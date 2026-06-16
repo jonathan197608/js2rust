@@ -1,0 +1,5 @@
+# Use rust-lld (LLVM LLD) as linker for MSVC target.
+# Needed because Zig-generated COFF objects have COMDAT sections
+# that MSVC link.exe cannot handle correctly.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

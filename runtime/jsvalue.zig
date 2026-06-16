@@ -1,0 +1,134 @@
+//! JsValue — JS-style dynamically-typed value for Zig
+//! Used when an object needs dynamic property access (computed with variable key).
+//! Objects that are only accessed with static keys use generated struct types instead.
+
+const std = @import("std");
+
+pub const Allocator = std.mem.Allocator;
+
+/// Tag for the dynamic value type.
+pub const JsValue = union(enum) {
+    int: i64,
+    float: f64,
+    bool: bool,
+    string: []const u8,
+    null: void,
+
+    // --- coercion helpers (JS semantics) ---
+
+    pub fn asI64(self: JsValue) i64 {
+        return switch (self) {
+            .int => |v| v,
+            .float => |v| @as(i64, @intFromFloat(v)),
+            .bool => |v| if (v) 1 else 0,
+            .string => |v| std.fmt.parseInt(i64, v, 10) catch 0,
+            .null => 0,
+        };
+    }
+
+    pub fn asF64(self: JsValue) f64 {
+        return switch (self) {
+            .int => |v| @as(f64, @floatFromInt(v)),
+            .float => |v| v,
+            .bool => |v| if (v) 1.0 else 0.0,
+            .string => |v| std.fmt.parseFloat(f64, v) catch 0,
+            .null => 0.0,
+        };
+    }
+
+    pub fn asString(self: JsValue, alloc: Allocator) []const u8 {
+        return switch (self) {
+            .int => |v| std.fmt.allocPrint(alloc, "{}", .{v}) catch "",
+            .float => |v| std.fmt.allocPrint(alloc, "{}", .{v}) catch "",
+            .bool => |v| if (v) "true" else "false",
+            .string => |v| v,
+            .null => "null",
+        };
+    }
+
+    pub fn asBool(self: JsValue) bool {
+        return switch (self) {
+            .int => |v| v != 0,
+            .float => |v| v != 0.0,
+            .bool => |v| v,
+            .string => |v| v.len != 0,
+            .null => false,
+        };
+    }
+
+    // --- arithmetic (JS semantics: if either operand is string, concatenate) ---
+
+    pub fn add(self: JsValue, other: JsValue, alloc: Allocator) JsValue {
+        const self_s = self.asString(alloc);
+        const other_s = other.asString(alloc);
+        const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ self_s, other_s }) catch "";
+        return .{ .string = result };
+    }
+
+    pub fn sub(self: JsValue, other: JsValue) JsValue {
+        return .{ .float = self.asF64() - other.asF64() };
+    }
+
+    pub fn mul(self: JsValue, other: JsValue) JsValue {
+        return .{ .float = self.asF64() * other.asF64() };
+    }
+
+    pub fn div(self: JsValue, other: JsValue) JsValue {
+        const denom = other.asF64();
+        if (denom == 0.0) return .{ .float = std.math.inf(f64) };
+        return .{ .float = self.asF64() / denom };
+    }
+
+    pub fn rem(self: JsValue, other: JsValue) JsValue {
+        return .{ .float = @mod(self.asF64(), other.asF64()) };
+    }
+
+    // --- unary ---
+
+    pub fn neg(self: JsValue) JsValue {
+        return switch (self) {
+            .int => |v| .{ .int = -v },
+            else => .{ .float = -self.asF64() },
+        };
+    }
+
+    pub fn not(self: JsValue) JsValue {
+        return .{ .bool = !self.asBool() };
+    }
+
+    // --- comparison (JS == semantics, not ===) ---
+
+    pub fn eq(self: JsValue, other: JsValue) bool {
+        return switch (self) {
+            .int => |a| switch (other) {
+                .int => |b| a == b,
+                .float => |b| @as(f64, @floatFromInt(a)) == b,
+                else => false,
+            },
+            .float => |a| switch (other) {
+                .int => |b| a == @as(f64, @floatFromInt(b)),
+                .float => |b| a == b,
+                else => false,
+            },
+            .bool => |a| switch (other) { .bool => |b| a == b, else => false },
+            .string => |a| switch (other) { .string => |b| std.mem.eql(u8, a, b), else => false },
+            .null => switch (other) { .null => true, else => false },
+        };
+    }
+
+    pub fn lt(self: JsValue, other: JsValue) bool {
+        return self.asF64() < other.asF64();
+    }
+
+    pub fn le(self: JsValue, other: JsValue) bool {
+        return self.asF64() <= other.asF64();
+    }
+
+    pub fn gt(self: JsValue, other: JsValue) bool {
+        return self.asF64() > other.asF64();
+    }
+
+    pub fn ge(self: JsValue, other: JsValue) bool {
+        return self.asF64() >= other.asF64();
+    }
+};

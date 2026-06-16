@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = [
+    "js2rustc",
+    "js2rust-bridge",
+]
