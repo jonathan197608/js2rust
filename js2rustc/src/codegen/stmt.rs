@@ -101,7 +101,7 @@ impl<'a> ZigCodegen<'a> {
             }
             Statement::TryStatement(ts) => self.emit_try_stmt(ts),
             _ => {
-                self.push_line("// TODO: unsupported statement");
+                self.push_line("@compileError(\"unsupported statement type\");");
             }
         }
     }

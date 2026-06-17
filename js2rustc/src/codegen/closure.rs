@@ -617,7 +617,7 @@ impl<'a> ZigCodegen<'a> {
                 }
                 s
             }
-            _ => format!("// TODO: {:?} in closure", std::mem::discriminant(stmt)),
+            _ => format!("@compileError(\"unsupported statement in closure: {:?}\")", std::mem::discriminant(stmt)),
         }
     }
 

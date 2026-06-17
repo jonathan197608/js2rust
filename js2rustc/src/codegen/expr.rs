@@ -334,7 +334,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::PrivateFieldExpression(_) => {
-                self.push("// TODO: private field");
+                self.push("@compileError(\"private field access is not supported\")");
             }
 
             Expression::AssignmentExpression(assign) => {
@@ -506,7 +506,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::TaggedTemplateExpression(_) => {
-                self.push("// TODO: tagged template");
+                self.push("@compileError(\"tagged template expression is not supported\")");
             }
 
             Expression::ArrowFunctionExpression(arrow) => {
@@ -642,7 +642,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::MetaProperty(_) => {
-                self.push("// TODO: meta property");
+                self.push("@compileError(\"meta property (new.target) is not supported\")");
             }
 
             Expression::ImportExpression(_) => {
@@ -706,19 +706,19 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::YieldExpression(_) => {
-                self.push("// TODO: yield");
+                self.push("@compileError(\"yield expression is not supported — generators are not yet implemented\")");
             }
 
             Expression::V8IntrinsicExpression(_) => {
-                self.push("// TODO: V8 intrinsic");
+                self.push("@compileError(\"V8 intrinsic expression is not supported\")");
             }
 
             Expression::PrivateInExpression(_) => {
-                self.push("// TODO: private in");
+                self.push("@compileError(\"private in expression is not supported\")");
             }
 
             Expression::JSXElement(_) | Expression::JSXFragment(_) => {
-                self.push("// TODO: JSX");
+                self.push("@compileError(\"JSX is not supported — use createElement() calls instead\")");
             }
         }
     }
