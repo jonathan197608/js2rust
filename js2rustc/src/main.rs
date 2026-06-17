@@ -118,7 +118,7 @@ fn main() {
 
     // === Phase 2: Generate Zig project per group ===
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
-    for group in &groups {
+    for (group_idx, group) in groups.iter().enumerate() {
         println!(
             "\n=== {} ({} member{}) ===",
             group.core_name,
@@ -190,6 +190,7 @@ fn main() {
                         .insert(imported_name.clone());
                 }
             }
+
 
             // --- Codegen pass ---
             for (member, meta) in group.members.iter().zip(member_metas.iter()) {
@@ -282,11 +283,27 @@ fn main() {
                 continue;
             }
 
+            // --- Generate C ABI wrapper code for lib.zig ---
+            // Build name→module lookup and name→CabiExport lookup
+            let mut name_to_module: HashMap<&str, &str> = HashMap::new();
+            for (exp_name, mod_name) in &all_module_exports {
+                name_to_module.entry(exp_name).or_insert(mod_name);
+            }
+            let mut name_to_cabi: HashMap<&str, &js2rustc::codegen::CabiExport> = HashMap::new();
+            for exp in &all_cabi_exports {
+                name_to_cabi.entry(&exp.name).or_insert(exp);
+            }
+            let cabi_wrapper_code = gen_cabi_wrappers(&name_to_module, &name_to_cabi);
+            let cabi_names: HashSet<String> =
+                name_to_cabi.keys().map(|&k| k.to_string()).collect();
+
             let project_opts = js2rustc::project::ProjectOptions {
                 name: group.core_name.clone(),
                 out_dir: out_dir.clone(),
                 per_file_code: per_file_modules,
                 external_exports: all_module_exports,
+                cabi_wrapper_code: cabi_wrapper_code.clone(),
+                cabi_names: cabi_names.clone(),
                 test_code: all_test_code,
                 runtime_dir: Some(runtime_dir.clone()),
                 host_header: if combined_zig.contains("host.") {
@@ -299,6 +316,7 @@ fn main() {
                 } else {
                     String::new()
                 },
+                include_windows_stub: group_idx == 0,
             };
 
             match js2rustc::project::generate(&project_opts) {
@@ -309,7 +327,7 @@ fn main() {
                 }
             }
 
-            write_cabi_metadata(&out_dir, &group.core_name, &all_cabi_exports, &host_fns);
+            write_cabi_metadata(&out_dir, &group.core_name, &all_cabi_exports, &host_fns, group_idx);
         }
 
         // === Zig build ===
@@ -344,18 +362,147 @@ fn main() {
     }
 }
 
+/// Generate `pub export fn` wrapper code for lib.zig.
+/// Each wrapper calls the per-file module function and lives in the root lib.zig,
+/// so Zig correctly propagates the symbols into the final .lib.
+///
+/// For string-returning functions, ALSO generate a Zig-friendly adapter
+/// (`pub fn greet(s: []const u8) []const u8`) so test code can call
+/// the function with idiomatic Zig string types.
+fn gen_cabi_wrappers(
+    name_to_module: &HashMap<&str, &str>,
+    name_to_cabi: &HashMap<&str, &js2rustc::codegen::CabiExport>,
+) -> String {
+    use std::collections::HashSet;
+
+    let mut out = String::new();
+    let mut emitted: HashSet<&str> = HashSet::new();
+
+    for (&name, exp) in name_to_cabi {
+        if !emitted.insert(name) {
+            continue;
+        }
+        let Some(&module) = name_to_module.get(name) else {
+            continue;
+        };
+
+        let returns_string = exp.ret_type == js2rustc::infer::ZigType::String;
+
+        if returns_string {
+            // ── Zig-friendly adapter (for tests) — calls _impl directly, no conversion ──
+            out.push_str(&format!(
+                "pub fn {name}(s: []const u8) []const u8 {{
+    return {mod}.{name}_impl(s);
+}}\n",
+                name = name,
+                mod = module,
+            ));
+
+            // ── C ABI wrapper — also calls _impl directly, converting itself ──
+            out.push_str(&format!(
+                "pub export fn {name}_cabi(name: [*:0]const u8) [*:0]const u8 {{
+    const name_slice: []const u8 = std.mem.span(name);
+    const _result = {mod}.{name}_impl(name_slice);
+    return @ptrCast(_result.ptr);
+}}\n",
+                name = name,
+                mod = module,
+            ));
+            out.push_str(&format!(
+                "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
+                name = name,
+            ));
+        } else {
+            // ── Simple C ABI wrapper (no string conversion needed) ──
+            let mut cabi_params: Vec<String> = Vec::new();
+            let mut arg_names: Vec<&str> = Vec::new();
+            for (pname, ptype) in &exp.params {
+                let zig_ty: String = if *ptype == js2rustc::infer::ZigType::String {
+                    "[*:0]const u8".into()
+                } else {
+                    ptype.to_zig_str()
+                };
+                cabi_params.push(format!("{}: {}", pname, zig_ty));
+                arg_names.push(pname);
+            }
+
+            let ret_zig = if exp.ret_type == js2rustc::infer::ZigType::Void {
+                "void".to_string()
+            } else {
+                exp.ret_type.to_zig_str()
+            };
+
+            if ret_zig == "void" {
+                out.push_str(&format!(
+                    "pub export fn {name}({params}) void {{
+    {mod}.{name}({args});
+}}\n",
+                    name = name,
+                    params = cabi_params.join(", "),
+                    mod = module,
+                    args = arg_names.join(", ")
+                ));
+            } else {
+                out.push_str(&format!(
+                    "pub export fn {name}({params}) {ret} {{
+    return {mod}.{name}({args});
+}}\n",
+                    name = name,
+                    params = cabi_params.join(", "),
+                    ret = ret_zig,
+                    mod = module,
+                    args = arg_names.join(", ")
+                ));
+            }
+        }
+
+        // ── free_xxx wrapper (C ABI, always _cabi suffix) ──
+        if exp.has_free_func {
+            let free_fn = format!("free_{}", name);
+            if returns_string {
+                out.push_str(&format!(
+                    "pub export fn {free_fn}_cabi(ptr: [*:0]const u8) void {{
+    {mod}.free_{name}(ptr);
+}}\n",
+                    free_fn = free_fn,
+                    name = name,
+                    mod = module,
+                ));
+                out.push_str(&format!(
+                "comptime {{ @export(&{free_fn}_cabi, .{{ .name = \"{free_fn}\", .linkage = .strong }}); }}\n",
+                    free_fn = free_fn,
+                ));
+            } else {
+                // Closure return: free takes *anyopaque
+                out.push_str(&format!(
+                    "pub export fn {free_fn}(ptr: *anyopaque) void {{
+    {mod}.{free_fn}(ptr);
+}}\n",
+                    free_fn = free_fn,
+                    mod = module,
+                ));
+            }
+        }
+
+        out.push('\n');
+    }
+
+    out
+}
+
 /// Write C ABI exports/imports JSON metadata for a single group project.
 fn write_cabi_metadata(
     out_dir: &str,
     group_name: &str,
     cabi_exports: &[js2rustc::codegen::CabiExport],
     host_fns: &js2rustc::host::HostFnRegistry,
+    group_idx: usize,
 ) {
     let project_dir = Path::new(out_dir).join(group_name);
 
     // cabi_exports.json
     let exports_path = project_dir.join("cabi_exports.json");
-    let exports_value: Vec<serde_json::Value> = cabi_exports
+    let mut exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
         .map(|exp| {
             let params: Vec<serde_json::Value> = exp
@@ -376,6 +523,24 @@ fn write_cabi_metadata(
             })
         })
         .collect();
+
+    // Only include js2rust_init and js2rust_deinit for the first group
+    // (they're only generated in the first group's lib.zig to avoid duplicate symbols)
+    if group_idx == 0 {
+        exports_value.push(serde_json::json!({
+            "name": "js2rust_init",
+            "params": [],
+            "ret_type": "void",
+            "has_free_func": false
+        }));
+        exports_value.push(serde_json::json!({
+            "name": "js2rust_deinit",
+            "params": [],
+            "ret_type": "void",
+            "has_free_func": false
+        }));
+    }
+
     if let Ok(json_str) = serde_json::to_string_pretty(&exports_value) {
         let _ = fs::write(&exports_path, &json_str);
     }

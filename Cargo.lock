@@ -322,7 +322,18 @@ dependencies = [
 name = "js2rust-bridge"
 version = "0.1.0"
 dependencies = [
+ "js2rust-bridge-macro",
+]
+
+[[package]]
+name = "js2rust-bridge-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde",
  "serde_json",
+ "syn",
 ]
 
 [[package]]

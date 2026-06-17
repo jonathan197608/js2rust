@@ -3,4 +3,5 @@ resolver = "3"
 members = [
     "js2rustc",
     "js2rust-bridge",
+    "js2rust-bridge-macro",
 ]

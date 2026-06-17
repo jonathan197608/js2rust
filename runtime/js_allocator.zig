@@ -13,7 +13,9 @@ pub fn setGlobalAllocator(alloc: std.mem.Allocator) void {
 }
 
 /// Retrieve the global allocator.
-/// Panics if `setGlobalAllocator` has not been called.
+/// Auto-initializes with `std.heap.page_allocator` if not explicitly set.
 pub fn g_alloc() std.mem.Allocator {
-    return g_allocator orelse @panic("js2rust: allocator not initialized (call init_js2rust first)");
+    if (g_allocator) |a| return a;
+    g_allocator = std.heap.page_allocator;
+    return g_allocator.?;
 }

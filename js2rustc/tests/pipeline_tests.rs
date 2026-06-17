@@ -196,14 +196,15 @@ const test_fact = factorial(5); // => 120
     assert!(!has_error, "Codegen errors: {:?}", diagnostics);
     assert!(!zig_code.trim().is_empty(), "Zig code must not be empty");
 
-    // In multi-file mode, exports use `pub export fn`, internals use `pub fn`
+    // In multi-file mode, exports in per-file modules use `pub fn`
+    // (C ABI `pub export fn` wrappers are generated in the orchestrator lib.zig)
     assert!(
-        zig_code.contains("pub export fn add("),
-        "add should be pub export fn"
+        zig_code.contains("pub fn add("),
+        "add should be pub fn"
     );
     assert!(
-        zig_code.contains("pub export fn multiply("),
-        "multiply should be pub export fn"
+        zig_code.contains("pub fn multiply("),
+        "multiply should be pub fn"
     );
     assert!(
         zig_code.contains("pub fn helper("),
@@ -259,10 +260,13 @@ const test_fact = factorial(5); // => 120
             dep_imports: vec![],
         }],
         external_exports: all_exports,
+        cabi_wrapper_code: String::new(),
+        cabi_names: Default::default(),
         test_code,
         runtime_dir: Some(ws_dir().join("runtime").to_string_lossy().to_string()),
         host_header,
         async_host_wrappers: async_wrappers,
+        include_windows_stub: false,
     };
     js2rustc::project::generate(&project_opts).expect("Project gen must succeed");
 

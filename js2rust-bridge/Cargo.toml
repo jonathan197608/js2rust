@@ -3,5 +3,5 @@ name = "js2rust-bridge"
 version = "0.1.0"
 edition = "2024"
 
-[build-dependencies]
-serde_json = "1"
+[dependencies]
+js2rust-bridge-macro = { path = "../js2rust-bridge-macro" }
