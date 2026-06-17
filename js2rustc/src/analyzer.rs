@@ -220,7 +220,8 @@ pub fn analyze_groups(in_dir: &str) -> (Vec<FileGroup>, String) {
     }
 
     // 6. Serialize groups.json.
-    let groups_json = serde_json::to_string_pretty(&groups_to_json(&groups)).unwrap();
+    let groups_json = serde_json::to_string_pretty(&groups_to_json(&groups))
+        .expect("Failed to serialize groups.json");
 
     (groups, groups_json)
 }
