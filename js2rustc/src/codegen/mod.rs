@@ -360,13 +360,13 @@ impl<'a> ZigCodegen<'a> {
 
     pub(super) fn escape_keyword(name: &str) -> String {
         let keywords: &[&str] = &[
-            "addrspace", "align", "and", "anyframe", "anytype", "asm", "async",
+            "align", "allowzero", "and", "anyframe", "anytype", "asm", "async",
             "await", "break", "callconv", "catch", "comptime", "const", "continue",
             "defer", "else", "enum", "errdefer", "error", "export", "extern",
             "false", "fn", "for", "if", "inline", "linksection", "noalias",
-            "noinline", "nosuspend", "null", "opaque", "or", "orelse", "packed",
+            "noinline", "noreturn", "nosuspend", "null", "opaque", "or", "orelse", "packed",
             "pub", "resume", "return", "struct", "suspend", "switch", "test",
-            "threadlocal", "true", "try", "type", "union", "unreachable",
+            "threadlocal", "true", "try", "type", "undefined", "union", "unreachable",
             "usingnamespace", "var", "volatile", "while",
         ];
         if keywords.contains(&name) {
@@ -483,7 +483,7 @@ impl<'a> ZigCodegen<'a> {
                     ZigType::String => ".string".to_string(),
                     ZigType::F64 | ZigType::F32 => ".float".to_string(),
                     ZigType::Bool => ".bool".to_string(),
-                    ZigType::Null => unreachable!(), // put() stores null variant
+                    ZigType::Null => ".null".to_string(),
                     _ => ".asI64()".to_string(),
                 };
             }
