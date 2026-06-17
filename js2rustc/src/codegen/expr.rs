@@ -339,20 +339,20 @@ impl<'a> ZigCodegen<'a> {
 
             Expression::AssignmentExpression(assign) => {
                 // Check if assigning to a field of a dynamic access object (HashMap)
-                if let AssignmentTarget::StaticMemberExpression(mem) = &assign.left {
-                    if let Expression::Identifier(obj_id) = &mem.object {
-                        let obj_name = obj_id.name.as_str();
-                        let dyn_vars = self.inferrer.get_dynamic_access_vars();
-                        if dyn_vars.contains(obj_name) {
-                            // Generate: obj.put("field", JsValue{...}) catch @panic("OOM");
-                            self.emit_expr(&mem.object);
-                            self.push(".put(\"");
-                            self.push(mem.property.name.as_str());
-                            self.push("\", ");
-                            self.emit_js_value_construction(&assign.right);
-                            self.push(") catch @panic(\"OOM\")");
-                            return;
-                        }
+                if let AssignmentTarget::StaticMemberExpression(mem) = &assign.left
+                    && let Expression::Identifier(obj_id) = &mem.object
+                {
+                    let obj_name = obj_id.name.as_str();
+                    let dyn_vars = self.inferrer.get_dynamic_access_vars();
+                    if dyn_vars.contains(obj_name) {
+                        // Generate: obj.put("field", JsValue{...}) catch @panic("OOM");
+                        self.emit_expr(&mem.object);
+                        self.push(".put(\"");
+                        self.push(mem.property.name.as_str());
+                        self.push("\", ");
+                        self.emit_js_value_construction(&assign.right);
+                        self.push(") catch @panic(\"OOM\")");
+                        return;
                     }
                 }
 

@@ -2343,15 +2343,13 @@ impl TypeInferrer {
         // Check for variable declarations that assign from a dynamic array
         if let Statement::VariableDeclaration(vd) = stmt {
             for decl in &vd.declarations {
-                if let Some(init) = &decl.init {
-                    if let Expression::Identifier(id) = init {
-                        // If assigning from a dynamic array, mark the new variable as dynamic
-                        if self.dynamic_arrays.contains(id.name.as_str()) {
-                            // Get the variable name from the binding pattern
-                            if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
-                                self.dynamic_arrays.insert(bi.name.to_string());
-                            }
-                        }
+                if let Some(init) = &decl.init
+                    && let Expression::Identifier(id) = init
+                    && self.dynamic_arrays.contains(id.name.as_str())
+                {
+                    // If assigning from a dynamic array, mark the new variable as dynamic
+                    if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
+                        self.dynamic_arrays.insert(bi.name.to_string());
                     }
                 }
             }
@@ -2377,14 +2375,12 @@ impl TypeInferrer {
         }
 
         // Check for assignment expressions: x = arr (where arr is dynamic)
-        if let Expression::AssignmentExpression(assign) = expr {
-            if let Some(target_id) = Self::get_assignment_target_id(&assign.left) {
-                if let Expression::Identifier(src_id) = &assign.right {
-                    if self.dynamic_arrays.contains(src_id.name.as_str()) {
-                        self.dynamic_arrays.insert(target_id);
-                    }
-                }
-            }
+        if let Expression::AssignmentExpression(assign) = expr
+            && let Some(target_id) = Self::get_assignment_target_id(&assign.left)
+            && let Expression::Identifier(src_id) = &assign.right
+            && self.dynamic_arrays.contains(src_id.name.as_str())
+        {
+            self.dynamic_arrays.insert(target_id);
         }
 
         // Structural recursion via shared walker

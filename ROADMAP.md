@@ -115,7 +115,7 @@
   - ✅ builtins：Math.round/Math.sign/parseInt
   - ✅ class declaration
   - 文件清单：`main.js`, `math.js`, `string_utils.js`, `builtins.js`, `classes.js`
-  - ✅ `cargo run` → `zig build` → `zig build test` 全部通过（27 个测试）
+  - ✅ `cargo run` → `zig build` → `zig build test` 全部通过（34 个测试，33 断言 + 1 smoke）
 
 - [x] **README.md** — 项目介绍、快速开始、架构图、限制说明
 

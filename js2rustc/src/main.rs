@@ -178,7 +178,7 @@ fn main() {
     }
 
     // === Phase 3: Extract test cases from AST (smoke tests, no JS runtime) ===
-    let test_cases = js2rustc::testgen::extract_test_cases(&program);
+    let test_cases = js2rustc::testgen::extract_test_cases(&program, &merged_js);
     let closure_fn_refs: HashSet<&str> = closure_fns.iter().map(|s| s.as_str()).collect();
     let test_code = js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs);
 
@@ -362,7 +362,7 @@ fn main() {
                 let alloc_m = oxc_allocator::Allocator::default();
                 let merged = merge.merged_js();
                 let prog_m = js2rustc::parser::parse(&alloc_m, &merged);
-                let test_cases = js2rustc::testgen::extract_test_cases(&prog_m);
+                let test_cases = js2rustc::testgen::extract_test_cases(&prog_m, &merged);
                 let clos_refs: HashSet<&str> =
                     all_closures.iter().map(|s| s.as_str()).collect();
                 let test_code = js2rustc::testgen::generate_test_code(&test_cases, &clos_refs);
@@ -411,7 +411,7 @@ fn main() {
                     continue;
                 }
 
-                let test_cases2 = js2rustc::testgen::extract_test_cases(&prog2);
+                let test_cases2 = js2rustc::testgen::extract_test_cases(&prog2, &merged2);
                 let clos_refs: HashSet<&str> =
                     clos2.iter().map(|s| s.as_str()).collect();
                 let test_code2 =

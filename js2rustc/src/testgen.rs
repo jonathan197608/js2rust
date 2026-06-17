@@ -8,11 +8,72 @@ pub struct TestCase {
     pub var_name: String,
     /// The expression text reconstructed from AST (e.g. "add(3, 5)")
     pub expr_text: String,
+    /// Optional expected value as a Zig literal (e.g. "@as(i64, 8)")
+    /// parsed from a trailing `// => value` comment.
+    pub expected: Option<String>,
+}
+
+/// Parse a `// => value` comment into a Zig literal.
+/// Supports: integers → @as(i64, N), floats → @as(f64, N), strings → "s", bool/null.
+fn parse_expected_value(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    // Boolean
+    if raw == "true" || raw == "false" {
+        return Some(raw.to_string());
+    }
+    // Null
+    if raw == "null" {
+        return Some("null".to_string());
+    }
+    // String literal
+    if raw.starts_with('"') && raw.ends_with('"') {
+        return Some(raw.to_string());
+    }
+    if raw.starts_with('\'') && raw.ends_with('\'') {
+        // Convert single-quoted JS string to double-quoted Zig string
+        let inner = &raw[1..raw.len() - 1];
+        return Some(format!("\"{}\"", inner));
+    }
+    // Float
+    if raw.contains('.') {
+        return Some(format!("@as(f64, {})", raw));
+    }
+    // Negative integer
+    if let Some(num) = raw.strip_prefix('-')
+        && num.chars().all(|c| c.is_ascii_digit())
+    {
+        return Some(format!("@as(i64, -{})", num));
+    }
+    // Positive integer
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("@as(i64, {})", raw));
+    }
+    // Fallback: treat as raw identifier/expression
+    Some(raw.to_string())
+}
+
+/// Scan source text after `end_pos` for a `// => value` trailing comment.
+/// Only searches within the current line (up to the first newline).
+fn scan_expected_comment(source: &str, end_pos: usize) -> Option<String> {
+    let rest = &source[end_pos..];
+    // Only look on the current line
+    let line = rest.split('\n').next()?;
+    let comment_pos = line.find("// =>")?;
+    // Extract everything after `// =>` until end of line
+    let after_marker = &line[comment_pos + 5..]; // skip "// =>"
+    let trimmed = after_marker.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    parse_expected_value(trimmed)
 }
 
 /// Extract test_* variable definitions from the AST.
-/// Reconstructs expression text from AST nodes (no source/span needed).
-pub fn extract_test_cases(program: &Program) -> Vec<TestCase> {
+/// Scans source text for `// => expected` trailing comments.
+pub fn extract_test_cases(program: &Program, source: &str) -> Vec<TestCase> {
     let mut cases = Vec::new();
 
     for stmt in &program.body {
@@ -31,9 +92,14 @@ pub fn extract_test_cases(program: &Program) -> Vec<TestCase> {
                 continue;
             };
             let expr_text = expr_to_string(init);
+
+            // Try to find `// => value` comment after this statement
+            let expected = scan_expected_comment(source, decl.span.end as usize);
+
             cases.push(TestCase {
                 var_name: name,
                 expr_text,
+                expected,
             });
         }
     }
@@ -41,9 +107,9 @@ pub fn extract_test_cases(program: &Program) -> Vec<TestCase> {
     cases
 }
 
-/// Generate Zig smoke-test code from test cases.
-/// Each test simply calls the expression and discards the result,
-/// verifying that the translated Zig code compiles and runs without crashing.
+/// Generate Zig test code from test cases.
+/// If a test case has an expected value (from `// => value` comment),
+/// generates an assertion; otherwise generates a smoke test (call + discard).
 ///
 /// `closure_fns`: names of functions that return closure structs (needs .call() syntax)
 pub fn generate_test_code(
@@ -55,7 +121,7 @@ pub fn generate_test_code(
     }
 
     let mut out = String::new();
-    out.push_str("// Auto-generated smoke tests from test_* variables\n\n");
+    out.push_str("// Auto-generated tests from test_* variables\n\n");
 
     for tc in test_cases {
         let test_name = tc.var_name.strip_prefix("test_").unwrap_or(&tc.var_name);
@@ -72,7 +138,24 @@ pub fn generate_test_code(
         out.push_str("    const allocator = arena.allocator();\n");
         out.push_str("    init_js2rust(allocator);\n");
         out.push_str("    defer deinit_js2rust();\n");
-        out.push_str(&format!("    _ = {};\n", call_expr));
+
+        if let Some(ref expected) = tc.expected {
+            if expected.starts_with('"') {
+                // String comparison — use expectEqualSlices to compare content, not pointers
+                out.push_str(&format!(
+                    "    try std.testing.expectEqualSlices(u8, {}, {});\n",
+                    expected, call_expr
+                ));
+            } else {
+                out.push_str(&format!(
+                    "    try std.testing.expectEqual({}, {});\n",
+                    expected, call_expr
+                ));
+            }
+        } else {
+            out.push_str(&format!("    _ = {};\n", call_expr));
+        }
+
         out.push_str("}\n\n");
     }
 
@@ -219,18 +302,18 @@ fn expr_to_string(expr: &Expression) -> String {
             format!("({})", expr_to_string(&parens.expression))
         }
         Expression::TemplateLiteral(tl) => {
-            if tl.expressions.is_empty() && tl.quasis.len() == 1 {
-                if let Some(cooked) = &tl.quasis[0].value.cooked {
-                    return format!("\"{}\"", cooked);
-                }
+            if tl.expressions.is_empty() && tl.quasis.len() == 1
+                && let Some(cooked) = &tl.quasis[0].value.cooked
+            {
+                return format!("\"{}\"", cooked);
             }
             // For template literals with expressions, just reconstruct the args
             let mut parts = Vec::new();
             for (i, quasi) in tl.quasis.iter().enumerate() {
-                if let Some(cooked) = &quasi.value.cooked {
-                    if !cooked.is_empty() {
-                        parts.push(format!("\"{}\"", cooked));
-                    }
+                if let Some(cooked) = &quasi.value.cooked
+                    && !cooked.is_empty()
+                {
+                    parts.push(format!("\"{}\"", cooked));
                 }
                 if i < tl.expressions.len() {
                     parts.push(expr_to_string(&tl.expressions[i]));
