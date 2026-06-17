@@ -147,7 +147,109 @@ fn expr_to_string(expr: &Expression) -> String {
                 .collect();
             format!("&[_]i64{{ {} }}", elements.join(", "))
         }
+        Expression::UnaryExpression(unary) => {
+            let arg = expr_to_string(&unary.argument);
+            match unary.operator {
+                UnaryOperator::UnaryNegation => format!("-{}", arg),
+                UnaryOperator::LogicalNot => format!("!{}", arg),
+                UnaryOperator::BitwiseNot => format!("~{}", arg),
+                _ => arg,
+            }
+        }
+        Expression::BinaryExpression(bin) => {
+            let left = expr_to_string(&bin.left);
+            let right = expr_to_string(&bin.right);
+            let op = match bin.operator {
+                BinaryOperator::Addition => "+",
+                BinaryOperator::Subtraction => "-",
+                BinaryOperator::Multiplication => "*",
+                BinaryOperator::Division => "/",
+                BinaryOperator::Remainder => "%",
+                BinaryOperator::Equality => "==",
+                BinaryOperator::Inequality => "!=",
+                BinaryOperator::StrictEquality => "===",
+                BinaryOperator::StrictInequality => "!==",
+                BinaryOperator::LessThan => "<",
+                BinaryOperator::LessEqualThan => "<=",
+                BinaryOperator::GreaterThan => ">",
+                BinaryOperator::GreaterEqualThan => ">=",
+                BinaryOperator::ShiftLeft => "<<",
+                BinaryOperator::ShiftRight => ">>",
+                BinaryOperator::ShiftRightZeroFill => ">>>",
+                BinaryOperator::BitwiseAnd => "&",
+                BinaryOperator::BitwiseOR => "|",
+                BinaryOperator::BitwiseXOR => "^",
+                _ => "??",
+            };
+            format!("({} {} {})", left, op, right)
+        }
+        Expression::ConditionalExpression(cond) => {
+            format!("({} ? {} : {})",
+                expr_to_string(&cond.test),
+                expr_to_string(&cond.consequent),
+                expr_to_string(&cond.alternate))
+        }
+        Expression::LogicalExpression(logic) => {
+            let left = expr_to_string(&logic.left);
+            let right = expr_to_string(&logic.right);
+            let op = match logic.operator {
+                LogicalOperator::And => "&&",
+                LogicalOperator::Or => "||",
+                LogicalOperator::Coalesce => "??",
+            };
+            format!("({} {} {})", left, op, right)
+        }
+        Expression::ObjectExpression(obj) => {
+            let props: Vec<String> = obj.properties.iter().filter_map(|prop| {
+                match prop {
+                    ObjectPropertyKind::ObjectProperty(p) => {
+                        let key = match &p.key {
+                            PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                            _ => "?".to_string(),
+                        };
+                        let val = expr_to_string(&p.value);
+                        Some(format!(".{} = {}", key, val))
+                    }
+                    _ => None,
+                }
+            }).collect();
+            format!(".{{ {} }}", props.join(", "))
+        }
+        Expression::ParenthesizedExpression(parens) => {
+            format!("({})", expr_to_string(&parens.expression))
+        }
+        Expression::TemplateLiteral(tl) => {
+            if tl.expressions.is_empty() && tl.quasis.len() == 1 {
+                if let Some(cooked) = &tl.quasis[0].value.cooked {
+                    return format!("\"{}\"", cooked);
+                }
+            }
+            // For template literals with expressions, just reconstruct the args
+            let mut parts = Vec::new();
+            for (i, quasi) in tl.quasis.iter().enumerate() {
+                if let Some(cooked) = &quasi.value.cooked {
+                    if !cooked.is_empty() {
+                        parts.push(format!("\"{}\"", cooked));
+                    }
+                }
+                if i < tl.expressions.len() {
+                    parts.push(expr_to_string(&tl.expressions[i]));
+                }
+            }
+            parts.join(", ")
+        }
+        Expression::AssignmentExpression(assign) => {
+            format!("({} = {})", expr_to_string_simple(&assign.left), expr_to_string(&assign.right))
+        }
         _ => "<expr>".to_string(),
+    }
+}
+
+/// Simplified expression to string for assignment targets
+fn expr_to_string_simple(target: &AssignmentTarget) -> String {
+    match target {
+        AssignmentTarget::AssignmentTargetIdentifier(id) => id.name.to_string(),
+        _ => "_".to_string(),
     }
 }
 

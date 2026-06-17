@@ -205,6 +205,17 @@ impl<'a> ZigCodegen<'a> {
         self.push(&result);
     }
 
+    /// Infer the element type of a dynamic array variable.
+    /// Returns the Zig type string for the element (e.g., "i64", "f64").
+    pub(super) fn infer_dynamic_array_elem_type(&self, var_name: &str) -> String {
+        let var_type = self.inferrer.get_var_type(var_name);
+        match var_type {
+            ZigType::Array(elem) | ZigType::Slice(elem) => elem.to_zig_str(),
+            ZigType::Any => "i64".to_string(),
+            _ => var_type.to_zig_str(),
+        }
+    }
+
     /// Emit direct ArrayList method calls for dynamic arrays
     /// (instead of going through js_array runtime functions).
     pub(super) fn emit_dynamic_array_method(
@@ -249,10 +260,83 @@ impl<'a> ZigCodegen<'a> {
                 }
                 self.push(") catch {}");
             }
-            "splice" | "sort" | "reverse" => {
-                self.push("@compileError(\"");
-                self.push(method);
-                self.push(" not yet implemented for dynamic array\")");
+            "reverse" => {
+                // arr.reverse() → std.mem.reverse(T, arr.items);
+                let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
+                self.push("std.mem.reverse(");
+                self.push(&elem_ty);
+                self.push(", ");
+                self.push(&escaped);
+                self.push(".items)");
+            }
+            "sort" => {
+                // arr.sort() → std.mem.sort(T, arr.items, {}, comptime (fn (void,T,T) bool)(struct { fn lt(_:void,a:T,b:T)bool{return a<b;} }.lt));
+                let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
+                self.push(&format!(
+                    "std.mem.sort({}, {}.items, {{}}, (struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{ return a < b; }} }}).lessThan)",
+                    elem_ty, escaped, elem_ty, elem_ty
+                ));
+            }
+            "splice" => {
+                // arr.splice(start, deleteCount, ...items)
+                // Only delete-removal (0–2 args) is fully supported; insertion is a compileError.
+                if args.len() > 2 {
+                    self.push("@compileError(\"splice with insert items not yet supported — use manual insert operations\")");
+                } else {
+                    self.push("(blk: {\n");
+                    self.indent += 1;
+
+                    let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
+                    self.emit_indent();
+                    self.push("const _start: usize = @intCast(@max(0, ");
+                    if let Some(arg0) = args.first() {
+                        self.emit_arg(arg0);
+                    } else {
+                        self.push("0");
+                    }
+                    self.push("));\n");
+
+                    self.emit_indent();
+                    self.push("var _n: usize = @intCast(@max(0, ");
+                    if args.len() >= 2 {
+                        if let Some(arg1) = args.get(1) {
+                            self.emit_arg(arg1);
+                        } else {
+                            self.push("0");
+                        }
+                    } else {
+                        // splice(start) → deleteCount = all remaining
+                        self.push(&format!("{}.items.len -| _start", escaped));
+                    }
+                    self.push("));\n");
+
+                    self.emit_indent();
+                    self.push(&format!("var _result = std.ArrayList({}).init(js_allocator.g_alloc());\n", elem_ty));
+                    self.emit_indent();
+                    self.push("defer _result.deinit();\n");
+
+                    self.emit_indent();
+                    self.push("while (_n > 0 and _start < ");
+                    self.push(&escaped);
+                    self.push(".items.len) : (_n -= 1) {\n");
+                    self.indent += 1;
+
+                    self.emit_indent();
+                    self.push("_result.append(");
+                    self.push(&escaped);
+                    self.push(".orderedRemove(_start)) catch @panic(\"OOM\");\n");
+
+                    self.indent -= 1;
+                    self.emit_indent();
+                    self.push("}\n");
+
+                    self.emit_indent();
+                    self.push("break :blk _result;\n");
+
+                    self.indent -= 1;
+                    self.emit_indent();
+                    self.push("})");
+                }
             }
             _ => {
                 self.push("@compileError(\"unknown array method: ");

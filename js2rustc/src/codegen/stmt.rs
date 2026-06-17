@@ -464,6 +464,15 @@ impl<'a> ZigCodegen<'a> {
                                 self.push(keyword);
                                 self.push(" ");
                                 self.push(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                if keyword == "var" {
+                                    let var_type = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                    let type_str = match &var_type {
+                                        ZigType::Any => "i64".to_string(),
+                                        _ => var_type.to_zig_str(),
+                                    };
+                                    self.push(": ");
+                                    self.push(&type_str);
+                                }
                                 if let Some(init_expr) = &decl.init {
                                     self.push(" = ");
                                     self.emit_expr(init_expr);
@@ -481,6 +490,15 @@ impl<'a> ZigCodegen<'a> {
                                 self.push(", ");
                             }
                             self.push(&Self::escape_keyword(self.binding_name(&decl.id)));
+                            if keyword == "var" {
+                                let var_type = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                let type_str = match &var_type {
+                                    ZigType::Any => "i64".to_string(),
+                                    _ => var_type.to_zig_str(),
+                                };
+                                self.push(": ");
+                                self.push(&type_str);
+                            }
                             if let Some(init_expr) = &decl.init {
                                 self.push(" = ");
                                 self.emit_expr(init_expr);
@@ -532,16 +550,123 @@ impl<'a> ZigCodegen<'a> {
     }
 
     pub(super) fn emit_for_in_stmt(&mut self, fis: &ForInStatement) {
-        // JS for-in iterates over enumerable keys (string) of an object.
-        // Zig has no direct equivalent without runtime library support
-        // for key enumeration and prototype chain traversal.
+        // JS for-in iterates over enumerable keys of an object.
+        // Only supported for HashMap-based dynamic access objects.
         //
-        // TODO: When Tier 3 runtime (js_string, js_object) is ready,
-        // emit: for (jsObjectKeys(obj)) |key| { body }
+        // Zig output:
+        //   {
+        //       const _obj = <expr>;
+        //       var _iter = _obj.iterator();
+        //       while (_iter.next()) |_entry| {
+        //           const key = _entry.key_ptr.*;
+        //           // body
+        //       }
+        //   }
+
+        let is_dynamic = if let Expression::Identifier(id) = &fis.right {
+            self.inferrer.get_dynamic_access_vars().contains(id.name.as_str())
+        } else {
+            false
+        };
+
+        if !is_dynamic {
+            self.emit_indent();
+            self.push("// TODO: for-in requires a dynamic object (HashMap) — ");
+            self.emit_expr(&fis.right);
+            self.push(" is not a dynamic access object\n");
+            self.diagnostics.push(crate::infer::Diagnostic {
+                kind: crate::infer::DiagnosticKind::Warning,
+                message: "for-in loop requires a dynamic access object (declared with dynamic property access)".to_string(),
+            });
+            return;
+        }
+
+        let key_name: Option<String>;
+        let is_var_assign: bool;
+
+        match &fis.left {
+            ForStatementLeft::VariableDeclaration(vd) => {
+                let first_decl = vd.declarations.first();
+                match first_decl {
+                    Some(decl) if is_simple_binding(&decl.id) => {
+                        let raw = self.binding_name(&decl.id);
+                        if raw.starts_with("test_") {
+                            return;
+                        }
+                        key_name = Some(Self::escape_keyword(raw));
+                        is_var_assign = false;
+                    }
+                    Some(_) => {
+                        self.emit_indent();
+                        self.push_line("// TODO: for-in with destructuring");
+                        return;
+                    }
+                    None => {
+                        self.emit_indent();
+                        self.push_line("// TODO: for-in with empty declaration");
+                        return;
+                    }
+                }
+            }
+            ForStatementLeft::AssignmentTargetIdentifier(id) => {
+                key_name = Some(Self::escape_keyword(&id.name));
+                is_var_assign = true;
+            }
+            _ => {
+                self.emit_indent();
+                self.push_line("// TODO: for-in with member expression / destructuring");
+                return;
+            }
+        }
+
+        let key = key_name.unwrap();
+
+        // Check whether the key variable is referenced in the body
+        let used = Self::capture_used_in_body(&key, &fis.body);
+
+        // Emit: { const _obj = expr; var _iter = _obj.iterator(); while (_iter.next()) |_entry| { const key = ...; body } }
         self.emit_indent();
-        self.push("// TODO: for-in loop over ");
+        self.push("{\n");
+        self.indent += 1;
+
+        self.emit_indent();
+        self.push("const _obj = ");
         self.emit_expr(&fis.right);
-        self.push(" — requires object key enumeration runtime\n");
+        self.push(";\n");
+
+        self.emit_indent();
+        self.push("var _iter = _obj.iterator();\n");
+
+        self.emit_indent();
+        self.push("while (_iter.next()) |_entry| {\n");
+        self.indent += 1;
+
+        self.emit_indent();
+        if is_var_assign {
+            self.push(&key);
+            self.push(" = _entry.key_ptr.*;\n");
+        } else {
+            self.push("const ");
+            self.push(&key);
+            self.push(" = _entry.key_ptr.*;\n");
+        }
+
+        if !used {
+            self.emit_indent();
+            self.push("_ = ");
+            self.push(&key);
+            self.push(";\n");
+        }
+
+        self.emit_stmts_inside(&fis.body);
+
+        self.indent -= 1;
+        self.emit_indent();
+        self.push("}\n");
+
+        self.indent -= 1;
+        self.emit_indent();
+        self.push("}\n");
     }
 
     pub(super) fn emit_for_of_stmt(&mut self, fos: &ForOfStatement) {

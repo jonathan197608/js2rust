@@ -928,6 +928,11 @@ impl TypeInferrer {
                     self.collect_constraints_in_expr(param_name, e, constraints);
                 }
             }
+            Expression::TemplateLiteral(tl) => {
+                for e in &tl.expressions {
+                    self.collect_constraints_in_expr(param_name, e, constraints);
+                }
+            }
             Expression::UpdateExpression(up)
                 if self.is_name_ref_simple_target(&up.argument, param_name) => {
                     constraints.push(ParamConstraint::Update);
