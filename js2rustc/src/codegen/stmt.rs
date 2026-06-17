@@ -573,17 +573,9 @@ impl<'a> ZigCodegen<'a> {
         };
 
         if !is_dynamic {
+            // T10: for-in on non-dynamic object — not supported for struct-based objects
             self.emit_indent();
-            self.push("// TODO: for-in requires a dynamic object (HashMap) — ");
-            self.emit_expr(&fis.right);
-            self.push(" is not a dynamic access object\n");
-            self.diagnostics.push(
-                crate::infer::Diagnostic::new(
-                    crate::infer::DiagnosticKind::Warning,
-                    "for-in loop requires a dynamic access object (declared with dynamic property access)".to_string(),
-                )
-                .with_span(fis.span.start as usize, fis.span.end as usize),
-            );
+            self.push("@compileError(\"for-in requires a dynamic access object (HashMap). Declare with: const obj = { ... } (dynamic access)\")");
             return;
         }
 
@@ -603,13 +595,16 @@ impl<'a> ZigCodegen<'a> {
                         is_var_assign = false;
                     }
                     Some(_) => {
+                        // T11: for-in with destructuring — JS iterates over keys (strings),
+                        // destructuring a string doesn't make sense. Generate error.
                         self.emit_indent();
-                        self.push_line("// TODO: for-in with destructuring");
+                        self.push("@compileError(\"for-in with destructuring is not supported (iterates over string keys)\")");
                         return;
                     }
                     None => {
+                        // T12: for-in with empty declaration — JS syntax error
                         self.emit_indent();
-                        self.push_line("// TODO: for-in with empty declaration");
+                        self.push("@compileError(\"for-in with empty declaration is invalid JS\")");
                         return;
                     }
                 }
@@ -619,10 +614,13 @@ impl<'a> ZigCodegen<'a> {
                 is_var_assign = true;
             }
             _ => {
-                self.emit_indent();
-                self.push_line("// TODO: for-in with member expression / destructuring");
-                return;
-            }
+                        // T13: for-in with member expression (AssignmentTarget)
+                        // JS: for (obj[key] in iterable) { ... }
+                        // Zig: not directly supported — generate error
+                        self.emit_indent();
+                        self.push("@compileError(\"for-in with member expression is not yet implemented\")");
+                        return;
+                    }
         }
 
         let key = key_name.unwrap();
@@ -752,8 +750,9 @@ impl<'a> ZigCodegen<'a> {
                         self.push_line("}");
                     }
                     None => {
+                        // T15: for-of with empty declaration — JS syntax error
                         self.emit_indent();
-                        self.push_line("// TODO: for-of with empty declaration");
+                        self.push("@compileError(\"for-of requires a variable declaration or identifier\")");
                     }
                 }
             }
@@ -773,9 +772,12 @@ impl<'a> ZigCodegen<'a> {
                 self.push_line("}");
             }
             _ => {
-                self.emit_indent();
-                self.push_line("// TODO: for-of with member expression / destructuring");
-            }
+                        // T16: for-of with member expression (AssignmentTarget)
+                        // JS: for (obj[key] of arr) { ... }
+                        // Zig: for (arr) |_item| { obj[key] = _item; ... }
+                        self.emit_indent();
+                        self.push("@compileError(\"for-of with member expression is not yet implemented\")");
+                    }
         }
     }
 
