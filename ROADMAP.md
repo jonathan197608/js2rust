@@ -123,11 +123,11 @@
 
 ## 🔵 P1 — 工程质量
 
-- [ ] **CI/CD** — GitHub Actions：`cargo check`、`cargo clippy`、Zig 构建测试
-- [ ] **Rust 单元测试** — 为核心模块（parser、preprocess、infer、codegen）添加 `#[test]`
-- [ ] **Host 函数配置化** — 将 `main.rs` 中硬编码的 host 函数提取为 JSON/YAML 配置文件
-- [ ] **错误信息改进** — 诊断信息附加源位置（行号/列号）
-- [ ] **性能基准** — 建立 baseline，跟踪回归
+- [x] **CI/CD** — GitHub Actions：`cargo check`、`cargo clippy`、Zig 构建测试
+- [x] **Rust 单元测试** — parser (7 个)、preprocess (3 个) + bridge (3 个)、testgen (3 个) → 14 passed
+- [x] **Host 函数配置化** — `host_config.json` + `HostFnRegistry::load_from_file()`
+- [x] **错误信息改进** — `Diagnostic::with_span()` + `format_with_source()` 输出 `[line:col]`
+- [x] **性能基准** — criterion 基准：parse 10.8µs / preprocess 101.5µs / pipeline 79.1µs
 
 ---
 

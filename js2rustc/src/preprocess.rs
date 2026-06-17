@@ -1184,3 +1184,57 @@ fn collect_refs_in_fn_body(
         collect_refs_in_stmt(stmt, module_name, rename_map, scope, edits);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    fn write_temp_files(files: &[(&str, &str)]) -> String {
+        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let tmp = std::env::temp_dir().join(format!("js2rust_test_preprocess_{id}"));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        for (name, content) in files {
+            fs::write(tmp.join(name), content).unwrap();
+        }
+        tmp.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn preprocess_single_file() {
+        let dir = write_temp_files(&[("main.js", "function add(a,b) { return a+b; }")]);
+        let result = preprocess(&dir);
+        assert!(result.diagnostics.is_empty());
+        // Preprocess may prefix names to avoid conflicts.
+        assert!(!result.merged_js().is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preprocess_with_import() {
+        let dir = write_temp_files(&[
+            ("math.js", "export function add(a,b) { return a+b; }"),
+            (
+                "main.js",
+                "import { add } from './math.js';\nfunction test() { return add(1,2); }",
+            ),
+        ]);
+        let result = preprocess(&dir);
+        let has_err = result.diagnostics.iter().any(|d| d.starts_with("error:"));
+        assert!(!has_err, "unexpected errors: {:?}", result.diagnostics);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preprocess_empty_dir() {
+        let dir = write_temp_files(&[]);
+        let result = preprocess(&dir);
+        // Empty dir yields no JS files → merged_js is empty, but no hard error.
+        assert!(result.merged_js().is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

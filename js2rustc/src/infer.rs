@@ -13,10 +13,51 @@ pub enum DiagnosticKind {
     Warning,
 }
 
+/// A diagnostic message with optional source location.
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub kind: DiagnosticKind,
     pub message: String,
+    /// Byte offset range in the merged source text, if available.
+    pub span: Option<(usize, usize)>,
+}
+
+impl Diagnostic {
+    /// Create a new diagnostic without source location.
+    pub fn new(kind: DiagnosticKind, message: String) -> Self {
+        Self { kind, message, span: None }
+    }
+
+    /// Attach a source span to this diagnostic.
+    pub fn with_span(mut self, start: usize, end: usize) -> Self {
+        self.span = Some((start, end));
+        self
+    }
+
+    /// Format the diagnostic with line:column info from source text.
+    pub fn format_with_source(&self, source: &str) -> String {
+        let prefix = match self.kind {
+            DiagnosticKind::Error => "error",
+            DiagnosticKind::Warning => "warning",
+        };
+        match self.span {
+            Some((start, _end)) => {
+                let (line, col) = byte_offset_to_line_col(source, start);
+                format!("{}: [{}:{}] {}", prefix, line, col, self.message)
+            }
+            None => format!("{}: {}", prefix, self.message),
+        }
+    }
+}
+
+/// Convert a byte offset in source text to 1-based line:column.
+fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
+    let offset = offset.min(source.len());
+    let prefix = &source[..offset];
+    let line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
+    let last_newline = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let col = offset - last_newline + 1;
+    (line, col)
 }
 
 // ============================================================
@@ -743,13 +784,13 @@ impl TypeInferrer {
                     let params = self.fn_param_types.get(fn_name).cloned().unwrap_or_default();
                     for (i, pname) in pnames.iter().enumerate() {
                         if i < params.len() && params[i] == ZigType::Any {
-                            self.diagnostics.push(Diagnostic {
-                                kind: DiagnosticKind::Error,
-                                message: format!(
+                            self.diagnostics.push(Diagnostic::new(
+                                DiagnosticKind::Error,
+                                format!(
                                     "function '{}' parameter '{}' has no body to infer from",
                                     fn_name, pname
                                 ),
-                            });
+                            ));
                         }
                     }
                 }
@@ -781,13 +822,13 @@ impl TypeInferrer {
                     self.collect_constraints_in_stmt(pname, s, &mut constraints);
                 }
                 if constraints.is_empty() {
-                    self.diagnostics.push(Diagnostic {
-                        kind: DiagnosticKind::Error,
-                        message: format!(
+                    self.diagnostics.push(Diagnostic::new(
+                        DiagnosticKind::Error,
+                        format!(
                             "function '{}' parameter '{}' is never referenced in the function body",
                             fn_name, pname
                         ),
-                    });
+                    ));
                     inferred.push(ZigType::Any);
                 } else {
                     inferred.push(self.resolve_param_type(&constraints));
@@ -1640,10 +1681,10 @@ impl TypeInferrer {
     fn validate_types(&mut self) {
         for (name, ret) in &self.fn_return_types {
             if *ret == ZigType::Any {
-                self.diagnostics.push(Diagnostic {
-                    kind: DiagnosticKind::Warning,
-                    message: format!("cannot infer return type of '{}', using JsValue", name),
-                });
+                self.diagnostics.push(Diagnostic::new(
+                    DiagnosticKind::Warning,
+                    format!("cannot infer return type of '{}', using JsValue", name),
+                ));
             }
         }
 
@@ -1654,13 +1695,13 @@ impl TypeInferrer {
                         .and_then(|ns| ns.get(i))
                         .map(|s| s.as_str())
                         .unwrap_or("?");
-                    self.diagnostics.push(Diagnostic {
-                        kind: DiagnosticKind::Warning,
-                        message: format!(
+                    self.diagnostics.push(Diagnostic::new(
+                        DiagnosticKind::Warning,
+                        format!(
                             "cannot infer type of parameter '{}' (#{}) in '{}', using JsValue",
                             pname, i, name
                         ),
-                    });
+                    ));
                 }
             }
         }
@@ -1671,10 +1712,10 @@ impl TypeInferrer {
                 match name_str {
                     "undefined" | "NaN" | "Infinity" => continue,
                     _ => {
-                        self.diagnostics.push(Diagnostic {
-                            kind: DiagnosticKind::Warning,
-                            message: format!("cannot infer type of variable '{}', using JsValue", name),
-                        });
+                        self.diagnostics.push(Diagnostic::new(
+                            DiagnosticKind::Warning,
+                            format!("cannot infer type of variable '{}', using JsValue", name),
+                        ));
                     }
                 }
             }

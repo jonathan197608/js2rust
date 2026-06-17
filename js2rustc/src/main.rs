@@ -18,6 +18,12 @@ fn main() {
     let out_dir = ws.join("out").to_string_lossy().to_string();
     let project_name = "js2rust".to_string();
 
+    // Ensure output directory exists before any writes.
+    fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
+        eprintln!("error: cannot create output directory '{}': {}", out_dir, e);
+        std::process::exit(1);
+    });
+
     // === Phase 1: Preprocess JS files (merge + resolve imports/exports) ===
     let pre_result = js2rustc::preprocess::preprocess(&in_dir);
 
@@ -53,46 +59,22 @@ fn main() {
     let program = js2rustc::parser::parse(&allocator, &merged_js);
 
     // === Register host functions (Rust functions callable from JS) ===
-    let mut host_fns = js2rustc::host::HostFnRegistry::new();
-    host_fns.register(
-        "hostAdd",
-        vec![
-            ("a".into(), js2rustc::infer::ZigType::I64),
-            ("b".into(), js2rustc::infer::ZigType::I64),
-        ],
-        js2rustc::infer::ZigType::I64,
-    );
-    host_fns.register(
-        "hostMultiply",
-        vec![
-            ("a".into(), js2rustc::infer::ZigType::I64),
-            ("b".into(), js2rustc::infer::ZigType::I64),
-        ],
-        js2rustc::infer::ZigType::I64,
-    );
-
-    // Register async host function: fetchUser(name) -> UserInfo { id, name }
-    host_fns.register_async(
-        "fetchUser",
-        "hostFetchUser",
-        vec![("name".into(), js2rustc::infer::ZigType::String)],
-        js2rustc::host::HostStructDef {
-            zig_name: "UserInfo".into(),
-            c_name: "HostUserInfo".into(),
-            fields: vec![
-                js2rustc::host::HostStructField {
-                    name: "id".into(),
-                    zig_type: "i64".into(),
-                    c_type: "i64".into(),
-                },
-                js2rustc::host::HostStructField {
-                    name: "name".into(),
-                    zig_type: "[]const u8".into(),
-                    c_type: "[128]u8".into(),
-                },
-            ],
-        },
-    );
+    let config_path = ws.join("host_config.json");
+    let host_fns = if config_path.exists() {
+        match js2rustc::host::HostFnRegistry::load_from_file(&config_path) {
+            Ok(registry) => registry,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        eprintln!(
+            "warning: '{}' not found — no host functions registered",
+            config_path.display()
+        );
+        js2rustc::host::HostFnRegistry::new()
+    };
 
     let mut builtins = js2rustc::builtins::BuiltinRegistry::new();
     builtins.register_host_fns(&host_fns);
@@ -113,9 +95,11 @@ fn main() {
         );
         for diag in &diagnostics {
             match diag.kind {
-                js2rustc::infer::DiagnosticKind::Error => eprintln!("  error: {}", diag.message),
+                js2rustc::infer::DiagnosticKind::Error => {
+                    eprintln!("  {}", diag.format_with_source(&merged_js))
+                }
                 js2rustc::infer::DiagnosticKind::Warning => {
-                    eprintln!("  warning: {}", diag.message)
+                    eprintln!("  {}", diag.format_with_source(&merged_js))
                 }
             }
         }
@@ -126,12 +110,7 @@ fn main() {
     if !diagnostics.is_empty() {
         eprintln!("{}: {} diagnostic(s)", project_name, diagnostics.len());
         for diag in &diagnostics {
-            match diag.kind {
-                js2rustc::infer::DiagnosticKind::Error => eprintln!("  error: {}", diag.message),
-                js2rustc::infer::DiagnosticKind::Warning => {
-                    eprintln!("  warning: {}", diag.message)
-                }
-            }
+            eprintln!("  {}", diag.format_with_source(&merged_js));
         }
     }
 
@@ -204,11 +183,6 @@ fn main() {
     let test_code = js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs);
 
     // === Phase 4: Generate Zig project ===
-    fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
-        eprintln!("error: cannot create output directory '{}': {}", out_dir, e);
-        std::process::exit(1);
-    });
-
     let project_opts = js2rustc::project::ProjectOptions {
         name: project_name.clone(),
         out_dir: out_dir.clone(),

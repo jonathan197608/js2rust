@@ -31,11 +31,13 @@ fn main() {
     // === Check that core has been run ===
     let cabi_json_path = artifacts_dir.join("cabi_exports.json");
     if !cabi_json_path.exists() {
-        panic!(
-            "{} not found.\n\
-             Run `cargo run -p js2rustc` first to generate the Zig project and metadata.",
+        // Gracefully skip — no Zig artifacts yet. Generate empty bindings.
+        println!(
+            "cargo:warning={} not found — skipping Zig build (run `cargo run` first)",
             cabi_json_path.display()
         );
+        generate_empty_bindings(&out_dir);
+        return;
     }
 
     // === Read C ABI exports metadata ===
@@ -46,11 +48,12 @@ fn main() {
 
     // === Phase: Build Zig static library ===
     if !zig_project_dir.exists() {
-        panic!(
-            "{} not found.\n\
-             Run `cargo run -p js2rustc` first to generate the Zig project.",
+        println!(
+            "cargo:warning={} not found — skipping Zig build (run `cargo run` first)",
             zig_project_dir.display()
         );
+        generate_empty_bindings(&out_dir);
+        return;
     }
 
     let status = Command::new("zig")
@@ -209,4 +212,13 @@ fn generate_ffi_bindings(exports: &[serde_json::Value], path: &Path) {
 
 fn sanitize_rust_name(name: &str) -> String {
     name.to_string()
+}
+
+fn generate_empty_bindings(out_dir: &Path) {
+    let bindings_path = out_dir.join("ffi_bindings.rs");
+    let code = "// No FFI bindings — Zig project not yet generated.\n";
+    if let Some(parent) = bindings_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&bindings_path, code);
 }

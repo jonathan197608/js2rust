@@ -10,6 +10,7 @@
 //! to `project.rs` for metadata generation and to `builtins`/`codegen` for translation.
 
 use crate::infer::ZigType;
+use std::path::Path;
 
 // ── Struct definitions ──
 
@@ -309,6 +310,110 @@ impl HostFnRegistry {
             out.push_str("}\n\n");
         }
         out
+    }
+
+    /// Load host function definitions from a JSON config file.
+    ///
+    /// Format:
+    /// ```json
+    /// {
+    ///   "host_functions": [
+    ///     { "name": "hostAdd", "params": [{"name":"a","type":"i64"}], "ret_type": "i64" },
+    ///     { "name": "fetchUser", "c_name": "hostFetchUser",
+    ///       "params": [{"name":"name","type":"string"}],
+    ///       "ret_type": "struct", "ret_struct": "UserInfo", "async": true }
+    ///   ],
+    ///   "host_structs": [
+    ///     { "zig_name": "UserInfo", "c_name": "HostUserInfo",
+    ///       "fields": [{"name":"id","zig_type":"i64","c_type":"i64"}] }
+    ///   ]
+    /// }
+    /// ```
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read '{}': {}", path.display(), e))?;
+        let json: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| format!("invalid JSON in '{}': {}", path.display(), e))?;
+
+        let mut registry = Self::new();
+        let mut struct_map: std::collections::HashMap<String, HostStructDef> =
+            std::collections::HashMap::new();
+
+        // Parse struct definitions first (needed by async functions).
+        // Store in a temporary map; register_async will add them to registry.
+        if let Some(structs) = json["host_structs"].as_array() {
+            for s in structs {
+                let zig_name = s["zig_name"].as_str().ok_or("missing zig_name in struct")?;
+                let c_name = s["c_name"].as_str().ok_or("missing c_name in struct")?;
+                let fields: Vec<HostStructField> = s["fields"]
+                    .as_array()
+                    .ok_or("missing fields array in struct")?
+                    .iter()
+                    .map(|f| {
+                        Ok(HostStructField {
+                            name: f["name"].as_str().ok_or("missing field name")?.into(),
+                            zig_type: f["zig_type"].as_str().ok_or("missing zig_type")?.into(),
+                            c_type: f["c_type"].as_str().ok_or("missing c_type")?.into(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, &str>>()?;
+                struct_map.insert(
+                    zig_name.to_string(),
+                    HostStructDef {
+                        zig_name: zig_name.into(),
+                        c_name: c_name.into(),
+                        fields,
+                    },
+                );
+            }
+        }
+
+        // Parse function definitions
+        if let Some(fns) = json["host_functions"].as_array() {
+            for f in fns {
+                let name = f["name"].as_str().ok_or("missing name in host function")?;
+                let params: Vec<(String, ZigType)> = f["params"]
+                    .as_array()
+                    .ok_or("missing params array")?
+                    .iter()
+                    .map(|p| {
+                        let n = p["name"].as_str().ok_or("missing param name")?;
+                        let t = Self::parse_type_str(p["type"].as_str().ok_or("missing param type")?);
+                        Ok((n.into(), t))
+                    })
+                    .collect::<Result<Vec<_>, &str>>()?;
+                let is_async = f["async"].as_bool().unwrap_or(false);
+
+                if is_async {
+                    let c_name = f["c_name"].as_str().ok_or("async fn missing c_name")?;
+                    let ret_struct_name = f["ret_struct"].as_str().ok_or("async fn missing ret_struct")?;
+                    let ret_struct = struct_map
+                        .get(ret_struct_name)
+                        .cloned()
+                        .ok_or_else(|| format!("undefined struct: {}", ret_struct_name))?;
+                    registry.register_async(name, c_name, params, ret_struct);
+                } else {
+                    let ret_type = Self::parse_type_str(f["ret_type"].as_str().ok_or("missing ret_type")?);
+                    registry.register(name, params, ret_type);
+                }
+            }
+        }
+
+        Ok(registry)
+    }
+
+    /// Parse a type string from JSON config into ZigType.
+    fn parse_type_str(s: &str) -> ZigType {
+        match s {
+            "i64" => ZigType::I64,
+            "f64" => ZigType::F64,
+            "bool" => ZigType::Bool,
+            "string" => ZigType::String,
+            "any" => ZigType::Any,
+            "void" => ZigType::Void,
+            other if other.starts_with("struct:") => ZigType::Struct(other[7..].into()),
+            _ => ZigType::Any,
+        }
     }
 
     /// Generate JSON metadata for cabi_imports.json (consumed by sys/build.rs).

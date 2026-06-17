@@ -8,23 +8,26 @@ impl<'a> ZigCodegen<'a> {
                 Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
                 Statement::FunctionDeclaration(fd) => self.emit_fn_decl(fd),
                 Statement::ClassDeclaration(cd) => self.emit_class_decl(cd),
-                Statement::ExpressionStatement(_) => {
-                    self.diagnostics.push(crate::infer::Diagnostic {
-                        kind: crate::infer::DiagnosticKind::Error,
-                        message: "top-level expression statements are not allowed; \
+                Statement::ExpressionStatement(es) => {
+                    self.diagnostics.push(
+                        crate::infer::Diagnostic::new(
+                            crate::infer::DiagnosticKind::Error,
+                            "top-level expression statements are not allowed; \
                                   use a variable declaration or function declaration instead"
-                            .to_string(),
-                    });
+                                .to_string(),
+                        )
+                        .with_span(es.span.start as usize, es.span.end as usize),
+                    );
                 }
                 _ => {
-                    self.diagnostics.push(crate::infer::Diagnostic {
-                        kind: crate::infer::DiagnosticKind::Error,
-                        message: format!(
+                    self.diagnostics.push(crate::infer::Diagnostic::new(
+                        crate::infer::DiagnosticKind::Error,
+                        format!(
                             "only variable declarations and function declarations are allowed \
                              at top level, found: {:?}",
                             std::mem::discriminant(stmt)
                         ),
-                    });
+                    ));
                 }
             }
             return;
@@ -33,10 +36,10 @@ impl<'a> ZigCodegen<'a> {
         // Inside function body: reject nested FunctionDeclaration
         if matches!(stmt, Statement::FunctionDeclaration(_)) {
             self.push_line("// ERROR: nested function declarations are not allowed");
-            self.diagnostics.push(crate::infer::Diagnostic {
-                kind: crate::infer::DiagnosticKind::Error,
-                message: "nested function declarations are not allowed".to_string(),
-            });
+            self.diagnostics.push(crate::infer::Diagnostic::new(
+                crate::infer::DiagnosticKind::Error,
+                "nested function declarations are not allowed".to_string(),
+            ));
             return;
         }
 
@@ -574,10 +577,13 @@ impl<'a> ZigCodegen<'a> {
             self.push("// TODO: for-in requires a dynamic object (HashMap) — ");
             self.emit_expr(&fis.right);
             self.push(" is not a dynamic access object\n");
-            self.diagnostics.push(crate::infer::Diagnostic {
-                kind: crate::infer::DiagnosticKind::Warning,
-                message: "for-in loop requires a dynamic access object (declared with dynamic property access)".to_string(),
-            });
+            self.diagnostics.push(
+                crate::infer::Diagnostic::new(
+                    crate::infer::DiagnosticKind::Warning,
+                    "for-in loop requires a dynamic access object (declared with dynamic property access)".to_string(),
+                )
+                .with_span(fis.span.start as usize, fis.span.end as usize),
+            );
             return;
         }
 
