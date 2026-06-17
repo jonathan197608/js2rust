@@ -222,7 +222,7 @@ impl<'a> ZigCodegen<'a> {
         } else if is_export {
             // Simple export: no string/closure types, use direct C ABI
             self.emit_indent();
-            self.push("export fn ");
+            self.push("pub export fn ");
             self.push(&name);
             self.push("(");
             self.emit_params(&fd.params, Some(raw_name));
@@ -249,10 +249,10 @@ impl<'a> ZigCodegen<'a> {
                 has_free_func: false,
             });
         } else {
-            // Non-exported function
+            // Non-exported function — `pub` so orchestrator can re-export for tests.
             self.emit_indent();
             if is_async {
-                self.push("fn ");
+                self.push("pub fn ");
                 self.push(&name);
                 self.push("(");
                 self.push("io: Io");
@@ -265,7 +265,7 @@ impl<'a> ZigCodegen<'a> {
                 self.push(" ");
                 self.emit_fn_body(fd, raw_name, true);
             } else {
-                self.push("fn ");
+                self.push("pub fn ");
                 self.push(&name);
                 self.push("(");
                 self.emit_params(&fd.params, Some(raw_name));
@@ -328,7 +328,7 @@ impl<'a> ZigCodegen<'a> {
         let returns_closure = self.fn_closure_spans.contains_key(raw_name);
 
         let mut w = String::new();
-        w.push_str(&format!("export fn {}(", escaped_name));
+        w.push_str(&format!("pub export fn {}(", escaped_name));
 
         // C ABI params (no async)
         let mut cabi_params: Vec<String> = Vec::new();
@@ -419,7 +419,7 @@ impl<'a> ZigCodegen<'a> {
         // Generate free_xxx for string returns
         if returns_string {
             w.push_str(&format!(
-                "export fn free_{}(ptr: [*:0]const u8) callconv(.c) void {{\n    _ = js_allocator.g_alloc().free(std.mem.span(ptr));\n}}\n\n",
+                "pub export fn free_{}(ptr: [*:0]const u8) callconv(.c) void {{\n    _ = js_allocator.g_alloc().free(std.mem.span(ptr));\n}}\n\n",
                 escaped_name
             ));
         }
@@ -427,7 +427,7 @@ impl<'a> ZigCodegen<'a> {
         // Generate free_xxx for closure returns
         if returns_closure {
             w.push_str(&format!(
-                "export fn free_{}(ptr: *anyopaque) callconv(.c) void {{\n    const alloc = js_allocator.g_alloc();\n    const typed: *{} = @ptrCast(@alignCast(ptr));\n    alloc.destroy(typed);\n}}\n\n",
+                "pub export fn free_{}(ptr: *anyopaque) callconv(.c) void {{\n    const alloc = js_allocator.g_alloc();\n    const typed: *{} = @ptrCast(@alignCast(ptr));\n    alloc.destroy(typed);\n}}\n\n",
                 escaped_name, ret_type_str
             ));
         }

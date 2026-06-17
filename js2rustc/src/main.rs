@@ -1,4 +1,4 @@
-use js2rustc::analyzer::analyze_groups;
+use js2rustc::analyzer::{analyze_groups, sanitize_module_name, strip_imports_extract_exports};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,53 +12,87 @@ fn workspace_dir() -> PathBuf {
         .to_path_buf()
 }
 
+/// Build the dependency import list for a per-file Zig module.
+/// Given a filename like "main.js", looks up its imported_names in the group
+/// and maps source filenames to sanitized Zig module names.
+fn build_dep_imports(
+    filename: &str,
+    group: &js2rustc::analyzer::FileGroup,
+) -> Vec<(String, String)> {
+    let empty = Vec::new();
+    let raw_imports = group.imported_names.get(filename).unwrap_or(&empty);
+    raw_imports
+        .iter()
+        .map(|(imported_name, src_file)| {
+            let mod_name = group
+                .name_map
+                .get(src_file.as_str())
+                .cloned()
+                .unwrap_or_else(|| {
+                    let stem = src_file.strip_suffix(".js").unwrap_or(src_file);
+                    sanitize_module_name(stem)
+                });
+            (imported_name.clone(), mod_name)
+        })
+        .collect()
+}
+
+/// Scan zig_code for all `pub fn xxx(` and `pub export fn xxx(` declarations.
+/// Returns the function names so the orchestrator can re-export them.
+fn scan_pub_functions(zig_code: &str) -> Vec<String> {
+    let mut fns = Vec::new();
+    for line in zig_code.lines() {
+        let trimmed = line.trim();
+        let rest = if let Some(r) = trimmed.strip_prefix("pub export fn ") {
+            r
+        } else if let Some(r) = trimmed.strip_prefix("pub fn ") {
+            r
+        } else {
+            continue;
+        };
+        if let Some(paren) = rest.find('(') {
+            let name = rest[..paren].trim().to_string();
+            // Skip infrastructure functions that shouldn't be re-exported
+            if name != "init_js2rust" && name != "deinit_js2rust" {
+                fns.push(name);
+            }
+        }
+    }
+    fns
+}
+
 fn main() {
     let ws = workspace_dir();
     let in_dir = ws.join("in").to_string_lossy().to_string();
     let out_dir = ws.join("out").to_string_lossy().to_string();
-    let project_name = "js2rust".to_string();
+    let in_path = ws.join("in");
 
-    // Ensure output directory exists before any writes.
+    // Ensure output directory exists.
     fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
         eprintln!("error: cannot create output directory '{}': {}", out_dir, e);
         std::process::exit(1);
     });
 
-    // === Phase 1: Preprocess JS files (merge + resolve imports/exports) ===
-    let pre_result = js2rustc::preprocess::preprocess(&in_dir);
-
-    for diag in &pre_result.diagnostics {
-        eprintln!("{}", diag);
-    }
-    let has_error = pre_result.diagnostics.iter().any(|d| d.starts_with("error:"));
-    if has_error {
-        eprintln!("Preprocessing failed -- aborting.");
-        std::process::exit(1);
-    }
-
-    let merged_js = pre_result.merged_js();
-    if merged_js.trim().is_empty() {
-        eprintln!("error: no JS source after preprocessing");
-        std::process::exit(1);
-    }
-
-    // === Phase 1.5: Analyze file groups for multi-file Zig projects ===
+    // === Phase 1: Analyze file groups ===
     let (groups, groups_json) = analyze_groups(&in_dir);
+
     let groups_json_path = Path::new(&out_dir).join("groups.json");
     if let Err(e) = fs::write(&groups_json_path, &groups_json) {
-        eprintln!("warning: could not write '{}': {}", groups_json_path.display(), e);
+        eprintln!(
+            "warning: could not write '{}': {}",
+            groups_json_path.display(),
+            e
+        );
     } else {
         println!("Wrote: {}/groups.json", out_dir);
     }
 
-    // Build export set: function names that should be `pub fn` in Zig
-    let exports: HashSet<String> = pre_result.export_map.keys().cloned().collect();
+    if groups.is_empty() {
+        eprintln!("error: no core files found in '{}'", in_dir);
+        std::process::exit(1);
+    }
 
-    // === Phase 2: Type inference + codegen on merged JS ===
-    let allocator = oxc_allocator::Allocator::default();
-    let program = js2rustc::parser::parse(&allocator, &merged_js);
-
-    // === Register host functions (Rust functions callable from JS) ===
+    // === Load host function registry ===
     let config_path = ws.join("host_config.json");
     let host_fns = if config_path.exists() {
         match js2rustc::host::HostFnRegistry::load_from_file(&config_path) {
@@ -78,47 +112,250 @@ fn main() {
 
     let mut builtins = js2rustc::builtins::BuiltinRegistry::new();
     builtins.register_host_fns(&host_fns);
-    let (zig_code, diagnostics, closure_fns, _fn_return_types, _cabi_exports) =
-        js2rustc::codegen::generate(&program, &builtins, &exports);
+    let host_header = host_fns.generate_zig_header();
+    let async_wrappers = host_fns.generate_async_wrappers();
+    let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
 
-    // Check for errors
-    let has_error = diagnostics
-        .iter()
-        .any(|d| d.kind == js2rustc::infer::DiagnosticKind::Error);
-    if has_error {
-        eprintln!(
-            "\nMerged JS: {} error(s) -- skipping project generation",
-            diagnostics
-                .iter()
-                .filter(|d| d.kind == js2rustc::infer::DiagnosticKind::Error)
-                .count()
+    // === Phase 2: Generate Zig project per group ===
+    // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
+    for group in &groups {
+        println!(
+            "\n=== {} ({} member{}) ===",
+            group.core_name,
+            group.members.len(),
+            if group.members.len() == 1 { "" } else { "s" }
         );
-        for diag in &diagnostics {
-            match diag.kind {
-                js2rustc::infer::DiagnosticKind::Error => {
-                    eprintln!("  {}", diag.format_with_source(&merged_js))
+
+        {
+            let mut per_file_modules: Vec<js2rustc::project::PerFileModule> = Vec::new();
+            let mut all_module_exports: Vec<(String, String)> = Vec::new();
+            let mut all_test_code = String::new();
+            let mut combined_zig = String::new();
+            let mut all_cabi_exports: Vec<js2rustc::codegen::CabiExport> = Vec::new();
+            let mut has_error = false;
+
+            // --- Pre-scan: collect source, exports, and module names ---
+            struct MemberMeta {
+                stripped: String,
+                exports: HashSet<String>,
+                module_name: String,
+            }
+            let mut member_metas: Vec<MemberMeta> = Vec::new();
+            let mut core_exports: HashSet<String> = HashSet::new();
+
+            for member in &group.members {
+                let src = match fs::read_to_string(in_path.join(member)) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("  warning: cannot read '{}': {}", member, e);
+                        continue;
+                    }
+                };
+                let (stripped, exports) = strip_imports_extract_exports(&src);
+
+                let module_name = group
+                    .name_map
+                    .get(member)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let stem = member.strip_suffix(".js").unwrap_or(member);
+                        sanitize_module_name(stem)
+                    });
+
+                if *member == group.core_file {
+                    core_exports = exports.clone();
                 }
-                js2rustc::infer::DiagnosticKind::Warning => {
-                    eprintln!("  {}", diag.format_with_source(&merged_js))
+
+                member_metas.push(MemberMeta {
+                    stripped,
+                    exports,
+                    module_name,
+                });
+            }
+
+            // --- Compute re-exported names per dependency ---
+            // Names that the core file re-exports from a dependency file should
+            // also get `pub export fn` in that dependency module.
+            let core_imports = group
+                .imported_names
+                .get(&group.core_file)
+                .cloned()
+                .unwrap_or_default();
+            let mut dep_re_exports: HashMap<String, HashSet<String>> = HashMap::new();
+            for (imported_name, source_file) in &core_imports {
+                if core_exports.contains(imported_name) {
+                    dep_re_exports
+                        .entry(source_file.clone())
+                        .or_default()
+                        .insert(imported_name.clone());
                 }
             }
-        }
-        std::process::exit(1);
-    }
 
-    // Print diagnostics
-    if !diagnostics.is_empty() {
-        eprintln!("{}: {} diagnostic(s)", project_name, diagnostics.len());
-        for diag in &diagnostics {
-            eprintln!("  {}", diag.format_with_source(&merged_js));
+            // --- Codegen pass ---
+            for (member, meta) in group.members.iter().zip(member_metas.iter()) {
+                let MemberMeta {
+                    ref stripped,
+                    ref exports,
+                    ref module_name,
+                } = *meta;
+
+                if stripped.trim().is_empty() {
+                    eprintln!("  skip '{}': empty after stripping imports", member);
+                    continue;
+                }
+
+                // Core file: its own JS exports → C ABI.
+                // Dependency file: only the names re-exported by the core → C ABI.
+                let codegen_exports: HashSet<String> =
+                    if *member == group.core_file {
+                        exports.clone()
+                    } else {
+                        dep_re_exports.get(member).cloned().unwrap_or_default()
+                    };
+
+                let allocator = oxc_allocator::Allocator::default();
+                let program = js2rustc::parser::parse(&allocator, stripped);
+                let (zig_code, diagnostics, closure_fns, _fn_return_types, cabi_exports) =
+                    js2rustc::codegen::generate(&program, &builtins, &codegen_exports);
+
+                let has_file_error = diagnostics
+                    .iter()
+                    .any(|d| d.kind == js2rustc::infer::DiagnosticKind::Error);
+                if has_file_error {
+                    let err_count = diagnostics
+                        .iter()
+                        .filter(|d| d.kind == js2rustc::infer::DiagnosticKind::Error)
+                        .count();
+                    eprintln!("  skip '{}': {} codegen error(s)", member, err_count);
+                    for diag in &diagnostics {
+                        if diag.kind == js2rustc::infer::DiagnosticKind::Error {
+                            eprintln!("    {}", diag.format_with_source(stripped));
+                        }
+                    }
+                    has_error = true;
+                    break;
+                }
+
+                if !diagnostics.is_empty() {
+                    eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
+                    for diag in &diagnostics {
+                        eprintln!("    {}", diag.format_with_source(stripped));
+                    }
+                }
+
+                for exp in exports {
+                    all_module_exports.push((exp.clone(), module_name.clone()));
+                }
+                // Also scan all pub fn / pub export fn for test re-export
+                for fn_name in scan_pub_functions(&zig_code) {
+                    if !exports.contains(&fn_name) {
+                        all_module_exports.push((fn_name, module_name.clone()));
+                    }
+                }
+
+                let dep_imports = build_dep_imports(member, group);
+
+                per_file_modules.push(js2rustc::project::PerFileModule {
+                    mod_name: module_name.clone(),
+                    zig_code: zig_code.clone(),
+                    dep_imports,
+                });
+
+                combined_zig.push_str(&zig_code);
+                all_cabi_exports.extend(cabi_exports);
+
+                // Testgen: use &stripped so AST span offsets match
+                let test_cases = js2rustc::testgen::extract_test_cases(&program, stripped);
+                let closure_fn_refs: HashSet<&str> =
+                    closure_fns.iter().map(|s| s.as_str()).collect();
+                let file_test_code =
+                    js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs);
+                all_test_code.push_str(&file_test_code);
+            }
+
+            if has_error {
+                continue;
+            }
+
+            if per_file_modules.is_empty() {
+                eprintln!("  skip: no valid modules after codegen");
+                continue;
+            }
+
+            let project_opts = js2rustc::project::ProjectOptions {
+                name: group.core_name.clone(),
+                out_dir: out_dir.clone(),
+                per_file_code: per_file_modules,
+                external_exports: all_module_exports,
+                test_code: all_test_code,
+                runtime_dir: Some(runtime_dir.clone()),
+                host_header: if combined_zig.contains("host.") {
+                    host_header.clone()
+                } else {
+                    String::new()
+                },
+                async_host_wrappers: if combined_zig.contains("fetchUser") {
+                    async_wrappers.clone()
+                } else {
+                    String::new()
+                },
+            };
+
+            match js2rustc::project::generate(&project_opts) {
+                Ok(()) => println!("  Generated: {}/{}", out_dir, group.core_name),
+                Err(e) => {
+                    eprintln!("  FAIL ({})", e);
+                    continue;
+                }
+            }
+
+            write_cabi_metadata(&out_dir, &group.core_name, &all_cabi_exports, &host_fns);
+        }
+
+        // === Zig build ===
+        let project_path = Path::new(&out_dir).join(&group.core_name);
+        let build_result = Command::new("zig")
+            .arg("build")
+            .current_dir(&project_path)
+            .output();
+        match build_result {
+            Ok(result) if result.status.success() => println!("  zig build: OK"),
+            Ok(result) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                eprintln!("  zig build FAILED:\n{}", stderr);
+            }
+            Err(_) => eprintln!("  warning: zig not found — skipping build"),
+        }
+
+        // === Zig tests ===
+        let test_result = Command::new("zig")
+            .arg("build")
+            .arg("test")
+            .current_dir(&project_path)
+            .output();
+        match test_result {
+            Ok(result) if result.status.success() => println!("  zig test: PASSED"),
+            Ok(result) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                eprintln!("  zig test FAILED:\n{}", stderr);
+            }
+            Err(_) => {}
         }
     }
+}
 
-    // === Write C ABI exports metadata to out/cabi_exports.json ===
-    // This file is read by sys/build.rs to generate ffi_bindings.rs
-    // without depending on the core crate.
-    let cabi_json_path = Path::new(&out_dir).join("cabi_exports.json");
-    let cabi_json_value: Vec<serde_json::Value> = _cabi_exports
+/// Write C ABI exports/imports JSON metadata for a single group project.
+fn write_cabi_metadata(
+    out_dir: &str,
+    group_name: &str,
+    cabi_exports: &[js2rustc::codegen::CabiExport],
+    host_fns: &js2rustc::host::HostFnRegistry,
+) {
+    let project_dir = Path::new(out_dir).join(group_name);
+
+    // cabi_exports.json
+    let exports_path = project_dir.join("cabi_exports.json");
+    let exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
         .map(|exp| {
             let params: Vec<serde_json::Value> = exp
@@ -139,435 +376,14 @@ fn main() {
             })
         })
         .collect();
-    match serde_json::to_string_pretty(&cabi_json_value) {
-        Ok(json_str) => {
-            if let Err(e) = fs::write(&cabi_json_path, &json_str) {
-                eprintln!(
-                    "warning: could not write '{}': {}",
-                    cabi_json_path.display(),
-                    e
-                );
-            } else {
-                println!("Wrote: {}/cabi_exports.json", out_dir);
-            }
-        }
-        Err(e) => {
-            eprintln!("warning: serializing cabi_exports: {}", e);
-        }
+    if let Ok(json_str) = serde_json::to_string_pretty(&exports_value) {
+        let _ = fs::write(&exports_path, &json_str);
     }
 
-    // === Write C ABI imports metadata to out/cabi_imports.json ===
-    // This file is read by sys/build.rs to link Rust host functions.
-    let cabi_imports_path = Path::new(&out_dir).join("cabi_imports.json");
-    let cabi_imports_value = host_fns.to_json_value();
-    match serde_json::to_string_pretty(&cabi_imports_value) {
-        Ok(json_str) => {
-            if let Err(e) = fs::write(&cabi_imports_path, &json_str) {
-                eprintln!(
-                    "warning: could not write '{}': {}",
-                    cabi_imports_path.display(),
-                    e
-                );
-            } else {
-                println!("Wrote: {}/cabi_imports.json", out_dir);
-            }
-        }
-        Err(e) => {
-            eprintln!("warning: serializing cabi_imports: {}", e);
-        }
+    // cabi_imports.json
+    let imports_path = project_dir.join("cabi_imports.json");
+    let imports_value = host_fns.to_json_value();
+    if let Ok(json_str) = serde_json::to_string_pretty(&imports_value) {
+        let _ = fs::write(&imports_path, &json_str);
     }
-
-    // === Phase 3: Extract test cases from AST (smoke tests, no JS runtime) ===
-    let test_cases = js2rustc::testgen::extract_test_cases(&program, &merged_js);
-    let closure_fn_refs: HashSet<&str> = closure_fns.iter().map(|s| s.as_str()).collect();
-    let test_code = js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs);
-
-    // === Phase 4: Generate Zig project ===
-    let project_opts = js2rustc::project::ProjectOptions {
-        name: project_name.clone(),
-        out_dir: out_dir.clone(),
-        lib_code: zig_code,
-        per_file_code: Vec::new(),
-        external_exports: Vec::new(),
-        test_code,
-        runtime_dir: Some(ws.join("runtime").to_string_lossy().to_string()),
-        host_header: host_fns.generate_zig_header(),
-        async_host_wrappers: host_fns.generate_async_wrappers(),
-    };
-
-    if let Err(e) = js2rustc::project::generate(&project_opts) {
-        eprintln!("error: generating project '{}': {}", project_name, e);
-        std::process::exit(1);
-    }
-
-    println!("Generated: {}/{} (single Zig library)", out_dir, project_name);
-
-    // === Phase 5: Build + test the generated Zig project ===
-    let project_path = Path::new(&out_dir).join(&project_name);
-    let output = Command::new("zig")
-        .arg("build")
-        .current_dir(&project_path)
-        .output()
-        .ok();
-
-    if let Some(result) = output {
-        if result.status.success() {
-            println!("Zig build: OK");
-        } else {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("Zig build failed:\n{}", stderr);
-        }
-    } else {
-        eprintln!("warning: zig not found -- skipping build");
-    }
-
-    // === Phase 6: Run Zig tests ===
-    let test_output = Command::new("zig")
-        .arg("build")
-        .arg("test")
-        .current_dir(&project_path)
-        .output()
-        .ok();
-
-    if let Some(result) = test_output {
-        if result.status.success() {
-            println!("Zig tests: PASSED");
-        } else {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("Zig tests FAILED:\n{}", stderr);
-        }
-    }
-
-    // === Phase 7: Generate one Zig project per file group ===
-    if groups.len() > 1 {
-        println!(
-            "\n=== Generating {} file-group Zig projects ===",
-            groups.len()
-        );
-
-        let host_header = host_fns.generate_zig_header();
-        let async_wrappers = host_fns.generate_async_wrappers();
-        let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
-
-        for group in &groups {
-            // Create temp in-dir with only this group's files
-            let tmp_in = format!("{}/_tmp_group_{}", out_dir, group.core_name);
-            let _ = fs::remove_dir_all(&tmp_in);
-            fs::create_dir_all(&tmp_in).unwrap_or_else(|e| {
-                eprintln!("warning: cannot create '{}': {}", tmp_in, e);
-            });
-
-            for member in &group.members {
-                let src = ws.join("in").join(member);
-                let dst = Path::new(&tmp_in).join(member);
-                let _ = fs::copy(&src, &dst);
-            }
-
-            // Preprocess for this group
-            let merge = js2rustc::preprocess::preprocess(&tmp_in);
-            let has_err = merge.diagnostics.iter().any(|d| d.starts_with("error:"));
-            if has_err || merge.merged_js().trim().is_empty() {
-                eprintln!(
-                    "  skip '{}': preprocessing errors ({})",
-                    group.core_name,
-                    merge.diagnostics.len()
-                );
-                let _ = fs::remove_dir_all(&tmp_in);
-                continue;
-            }
-
-            let is_multi = group.members.len() > 1;
-
-            if is_multi {
-                // === Multi-member group: per-file codegen ===
-                let mut per_file_zig: Vec<(String, String)> = Vec::new();
-                let mut external_exports: Vec<(String, String)> = Vec::new();
-                let mut all_closures: Vec<String> = Vec::new();
-                let mut has_host = false;
-                let mut has_async = false;
-
-                // Build all-exports map (all exports from ALL files → source module)
-                // for lib.zig re-exports so test blocks can reference functions directly.
-                let mut all_exports_map: HashMap<String, String> = HashMap::new();
-
-                for (mod_name, transformed_js) in &merge.per_file {
-                    if transformed_js.trim().is_empty() {
-                        continue;
-                    }
-
-                    let file_exports: HashSet<String> = merge
-                        .per_file_exports
-                        .get(mod_name)
-                        .cloned()
-                        .unwrap_or_default();
-
-                    // Track all exports → source module for lib.zig re-exports
-                    for exp in &file_exports {
-                        all_exports_map.insert(exp.clone(), mod_name.clone());
-                    }
-
-                    let alloc = oxc_allocator::Allocator::default();
-                    let prog = js2rustc::parser::parse(&alloc, transformed_js);
-
-                    // Per-file codegen with EMPTY exports: produces `fn` (not `export fn`).
-                    // We post-process to add `pub` for exported functions.
-                    let empty_exports: HashSet<String> = HashSet::new();
-                    let (zig, diag, clos, _ret_types, _) = js2rustc::codegen::generate(
-                        &prog,
-                        &builtins,
-                        &empty_exports,
-                    );
-
-                    if diag
-                        .iter()
-                        .any(|d| d.kind == js2rustc::infer::DiagnosticKind::Error)
-                    {
-                        eprintln!("  skip '{}/{}': codegen errors", group.core_name, mod_name);
-                        continue;
-                    }
-
-                    // Post-process: add `pub` prefix to exported functions.
-                    // The codegen produces `fn add(` — we change it to `pub fn add(`.
-                    let zig_pub = add_pub_to_exports(&zig, &file_exports);
-                    // Strip per-file init_js2rust/deinit_js2rust (provided by orchestrator lib.zig)
-                    let zig_clean = strip_init_deinit(&zig_pub);
-
-                    // Track closure structs for testgen
-                    all_closures.extend(clos);
-
-                    // Check for host/async references
-                    if !has_host && zig_clean.contains("host.") {
-                        has_host = true;
-                    }
-                    if !has_async && zig_clean.contains("fetchUser") {
-                        has_async = true;
-                    }
-
-                    per_file_zig.push((mod_name.clone(), zig_clean));
-                }
-
-                if per_file_zig.is_empty() {
-                    eprintln!("  skip '{}': no valid per-file codegen results", group.core_name);
-                    let _ = fs::remove_dir_all(&tmp_in);
-                    continue;
-                }
-
-                // Re-export ALL exports in lib.zig so test blocks can reference
-                // functions directly (e.g., `add(3,5)` not `math.add(3,5)`).
-                for (exp_name, mod_name) in &all_exports_map {
-                    external_exports.push((exp_name.clone(), mod_name.clone()));
-                }
-
-                // Run testgen on merged program AST
-                let alloc_m = oxc_allocator::Allocator::default();
-                let merged = merge.merged_js();
-                let prog_m = js2rustc::parser::parse(&alloc_m, &merged);
-                let test_cases = js2rustc::testgen::extract_test_cases(&prog_m, &merged);
-                let clos_refs: HashSet<&str> =
-                    all_closures.iter().map(|s| s.as_str()).collect();
-                let test_code = js2rustc::testgen::generate_test_code(&test_cases, &clos_refs);
-
-                let proj_opts = js2rustc::project::ProjectOptions {
-                    name: group.core_name.clone(),
-                    out_dir: format!("{}/groups", out_dir),
-                    lib_code: String::new(), // not used in multi-file mode
-                    per_file_code: per_file_zig,
-                    external_exports,
-                    test_code,
-                    runtime_dir: Some(runtime_dir.clone()),
-                    host_header: if has_host { host_header.clone() } else { String::new() },
-                    async_host_wrappers: if has_async { async_wrappers.clone() } else { String::new() },
-                };
-
-                match js2rustc::project::generate(&proj_opts) {
-                    Ok(()) => println!(
-                        "  {}/: OK ({} files → {} modules)",
-                        group.core_name,
-                        group.members.len(),
-                        proj_opts.per_file_code.len()
-                    ),
-                    Err(e) => eprintln!("  {}/: FAIL ({})", group.core_name, e),
-                }
-            } else {
-                // === Single-member group: merged codegen (existing path) ===
-                let group_exports: HashSet<String> =
-                    merge.export_map.keys().cloned().collect();
-                let alloc2 = oxc_allocator::Allocator::default();
-                let merged2 = merge.merged_js();
-                let prog2 = js2rustc::parser::parse(&alloc2, &merged2);
-
-                let (zig2, diag2, clos2, _ret_types2, _) = js2rustc::codegen::generate(
-                    &prog2,
-                    &builtins,
-                    &group_exports,
-                );
-
-                if diag2
-                    .iter()
-                    .any(|d| d.kind == js2rustc::infer::DiagnosticKind::Error)
-                {
-                    eprintln!("  skip '{}': codegen errors", group.core_name);
-                    let _ = fs::remove_dir_all(&tmp_in);
-                    continue;
-                }
-
-                let test_cases2 = js2rustc::testgen::extract_test_cases(&prog2, &merged2);
-                let clos_refs: HashSet<&str> =
-                    clos2.iter().map(|s| s.as_str()).collect();
-                let test_code2 =
-                    js2rustc::testgen::generate_test_code(&test_cases2, &clos_refs);
-
-                let proj_opts = js2rustc::project::ProjectOptions {
-                    name: group.core_name.clone(),
-                    out_dir: format!("{}/groups", out_dir),
-                    lib_code: zig2.clone(),
-                    per_file_code: Vec::new(),
-                    external_exports: Vec::new(),
-                    test_code: test_code2,
-                    runtime_dir: Some(runtime_dir.clone()),
-                    host_header: if zig2.contains("host.") { host_header.clone() } else { String::new() },
-                    async_host_wrappers: if zig2.contains("fetchUser") { async_wrappers.clone() } else { String::new() },
-                };
-
-                match js2rustc::project::generate(&proj_opts) {
-                    Ok(()) => println!(
-                        "  {}/: OK ({} members)",
-                        group.core_name,
-                        group.members.len()
-                    ),
-                    Err(e) => eprintln!("  {}/: FAIL ({})", group.core_name, e),
-                }
-            }
-
-            let _ = fs::remove_dir_all(&tmp_in);
-        }
-    }
-}
-
-/// Post-process per-file Zig output: add `pub` prefix to functions
-/// that are in the exports set (from JS `export function`).
-/// The codegen passes empty exports set so functions are `fn`, not `export fn`.
-fn add_pub_to_exports(zig_code: &str, exports: &HashSet<String>) -> String {
-    if exports.is_empty() {
-        return zig_code.to_string();
-    }
-
-    let mut result = String::with_capacity(zig_code.len() + exports.len() * 4);
-    let bytes = zig_code.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        // Look for "fn " or "pub fn " (already public)
-        if bytes[i..].starts_with(b"pub fn ") {
-            // Already public — skip
-            let end = i + 7;
-            result.push_str(&zig_code[i..end]);
-            i = end;
-            continue;
-        }
-
-        if bytes[i..].starts_with(b"fn ") {
-            // Check if this function name is in the exports set
-            let fn_start = i;
-            let name_start = i + 3; // after "fn "
-            let name_end = match bytes[name_start..].iter().position(|&b| b == b'(' || b == b'<') {
-                Some(pos) => name_start + pos,
-                None => {
-                    // Not a function definition — just copy
-                    result.push_str(&zig_code[i..i + 2]);
-                    i += 2;
-                    continue;
-                }
-            };
-
-            let fn_name = &zig_code[name_start..name_end];
-
-            // Check against exports (exact match)
-            if exports.contains(fn_name) {
-                result.push_str("pub fn ");
-                i = fn_start + 3; // skip "fn "
-            } else {
-                result.push_str("fn ");
-                i = fn_start + 3;
-            }
-            continue;
-        }
-
-        // Copy one byte
-        result.push(zig_code[i..].chars().next().unwrap());
-        i += zig_code[i..].chars().next().unwrap().len_utf8();
-    }
-
-    result
-}
-
-/// Strip init_js2rust and deinit_js2rust from per-file module code.
-/// These are already provided by the orchestrator lib.zig.
-fn strip_init_deinit(zig_code: &str) -> String {
-    // Remove lines containing "pub fn init_js2rust" / "pub fn deinit_js2rust"
-    // and their associated comment lines and bodies
-    let mut result = String::with_capacity(zig_code.len());
-    let mut in_init_block = false;
-    let mut in_deinit_block = false;
-    let mut brace_depth: i32 = 0;
-
-    for line in zig_code.lines() {
-        let trimmed = line.trim();
-
-        // Detect start of init_js2rust or deinit_js2rust definitions and doc comments
-        if trimmed == "/// Initialize global allocator and all objects that use dynamic property access."
-            || trimmed == "/// Release global resources allocated via init_js2rust()."
-            || trimmed == "/// Initialize the global allocator used by all generated functions."
-            || trimmed == "/// Deinitialize all global objects created by init_js2rust()."
-        {
-            // Check next line to confirm it's about init_js2rust/deinit_js2rust
-            in_init_block = false;
-            in_deinit_block = false;
-            continue; // skip the doc comment
-        }
-
-        if trimmed.starts_with("pub fn init_js2rust(") {
-            in_init_block = true;
-            brace_depth = 0;
-            // Count braces on this line
-            for ch in line.chars() {
-                if ch == '{' { brace_depth += 1; }
-                if ch == '}' { brace_depth -= 1; }
-            }
-            if brace_depth <= 0 {
-                in_init_block = false;
-            }
-            continue;
-        }
-
-        if trimmed.starts_with("pub fn deinit_js2rust(") {
-            in_deinit_block = true;
-            brace_depth = 0;
-            for ch in line.chars() {
-                if ch == '{' { brace_depth += 1; }
-                if ch == '}' { brace_depth -= 1; }
-            }
-            if brace_depth <= 0 {
-                in_deinit_block = false;
-            }
-            continue;
-        }
-
-        if in_init_block || in_deinit_block {
-            for ch in line.chars() {
-                if ch == '{' { brace_depth += 1; }
-                if ch == '}' { brace_depth -= 1; }
-            }
-            if brace_depth <= 0 {
-                in_init_block = false;
-                in_deinit_block = false;
-            }
-            continue;
-        }
-
-        result.push_str(line);
-        result.push('\n');
-    }
-
-    result
 }

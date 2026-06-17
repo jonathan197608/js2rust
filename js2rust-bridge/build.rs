@@ -1,6 +1,6 @@
 // build.rs for js2rust-bridge crate
-// Reads intermediate artifacts produced by `js2rustc` (out/cabi_exports.json),
-// runs `zig build` on the already-generated Zig project (out/js2rust/),
+// Reads intermediate artifacts produced by `js2rustc` (out/main/cabi_exports.json),
+// runs `zig build` on the already-generated Zig project (out/main/),
 // generates Rust FFI bindings from the JSON metadata, and informs Cargo about linking.
 //
 // NOTE: Run `cargo run -p js2rustc` first to generate the artifacts in out/.
@@ -10,18 +10,25 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Group name that the bridge links against (must match a directory under out/).
+const GROUP: &str = "main";
+
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let ws_root = manifest_dir.parent().unwrap();
 
+    // The pipeline generates per-group projects under out/{group}/.
+    // Bridge is currently wired to the "main" group — the primary
+    // translated project that holds core-file exports.
     let artifacts_dir = ws_root.join("out");
-    let zig_project_dir = artifacts_dir.join("js2rust");
+    let zig_project_dir = artifacts_dir.join(GROUP);
 
     // Re-run triggers
+    let cabi_json_path = zig_project_dir.join("cabi_exports.json");
     println!(
         "cargo:rerun-if-changed={}",
-        artifacts_dir.join("cabi_exports.json").to_string_lossy()
+        cabi_json_path.to_string_lossy()
     );
     println!(
         "cargo:rerun-if-changed={}",
@@ -29,7 +36,6 @@ fn main() {
     );
 
     // === Check that core has been run ===
-    let cabi_json_path = artifacts_dir.join("cabi_exports.json");
     if !cabi_json_path.exists() {
         // Gracefully skip — no Zig artifacts yet. Generate empty bindings.
         println!(
@@ -70,14 +76,13 @@ fn main() {
     }
 
     // === Find the compiled static library ===
-    let lib_dir = find_static_lib_dir(&zig_project_dir);
-    let _lib_path = lib_dir.join("js2rust.lib");
+    let lib_dir = find_static_lib_dir(&zig_project_dir, GROUP);
 
     println!(
         "cargo:rustc-link-search=native={}",
         lib_dir.to_string_lossy()
     );
-    println!("cargo:rustc-link-lib=static=js2rust");
+    println!("cargo:rustc-link-lib=static={GROUP}");
 
     // NT API symbols (ntdll.lib provides LdrRegisterDllNotification etc.)
     println!("cargo:rustc-link-lib=ntdll");
@@ -88,23 +93,24 @@ fn main() {
 }
 
 /// Locate the directory containing the compiled static library.
-fn find_static_lib_dir(zig_project_dir: &Path) -> PathBuf {
+fn find_static_lib_dir(zig_project_dir: &Path, lib_name: &str) -> PathBuf {
+    let lib_filename = format!("{lib_name}.lib");
     let zig_out = zig_project_dir.join("zig-out").join("lib");
-    if zig_out.is_dir() && has_static_lib(&zig_out) {
+    if zig_out.is_dir() && has_static_lib(&zig_out, &lib_filename) {
         return zig_out;
     }
     let zig_cache = zig_project_dir.join(".zig-cache").join("lib");
-    if zig_cache.is_dir() && has_static_lib(&zig_cache) {
+    if zig_cache.is_dir() && has_static_lib(&zig_cache, &lib_filename) {
         return zig_cache;
     }
-    search_for_static_lib(zig_project_dir)
-        .unwrap_or_else(|| panic!("Could not find compiled static library js2rust.lib"))
+    search_for_static_lib(zig_project_dir, &lib_filename)
+        .unwrap_or_else(|| panic!("Could not find compiled static library {lib_filename}"))
 }
 
-fn has_static_lib(dir: &Path) -> bool {
+fn has_static_lib(dir: &Path, filename: &str) -> bool {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy() == "js2rust.lib" {
+            if entry.file_name().to_string_lossy() == filename {
                 return true;
             }
         }
@@ -112,7 +118,7 @@ fn has_static_lib(dir: &Path) -> bool {
     false
 }
 
-fn search_for_static_lib(dir: &Path) -> Option<PathBuf> {
+fn search_for_static_lib(dir: &Path, filename: &str) -> Option<PathBuf> {
     if !dir.is_dir() {
         return None;
     }
@@ -120,10 +126,10 @@ fn search_for_static_lib(dir: &Path) -> Option<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if let Some(result) = search_for_static_lib(&path) {
+                if let Some(result) = search_for_static_lib(&path, filename) {
                     return Some(result);
                 }
-            } else if path.file_name().and_then(|n| n.to_str()) == Some("js2rust.lib") {
+            } else if path.file_name().and_then(|n| n.to_str()) == Some(filename) {
                 return path.parent().map(|p| p.to_path_buf());
             }
         }
@@ -162,7 +168,6 @@ fn generate_ffi_bindings(exports: &[serde_json::Value], path: &Path) {
     let mut code = String::new();
     code.push_str("// Auto-generated by js2rust-bridge/build.rs — Rust FFI bindings for js2rust Zig static library\n");
     code.push_str("// Do not edit manually.\n");
-    code.push_str("// Linking is controlled by build.rs via cargo:rustc-link-lib=static=js2rust\n\n");
     code.push_str("unsafe extern \"C\" {\n");
 
     for exp in exports {

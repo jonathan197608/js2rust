@@ -1,7 +1,20 @@
 /// Generate a complete Zig library project from translated JS code.
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+/// A single per-file Zig module with its dependency info.
+#[derive(Debug, Clone)]
+pub struct PerFileModule {
+    /// Sanitized module name (e.g. "math", "string_utils", "main")
+    pub mod_name: String,
+    /// Translated Zig source code for this file
+    pub zig_code: String,
+    /// Dependency imports: Vec<(imported_name, source_module_name)>
+    /// e.g. [("add", "math"), ("multiply", "math"), ("greet", "string_utils")]
+    pub dep_imports: Vec<(String, String)>,
+}
 
 /// Project generation options
 pub struct ProjectOptions {
@@ -9,14 +22,12 @@ pub struct ProjectOptions {
     pub name: String,
     /// Output directory (e.g. "out")
     pub out_dir: String,
-    /// The translated Zig source code (from codegen) — for single-file mode
-    pub lib_code: String,
-    /// Per-file Zig source: Vec of (module_name, zig_code).
-    /// When non-empty, each entry is written as `{name}.zig`, and lib.zig
+    /// Per-file Zig modules. Each entry is written as `{mod_name}.zig`, and lib.zig
     /// becomes a thin orchestrator that imports all per-file modules.
-    pub per_file_code: Vec<(String, String)>,
-    /// Export names that should be re-exported from lib.zig (external only).
-    /// Only used in per-file mode. Maps export name → source module name.
+    pub per_file_code: Vec<PerFileModule>,
+    /// Export names that should be re-exported from lib.zig.
+    /// Each entry: (export_name, source_module_name).
+    /// In multi-file mode, this should include ALL public exports from ALL modules.
     pub external_exports: Vec<(String, String)>,
     /// Auto-generated test code (from testgen)
     pub test_code: String,
@@ -47,33 +58,25 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     fs::write(project_dir.join("build.zig"), build_zig)
         .map_err(|e| format!("write build.zig: {}", e))?;
 
-    // 3. Write per-file .zig files (if multi-file mode) + lib.zig
-    if !opts.per_file_code.is_empty() {
-        // Multi-file mode: write each per-file module
-        for (mod_name, zig_code) in &opts.per_file_code {
-            let mod_zig = generate_module_zig(mod_name, zig_code);
-            let mod_path = src_dir.join(format!("{}.zig", mod_name));
-            fs::write(&mod_path, mod_zig)
-                .map_err(|e| format!("write {}.zig: {}", mod_path.display(), e))?;
-        }
-
-        // Generate orchestrator lib.zig
-        let lib_zig = generate_orchestrator_lib(
-            &opts.name,
-            &opts.per_file_code,
-            &opts.external_exports,
-            &opts.test_code,
-            &opts.host_header,
-            &opts.async_host_wrappers,
-        );
-        fs::write(src_dir.join("lib.zig"), lib_zig)
-            .map_err(|e| format!("write lib.zig: {}", e))?;
-    } else {
-        // Single-file mode: traditional monolithic output
-        let lib_zig = generate_lib_zig(&opts.lib_code, &opts.test_code, &opts.host_header, &opts.async_host_wrappers);
-        fs::write(src_dir.join("lib.zig"), lib_zig)
-            .map_err(|e| format!("write lib.zig: {}", e))?;
+    // 3. Write per-file .zig files + orchestrator lib.zig
+    for module in &opts.per_file_code {
+        let mod_zig = generate_module_zig(module);
+        let mod_path = src_dir.join(format!("{}.zig", module.mod_name));
+        fs::write(&mod_path, mod_zig)
+            .map_err(|e| format!("write {}.zig: {}", mod_path.display(), e))?;
     }
+
+    // Generate orchestrator lib.zig
+    let lib_zig = generate_orchestrator_lib(
+        &opts.name,
+        &opts.per_file_code,
+        &opts.external_exports,
+        &opts.test_code,
+        &opts.host_header,
+        &opts.async_host_wrappers,
+    );
+    fs::write(src_dir.join("lib.zig"), lib_zig)
+        .map_err(|e| format!("write lib.zig: {}", e))?;
 
     // 3.5 src/host.zig — host function extern "c" declarations
     if !opts.host_header.is_empty() {
@@ -117,8 +120,8 @@ fn compute_fingerprint(project_dir: &Path) -> Option<String> {
     if let Some(pos) = stderr.find(prefix) {
         let after = &stderr[pos + prefix.len()..];
         let fp = after.split_whitespace().next()?;
-        // Validate it looks like 0xHEX
-        if fp.starts_with("0x") && fp.len() == 18 {
+        // Validate it looks like 0xHEX (length varies: 16–18 chars)
+        if fp.starts_with("0x") && fp.len() >= 16 && fp[2..].chars().all(|c| c.is_ascii_hexdigit()) {
             return Some(fp.to_string());
         }
     }
@@ -183,9 +186,23 @@ pub fn build(b: *std.Build) void {{
     )
 }
 
-fn generate_lib_zig(translated_code: &str, test_code: &str, host_header: &str, async_wrappers: &str) -> String {
+/// Generate a per-file Zig module with dependency imports and full runtime imports.
+///
+/// Produces:
+///   // Auto-generated from {mod_name}.js
+///   const std = ...
+///   const js_allocator = ...
+///   // --- Dependency module imports ---
+///   const math = @import("math.zig");
+///   const string_utils = @import("string_utils.zig");
+///   // --- Imported name aliases ---
+///   const add = math.add;
+///   ...
+///   // Generated code
+///   export fn add(...) ...
+fn generate_module_zig(module: &PerFileModule) -> String {
     let mut out = String::new();
-    out.push_str("// Auto-generated by js2rust\n");
+    out.push_str(&format!("// Auto-generated from {}.js\n", module.mod_name));
     out.push_str("const std = @import(\"std\");\n");
     out.push_str("const builtin = @import(\"builtin\");\n");
     out.push_str("const Io = std.Io;\n");
@@ -210,66 +227,42 @@ fn generate_lib_zig(translated_code: &str, test_code: &str, host_header: &str, a
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push('\n');
 
-    // Host function declarations (if any)
-    if !host_header.is_empty() {
-        // The host_header is the full content of host.zig — import it
-        out.push_str("// Tier-4 host functions (Rust via C ABI)\n");
-        out.push_str("const host = @import(\"host.zig\");\n");
+    // Deduplicate dependency modules
+    let mut dep_modules: Vec<String> = Vec::new();
+    let mut seen_modules: HashSet<&str> = HashSet::new();
+    for (_, src_mod) in &module.dep_imports {
+        if seen_modules.insert(src_mod) {
+            dep_modules.push(src_mod.clone());
+        }
+    }
+
+    if !dep_modules.is_empty() {
+        out.push_str("// --- Dependency module imports ---\n");
+        for mod_name in &dep_modules {
+            out.push_str(&format!("const {} = @import(\"{}.zig\");\n", mod_name, mod_name));
+        }
+        out.push('\n');
+
+        out.push_str("// --- Imported name aliases ---\n");
+        for (name, src_mod) in &module.dep_imports {
+            out.push_str(&format!("const {name} = {mod}.{name};\n", name = name, mod = src_mod));
+        }
         out.push('\n');
     }
 
-    // Windows stub: LdrRegisterDllNotification is referenced by
-    // std.debug.SelfInfo.Windows but ntdll.lib may not export it in all SDKs.
-    // Provide a stub that returns success (no DLL tracking needed for static lib).
-    out.push_str("const windows = std.os.windows;\n");
-    out.push_str("pub export fn LdrRegisterDllNotification(\n");
-    out.push_str("    Flags: windows.ULONG,\n");
-    out.push_str("    NotificationFunction: ?*const anyopaque,\n");
-    out.push_str("    Context: ?*anyopaque,\n");
-    out.push_str("    Cookie: *?*anyopaque,\n");
-    out.push_str(") callconv(.c) windows.NTSTATUS {\n");
-    out.push_str("    _ = Flags;\n");
-    out.push_str("    _ = NotificationFunction;\n");
-    out.push_str("    _ = Context;\n");
-    out.push_str("    Cookie.* = @ptrFromInt(1);\n");
-    out.push_str("    return .SUCCESS;\n");
-    out.push_str("}\n\n");
+    // NOTE: No Windows LdrRegisterDllNotification stub here — it's in the orchestrator lib.zig.
+    // Per-file modules are only compiled as part of the orchestrator, so the stub is inherited.
 
-    // Async host function wrappers (if any)
-    if !async_wrappers.is_empty() {
-        out.push_str(async_wrappers);
-        out.push('\n');
-    }
-
-    out.push_str(translated_code);
-
-    // Append test blocks
-    if !test_code.trim().is_empty() {
-        out.push('\n');
-        out.push_str(test_code);
-    }
-    out
-}
-
-fn generate_module_zig(mod_name: &str, zig_code: &str) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("// Auto-generated from {}.js\n", mod_name));
-    out.push_str("const std = @import(\"std\");\n");
-    out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
-    // Only add Io import if the code uses async (contains "Io" or "io: Io")
-    if zig_code.contains("io: Io") || zig_code.contains("Io,") {
-        out.push_str("const Io = std.Io;\n");
-    }
-    out.push('\n');
-    out.push_str(zig_code);
+    out.push_str(&module.zig_code);
     out
 }
 
 /// Generate the orchestrator lib.zig for multi-file mode.
-/// Imports all per-file modules, re-exports external exports, includes test blocks.
+/// Imports all per-file modules, re-exports ALL public exports from all modules,
+/// includes test blocks.
 fn generate_orchestrator_lib(
     name: &str,
-    per_file_code: &[(String, String)],
+    per_file_code: &[PerFileModule],
     external_exports: &[(String, String)],
     test_code: &str,
     host_header: &str,
@@ -281,6 +274,9 @@ fn generate_orchestrator_lib(
     out.push_str("const builtin = @import(\"builtin\");\n");
     out.push_str("const Io = std.Io;\n");
     out.push_str("const Allocator = std.mem.Allocator;\n");
+    out.push('\n');
+    out.push_str("// Global allocator for generated code\n");
+    out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
     out.push('\n');
     out.push_str("// Tier-3 runtime library imports\n");
     out.push_str("const js_string = @import(\"js_runtime/js_string.zig\");\n");
@@ -294,10 +290,8 @@ fn generate_orchestrator_lib(
     out.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
     out.push_str("const js_set = @import(\"js_runtime/js_set.zig\");\n");
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
+    out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
-    out.push('\n');
-    out.push_str("// Global allocator for generated code\n");
-    out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
     out.push('\n');
 
     // Host function declarations (if any)
@@ -330,8 +324,11 @@ fn generate_orchestrator_lib(
 
     // Per-file module imports
     out.push_str("// Per-file module imports\n");
-    for (mod_name, _) in per_file_code {
-        out.push_str(&format!("const {} = @import(\"{}.zig\");\n", mod_name, mod_name));
+    for module in per_file_code {
+        out.push_str(&format!(
+            "const {} = @import(\"{}.zig\");\n",
+            module.mod_name, module.mod_name
+        ));
     }
     out.push('\n');
 
@@ -339,16 +336,46 @@ fn generate_orchestrator_lib(
     out.push_str("/// Initialize the global allocator used by all generated functions.\n");
     out.push_str("pub fn init_js2rust(allocator: std.mem.Allocator) void {\n");
     out.push_str("    js_allocator.setGlobalAllocator(allocator);\n");
+    // Also call init_js2rust on each per-file module that defines its own
+    for module in per_file_code {
+        if module.zig_code.contains("pub fn init_js2rust") {
+            out.push_str(&format!("    {}.init_js2rust(allocator);\n", module.mod_name));
+        }
+    }
     out.push_str("}\n\n");
     out.push_str("/// Release global resources allocated via init_js2rust.\n");
-    out.push_str("pub fn deinit_js2rust() void {}\n\n");
+    out.push_str("pub fn deinit_js2rust() void {\n");
+    for module in per_file_code {
+        if module.zig_code.contains("pub fn deinit_js2rust") {
+            out.push_str(&format!("    {}.deinit_js2rust();\n", module.mod_name));
+        }
+    }
+    out.push_str("}\n\n");
 
-    // Re-export all exports so lib.zig test blocks can reference them directly
+    // Re-export ALL public exports from ALL modules so tests can reference them
     if !external_exports.is_empty() {
-        out.push_str("// Re-export all public exports\n");
-        let mut exported: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        out.push_str("// Re-export all public exports from per-file modules\n");
+        let mut exported: HashSet<&str> = HashSet::new();
+
+        // Build a set of functions that return C ABI strings ([*:0]const u8),
+        // so we can emit adapter wrappers instead of bare `pub const X = mod.X;`.
+        let cabi_string_fns = collect_cabi_string_fns(per_file_code);
+
         for (exp_name, mod_name) in external_exports {
-            if exported.insert(exp_name) {
+            if !exported.insert(exp_name) {
+                continue;
+            }
+            if cabi_string_fns.contains(exp_name.as_str()) {
+                // C ABI string-returning function: generate adapter
+                // pub fn greet(s: []const u8) []const u8 {
+                //     return std.mem.sliceTo(mod.greet(@ptrCast(s.ptr)), 0);
+                // }
+                out.push_str(&format!(
+                    "pub fn {name}(s: []const u8) []const u8 {{\n    return std.mem.sliceTo({mod}.{name}(@ptrCast(s.ptr)), 0);\n}}\n",
+                    name = exp_name,
+                    mod = mod_name
+                ));
+            } else {
                 out.push_str(&format!(
                     "pub const {exp} = {mod}.{exp};\n",
                     exp = exp_name,
@@ -367,6 +394,32 @@ fn generate_orchestrator_lib(
 
     _ = name; // silence unused warning
     out
+}
+
+/// Scan per-file modules' zig_code for functions that return C ABI strings
+/// (signatures containing `[*:0]const u8`)
+fn collect_cabi_string_fns(per_file_code: &[PerFileModule]) -> HashSet<String> {
+    let mut fns = HashSet::new();
+    for module in per_file_code {
+        for line in module.zig_code.lines() {
+            let trimmed = line.trim();
+            // Match: pub export fn greet(name: ...) callconv(.c) [*:0]const u8 {
+            if (trimmed.starts_with("pub export fn ") || trimmed.starts_with("pub fn "))
+                && trimmed.contains("[*:0]const u8")
+                && let Some(open_paren) = trimmed.find('(')
+            {
+                // Extract function name between `fn ` and `(`
+                let prefix_end = if trimmed.starts_with("pub export fn ") {
+                    "pub export fn ".len()
+                } else {
+                    "pub fn ".len()
+                };
+                let name = trimmed[prefix_end..open_paren].trim();
+                fns.insert(name.to_string());
+            }
+        }
+    }
+    fns
 }
 
 /// Recursively copy a directory

@@ -65,20 +65,11 @@ fn bench_parse(c: &mut Criterion) {
     });
 }
 
-fn bench_preprocess(c: &mut Criterion) {
-    c.bench_function("preprocess", |b| {
-        // Write temp files for preprocess to read
-        let tmp = std::env::temp_dir().join("js2rust_bench");
-        let _ = std::fs::create_dir_all(&tmp);
-        let js_file = tmp.join("bench.js");
-        std::fs::write(&js_file, BENCH_JS).unwrap();
-        let in_dir = tmp.to_string_lossy().to_string();
-
+fn bench_strip_imports(c: &mut Criterion) {
+    c.bench_function("strip_imports", |b| {
         b.iter(|| {
-            js2rustc::preprocess::preprocess(&in_dir);
+            js2rustc::analyzer::strip_imports_extract_exports(BENCH_JS);
         });
-
-        let _ = std::fs::remove_dir_all(&tmp);
     });
 }
 
@@ -109,5 +100,5 @@ fn bench_codegen(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_parse, bench_preprocess, bench_pipeline, bench_codegen);
+criterion_group!(benches, bench_parse, bench_strip_imports, bench_pipeline, bench_codegen);
 criterion_main!(benches);
