@@ -690,8 +690,7 @@ impl<'a> ZigCodegen<'a> {
         // we emit `_ = name;` to suppress the "unused capture" error.
 
         if fos.r#await {
-            self.emit_indent();
-            self.push_line("// TODO: for-await-of — use io.async loop");
+            // for-await-of is not supported (skipped by user decision)
             return;
         }
 

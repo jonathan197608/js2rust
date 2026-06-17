@@ -59,7 +59,7 @@
 | T11 | `for-in` with destructuring | 135 | 低 |
 | T12 | `for-in` with empty decl | 139 | 低 |
 | T13 | `for-in` with member expr | 144 | 低 |
-| T14 | `for-await-of` (async iterator) | 155 | 高（Zig 0.16 async/await 支持） |
+| T14 | `for-await-of` (async iterator) | 155 | 高（Zig 0.16 async/await 支持） | 跳过（用户决定不实现） |
 | T15 | `for-of` with empty decl | 186 | 低 |
 | T16 | `for-of` with member expr/destructuring | 191 | 低 |
 | T17 | 未知 Statement 类型 | 104 | 中（会输出 `// TODO` 导致编译失败） |
@@ -118,10 +118,18 @@
 
 ## 五、已修复项目（截止目前）
 
-| BUG # | 修复内容 | 提交状态 |
+| BUG/TODO # | 修复内容 | 提交状态 |
 |---|---|---|
-| 1 | `mod.rs` `dynamic_field_accessor` 中 `unreachable!()` → `".null".to_string()` | ✅ 已提交 |
-| 10 | `escape_keyword` 补充 `allowzero`、`noreturn`、`undefined`，移除错误关键字 `addrspace` | ✅ 已提交 |
+| 1 | `mod.rs` `dynamic_field_accessor` 中 `unreachable!()` → `".null".to_string()` | ✅ `4dd6f9e` |
+| 3 | `builtins.rs` `chars.next().unwrap()` → `.expect("peek() guaranteed a digit")` | ✅ `156765c` |
+| 4 | `analyzer.rs` `to_string_pretty(...).unwrap()` → `.expect("Failed to serialize groups.json")` | ✅ `e79ba4c` |
+| 5 | `js_allocator.zig` 竞态条件：停止缓存 `page_allocator`，直接返回避免竞态 | ✅ `e8bb9f7` |
+| 6 | `mod.rs` 浮点判断 `fract() != 0.0` → `is_finite() && value.trunc() == value` | ✅ `e8bb9f7` |
+| 7 | `infer.rs` `simplify_union` 增加空/single-element 守卫 | ✅ `e8bb9f7` |
+| 10 | `escape_keyword` 补充 `allowzero`、`noreturn`、`undefined`，移除错误关键字 `addrspace` | ✅ `4dd6f9e` |
+| T19 | 多语句闭包体（实际已实现，更新注释） | ✅ `ee034cd` |
+| T20 | `emit_stmt_with_capture` 增加 `VariableDeclaration` 分支 | ✅ `ee179e2` |
+| T14 | `for-await-of` 跳过（用户决定不实现） | ✅ `skip` |
 
 ---
 
