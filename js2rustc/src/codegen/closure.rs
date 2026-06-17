@@ -463,14 +463,13 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             def.push_str(";\n");
-        } else {
-            // Block body — just emit a placeholder for now
-            def.push_str("        // multi-statement closure body\n");
-            for s in &arrow.body.statements {
-                let stmt_code = self.emit_closure_stmt(s, ci);
-                def.push_str(&format!("        {}\n", stmt_code));
+            } else {
+                // Block body — emit each statement in closure context
+                for s in &arrow.body.statements {
+                    let stmt_code = self.emit_closure_stmt(s, ci);
+                    def.push_str(&format!("        {}\n", stmt_code));
+                }
             }
-        }
 
         def.push_str("    }\n");
         def.push_str("};\n\n");
