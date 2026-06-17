@@ -586,6 +586,27 @@ impl<'a> ZigCodegen<'a> {
                 let s = self.emit_expr_with_capture(&es.expression, captured);
                 format!("{};", s)
             }
+            Statement::VariableDeclaration(vd) => {
+                // Variable declarations inside a closure body are local.
+                // Only the *initializer* may reference captured variables,
+                // which emit_expr_with_capture already handles.
+                let mut s = String::new();
+                for decl in &vd.declarations {
+                    let name = self.binding_name(&decl.id).to_string();
+                    let kw = match vd.kind {
+                        oxc_ast::ast::VariableDeclarationKind::Const => "const",
+                        _ => "var",
+                    };
+                    s.push_str(&format!("{} {} = ", kw, Self::escape_keyword(&name)));
+                    if let Some(init) = &decl.init {
+                        s.push_str(&self.emit_expr_with_capture(init, captured));
+                    } else {
+                        s.push_str("undefined");
+                    }
+                    s.push(';');
+                }
+                s
+            }
             Statement::IfStatement(if_stmt) => {
                 let test = self.emit_expr_with_capture(&if_stmt.test, captured);
                 let cons = self.emit_stmt_with_capture(&if_stmt.consequent, captured);
