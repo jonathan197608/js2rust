@@ -638,7 +638,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::ClassExpression(_) => {
-                self.push("// TODO: class expression");
+                self.push("@compileError(\"class expression (const X = class { ... }) is not yet implemented\")");
             }
 
             Expression::MetaProperty(_) => {
@@ -646,7 +646,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::ImportExpression(_) => {
-                self.push("// TODO: dynamic import");
+                self.push("@compileError(\"dynamic import (import()) is not supported — use static import instead\")");
             }
 
             Expression::Super(_) => {
