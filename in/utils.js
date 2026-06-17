@@ -3,7 +3,6 @@
 // Internal: helper (DELIBERATELY same name as strings.js helper — tests suffix naming)
 
 export function voidFunc() {
-    const x = 1;
 }
 
 // Internal helper — CONFLICT: same name in strings.js

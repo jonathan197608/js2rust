@@ -81,7 +81,7 @@ pub fn slice(s: []const u8, start: i64, end: i64) []const u8 {
 
 /// Split string by separator. Returns newly allocated array of strings.
 pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
-    var parts = std.ArrayList([]const u8).init(alloc);
+    var parts = std.ArrayList([]const u8){ .allocator = alloc };
     errdefer parts.deinit();
 
     var remaining = s;

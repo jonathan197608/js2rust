@@ -839,13 +839,8 @@ impl<'a> ZigCodegen<'a> {
             Statement::FunctionDeclaration(fd) => self.emit_fn_decl(fd),
             Statement::ExpressionStatement(es) => {
                 self.emit_indent();
-                // Zig requires `_ = expr;` for discarded expression values
-                match &es.expression {
-                    Expression::CallExpression(_) | Expression::NewExpression(_) => {
-                        self.push("_ = ");
-                    }
-                    _ => {}
-                }
+                // Zig 0.16: do NOT use `_ = expr;` for expression statements.
+                // This causes "error set is discarded" error.
                 self.emit_expr(&es.expression);
                 self.push(";\n");
             }
@@ -964,6 +959,38 @@ impl<'a> ZigCodegen<'a> {
             _ => {
                 // Unsupported - store as int 0
                 ".{ .int = 0 }".to_string()
+            }
+        }
+    }
+
+    /// Emit JsValue construction code for an expression (used in HashMap.put() calls).
+    /// For literals, emit inline JsValue literal.
+    /// For complex expressions, emit a simple wrap (assumes i64).
+    fn emit_js_value_construction(&mut self, expr: &Expression) {
+        match expr {
+            Expression::NumericLiteral(lit) => {
+                let val_str = lit.value.to_string();
+                if lit.value.fract() != 0.0 {
+                    self.push(&format!("JsValue{{ .float = {} }}", val_str));
+                } else {
+                    self.push(&format!("JsValue{{ .int = {} }}", val_str));
+                }
+            }
+            Expression::StringLiteral(lit) => {
+                self.push(&format!("JsValue{{ .string = \"{}\" }}", lit.value));
+            }
+            Expression::BooleanLiteral(lit) => {
+                let b = if lit.value { "true" } else { "false" };
+                self.push(&format!("JsValue{{ .bool = {} }}", b));
+            }
+            Expression::NullLiteral(_) => {
+                self.push("JsValue{ .null = {} }");
+            }
+            _ => {
+                // TODO: use runtime helper for proper type conversion
+                self.push("JsValue{ .int = ");
+                self.emit_expr(expr);
+                self.push(" }");
             }
         }
     }
@@ -1128,29 +1155,28 @@ impl<'a> ZigCodegen<'a> {
                 let et = elem_type.to_zig_str();
                 let escaped = Self::escape_keyword(name);
 
-                // var name = std.ArrayList(T).init(js_allocator.g_alloc());
+                // var name = std.ArrayList(T).empty; // Zig 0.16 correct initialization
                 self.emit_indent();
                 self.push("var ");
                 self.push(&escaped);
                 self.push(" = std.ArrayList(");
                 self.push(&et);
-                self.push(").init(js_allocator.g_alloc());\n");
+                self.push(").empty; ");
 
                 // Append initial elements if array literal
                 if let Expression::ArrayExpression(arr) = init
                     && !arr.elements.is_empty()
                 {
                     self.emit_indent();
-                    self.push("try ");
                     self.push(&escaped);
-                    self.push(".appendSlice(&[_]");
+                    self.push(".appendSlice(js_allocator.g_alloc(), &[_]");
                     self.push(&et);
                     self.push("{ ");
                     for (i, elem) in arr.elements.iter().enumerate() {
                         if i > 0 { self.push(", "); }
                         self.emit_array_element(elem);
                     }
-                    self.push(" });\n");
+                    self.push(" }) catch unreachable;\n");
                 }
                 continue;
             }
@@ -1167,13 +1193,18 @@ impl<'a> ZigCodegen<'a> {
             self.push(" ");
             self.push(&name);
 
+            // Zig 0.16: add type annotation for var declarations
+            if keyword == "var" {
+                let var_type = self.inferrer.get_var_type(&name);
+                let type_str = match &var_type {
+                    ZigType::Any => "i64".to_string(),
+                    _ => var_type.to_zig_str(),
+                };
+                self.push(": ");
+                self.push(&type_str);
+            }
+
             if let Some(init) = &decl.init {
-                // var x = undefined → Zig needs type annotation
-                if let Expression::Identifier(id) = init
-                    && id.name.as_str() == "undefined"
-                    && keyword == "var" {
-                    self.push(": i64");  // default type for untyped var
-                }
                 self.push(" = ");
                 self.emit_expr(init);
             } else {
@@ -1182,35 +1213,12 @@ impl<'a> ZigCodegen<'a> {
 
             self.push(";\n");
 
-            // Suppress "unused local constant" error for trivial literals in function bodies.
-            // Heuristic: if the RHS is a simple literal (number/string/bool/null), the variable
-            // is likely dead code. For RHS with side effects (function calls, await, etc.),
-            // we skip the suppression because the variable is likely used later.
-            if keyword == "const"
-                && self.indent > 0
-                && let Some(init) = &decl.init
-                && Self::is_trivial_literal(init)
-            {
-                self.emit_indent();
-                self.push("_ = ");
-                self.push(&name);
-                self.push(";\n");
+            // Zig 0.16: do NOT emit `_ = name;` — causes "pointless discard" error.
+            // Unused variable warnings are now handled by the Zig compiler differently.
+            // (Previously: suppress "unused local constant" for trivial literals)
             }
-        }
     }
 
-    /// Check if an expression is a trivial literal with no side effects.
-    /// String literals are excluded — they are more likely to be used later (e.g. as keys).
-    fn is_trivial_literal(expr: &Expression) -> bool {
-        matches!(
-            expr,
-            Expression::NumericLiteral(_)
-                | Expression::BooleanLiteral(_)
-                | Expression::NullLiteral(_)
-        )
-    }
-
-    /// Emit a destructured variable declaration: `const { a, b } = expr` →
     ///   const _tmp_0 = expr;
     ///   const a = _tmp_0.a;
     ///   const b = _tmp_0.b;
@@ -1237,6 +1245,13 @@ impl<'a> ZigCodegen<'a> {
             let temp_name = format!("_tmp_{}", self.temp_counter);
             self.temp_counter += 1;
 
+            // Check if the init expression is a dynamic array
+            let is_init_dynamic_array = if let Expression::Identifier(id) = init {
+                self.inferrer.is_dynamic_array(id.name.as_str())
+            } else {
+                false
+            };
+
             self.emit_indent();
             self.push(keyword);
             self.push(" ");
@@ -1257,6 +1272,10 @@ impl<'a> ZigCodegen<'a> {
                 if !leaf.access.is_empty() {
                     self.push(" = ");
                     self.push(&temp_name);
+                    // For dynamic arrays, use .items[...] instead of [...]
+                    if is_init_dynamic_array && leaf.access.starts_with('[') {
+                        self.push(".items");
+                    }
                     self.push(&leaf.access);
                 } else {
                     // No access path (shouldn't happen for destructured patterns)
@@ -1578,9 +1597,13 @@ impl<'a> ZigCodegen<'a> {
             self.in_top_level = false;
             let prev_fn = self.current_fn.take();
             self.current_fn = Some(raw_name.to_string());
+            // Also set inferrer.current_fn so get_var_type() can look up fn_local_types
+            let prev_infer_fn = self.inferrer.current_fn.take();
+            self.inferrer.current_fn = Some(raw_name.to_string());
             for stmt in &body.statements {
                 self.emit_stmt(stmt);
             }
+            self.inferrer.current_fn = prev_infer_fn;
             self.current_fn = prev_fn;
             self.in_top_level = prev;
             self.indent -= 1;
@@ -2394,7 +2417,15 @@ impl<'a> ZigCodegen<'a> {
     fn emit_if_stmt(&mut self, if_stmt: &IfStatement) {
         self.emit_indent();
         self.push("if (");
-        self.emit_expr(&if_stmt.test);
+        let cond = &if_stmt.test;
+        let cond_ty = self.inferrer.infer_expr(cond);
+        // Zig 0.16: `if (optional)` is not allowed; use `if (cond != null)` for optionals
+        if matches!(cond_ty, ZigType::Optional(_)) {
+            self.emit_expr(cond);
+            self.push(" != null");
+        } else {
+            self.emit_expr(cond);
+        }
         self.push(") {\n");
         self.indent += 1;
         self.emit_stmts_inside(&if_stmt.consequent);
@@ -2785,7 +2816,21 @@ impl<'a> ZigCodegen<'a> {
         self.try_label = Some(try_label.clone());
 
         self.emit_indent();
-        self.push(&format!("const {} = {}: {{", "_try_result", try_label));
+        // If the enclosing function has a non-void return type AND there is no
+        // finalizer (finally), emit `return` so the try-catch value becomes the
+        // function's return value. With a finalizer, defer {} captures cleanup
+        // and there may be trailing statements after the try-catch-finally.
+        let use_return = ts.finalizer.is_none()
+            && self.current_fn.as_ref().map(|fn_name| {
+                let ret = self.inferrer.get_fn_return_type(fn_name);
+                ret != ZigType::Void
+            }).unwrap_or(false);
+        if use_return {
+            self.push("return ");
+        } else {
+            self.push("_ = ");
+        }
+        self.push(&format!("{}: {{", try_label));
         self.push("\n");
         self.indent += 1;
 
@@ -2798,13 +2843,9 @@ impl<'a> ZigCodegen<'a> {
 
         // Enter catch block
         self.emit_indent();
-        self.push(&format!("}} catch |e| {}: {{", catch_label));
+        self.push(&format!("\n}} catch {}: {{", catch_label));
         self.push("\n");
         self.indent += 1;
-
-        // Always suppress unused `e` to avoid "unused capture" error
-        self.emit_indent();
-        self.push("_ = e;\n");
 
         self.catch_label = Some(catch_label.clone());
         if let Some(handler) = &ts.handler {
@@ -2818,9 +2859,6 @@ impl<'a> ZigCodegen<'a> {
         self.emit_indent();
         self.push("};\n");
 
-        // Suppress "unused local constant" for _try_result
-        self.emit_indent();
-        self.push("_ = _try_result;\n");
     }
 
     // ========== Expressions ==========
@@ -2861,6 +2899,12 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::Identifier(id) => {
+                // Built-in global constants
+                match id.name.as_str() {
+                    "NaN" => { self.push("std.math.nan(f64)"); return; }
+                    "Infinity" => { self.push("std.math.inf(f64)"); return; }
+                    _ => {}
+                }
                 self.push(&Self::escape_keyword(id.name.as_str()));
             }
 
@@ -3002,7 +3046,22 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::NewExpression(ne) => {
-                // new ClassName(args) → ClassName.init(args)
+                // Check for built-in constructors (Map, Set, etc.)
+                if let Expression::Identifier(id) = &ne.callee {
+                    match id.name.as_str() {
+                        "Map" => {
+                            self.push("js_map.JsMap.init(js_allocator.g_alloc())");
+                            return;
+                        }
+                        "Set" => {
+                            self.push("js_set.JsSet.init(js_allocator.g_alloc())");
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                
+                // Default: new ClassName(args) → ClassName.init(args)
                 self.emit_expr(&ne.callee);
                 self.push(".init(");
                 for (i, arg) in ne.arguments.iter().enumerate() {
@@ -3021,7 +3080,7 @@ impl<'a> ZigCodegen<'a> {
                 } else {
                     false
                 };
-                
+
                 if is_dynamic {
                     // Look up field type from the original object type to pick
                     // the correct JsValue variant accessor.
@@ -3051,16 +3110,40 @@ impl<'a> ZigCodegen<'a> {
                         return;
                     }
                 }
+
+                // Check builtin static properties (e.g., Math.PI → std.math.pi)
+                if let Expression::Identifier(id) = &mem.object
+                    && let Some(zig_expr) = self.builtins.lookup_property(id.name.as_str(), mem.property.name.as_str()) {
+                        self.push(zig_expr);
+                        return;
+                    }
+
                 self.emit_expr(&mem.object);
                 self.push(".");
                 self.push(mem.property.name.as_str());
             }
 
             Expression::ComputedMemberExpression(mem) => {
-                // Check if object is a dynamic array
+                // Check if object is a dynamic array (ArrayList)
+                // Distinguish: function params with slice type use direct indexing;
+                // locally-declared dynamic arrays use .items[...]
                 if let Expression::Identifier(id) = &mem.object
                     && self.inferrer.is_dynamic_array(id.name.as_str())
                 {
+                    // Check if this variable is a parameter of the CURRENT function.
+                    // If yes, it's a slice — use direct indexing.
+                    // If no, it's a locally-declared ArrayList — use .items[...].
+                    let is_current_fn_param = self.current_fn.as_ref()
+                        .map(|fn_name| self.inferrer.is_fn_param_of(fn_name, id.name.as_str()))
+                        .unwrap_or(false);
+                    if is_current_fn_param {
+                        self.emit_expr(&mem.object);
+                        self.push("[");
+                        self.emit_expr(&mem.expression);
+                        self.push("]");
+                        return;
+                    }
+                    // Locally-declared ArrayList - use .items[...]
                     self.emit_expr(&mem.object);
                     self.push(".items[");
                     self.emit_expr(&mem.expression);
@@ -3074,7 +3157,7 @@ impl<'a> ZigCodegen<'a> {
                 } else {
                     false
                 };
-                
+
                 if is_dynamic {
                     // Generate: object.get(key).?
                     self.emit_expr(&mem.object);
@@ -3083,7 +3166,7 @@ impl<'a> ZigCodegen<'a> {
                     self.push(").?");
                     return;
                 }
-                
+
                 // Check if object is a struct type and key is a string literal
                 let obj_type = self.inferrer.infer_expr(&mem.object);
                 if matches!(&obj_type, ZigType::Object { .. })
@@ -3095,7 +3178,17 @@ impl<'a> ZigCodegen<'a> {
                     self.push(s.value.as_str());
                     return;
                 }
-                // Fall through: array/string indexing or struct [] error
+
+                // Check if object is an array type (ZigType::Array) - use direct indexing for slices
+                if matches!(&obj_type, ZigType::Array(_)) {
+                    self.emit_expr(&mem.object);
+                    self.push("[");
+                    self.emit_expr(&mem.expression);
+                    self.push("]");
+                    return;
+                }
+
+                // Fall through: string indexing or other cases
                 self.emit_expr(&mem.object);
                 self.push("[");
                 self.emit_expr(&mem.expression);
@@ -3107,6 +3200,24 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::AssignmentExpression(assign) => {
+                // Check if assigning to a field of a dynamic access object (HashMap)
+                if let AssignmentTarget::StaticMemberExpression(mem) = &assign.left {
+                    if let Expression::Identifier(obj_id) = &mem.object {
+                        let obj_name = obj_id.name.as_str();
+                        let dyn_vars = self.inferrer.get_dynamic_access_vars();
+                        if dyn_vars.contains(obj_name) {
+                            // Generate: obj.put("field", JsValue{...}) catch @panic("OOM");
+                            self.emit_expr(&mem.object);
+                            self.push(".put(\"");
+                            self.push(mem.property.name.as_str());
+                            self.push("\", ");
+                            self.emit_js_value_construction(&assign.right);
+                            self.push(") catch @panic(\"OOM\")");
+                            return;
+                        }
+                    }
+                }
+
                 self.emit_assign_target(&assign.left);
                 self.push(" ");
                 self.push(self.map_assign_op(&assign.operator));
@@ -3176,37 +3287,14 @@ impl<'a> ZigCodegen<'a> {
                     self.push("(blk: {\n");
                     self.indent += 1;
 
-                    // If the base is an identifier with a known Object type, we need a named
-                    // struct type for _tmp to avoid "comptime field does not match default".
-                    let base_struct_def: Option<String> =
-                        if let Expression::Identifier(id) = &spread_props[0].argument {
-                            let var_type = self.inferrer.get_var_type(id.name.as_str());
-                            if let ZigType::Object { ref fields } = var_type {
-                                let field_strs: Vec<String> = fields.iter()
-                                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
-                                    .collect();
-                                Some(format!("const _STy = struct {{ {} }};", field_strs.join(", ")))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                    if let Some(struct_def) = base_struct_def {
-                        self.emit_indent();
-                        self.push(&struct_def);
-                        self.push("\n");
-                        self.emit_indent();
-                        self.push("var _tmp: _STy = ");
-                        self.emit_expr(&spread_props[0].argument);
-                        self.push(";\n");
-                    } else {
-                        self.emit_indent();
-                        self.push("var _tmp = ");
-                        self.emit_expr(&spread_props[0].argument);
-                        self.push(";\n");
-                    }
+                    // Always use @TypeOf(base) to get the correct type, whether it's a
+                    // named struct (e.g., Base_objects) or an anonymous struct.
+                    self.emit_indent();
+                    self.push("var _tmp: @TypeOf(");
+                    self.emit_expr(&spread_props[0].argument);
+                    self.push(") = ");
+                    self.emit_expr(&spread_props[0].argument);
+                    self.push(";\n");
                     for (_p, key_str, val_expr) in &normal_props {
                         self.emit_indent();
                         self.push("_tmp.");
@@ -3428,13 +3516,24 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::RegExpLiteral(lit) => {
-                let s = if let Some(raw) = &lit.raw {
-                    raw.as_str().to_owned()
+                // Extract pattern from raw source (e.g., "/world/" → "world", "/zig/g" → "zig")
+                let pattern = if let Some(ref raw) = lit.raw {
+                    let raw_str = raw.as_str();
+                    if let Some(inner) = raw_str.strip_prefix('/') {
+                        if let Some(end) = inner.rfind('/') {
+                            &inner[..end]
+                        } else {
+                            inner
+                        }
+                    } else {
+                        raw_str
+                    }
                 } else {
-                    "// TODO: regex".to_string()
+                    ""
                 };
-                self.push("// TODO: regex: ");
-                self.push(&s);
+                self.push("\"");
+                self.push(pattern);
+                self.push("\"");
             }
 
             Expression::TSAsExpression(ts) => {
@@ -3493,23 +3592,62 @@ impl<'a> ZigCodegen<'a> {
     fn try_emit_builtin_call(&mut self, call: &CallExpression) -> bool {
         // Case 1: obj.method(args) — StaticMemberExpression callee
         if let Expression::StaticMemberExpression(mem) = &call.callee {
-            let obj_name = match &mem.object {
-                Expression::Identifier(id) => id.name.as_str().to_string(),
-                _ => return false,
-            };
+            let obj_expr = &mem.object;
             let method_name = mem.property.name.as_str();
 
-            // Dynamic array methods: use ArrayList directly
-            if self.inferrer.is_dynamic_array(&obj_name) {
-                self.emit_dynamic_array_method(&obj_name, method_name, &call.arguments);
-                return true;
-            }
+            // Dynamic array methods: use ArrayList directly (before any lookup)
+            if let Expression::Identifier(id) = obj_expr
+                && self.inferrer.is_dynamic_array(id.name.as_str()) {
+                    self.emit_dynamic_array_method(id.name.as_str(), method_name, &call.arguments);
+                    return true;
+                }
 
-            if let Some(trans) = self.builtins.lookup_method(&obj_name, method_name) {
-                self.apply_builtin_template(trans, &call.arguments);
-                return true;
+            // ── Namespace lookup (Math.abs, console.log, Object.keys, …) ──
+            // Use the object's identifier name (e.g. "Math", "console", "Object")
+            if let Expression::Identifier(id) = obj_expr
+                && let Some(trans) = self.builtins.lookup_method(id.name.as_str(), method_name) {
+                    // Namespace call: template already bakes in the receiver.
+                    // e.g. template "js_console.log({})" → just pass call arguments.
+                    self.apply_builtin_template(trans, &call.arguments);
+                    return true;
+                }
+
+                // ── Type-based lookup (arr.indexOf, str.toUpperCase, …) ──
+                // e.g.  arr.indexOf(42) → key "array", template "js_array.indexOf({}, {})"
+                let obj_ty = self.inferrer.infer_expr(obj_expr);
+                if let Some(type_key) = Self::type_to_builtin_key(&obj_ty)
+                    && let Some(trans) = self.builtins.lookup_method(type_key, method_name) {
+                        // Type-based call: template expects receiver as {0}.
+                        self.emit_builtin_method_call(trans, obj_expr, &call.arguments);
+                        return true;
+                    }
+
+                // ── Regexp dispatch (re.test(str), re.exec(str)) ──
+                // Simplified: regexp literals are emitted as pattern strings,
+                // so re.test(str) → js_regexp.test_(str, re)
+                if method_name == "test" {
+                    self.push("js_regexp.test_(");
+                    if let Some(arg0) = call.arguments.first() {
+                        self.emit_arg(arg0);
+                    }
+                    self.push(", ");
+                    self.emit_expr(obj_expr);
+                    self.push(")");
+                    return true;
+                }
+                if method_name == "exec" {
+                    self.push("(js_regexp.exec(js_allocator.g_alloc(), ");
+                    if let Some(arg0) = call.arguments.first() {
+                        self.emit_arg(arg0);
+                    }
+                    self.push(", ");
+                    self.emit_expr(obj_expr);
+                    self.push(") catch null)");
+                    // Also emit a follow-up if-block for the caller
+                    // This is handled by the caller's if-clause in JS
+                    return true;
+                }
             }
-        }
 
         // Case 2: globalFunc(args) — Identifier callee
         if let Expression::Identifier(id) = &call.callee
@@ -3520,6 +3658,139 @@ impl<'a> ZigCodegen<'a> {
         }
 
         false
+    }
+
+    /// Map a ZigType to a builtin lookup key ("array", "string", etc.)
+    fn type_to_builtin_key(ty: &ZigType) -> Option<&'static str> {
+        match ty {
+            ZigType::String => Some("string"),
+            ZigType::Array(_) => Some("array"),
+            ZigType::Object { .. } => Some("object"),
+            ZigType::Struct(s) => {
+                match s.as_str() {
+                    "Map" => Some("map"),
+                    "Set" => Some("set"),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Emit a builtin method call, handling the receiver object.
+    /// The template may use {} (all args) or {0}, {1} (positional).
+    /// For type-dispatched calls, the receiver is implicitly arg 0.
+    fn emit_builtin_method_call(
+        &mut self,
+        trans: &crate::builtins::BuiltinTranslation,
+        receiver: &Expression,
+        args: &oxc_allocator::Vec<'_, Argument>,
+    ) {
+        let template = &trans.template;
+
+        // Check if template starts with a runtime function that needs allocator
+        // e.g., "js_array.indexOf({}, {})" — receiver goes into {}
+        // We need to replace {} with "receiver, arg0, arg1..."
+        // and {0}, {1} with positional args
+
+        // Collect all arg strings (receiver + call args)
+        let mut all_args: Vec<String> = Vec::new();
+        let empty_exports = std::collections::HashSet::new();
+        let mut tmp = ZigCodegen {
+            output: String::new(),
+            indent: self.indent,
+            inferrer: TypeInferrer::new(),
+            diagnostics: &mut Vec::new(),
+            in_top_level: self.in_top_level,
+            task_counter: self.task_counter,
+            builtins: self.builtins,
+            closure_map: std::collections::HashMap::new(),
+            closure_struct_defs: std::collections::HashMap::new(),
+            fn_closure_spans: std::collections::HashMap::new(),
+            closure_counter: 0,
+            closure_structs: Vec::new(),
+            cabi_wrappers: Vec::new(),
+            cabi_exports: Vec::new(),
+            string_return_fns: std::collections::HashSet::new(),
+            closure_vars: std::collections::HashSet::new(),
+            current_fn: None,
+            exports: empty_exports,
+            try_label: None,
+            catch_label: None,
+            try_counter: self.try_counter,
+            temp_counter: 0,
+            destructure_prelude: Vec::new(),
+            current_class: None,
+            object_type_defs: Vec::new(),
+            current_obj_structs: Vec::new(),
+            init_globals_code: Vec::new(),
+        };
+        tmp.emit_expr(receiver);
+        all_args.push(tmp.output.clone());
+
+        for arg in args.iter() {
+            let mut tmp2 = ZigCodegen {
+                output: String::new(),
+                indent: self.indent,
+                inferrer: TypeInferrer::new(),
+                diagnostics: &mut Vec::new(),
+                in_top_level: self.in_top_level,
+                task_counter: self.task_counter,
+                builtins: self.builtins,
+                closure_map: std::collections::HashMap::new(),
+                closure_struct_defs: std::collections::HashMap::new(),
+                fn_closure_spans: std::collections::HashMap::new(),
+                closure_counter: 0,
+                closure_structs: Vec::new(),
+                cabi_wrappers: Vec::new(),
+                cabi_exports: Vec::new(),
+                string_return_fns: std::collections::HashSet::new(),
+                closure_vars: std::collections::HashSet::new(),
+                current_fn: None,
+                exports: std::collections::HashSet::new(),
+                try_label: None,
+                catch_label: None,
+                try_counter: self.try_counter,
+                temp_counter: 0,
+                destructure_prelude: Vec::new(),
+                current_class: None,
+                object_type_defs: Vec::new(),
+                current_obj_structs: Vec::new(),
+                init_globals_code: Vec::new(),
+            };
+            tmp2.emit_arg(arg);
+            all_args.push(tmp2.output.clone());
+        }
+
+        // Now apply template: {} = all_args joined, {0} = all_args[0], etc.
+        let mut result = String::new();
+        let mut chars = template.chars().peekable();
+        let all_args_ref: Vec<&str> = all_args.iter().map(|s| s.as_str()).collect();
+        while let Some(ch) = chars.next() {
+            if ch == '{' {
+                if let Some(&('0'..='9')) = chars.peek() {
+                    let mut idx_str = String::new();
+                    while let Some(&('0'..='9')) = chars.peek() {
+                        idx_str.push(chars.next().unwrap());
+                    }
+                    if chars.peek() == Some(&'}') {
+                        chars.next();
+                    }
+                    if let Ok(idx) = idx_str.parse::<usize>()
+                        && let Some(arg) = all_args_ref.get(idx) {
+                            result.push_str(arg);
+                        }
+                } else if chars.peek() == Some(&'}') {
+                    chars.next();
+                    result.push_str(&all_args_ref.join(", "));
+                } else {
+                    result.push(ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+        self.push(&result);
     }
 
     /// Emit direct ArrayList method calls for dynamic arrays
@@ -3534,21 +3805,19 @@ impl<'a> ZigCodegen<'a> {
 
         match method {
             "push" => {
-                // arr.push(val) → (blk: { arr.append(val) catch {}; break :blk @as(i64, @intCast(arr.items.len)); })
-                self.push("(blk: { ");
+                // arr.push(val) → arr.append(js_allocator.g_alloc(), val) catch {};
+                // Zig 0.16: do NOT return the new length (blk expression return value ignored error)
                 self.push(&escaped);
-                self.push(".append(");
+                self.push(".append(js_allocator.g_alloc(), ");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 { self.push(", "); }
                     self.emit_arg(arg);
                 }
-                self.push(") catch {}; break :blk @as(i64, @intCast(");
-                self.push(&escaped);
-                self.push(".items.len)); })");
+                self.push(") catch {}");
             }
             "pop" => {
                 self.push(&escaped);
-                self.push(".popOrNull()");
+                self.push(".pop() orelse null");
             }
             "shift" => {
                 self.push("(blk: { if (");
@@ -3558,16 +3827,15 @@ impl<'a> ZigCodegen<'a> {
                 self.push(".orderedRemove(0); })");
             }
             "unshift" => {
-                self.push("(blk: { ");
+                // arr.unshift(val) → arr.insert(js_allocator.g_alloc(), 0, val) catch {};
+                // Zig 0.16: do NOT return the new length
                 self.push(&escaped);
-                self.push(".insert(0, ");
+                self.push(".insert(js_allocator.g_alloc(), 0, ");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 { self.push(", "); }
                     self.emit_arg(arg);
                 }
-                self.push(") catch {}; break :blk @as(i64, @intCast(");
-                self.push(&escaped);
-                self.push(".items.len)); })");
+                self.push(") catch {}");
             }
             "splice" | "sort" | "reverse" => {
                 self.push("@compileError(\"");

@@ -213,6 +213,15 @@ pub struct TypeInferrer {
     /// Variables whose arrays need ArrayList-based dynamic storage
     /// (detected when push/pop/shift/unshift/splice/sort/reverse is called on them)
     dynamic_arrays: HashSet<String>,
+    /// Persistent storage for local variable types per function.
+    /// Key: function name, Value: map from local variable name to its type.
+    /// Populated during inference, used by codegen via get_var_type.
+    fn_local_types: HashMap<String, HashMap<String, ZigType>>,
+    /// Current function being analyzed (set by register_fn_env, cleared by unregister).
+    /// Used to populate fn_local_types correctly.
+    /// Also set by codegen before generating each function body,
+    /// so that get_var_type() can look up fn_local_types.
+    pub(crate) current_fn: Option<String>,
 }
 
 /// Pre-indexed function data for O(1) lookup.
@@ -493,6 +502,8 @@ impl TypeInferrer {
             diagnostics: Vec::new(),
             dynamic_access_vars: HashSet::new(),
             dynamic_arrays: HashSet::new(),
+            fn_local_types: HashMap::new(),
+            current_fn: None,
         }
     }
 
@@ -537,13 +548,43 @@ impl TypeInferrer {
     }
 
     pub fn get_var_type(&self, name: &str) -> ZigType {
-        self.env.get(name).map(|bi| bi.zig_type.clone()).unwrap_or(ZigType::Any)
+        // Check temporary env first (populated during inference)
+        if let Some(ty) = self.env.get(name).map(|bi| bi.zig_type.clone()) {
+            return ty;
+        }
+        // Fall back to persistent fn_local_types (populated during inference,
+        // used during codegen when env is not populated).
+        if let Some(ref fn_name) = self.current_fn
+            && let Some(local_map) = self.fn_local_types.get(fn_name)
+            && let Some(ty) = local_map.get(name)
+        {
+            return ty.clone();
+        }
+        // If current_fn is set but var not found, try all functions (edge case)
+        for local_map in self.fn_local_types.values() {
+            if let Some(ty) = local_map.get(name) {
+                return ty.clone();
+            }
+        }
+        ZigType::Any
     }
 
     /// Check if a variable name is in the dynamic_arrays set
     /// (i.e., push/pop/shift/unshift/splice/sort/reverse was called on it)
     pub fn is_dynamic_array(&self, name: &str) -> bool {
         self.dynamic_arrays.contains(name)
+    }
+
+    /// Check if a name is a parameter of a specific function.
+    pub fn is_fn_param_of(&self, fn_name: &str, param_name: &str) -> bool {
+        self.fn_param_names.get(fn_name)
+            .map(|params| params.iter().any(|p| p == param_name))
+            .unwrap_or(false)
+    }
+
+    /// Check if a name is a parameter of any known function.
+    pub fn is_fn_param(&self, name: &str) -> bool {
+        self.fn_param_names.values().any(|params| params.iter().any(|p| p == name))
     }
 
     pub fn get_fn_return_type(&self, name: &str) -> ZigType {
@@ -578,6 +619,8 @@ impl TypeInferrer {
 
     /// After all inference passes, register all function params in the env
     /// so that codegen's closure pre-scan can look up captured variable types.
+    /// NOTE: This is a temporary workaround. Proper scoping should be implemented
+    /// to avoid cross-scope variable name conflicts.
     fn install_all_fn_params(&mut self) {
         for (fn_name, param_types) in &self.fn_param_types {
             if let Some(param_names) = self.fn_param_names.get(fn_name) {
@@ -587,7 +630,17 @@ impl TypeInferrer {
                     } else {
                         ZigType::I64
                     };
-                    self.env.insert(pn.clone(), BindingInfo { zig_type: ty, is_const: true });
+                    // Do NOT overwrite an existing variable with a more accurate type.
+                    // This avoids cross-scope conflicts (e.g., a param named "base"
+                    // overwriting a top-level object variable also named "base").
+                    if let Some(existing) = self.env.get_mut(pn) {
+                        // Only upgrade from Any to a concrete type; never downgrade.
+                        if existing.zig_type == ZigType::Any {
+                            existing.zig_type = ty;
+                        }
+                    } else {
+                        self.env.insert(pn.clone(), BindingInfo { zig_type: ty, is_const: true });
+                    }
                 }
             }
         }
@@ -1071,6 +1124,7 @@ impl TypeInferrer {
             ("console.log" | "console.warn" | "console.error"
                 | "console.info" | "console.debug", _) => Some(ZigType::Any),
             ("Array.isArray" | "isNaN", 0) => Some(ZigType::Any),
+            ("encodeURIComponent" | "decodeURIComponent", 0) => Some(ZigType::String),
             _ => None,
         }
     }
@@ -1082,20 +1136,39 @@ impl TypeInferrer {
     fn infer_all_return_types(&mut self, index: &FnIndex) {
         let fn_names: Vec<String> = self.fn_return_types.keys().cloned().collect();
 
-        for fn_name in fn_names {
+        for fn_name in &fn_names {
             // Register params and local vars in env for this function's body analysis
-            let saved = self.register_fn_env(&fn_name, index);
+            let saved = self.register_fn_env(fn_name, index);
 
             // Walk body to collect return types — O(1) via FnIndex
-            let body_stmts = index.body_stmts(&fn_name)
+            let body_stmts = index.body_stmts(fn_name)
                 .copied()
                 .unwrap_or(&[]);
             let ret = self.infer_return_type_from_stmts(body_stmts);
 
-            self.fn_return_types.insert(fn_name, ret);
+            self.fn_return_types.insert(fn_name.clone(), ret);
 
             // Restore env
             self.unregister_params_for_fn(saved);
+        }
+
+        // Fixup pass: re-compute return types now that callee return types are known.
+        // This fixes functions like `useSafeDivide` whose return type depends on
+        // the return type of `safeDivide` (processed in an arbitrary order above).
+        for _ in 0..2 {
+            let mut any_changed = false;
+            for fn_name in &fn_names {
+                let saved = self.register_fn_env(fn_name, index);
+                let body_stmts = index.body_stmts(fn_name).copied().unwrap_or(&[]);
+                let ret = self.infer_return_type_from_stmts(body_stmts);
+                let old = self.fn_return_types.get(fn_name).cloned();
+                if old.as_ref() != Some(&ret) {
+                    self.fn_return_types.insert(fn_name.clone(), ret);
+                    any_changed = true;
+                }
+                self.unregister_params_for_fn(saved);
+            }
+            if !any_changed { break; }
         }
     }
 
@@ -1107,6 +1180,9 @@ impl TypeInferrer {
         index: &FnIndex,
     ) -> Vec<(String, Option<BindingInfo>)> {
         let mut saved = Vec::new();
+
+        // 0. Set current function for fn_local_types tracking
+        self.current_fn = Some(fn_name.to_string());
 
         // 1. Register parameters
         let param_types = self.fn_param_types.get(fn_name).cloned().unwrap_or_default();
@@ -1137,6 +1213,8 @@ impl TypeInferrer {
     }
 
     fn unregister_params_for_fn(&mut self, saved: Vec<(String, Option<BindingInfo>)>) {
+        // Clear current function tracking
+        self.current_fn = None;
         for (name, old) in saved {
             self.env.remove(&name);
             if let Some(bi) = old {
@@ -1239,7 +1317,16 @@ impl TypeInferrer {
                     self.infer_destructured_array_types(arr_pat, arr_expr)
                 } else {
                     let overall = self.infer_expr(init);
-                    std::iter::repeat_n(overall, names.len()).collect()
+                    // If init is an array/slice type, unwrap element type for each binding
+                    let elem_ty = match &overall {
+                        ZigType::Array(elem) | ZigType::Slice(elem) => Some(elem.as_ref().clone()),
+                        _ => None,
+                    };
+                    if let Some(elem) = elem_ty {
+                        std::iter::repeat_n(elem, names.len()).collect()
+                    } else {
+                        std::iter::repeat_n(overall, names.len()).collect()
+                    }
                 }
             }
             _ => {
@@ -1251,7 +1338,14 @@ impl TypeInferrer {
             let ty = types.get(i).cloned().unwrap_or_else(|| self.infer_expr(init));
             let old = self.env.remove(pn);
             saved.push((pn.clone(), old));
-            self.env.insert(pn.clone(), BindingInfo { zig_type: ty, is_const: true });
+            self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const: true });
+            // Also persist the type in fn_local_types for codegen use
+            if let Some(ref fn_name) = self.current_fn {
+                self.fn_local_types
+                    .entry(fn_name.clone())
+                    .or_default()
+                    .insert(pn.clone(), ty);
+            }
         }
     }
 
@@ -1319,7 +1413,9 @@ impl TypeInferrer {
                     // First pass: collect propagations (immutable borrows)
                     for i in 0..param_names.len() {
                         let types = self.fn_param_types.get(fn_name);
-                        if types.is_some_and(|t| i < t.len() && t[i] != ZigType::Any) {
+                        // Allow re-consideration of I64 (default) params too, so that
+                        // callee's concrete types (e.g. f64) can propagate back to caller.
+                        if types.is_some_and(|t| i < t.len() && t[i] != ZigType::Any && t[i] != ZigType::I64) {
                             continue;
                         }
                         if let Some(propagated) = self.find_direct_forward(
@@ -1347,6 +1443,31 @@ impl TypeInferrer {
             let site_changed = self.propagate_from_call_sites(index);
             if site_changed {
                 changed = true;
+            }
+
+            // Phase 3: Widen local variables based on function return type.
+            // If a function returns f64 and a returned local variable is i64,
+            // widen the variable to f64 so that `return cleaned;` compiles.
+            for fn_name in &fn_names {
+                let ret = self.fn_return_types.get(fn_name).cloned();
+                if ret != Some(ZigType::F64) { continue; }
+                if let Some(local_map) = self.fn_local_types.get_mut(fn_name) {
+                    let mut widened: Vec<String> = Vec::new();
+                    for (var_name, var_type) in local_map.iter_mut() {
+                        if *var_type == ZigType::I64 {
+                            *var_type = ZigType::F64;
+                            widened.push(var_name.clone());
+                        }
+                    }
+                    // Also update env if this function is currently registered
+                    if self.current_fn.as_deref() == Some(fn_name) {
+                        for var_name in &widened {
+                            if let Some(bi) = self.env.get_mut(var_name) {
+                                bi.zig_type = ZigType::F64;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1465,6 +1586,7 @@ impl TypeInferrer {
             | "parseInt" | "parseFloat" | "Number" | "String"
             | "Boolean" | "JSON.stringify" | "JSON.parse"
             | "Array.isArray" | "isNaN"
+            | "encodeURIComponent" | "decodeURIComponent"
         )
     }
 
@@ -1572,6 +1694,7 @@ impl TypeInferrer {
             Expression::TemplateLiteral(_) => ZigType::String,
             Expression::BooleanLiteral(_) => ZigType::Bool,
             Expression::NullLiteral(_) => ZigType::Optional(Box::new(ZigType::Void)),
+            Expression::RegExpLiteral(_) => ZigType::String, // regex patterns are strings
             Expression::BigIntLiteral(_) => ZigType::I64,
             Expression::Identifier(id) => match id.name.as_str() {
                 "undefined" => ZigType::Optional(Box::new(ZigType::Void)),
@@ -1675,7 +1798,18 @@ impl TypeInferrer {
             Expression::StaticMemberExpression(mem) => self.infer_member_expr(mem),
             Expression::ComputedMemberExpression(mem) => self.infer_computed_member_expr(mem),
             Expression::ObjectExpression(obj) => self.infer_object_expr(obj),
-            Expression::NewExpression(_) => ZigType::Any,
+            Expression::NewExpression(ne) => {
+                // Check for built-in constructors
+                if let Expression::Identifier(id) = &ne.callee {
+                    match id.name.as_str() {
+                        "Map" => return ZigType::Struct("Map".to_string()),
+                        "Set" => return ZigType::Struct("Set".to_string()),
+                        // For class constructors, return Struct with class name
+                        _ => return ZigType::Struct(id.name.to_string()),
+                    }
+                }
+                ZigType::Any
+            }
             Expression::FunctionExpression(_) => ZigType::Any,
             Expression::AwaitExpression(await_expr) => self.infer_expr(&await_expr.argument),
             _ => ZigType::Any,
@@ -1722,6 +1856,10 @@ impl TypeInferrer {
     }
 
     fn infer_member_expr(&self, mem: &StaticMemberExpression) -> ZigType {
+        // this.field → all class fields are i64
+        if matches!(&mem.object, Expression::ThisExpression(_)) {
+            return ZigType::I64;
+        }
         if let Expression::Identifier(id) = &mem.object {
             let obj_name = id.name.as_str();
             let prop = mem.property.name.as_str();
@@ -1739,7 +1877,8 @@ impl TypeInferrer {
                 ZigType::Array(elem) => match prop {
                     "length" => ZigType::Usize,
                     "push" | "unshift" => ZigType::Usize,
-                    "pop" | "shift" | "splice" => ZigType::Any,
+                    "pop" | "shift" => ZigType::Optional(elem.clone()),
+                    "splice" => ZigType::Array(elem.clone()),
                     "indexOf" | "lastIndexOf" => ZigType::I64,
                     "includes" => ZigType::Bool,
                     "join" | "reverse" | "sort" | "flat" | "flatMap" => ZigType::Array(elem.clone()),
@@ -1782,7 +1921,7 @@ impl TypeInferrer {
 
         let obj_type = self.infer_expr(&mem.object);
         match &obj_type {
-            ZigType::Array(elem) => elem.as_ref().clone(),
+            ZigType::Array(elem) | ZigType::Slice(elem) => elem.as_ref().clone(),
             ZigType::String => ZigType::I32,
             ZigType::Object { fields } => {
                 // If the computed key is a string literal, we can resolve it
@@ -1958,10 +2097,39 @@ impl TypeInferrer {
                     if builtin != ZigType::Any {
                         return builtin;
                     }
+                    // Check for regexp methods (re.test(str), re.exec(str))
+                    // Regexp literals are emitted as strings, so String-typed vars
+                    // with .test()/.exec() methods are regexp dispatch.
+                    let prop_name = mem.property.name.as_str();
+                    if let Some(var_info) = self.env.get(obj_name)
+                        && var_info.zig_type == ZigType::String {
+                            return match prop_name {
+                                "test" => ZigType::Bool,
+                                "exec" => ZigType::Optional(Box::new(ZigType::String)),
+                                _ => ZigType::Any,
+                            };
+                        }
                     // Check if obj_name is a local variable (e.g., rect.area())
-                    // If the local var has a known Struct type, we could look up the method
-                    // For now, fall through to Any
-                    let _ = self.env.get(obj_name);
+                    // Class structs: fields and method returns are all i64.
+                    if let Some(var_info) = self.env.get(obj_name)
+                        && matches!(&var_info.zig_type, ZigType::Struct(_)) {
+                            return ZigType::I64;
+                        }
+                    // Check array methods (arr.pop(), arr.push(), etc.)
+                    if let Some(var_info) = self.env.get(obj_name)
+                        && let ZigType::Array(elem) = &var_info.zig_type {
+                            return match prop_name {
+                                "length" => ZigType::Usize,
+                                "push" | "unshift" => ZigType::Usize,
+                                "pop" | "shift" => ZigType::Optional(elem.clone()),
+                                "indexOf" | "lastIndexOf" => ZigType::I64,
+                                "includes" => ZigType::Bool,
+                                "join" | "reverse" | "sort" | "slice" | "concat" => ZigType::Array(elem.clone()),
+                                "forEach" | "map" | "filter" | "reduce" | "some" | "every" | "find" | "findIndex"
+                                    | "flatMap" | "flat" => ZigType::Array(elem.clone()),
+                                _ => ZigType::Any,
+                            };
+                        }
                 }
                 ZigType::Any
             }
@@ -1979,6 +2147,7 @@ impl TypeInferrer {
             "String" | "JSON.parse" => ZigType::String,
             "Boolean" | "Array.isArray" | "isNaN" | "Number.isInteger"
                 | "Number.isNaN" | "Number.isFinite" => ZigType::Bool,
+            "encodeURIComponent" | "decodeURIComponent" => ZigType::String,
             "console.log" | "console.warn" | "console.error" | "console.info"
                 | "console.debug" | "console.assert" | "console.table" | "console.dir"
                 | "console.time" | "console.timeEnd" | "console.group" | "console.groupEnd"
@@ -2082,7 +2251,7 @@ impl TypeInferrer {
         // Use as_member_expression() to check if target is a MemberExpression
         if let Some(mem) = target.as_member_expression()
             && let MemberExpression::ComputedMemberExpression(cm) = mem
-                && !matches!(&cm.expression, Expression::StringLiteral(_))
+                && !matches!(&cm.expression, Expression::StringLiteral(_) | Expression::NumericLiteral(_))
                     && let Expression::Identifier(id) = &cm.object {
                         self.dynamic_access_vars.insert(id.name.to_string());
                     }
@@ -2090,8 +2259,9 @@ impl TypeInferrer {
 
     fn detect_dynamic_access_expr(&mut self, expr: &Expression) {
         // Specialized detection: ComputedMemberExpression with non-literal key
+        // Exclude string and numeric literals — they are static indexing, not dynamic access.
         if let Expression::ComputedMemberExpression(mem) = expr
-            && !matches!(&mem.expression, Expression::StringLiteral(_))
+            && !matches!(&mem.expression, Expression::StringLiteral(_) | Expression::NumericLiteral(_))
                 && let Expression::Identifier(id) = &mem.object {
                     self.dynamic_access_vars.insert(id.name.to_string());
                 }
@@ -2124,6 +2294,23 @@ impl TypeInferrer {
     }
 
     fn detect_dynamic_arrays_stmt(&mut self, stmt: &Statement) {
+        // Check for variable declarations that assign from a dynamic array
+        if let Statement::VariableDeclaration(vd) = stmt {
+            for decl in &vd.declarations {
+                if let Some(init) = &decl.init {
+                    if let Expression::Identifier(id) = init {
+                        // If assigning from a dynamic array, mark the new variable as dynamic
+                        if self.dynamic_arrays.contains(id.name.as_str()) {
+                            // Get the variable name from the binding pattern
+                            if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
+                                self.dynamic_arrays.insert(bi.name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         walk_stmt(stmt, &mut |event| match event {
             WalkEvent::Expr(e) => self.detect_dynamic_arrays_expr(e),
             WalkEvent::Stmt(s) => self.detect_dynamic_arrays_stmt(s),
@@ -2143,6 +2330,17 @@ impl TypeInferrer {
             }
         }
 
+        // Check for assignment expressions: x = arr (where arr is dynamic)
+        if let Expression::AssignmentExpression(assign) = expr {
+            if let Some(target_id) = Self::get_assignment_target_id(&assign.left) {
+                if let Expression::Identifier(src_id) = &assign.right {
+                    if self.dynamic_arrays.contains(src_id.name.as_str()) {
+                        self.dynamic_arrays.insert(target_id);
+                    }
+                }
+            }
+        }
+
         // Structural recursion via shared walker
         walk_expr_children(expr, &mut |e| self.detect_dynamic_arrays_expr(e));
 
@@ -2153,6 +2351,14 @@ impl TypeInferrer {
             for s in &body.statements {
                 self.detect_dynamic_arrays_stmt(s);
             }
+        }
+    }
+
+    /// Helper: get the variable name from an assignment target
+    fn get_assignment_target_id(target: &AssignmentTarget) -> Option<String> {
+        match target {
+            AssignmentTarget::AssignmentTargetIdentifier(id) => Some(id.name.to_string()),
+            _ => None,
         }
     }
 

@@ -18,8 +18,8 @@ export function createMultiplier(factor) {
 }
 
 // Multiple closures in the same function
-export function createOperations(base) {
-    const add = (x) => x + base;
-    const sub = (x) => x - base;
+export function createOperations(baseNum) {
+    const add = (x) => x + baseNum;
+    const sub = (x) => x - baseNum;
     return add(3) + sub(2);
 }

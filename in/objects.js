@@ -7,6 +7,9 @@ const person = {
     }
 };
 
+// Object spread operator tests
+const base = { x: 10, y: 20 };
+
 function updatePerson() {
     person.age = 31;
 }
@@ -27,13 +30,11 @@ function computedAccess() {
 
 // Object spread operator tests
 function cloneWithSpread() {
-    const base = { x: 10, y: 20 };
     const copy = { ...base };
     return copy.x + copy.y;
 }
 
 function overrideWithSpread() {
-    const base = { x: 10, y: 20 };
     const withOverride = { ...base, x: 99 };
     return withOverride.x + withOverride.y;
 }

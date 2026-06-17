@@ -199,6 +199,14 @@ fn generate_lib_zig(translated_code: &str, test_code: &str, host_header: &str, a
     out.push_str("const js_console = @import(\"js_runtime/js_console.zig\");\n");
     out.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
     out.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
+    out.push_str("const js_object = @import(\"js_runtime/js_object.zig\");\n");
+    out.push_str("const js_number = @import(\"js_runtime/js_number.zig\");\n");
+    out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
+    out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
+    out.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
+    out.push_str("const js_set = @import(\"js_runtime/js_set.zig\");\n");
+    out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
+    out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push('\n');
 
@@ -279,6 +287,13 @@ fn generate_orchestrator_lib(
     out.push_str("const js_console = @import(\"js_runtime/js_console.zig\");\n");
     out.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
     out.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
+    out.push_str("const js_object = @import(\"js_runtime/js_object.zig\");\n");
+    out.push_str("const js_number = @import(\"js_runtime/js_number.zig\");\n");
+    out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
+    out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
+    out.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
+    out.push_str("const js_set = @import(\"js_runtime/js_set.zig\");\n");
+    out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push('\n');
     out.push_str("// Global allocator for generated code\n");
