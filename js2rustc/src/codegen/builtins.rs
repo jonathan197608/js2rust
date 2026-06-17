@@ -183,7 +183,7 @@ impl<'a> ZigCodegen<'a> {
                 if let Some(&('0'..='9')) = chars.peek() {
                     let mut idx_str = String::new();
                     while let Some(&('0'..='9')) = chars.peek() {
-                        idx_str.push(chars.next().unwrap());
+                        idx_str.push(chars.next().expect("peek() guaranteed a digit"));
                     }
                     if chars.peek() == Some(&'}') {
                         chars.next();
@@ -401,7 +401,7 @@ impl<'a> ZigCodegen<'a> {
                 if let Some(&('0'..='9')) = chars.peek() {
                     let mut idx_str = String::new();
                     while let Some(&('0'..='9')) = chars.peek() {
-                        idx_str.push(chars.next().unwrap());
+                        idx_str.push(chars.next().expect("peek() guaranteed a digit"));
                     }
                     // Skip closing }
                     if chars.peek() == Some(&'}') {
