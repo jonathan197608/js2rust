@@ -417,10 +417,12 @@ impl<'a> ZigCodegen<'a> {
         match expr {
             Expression::NumericLiteral(lit) => {
                 let val_str = lit.value.to_string();
-                if lit.value.fract() != 0.0 {
-                    format!(".{{ .float = {} }}", val_str)
-                } else {
+                // Use is_finite() + trunc() to reliably detect integer literals.
+                // f64::fract() can be unreliable due to floating-point precision.
+                if lit.value.is_finite() && lit.value == lit.value.trunc() {
                     format!(".{{ .int = {} }}", val_str)
+                } else {
+                    format!(".{{ .float = {} }}", val_str)
                 }
             }
             Expression::StringLiteral(lit) => {
@@ -446,10 +448,10 @@ impl<'a> ZigCodegen<'a> {
         match expr {
             Expression::NumericLiteral(lit) => {
                 let val_str = lit.value.to_string();
-                if lit.value.fract() != 0.0 {
-                    self.push(&format!("JsValue{{ .float = {} }}", val_str));
-                } else {
+                if lit.value.is_finite() && lit.value == lit.value.trunc() {
                     self.push(&format!("JsValue{{ .int = {} }}", val_str));
+                } else {
+                    self.push(&format!("JsValue{{ .float = {} }}", val_str));
                 }
             }
             Expression::StringLiteral(lit) => {

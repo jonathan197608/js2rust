@@ -186,6 +186,14 @@ impl ZigType {
 
     /// Simplify a union type: if all numeric, widen; otherwise keep as Union
     fn simplify_union(types: Vec<ZigType>) -> ZigType {
+        // Defensive: empty union → Any
+        if types.is_empty() {
+            return ZigType::Any;
+        }
+        // Defensive: single-element union → flatten
+        if types.len() == 1 {
+            return types[0].clone();
+        }
         // If all numeric, widen to the widest type
         if types.iter().all(|t| t.is_numeric()) {
             let mut result = types[0].clone();
