@@ -184,7 +184,7 @@ impl ZigType {
         ZigType::simplify_union(dedup)
     }
 
-    /// Simplify a union type: if all numeric, widen; otherwise keep as Union
+    /// Simplify a union type: flatten Optionals, widen numerics, etc.
     fn simplify_union(types: Vec<ZigType>) -> ZigType {
         // Defensive: empty union → Any
         if types.is_empty() {
@@ -194,6 +194,18 @@ impl ZigType {
         if types.len() == 1 {
             return types[0].clone();
         }
+
+        // Optional flattening: JS `T | null` → Zig `?T`
+        let has_null = types.iter().any(|t| matches!(t, ZigType::Null));
+        if has_null {
+            let non_null: Vec<ZigType> = types
+                .into_iter()
+                .filter(|t| !matches!(t, ZigType::Null))
+                .collect();
+            let simplified = ZigType::simplify_union(non_null);
+            return ZigType::Optional(Box::new(simplified));
+        }
+
         // If all numeric, widen to the widest type
         if types.iter().all(|t| t.is_numeric()) {
             let mut result = types[0].clone();
@@ -202,8 +214,7 @@ impl ZigType {
             }
             return result;
         }
-        // If contains optional, flatten
-        // TODO: handle Optional flattening
+
         ZigType::Union(types)
     }
 
