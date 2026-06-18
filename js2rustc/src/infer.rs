@@ -731,7 +731,10 @@ impl TypeInferrer {
                 .map(|p| {
                     let mut n = Vec::new();
                     collect_binding_names(&p.pattern, &mut n);
-                    n.into_iter().next().unwrap_or_default()
+                    // Use "_" as placeholder for destructured/anonymous params
+                    // to avoid generating empty parameter names in Zig output
+                    let name = n.into_iter().next().unwrap_or_default();
+                    if name.is_empty() { "_".to_string() } else { name }
                 })
                 .collect();
             if !pnames.is_empty() {

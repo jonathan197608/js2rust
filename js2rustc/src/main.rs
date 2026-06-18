@@ -8,7 +8,7 @@ use std::process::Command;
 fn workspace_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .unwrap()
+        .expect("CARGO_MANIFEST_DIR must have a parent directory (workspace root)")
         .to_path_buf()
 }
 
