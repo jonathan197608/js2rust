@@ -10,4 +10,4 @@ keywords = ["ffi", "zig", "js", "bindings"]
 categories = ["development-tools", "external-ffi-bindings"]
 
 [dependencies]
-js2rust-bridge-macro = { path = "../js2rust-bridge-macro" }
+js2rust-bridge-macro = { version = "0.1.0", path = "../js2rust-bridge-macro" }

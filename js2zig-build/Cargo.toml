@@ -14,7 +14,7 @@ categories = ["development-tools", "build-dependencies"]
 # js2zig-build = "0.1"
 
 [dependencies]
-js2zig-core = { path = "../js2zig-core" }
+js2zig-core = { version = "0.1.0", path = "../js2zig-core" }
 
 [lib]
 name = "js2zig_build"
