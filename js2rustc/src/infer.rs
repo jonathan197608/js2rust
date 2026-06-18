@@ -2120,7 +2120,7 @@ impl TypeInferrer {
             let obj_type = self.get_var_type(obj_name);
             match &obj_type {
                 ZigType::String => match prop {
-                    "length" => ZigType::Usize,
+                    "length" => ZigType::I64,
                     "charAt" | "slice" | "substring" | "toLowerCase" | "toUpperCase"
                         | "trim" | "padStart" | "padEnd" | "repeat" | "concat"
                         | "replace" | "replaceAll" | "split" | "toString" => ZigType::String,
@@ -2129,7 +2129,7 @@ impl TypeInferrer {
                     _ => ZigType::JsValue,
                 },
                 ZigType::Array(elem) => match prop {
-                    "length" => ZigType::Usize,
+                    "length" => ZigType::I64,
                     "push" | "unshift" => ZigType::Usize,
                     "pop" | "shift" => ZigType::Optional(elem.clone()),
                     "splice" => ZigType::Array(elem.clone()),
@@ -2356,6 +2356,15 @@ impl TypeInferrer {
                     if let Some(var_info) = self.env.get(obj_name)
                         && var_info.zig_type == ZigType::String {
                             return match prop_name {
+                                // String search methods
+                                "includes" | "startsWith" | "endsWith" => ZigType::Bool,
+                                "indexOf" | "lastIndexOf" | "search" | "charCodeAt" | "codePointAt" => ZigType::I64,
+                                // String transform methods
+                                "charAt" | "slice" | "substring" | "toLowerCase" | "toUpperCase"
+                                    | "trim" | "trimStart" | "trimEnd" | "padStart" | "padEnd"
+                                    | "repeat" | "concat" | "replace" | "replaceAll" | "toString" => ZigType::String,
+                                "split" => ZigType::Array(Box::new(ZigType::String)),
+                                // Regexp methods (re.test/exec on string-typed vars used as patterns)
                                 "test" => ZigType::Bool,
                                 "exec" => ZigType::Optional(Box::new(ZigType::String)),
                                 _ => ZigType::JsValue,
@@ -2371,8 +2380,8 @@ impl TypeInferrer {
                     if let Some(var_info) = self.env.get(obj_name)
                         && let ZigType::Array(elem) = &var_info.zig_type {
                             return match prop_name {
-                                "length" => ZigType::Usize,
-                                "push" | "unshift" => ZigType::Usize,
+                                "length" => ZigType::I64,
+                                "push" | "unshift" => ZigType::I64,
                                 "pop" | "shift" => ZigType::Optional(elem.clone()),
                                 "indexOf" | "lastIndexOf" => ZigType::I64,
                                 "includes" => ZigType::Bool,

@@ -30,7 +30,7 @@ impl<'a> ZigCodegen<'a> {
                 if let Some(type_key) = Self::type_to_builtin_key(&obj_ty)
                     && let Some(trans) = self.builtins.lookup_method(type_key, method_name) {
                         // Type-based call: template expects receiver as {0}.
-                        self.emit_builtin_method_call(trans, obj_expr, &call.arguments);
+                        self.emit_builtin_method_call(trans, obj_expr, &call.arguments, &obj_ty);
                         return true;
                     }
 
@@ -97,6 +97,7 @@ impl<'a> ZigCodegen<'a> {
         trans: &crate::builtins::BuiltinTranslation,
         receiver: &Expression,
         args: &oxc_allocator::Vec<'_, Argument>,
+        receiver_type: &ZigType,
     ) {
         let template = &trans.template;
 
@@ -138,7 +139,12 @@ impl<'a> ZigCodegen<'a> {
             init_globals_code: Vec::new(),
         };
         tmp.emit_expr(receiver);
-        all_args.push(tmp.output.clone());
+        // Static arrays need & to coerce to []const T for runtime functions
+        if matches!(receiver_type, ZigType::Array(_)) {
+            all_args.push(format!("&{}", tmp.output));
+        } else {
+            all_args.push(tmp.output.clone());
+        }
 
         for arg in args.iter() {
             let mut tmp2 = ZigCodegen {
@@ -174,10 +180,11 @@ impl<'a> ZigCodegen<'a> {
             all_args.push(tmp2.output.clone());
         }
 
-        // Now apply template: {} = all_args joined, {0} = all_args[0], etc.
+        // Now apply template: {} = sequential arg, {0} = all_args[0], etc.
         let mut result = String::new();
         let mut chars = template.chars().peekable();
         let all_args_ref: Vec<&str> = all_args.iter().map(|s| s.as_str()).collect();
+        let mut seq_idx: usize = 0; // sequential argument index for {} placeholders
         while let Some(ch) = chars.next() {
             if ch == '{' {
                 if let Some(&('0'..='9')) = chars.peek() {
@@ -194,7 +201,10 @@ impl<'a> ZigCodegen<'a> {
                         }
                 } else if chars.peek() == Some(&'}') {
                     chars.next();
-                    result.push_str(&all_args_ref.join(", "));
+                    if let Some(arg) = all_args_ref.get(seq_idx) {
+                        result.push_str(arg);
+                    }
+                    seq_idx += 1;
                 } else {
                     result.push(ch);
                 }

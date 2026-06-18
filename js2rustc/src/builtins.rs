@@ -73,24 +73,25 @@ impl BuiltinRegistry {
         registry.add_global("decodeURIComponent", "js_uri.decodeURIComponent(js_allocator.g_alloc(), {})");
 
         // ── Tier 3: Runtime ──
-        // All runtime functions use std.heap.page_allocator internally.
+        // All runtime functions use js_allocator.g_alloc() where Zig needs an allocator.
+        // For type-dispatched methods, {} is sequential: {0}=receiver, {1}=arg0, {2}=arg1, ...
         // String methods
         registry.add_method("String", "length", "{}.len");
         registry.add_method_runtime("string", "length", "{}.len", "js_string");
-        registry.add_method_runtime("string", "toUpperCase", "js_string.toUpper({})", "js_string");
-        registry.add_method_runtime("string", "toLowerCase", "js_string.toLower({})", "js_string");
-        registry.add_method_runtime("string", "charAt", "js_string.charAt({}, {})", "js_string");
+        registry.add_method_runtime("string", "toUpperCase", "(js_string.toUpper(js_allocator.g_alloc(), {}) catch \"\")", "js_string");
+        registry.add_method_runtime("string", "toLowerCase", "(js_string.toLower(js_allocator.g_alloc(), {}) catch \"\")", "js_string");
+        registry.add_method_runtime("string", "charAt", "(js_string.charAt(js_allocator.g_alloc(), {}, {}) catch \"\")", "js_string");
         registry.add_method_runtime("string", "charCodeAt", "{0}[@intCast({1})]", "js_string");
-        registry.add_method_runtime("string", "concat", "js_string.concat({}, {})", "js_string");
+        registry.add_method_runtime("string", "concat", "(js_string.concat(js_allocator.g_alloc(), {}, {}) catch \"\")", "js_string");
         registry.add_method_runtime("string", "includes", "js_string.includes({}, {})", "js_string");
         registry.add_method_runtime("string", "indexOf", "js_string.indexOf({}, {})", "js_string");
         registry.add_method_runtime("string", "startsWith", "js_string.startsWith({}, {})", "js_string");
         registry.add_method_runtime("string", "endsWith", "js_string.endsWith({}, {})", "js_string");
         registry.add_method_runtime("string", "slice", "js_string.slice({}, {}, {})", "js_string");
-        registry.add_method_runtime("string", "split", "js_string.split({}, {})", "js_string");
-        registry.add_method_runtime("string", "replace", "js_string.replace({}, {}, {})", "js_string");
+        registry.add_method_runtime("string", "split", "(js_string.split(js_allocator.g_alloc(), {}, {}) catch &[_][]const u8{})", "js_string");
+        registry.add_method_runtime("string", "replace", "(js_string.replace(js_allocator.g_alloc(), {}, {}, {}) catch \"\")", "js_string");
         registry.add_method_runtime("string", "trim", "js_string.trim({})", "js_string");
-        registry.add_method_runtime("string", "repeat", "js_string.repeat({}, {})", "js_string");
+        registry.add_method_runtime("string", "repeat", "(js_string.repeat(js_allocator.g_alloc(), {}, {}) catch \"\")", "js_string");
 
         // Console
         registry.add_method_runtime("console", "log", "js_console.log({})", "js_console");
@@ -104,19 +105,19 @@ impl BuiltinRegistry {
         // Array
         registry.add_method_runtime("Array", "isArray", "js_array.isArray({})", "js_array");
         registry.add_method_runtime("array", "length", "{}.len", "js_array");
-        registry.add_method_runtime("array", "push", "js_array.push({}, {})", "js_array");
+        registry.add_method_runtime("array", "push", "(js_array.push(js_allocator.g_alloc(), {}, {}) catch &[_]i64{})", "js_array");
         registry.add_method_runtime("array", "pop", "js_array.pop({})", "js_array");
         registry.add_method_runtime("array", "shift", "js_array.shift({})", "js_array");
-        registry.add_method_runtime("array", "unshift", "js_array.unshift({}, {})", "js_array");
-        registry.add_method_runtime("array", "join", "js_array.join({}, {})", "js_array");
-        registry.add_method_runtime("array", "map", "js_array.map({}, {})", "js_array");
-        registry.add_method_runtime("array", "filter", "js_array.filter({}, {})", "js_array");
+        registry.add_method_runtime("array", "unshift", "(js_array.unshift(js_allocator.g_alloc(), {}, {}) catch &[_]i64{})", "js_array");
+        registry.add_method_runtime("array", "join", "(js_array.join(js_allocator.g_alloc(), {}, {}) catch \"\")", "js_array");
+        registry.add_method_runtime("array", "map", "(js_array.map(js_allocator.g_alloc(), {}, {}) catch &[_]i64{})", "js_array");
+        registry.add_method_runtime("array", "filter", "(js_array.filter(js_allocator.g_alloc(), {}, {}) catch &[_]i64{})", "js_array");
         registry.add_method_runtime("array", "indexOf", "js_array.indexOf({}, {})", "js_array");
         registry.add_method_runtime("array", "includes", "js_array.includes({}, {})", "js_array");
-        registry.add_method_runtime("array", "reverse", "js_array.reverse({}, {})", "js_array");
+        registry.add_method_runtime("array", "reverse", "(js_array.reverse(js_allocator.g_alloc(), {}) catch &[_]i64{})", "js_array");
         registry.add_method_runtime("array", "slice", "js_array.slice({}, {}, {})", "js_array");
-        registry.add_method_runtime("array", "concat", "js_array.concat({}, {}, {})", "js_array");
-        registry.add_method_runtime("array", "sort", "js_array.sort({}, {})", "js_array");
+        registry.add_method_runtime("array", "concat", "(js_array.concat(js_allocator.g_alloc(), {}, {}) catch &[_]i64{})", "js_array");
+        registry.add_method_runtime("array", "sort", "(js_array.sort(js_allocator.g_alloc(), {}) catch &[_]i64{})", "js_array");
 
         // ── Tier 3: Object ──
         registry.add_method_runtime("Object", "keys", "js_object.keys(js_allocator.g_alloc(), {})", "js_object");

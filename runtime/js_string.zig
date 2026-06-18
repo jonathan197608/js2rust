@@ -81,17 +81,17 @@ pub fn slice(s: []const u8, start: i64, end: i64) []const u8 {
 
 /// Split string by separator. Returns newly allocated array of strings.
 pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
-    var parts = std.ArrayList([]const u8){ .allocator = alloc };
+    var parts = std.ArrayList([]const u8).empty;
     errdefer parts.deinit(alloc);
 
     var remaining = s;
     while (std.mem.indexOf(u8, remaining, sep)) |pos| {
-        try parts.append(remaining[0..pos]);
+        try parts.append(alloc, remaining[0..pos]);
         remaining = remaining[pos + sep.len ..];
     }
-    try parts.append(remaining);
+    try parts.append(alloc, remaining);
 
-    return parts.toOwnedSlice();
+    return parts.toOwnedSlice(alloc);
 }
 
 /// Replace all occurrences of old with new. Returns newly allocated string.

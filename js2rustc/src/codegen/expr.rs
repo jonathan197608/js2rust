@@ -583,14 +583,16 @@ impl<'a> ZigCodegen<'a> {
                     if let Expression::Identifier(id) = &mem.object
                         && self.inferrer.is_dynamic_array(id.name.as_str())
                     {
+                        self.push("@as(i64, @intCast(");
                         self.emit_expr(&mem.object);
-                        self.push(".items.len");
+                        self.push(".items.len))");
                         return;
                     }
                     let obj_ty = self.inferrer.infer_expr(&mem.object);
                     if obj_ty == ZigType::String || matches!(obj_ty, ZigType::Array(_)) {
+                        self.push("@as(i64, @intCast(");
                         self.emit_expr(&mem.object);
-                        self.push(".len");
+                        self.push(".len))");
                         return;
                     }
                 }
