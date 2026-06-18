@@ -185,11 +185,13 @@ fn main() {
     // === Phase 2: Generate Zig project per group ===
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
     for (group_idx, group) in groups.iter().enumerate() {
+        let is_test_group = group.core_name.starts_with("test_");
         println!(
-            "\n=== {} ({} member{}) ===",
+            "\n=== {} ({} member{}) {}===",
             group.core_name,
             group.members.len(),
-            if group.members.len() == 1 { "" } else { "s" }
+            if group.members.len() == 1 { "" } else { "s" },
+            if is_test_group { "[test] " } else { "" }
         );
 
         // --- Incremental check ---
@@ -340,22 +342,26 @@ fn main() {
                 });
 
                 combined_zig.push_str(&zig_code);
-                all_cabi_exports.extend(cabi_exports);
                 if !source_map.mappings.is_empty() {
                     all_source_maps.push(source_map);
                 }
 
-                // Testgen: use &stripped so AST span offsets match
-                let test_cases = js2rustc::testgen::extract_test_cases(&program, stripped);
-                let closure_fn_refs: HashSet<&str> =
-                    closure_fns.iter().map(|s| s.as_str()).collect();
-                let ret_type_map: HashMap<String, String> = fn_return_types
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.to_zig_str()))
-                    .collect();
-                let file_test_code =
-                    js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs, &ret_type_map);
-                all_test_code.push_str(&file_test_code);
+                if is_test_group {
+                    // Test groups: generate test code from test_* variables, skip CABI
+                    let test_cases = js2rustc::testgen::extract_test_cases(&program, stripped);
+                    let closure_fn_refs: HashSet<&str> =
+                        closure_fns.iter().map(|s| s.as_str()).collect();
+                    let ret_type_map: HashMap<String, String> = fn_return_types
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.to_zig_str()))
+                        .collect();
+                    let file_test_code =
+                        js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs, &ret_type_map);
+                    all_test_code.push_str(&file_test_code);
+                } else {
+                    // Normal groups: collect CABI exports, skip testgen
+                    all_cabi_exports.extend(cabi_exports);
+                }
             }
 
             if has_error {
@@ -368,26 +374,31 @@ fn main() {
             }
 
             // --- Generate C ABI wrapper code for lib.zig ---
-            // Build name→module lookup and name→CabiExport lookup
-            let mut name_to_module: HashMap<&str, &str> = HashMap::new();
-            for (exp_name, mod_name) in &all_module_exports {
-                name_to_module.entry(exp_name).or_insert(mod_name);
-            }
-            let mut name_to_cabi: HashMap<&str, &js2rustc::codegen::CabiExport> = HashMap::new();
-            for exp in &all_cabi_exports {
-                name_to_cabi.entry(&exp.name).or_insert(exp);
-            }
-            let cabi_wrapper_code = gen_cabi_wrappers(&name_to_module, &name_to_cabi);
-            let cabi_names: HashSet<String> =
-                name_to_cabi.keys().map(|&k| k.to_string()).collect();
+            // Test groups skip CABI wrappers; normal groups skip test code.
+            let (cabi_wrapper_code, cabi_names) = if is_test_group {
+                (String::new(), HashSet::new())
+            } else {
+                let mut name_to_module: HashMap<&str, &str> = HashMap::new();
+                for (exp_name, mod_name) in &all_module_exports {
+                    name_to_module.entry(exp_name).or_insert(mod_name);
+                }
+                let mut name_to_cabi: HashMap<&str, &js2rustc::codegen::CabiExport> = HashMap::new();
+                for exp in &all_cabi_exports {
+                    name_to_cabi.entry(&exp.name).or_insert(exp);
+                }
+                let wrapper_code = gen_cabi_wrappers(&name_to_module, &name_to_cabi);
+                let names: HashSet<String> =
+                    name_to_cabi.keys().map(|&k| k.to_string()).collect();
+                (wrapper_code, names)
+            };
 
             let project_opts = js2rustc::project::ProjectOptions {
                 name: group.core_name.clone(),
                 out_dir: out_dir.clone(),
                 per_file_code: per_file_modules,
                 external_exports: all_module_exports,
-                cabi_wrapper_code: cabi_wrapper_code.clone(),
-                cabi_names: cabi_names.clone(),
+                cabi_wrapper_code,
+                cabi_names,
                 test_code: all_test_code,
                 runtime_dir: Some(runtime_dir.clone()),
                 host_header: if combined_zig.contains("host.") {
@@ -438,7 +449,15 @@ fn main() {
                 }
             }
 
-            write_cabi_metadata(&out_dir, &group.core_name, &all_cabi_exports, &host_fns, group_idx);
+            // Write CABI metadata (only for non-test groups)
+            if !is_test_group {
+                write_cabi_metadata(&out_dir, &group.core_name, &all_cabi_exports, &host_fns, group_idx);
+            } else {
+                // Clean up stale CABI metadata from previous runs
+                let project_dir = Path::new(&out_dir).join(&group.core_name);
+                let _ = fs::remove_file(project_dir.join("cabi_exports.json"));
+                let _ = fs::remove_file(project_dir.join("cabi_imports.json"));
+            }
         }
 
         // === Zig build ===
