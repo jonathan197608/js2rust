@@ -1,0 +1,19 @@
+[package]
+name = "js2zig-core"
+version = "0.1.0"
+edition = "2024"
+authors = ["jonathan197608"]
+description = "Core JS-to-Zig transpiler library"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jonathan197608/js2rust"
+keywords = ["js", "zig", "transpiler", "javascript", "webassembly"]
+categories = ["development-tools", "compilers"]
+
+[dependencies]
+oxc_parser = "0.135"
+oxc_ast = "0.135"
+oxc_allocator = "0.135"
+oxc_span = "0.135"
+glob = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -2,6 +2,12 @@
 name = "js2rust-bridge"
 version = "0.1.0"
 edition = "2024"
+authors = ["jonathan197608"]
+description = "FFI bridge runtime for js2rust-generated Zig code"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jonathan197608/js2rust"
+keywords = ["ffi", "zig", "js", "bindings"]
+categories = ["development-tools", "external-ffi-bindings"]
 
 [dependencies]
 js2rust-bridge-macro = { path = "../js2rust-bridge-macro" }

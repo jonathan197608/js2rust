@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "js2rustc",
+    "js2zig-core",
+    "js2zig-build",
     "js2rust-bridge",
     "js2rust-bridge-macro",
+    "examples/test-project",
 ]

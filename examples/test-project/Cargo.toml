@@ -1,0 +1,12 @@
+[package]
+name = "js2zig-test-project"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+# Path dependency (for testing). In real project, use: js2zig-build = "0.1"
+js2zig-build = { path = "../../js2zig-build" }
+
+[dependencies]
+# Path dependency (for testing). In real project, use: js2rust-bridge = "0.1"
+js2rust-bridge-macro = { path = "../../js2rust-bridge-macro" }

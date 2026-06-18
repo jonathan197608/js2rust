@@ -1,8 +1,11 @@
 # js2rust — 开发路线图
 
-> JS → Zig 源码翻译器，Rust 实现。
+> JS → Zig 源码转译器，Rust 实现。
 > ~10,000 行 Rust + 15 个 Zig 运行时文件。
 > `cargo check` / `cargo clippy` 零新警告，Zig 0.16 目标。
+>
+> **架构简化（2026-06-18）**：删除 CLI（`js2rustc`），只保留 build.rs 集成模式。
+> 新增 `js2zig-core`（核心转译库）和 `js2zig-build`（build.rs helper）。
 
 ---
 
@@ -15,8 +18,82 @@
 | 3 | 代码生成（语句、表达式、闭包、内置函数、类） | ✅ 核心完成 | ~3400 |
 | 4 | 测试生成（AST 提取用例 → Zig test 块） | ✅ 完成 | 236 |
 | 5 | Zig 项目输出（build.zig/build.zig.zon/lib.zig） | ✅ 完成 | 390 |
-| 6 | Zig 构建 + 测试（自动调用 `zig build` / `zig build test`） | ✅ 完成 | 内嵌 main.rs |
-| 7 | 多文件分组（每组独立 Zig 项目，per-file codegen） | ✅ 完成 | 内嵌 main.rs |
+| 6 | Zig 构建 + 测试（自动调用 `zig build` / `zig build test`） | ✅ 完成 | js2zig-build |
+| 7 | 多文件分组（每组独立 Zig 项目，per-file codegen） | ✅ 完成 | js2zig-core |
+
+---
+
+## 架构重构（2026-06-18）
+
+### 简化方案
+
+**目标**：外部 Rust 项目通过 `build.rs` 一行调用，实现 JS → Zig → 静态库 → Rust FFI 的全自动编译集成。
+
+**简化要点**：
+1. **删除 CLI**（`js2rustc` 不再保留）— 不需要独立的命令行工具
+2. **只支持多文件项目转译** — 专注于 build.rs 集成模式
+3. **Bridge Macro 固定 `$OUT_DIR` 前缀** — 用户只需指定组名，无需配置路径
+
+### 新的 Workspace 结构
+
+```
+js2rust/                          # workspace root
+├── Cargo.toml                    # workspace 配置
+│
+├── js2zig-core/           [核心] # 转译库 (从 js2rustc 提取)
+│   ├── Cargo.toml
+│   ├── build.rs                # 自动生成 runtime/embed.rs
+│   └── src/
+│       ├── lib.rs                # 公开 API
+│       ├── pipeline.rs           # 编排逻辑 (js2rustc/main.rs → 此处)
+│       ├── bridge.rs             # Bridge lib.rs 生成
+│       └── runtime/
+│           └── embed.rs          # auto-generated: include_str!() 嵌入运行时
+│
+├── js2zig-build/         [发布] # build.rs helper (外部项目用)
+│   ├── Cargo.toml
+│   └── src/lib.rs                # compile_js() — build.rs 一键集成
+│
+├── js2rust-bridge/        [发布] # FFI 桥接 (保持现有结构)
+├── js2rust-bridge-macro/ [发布] # proc-macro (固定 $OUT_DIR 前缀)
+│
+├── runtime/               [源]   # Zig 运行时源文件 (被 js2zig-core 嵌入)
+├── in/                    [测试] # JS 测试文件
+├── host_config.json       [配置] # Host 函数配置
+├── INTEGRATION.md                 # 集成方案（简化版）
+├── INTEGRATION_BUILDRS_SIMPLE.md # 详细设计文档
+└── README.md
+```
+
+### 外部项目集成示例
+
+```toml
+# 外部项目 Cargo.toml
+[build-dependencies]
+js2zig-build = { git = "https://github.com/aspect-building/js2rust.git" }
+
+[dependencies]
+js2rust-bridge = { git = "https://github.com/aspect-building/js2rust.git" }
+```
+
+```rust
+// build.rs — 一行调用
+fn main() {
+    js2zig_build::compile_js(Default::default());
+}
+```
+
+```rust
+// src/main.rs — 只需指定组名
+use js2rust_bridge::js2rust_bridge;
+
+js2rust_bridge!("main");  // 自动查找 $OUT_DIR/js2zig/main/cabi_exports.json
+
+fn main() {
+    let sum = unsafe { add_main(3, 5) };
+    println!("3 + 5 = {}", sum);
+}
+```
 
 ---
 
@@ -118,6 +195,29 @@
   - ✅ `cargo run` → `zig build` → `zig build test` 全部通过（34 个测试，33 断言 + 1 smoke）
 
 - [x] **README.md** — 项目介绍、快速开始、架构图、限制说明
+
+- [x] **架构重构（简化方案）** — 删除 CLI，只保留 build.rs 集成模式
+  - [x] Step 1: 新建 `js2zig-core` crate（从 `js2rustc` 提取核心逻辑）
+  - [x] Step 2: 删除 `js2rustc` CLI
+  - [x] Step 3: 新建 `js2zig-build` crate（build.rs helper）
+  - [x] Step 4: 简化 `js2rust-bridge-macro`（固定 `$OUT_DIR` 前缀）
+  - [ ] Step 5: 发布到 crates.io（4 个 crate）
+  - [x] Step 6: 验证（测试 + clippy + 端到端）
+
+### Crates.io 发布准备
+
+发布到 crates.io 的 4 个 crate：
+- `js2zig-core` — 核心转译库
+- `js2zig-build` — build.rs helper（外部项目用 `[build-dependencies]`）
+- `js2rust-bridge` — FFI 桥接 runtime
+- `js2rust-bridge-macro` — proc-macro（生成 FFI 绑定）
+
+发布前检查清单：
+- [ ] 所有 Cargo.toml 包含完整元数据（description, license, repository, keywords）
+- [ ] 文档注释完整（cargo doc 构建无警告）
+- [ ] 版本号统一
+- [ ] 示例代码可用（examples/test-project）
+- [ ] README.md 包含快速开始指南
 
 ---
 

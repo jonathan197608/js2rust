@@ -2,19 +2,13 @@
 //!
 //! Usage:
 //! ```rust,ignore
-//! // In js2rust-bridge/src/lib.rs:
+//! // In your Rust code (after js2zig-build ran in build.rs):
 //! use js2rust_bridge_macro::js2rust_bridge;
-//! js2rust_bridge!("out/main/cabi_exports.json");
+//! js2rust_bridge!(main);  // Looks for $OUT_DIR/js2zig/main/cabi_exports.json
 //! ```
 //!
-//! Each macro invocation corresponds to one JS file group.
-//! The macro reads the JSON file at compile time and generates:
-//! 1. `unsafe extern "C"` block with raw FFI declarations (names match Zig exports exactly)
-//! 2. Safe Rust wrapper functions with `_<group>` suffix (e.g. `greet_main`, `mathRound_builtins`)
-//!
-//! The group name is derived from the JSON file path:
-//! `out/main/cabi_exports.json` → suffix `_main`
-//! `out/builtins/cabi_exports.json` → suffix `_builtins`
+//! The group name is appended to generated function names to avoid collisions:
+//! `greet` → `greet_main`, `add` → `add_main`.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -44,7 +38,6 @@ fn find_workspace_root(start: &str) -> String {
 
 /// Extract group name from the JSON file path.
 /// e.g. `out/main/cabi_exports.json` → `main`
-///        `out/my-group/cabi_exports.json` → `my_group`
 fn extract_group_name(path: &std::path::Path) -> String {
     let raw = path
         .parent()
@@ -56,8 +49,6 @@ fn extract_group_name(path: &std::path::Path) -> String {
 }
 
 /// Sanitize a string into a valid Rust identifier fragment.
-/// Replaces any char that is not ASCII alphanumeric or `_` with `_`.
-/// Prepends `_` if the first char is a digit.
 fn sanitize_ident(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -67,7 +58,6 @@ fn sanitize_ident(s: &str) -> String {
             out.push('_');
         }
     }
-    // Rust identifiers cannot start with a digit
     if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         out = format!("_{}", out);
     }
@@ -93,39 +83,18 @@ struct CabiParam {
     zig_type: String,
 }
 
-/// Function-like proc-macro: `js2rust_bridge!("path/to/cabi_exports.json");`
-///
-/// Generates FFI bindings + safe wrappers for one group.
-#[proc_macro]
-pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
-    // Parse the input as a single string literal
-    let lit_str = match syn::parse::<syn::LitStr>(input) {
-        Ok(s) => s,
-        Err(e) => return e.to_compile_error().into(),
-    };
-
-    let json_path = lit_str.value();
-
-    // Resolve path: the path in the macro invocation is relative to the workspace root.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR not set");
-    let workspace_root = find_workspace_root(&manifest_dir);
-    let resolved_path = std::path::Path::new(&workspace_root).join(&json_path);
-
-    // Extract group name from path (used as suffix for generated functions)
-    let group_name = extract_group_name(&resolved_path);
-
+/// Generate bindings from a `cabi_exports.json` path.
+fn generate_from_path(json_path: &std::path::Path, group_name: &str, span: proc_macro2::Span) -> TokenStream {
     // Read and parse JSON
-    let json_content = match std::fs::read_to_string(&resolved_path) {
+    let json_content = match std::fs::read_to_string(json_path) {
         Ok(s) => s,
         Err(e) => {
             return syn::Error::new(
-                lit_str.span(),
+                span,
                 format!(
-                    "js2rust_bridge: cannot read '{}': {}\nResolved path: {}",
-                    json_path,
-                    e,
-                    resolved_path.display()
+                    "js2rust_bridge: cannot read '{}': {}",
+                    json_path.display(),
+                    e
                 ),
             )
             .to_compile_error()
@@ -137,8 +106,12 @@ pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
         Ok(v) => v,
         Err(e) => {
             return syn::Error::new(
-                lit_str.span(),
-                format!("js2rust_bridge: failed to parse '{}': {}", json_path, e),
+                span,
+                format!(
+                    "js2rust_bridge: failed to parse '{}': {}",
+                    json_path.display(),
+                    e
+                ),
             )
             .to_compile_error()
             .into();
@@ -146,22 +119,68 @@ pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
     };
 
     // Generate code with the group name as suffix for functions
-    // and as the module name (instead of a hash).
-    let generated = generate_bindings(&exports, &group_name);
+    let generated = generate_bindings(&exports, group_name);
 
     match generated.parse::<TokenStream>() {
         Ok(ts) => ts,
-        Err(e) => syn::Error::new(lit_str.span(), format!("internal error: {}", e))
+        Err(e) => syn::Error::new(span, format!("internal error: {}", e))
             .to_compile_error()
             .into(),
     }
 }
 
-/// Generate Rust FFI bindings + safe wrappers from C ABI export metadata.
+/// Function-like proc-macro: `js2rust_bridge!(group_name);`
 ///
-/// `group_suffix` is appended to all safe wrapper function names to avoid
-/// inter-group name collisions (e.g. `greet` → `greet_main`).
-/// It is also used in the raw/safe module names so they are human-readable.
+/// Simplified syntax: only specify the group name.
+/// The macro automatically looks for `$OUT_DIR/js2zig/{group_name}/cabi_exports.json`.
+///
+/// Generates FFI bindings + safe wrappers for one group.
+#[proc_macro]
+pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
+    // Parse input as an identifier (group name)
+    let group_name = match syn::parse::<syn::Ident>(input.clone()) {
+        Ok(ident) => ident.to_string(),
+        Err(_) => {
+            // Fallback: try parsing as string literal (backward compatibility)
+            match syn::parse::<syn::LitStr>(input) {
+                Ok(s) => {
+                    let json_path = s.value();
+                    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+                        .expect("CARGO_MANIFEST_DIR not set");
+                    let workspace_root = find_workspace_root(&manifest_dir);
+                    let resolved_path = std::path::Path::new(&workspace_root).join(&json_path);
+                    let group_name = extract_group_name(&resolved_path);
+                    return generate_from_path(&resolved_path, &group_name, s.span());
+                }
+                Err(e) => return e.to_compile_error().into(),
+            }
+        }
+    };
+
+    // Read OUT_DIR environment variable (set by Cargo during build)
+    let out_dir = match std::env::var("OUT_DIR") {
+        Ok(dir) => dir,
+        Err(_) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "js2rust_bridge: OUT_DIR not set.\n\
+                 Make sure you have a build script that calls `js2zig_build::transpile()`.",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    // Build path: {OUT_DIR}/js2zig/{group_name}/cabi_exports.json
+    let json_path = std::path::Path::new(&out_dir)
+        .join("js2zig")
+        .join(&group_name)
+        .join("cabi_exports.json");
+
+    generate_from_path(&json_path, &group_name, proc_macro2::Span::call_site())
+}
+
+/// Generate Rust FFI bindings + safe wrappers from C ABI export metadata.
 fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
@@ -230,9 +249,6 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
 }
 
 /// Generate a safe Rust wrapper function for a C ABI export.
-///
-/// The wrapper function name gets `_group_suffix` appended so that
-/// multiple groups can be imported without name collisions.
 fn generate_safe_wrapper(
     exp: &CabiExport,
     fn_name: &syn::Ident,
@@ -292,67 +308,63 @@ fn generate_safe_wrapper(
     }
 }
 
-/// Convert a Zig type string to Rust FFI type (for `unsafe extern "C"`).
+// ── Type conversion helpers ─────────────────────────────────────────
+
+/// Convert Zig FFI type to Rust FFI type (for `unsafe extern "C"`).
 fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
     match zig_type {
-        "i64" | "i32" | "usize" => quote! { i64 },
-        "f64" | "f32" => quote! { f64 },
-        "bool" => quote! { bool },
         "[]const u8" => quote! { *const std::ffi::c_char },
+        "i32" => quote! { i32 },
+        "i64" => quote! { i64 },
+        "f64" => quote! { f64 },
+        "bool" => quote! { bool },
         "void" => quote! { () },
-        // JsValue and JsAny are passed by value over C ABI — treat as i64
-        "JsValue" | "JsAny" => quote! { i64 },
-        _ => {
-            // Default: treat as opaque pointer
-            quote! { *const std::ffi::c_void }
-        }
+        _ => quote! { *mut std::ffi::c_void },
     }
 }
 
-/// Convert a Zig return type to Rust FFI return type.
-fn zig_ret_type_to_rust_ffi(zig_type: &str) -> proc_macro2::TokenStream {
-    match zig_type {
-        "[]const u8" => quote! { *mut std::ffi::c_char },
-        _ => zig_type_to_rust_ffi_type(zig_type),
+/// Convert Zig return type to Rust FFI return type.
+fn zig_ret_type_to_rust_ffi(ret_type: &str) -> proc_macro2::TokenStream {
+    match ret_type {
+        "[]const u8" => quote! { *const std::ffi::c_char },
+        "i32" => quote! { i32 },
+        "i64" => quote! { i64 },
+        "f64" => quote! { f64 },
+        "bool" => quote! { bool },
+        "void" => quote! { () },
+        _ => quote! { *mut std::ffi::c_void },
     }
 }
 
-/// Convert a Zig type to safe Rust type (for wrapper function signatures).
+/// Convert Zig type to safe Rust type (for wrapper function parameters).
 fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
     match zig_type {
-        "i64" | "i32" | "usize" => quote! { i64 },
-        "f64" | "f32" => quote! { f64 },
-        "bool" => quote! { bool },
         "[]const u8" => quote! { &str },
-        "void" => quote! { () },
-        "JsValue" | "JsAny" => quote! { i64 },
-        _ => quote! { i64 },
+        "i32" => quote! { i32 },
+        "i64" => quote! { i64 },
+        "f64" => quote! { f64 },
+        "bool" => quote! { bool },
+        _ => quote! { *mut std::ffi::c_void },
     }
 }
 
-/// Convert safe Rust type to FFI type (for function call arguments).
+/// Convert safe Rust type to FFI type (for calling `unsafe extern "C"` functions).
 fn convert_safe_to_ffi(zig_type: &str, ident: &syn::Ident) -> proc_macro2::TokenStream {
     match zig_type {
-        "[]const u8" => {
-            quote! {
-                std::ffi::CString::new(#ident)
-                    .expect("null byte in string")
-                    .as_ptr()
-            }
-        }
+        "[]const u8" => quote! { std::ffi::CString::new(#ident).unwrap().into_raw() },
         _ => quote! { #ident },
     }
 }
 
-/// Convert a Zig return type to safe Rust return type.
-fn zig_ret_type_to_rust_safe(zig_type: &str) -> proc_macro2::TokenStream {
-    match zig_type {
+/// Convert Zig return type to safe Rust return type.
+fn zig_ret_type_to_rust_safe(ret_type: &str) -> proc_macro2::TokenStream {
+    match ret_type {
         "[]const u8" => quote! { String },
-        "i64" | "i32" | "usize" => quote! { i64 },
-        "f64" | "f32" => quote! { f64 },
+        "i32" => quote! { i32 },
+        "i64" => quote! { i64 },
+        "f64" => quote! { f64 },
         "bool" => quote! { bool },
         "void" => quote! { () },
-        "JsValue" | "JsAny" => quote! { i64 },
-        _ => quote! { i64 },
+        _ => quote! { *mut std::ffi::c_void },
     }
 }

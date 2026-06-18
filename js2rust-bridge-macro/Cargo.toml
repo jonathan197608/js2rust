@@ -3,6 +3,11 @@ name = "js2rust-bridge-macro"
 version = "0.1.0"
 edition = "2021"
 description = "Proc-macro for generating Rust FFI bindings from js2rust C ABI export metadata"
+authors = ["jonathan197608"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jonathan197608/js2rust"
+keywords = ["ffi", "proc-macro", "zig", "bindings"]
+categories = ["development-tools", "external-ffi-bindings"]
 
 [lib]
 proc-macro = true
