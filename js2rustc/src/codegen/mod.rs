@@ -7,6 +7,7 @@ use oxc_ast::ast::*;
 
 use crate::builtins::BuiltinRegistry;
 use crate::infer::{TypeInferrer, ZigType};
+use crate::sourcemap::{LineIndex, SourceMap, count_lines};
 
 mod builtins;
 mod closure;
@@ -156,19 +157,22 @@ pub fn is_simple_binding(pattern: &BindingPattern) -> bool {
     matches!(pattern, BindingPattern::BindingIdentifier(_))
 }
 
-/// Return type for codegen::generate: (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports)
+/// Return type for codegen::generate: (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map)
 pub type CodegenResult = (
     String,
     Vec<crate::infer::Diagnostic>,
     std::collections::HashSet<String>,
     std::collections::HashMap<String, ZigType>,
     Vec<CabiExport>,
+    SourceMap,
 );
 
 pub fn generate(
     program: &Program,
     builtins: &BuiltinRegistry,
     exports: &HashSet<String>,
+    source_text: &str,
+    source_file: &str,
 ) -> CodegenResult {
     let mut inferrer = TypeInferrer::new();
     inferrer.infer_program(program);
@@ -178,7 +182,14 @@ pub fn generate(
 
     let mut diagnostics = inferrer.diagnostics().to_vec();
 
-    let mut cg = ZigCodegen::new(inferrer, &mut diagnostics, builtins, exports.clone());
+    let mut cg = ZigCodegen::new(
+        inferrer,
+        &mut diagnostics,
+        builtins,
+        exports.clone(),
+        source_text,
+        source_file,
+    );
     // Header is added by project.rs/generate_lib_zig() — do NOT emit here.
 
     // Pre-scan: find functions that return inline arrow functions
@@ -219,8 +230,9 @@ pub fn generate(
     let closure_fns: HashSet<String> = cg.fn_closure_spans.keys().cloned().collect();
 
     let cabi_exports = cg.cabi_exports;
+    let source_map = cg.source_map;
 
-    (cg.output, diagnostics, closure_fns, fn_return_types, cabi_exports)
+    (cg.output, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map)
 }
 
 /// Metadata for a C ABI exported function, used by sys crate to generate Rust FFI bindings.
@@ -287,6 +299,12 @@ struct ZigCodegen<'a> {
     /// Buffered initialization code for init_globals() function.
     /// Each string is a line of code to be inserted into init_globals().
     init_globals_code: Vec<String>,
+    /// Source map: tracks JS→Zig line mappings
+    source_map: SourceMap,
+    /// Line index for the JS source (byte offset → line/col)
+    line_index: LineIndex,
+    /// JS source file name
+    source_file: String,
 }
 
 
@@ -296,6 +314,8 @@ impl<'a> ZigCodegen<'a> {
         diagnostics: &'a mut Vec<crate::infer::Diagnostic>,
         builtins: &'a BuiltinRegistry,
         exports: HashSet<String>,
+        source_text: &str,
+        source_file: &str,
     ) -> Self {
         Self {
             output: String::new(),
@@ -325,6 +345,9 @@ impl<'a> ZigCodegen<'a> {
             object_type_defs: Vec::new(),
             current_obj_structs: Vec::new(),
             init_globals_code: Vec::new(),
+            source_map: SourceMap::new(source_file),
+            line_index: LineIndex::new(source_text),
+            source_file: source_file.to_string(),
         }
     }
 
@@ -346,6 +369,17 @@ impl<'a> ZigCodegen<'a> {
         self.emit_indent();
         self.push(s);
         self.push("\n");
+    }
+
+    /// Record a source mapping and emit an inline `// @src(file:line) kind` comment.
+    /// `span_start` is the byte offset in the JS source.
+    pub(super) fn record_src(&mut self, span_start: u32, kind: &str) {
+        let (js_line, js_col) = self.line_index.offset_to_line_col(span_start);
+        let zig_line = count_lines(&self.output) + 1; // next line to be written
+        self.source_map.add(zig_line, js_line, js_col, kind);
+        // Emit inline comment
+        self.emit_indent();
+        self.push(&format!("// @src({}:{}) {}\n", self.source_file, js_line, kind));
     }
 
     pub(super) fn binding_name<'b>(&self, pattern: &BindingPattern<'b>) -> &'b str {

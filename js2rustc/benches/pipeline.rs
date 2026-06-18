@@ -82,7 +82,7 @@ fn bench_pipeline(c: &mut Criterion) {
         let exports = std::collections::HashSet::new();
 
         b.iter(|| {
-            js2rustc::codegen::generate(&program, &builtins, &exports);
+            js2rustc::codegen::generate(&program, &builtins, &exports, BENCH_JS, "bench.js");
         });
     });
 }
@@ -95,7 +95,7 @@ fn bench_codegen(c: &mut Criterion) {
 
     c.bench_function("codegen", |b| {
         b.iter(|| {
-            js2rustc::codegen::generate(&program, &builtins, &exports);
+            js2rustc::codegen::generate(&program, &builtins, &exports, BENCH_JS, "bench.js");
         });
     });
 }

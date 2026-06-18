@@ -5,9 +5,32 @@ impl<'a> ZigCodegen<'a> {
         // Top-level: only VariableDeclaration and FunctionDeclaration (and ClassDeclaration) are allowed
         if self.in_top_level {
             match stmt {
-                Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
-                Statement::FunctionDeclaration(fd) => self.emit_fn_decl(fd),
-                Statement::ClassDeclaration(cd) => self.emit_class_decl(cd),
+                Statement::VariableDeclaration(vd) => {
+                    // Record source mapping for top-level variable declarations
+                    if let Some(first_decl) = vd.declarations.first() {
+                        let name = self.binding_name(&first_decl.id);
+                        if !name.starts_with("test_") {
+                            self.record_src(vd.span.start, &format!("const {}", name));
+                        }
+                    }
+                    self.emit_var_decl(vd);
+                }
+                Statement::FunctionDeclaration(fd) => {
+                    let fn_name = fd.id.as_ref()
+                        .map(|id| id.name.as_str())
+                        .unwrap_or("anonymous");
+                    if !fn_name.starts_with("test_") {
+                        self.record_src(fd.span.start, &format!("fn {}", fn_name));
+                    }
+                    self.emit_fn_decl(fd);
+                }
+                Statement::ClassDeclaration(cd) => {
+                    let class_name = cd.id.as_ref()
+                        .map(|id| id.name.as_str())
+                        .unwrap_or("anonymous");
+                    self.record_src(cd.span.start, &format!("class {}", class_name));
+                    self.emit_class_decl(cd);
+                }
                 Statement::ExpressionStatement(es) => {
                     self.diagnostics.push(
                         crate::infer::Diagnostic::new(

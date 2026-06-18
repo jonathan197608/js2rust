@@ -5,4 +5,5 @@ pub mod host;
 pub mod infer;
 pub mod parser;
 pub mod project;
+pub mod sourcemap;
 pub mod testgen;

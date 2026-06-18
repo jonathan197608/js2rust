@@ -137,6 +137,9 @@ impl<'a> ZigCodegen<'a> {
             object_type_defs: Vec::new(),
             current_obj_structs: Vec::new(),
             init_globals_code: Vec::new(),
+            source_map: crate::sourcemap::SourceMap::new(""),
+            line_index: crate::sourcemap::LineIndex::new(""),
+            source_file: String::new(),
         };
         tmp.emit_expr(receiver);
         // Static arrays need & to coerce to []const T for runtime functions
@@ -175,6 +178,9 @@ impl<'a> ZigCodegen<'a> {
                 object_type_defs: Vec::new(),
                 current_obj_structs: Vec::new(),
                 init_globals_code: Vec::new(),
+            source_map: crate::sourcemap::SourceMap::new(""),
+            line_index: crate::sourcemap::LineIndex::new(""),
+            source_file: String::new(),
             };
             tmp2.emit_arg(arg);
             all_args.push(tmp2.output.clone());
@@ -391,6 +397,9 @@ impl<'a> ZigCodegen<'a> {
                     object_type_defs: Vec::new(),
                     current_obj_structs: Vec::new(),
                     init_globals_code: Vec::new(),
+            source_map: crate::sourcemap::SourceMap::new(""),
+            line_index: crate::sourcemap::LineIndex::new(""),
+            source_file: String::new(),
                 };
                 tmp.emit_arg(arg);
                 tmp.output

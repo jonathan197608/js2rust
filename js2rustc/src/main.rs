@@ -132,6 +132,7 @@ fn main() {
             let mut all_test_code = String::new();
             let mut combined_zig = String::new();
             let mut all_cabi_exports: Vec<js2rustc::codegen::CabiExport> = Vec::new();
+            let mut all_source_maps: Vec<js2rustc::sourcemap::SourceMap> = Vec::new();
             let mut has_error = false;
 
             // --- Pre-scan: collect source, exports, and module names ---
@@ -216,8 +217,8 @@ fn main() {
 
                 let allocator = oxc_allocator::Allocator::default();
                 let program = js2rustc::parser::parse(&allocator, stripped);
-                let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports) =
-                    js2rustc::codegen::generate(&program, &builtins, &codegen_exports);
+                let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
+                    js2rustc::codegen::generate(&program, &builtins, &codegen_exports, stripped, member);
 
                 let has_file_error = diagnostics
                     .iter()
@@ -264,6 +265,9 @@ fn main() {
 
                 combined_zig.push_str(&zig_code);
                 all_cabi_exports.extend(cabi_exports);
+                if !source_map.mappings.is_empty() {
+                    all_source_maps.push(source_map);
+                }
 
                 // Testgen: use &stripped so AST span offsets match
                 let test_cases = js2rustc::testgen::extract_test_cases(&program, stripped);
@@ -328,6 +332,33 @@ fn main() {
                 Err(e) => {
                     eprintln!("  FAIL ({})", e);
                     continue;
+                }
+            }
+
+            // Write source map JSON
+            if !all_source_maps.is_empty() {
+                let sm_path = Path::new(&out_dir)
+                    .join(&group.core_name)
+                    .join("source_map.json");
+                let sm_json = serde_json::json!({
+                    "version": 1,
+                    "generator": "js2rustc",
+                    "files": all_source_maps
+                        .iter()
+                        .map(|sm| serde_json::json!({
+                            "source": sm.source_file,
+                            "mappings": sm.mappings.iter().map(|m| serde_json::json!({
+                                "zig_line": m.zig_line,
+                                "js_file": m.js_file,
+                                "js_line": m.js_line,
+                                "js_col": m.js_col,
+                                "kind": m.kind,
+                            })).collect::<Vec<_>>()
+                        }))
+                        .collect::<Vec<_>>()
+                });
+                if let Ok(json_str) = serde_json::to_string_pretty(&sm_json) {
+                    let _ = std::fs::write(&sm_path, json_str);
                 }
             }
 

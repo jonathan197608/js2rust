@@ -187,8 +187,8 @@ const test_fact = factorial(5); // => 120
 
     let allocator = oxc_allocator::Allocator::default();
     let program = js2rustc::parser::parse(&allocator, &stripped);
-    let (zig_code, diagnostics, closure_fns, _, _) =
-        js2rustc::codegen::generate(&program, &builtins, &exports);
+    let (zig_code, diagnostics, closure_fns, _, _, _) =
+        js2rustc::codegen::generate(&program, &builtins, &exports, &stripped, "test.js");
 
     let has_error = diagnostics
         .iter()
