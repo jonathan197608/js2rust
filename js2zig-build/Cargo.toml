@@ -7,7 +7,7 @@ description = "Build.rs helper for js2zig-core: transpile JS to Zig during Cargo
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jonathan197608/js2rust"
 keywords = ["js", "zig", "transpiler", "build-dependency"]
-categories = ["development-tools", "build-dependencies"]
+categories = ["development-tools"]
 
 # This crate is intended as a build-dependency:
 # [build-dependencies]
