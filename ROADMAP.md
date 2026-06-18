@@ -137,5 +137,9 @@
   - ✅ `sourcemap.rs`: `LineIndex` (byte→line O(log n)) + `SourceMap` (JSON 序列化) + 4 单元测试
   - ✅ 内联注释 `// @src(file.js:line) fn/const/class` 在顶层声明处
   - ✅ 每组生成 `source_map.json`（per-file mappings）
-- [ ] **增量编译** — 只重译变更文件
+- [x] **增量编译** — 只重译变更文件
+  - ✅ `compute_group_hash()`: 哈希所有 JS + runtime .zig 文件
+  - ✅ `.build_cache.json`: 构建缓存持久化
+  - ✅ 第二次运行 12 组全部跳过（"unchanged, skipping"）
+  - ✅ `--force` 标志强制全量重建
 - [ ] **WASM 目标** — 生成 Zig → WASM
