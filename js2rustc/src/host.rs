@@ -409,10 +409,12 @@ impl HostFnRegistry {
             "f64" => ZigType::F64,
             "bool" => ZigType::Bool,
             "string" => ZigType::String,
-            "any" => ZigType::Any,
+            "any" => ZigType::JsValue,
+            "jsvalue" => ZigType::JsValue,
+            "jsany" => ZigType::JsAny,
             "void" => ZigType::Void,
             other if other.starts_with("struct:") => ZigType::Struct(other[7..].into()),
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 

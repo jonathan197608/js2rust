@@ -42,8 +42,8 @@ pub fn unshift(alloc: Allocator, arr: []const i64, val: i64) ![]const i64 {
 pub fn join(alloc: Allocator, arr: []const i64, sep: []const u8) ![]const u8 {
     if (arr.len == 0) return &[0]u8{};
 
-    var buf = std.ArrayList(u8).init(alloc) catch unreachable;
-    errdefer buf.deinit();
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(alloc);
     var writer = buf.writer();
 
     for (arr, 0..) |val, i| {
@@ -65,8 +65,8 @@ pub fn map(alloc: Allocator, arr: []const i64, mul: i64) ![]const i64 {
 
 /// Array.filter — keep elements above threshold.
 pub fn filter(alloc: Allocator, arr: []const i64, threshold: i64) ![]const i64 {
-    var buf = std.ArrayList(i64).init(alloc) catch unreachable;
-    errdefer buf.deinit();
+    var buf: std.ArrayList(i64) = .empty;
+    errdefer buf.deinit(alloc);
     for (arr) |val| {
         if (val > threshold) {
             try buf.append(alloc, val);

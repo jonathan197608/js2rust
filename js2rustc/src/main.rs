@@ -216,7 +216,7 @@ fn main() {
 
                 let allocator = oxc_allocator::Allocator::default();
                 let program = js2rustc::parser::parse(&allocator, stripped);
-                let (zig_code, diagnostics, closure_fns, _fn_return_types, cabi_exports) =
+                let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports) =
                     js2rustc::codegen::generate(&program, &builtins, &codegen_exports);
 
                 let has_file_error = diagnostics
@@ -269,8 +269,12 @@ fn main() {
                 let test_cases = js2rustc::testgen::extract_test_cases(&program, stripped);
                 let closure_fn_refs: HashSet<&str> =
                     closure_fns.iter().map(|s| s.as_str()).collect();
+                let ret_type_map: HashMap<String, String> = fn_return_types
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.to_zig_str()))
+                    .collect();
                 let file_test_code =
-                    js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs);
+                    js2rustc::testgen::generate_test_code(&test_cases, &closure_fn_refs, &ret_type_map);
                 all_test_code.push_str(&file_test_code);
             }
 
@@ -431,11 +435,25 @@ fn gen_cabi_wrappers(
             } else {
                 exp.ret_type.to_zig_str()
             };
+            let exp_ret_is_js_obj =
+                matches!(exp.ret_type, js2rustc::infer::ZigType::JsValue | js2rustc::infer::ZigType::JsAny);
 
             if ret_zig == "void" {
                 out.push_str(&format!(
                     "pub export fn {name}({params}) void {{
     {mod}.{name}({args});
+}}\n",
+                    name = name,
+                    params = cabi_params.join(", "),
+                    mod = module,
+                    args = arg_names.join(", ")
+                ));
+            } else if exp_ret_is_js_obj {
+                // JsValue/JsAny: extract .int for C ABI (i64)
+                out.push_str(&format!(
+                    "pub export fn {name}({params}) i64 {{
+    const _result = {mod}.{name}({args});
+    return _result.int;
 }}\n",
                     name = name,
                     params = cabi_params.join(", "),
@@ -518,7 +536,7 @@ fn write_cabi_metadata(
             serde_json::json!({
                 "name": exp.name,
                 "params": params,
-                "ret_type": exp.ret_type.to_zig_str(),
+                "ret_type": exp.ret_type.to_cabi_str(),
                 "has_free_func": exp.has_free_func
             })
         })

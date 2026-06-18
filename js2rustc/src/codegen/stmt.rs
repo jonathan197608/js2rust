@@ -85,8 +85,24 @@ impl<'a> ZigCodegen<'a> {
             Statement::WhileStatement(ws) => self.emit_while_stmt(ws),
             Statement::DoWhileStatement(dw) => self.emit_do_while_stmt(dw),
             Statement::EmptyStatement(_) => {}
-            Statement::BreakStatement(_) => self.push_line("break;"),
-            Statement::ContinueStatement(_) => self.push_line("continue;"),
+            Statement::BreakStatement(bs) => {
+                self.emit_indent();
+                if let Some(label) = &bs.label {
+                    self.push(&format!("break :{}", Self::escape_keyword(label.name.as_str())));
+                } else {
+                    self.push("break");
+                }
+                self.push(";\n");
+            }
+            Statement::ContinueStatement(cs) => {
+                self.emit_indent();
+                if let Some(label) = &cs.label {
+                    self.push(&format!("continue :{}", Self::escape_keyword(label.name.as_str())));
+                } else {
+                    self.push("continue");
+                }
+                self.push(";\n");
+            }
             Statement::SwitchStatement(sw) => self.emit_switch_stmt(sw),
             Statement::ThrowStatement(_throw_stmt) => {
                 self.emit_indent();
@@ -100,6 +116,35 @@ impl<'a> ZigCodegen<'a> {
                 self.push(";\n");
             }
             Statement::TryStatement(ts) => self.emit_try_stmt(ts),
+            Statement::LabeledStatement(ls) => {
+                // JS `label: stmt` → Zig labeled block/loop
+                let label = Self::escape_keyword(ls.label.name.as_str());
+                match &ls.body {
+                    // Loop statements: apply label directly to the Zig loop
+                    Statement::ForStatement(_)
+                    | Statement::ForInStatement(_)
+                    | Statement::ForOfStatement(_)
+                    | Statement::WhileStatement(_)
+                    | Statement::DoWhileStatement(_) => {
+                        // Push label prefix, then emit the loop body
+                        self.emit_indent();
+                        self.push(&format!("{}: ", label));
+                        // Remove indent from the loop emission since we already emitted it
+                        // Actually, emit the labeled body directly
+                        self.emit_labeled_loop_body(&ls.body, &label);
+                    }
+                    // Non-loop: wrap in a labeled block
+                    _ => {
+                        self.emit_indent();
+                        self.push(&format!("{}: {{\n", label));
+                        self.indent += 1;
+                        self.emit_stmt(&ls.body);
+                        self.indent -= 1;
+                        self.emit_indent();
+                        self.push("}\n");
+                    }
+                }
+            }
             _ => {
                 self.push_line("@compileError(\"unsupported statement type\");");
             }
@@ -147,7 +192,7 @@ impl<'a> ZigCodegen<'a> {
                         let obj_type = self.inferrer.infer_expr(init);
                         if let ZigType::Object { ref fields } = obj_type
                             && !fields.is_empty()
-                            && fields.iter().all(|(_, ty)| *ty != ZigType::Any)
+                            && fields.iter().all(|(_, ty)| *ty != ZigType::JsValue && *ty != ZigType::JsAny)
                         {
                             let kw = match vd.kind {
                                 VariableDeclarationKind::Const => "const",
@@ -187,28 +232,14 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
 
-            // Dynamic array: use std.ArrayList instead of fixed-size [_]T
+            // Dynamic array: use std.ArrayList(JsAny) for heterogeneous element support
             if self.inferrer.is_dynamic_array(name)
                 && let Some(init) = &decl.init
             {
-                let elem_type = match init {
-                    Expression::ArrayExpression(arr) => {
-                        if arr.elements.is_empty() {
-                            ZigType::I64
-                        } else {
-                            arr.elements.iter().find_map(|elem| match elem {
-                                ArrayExpressionElement::SpreadElement(_) => None,
-                                ArrayExpressionElement::Elision(_) => None,
-                                _ => elem.as_expression().map(|e| self.inferrer.infer_expr(e)),
-                            }).unwrap_or(ZigType::I64)
-                        }
-                    }
-                    _ => self.inferrer.infer_expr(init),
-                };
-                let et = elem_type.to_zig_str();
+                let et = "JsAny".to_string();
                 let escaped = Self::escape_keyword(name);
 
-                // var name = std.ArrayList(T).empty; // Zig 0.16 correct initialization
+                // var name = std.ArrayList(JsAny).empty; // Zig 0.16 correct initialization
                 self.emit_indent();
                 self.push("var ");
                 self.push(&escaped);
@@ -227,7 +258,7 @@ impl<'a> ZigCodegen<'a> {
                     self.push("{ ");
                     for (i, elem) in arr.elements.iter().enumerate() {
                         if i > 0 { self.push(", "); }
-                        self.emit_array_element(elem);
+                        self.emit_jsany_array_element(elem);
                     }
                     self.push(" }) catch unreachable;\n");
                 }
@@ -249,17 +280,15 @@ impl<'a> ZigCodegen<'a> {
             // Zig 0.16: add type annotation for var declarations
             if keyword == "var" {
                 let var_type = self.inferrer.get_var_type(&name);
-                let type_str = match &var_type {
-                    ZigType::Any => "i64".to_string(),
-                    _ => var_type.to_zig_str(),
-                };
+                let type_str = var_type.to_zig_str();
                 self.push(": ");
                 self.push(&type_str);
             }
 
             if let Some(init) = &decl.init {
                 self.push(" = ");
-                self.emit_expr(init);
+                let var_type = self.inferrer.get_var_type(&name);
+                self.emit_typed_init(init, &var_type);
             } else {
                 self.push(" = undefined");
             }
@@ -466,19 +495,17 @@ impl<'a> ZigCodegen<'a> {
                                 self.emit_indent();
                                 self.push(keyword);
                                 self.push(" ");
-                                self.push(&Self::escape_keyword(self.binding_name(&decl.id)));
-                                if keyword == "var" {
-                                    let var_type = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
-                                    let type_str = match &var_type {
-                                        ZigType::Any => "i64".to_string(),
-                                        _ => var_type.to_zig_str(),
-                                    };
-                                    self.push(": ");
+                            self.push(&Self::escape_keyword(self.binding_name(&decl.id)));
+                            if keyword == "var" {
+                                let var_type = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                let type_str = var_type.to_zig_str();
+                                self.push(": ");
                                     self.push(&type_str);
                                 }
                                 if let Some(init_expr) = &decl.init {
                                     self.push(" = ");
-                                    self.emit_expr(init_expr);
+                                    let vt = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                    self.emit_typed_init(init_expr, &vt);
                                 }
                                 self.push(";\n");
                             }
@@ -493,18 +520,22 @@ impl<'a> ZigCodegen<'a> {
                                 self.push(", ");
                             }
                             self.push(&Self::escape_keyword(self.binding_name(&decl.id)));
-                            if keyword == "var" {
-                                let var_type = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
-                                let type_str = match &var_type {
-                                    ZigType::Any => "i64".to_string(),
-                                    _ => var_type.to_zig_str(),
-                                };
+                            let var_type = if keyword == "var" {
+                                let vt = self.inferrer.get_var_type(&Self::escape_keyword(self.binding_name(&decl.id)));
+                                let type_str = vt.to_zig_str();
                                 self.push(": ");
                                 self.push(&type_str);
-                            }
+                                vt
+                            } else {
+                                ZigType::JsValue // dummy, won't be used for init
+                            };
                             if let Some(init_expr) = &decl.init {
                                 self.push(" = ");
-                                self.emit_expr(init_expr);
+                                if keyword == "var" {
+                                    self.emit_typed_init(init_expr, &var_type);
+                                } else {
+                                    self.emit_expr(init_expr);
+                                }
                             }
                         }
                         self.push(";\n");
@@ -926,5 +957,68 @@ impl<'a> ZigCodegen<'a> {
         self.emit_indent();
         self.push("};\n");
 
+    }
+
+    /// Emit a loop statement body for labeled statements.
+    /// The label prefix (e.g. "outer: ") is already emitted by the caller.
+    /// This emits the while/for loop WITHOUT the leading indent (since label takes that line).
+    pub(super) fn emit_labeled_loop_body(&mut self, stmt: &Statement, _label: &str) {
+        match stmt {
+            Statement::WhileStatement(ws) => {
+                self.push("while (");
+                self.emit_expr(&ws.test);
+                self.push(") {\n");
+                self.indent += 1;
+                self.emit_stmt(&ws.body);
+                self.indent -= 1;
+                self.push_line("}");
+            }
+            Statement::DoWhileStatement(dw) => {
+                self.push("while (true) {\n");
+                self.indent += 1;
+                self.emit_stmt(&dw.body);
+                self.emit_indent();
+                self.push("if (!(");
+                self.emit_expr(&dw.test);
+                self.push(")) break;\n");
+                self.indent -= 1;
+                self.push_line("}");
+            }
+            Statement::ForStatement(fs) => {
+                // For labeled for-loops, emit as: label: { init; label_inner: while (...) ... }
+                // Actually simpler: just wrap in a block and delegate
+                self.push("{\n");
+                self.indent += 1;
+                self.emit_for_stmt(fs);
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}\n");
+            }
+            Statement::ForInStatement(fis) => {
+                self.push("{\n");
+                self.indent += 1;
+                self.emit_for_in_stmt(fis);
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}\n");
+            }
+            Statement::ForOfStatement(fos) => {
+                self.push("{\n");
+                self.indent += 1;
+                self.emit_for_of_stmt(fos);
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}\n");
+            }
+            _ => {
+                // Fallback: emit as block
+                self.push("{\n");
+                self.indent += 1;
+                self.emit_stmt(stmt);
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}\n");
+            }
+        }
     }
 }

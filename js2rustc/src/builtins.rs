@@ -1,30 +1,11 @@
 use crate::host::HostFnRegistry;
 use std::collections::HashMap;
 
-/// Built-in mapping tier
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuiltinTier {
-    /// Direct Zig builtin: Math.abs → @abs
-    Tier1Direct,
-    /// Zig std lib: isNaN → std.math.isNan
-    Tier2Std,
-    /// Runtime library: "s".split → js_string.split
-    Tier3Runtime,
-    /// Rust via C ABI (stub)
-    Tier4Rust,
-}
-
 /// Result of looking up a JS built-in call
 #[derive(Debug, Clone)]
 pub struct BuiltinTranslation {
     /// The Zig code template, {} placeholders for arguments
     pub template: String,
-    /// Which tier was used
-    #[allow(dead_code)]
-    pub tier: BuiltinTier,
-    /// Name of the runtime module this depends on (e.g. "js_string"), None if not needed
-    #[allow(dead_code)]
-    pub runtime_dep: Option<String>,
 }
 
 /// Central registry for JS → Zig built-in mappings
@@ -50,52 +31,51 @@ impl BuiltinRegistry {
         registry.add_property("Math", "E", "std.math.e");
 
         // ── Tier 1: Direct Zig builtins ──
-        registry.add_method("Math", "abs", "@abs({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "ceil", "@ceil({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "floor", "@floor({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "trunc", "@trunc({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "round", "@round({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "sqrt", "@sqrt({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "cbrt", "@sqrt(@sqrt({}))", BuiltinTier::Tier1Direct, None); // approximation
-        registry.add_method("Math", "sin", "@sin({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "cos", "@cos({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "tan", "@tan({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "asin", "@asin({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "acos", "@acos({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "atan", "@atan({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "atan2", "@atan2({}, {})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "exp", "@exp({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "log", "@log({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "log2", "@log2({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "log10", "@log10({})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "min", "@min({}, {})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "max", "@max({}, {})", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "sign", "if ({0} > 0) @as(i64, 1) else if ({0} < 0) @as(i64, -1) else @as(i64, 0)", BuiltinTier::Tier1Direct, None);
-        registry.add_method("Math", "hypot", "@sqrt({0} * {0} + {1} * {1})", BuiltinTier::Tier1Direct, None);
+        registry.add_method("Math", "abs", "@abs({})");
+        registry.add_method("Math", "ceil", "@ceil({})");
+        registry.add_method("Math", "floor", "@floor({})");
+        registry.add_method("Math", "trunc", "@trunc({})");
+        registry.add_method("Math", "round", "@round({})");
+        registry.add_method("Math", "sqrt", "@sqrt({})");
+        registry.add_method("Math", "cbrt", "@sqrt(@sqrt({}))"); // approximation
+        registry.add_method("Math", "sin", "@sin({})");
+        registry.add_method("Math", "cos", "@cos({})");
+        registry.add_method("Math", "tan", "@tan({})");
+        registry.add_method("Math", "asin", "@asin({})");
+        registry.add_method("Math", "acos", "@acos({})");
+        registry.add_method("Math", "atan", "@atan({})");
+        registry.add_method("Math", "atan2", "@atan2({}, {})");
+        registry.add_method("Math", "exp", "@exp({})");
+        registry.add_method("Math", "log", "@log({})");
+        registry.add_method("Math", "log2", "@log2({})");
+        registry.add_method("Math", "log10", "@log10({})");
+        registry.add_method("Math", "min", "@min({}, {})");
+        registry.add_method("Math", "max", "@max({}, {})");
+        registry.add_method("Math", "sign", "if ({0} > 0) @as(i64, 1) else if ({0} < 0) @as(i64, -1) else @as(i64, 0)");
+        registry.add_method("Math", "hypot", "@sqrt({0} * {0} + {1} * {1})");
 
         // ── Tier 2: std lib ──
-        registry.add_method("Math", "pow", "std.math.pow(f64, {}, {})", BuiltinTier::Tier2Std, None);
+        registry.add_method("Math", "pow", "std.math.pow(f64, {}, {})");
         registry.add_method(
             "Math", "random",
             "std.crypto.random.float(f64)",
-            BuiltinTier::Tier2Std, None,
         );
 
         // Global functions (Tier 2)
-        registry.add_global("parseInt", "std.fmt.parseInt(i64, {}, 10) catch @as(i64, 0)", BuiltinTier::Tier2Std, None);
-        registry.add_global("parseFloat", "std.fmt.parseFloat(f64, {}) catch @as(f64, 0.0)", BuiltinTier::Tier2Std, None);
-        registry.add_global("isNaN", "std.math.isNan(@as(f64, {}))", BuiltinTier::Tier2Std, None);
-        registry.add_global("isFinite", "!std.math.isInf({})", BuiltinTier::Tier2Std, None);
-        registry.add_global("Number", "std.fmt.parseInt(i64, {}, 10) catch @as(i64, 0)", BuiltinTier::Tier2Std, None);
+        registry.add_global("parseInt", "std.fmt.parseInt(i64, {}, 10) catch @as(i64, 0)");
+        registry.add_global("parseFloat", "std.fmt.parseFloat(f64, {}) catch @as(f64, 0.0)");
+        registry.add_global("isNaN", "std.math.isNan(@as(f64, {}))");
+        registry.add_global("isFinite", "!std.math.isInf({})");
+        registry.add_global("Number", "std.fmt.parseInt(i64, {}, 10) catch @as(i64, 0)");
 
         // ── Tier 3: URI encoding ──
-        registry.add_global("encodeURIComponent", "js_uri.encodeURIComponent(js_allocator.g_alloc(), {})", BuiltinTier::Tier3Runtime, Some("js_uri".to_string()));
-        registry.add_global("decodeURIComponent", "js_uri.decodeURIComponent(js_allocator.g_alloc(), {})", BuiltinTier::Tier3Runtime, Some("js_uri".to_string()));
+        registry.add_global("encodeURIComponent", "js_uri.encodeURIComponent(js_allocator.g_alloc(), {})");
+        registry.add_global("decodeURIComponent", "js_uri.decodeURIComponent(js_allocator.g_alloc(), {})");
 
         // ── Tier 3: Runtime ──
         // All runtime functions use std.heap.page_allocator internally.
         // String methods
-        registry.add_method("String", "length", "{}.len", BuiltinTier::Tier3Runtime, None);
+        registry.add_method("String", "length", "{}.len");
         registry.add_method_runtime("string", "length", "{}.len", "js_string");
         registry.add_method_runtime("string", "toUpperCase", "js_string.toUpper({})", "js_string");
         registry.add_method_runtime("string", "toLowerCase", "js_string.toLower({})", "js_string");
@@ -166,6 +146,19 @@ impl BuiltinRegistry {
         registry.add_method_runtime("Date", "getSeconds", "js_date.getSeconds({})", "js_date");
         registry.add_method_runtime("Date", "parse", "std.fmt.parseInt(i64, {}, 10) catch @as(i64, 0)", "js_date");
 
+        // ── Tier 3: Map (instance methods) ──
+        registry.add_method_runtime("map", "get", "{0}.get({1})", "js_map");
+        registry.add_method_runtime("map", "set", "{0}.set({1}, {2}) catch unreachable", "js_map");
+        registry.add_method_runtime("map", "has", "{0}.has({1})", "js_map");
+        registry.add_method_runtime("map", "delete", "{0}.delete({1})", "js_map");
+        registry.add_method_runtime("map", "clear", "{0}.clear()", "js_map");
+
+        // ── Tier 3: Set (instance methods) ──
+        registry.add_method_runtime("set", "add", "{0}.add({1}) catch unreachable", "js_set");
+        registry.add_method_runtime("set", "has", "{0}.has({1})", "js_set");
+        registry.add_method_runtime("set", "delete", "{0}.delete({1})", "js_set");
+        registry.add_method_runtime("set", "clear", "{0}.clear()", "js_set");
+
         // ── Tier 3: RegExp ──
         registry.add_method_runtime("RegExp", "test", "js_regexp.test_({}, {})", "js_regexp");
         registry.add_method_runtime("RegExp", "exec", "js_regexp.exec(js_allocator.g_alloc(), {}, {})", "js_regexp");
@@ -190,31 +183,25 @@ impl BuiltinRegistry {
                 def.name.clone(),
                 BuiltinTranslation {
                     template,
-                    tier: BuiltinTier::Tier4Rust,
-                    runtime_dep: None,
                 },
             );
         }
     }
 
-    fn add_method(&mut self, object: &str, method: &str, template: &str, tier: BuiltinTier, runtime_dep: Option<String>) {
+    fn add_method(&mut self, object: &str, method: &str, template: &str) {
         let key = format!("{}.{}", object, method);
         self.methods.insert(key, BuiltinTranslation {
             template: template.to_string(),
-            tier,
-            runtime_dep,
         });
     }
 
-    fn add_method_runtime(&mut self, object: &str, method: &str, template: &str, dep: &str) {
-        self.add_method(object, method, template, BuiltinTier::Tier3Runtime, Some(dep.to_string()));
+    fn add_method_runtime(&mut self, object: &str, method: &str, template: &str, _dep: &str) {
+        self.add_method(object, method, template);
     }
 
-    fn add_global(&mut self, name: &str, template: &str, tier: BuiltinTier, runtime_dep: Option<String>) {
+    fn add_global(&mut self, name: &str, template: &str) {
         self.globals.insert(name.to_string(), BuiltinTranslation {
             template: template.to_string(),
-            tier,
-            runtime_dep,
         });
     }
 
@@ -240,19 +227,6 @@ impl BuiltinRegistry {
         self.properties.get(&key).map(|s| s.as_str())
     }
 
-    /// Collect all unique runtime dependencies needed
-    #[allow(dead_code)]
-    pub fn collect_runtime_deps<'a>(&'a self, translations: impl Iterator<Item = &'a BuiltinTranslation>) -> Vec<&'a str> {
-        let mut deps: Vec<&str> = Vec::new();
-        for t in translations {
-            if let Some(ref dep) = t.runtime_dep
-                && !deps.contains(&dep.as_str())
-            {
-                deps.push(dep.as_str());
-            }
-        }
-        deps
-    }
 }
 
 impl Default for BuiltinRegistry {

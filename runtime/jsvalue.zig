@@ -14,6 +14,64 @@ pub const JsValue = union(enum) {
     string: []const u8,
     null: void,
 
+    // --- constructors ---
+
+    pub fn fromI64(v: i64) JsValue {
+        return .{ .int = v };
+    }
+
+    pub fn fromF64(v: f64) JsValue {
+        return .{ .float = v };
+    }
+
+    pub fn fromBool(v: bool) JsValue {
+        return .{ .bool = v };
+    }
+
+    pub fn fromString(v: []const u8) JsValue {
+        return .{ .string = v };
+    }
+
+    pub fn fromNull() JsValue {
+        return .{ .null = {} };
+    }
+
+    // --- type checks ---
+
+    pub fn isInt(self: JsValue) bool {
+        return self == .int;
+    }
+
+    pub fn isFloat(self: JsValue) bool {
+        return self == .float;
+    }
+
+    pub fn isString(self: JsValue) bool {
+        return self == .string;
+    }
+
+    pub fn isBool(self: JsValue) bool {
+        return self == .bool;
+    }
+
+    pub fn isNull(self: JsValue) bool {
+        return self == .null;
+    }
+
+    pub fn isNumber(self: JsValue) bool {
+        return self == .int or self == .float;
+    }
+
+    pub fn typeName(self: JsValue) []const u8 {
+        return switch (self) {
+            .int => "number",
+            .float => "number",
+            .bool => "boolean",
+            .string => "string",
+            .null => "object",
+        };
+    }
+
     // --- coercion helpers (JS semantics) ---
 
     pub fn asI64(self: JsValue) i64 {
@@ -56,13 +114,20 @@ pub const JsValue = union(enum) {
         };
     }
 
-    // --- arithmetic (JS semantics: if either operand is string, concatenate) ---
+    // --- arithmetic (JS semantics) ---
 
+    /// add: if either operand is a string, concatenate; otherwise numeric add.
     pub fn add(self: JsValue, other: JsValue, alloc: Allocator) JsValue {
-        const self_s = self.asString(alloc);
-        const other_s = other.asString(alloc);
-        const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ self_s, other_s }) catch "";
-        return .{ .string = result };
+        if (self == .string or other == .string) {
+            const self_s = self.asString(alloc);
+            const other_s = other.asString(alloc);
+            const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ self_s, other_s }) catch "";
+            return .{ .string = result };
+        }
+        if (self == .int and other == .int) {
+            return .{ .int = self.int + other.int };
+        }
+        return .{ .float = self.asF64() + other.asF64() };
     }
 
     pub fn sub(self: JsValue, other: JsValue) JsValue {

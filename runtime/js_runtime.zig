@@ -14,3 +14,10 @@ pub const js_set = @import("js_set.zig");
 pub const js_regexp = @import("js_regexp.zig");
 pub const js_uri = @import("js_uri.zig");
 pub const jsvalue = @import("jsvalue.zig");
+pub const jsany = @import("jsany.zig");
+
+// Re-export commonly used types at top level for convenience.
+pub const JsValue = jsvalue.JsValue;
+pub const JsAny = jsany.JsAny;
+pub const JsArrayList = jsany.JsArrayList;
+pub const JsObjectMap = jsany.JsObjectMap;

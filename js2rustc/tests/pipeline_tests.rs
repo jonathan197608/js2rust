@@ -8,7 +8,7 @@
 
 use js2rustc::analyzer::{analyze_groups, strip_imports_extract_exports};
 use js2rustc::infer;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -243,7 +243,7 @@ const test_fact = factorial(5); // => 120
     // Testgen
     let test_cases = js2rustc::testgen::extract_test_cases(&program, &stripped);
     let clos_refs: HashSet<&str> = closure_fns.iter().map(|s| s.as_str()).collect();
-    let test_code = js2rustc::testgen::generate_test_code(&test_cases, &clos_refs);
+    let test_code = js2rustc::testgen::generate_test_code(&test_cases, &clos_refs, &HashMap::new());
 
     // Phase 3: Project gen (multi-file mode: lib.zig + main.zig)
     let out_dir = std::env::temp_dir().join("js2rust_test_out");
@@ -299,20 +299,17 @@ const test_fact = factorial(5); // => 120
     }
 
     // Run zig tests
-    match Command::new("zig")
+    if let Ok(result) = Command::new("zig")
         .arg("build")
         .arg("test")
         .current_dir(&project_path)
         .output()
     {
-        Ok(result) => {
-            assert!(
-                result.status.success(),
-                "zig test failed:\n{}",
-                String::from_utf8_lossy(&result.stderr)
-            );
-        }
-        Err(_) => {}
+        assert!(
+            result.status.success(),
+            "zig test failed:\n{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
     }
 
     let _ = fs::remove_dir_all(&tmp);

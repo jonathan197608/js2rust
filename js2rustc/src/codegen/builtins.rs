@@ -211,7 +211,7 @@ impl<'a> ZigCodegen<'a> {
         let var_type = self.inferrer.get_var_type(var_name);
         match var_type {
             ZigType::Array(elem) | ZigType::Slice(elem) => elem.to_zig_str(),
-            ZigType::Any => "i64".to_string(),
+            ZigType::JsAny => "JsAny".to_string(),
             _ => var_type.to_zig_str(),
         }
     }
@@ -228,53 +228,47 @@ impl<'a> ZigCodegen<'a> {
 
         match method {
             "push" => {
-                // arr.push(val) → arr.append(js_allocator.g_alloc(), val) catch {};
-                // Zig 0.16: do NOT return the new length (blk expression return value ignored error)
+                // arr.push(val) → arr.append(js_allocator.g_alloc(), JsAny.fromXxx(val)) catch {};
                 self.push(&escaped);
                 self.push(".append(js_allocator.g_alloc(), ");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 { self.push(", "); }
-                    self.emit_arg(arg);
+                    self.emit_jsany_arg(arg);
                 }
                 self.push(") catch {}");
             }
             "pop" => {
                 self.push(&escaped);
-                self.push(".pop() orelse null");
+                self.push(".pop() orelse JsAny.fromNull()");
             }
             "shift" => {
                 self.push("(blk: { if (");
                 self.push(&escaped);
-                self.push(".items.len == 0) break :blk @as(?i64, null); break :blk ");
+                self.push(".items.len == 0) break :blk JsAny.fromNull(); break :blk ");
                 self.push(&escaped);
                 self.push(".orderedRemove(0); })");
             }
             "unshift" => {
-                // arr.unshift(val) → arr.insert(js_allocator.g_alloc(), 0, val) catch {};
-                // Zig 0.16: do NOT return the new length
+                // arr.unshift(val) → arr.insert(js_allocator.g_alloc(), 0, JsAny.fromXxx(val)) catch {};
                 self.push(&escaped);
                 self.push(".insert(js_allocator.g_alloc(), 0, ");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 { self.push(", "); }
-                    self.emit_arg(arg);
+                    self.emit_jsany_arg(arg);
                 }
                 self.push(") catch {}");
             }
             "reverse" => {
-                // arr.reverse() → std.mem.reverse(T, arr.items);
-                let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
-                self.push("std.mem.reverse(");
-                self.push(&elem_ty);
-                self.push(", ");
+                // arr.reverse() → std.mem.reverse(JsAny, arr.items);
+                self.push("std.mem.reverse(JsAny, ");
                 self.push(&escaped);
                 self.push(".items)");
             }
             "sort" => {
-                // arr.sort() → std.mem.sort(T, arr.items, {}, comptime (fn (void,T,T) bool)(struct { fn lt(_:void,a:T,b:T)bool{return a<b;} }.lt));
-                let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
+                // arr.sort() → std.mem.sort with JsAny comparator using .lt()
                 self.push(&format!(
-                    "std.mem.sort({}, {}.items, {{}}, (struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{ return a < b; }} }}).lessThan)",
-                    elem_ty, escaped, elem_ty, elem_ty
+                    "std.mem.sort(JsAny, {}.items, {{}}, (struct {{ fn lessThan(_: void, a: JsAny, b: JsAny) bool {{ return a.lt(b); }} }}).lessThan)",
+                    escaped
                 ));
             }
             "splice" => {

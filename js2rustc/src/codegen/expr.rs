@@ -1,6 +1,266 @@
 use super::*;
 
 impl<'a> ZigCodegen<'a> {
+    /// Check if a ZigType is a JS object type (JsValue or JsAny) that needs method-call operators.
+    fn is_js_obj_type(ty: &ZigType) -> bool {
+        matches!(ty, ZigType::JsValue | ZigType::JsAny)
+    }
+
+    /// Get the type prefix for method calls ("JsValue" or "JsAny").
+    fn js_type_prefix(ty: &ZigType) -> &'static str {
+        match ty {
+            ZigType::JsAny => "JsAny",
+            _ => "JsValue",
+        }
+    }
+
+    /// Wrap an expression in the appropriate JsValue/JsAny constructor based on its type.
+    fn emit_wrap_js_value(&mut self, expr: &Expression, target_prefix: &str) {
+        let expr_ty = self.inferrer.infer_expr(expr);
+        match &expr_ty {
+            ZigType::I64 | ZigType::I32 | ZigType::Usize => {
+                self.push(target_prefix);
+                self.push(".fromI64(@intCast(");
+                self.emit_expr(expr);
+                self.push("))");
+            }
+            ZigType::F64 | ZigType::F32 => {
+                self.push(target_prefix);
+                self.push(".fromF64(@floatCast(");
+                self.emit_expr(expr);
+                self.push("))");
+            }
+            ZigType::Bool => {
+                self.push(target_prefix);
+                self.push(".fromBool(");
+                self.emit_expr(expr);
+                self.push(")");
+            }
+            ZigType::String => {
+                self.push(target_prefix);
+                self.push(".fromString(");
+                self.emit_expr(expr);
+                self.push(")");
+            }
+            ZigType::Null => {
+                self.push(target_prefix);
+                self.push(".fromNull()");
+            }
+            ZigType::JsValue | ZigType::JsAny => {
+                // Already a JS type, emit as-is
+                self.emit_expr(expr);
+            }
+            _ => {
+                // Unknown type, wrap as i64
+                self.push(target_prefix);
+                self.push(".fromI64(@intCast(");
+                self.emit_expr(expr);
+                self.push("))");
+            }
+        }
+    }
+
+    /// Infer the type of a simple assignment target.
+    fn infer_simple_target_type(&self, target: &SimpleAssignmentTarget) -> ZigType {
+        match target {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                self.inferrer.get_var_type(id.name.as_str())
+            }
+            SimpleAssignmentTarget::StaticMemberExpression(mem) => {
+                // Check if it's a class field access (this.field or self.field)
+                let is_this = matches!(&mem.object, Expression::ThisExpression(_))
+                    || matches!(&mem.object, Expression::Identifier(id) if id.name.as_str() == "self");
+                if is_this {
+                    let field_name = mem.property.name.as_str();
+                    if let Some((_, ref fields)) = self.current_class
+                        && fields.iter().any(|f| f == field_name)
+                    {
+                        return ZigType::I64; // class fields are i64
+                    }
+                }
+                ZigType::JsValue
+            }
+            _ => ZigType::JsValue,
+        }
+    }
+
+    /// Infer the type of an assignment target expression.
+    fn infer_assign_target_type(&self, target: &AssignmentTarget) -> ZigType {
+        if let Some(simple) = target.as_simple_assignment_target() {
+            match simple {
+                SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                    self.inferrer.get_var_type(id.name.as_str())
+                }
+                SimpleAssignmentTarget::StaticMemberExpression(mem) => {
+                    // Check if it's a class field access (this.field or self.field)
+                    let is_this = matches!(&mem.object, Expression::ThisExpression(_))
+                        || matches!(&mem.object, Expression::Identifier(id) if id.name.as_str() == "self");
+                    if is_this {
+                        let field_name = mem.property.name.as_str();
+                        if let Some((_, ref fields)) = self.current_class
+                            && fields.iter().any(|f| f == field_name)
+                        {
+                            return ZigType::I64; // class fields are i64
+                        }
+                    }
+                    ZigType::JsValue
+                }
+                _ => ZigType::JsValue,
+            }
+        } else {
+            ZigType::JsValue
+        }
+    }
+
+    /// Emit a compound assignment (e.g., +=, -=) expanded to a method call for JsValue/JsAny.
+    /// sum += i  →  sum = sum.add(JsValue.fromI64(i), alloc)
+    fn emit_js_compound_assign(
+        &mut self,
+        left: &AssignmentTarget,
+        right: &Expression,
+        op: &AssignmentOperator,
+        lhs_type: &ZigType,
+    ) {
+        let prefix = Self::js_type_prefix(lhs_type);
+        // Emit: left = left.method(right_wrapped)
+        self.emit_assign_target(left);
+        self.push(" = ");
+        self.emit_assign_target(left);
+        match op {
+            AssignmentOperator::Addition => {
+                self.push(".add(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(", js_allocator.g_alloc())");
+            }
+            AssignmentOperator::Subtraction => {
+                self.push(".sub(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            AssignmentOperator::Multiplication => {
+                self.push(".mul(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            AssignmentOperator::Division => {
+                self.push(".div(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            AssignmentOperator::Remainder => {
+                self.push(".rem(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            _ => {
+                // Fallback: raw compound assignment (bitwise ops)
+                self.push(" ");
+                self.push(self.map_assign_op(op));
+                self.push(" ");
+                self.emit_expr(right);
+            }
+        }
+    }
+
+    /// Emit a JS-style binary operation as a method call.
+    /// For JsValue/JsAny typed operands, uses .add()/.sub()/.mul() etc.
+    fn emit_js_binary_op(
+        &mut self,
+        left: &Expression,
+        right: &Expression,
+        op: &BinaryOperator,
+        left_ty: &ZigType,
+    ) {
+        // Determine the wider type for method calls
+        let right_ty = self.inferrer.infer_expr(right);
+        let prefix = if matches!(left_ty, ZigType::JsAny) || matches!(&right_ty, ZigType::JsAny) {
+            "JsAny"
+        } else {
+            "JsValue"
+        };
+
+        match op {
+            // Arithmetic
+            BinaryOperator::Addition => {
+                self.emit_expr(left);
+                self.push(".add(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(", js_allocator.g_alloc())");
+            }
+            BinaryOperator::Subtraction => {
+                self.emit_expr(left);
+                self.push(".sub(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::Multiplication => {
+                self.emit_expr(left);
+                self.push(".mul(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::Division => {
+                self.emit_expr(left);
+                self.push(".div(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::Remainder => {
+                self.emit_expr(left);
+                self.push(".rem(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            // Comparison — wrap right operand in same JS type
+            BinaryOperator::LessThan => {
+                self.emit_expr(left);
+                self.push(".lt(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::LessEqualThan => {
+                self.emit_expr(left);
+                self.push(".le(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::GreaterThan => {
+                self.emit_expr(left);
+                self.push(".gt(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::GreaterEqualThan => {
+                self.emit_expr(left);
+                self.push(".ge(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::Equality | BinaryOperator::StrictEquality => {
+                self.emit_expr(left);
+                self.push(".eq(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
+                self.emit_expr(left);
+                self.push(".neq(");
+                self.emit_wrap_js_value(right, prefix);
+                self.push(")");
+            }
+            // Fallback: emit raw operator (bitwise, shift, instanceof, in)
+            _ => {
+                self.push("/* unsupported JS binary op for ");
+                self.push(prefix);
+                self.push(" */ ");
+                self.emit_expr(left);
+                self.push(" ");
+                self.push(self.map_binary_op(op));
+                self.push(" ");
+                self.emit_expr(right);
+            }
+        }
+    }
     pub(super) fn emit_expr(&mut self, expr: &Expression) {
         match expr {
             Expression::NumericLiteral(lit) => {
@@ -52,6 +312,37 @@ impl<'a> ZigCodegen<'a> {
 
             Expression::BinaryExpression(bin) => {
                 // Handle special operators that don't map 1:1 to Zig
+                if bin.operator == BinaryOperator::Instanceof {
+                    // JS `x instanceof Y` → Zig `@TypeOf(x) == Y`
+                    self.push("(@TypeOf(");
+                    self.emit_expr(&bin.left);
+                    self.push(") == ");
+                    self.emit_expr(&bin.right);
+                    self.push(")");
+                    return;
+                }
+                if bin.operator == BinaryOperator::In {
+                    // JS `"key" in obj` → Zig `@hasField(@TypeOf(obj), key)`
+                    // For dynamic access (HashMap): `obj.contains(key)`
+                    let is_dynamic = if let Expression::Identifier(id) = &bin.right {
+                        self.inferrer.get_dynamic_access_vars().contains(id.name.as_str())
+                    } else {
+                        false
+                    };
+                    if is_dynamic {
+                        self.emit_expr(&bin.right);
+                        self.push(".contains(");
+                        self.emit_expr(&bin.left);
+                        self.push(")");
+                    } else {
+                        self.push("@hasField(@TypeOf(");
+                        self.emit_expr(&bin.right);
+                        self.push("), ");
+                        self.emit_expr(&bin.left);
+                        self.push(")");
+                    }
+                    return;
+                }
                 if bin.operator == BinaryOperator::Exponential {
                     // JS `**` is exponentiation; Zig's `**` is array repetition
                     self.push("std.math.pow(f64, @floatFromInt(");
@@ -81,6 +372,20 @@ impl<'a> ZigCodegen<'a> {
                             self.emit_expr(&bin.right);
                             self.push(" }) catch @panic(\"OOM\")");
                         }
+                        return;
+                    }
+                    // Check JsValue/JsAny after String check
+                    if Self::is_js_obj_type(&left_ty) || Self::is_js_obj_type(&right_ty) {
+                        self.emit_js_binary_op(&bin.left, &bin.right, &bin.operator, &left_ty);
+                        return;
+                    }
+                }
+                // For non-Addition binary ops with JsValue/JsAny operands
+                if bin.operator != BinaryOperator::Addition {
+                    let left_ty = self.inferrer.infer_expr(&bin.left);
+                    let right_ty = self.inferrer.infer_expr(&bin.right);
+                    if Self::is_js_obj_type(&left_ty) || Self::is_js_obj_type(&right_ty) {
+                        self.emit_js_binary_op(&bin.left, &bin.right, &bin.operator, &left_ty);
                         return;
                     }
                 }
@@ -138,14 +443,32 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::UpdateExpression(update) => {
-                let op = match update.operator {
-                    UpdateOperator::Increment => "+=",
-                    UpdateOperator::Decrement => "-=",
-                };
-                self.emit_assign_target_from_simple(&update.argument);
-                self.push(" ");
-                self.push(op);
-                self.push(" 1");
+                // Check if argument is a JsValue/JsAny variable — expand to method call
+                let arg_type = self.infer_simple_target_type(&update.argument);
+                if Self::is_js_obj_type(&arg_type) {
+                    let prefix = Self::js_type_prefix(&arg_type);
+                    let method = match update.operator {
+                        UpdateOperator::Increment => "add",
+                        UpdateOperator::Decrement => "sub",
+                    };
+                    self.emit_assign_target_from_simple(&update.argument);
+                    self.push(" = ");
+                    self.emit_assign_target_from_simple(&update.argument);
+                    if update.operator == UpdateOperator::Increment {
+                        self.push(&format!(".{}({}.fromI64(1), js_allocator.g_alloc())", method, prefix));
+                    } else {
+                        self.push(&format!(".{}({}.fromI64(1))", method, prefix));
+                    }
+                } else {
+                    let op = match update.operator {
+                        UpdateOperator::Increment => "+=",
+                        UpdateOperator::Decrement => "-=",
+                    };
+                    self.emit_assign_target_from_simple(&update.argument);
+                    self.push(" ");
+                    self.push(op);
+                    self.push(" 1");
+                }
             }
 
             Expression::CallExpression(call) => {
@@ -184,7 +507,7 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::NewExpression(ne) => {
-                // Check for built-in constructors (Map, Set, etc.)
+                // Check for built-in constructors (Map, Set, Error, etc.)
                 if let Expression::Identifier(id) = &ne.callee {
                     match id.name.as_str() {
                         "Map" => {
@@ -193,6 +516,17 @@ impl<'a> ZigCodegen<'a> {
                         }
                         "Set" => {
                             self.push("js_set.JsSet.init(js_allocator.g_alloc())");
+                            return;
+                        }
+                        "Error" | "TypeError" | "RangeError" | "ReferenceError" | "SyntaxError" => {
+                            // new Error(msg) → js_error.JsError.init(js_allocator.g_alloc(), msg) catch @panic("OOM")
+                            self.push("js_error.JsError.init(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("\"\"");
+                            }
+                            self.push(") catch @panic(\"OOM\")");
                             return;
                         }
                         _ => {}
@@ -231,6 +565,18 @@ impl<'a> ZigCodegen<'a> {
                     return;
                 }
                 
+                // Map/Set .size property → .size() method call
+                if mem.property.name.as_str() == "size" {
+                    let obj_ty = self.inferrer.infer_expr(&mem.object);
+                    if let ZigType::Struct(ref s) = obj_ty
+                        && (s == "Map" || s == "Set")
+                    {
+                        self.emit_expr(&mem.object);
+                        self.push(".size()");
+                        return;
+                    }
+                }
+
                 // Map JS .length to Zig .len for arrays and strings
                 if mem.property.name.as_str() == "length" {
                     // Dynamic arrays (ArrayList): use .items.len
@@ -356,11 +702,24 @@ impl<'a> ZigCodegen<'a> {
                     }
                 }
 
+                // For JsValue/JsAny targets, expand compound assignments to method calls
+                let lhs_type = self.infer_assign_target_type(&assign.left);
+                if Self::is_js_obj_type(&lhs_type) && assign.operator != AssignmentOperator::Assign {
+                    self.emit_js_compound_assign(&assign.left, &assign.right, &assign.operator, &lhs_type);
+                    return;
+                }
+
                 self.emit_assign_target(&assign.left);
                 self.push(" ");
                 self.push(self.map_assign_op(&assign.operator));
                 self.push(" ");
-                self.emit_expr(&assign.right);
+                // For simple = with JsValue/JsAny target, wrap RHS
+                if Self::is_js_obj_type(&lhs_type) && assign.operator == AssignmentOperator::Assign {
+                    let prefix = Self::js_type_prefix(&lhs_type);
+                    self.emit_wrap_js_value(&assign.right, prefix);
+                } else {
+                    self.emit_expr(&assign.right);
+                }
             }
 
             Expression::ConditionalExpression(cond) => {
@@ -380,7 +739,7 @@ impl<'a> ZigCodegen<'a> {
                         ArrayExpressionElement::SpreadElement(_) => None,
                         ArrayExpressionElement::Elision(_) => None,
                         _ => elem.as_expression().map(|e| self.inferrer.infer_expr(e)),
-                    }).unwrap_or(ZigType::Any)  // inference failed → Zig compile error
+                    }).unwrap_or(ZigType::JsValue)  // inference failed → Zig compile error
                 };
                 // If inference failed, elem_type = Any → "JsValue" → Zig compile error
                 self.push(&format!("[_]{}{{", elem_type.to_zig_str()));
@@ -650,7 +1009,8 @@ impl<'a> ZigCodegen<'a> {
             }
 
             Expression::Super(_) => {
-                self.push("super");
+                // In extends class: super.method() → self.base.method()
+                self.push("self.base");
             }
 
             Expression::RegExpLiteral(lit) => {

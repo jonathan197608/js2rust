@@ -240,6 +240,7 @@ fn generate_module_zig(module: &PerFileModule) -> String {
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
+    out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push('\n');
 
     // Deduplicate dependency modules
@@ -310,6 +311,7 @@ fn generate_orchestrator_lib(
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
+    out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push('\n');
 
     // Host function declarations (if any)

@@ -111,7 +111,7 @@ impl<'a> ZigCodegen<'a> {
                 // Keep only fields with known (non-Any) types.
                 let known: Vec<(String, ZigType)> = fields
                     .iter()
-                    .filter(|(_, ty)| *ty != ZigType::Any)
+                    .filter(|(_, ty)| *ty != ZigType::JsValue && *ty != ZigType::JsAny)
                     .map(|(n, ty)| (n.clone(), ty.clone()))
                     .collect();
                 if known.is_empty() {
@@ -180,7 +180,7 @@ impl<'a> ZigCodegen<'a> {
             needs_cabi_wrapper = has_string_param || returns_string || returns_closure;
         } else {
             param_types = Vec::new();
-            ret_type = ZigType::Any;
+            ret_type = ZigType::JsValue;
             needs_cabi_wrapper = false;
         };
 
@@ -209,7 +209,7 @@ impl<'a> ZigCodegen<'a> {
                 let ptype = if i < param_types.len() {
                     param_types[i].clone()
                 } else {
-                    ZigType::Any
+                    ZigType::JsValue
                 };
                 params.push((pname, ptype));
             }
@@ -224,12 +224,18 @@ impl<'a> ZigCodegen<'a> {
             // NOTE: `pub fn` not `pub export fn` — the orchestrator lib.zig
             // re-exports via `comptime { @export(...) }` which is required by
             // Zig's linking model: only root-module exports reach the .lib.
+            // For JsValue/JsAny returns, skip callconv(.c) since unions
+            // can't be passed over C ABI. The lib.zig wrapper handles .int extraction.
+            let is_js_obj_ret = matches!(ret_type, ZigType::JsValue | ZigType::JsAny);
             self.emit_indent();
             self.push("pub fn ");
             self.push(&name);
             self.push("(");
             self.emit_params(&fd.params, Some(raw_name));
-            self.push(") callconv(.c) ");
+            self.push(") ");
+            if !is_js_obj_ret {
+                self.push("callconv(.c) ");
+            }
             self.push(&ret_type_str);
             self.push(" ");
             self.emit_fn_body(fd, raw_name, false);
@@ -241,7 +247,7 @@ impl<'a> ZigCodegen<'a> {
                 let ptype = if i < param_types.len() {
                     param_types[i].clone()
                 } else {
-                    ZigType::Any
+                    ZigType::JsValue
                 };
                 params.push((pname, ptype));
             }
@@ -329,6 +335,7 @@ impl<'a> ZigCodegen<'a> {
         let ret_type = self.inferrer.get_fn_return_type(raw_name);
         let returns_string = ret_type == ZigType::String;
         let returns_closure = self.fn_closure_spans.contains_key(raw_name);
+        let returns_js_obj = matches!(ret_type, ZigType::JsValue | ZigType::JsAny);
 
         let mut w = String::new();
         // NOTE: `pub fn` not `pub export fn` — orchestrator lib.zig handles export via @export
@@ -342,7 +349,7 @@ impl<'a> ZigCodegen<'a> {
             let ptype = if i < param_types.len() {
                 param_types[i].clone()
             } else {
-                ZigType::Any
+                ZigType::JsValue
             };
             if ptype == ZigType::String {
                 cabi_params.push(format!("{}: [*:0]const u8", safe_pname));
@@ -357,6 +364,8 @@ impl<'a> ZigCodegen<'a> {
             w.push_str("[*:0]const u8");
         } else if returns_closure {
             w.push_str("*anyopaque");
+        } else if returns_js_obj {
+            w.push_str("i64");
         } else {
             w.push_str(ret_type_str);
         }
@@ -369,7 +378,7 @@ impl<'a> ZigCodegen<'a> {
             let ptype = if i < param_types.len() {
                 param_types[i].clone()
             } else {
-                ZigType::Any
+                ZigType::JsValue
             };
             if ptype == ZigType::String {
                 w.push_str(&format!(
@@ -381,7 +390,7 @@ impl<'a> ZigCodegen<'a> {
 
         // Call impl
         w.push_str("    ");
-        if returns_string || returns_closure {
+        if returns_string || returns_closure || returns_js_obj {
             w.push_str("const _result = ");
         } else if ret_type_str != "void" {
             w.push_str("return ");
@@ -394,7 +403,7 @@ impl<'a> ZigCodegen<'a> {
             let ptype = if i < param_types.len() {
                 param_types[i].clone()
             } else {
-                ZigType::Any
+                ZigType::JsValue
             };
             if ptype == ZigType::String {
                 call_args.push(format!("{}_slice", safe_pname));
@@ -408,6 +417,11 @@ impl<'a> ZigCodegen<'a> {
         // Handle string return
         if returns_string {
             w.push_str("    return @ptrCast(_result.ptr);\n");
+        }
+
+        // Handle JsValue/JsAny return: extract .int field for C ABI compatibility
+        if returns_js_obj {
+            w.push_str("    return _result.int;\n");
         }
 
         // Handle closure return: allocate on heap, return opaque pointer
@@ -471,24 +485,49 @@ impl<'a> ZigCodegen<'a> {
         let name = Self::escape_keyword(raw_name);
         let is_export = self.exports.contains(raw_name);
 
-        // Collect fields from constructor
+        // Collect fields from constructor AND property definitions
         let mut fields = Vec::new();
+        let mut field_defaults: Vec<(String, Option<&Expression>)> = Vec::new();
         let mut methods: Vec<&MethodDefinition> = Vec::new();
+        let mut static_methods: Vec<&MethodDefinition> = Vec::new();
+        let mut static_fields: Vec<(&str, Option<&Expression>)> = Vec::new();
         let mut constructor: Option<&MethodDefinition> = None;
+        // Track parent class for extends
+        let super_class = cd.super_class.as_ref();
 
         for elem in &cd.body.body {
-            if let ClassElement::MethodDefinition(md) = elem {
-                match &md.key {
-                    PropertyKey::StaticIdentifier(id) if id.name.as_str() == "constructor" => {
-                        constructor = Some(md);
-                        if let Some(body) = &md.value.body {
-                            fields = Self::collect_class_fields(body);
+            match elem {
+                ClassElement::MethodDefinition(md) => {
+                    if md.r#static {
+                        static_methods.push(md);
+                    } else {
+                        match &md.key {
+                            PropertyKey::StaticIdentifier(id) if id.name.as_str() == "constructor" => {
+                                constructor = Some(md);
+                                if let Some(body) = &md.value.body {
+                                    fields = Self::collect_class_fields(body);
+                                }
+                            }
+                            _ => {
+                                methods.push(md);
+                            }
                         }
                     }
-                    _ => {
-                        methods.push(md);
+                }
+                ClassElement::PropertyDefinition(pd) => {
+                    if let PropertyKey::StaticIdentifier(id) = &pd.key {
+                        if pd.r#static {
+                            static_fields.push((id.name.as_str(), pd.value.as_ref()));
+                        } else {
+                            let fname = id.name.to_string();
+                            if !fields.contains(&fname) {
+                                fields.push(fname.clone());
+                                field_defaults.push((fname, pd.value.as_ref()));
+                            }
+                        }
                     }
                 }
+                _ => {}
             }
         }
 
@@ -497,30 +536,60 @@ impl<'a> ZigCodegen<'a> {
         self.push(&format!("{} {} = struct {{\n", vis, name));
         self.indent += 1;
 
+        // Embed parent struct for extends
+        if let Some(super_expr) = super_class {
+            self.emit_indent();
+            self.push("base: ");
+            self.emit_expr(super_expr);
+            self.push(",\n");
+        }
+
         // Fields
         if !fields.is_empty() {
             for (i, f) in fields.iter().enumerate() {
                 self.emit_indent();
                 self.push(f);
                 self.push(": i64");
-                if i < fields.len() - 1 || constructor.is_some() || !methods.is_empty() {
+                if i < fields.len() - 1 || constructor.is_some() || !methods.is_empty() || !static_methods.is_empty() {
                     self.push(",");
                 }
                 self.push("\n");
             }
-            if constructor.is_some() || !methods.is_empty() {
+            if constructor.is_some() || !methods.is_empty() || !static_methods.is_empty() {
                 self.push("\n");
             }
         }
 
-        // Emit constructor inside struct
-        if let Some(cons) = constructor {
-            self.emit_class_method(&name, cons, &fields, true);
+        // Static fields → `pub const field = value;`
+        for (sf_name, sf_val) in &static_fields {
+            self.emit_indent();
+            self.push("pub const ");
+            self.push(sf_name);
+            if let Some(val) = sf_val {
+                self.push(" = ");
+                self.emit_expr(val);
+            } else {
+                self.push(" = undefined");
+            }
+            self.push(";\n");
+        }
+        if !static_fields.is_empty() {
+            self.push("\n");
         }
 
-        // Emit methods inside struct
+        // Emit constructor inside struct
+        if let Some(cons) = constructor {
+            self.emit_class_method(&name, cons, &fields, true, super_class.is_some());
+        }
+
+        // Emit methods inside struct (including getters/setters)
         for method in &methods {
-            self.emit_class_method(&name, method, &fields, false);
+            self.emit_class_method(&name, method, &fields, false, super_class.is_some());
+        }
+
+        // Emit static methods (no self parameter)
+        for method in &static_methods {
+            self.emit_static_class_method(method);
         }
 
         self.indent -= 1;
@@ -528,7 +597,7 @@ impl<'a> ZigCodegen<'a> {
         self.push("};\n\n");
     }
 
-    pub(super) fn emit_class_method(&mut self, struct_name: &str, md: &MethodDefinition, fields: &[String], is_constructor: bool) {
+    pub(super) fn emit_class_method(&mut self, struct_name: &str, md: &MethodDefinition, fields: &[String], is_constructor: bool, _has_super: bool) {
         let prev_class = self.current_class.take();
         self.current_class = Some((struct_name.to_string(), fields.to_vec()));
 
@@ -536,10 +605,17 @@ impl<'a> ZigCodegen<'a> {
             PropertyKey::StaticIdentifier(id) => id.name.as_str().to_string(),
             _ => "unknown".to_string(),
         };
+
+        // Determine the emitted function name
         let escaped_name = if is_constructor {
             "init".to_string()
         } else {
-            Self::escape_keyword(&method_name)
+            // Getter/setter: prefix with get_/set_ to avoid name collision
+            match md.kind {
+                MethodDefinitionKind::Get => format!("get_{}", Self::escape_keyword(&method_name)),
+                MethodDefinitionKind::Set => format!("set_{}", Self::escape_keyword(&method_name)),
+                _ => Self::escape_keyword(&method_name),
+            }
         };
 
         let fd = &md.value;
@@ -613,6 +689,47 @@ impl<'a> ZigCodegen<'a> {
         self.current_class = prev_class;
     }
 
+    /// Emit a static class method (no `self` parameter).
+    pub(super) fn emit_static_class_method(&mut self, md: &MethodDefinition) {
+        let method_name = match &md.key {
+            PropertyKey::StaticIdentifier(id) => id.name.as_str().to_string(),
+            _ => "unknown".to_string(),
+        };
+        let escaped_name = Self::escape_keyword(&method_name);
+        let fd = &md.value;
+
+        // Infer return type
+        let body_ret = self.inferrer.infer_return_type_from_function_body(&fd.body);
+        let ret_type = body_ret.to_zig_str();
+
+        self.emit_indent();
+        self.push("pub fn ");
+        self.push(&escaped_name);
+        self.push("(");
+        // Static methods: no self parameter, just regular params
+        self.emit_params(&fd.params, None);
+        self.push(") ");
+        self.push(&ret_type);
+        self.push(" ");
+
+        // Emit body
+        if let Some(body) = &fd.body {
+            self.push("{\n");
+            self.indent += 1;
+            let prev = self.in_top_level;
+            self.in_top_level = false;
+            for stmt in &body.statements {
+                self.emit_stmt(stmt);
+            }
+            self.in_top_level = prev;
+            self.indent -= 1;
+            self.emit_indent();
+            self.push("}\n\n");
+        } else {
+            self.push("{};\n\n");
+        }
+    }
+
     pub(super) fn emit_constructor_params(&mut self, params: &FormalParameters) {
         self.destructure_prelude.clear();
 
@@ -626,7 +743,7 @@ impl<'a> ZigCodegen<'a> {
                 let arg_name = format!("_arg{}", i);
                 self.push(&arg_name);
                 self.push(": ");
-                self.push(&ZigType::Any.to_zig_str());
+                self.push(&ZigType::JsValue.to_zig_str());
 
                 let mut leaves = Vec::new();
                 flatten_binding_pattern(&param.pattern, &arg_name, &mut leaves);
@@ -686,7 +803,7 @@ impl<'a> ZigCodegen<'a> {
                 let arg_name = format!("_arg{}", i);
                 self.push(&arg_name);
                 self.push(": ");
-                self.push(&ZigType::Any.to_zig_str());
+                self.push(&ZigType::JsValue.to_zig_str());
 
                 // Generate body prelude: unpack destructured fields
                 let mut leaves = Vec::new();
@@ -725,12 +842,12 @@ impl<'a> ZigCodegen<'a> {
                 } else if let Some(default) = &param.initializer {
                     self.inferrer.infer_expr(default)
                 } else {
-                    ZigType::Any // inference failed → Zig compile error
+                    ZigType::JsValue // inference failed → Zig compile error
                 }
             } else if let Some(default) = &param.initializer {
                 self.inferrer.infer_expr(default)
             } else {
-                ZigType::Any // inference failed → Zig compile error
+                ZigType::JsValue // inference failed → Zig compile error
             };
 
             let type_str = if i < self.current_obj_structs.len() {
@@ -748,6 +865,17 @@ impl<'a> ZigCodegen<'a> {
                 self.push(" = ");
                 self.emit_expr(default);
             }
+        }
+
+        // Handle rest parameter: ...args → args: []const i64
+        if let Some(rest) = &params.rest {
+            if !params.items.is_empty() {
+                self.push(", ");
+            }
+            let rest_name = self.binding_name(&rest.rest.argument);
+            let escaped = Self::escape_keyword(rest_name);
+            self.push(&escaped);
+            self.push(": []const i64");
         }
     }
 }

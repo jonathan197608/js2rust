@@ -12,7 +12,7 @@ const JsValueHashMap = std.StringHashMap(JsValue);
 pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     var kiter = obj.iterator();
     var list = std.ArrayList([]const u8){ .allocator = alloc };
-    errdefer list.deinit();
+    errdefer list.deinit(alloc);
     while (kiter.next()) |entry| {
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
         try list.append(key_copy);
@@ -24,7 +24,7 @@ pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
 pub fn values(alloc: Allocator, obj: *const JsValueHashMap) ![]JsValue {
     var kiter = obj.iterator();
     var list = std.ArrayList(JsValue){ .allocator = alloc };
-    errdefer list.deinit();
+    errdefer list.deinit(alloc);
     while (kiter.next()) |entry| {
         try list.append(entry.value_ptr.*);
     }

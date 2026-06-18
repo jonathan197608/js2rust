@@ -1,5 +1,5 @@
 use oxc_ast::ast::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// A single test case extracted from a test_* variable
 #[derive(Debug, Clone)]
@@ -112,9 +112,11 @@ pub fn extract_test_cases(program: &Program, source: &str) -> Vec<TestCase> {
 /// generates an assertion; otherwise generates a smoke test (call + discard).
 ///
 /// `closure_fns`: names of functions that return closure structs (needs .call() syntax)
+/// `fn_return_types`: map from function name to its Zig return type string (e.g. "i64", "JsValue")
 pub fn generate_test_code(
     test_cases: &[TestCase],
     closure_fns: &HashSet<&str>,
+    fn_return_types: &HashMap<String, String>,
 ) -> String {
     if test_cases.is_empty() {
         return String::new();
@@ -127,7 +129,29 @@ pub fn generate_test_code(
         let test_name = tc.var_name.strip_prefix("test_").unwrap_or(&tc.var_name);
 
         // Transform closure calls: makeAdder(10)(5) → makeAdder(10).call(5)
-        let call_expr = rewrite_closure_calls(&tc.expr_text, closure_fns);
+        let mut call_expr = rewrite_closure_calls(&tc.expr_text, closure_fns);
+
+        // If the function returns JsValue/JsAny, extract the appropriate field
+        if let Some(fn_name) = extract_callee_name(&tc.expr_text)
+            && let Some(ret_type) = fn_return_types.get(&fn_name)
+            && let Some(ref expected) = tc.expected
+        {
+                if !expected.starts_with('"') {
+                    // Numeric comparison: extract .int
+                    if ret_type == "JsValue" {
+                        call_expr = format!("{}.int", call_expr);
+                    } else if ret_type == "JsAny" {
+                        call_expr = format!("{}.value.int", call_expr);
+                    }
+                } else {
+                    // String comparison: extract .string / .value.string
+                    if ret_type == "JsValue" {
+                        call_expr = format!("{}.string", call_expr);
+                    } else if ret_type == "JsAny" {
+                        call_expr = format!("{}.value.string", call_expr);
+                    }
+                }
+        }
 
         out.push_str(&format!(
             "test \"{}\" {{\n",
@@ -361,6 +385,19 @@ fn rewrite_closure_calls(expr: &str, closure_fns: &HashSet<&str>) -> String {
     }
 
     expr.to_string()
+}
+
+/// Extract the callee function name from an expression like "forLoop(5)" or "add(1, 2)".
+/// Returns None if the expression doesn't start with a simple identifier call.
+fn extract_callee_name(expr: &str) -> Option<String> {
+    let first_paren = expr.find('(')?;
+    let fn_name = &expr[..first_paren];
+    // Verify it's a simple identifier (not a complex expression)
+    if fn_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
+        Some(fn_name.to_string())
+    } else {
+        None
+    }
 }
 
 /// Find the position of the matching closing paren for an opening paren at `open_pos`

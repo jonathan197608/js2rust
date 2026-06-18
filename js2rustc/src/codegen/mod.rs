@@ -42,8 +42,6 @@ struct LeafBinding<'a> {
     name: &'a str,
     /// Full access path from the temp variable (e.g. "_tmp.a.b" or "_tmp[0].x")
     access: String,
-    #[allow(dead_code)]
-    default_value: Option<&'a Expression<'a>>,
 }
 
 /// Recursively flatten a BindingPattern into a list of leaf bindings.
@@ -58,7 +56,6 @@ fn flatten_binding_pattern<'a>(
             result.push(LeafBinding {
                 name: id.name.as_str(),
                 access: prefix.to_string(),
-                default_value: None,
             });
         }
         BindingPattern::ObjectPattern(obj) => {
@@ -376,21 +373,93 @@ impl<'a> ZigCodegen<'a> {
         }
     }
 
+    /// Wrap an init expression with the appropriate constructor for JsValue/JsAny types.
+    /// For precise Zig types (I64, F64, Bool, String), the expression is emitted as-is.
+    pub(super) fn emit_typed_init(&mut self, init: &Expression, target_type: &ZigType) {
+        match target_type {
+            ZigType::JsValue => {
+                let expr_type = self.inferrer.infer_expr(init);
+                match expr_type {
+                    ZigType::I64 | ZigType::I32 | ZigType::Usize => {
+                        self.push("JsValue.fromI64(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::F64 | ZigType::F32 => {
+                        self.push("JsValue.fromF64(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::Bool => {
+                        self.push("JsValue.fromBool(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::String => {
+                        self.push("JsValue.fromString(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::Null => {
+                        self.push("JsValue.fromNull()");
+                    }
+                    _ => {
+                        self.emit_expr(init);
+                    }
+                }
+            }
+            ZigType::JsAny => {
+                let expr_type = self.inferrer.infer_expr(init);
+                match expr_type {
+                    ZigType::I64 | ZigType::I32 | ZigType::Usize => {
+                        self.push("JsAny.fromI64(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::F64 | ZigType::F32 => {
+                        self.push("JsAny.fromF64(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::Bool => {
+                        self.push("JsAny.fromBool(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::String => {
+                        self.push("JsAny.fromString(");
+                        self.emit_expr(init);
+                        self.push(")");
+                    }
+                    ZigType::Null => {
+                        self.push("JsAny.fromNull()");
+                    }
+                    _ => {
+                        self.emit_expr(init);
+                    }
+                }
+            }
+            _ => {
+                self.emit_expr(init);
+            }
+        }
+    }
+
     // ========== Statements ==========
 
     pub(super) fn emit_dynamic_access_var_decl(&mut self, name: &str) {
         self.emit_indent();
         self.push("var ");
         self.push(name);
-        self.push(": std.StringHashMap(JsValue) = undefined;\n");
+        self.push(": std.StringHashMap(JsAny) = undefined;\n");
     }
 
     /// Generate initialization code for a dynamic access variable.
     /// The code is buffered in init_globals_code and emitted in init_js2rust().
     pub(super) fn emit_dynamic_access_var_init_code(&mut self, name: &str, obj: &ObjectExpression) {
-        // Add initialization code: name = std.StringHashMap(JsValue).init(allocator);
+        // Add initialization code: name = std.StringHashMap(JsAny).init(allocator);
         self.init_globals_code.push(format!(
-            "    {} = std.StringHashMap(JsValue).init(allocator);\n",
+            "    {} = std.StringHashMap(JsAny).init(allocator);\n",
             name
         ));
 
@@ -402,15 +471,52 @@ impl<'a> ZigCodegen<'a> {
                     oxc_ast::ast::PropertyKey::StringLiteral(s) => s.value.to_string(),
                     _ => continue,
                 };
-                
-                // Generate JsValue literal based on expression type
-                let js_value_lit = self.emit_js_value_literal(&p.value);
+
+                // Generate JsAny literal based on expression type
+                let js_any_lit = self.emit_js_any_literal(&p.value);
                 self.init_globals_code.push(format!(
                     "    {}.put(\"{}\", {}) catch @panic(\"OOM\");\n",
-                    name, field_name, js_value_lit
+                    name, field_name, js_any_lit
                 ));
             }
         }
+    }
+
+    /// Generate a JsAny literal from a constant expression.
+    /// For non-constant expressions, wraps in JsAny.fromValue(JsValue{...}).
+    pub(super) fn emit_js_any_literal(&self, expr: &Expression) -> String {
+        match expr {
+            Expression::NumericLiteral(lit) => {
+                if lit.value.is_finite() && lit.value == lit.value.trunc() {
+                    format!("JsAny.fromI64({})", lit.value as i64)
+                } else {
+                    format!("JsAny.fromF64({})", lit.value)
+                }
+            }
+            Expression::StringLiteral(s) => {
+                format!("JsAny.fromString(\"{}\")", Self::escape_zig_string(&s.value))
+            }
+            Expression::BooleanLiteral(b) => {
+                format!("JsAny.fromBool({})", b.value)
+            }
+            Expression::NullLiteral(_) => {
+                "JsAny.fromNull()".to_string()
+            }
+            _ => {
+                // For non-literal expressions, fall back to JsValue wrapping
+                let js_val = self.emit_js_value_literal(expr);
+                format!("JsAny.fromValue({})", js_val)
+            }
+        }
+    }
+
+    /// Escape a string for Zig string literal context.
+    fn escape_zig_string(s: &str) -> String {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
     }
 
     pub(super) fn emit_js_value_literal(&self, expr: &Expression) -> String {
@@ -569,6 +675,22 @@ impl<'a> ZigCodegen<'a> {
         }
     }
 
+    /// Emit an argument wrapped in JsAny constructor for dynamic array methods.
+    pub(super) fn emit_jsany_arg(&mut self, arg: &Argument) {
+        match arg {
+            Argument::SpreadElement(_) => {
+                // Spread not supported in dynamic array method args
+                self.push("JsAny.fromNull()");
+            }
+            _ => {
+                if let Some(expr) = arg.as_expression() {
+                    let lit = self.emit_js_any_literal(expr);
+                    self.push(&lit);
+                }
+            }
+        }
+    }
+
     pub(super) fn emit_array_element(&mut self, elem: &ArrayExpressionElement) {
         match elem {
             ArrayExpressionElement::SpreadElement(spread) => {
@@ -581,6 +703,24 @@ impl<'a> ZigCodegen<'a> {
             _ => {
                 if let Some(expr) = elem.as_expression() {
                     self.emit_expr(expr);
+                }
+            }
+        }
+    }
+
+    /// Emit an array element wrapped in JsAny constructor for dynamic arrays.
+    pub(super) fn emit_jsany_array_element(&mut self, elem: &ArrayExpressionElement) {
+        match elem {
+            ArrayExpressionElement::SpreadElement(_) => {
+                self.push("JsAny.fromNull()"); // spread not supported in array literal
+            }
+            ArrayExpressionElement::Elision(_) => {
+                self.push("JsAny.fromNull()");
+            }
+            _ => {
+                if let Some(expr) = elem.as_expression() {
+                    let lit = self.emit_js_any_literal(expr);
+                    self.push(&lit);
                 }
             }
         }

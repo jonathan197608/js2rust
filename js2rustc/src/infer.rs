@@ -65,7 +65,6 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
 // ============================================================
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub enum ZigType {
     I64,
     I32,
@@ -91,9 +90,12 @@ pub enum ZigType {
     /// Union type (e.g., `number | string` from heterogeneous returns)
     /// Generated as a tagged union in Zig.
     Union(Vec<ZigType>),
-    /// Type inference failed — maps to undefined Zig type "JsValue" in generated code,
-    /// causing a Zig compile error that forces the user to fix the JS source.
-    Any,
+    /// Dynamic JS value type — maps to Zig `JsValue` union enum.
+    /// Used for `var` declarations with value-type expressions (string/number/bool).
+    JsValue,
+    /// General-purpose container type — maps to Zig `JsAny`.
+    /// Used for dynamic arrays (ArrayList), dynamic objects (HashMap), and nested structures.
+    JsAny,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,7 +116,8 @@ impl ZigType {
             ZigType::String => "[]const u8".to_string(),
             ZigType::Null => "null".to_string(),
             ZigType::Void => "void".to_string(),
-            ZigType::Any => "JsValue".to_string(),
+            ZigType::JsValue => "JsValue".to_string(),
+            ZigType::JsAny => "JsAny".to_string(),
             ZigType::Array(elem) => format!("[_]{}", elem.to_zig_str()),
             ZigType::Slice(elem) => format!("[]const {}", elem.to_zig_str()),
             ZigType::Optional(inner) => format!("?{}", inner.to_zig_str()),
@@ -123,8 +126,17 @@ impl ZigType {
                 format!("fn ({}) {}", params.join(", "), sig.return_type.to_zig_str())
             }
             ZigType::Struct(name) => name.clone(),
-            ZigType::Object { .. } => "JsValue".to_string(),
+            ZigType::Object { .. } => "JsAny".to_string(),
             ZigType::Union(_) => "JsValue".to_string(),
+        }
+    }
+
+    /// Return the C ABI compatible type string.
+    /// JsValue/JsAny are represented as i64 over C ABI (extracting .int field).
+    pub fn to_cabi_str(&self) -> String {
+        match self {
+            ZigType::JsValue | ZigType::JsAny => "i64".to_string(),
+            _ => self.to_zig_str(),
         }
     }
 
@@ -132,16 +144,16 @@ impl ZigType {
         matches!(self, ZigType::I64 | ZigType::I32 | ZigType::F64 | ZigType::F32 | ZigType::Usize)
     }
 
-    /// Check if this type is a numeric union (all variants are numeric)
-    pub fn is_numeric_union(&self) -> bool {
-        match self {
-            ZigType::Union(types) => types.iter().all(|t| t.is_numeric()),
-            _ => self.is_numeric(),
-        }
-    }
-
-    /// Widen: if both numeric, pick wider; otherwise Any
+    /// Widen: if both numeric, pick wider; if JsAny involved → JsAny; otherwise JsValue
     pub fn widen(left: &ZigType, right: &ZigType) -> ZigType {
+        // JsAny absorbs everything (most general container)
+        if matches!(left, ZigType::JsAny) || matches!(right, ZigType::JsAny) {
+            return ZigType::JsAny;
+        }
+        // JsValue absorbs non-JsAny types
+        if matches!(left, ZigType::JsValue) || matches!(right, ZigType::JsValue) {
+            return ZigType::JsValue;
+        }
         match (left, right) {
             (ZigType::F64, _) | (_, ZigType::F64) => ZigType::F64,
             (ZigType::F32, _) | (_, ZigType::F32) => ZigType::F64,
@@ -159,7 +171,7 @@ impl ZigType {
                 merged.push(other.clone());
                 ZigType::simplify_union(merged)
             }
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 
@@ -186,9 +198,9 @@ impl ZigType {
 
     /// Simplify a union type: flatten Optionals, widen numerics, etc.
     fn simplify_union(types: Vec<ZigType>) -> ZigType {
-        // Defensive: empty union → Any
+        // Defensive: empty union → JsValue
         if types.is_empty() {
-            return ZigType::Any;
+            return ZigType::JsValue;
         }
         // Defensive: single-element union → flatten
         if types.len() == 1 {
@@ -206,6 +218,16 @@ impl ZigType {
             return ZigType::Optional(Box::new(simplified));
         }
 
+        // JsAny absorbs everything (most general container type)
+        if types.iter().any(|t| matches!(t, ZigType::JsAny)) {
+            return ZigType::JsAny;
+        }
+
+        // JsValue absorbs non-JsAny types
+        if types.iter().any(|t| matches!(t, ZigType::JsValue)) {
+            return ZigType::JsValue;
+        }
+
         // If all numeric, widen to the widest type
         if types.iter().all(|t| t.is_numeric()) {
             let mut result = types[0].clone();
@@ -218,8 +240,75 @@ impl ZigType {
         ZigType::Union(types)
     }
 
-    pub fn default_int() -> ZigType { ZigType::I64 }
-    pub fn default_float() -> ZigType { ZigType::F64 }
+    /// Check if this type is a primitive value type (int, float, bool, string, null).
+    pub fn is_value_type(&self) -> bool {
+        matches!(self, ZigType::I64 | ZigType::I32 | ZigType::F64 | ZigType::F32
+            | ZigType::Bool | ZigType::String | ZigType::Null | ZigType::Usize)
+    }
+
+    /// Check if this type is a static array or object (Layer 1).
+    pub fn is_static_aggregate(&self) -> bool {
+        matches!(self, ZigType::Array(_) | ZigType::Object { .. } | ZigType::Slice(_))
+    }
+}
+
+// ============================================================
+// Constant expression detection
+// ============================================================
+
+/// Determine if an expression is a compile-time constant.
+/// Used to decide whether a `const` variable gets a precise Zig type (Layer 1)
+/// or falls back to JsAny (Layer 3).
+///
+/// A constant expression is:
+/// - A literal (number, string, boolean, null, bigint)
+/// - A binary expression where both operands are constant
+/// - A unary expression where the argument is constant
+/// - A template literal with no interpolated expressions
+/// - An array where all elements are constant
+/// - An object where all property values are constant
+/// - A parenthesized expression wrapping a constant
+pub fn is_constant_expr(expr: &Expression) -> bool {
+    match expr {
+        // Literals — always constant
+        Expression::NumericLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::BigIntLiteral(_) => true,
+
+        // Binary expression — constant if both operands are constant
+        Expression::BinaryExpression(bin) => {
+            is_constant_expr(&bin.left) && is_constant_expr(&bin.right)
+        }
+
+        // Unary expression — constant if argument is constant
+        Expression::UnaryExpression(un) => is_constant_expr(&un.argument),
+
+        // Template literal — constant only if no interpolated expressions
+        Expression::TemplateLiteral(tl) => tl.expressions.is_empty(),
+
+        // Array — constant if all elements are constant
+        Expression::ArrayExpression(arr) => {
+            arr.elements.iter().all(|elem| {
+                elem.as_expression().is_some_and(is_constant_expr)
+            })
+        }
+
+        // Object — constant if all property values are constant (no spread)
+        Expression::ObjectExpression(obj) => {
+            obj.properties.iter().all(|prop| match prop {
+                ObjectPropertyKind::ObjectProperty(p) => is_constant_expr(&p.value),
+                ObjectPropertyKind::SpreadProperty(_) => false,
+            })
+        }
+
+        // Parenthesized — constant if inner is constant
+        Expression::ParenthesizedExpression(p) => is_constant_expr(&p.expression),
+
+        // Everything else is not constant
+        _ => false,
+    }
 }
 
 // ============================================================
@@ -626,7 +715,7 @@ impl TypeInferrer {
                 return ty.clone();
             }
         }
-        ZigType::Any
+        ZigType::JsValue
     }
 
     /// Check if a variable name is in the dynamic_arrays set
@@ -648,11 +737,65 @@ impl TypeInferrer {
     }
 
     pub fn get_fn_return_type(&self, name: &str) -> ZigType {
-        self.fn_return_types.get(name).cloned().unwrap_or(ZigType::Any)
+        self.fn_return_types.get(name).cloned().unwrap_or(ZigType::JsValue)
     }
 
     pub fn all_fn_return_types(&self) -> HashMap<String, ZigType> {
         self.fn_return_types.clone()
+    }
+
+    /// Determine the Zig type for a variable based on the three-layer type system.
+    ///
+    /// Layer 1 (ZigType): `const` + constant expression → precise Zig type
+    /// Layer 2 (JsValue): `var` + value type (no dynamic usage) → JsValue
+    /// Layer 3 (JsAny): dynamic arrays/objects, or `const` with non-constant init
+    pub fn infer_var_type(&self, name: &str, init: &Expression, is_const: bool) -> ZigType {
+        let is_constant = is_constant_expr(init);
+
+        // Rule 1: const + constant expression → precise Zig type (Layer 1)
+        if is_const && is_constant {
+            return self.infer_expr(init);
+        }
+
+        // Rule 2.3: const + new ClassName() → Struct (preserve class type)
+        if is_const
+            && let Expression::NewExpression(_) = init {
+                return self.infer_expr(init);
+            }
+
+        // Rule 2.4: const but not constant → JsAny (Layer 3)
+        if is_const {
+            return ZigType::JsAny;
+        }
+
+        // var declaration — check usage context for dynamic arrays/objects
+        let is_dyn_array = self.dynamic_arrays.contains(name);
+        let is_dyn_obj = self.dynamic_access_vars.contains(name);
+
+        // Dynamic usage → JsAny (Layer 3)
+        if is_dyn_array || is_dyn_obj {
+            return ZigType::JsAny;
+        }
+
+        let init_type = self.infer_expr(init);
+
+        // Rule 2.2/2.3: var + static array/object (no dynamic usage) → keep type
+        if init_type.is_static_aggregate() {
+            return init_type;
+        }
+
+        // Rule 2.1: var + value type → JsValue (Layer 2)
+        if init_type.is_value_type() {
+            return ZigType::JsValue;
+        }
+
+        // Function expressions keep their type
+        if matches!(init_type, ZigType::FunctionPtr(_)) {
+            return init_type;
+        }
+
+        // Default → JsValue
+        ZigType::JsValue
     }
 
     pub fn get_fn_param_types(&self, name: &str) -> Vec<ZigType> {
@@ -695,7 +838,7 @@ impl TypeInferrer {
                     // overwriting a top-level object variable also named "base").
                     if let Some(existing) = self.env.get_mut(pn) {
                         // Only upgrade from Any to a concrete type; never downgrade.
-                        if existing.zig_type == ZigType::Any {
+                        if existing.zig_type == ZigType::JsValue {
                             existing.zig_type = ty;
                         }
                     } else {
@@ -704,11 +847,6 @@ impl TypeInferrer {
                 }
             }
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn get_binding(&self, name: &str) -> Option<&BindingInfo> {
-        self.env.get(name)
     }
 
     // ============================================================
@@ -751,8 +889,16 @@ impl TypeInferrer {
                         let mut names = Vec::new();
                         collect_binding_names(&decl.id, &mut names);
                         let ty = decl.init.as_ref()
-                            .map(|init| self.infer_expr(init))
-                            .unwrap_or(ZigType::Any);
+                            .map(|init| {
+                                if names.len() == 1 {
+                                    // Single binding — apply three-layer type inference
+                                    self.infer_var_type(&names[0], init, is_const)
+                                } else {
+                                    // Destructured — infer from expression
+                                    self.infer_expr(init)
+                                }
+                            })
+                            .unwrap_or(ZigType::JsValue);
 
                         for name in &names {
                             self.env.insert(name.clone(), BindingInfo { zig_type: ty.clone(), is_const });
@@ -805,7 +951,7 @@ impl TypeInferrer {
                 if let Some(pnames) = self.fn_param_names.get(fn_name) {
                     let params = self.fn_param_types.get(fn_name).cloned().unwrap_or_default();
                     for (i, pname) in pnames.iter().enumerate() {
-                        if i < params.len() && params[i] == ZigType::Any {
+                        if i < params.len() && params[i] == ZigType::JsValue {
                             self.diagnostics.push(Diagnostic::new(
                                 DiagnosticKind::Error,
                                 format!(
@@ -830,7 +976,7 @@ impl TypeInferrer {
                 // Check default value first
                 let default_ty = self.get_param_default_type(fn_name, i, index);
 
-                if default_ty != ZigType::Any {
+                if default_ty != ZigType::JsValue {
                     inferred.push(default_ty);
                     continue;
                 }
@@ -851,7 +997,7 @@ impl TypeInferrer {
                             fn_name, pname
                         ),
                     ));
-                    inferred.push(ZigType::Any);
+                    inferred.push(ZigType::JsValue);
                 } else {
                     inferred.push(self.resolve_param_type(&constraints));
                 }
@@ -868,9 +1014,9 @@ impl TypeInferrer {
         {
             return params.items[param_idx].initializer.as_ref()
                 .map(|d| self.infer_expr(d))
-                .unwrap_or(ZigType::Any);
+                .unwrap_or(ZigType::JsValue);
         }
-        ZigType::Any
+        ZigType::JsValue
     }
 
     // ============================================================
@@ -1096,7 +1242,7 @@ impl TypeInferrer {
     fn resolve_param_type(&self, constraints: &[ParamConstraint]) -> ZigType {
         let types: Vec<ZigType> = constraints.iter()
             .map(|c| self.constraint_to_type(c))
-            .filter(|t| *t != ZigType::Any) // skip non-constraining
+            .filter(|t| *t != ZigType::JsValue) // skip non-constraining
             .collect();
 
         if types.is_empty() {
@@ -1111,7 +1257,7 @@ impl TypeInferrer {
             let mut result = types[0].clone();
             for t in &types[1..] {
                 result = ZigType::widen(&result, t);
-                if result == ZigType::Any {
+                if result == ZigType::JsValue {
                     return ZigType::I64;
                 }
             }
@@ -1153,7 +1299,7 @@ impl TypeInferrer {
                 | BinaryOperator::GreaterThan
                 | BinaryOperator::GreaterEqualThan
                 | BinaryOperator::In
-                | BinaryOperator::Instanceof => ZigType::Any,
+                | BinaryOperator::Instanceof => ZigType::JsValue,
             },
             ParamConstraint::CallArg(callee, arg_idx) => {
                 self.builtin_param_type(callee, *arg_idx)
@@ -1162,20 +1308,20 @@ impl TypeInferrer {
                             .and_then(|params| params.get(*arg_idx))
                             .cloned()
                     })
-                    .unwrap_or(ZigType::Any)
+                    .unwrap_or(ZigType::JsValue)
             }
             ParamConstraint::UnaryOp(op) => match op {
                 UnaryOperator::LogicalNot => ZigType::Bool,
                 UnaryOperator::BitwiseNot => ZigType::I64,
                 UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => ZigType::I64,
-                UnaryOperator::Typeof => ZigType::Any,
-                UnaryOperator::Void => ZigType::Any,
-                UnaryOperator::Delete => ZigType::Any,
+                UnaryOperator::Typeof => ZigType::JsValue,
+                UnaryOperator::Void => ZigType::JsValue,
+                UnaryOperator::Delete => ZigType::JsValue,
             },
             ParamConstraint::Update => ZigType::I64,
-            ParamConstraint::Condition => ZigType::Any,
-            ParamConstraint::ReturnPos => ZigType::Any,
-            ParamConstraint::Referenced => ZigType::Any,
+            ParamConstraint::Condition => ZigType::JsValue,
+            ParamConstraint::ReturnPos => ZigType::JsValue,
+            ParamConstraint::Referenced => ZigType::JsValue,
             ParamConstraint::IteratedInto => ZigType::Slice(Box::new(ZigType::I64)),
         }
     }
@@ -1186,12 +1332,12 @@ impl TypeInferrer {
                 | "Math.log" | "Math.floor" | "Math.ceil" | "Math.round"
                 | "Math.trunc" | "Math.sign" | "Math.cbrt" | "Math.exp", 0) => Some(ZigType::I64),
             ("Math.pow" | "Math.min" | "Math.max", _) => Some(ZigType::I64),
-            ("parseInt" | "parseFloat" | "Number" | "String" | "Boolean", 0) => Some(ZigType::Any),
-            ("JSON.stringify", 0) => Some(ZigType::Any),
+            ("parseInt" | "parseFloat" | "Number" | "String" | "Boolean", 0) => Some(ZigType::JsValue),
+            ("JSON.stringify", 0) => Some(ZigType::JsValue),
             ("JSON.parse", 0) => Some(ZigType::String),
             ("console.log" | "console.warn" | "console.error"
-                | "console.info" | "console.debug", _) => Some(ZigType::Any),
-            ("Array.isArray" | "isNaN", 0) => Some(ZigType::Any),
+                | "console.info" | "console.debug", _) => Some(ZigType::JsValue),
+            ("Array.isArray" | "isNaN", 0) => Some(ZigType::JsValue),
             ("encodeURIComponent" | "decodeURIComponent", 0) => Some(ZigType::String),
             _ => None,
         }
@@ -1263,7 +1409,7 @@ impl TypeInferrer {
                 } else if let Some(d) = &param.initializer {
                     self.infer_expr(d)
                 } else {
-                    ZigType::Any
+                    ZigType::JsValue
                 };
                 for pn in &names {
                     let old = self.env.remove(pn);
@@ -1302,9 +1448,10 @@ impl TypeInferrer {
             // walk_stmt only emits Expr(init) for VariableDeclarations, never
             // Stmt(VariableDeclaration), so we must handle them here at the top level.
             if let Statement::VariableDeclaration(vd) = stmt {
+                let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
                 for decl in &vd.declarations {
                     if let Some(init) = &decl.init {
-                        self.register_binding_with_expr(&decl.id, init, saved);
+                        self.register_binding_with_expr(&decl.id, init, is_const, saved);
                     }
                 }
             }
@@ -1315,9 +1462,10 @@ impl TypeInferrer {
             {
                 let fi_ref: &ForStatementInit = init_box;
                 if let ForStatementInit::VariableDeclaration(v) = fi_ref {
+                    let is_const = matches!(v.kind, VariableDeclarationKind::Const);
                     for decl in &v.declarations {
                         if let Some(init_expr) = &decl.init {
-                            self.register_binding_with_expr(&decl.id, init_expr, saved);
+                            self.register_binding_with_expr(&decl.id, init_expr, is_const, saved);
                         }
                     }
                 }
@@ -1326,9 +1474,10 @@ impl TypeInferrer {
             // Walk for nested VariableDeclarations (inside if/while/for/etc. bodies).
             walk_stmt(stmt, &mut |event| {
                 if let WalkEvent::Stmt(Statement::VariableDeclaration(vd)) = event {
+                    let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
                     for decl in &vd.declarations {
                         if let Some(init) = &decl.init {
-                            self.register_binding_with_expr(&decl.id, init, saved);
+                            self.register_binding_with_expr(&decl.id, init, is_const, saved);
                         }
                     }
                 }
@@ -1341,6 +1490,7 @@ impl TypeInferrer {
         &mut self,
         pattern: &BindingPattern,
         init: &Expression,
+        is_const: bool,
         saved: &mut Vec<(String, Option<BindingInfo>)>,
     ) {
         let mut names = Vec::new();
@@ -1360,14 +1510,14 @@ impl TypeInferrer {
                             let name = match &prop.key {
                                 oxc_ast::ast::PropertyKey::StaticIdentifier(id) => id.name.as_str(),
                                 _ => {
-                                    types.push(ZigType::Any);
+                                    types.push(ZigType::JsValue);
                                     continue;
                                 }
                             };
                             let ty = fields.iter()
                                 .find(|(n, _)| n == name)
                                 .map(|(_, ty)| ty.clone())
-                                .unwrap_or(ZigType::Any);
+                                .unwrap_or(ZigType::JsValue);
                             types.push(ty);
                         }
                         types
@@ -1398,7 +1548,12 @@ impl TypeInferrer {
                 }
             }
             _ => {
-                vec![self.infer_expr(init)]
+                // Single binding — apply three-layer type inference
+                if names.len() == 1 {
+                    vec![self.infer_var_type(&names[0], init, is_const)]
+                } else {
+                    vec![self.infer_expr(init)]
+                }
             }
         };
 
@@ -1406,7 +1561,7 @@ impl TypeInferrer {
             let ty = types.get(i).cloned().unwrap_or_else(|| self.infer_expr(init));
             let old = self.env.remove(pn);
             saved.push((pn.clone(), old));
-            self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const: true });
+            self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const });
             // Also persist the type in fn_local_types for codegen use
             if let Some(ref fn_name) = self.current_fn {
                 self.fn_local_types
@@ -1428,7 +1583,7 @@ impl TypeInferrer {
             let name = match &prop.key {
                 oxc_ast::ast::PropertyKey::StaticIdentifier(id) => id.name.as_str(),
                 _ => {
-                    types.push(ZigType::Any);
+                    types.push(ZigType::JsValue);
                     continue;
                 }
             };
@@ -1443,7 +1598,7 @@ impl TypeInferrer {
                     }
                 }
                 None
-            }).unwrap_or(ZigType::Any);
+            }).unwrap_or(ZigType::JsValue);
             types.push(found_type);
         }
         types
@@ -1456,7 +1611,7 @@ impl TypeInferrer {
         arr_expr: &oxc_ast::ast::ArrayExpression,
     ) -> Vec<ZigType> {
         arr_expr.elements.iter().map(|elem| {
-            elem.as_expression().map(|e| self.infer_expr(e)).unwrap_or(ZigType::Any)
+            elem.as_expression().map(|e| self.infer_expr(e)).unwrap_or(ZigType::JsValue)
         }).collect()
     }
 
@@ -1483,7 +1638,7 @@ impl TypeInferrer {
                         let types = self.fn_param_types.get(fn_name);
                         // Allow re-consideration of I64 (default) params too, so that
                         // callee's concrete types (e.g. f64) can propagate back to caller.
-                        if types.is_some_and(|t| i < t.len() && t[i] != ZigType::Any && t[i] != ZigType::I64) {
+                        if types.is_some_and(|t| i < t.len() && t[i] != ZigType::JsValue && t[i] != ZigType::I64) {
                             continue;
                         }
                         if let Some(propagated) = self.find_direct_forward(
@@ -1567,7 +1722,7 @@ impl TypeInferrer {
             {
                 let current = &params[param_idx];
                 // Propagate if current is Any, or is the default I64 with no real constraint
-                if *current == ZigType::Any || *current == ZigType::I64 {
+                if *current == ZigType::JsValue || *current == ZigType::I64 {
                     params[param_idx] = ty;
                     changed = true;
                 }
@@ -1636,7 +1791,7 @@ impl TypeInferrer {
         for (i, arg) in call.arguments.iter().enumerate() {
             if let Some(expr) = arg.as_expression() {
                 let arg_type = self.infer_expr(expr);
-                if arg_type != ZigType::Any {
+                if arg_type != ZigType::JsValue {
                     propagations.push((callee_name.clone(), i, arg_type));
                 }
             }
@@ -1702,7 +1857,7 @@ impl TypeInferrer {
 
     fn validate_types(&mut self) {
         for (name, ret) in &self.fn_return_types {
-            if *ret == ZigType::Any {
+            if *ret == ZigType::JsValue {
                 self.diagnostics.push(Diagnostic::new(
                     DiagnosticKind::Warning,
                     format!("cannot infer return type of '{}', using JsValue", name),
@@ -1712,7 +1867,7 @@ impl TypeInferrer {
 
         for (name, params) in &self.fn_param_types {
             for (i, ty) in params.iter().enumerate() {
-                if *ty == ZigType::Any {
+                if *ty == ZigType::JsValue {
                     let pname = self.fn_param_names.get(name)
                         .and_then(|ns| ns.get(i))
                         .map(|s| s.as_str())
@@ -1729,7 +1884,7 @@ impl TypeInferrer {
         }
 
         for (name, info) in &self.env {
-            if info.zig_type == ZigType::Any {
+            if info.zig_type == ZigType::JsValue {
                 let name_str = name.as_str();
                 match name_str {
                     "undefined" | "NaN" | "Infinity" => continue,
@@ -1831,7 +1986,7 @@ impl TypeInferrer {
                 if cons == alt { cons } else { ZigType::make_union(vec![cons, alt]) }
             }
             Expression::ArrayExpression(arr) => {
-                if arr.elements.is_empty() { return ZigType::Any; }
+                if arr.elements.is_empty() { return ZigType::JsValue; }
                 let first_ty = arr.elements.iter().find_map(|elem| match elem {
                     ArrayExpressionElement::SpreadElement(_) | ArrayExpressionElement::Elision(_) => None,
                     _ => elem.as_expression().map(|e| self.infer_expr(e)),
@@ -1841,11 +1996,11 @@ impl TypeInferrer {
                         ArrayExpressionElement::SpreadElement(_) | ArrayExpressionElement::Elision(_) => true,
                         _ => elem.as_expression().map(|e| self.infer_expr(e) == *ty).unwrap_or(true),
                     });
-                    if all_same && *ty != ZigType::Any {
+                    if all_same && *ty != ZigType::JsValue {
                         return ZigType::Array(Box::new(ty.clone()));
                     }
                 }
-                ZigType::Array(Box::new(first_ty.unwrap_or(ZigType::Any)))
+                ZigType::Array(Box::new(first_ty.unwrap_or(ZigType::JsValue)))
             }
             Expression::ParenthesizedExpression(p) => self.infer_expr(&p.expression),
             Expression::SequenceExpression(seq) => {
@@ -1854,7 +2009,7 @@ impl TypeInferrer {
             Expression::ArrowFunctionExpression(arrow) => {
                 let ret = self.infer_return_type_from_arrow(arrow);
                 ZigType::FunctionPtr(Box::new(ZigFuncSig {
-                    params: vec![ZigType::Any; arrow.params.items.len()],
+                    params: vec![ZigType::JsValue; arrow.params.items.len()],
                     return_type: Box::new(ret),
                 }))
             }
@@ -1876,11 +2031,11 @@ impl TypeInferrer {
                         _ => return ZigType::Struct(id.name.to_string()),
                     }
                 }
-                ZigType::Any
+                ZigType::JsValue
             }
-            Expression::FunctionExpression(_) => ZigType::Any,
+            Expression::FunctionExpression(_) => ZigType::JsValue,
             Expression::AwaitExpression(await_expr) => self.infer_expr(&await_expr.argument),
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 
@@ -1914,7 +2069,7 @@ impl TypeInferrer {
                         }
                         _ => {
                             // Spread of non-Object type: can't merge fields
-                            return ZigType::Any;
+                            return ZigType::JsValue;
                         }
                     }
                 }
@@ -1940,7 +2095,7 @@ impl TypeInferrer {
                         | "replace" | "replaceAll" | "split" | "toString" => ZigType::String,
                     "indexOf" | "lastIndexOf" | "search" | "charCodeAt" | "codePointAt" => ZigType::I64,
                     "includes" | "startsWith" | "endsWith" => ZigType::Bool,
-                    _ => ZigType::Any,
+                    _ => ZigType::JsValue,
                 },
                 ZigType::Array(elem) => match prop {
                     "length" => ZigType::Usize,
@@ -1951,19 +2106,19 @@ impl TypeInferrer {
                     "includes" => ZigType::Bool,
                     "join" | "reverse" | "sort" | "flat" | "flatMap" => ZigType::Array(elem.clone()),
                     "slice" | "concat" => ZigType::Array(elem.clone()),
-                    _ => ZigType::Any,
+                    _ => ZigType::JsValue,
                 },
                 ZigType::Object { fields } => {
                     // Look up the property in the object's field list
                     fields.iter()
                         .find(|(n, _)| n == prop)
                         .map(|(_, ty)| ty.clone())
-                        .unwrap_or(ZigType::Any)
+                        .unwrap_or(ZigType::JsValue)
                 }
                 ZigType::Struct(_struct_name) => {
                     // Named struct from class: can't enumerate fields at infer time
                     // Fall through to Any — class fields are all i64 anyway
-                    ZigType::Any
+                    ZigType::JsValue
                 }
                 _ => match (obj_name, prop) {
                     ("Math", "PI" | "E" | "LN2" | "LN10" | "LOG2E" | "LOG10E"
@@ -1971,11 +2126,11 @@ impl TypeInferrer {
                     ("Number", "MAX_SAFE_INTEGER" | "MIN_SAFE_INTEGER" | "MAX_VALUE"
                         | "MIN_VALUE" | "POSITIVE_INFINITY" | "NEGATIVE_INFINITY"
                         | "EPSILON") => ZigType::F64,
-                    _ => ZigType::Any,
+                    _ => ZigType::JsValue,
                 },
             }
         } else {
-            ZigType::Any
+            ZigType::JsValue
         }
     }
 
@@ -1984,7 +2139,7 @@ impl TypeInferrer {
         // If so, person[key] returns JsValue (?Any type)
         if let Expression::Identifier(id) = &mem.object
             && self.dynamic_access_vars.contains(id.name.as_str()) {
-                return ZigType::Any;  // JsValue
+                return ZigType::JsValue;  // JsValue
             }
 
         let obj_type = self.infer_expr(&mem.object);
@@ -1998,13 +2153,13 @@ impl TypeInferrer {
                     fields.iter()
                         .find(|(n, _)| n == key)
                         .map(|(_, ty)| ty.clone())
-                        .unwrap_or(ZigType::Any)
+                        .unwrap_or(ZigType::JsValue)
                 } else {
                     // For non-literal keys, return Any (JsValue)
-                    ZigType::Any
+                    ZigType::JsValue
                 }
             }
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 
@@ -2083,8 +2238,6 @@ impl TypeInferrer {
             return ZigType::Void;
         }
         if ret_types.iter().all(|t| t == &ret_types[0]) {
-            // Removed aggressive I64 default: Any maps to JsValue in generated code,
-            // causing a Zig compile error that forces the user to fix the JS source.
             return ret_types[0].clone();
         }
 
@@ -2098,9 +2251,9 @@ impl TypeInferrer {
                 let mut result = first_non_void.unwrap().clone();
                 for ty in &non_void[1..] {
                     result = ZigType::widen(&result, ty);
-                    if result == ZigType::Any { break; }
+                    if matches!(result, ZigType::JsValue | ZigType::JsAny) { break; }
                 }
-                if result != ZigType::Any { return result; }
+                if !matches!(result, ZigType::JsValue | ZigType::JsAny) { return result; }
             }
         }
 
@@ -2162,7 +2315,7 @@ impl TypeInferrer {
                     let method_key = format!("{}.{}", obj_name, mem.property.name);
                     // Check builtins first (console.log, Math.abs, etc.)
                     let builtin = self.builtin_return_type(&method_key);
-                    if builtin != ZigType::Any {
+                    if builtin != ZigType::JsValue {
                         return builtin;
                     }
                     // Check for regexp methods (re.test(str), re.exec(str))
@@ -2174,7 +2327,7 @@ impl TypeInferrer {
                             return match prop_name {
                                 "test" => ZigType::Bool,
                                 "exec" => ZigType::Optional(Box::new(ZigType::String)),
-                                _ => ZigType::Any,
+                                _ => ZigType::JsValue,
                             };
                         }
                     // Check if obj_name is a local variable (e.g., rect.area())
@@ -2195,13 +2348,13 @@ impl TypeInferrer {
                                 "join" | "reverse" | "sort" | "slice" | "concat" => ZigType::Array(elem.clone()),
                                 "forEach" | "map" | "filter" | "reduce" | "some" | "every" | "find" | "findIndex"
                                     | "flatMap" | "flat" => ZigType::Array(elem.clone()),
-                                _ => ZigType::Any,
+                                _ => ZigType::JsValue,
                             };
                         }
                 }
-                ZigType::Any
+                ZigType::JsValue
             }
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 
@@ -2220,7 +2373,7 @@ impl TypeInferrer {
                 | "console.debug" | "console.assert" | "console.table" | "console.dir"
                 | "console.time" | "console.timeEnd" | "console.group" | "console.groupEnd"
                 | "console.clear" | "console.count" | "console.trace" => ZigType::Void,
-            _ => ZigType::Any,
+            _ => ZigType::JsValue,
         }
     }
 
@@ -2228,49 +2381,19 @@ impl TypeInferrer {
     // Helpers
     // ============================================================
 
-    /// Convert a TypeScript type annotation to ZigType.
-    /// Returns Any if the type can't be mapped (e.g., user-defined types).
-    #[allow(dead_code)]
-    fn ts_type_to_zig_type(ts_type: &oxc_ast::ast::TSType) -> ZigType {
-        match ts_type {
-            oxc_ast::ast::TSType::TSNumberKeyword(_) => ZigType::I64,
-            oxc_ast::ast::TSType::TSStringKeyword(_) => ZigType::String,
-            oxc_ast::ast::TSType::TSBooleanKeyword(_) => ZigType::Bool,
-            oxc_ast::ast::TSType::TSNullKeyword(_) => ZigType::Optional(Box::new(ZigType::Void)),
-            oxc_ast::ast::TSType::TSUndefinedKeyword(_) => ZigType::Optional(Box::new(ZigType::Void)),
-            oxc_ast::ast::TSType::TSVoidKeyword(_) => ZigType::Void,
-            oxc_ast::ast::TSType::TSAnyKeyword(_) => ZigType::Any,
-            oxc_ast::ast::TSType::TSBigIntKeyword(_) => ZigType::I64,
-            oxc_ast::ast::TSType::TSArrayType(arr) => {
-                ZigType::Array(Box::new(Self::ts_type_to_zig_type(&arr.element_type)))
-            }
-            oxc_ast::ast::TSType::TSUnionType(union_ty) => {
-                let types: Vec<ZigType> = union_ty.types.iter()
-                    .map(|t| Self::ts_type_to_zig_type(t))
-                    .collect();
-                ZigType::make_union(types)
-            }
-            oxc_ast::ast::TSType::TSParenthesizedType(p) => {
-                Self::ts_type_to_zig_type(&p.type_annotation)
-            }
-            oxc_ast::ast::TSType::TSTypeReference(_) => ZigType::Any,
-            _ => ZigType::Any,
-        }
-    }
-
     fn extract_fn_sig(&self, expr: &Expression) -> Option<ZigFuncSig> {
         match expr {
             Expression::ArrowFunctionExpression(arrow) => {
                 let ret = self.infer_return_type_from_arrow(arrow);
                 Some(ZigFuncSig {
-                    params: vec![ZigType::Any; arrow.params.items.len()],
+                    params: vec![ZigType::JsValue; arrow.params.items.len()],
                     return_type: Box::new(ret),
                 })
             }
             Expression::FunctionExpression(fe) => {
                 let ret = self.infer_return_type_from_function_body(&fe.body);
                 Some(ZigFuncSig {
-                    params: vec![ZigType::Any; fe.params.items.len()],
+                    params: vec![ZigType::JsValue; fe.params.items.len()],
                     return_type: Box::new(ret),
                 })
             }

@@ -300,6 +300,8 @@ fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
         "bool" => quote! { bool },
         "[]const u8" => quote! { *const std::ffi::c_char },
         "void" => quote! { () },
+        // JsValue and JsAny are passed by value over C ABI — treat as i64
+        "JsValue" | "JsAny" => quote! { i64 },
         _ => {
             // Default: treat as opaque pointer
             quote! { *const std::ffi::c_void }
@@ -323,6 +325,7 @@ fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
         "bool" => quote! { bool },
         "[]const u8" => quote! { &str },
         "void" => quote! { () },
+        "JsValue" | "JsAny" => quote! { i64 },
         _ => quote! { i64 },
     }
 }
@@ -349,6 +352,7 @@ fn zig_ret_type_to_rust_safe(zig_type: &str) -> proc_macro2::TokenStream {
         "f64" | "f32" => quote! { f64 },
         "bool" => quote! { bool },
         "void" => quote! { () },
+        "JsValue" | "JsAny" => quote! { i64 },
         _ => quote! { i64 },
     }
 }
