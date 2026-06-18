@@ -821,11 +821,8 @@ impl<'a> ZigCodegen<'a> {
                     self.destructure_prelude.push(prelude);
                 }
 
-                // Handle param default value
-                if let Some(default) = &param.initializer {
-                    self.push(" = ");
-                    self.emit_expr(default);
-                }
+                // Default values in destructured params: Zig does not support
+                // default parameter syntax; skip — caller must provide all args.
                 continue;
             }
 
@@ -861,10 +858,8 @@ impl<'a> ZigCodegen<'a> {
             };
             self.push(&type_str);
 
-            if let Some(default) = &param.initializer {
-                self.push(" = ");
-                self.emit_expr(default);
-            }
+            // NOTE: Zig does not support default parameter values (`y: i64 = 10`).
+            // Default values are silently dropped — caller must provide all args.
         }
 
         // Handle rest parameter: ...args → args: []const i64

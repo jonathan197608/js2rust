@@ -22,8 +22,8 @@
 | 5 | `runtime/js_allocator.zig` | 17-21 | `g_alloc()` 存在竞态：两个并发调用可能同时看到 `null` 并尝试设置 | 多线程环境下可能崩溃 | **已修复** → 不缓存 page_allocator，直接返回 |
 | 6 | `codegen/mod.rs` | 420 | `lit.value.fract() != 0.0` 浮点比较不可靠（如 1.1 的二进制表示） | 整数被误判为浮点数 | **已修复** → `is_finite() && value.trunc() == value` |
 | 7 | `infer.rs` | 191 | `simplify_union` 中 `types[0].clone()` 在空 vec 时 panic（虽然有调用方保护，但防御性不足） | 极端情况下 panic | **已修复** → 增加空/single-element 守卫 |
-| 8 | `main.rs` | 11 | `Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()` — 若 CARGO_MANIFEST_DIR 是根目录会 panic | 极低概率 panic | 待修复 |
-| 9 | `infer.rs` | 715 | `n.into_iter().next().unwrap_or_default()` — 解构 pattern 无名字时返回空字符串作为函数名 | 生成错误函数名 | 待修复 |
+| 8 | `main.rs` | 11 | `Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()` — 若 CARGO_MANIFEST_DIR 是根目录会 panic | 极低概率 panic | **已修复** → `.expect("CARGO_MANIFEST_DIR must have a parent directory")` |
+| 9 | `infer.rs` | 1566 | `pnames.into_iter().next().unwrap_or_default()` — 解构 pattern 无名字时返回空字符串作为参数名 | 生成错误参数名 | **已修复** → 空名替换为 `"_"` |
 
 ### P2 — 代码质量问题
 
@@ -132,3 +132,20 @@
 | T5 | ImportExpression → @compileError | ✅ `b5af459` |
 | T10-T13 | for-in 边界 → @compileError | ✅ `8cdc859` |
 | T15-T16 | for-of 边界 → @compileError | ✅ `8cdc859` |
+| NEW-1 | `fn_decl.rs` 默认参数 `y: i64 = 10` Zig 不合法语法 — 移除两处 `= value` 输出 | ✅ 2026-06-18 |
+| NEW-2 | `infer.rs` 闭包返回类型推断：`const mul = (x) => x * factor` → JsAny 而非 FunctionPtr — `register_binding_with_expr` 特殊处理 ArrowFunctionExpression | ✅ 2026-06-18 |
+| NEW-3 | `codegen/builtins.rs` `{}` 占位符展开为全部参数（`@min({}, {})` → `@min(a, b, a, b)`）— 改为顺序索引 | ✅ 2026-06-18 |
+
+---
+
+## 六、测试发现的已知限制（待后续解决）
+
+| # | 描述 | 优先级 |
+|---|---|---|
+| L1 | 静态方法参数默认推断为 JsValue 而非 i64（非构造函数不享受 i64 默认） | 中 |
+| L2 | `const a = x + 1` → JsAny，但 `return a` 返回 i64，函数声明返回 JsAny 类型不匹配 | 高 |
+| L3 | `console.log(x)` 传入 i64 参数，但 js_console.log 期望 `[]const u8` | 中 |
+| L4 | `Math.abs/min/max` 对 i64 输入产生类型不匹配（`@abs(i64)` → `u64`，函数返回 f64） | 高 |
+| L5 | `7.0` 等整数浮点字面量被推断为 i64（`fract() == 0.0` 判定为整数） | 中 |
+| L6 | Zig 默认参数不支持，需完整实现 optional param + orelse 模式 | 低 |
+| L7 | 递归函数返回类型推断失败（如 `fib(n)` fallback 到 JsValue） | 中 |

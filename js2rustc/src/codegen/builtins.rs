@@ -387,9 +387,10 @@ impl<'a> ZigCodegen<'a> {
             })
             .collect();
 
-        // Replace positional placeholders {0}, {1}, ...
+        // Replace positional placeholders {0}, {1}, ... and sequential {}
         let mut result = String::new();
         let mut chars = template.chars().peekable();
+        let mut seq_idx: usize = 0; // sequential argument index for {} placeholders
         while let Some(ch) = chars.next() {
             if ch == '{' {
                 if let Some(&('0'..='9')) = chars.peek() {
@@ -407,23 +408,17 @@ impl<'a> ZigCodegen<'a> {
                         result.push_str(arg);
                     }
                 } else if chars.peek() == Some(&'}') {
-                    // {} → all args comma-separated
+                    // {} → next sequential argument
                     chars.next();
-                    result.push_str(&formatted_args.join(", "));
+                    if let Some(arg) = formatted_args.get(seq_idx) {
+                        result.push_str(arg);
+                    }
+                    seq_idx += 1;
                 } else {
                     result.push(ch);
                 }
             } else {
                 result.push(ch);
-            }
-        }
-
-        // If no placeholders were found, result == template → just push template
-        // Actually, some templates like `@abs({})` have `{}` → replace with first arg
-        if result == *template {
-            // Simple case: template has no positional args, use first arg
-            if let Some(first) = formatted_args.first() {
-                result = template.replace("{}", first);
             }
         }
 

@@ -763,6 +763,13 @@ impl TypeInferrer {
                 return self.infer_expr(init);
             }
 
+        // Rule 2.3b: const + arrow/function expression → FunctionPtr (preserve callable type)
+        if is_const && matches!(init,
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+        ) {
+            return self.infer_expr(init);
+        }
+
         // Rule 2.4: const but not constant → JsAny (Layer 3)
         if is_const {
             return ZigType::JsAny;
@@ -1548,8 +1555,32 @@ impl TypeInferrer {
                 }
             }
             _ => {
-                // Single binding — apply three-layer type inference
-                if names.len() == 1 {
+                // Special case: const + arrow function → infer return type with
+                // arrow params properly registered in env (fixes closure return type).
+                if is_const && names.len() == 1 {
+                    if let Expression::ArrowFunctionExpression(arrow) = init {
+                        let arrow_params: Vec<(String, ZigType)> = arrow.params.items.iter()
+                            .map(|p| {
+                                let mut pnames = Vec::new();
+                                collect_binding_names(&p.pattern, &mut pnames);
+                                let pname = pnames.into_iter().next().unwrap_or_default();
+                                let pname = if pname.is_empty() { "_".to_string() } else { pname };
+                                let ptype = self.infer_arrow_param_type(&pname, &arrow.body);
+                                (pname, ptype)
+                            })
+                            .collect();
+
+                        let ret = self.infer_return_type_from_arrow_with_params(arrow, &arrow_params);
+                        let sig = ZigFuncSig {
+                            params: arrow_params.iter().map(|(_, t)| t.clone()).collect(),
+                            return_type: Box::new(ret),
+                        };
+                        vec![ZigType::FunctionPtr(Box::new(sig))]
+                    } else {
+                        vec![self.infer_var_type(&names[0], init, is_const)]
+                    }
+                } else if names.len() == 1 {
+                    // Single binding — apply three-layer type inference
                     vec![self.infer_var_type(&names[0], init, is_const)]
                 } else {
                     vec![self.infer_expr(init)]
