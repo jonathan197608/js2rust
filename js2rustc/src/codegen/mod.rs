@@ -648,6 +648,8 @@ impl<'a> ZigCodegen<'a> {
     }
 
     /// Emit deinit_js2rust() that frees all global HashMaps.
+    /// Only generated when there are actual resources to free (HashMap .deinit() calls).
+    /// When empty, the function is omitted — lib.zig provides the top-level shell for tests.
     pub(super) fn emit_deinit_js2rust(&mut self) {
         // Extract HashMap variable names from init code (format: "    varname = std.StringHashMap...")
         let mut hashmap_names: Vec<String> = Vec::new();
@@ -658,7 +660,10 @@ impl<'a> ZigCodegen<'a> {
                 hashmap_names.push(name.to_string());
             }
         }
-        // Always generate deinit — noop if no HashMaps, but needed for defer
+        // Skip generation when no resources need cleanup — lib.zig still provides the shell
+        if hashmap_names.is_empty() {
+            return;
+        }
         self.push("\n");
         self.push("/// Deinitialize all global objects created by init_js2rust().\n");
         self.push("pub fn deinit_js2rust() void {\n");

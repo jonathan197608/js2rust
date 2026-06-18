@@ -42,7 +42,7 @@
 | switch | ✅ |
 | try/catch/finally（→ Zig error union + defer） | ✅ |
 | throw（→ error propagation） | ✅ |
-| for-await-of | 🚫 不实现 |
+| for-await-of | 🚫 `@compileError` |
 
 ### 表达式 — 28/36 已支持（8 项标为不实现）
 
