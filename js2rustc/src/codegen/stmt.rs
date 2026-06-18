@@ -742,7 +742,8 @@ impl<'a> ZigCodegen<'a> {
         // we emit `_ = name;` to suppress the "unused capture" error.
 
         if fos.r#await {
-            // for-await-of is not supported (skipped by user decision)
+            self.emit_indent();
+            self.push_line("@compileError(\"for-await-of is not supported — async iteration requires runtime support\");");
             return;
         }
 

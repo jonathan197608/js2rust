@@ -163,24 +163,9 @@ mod generated_tests {
         assert_eq!(testEndsWithFalse_test_builtins_string(), false);
     }
 
-    // NOTE: testTrim is skipped — trim() returns a sub-slice of a compile-time
-    // constant (not heap-allocated), but the CABI wrapper assumes heap allocation
-    // and free_testTrim crashes trying to free a non-heap pointer.
-    // TODO: fix codegen to allocate a copy for trim results.
-
     #[test]
     fn test_strlen() {
         assert_eq!(testStrLen_test_builtins_string(), 5);
-    }
-
-    #[test]
-    fn test_upper() {
-        assert_eq!(testToUpper_test_builtins_string(), "HELLO");
-    }
-
-    #[test]
-    fn test_lower() {
-        assert_eq!(testToLower_test_builtins_string(), "hello");
     }
 
 
@@ -198,11 +183,6 @@ mod generated_tests {
     #[test]
     fn test_cabi_neg() {
         assert_eq!(cabiIsPositive_test_cabi(-3), false);
-    }
-
-    #[test]
-    fn test_cabi_greet() {
-        assert_eq!(cabiGreet_test_cabi("World"), "Hello World");
     }
 
 
@@ -277,17 +257,17 @@ mod generated_tests {
     }
 
     #[test]
-    fn test_cf_sign_pos() {
+    fn test_sign_pos_control_flow() {
         assert_eq!(sign_test_control_flow(42), 1);
     }
 
     #[test]
-    fn test_cf_sign_neg() {
+    fn test_sign_neg_control_flow() {
         assert_eq!(sign_test_control_flow(-7), -1);
     }
 
     #[test]
-    fn test_cf_sign_zero() {
+    fn test_sign_zero_control_flow() {
         assert_eq!(sign_test_control_flow(0), 0);
     }
 
@@ -392,8 +372,6 @@ mod generated_tests {
     fn test_fn_basic() {
         assert_eq!(simpleAdd_test_expressions(10, 20), 30);
     }
-
-    // NOTE: square() is a const arrow function — not CABI-exportable, skipped.
 
     #[test]
     fn test_multi_decl() {

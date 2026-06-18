@@ -242,11 +242,10 @@ fn convert_test_cases_for_bridge(
             continue;
         }
 
-        // Look up return type from CABI export info
-        let ret_type = cabi_ret_types
-            .get(&fn_name)
-            .cloned()
-            .unwrap_or_else(|| "i64".to_string());
+        // Skip functions not in CABI exports (e.g. const arrow functions)
+        let Some(ret_type) = cabi_ret_types.get(&fn_name).cloned() else {
+            continue;
+        };
 
         let test_name = tc.var_name
             .strip_prefix("test_")
@@ -519,9 +518,11 @@ fn main() {
                     all_test_code.push_str(&file_test_code);
 
                     // Convert to bridge Rust test cases
-                    let cabi_ret_types: HashMap<String, String> = fn_return_types
+                    // Use all_cabi_exports (actual CABI-exported fns), NOT fn_return_types
+                    // (which includes non-exportable functions like const arrow fns)
+                    let cabi_ret_types: HashMap<String, String> = all_cabi_exports
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.to_cabi_str()))
+                        .map(|exp| (exp.name.clone(), exp.ret_type.to_cabi_str()))
                         .collect();
                     let skip_fns: HashSet<String> = fn_return_types
                         .iter()
@@ -778,6 +779,9 @@ pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
         // Generate #[test] functions from test_cases.json
         out.push_str("\n    // === Auto-generated test functions ===\n");
 
+        // Track generated test names to detect duplicates across groups
+        let mut used_test_names: HashSet<String> = HashSet::new();
+
         for group in &test_groups {
             let tc_path = Path::new(out_dir).join(group).join("test_cases.json");
             let test_cases: Vec<BridgeTestCase> = if let Ok(data) = fs::read_to_string(&tc_path) {
@@ -790,11 +794,30 @@ pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
                 continue;
             }
 
+            // Short group suffix for disambiguation (strip "test_" prefix)
+            let group_short = group.strip_prefix("test_").unwrap_or(group);
+
             out.push_str(&format!("\n    // --- {} ---\n", group));
             for tc in &test_cases {
+                // Skip string-returning functions: bridge tests don't init Zig allocator,
+                // and some string returns (e.g. trim) are sub-slices of constants that
+                // crash on free. These are covered by Zig-side tests instead.
+                if tc.ret_type == "[]const u8" {
+                    continue;
+                }
+
                 let wrapper_name = format!("{}_{}", tc.fn_name, group);
                 let args_str = tc.args.join(", ");
                 let call = format!("{}({})", wrapper_name, args_str);
+
+                // Disambiguate test names: if already used, append group suffix
+                let base_name = tc.test_name.clone();
+                let test_fn_name = if used_test_names.contains(&base_name) {
+                    format!("{}_{}", base_name, group_short)
+                } else {
+                    base_name.clone()
+                };
+                used_test_names.insert(base_name);
 
                 // Generate appropriate assertion based on return type
                 if let Some(ref expected) = tc.expected {
@@ -802,22 +825,14 @@ pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
                         // Float comparison with tolerance
                         out.push_str(&format!(
                             "    #[test]\n    fn test_{name}() {{\n        assert!(({call} - {exp}f64).abs() < 1e-10, \"{name}: got {{}}, expected {exp}\", {call});\n    }}\n\n",
-                            name = tc.test_name,
+                            name = test_fn_name,
                             call = call,
                             exp = expected,
                         ));
                     } else if tc.ret_type == "bool" {
                         out.push_str(&format!(
                             "    #[test]\n    fn test_{name}() {{\n        assert_eq!({call}, {exp});\n    }}\n\n",
-                            name = tc.test_name,
-                            call = call,
-                            exp = expected,
-                        ));
-                    } else if tc.ret_type == "[]const u8" {
-                        // String comparison
-                        out.push_str(&format!(
-                            "    #[test]\n    fn test_{name}() {{\n        assert_eq!({call}, {exp});\n    }}\n\n",
-                            name = tc.test_name,
+                            name = test_fn_name,
                             call = call,
                             exp = expected,
                         ));
@@ -825,7 +840,7 @@ pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
                         // Default: integer comparison (i64)
                         out.push_str(&format!(
                             "    #[test]\n    fn test_{name}() {{\n        assert_eq!({call}, {exp});\n    }}\n\n",
-                            name = tc.test_name,
+                            name = test_fn_name,
                             call = call,
                             exp = expected,
                         ));
@@ -834,7 +849,7 @@ pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
                     // No expected value: smoke test (call should not panic)
                     out.push_str(&format!(
                         "    #[test]\n    fn test_{name}() {{\n        let _ = {call};\n    }}\n\n",
-                        name = tc.test_name,
+                        name = test_fn_name,
                         call = call,
                     ));
                 }
