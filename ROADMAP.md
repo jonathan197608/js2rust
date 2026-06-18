@@ -142,4 +142,7 @@
   - ✅ `.build_cache.json`: 构建缓存持久化
   - ✅ 第二次运行 12 组全部跳过（"unchanged, skipping"）
   - ✅ `--force` 标志强制全量重建
-- [ ] **WASM 目标** — 生成 Zig → WASM
+- [x] **WASM 目标** — 生成 Zig → WASM
+  - ✅ build.zig 新增 `zig build wasm` 步骤（wasm32-wasi）
+  - ✅ Windows 桩改为平台无关类型，跨平台编译无误
+  - ✅ 验证：builtins.wasm 1015KB, main.wasm 1.1MB
