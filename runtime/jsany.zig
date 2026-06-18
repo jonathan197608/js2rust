@@ -92,6 +92,18 @@ pub const JsAny = union(enum) {
         };
     }
 
+    // === std.fmt integration (for template literals) ===
+
+    /// Custom formatter so `std.fmt.allocPrint("{}", .{jsany})` outputs the JS string representation.
+    pub fn format(self: JsAny, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        switch (self) {
+            .value => |v| try v.format(writer),
+            .array => try writer.writeAll("[Array]"),
+            .object => try writer.writeAll("[Object]"),
+            .null => try writer.writeAll("null"),
+        }
+    }
+
     // === Coercion to primitive ===
 
     pub fn asI64(self: JsAny) i64 {

@@ -72,6 +72,19 @@ pub const JsValue = union(enum) {
         };
     }
 
+    // --- std.fmt integration (for template literals) ---
+
+    /// Custom formatter so `std.fmt.allocPrint("{}", .{jsvalue})` outputs the JS string representation.
+    pub fn format(self: JsValue, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        switch (self) {
+            .int => |v| try writer.print("{d}", .{v}),
+            .float => |v| try writer.print("{d}", .{v}),
+            .bool => |v| try writer.writeAll(if (v) "true" else "false"),
+            .string => |s| try writer.writeAll(s),
+            .null => try writer.writeAll("null"),
+        }
+    }
+
     // --- coercion helpers (JS semantics) ---
 
     pub fn asI64(self: JsValue) i64 {

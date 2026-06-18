@@ -14,6 +14,23 @@ impl<'a> ZigCodegen<'a> {
         }
     }
 
+    /// Escape a cooked template quasi value for embedding in a Zig string literal.
+    /// Handles newlines, tabs, backslashes, and double quotes.
+    fn escape_quasi_for_zig(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '"' => out.push_str("\\\""),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                _ => out.push(c),
+            }
+        }
+        out
+    }
+
     /// Wrap an expression in the appropriate JsValue/JsAny constructor based on its type.
     fn emit_wrap_js_value(&mut self, expr: &Expression, target_prefix: &str) {
         let expr_ty = self.inferrer.infer_expr(expr);
@@ -838,7 +855,7 @@ impl<'a> ZigCodegen<'a> {
                     && let Some(quasi) = tl.quasis.first()
                         && let Some(cooked) = &quasi.value.cooked {
                             self.push("\"");
-                            self.push(cooked.as_ref());
+                            self.push(&Self::escape_quasi_for_zig(cooked.as_ref()));
                             self.push("\"");
                             return;
                         }
@@ -846,14 +863,25 @@ impl<'a> ZigCodegen<'a> {
                 // Template literal with expressions: use std.fmt.allocPrint
                 // e.g. `hello ${name}, you are ${age}` →
                 //   std.fmt.allocPrint(js_allocator.g_alloc(), "hello {}{}!", .{ name, age }) catch @panic("OOM")
+                //
+                // Zig 0.16.0 format dispatch: {} uses default formatter (prints union internals),
+                // {f} calls the custom .format(writer) method. JsAny/JsValue unions need {f}.
+                let inferrer = &self.inferrer;
+                let fmt_specs: Vec<&str> = tl.expressions.iter().map(|expr| {
+                    match inferrer.infer_expr(expr) {
+                        ZigType::JsAny | ZigType::JsValue => "{f}",
+                        _ => "{}",
+                    }
+                }).collect();
+
                 self.push("std.fmt.allocPrint(js_allocator.g_alloc(), \"");
-                // Build format string
+                // Build format string with type-aware specifiers
                 for (i, quasi) in tl.quasis.iter().enumerate() {
                     if let Some(cooked) = &quasi.value.cooked {
-                        self.push(cooked.as_ref());
+                        self.push(&Self::escape_quasi_for_zig(cooked.as_ref()));
                     }
                     if i < tl.expressions.len() {
-                        self.push("{}");
+                        self.push(fmt_specs[i]);
                     }
                 }
                 self.push("\", .{ ");
