@@ -133,6 +133,9 @@
 
 ## ⚪ P2 — 远期
 
-- [ ] **源码映射 (Source Map)** — Zig → JS 行号对应
+- [x] **源码映射 (Source Map)** — Zig → JS 行号对应
+  - ✅ `sourcemap.rs`: `LineIndex` (byte→line O(log n)) + `SourceMap` (JSON 序列化) + 4 单元测试
+  - ✅ 内联注释 `// @src(file.js:line) fn/const/class` 在顶层声明处
+  - ✅ 每组生成 `source_map.json`（per-file mappings）
 - [ ] **增量编译** — 只重译变更文件
 - [ ] **WASM 目标** — 生成 Zig → WASM
