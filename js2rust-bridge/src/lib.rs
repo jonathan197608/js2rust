@@ -49,6 +49,7 @@ mod generated_tests {
     js2rust_bridge!("out/test_closures/cabi_exports.json");
     js2rust_bridge!("out/test_control_flow/cabi_exports.json");
     js2rust_bridge!("out/test_expressions/cabi_exports.json");
+    js2rust_bridge!("out/test_template/cabi_exports.json");
     js2rust_bridge!("out/test_types/cabi_exports.json");
 
     // === Auto-generated test functions ===
@@ -378,6 +379,8 @@ mod generated_tests {
         assert_eq!(multiDecl_test_expressions(), 6);
     }
 
+
+    // --- test_template ---
 
     // --- test_types ---
     #[test]
