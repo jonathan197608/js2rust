@@ -1,6 +1,7 @@
 use js2rustc::analyzer::{analyze_groups, sanitize_module_name, strip_imports_extract_exports};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -61,11 +62,72 @@ fn scan_pub_functions(zig_code: &str) -> Vec<String> {
     fns
 }
 
+/// Compute a content hash for a file group.
+/// Hashes all member JS files + runtime .zig files so any change triggers rebuild.
+fn compute_group_hash(
+    in_dir: &Path,
+    group: &js2rustc::analyzer::FileGroup,
+    runtime_dir: &Path,
+) -> String {
+    let mut hasher = std::hash::DefaultHasher::new();
+
+    // Hash each member JS file content (sorted for determinism)
+    let mut members: Vec<&String> = group.members.iter().collect();
+    members.sort();
+    for member in &members {
+        member.hash(&mut hasher);
+        if let Ok(content) = fs::read(in_dir.join(member)) {
+            content.hash(&mut hasher);
+        }
+    }
+
+    // Hash runtime .zig files (changes here affect all groups)
+    if let Ok(entries) = fs::read_dir(runtime_dir) {
+        let mut rt_files: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|ext| ext == "zig"))
+            .collect();
+        rt_files.sort();
+        for rt_file in &rt_files {
+            if let Ok(content) = fs::read(rt_file) {
+                rt_file.file_name().hash(&mut hasher);
+                content.hash(&mut hasher);
+            }
+        }
+    }
+
+    format!("{:016x}", hasher.finish())
+}
+
+/// Read build cache from `out/.build_cache.json`.
+/// Returns group_name → hash_hex map.
+fn read_build_cache(out_dir: &str) -> HashMap<String, String> {
+    let cache_path = Path::new(out_dir).join(".build_cache.json");
+    if let Ok(data) = fs::read_to_string(&cache_path)
+        && let Ok(map) = serde_json::from_str(&data)
+    {
+        return map;
+    }
+    HashMap::new()
+}
+
+/// Write build cache to `out/.build_cache.json`.
+fn write_build_cache(out_dir: &str, cache: &HashMap<String, String>) {
+    let cache_path = Path::new(out_dir).join(".build_cache.json");
+    if let Ok(json) = serde_json::to_string_pretty(cache) {
+        let _ = fs::write(cache_path, json);
+    }
+}
+
 fn main() {
     let ws = workspace_dir();
     let in_dir = ws.join("in").to_string_lossy().to_string();
     let out_dir = ws.join("out").to_string_lossy().to_string();
     let in_path = ws.join("in");
+
+    // CLI flags
+    let force_rebuild = std::env::args().any(|a| a == "--force");
 
     // Ensure output directory exists.
     fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
@@ -116,6 +178,10 @@ fn main() {
     let async_wrappers = host_fns.generate_async_wrappers();
     let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
 
+    // === Incremental compilation: load build cache ===
+    let mut build_cache = read_build_cache(&out_dir);
+    let runtime_path = ws.join("runtime");
+
     // === Phase 2: Generate Zig project per group ===
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
     for (group_idx, group) in groups.iter().enumerate() {
@@ -125,6 +191,16 @@ fn main() {
             group.members.len(),
             if group.members.len() == 1 { "" } else { "s" }
         );
+
+        // --- Incremental check ---
+        let current_hash = compute_group_hash(&in_path, group, &runtime_path);
+        if !force_rebuild
+            && let Some(cached_hash) = build_cache.get(&group.core_name)
+            && *cached_hash == current_hash
+        {
+            println!("  unchanged, skipping (use --force to rebuild)");
+            continue;
+        }
 
         {
             let mut per_file_modules: Vec<js2rustc::project::PerFileModule> = Vec::new();
@@ -367,12 +443,16 @@ fn main() {
 
         // === Zig build ===
         let project_path = Path::new(&out_dir).join(&group.core_name);
+        let mut build_ok = false;
         let build_result = Command::new("zig")
             .arg("build")
             .current_dir(&project_path)
             .output();
         match build_result {
-            Ok(result) if result.status.success() => println!("  zig build: OK"),
+            Ok(result) if result.status.success() => {
+                println!("  zig build: OK");
+                build_ok = true;
+            }
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 eprintln!("  zig build FAILED:\n{}", stderr);
@@ -381,20 +461,32 @@ fn main() {
         }
 
         // === Zig tests ===
+        let mut test_ok = false;
         let test_result = Command::new("zig")
             .arg("build")
             .arg("test")
             .current_dir(&project_path)
             .output();
         match test_result {
-            Ok(result) if result.status.success() => println!("  zig test: PASSED"),
+            Ok(result) if result.status.success() => {
+                println!("  zig test: PASSED");
+                test_ok = true;
+            }
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 eprintln!("  zig test FAILED:\n{}", stderr);
             }
             Err(_) => {}
         }
+
+        // === Update build cache on success ===
+        if build_ok && test_ok {
+            build_cache.insert(group.core_name.clone(), current_hash.clone());
+        }
     }
+
+    // === Write build cache ===
+    write_build_cache(&out_dir, &build_cache);
 }
 
 /// Generate `pub export fn` wrapper code for lib.zig.
