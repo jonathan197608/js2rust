@@ -1,0 +1,12 @@
+[package]
+name = "js2zig-test-bin-project"
+version = "0.1.0"
+edition = "2021"
+authors = ["jonathan197608"]
+description = "Test binary project for js2rust — JS-to-Zig transpiler"
+
+[build-dependencies]
+js2zig-build = { version = "0.1", path = "../../js2zig-build" }
+
+[dependencies]
+js2rust-bridge = { version = "0.1", path = "../../js2rust-bridge" }

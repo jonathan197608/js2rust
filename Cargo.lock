@@ -127,6 +127,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "js2zig-test-bin-project"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+ "js2zig-build",
+]
+
+[[package]]
 name = "js2zig-test-project"
 version = "0.1.0"
 dependencies = [

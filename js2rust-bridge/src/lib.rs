@@ -4,7 +4,7 @@
 // Each `js2rust_bridge!()` invocation reads cabi_exports.json at compile time
 // and generates `unsafe extern "C"` + safe Rust wrappers.
 
-use js2rust_bridge_macro::js2rust_bridge;
+pub use js2rust_bridge_macro::js2rust_bridge;
 
 pub mod host;
 

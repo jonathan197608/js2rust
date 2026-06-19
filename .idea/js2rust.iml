@@ -5,8 +5,12 @@
       <sourceFolder url="file://$MODULE_DIR$/js2rustc/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/js2rustc/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/js2rust-bridge/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/test-bin-project/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/test-project/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/js2rust-bridge-macro/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/js2rustc/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/js2zig-build/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/js2zig-core/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/out/groups/_u6570_u5b66_u8fd0_u7b97/.zig-cache/tmp" />
       <excludeFolder url="file://$MODULE_DIR$/out/groups/classes/.zig-cache" />
       <excludeFolder url="file://$MODULE_DIR$/out/groups/destructure/.zig-cache/tmp" />
