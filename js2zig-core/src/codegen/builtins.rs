@@ -141,6 +141,7 @@ impl<'a> ZigCodegen<'a> {
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
             async_host_fns: std::collections::HashSet::new(),
+            current_callback_method: None,
         };
         tmp.emit_expr(receiver);
         // Static arrays need & to coerce to []const T for runtime functions
@@ -183,6 +184,7 @@ impl<'a> ZigCodegen<'a> {
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
             async_host_fns: std::collections::HashSet::new(),
+                current_callback_method: None,
             };
             tmp2.emit_arg(arg);
             all_args.push(tmp2.output.clone());
@@ -221,21 +223,6 @@ impl<'a> ZigCodegen<'a> {
             }
         }
         self.push(&result);
-    }
-
-    /// Infer the element type of a dynamic array variable.
-    /// Returns the Zig type string for the element (e.g., "i64", "f64").
-    pub(super) fn infer_dynamic_array_elem_type(&self, var_name: &str) -> String {
-        // If marked as dynamic array, always use JsAny
-        if self.inferrer.is_dynamic_array(var_name) {
-            return "JsAny".to_string();
-        }
-        let var_type = self.inferrer.get_var_type(var_name);
-        match var_type {
-            ZigType::Array(elem) | ZigType::Slice(elem) => elem.to_zig_str(),
-            ZigType::JsAny => "JsAny".to_string(),
-            _ => var_type.to_zig_str(),
-        }
     }
 
     /// Emit direct ArrayList method calls for dynamic arrays
@@ -374,10 +361,49 @@ impl<'a> ZigCodegen<'a> {
                 ));
             }
             "map" => {
-                self.push("@compileError(\"map() callback inlining not yet implemented\")");
+                // arr.map(callback) → for loop with callback.call(item)
+                self.push("blk: {\n");
+                self.push("    var _result = std.ArrayList(JsAny).empty;\n");
+                self.push("    errdefer _result.deinit(js_allocator.g_alloc());\n");
+                self.push("    _result.ensureTotalCapacity(js_allocator.g_alloc(), ");
+                self.push(&escaped);
+                self.push(".items.len) catch @panic(\"OOM\");\n");
+                self.push("    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";\n");
+                self.push("    for (");
+                self.push(&escaped);
+                self.push(".items) |item| {\n");
+                self.push("        const _mapped = _callback.call(item);\n");
+                self.push("        _result.appendAssumeCapacity(_mapped);\n");
+                self.push("    }\n");
+                self.push("    break :blk _result;\n");
+                self.push("}");
             }
             "filter" => {
-                self.push("@compileError(\"filter() callback inlining not yet implemented\")");
+                // arr.filter(callback) → for loop with callback.call(item).toBool()
+                self.push("blk: {\n");
+                self.push("    var _result = std.ArrayList(JsAny).empty;\n");
+                self.push("    errdefer _result.deinit(js_allocator.g_alloc());\n");
+                self.push("    _result.ensureTotalCapacity(js_allocator.g_alloc(), ");
+                self.push(&escaped);
+                self.push(".items.len) catch @panic(\"OOM\");\n");
+                self.push("    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";\n");
+                self.push("    for (");
+                self.push(&escaped);
+                self.push(".items) |item| {\n");
+                self.push("        if (_callback.call(item)) {\n");
+                self.push("            _result.appendAssumeCapacity(item);\n");
+                self.push("        }\n");
+                self.push("    }\n");
+                self.push("    break :blk _result;\n");
+                self.push("}");
             }
             _ => {
                 self.push("@compileError(\"unknown array method: ");
@@ -432,6 +458,7 @@ impl<'a> ZigCodegen<'a> {
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
             async_host_fns: std::collections::HashSet::new(),
+                    current_callback_method: None,
                 };
                 tmp.emit_arg(arg);
                 tmp.output

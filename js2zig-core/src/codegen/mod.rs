@@ -335,6 +335,7 @@ struct ZigCodegen<'a> {
     /// Names of async host functions (to append `_async` in io.async calls)
     #[allow(dead_code)]
     async_host_fns: HashSet<String>,
+    current_callback_method: Option<String>,
 }
 
 
@@ -380,6 +381,7 @@ impl<'a> ZigCodegen<'a> {
             line_index: LineIndex::new(source_text),
             source_file: source_file.to_string(),
             async_host_fns,
+            current_callback_method: None,
         }
     }
 

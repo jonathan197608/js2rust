@@ -64,11 +64,25 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             Expression::CallExpression(call) => {
+                // Check if this is a map()/filter() call on a dynamic array
+                // If so, set current_callback_method to force JsAny types for callbacks
+                let mut _is_map_or_filter = false;
+                if let Expression::StaticMemberExpression(mem) = &call.callee {
+                    let _method = mem.property.name.as_str();
+                    if (_method == "map" || _method == "filter") && let Expression::Identifier(id) = &mem.object
+                        && self.inferrer.is_dynamic_array(id.name.as_str()) {
+                        _is_map_or_filter = true;
+                        self.current_callback_method = Some(_method.to_string());
+                    }
+                }
                 self.scan_expr_for_closures(context_name, fn_params, &call.callee, false);
                 for arg in &call.arguments {
                     if let Some(expr) = arg.as_expression() {
                         self.scan_expr_for_closures(context_name, fn_params, expr, false);
                     }
+                }
+                if _is_map_or_filter {
+                    self.current_callback_method = None;
                 }
             }
             Expression::BinaryExpression(bin) => {
@@ -238,7 +252,9 @@ impl<'a> ZigCodegen<'a> {
         let mut arrow_param_types: Vec<(String, crate::infer::ZigType)> = Vec::new();
         for p in &arrow.params.items {
             let pname = self.binding_name(&p.pattern).to_owned();
-            let ptype = if let Some(default) = &p.initializer {
+            let ptype = if self.current_callback_method.is_some() {
+                crate::infer::ZigType::JsAny
+            } else if let Some(default) = &p.initializer {
                 self.inferrer.infer_expr(default)
             } else {
                 self.inferrer.infer_arrow_param_type(&pname, &arrow.body)
@@ -288,7 +304,14 @@ impl<'a> ZigCodegen<'a> {
         captured.sort_by(|a, b| a.0.cmp(&b.0));
 
         // Infer return type of the arrow body, with arrow params registered
-        let ret_ty = self.inferrer.infer_return_type_from_arrow_with_params(arrow, &arrow_param_types);
+        let ret_ty = if self.current_callback_method == Some("filter".to_string()) {
+            crate::infer::ZigType::Bool
+        } else if self.current_callback_method.is_some() {
+            // map() or other array method: force return type to JsAny
+            crate::infer::ZigType::JsAny
+        } else {
+            self.inferrer.infer_return_type_from_arrow_with_params(arrow, &arrow_param_types)
+        };
 
         let mut info = ClosureInfo {
             struct_name,
@@ -431,11 +454,45 @@ impl<'a> ZigCodegen<'a> {
             def.push('\n');
         }
 
+        // Collect used identifiers in the arrow body to detect unused params
+        let mut _used_idents = std::collections::HashSet::new();
+        if arrow.expression {
+            if let Some(_first) = arrow.body.statements.first() {
+                match _first {
+                    Statement::ExpressionStatement(es) => {
+                        Self::collect_identifiers_in_expr(&es.expression, &mut _used_idents);
+                    }
+                    Statement::ReturnStatement(rs) => {
+                        if let Some(_arg) = &rs.argument {
+                            Self::collect_identifiers_in_expr(_arg, &mut _used_idents);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            for _s in &arrow.body.statements {
+                Self::collect_identifiers_in_stmt(_s, &mut _used_idents);
+            }
+        }
+
         // Emit call method signature
-        def.push_str("    pub fn call(self: @This()");
+        // Use '_' if no captured vars (self is unused in Zig)
+        // Anonymous parameter '_' suppresses "unused parameter" error
+        if ci.captured.is_empty() {
+            def.push_str("    pub fn call(_: @This()");
+        } else {
+            def.push_str("    pub fn call(self: @This()");
+        }
         for (pname, ptype) in &ci.params {
             let safe_pname = Self::escape_keyword(pname);
-            def.push_str(&format!(", {}: {}", safe_pname, ptype));
+            // Use '_' if unused (anonymous param, no warning)
+            let _param_name = if _used_idents.contains(pname.as_str()) {
+                safe_pname
+            } else {
+                "_".to_string()
+            };
+            def.push_str(&format!(", {}: {}", _param_name, ptype));
         }
         def.push_str(") ");
         def.push_str(&ci.return_type);

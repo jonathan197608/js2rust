@@ -2632,10 +2632,10 @@ impl TypeInferrer {
                 {
                     let method = mem.property.name.as_str();
                     // Methods that return a new array
-                    if matches!(method, "slice" | "filter" | "map" | "concat") {
-                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
-                            self.dynamic_arrays.insert(bi.name.to_string());
-                        }
+                    if matches!(method, "slice" | "filter" | "map" | "concat")
+                        && let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id
+                    {
+                        self.dynamic_arrays.insert(bi.name.to_string());
                     }
                 }
             }

@@ -167,9 +167,11 @@ pub fn build(b: *std.Build) void {{
         .link_libc = true,
     }});
 
-    // Build as static library with bundled compiler-rt.
-    // Uses rust-lld (LLVM linker) at final link time to handle COMDAT sections
-    // that MSVC link.exe cannot parse from Zig-generated COFF objects.
+    // Build as static library.
+    // bundle_compiler_rt = true: includes compiler-rt symbols in the .lib.
+    // MSVC link.exe cannot parse COMDAT sections in compiler_rt.obj (LNK1143),
+    // so users MUST use rust-lld as the linker:
+    //   .cargo/config.toml: [target.x86_64-pc-windows-msvc] linker = "rust-lld.exe"
     const lib = b.addLibrary(.{{
         .name = "{name}",
         .linkage = .static,

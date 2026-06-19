@@ -39,6 +39,18 @@ fn main() {
     let slice_ok = testArraySlice_phase5();
     println!("  testArraySlice() = {} (expected 0)", slice_ok);
 
+    // ── Array.map ────────────────────────────────
+    println!();
+    println!("--- Array.map ---");
+    let map_ok = testArrayMap_phase5();
+    println!("  testArrayMap() = {} (expected 0)", map_ok);
+
+    // ── Array.filter ─────────────────────────────
+    println!();
+    println!("--- Array.filter ---");
+    let filter_ok = testArrayFilter_phase5();
+    println!("  testArrayFilter() = {} (expected 0)", filter_ok);
+
     js2rust_deinit();
 
     println!();

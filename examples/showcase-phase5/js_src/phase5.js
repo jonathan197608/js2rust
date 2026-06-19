@@ -74,9 +74,8 @@ export function testArraySpliceInsert() {
 }
 */
 
-// ── Array.map (DISABLED) ───────────────────────
-// callback inlining not yet implemented
-/*
+// ── Array.map ───────────────────────────────
+// callback inlining: identity function
 export function testArrayMap() {
     const arr = [1, 2, 3, 4, 5];
     const same = arr.map(x => x);  // identity function
@@ -85,11 +84,9 @@ export function testArrayMap() {
     }
     return -1;
 }
-*/
 
-// ── Array.filter (DISABLED) ─────────────────────
-// callback inlining not yet implemented
-/*
+// ── Array.filter ─────────────────────────────
+// callback inlining: keep all
 export function testArrayFilter() {
     const arr = [1, 2, 3, 4, 5];
     const all = arr.filter(x => true);  // keep all
@@ -98,4 +95,3 @@ export function testArrayFilter() {
     }
     return -1;
 }
-*/
