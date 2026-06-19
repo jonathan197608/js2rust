@@ -201,23 +201,18 @@ fn main() {
   - [x] Step 2: 删除 `js2rustc` CLI
   - [x] Step 3: 新建 `js2zig-build` crate（build.rs helper）
   - [x] Step 4: 简化 `js2rust-bridge-macro`（固定 `$OUT_DIR` 前缀）
-  - [ ] Step 5: 发布到 crates.io（4 个 crate）
+  - [x] Step 5: 发布到 crates.io（4 个 crate）
   - [x] Step 6: 验证（测试 + clippy + 端到端）
 
-### Crates.io 发布准备
+### ✅ Crates.io 发布完成
 
-发布到 crates.io 的 4 个 crate：
+已发布到 crates.io 的 4 个 crate（v0.1.0）：
 - `js2zig-core` — 核心转译库
 - `js2zig-build` — build.rs helper（外部项目用 `[build-dependencies]`）
 - `js2rust-bridge` — FFI 桥接 runtime
 - `js2rust-bridge-macro` — proc-macro（生成 FFI 绑定）
 
-发布前检查清单：
-- [ ] 所有 Cargo.toml 包含完整元数据（description, license, repository, keywords）
-- [ ] 文档注释完整（cargo doc 构建无警告）
-- [ ] 版本号统一
-- [ ] 示例代码可用（examples/test-project）
-- [ ] README.md 包含快速开始指南
+查看：https://crates.io/users/jonathan197608
 
 ---
 
