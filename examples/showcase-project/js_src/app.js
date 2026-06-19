@@ -170,3 +170,52 @@ export function continueEven(n) {
     }
     return sum;
 }
+
+// ══════════════════════════════════════════════════════════════
+// Phase 2: Error Handling — try-catch / throw
+// [LOCKED] Do not modify once tests pass.
+// ══════════════════════════════════════════════════════════════
+
+// -- Basic throw + catch: catch path taken --
+export function tryCatchBasic() {
+    try {
+        throw "error";
+    } catch (e) {
+        return 42;
+    }
+}
+
+// -- Side effect before throw preserved in catch --
+export function tryCatchSideEffect() {
+    let x = 10;
+    try {
+        x = x + 5;
+        throw "error";
+    } catch (e) {
+        return x;
+    }
+}
+
+// -- Conditional throw: normal path vs error path --
+export function throwIfNegative(n) {
+    try {
+        if (n < 0) {
+            throw "negative";
+        }
+        return n;
+    } catch (e) {
+        return -n;
+    }
+}
+
+// -- Multiple operations in catch --
+export function tryCatchMultiOp() {
+    let a = 5;
+    const b = 10;
+    try {
+        a = a + b;
+        throw "error";
+    } catch (e) {
+        return a * 2;
+    }
+}

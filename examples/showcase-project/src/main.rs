@@ -107,6 +107,24 @@ fn main() {
     let cont_even = continueEven_app(10);
     println!("  continueEven(10) = {} (expected 30)", cont_even);
 
+    // ── Phase 2: Error Handling ────────────────────────────
+    println!();
+    println!("--- Error Handling (Phase 2) ---");
+    let tc_basic = tryCatchBasic_app();
+    println!("  tryCatchBasic() = {} (expected 42)", tc_basic);
+
+    let tc_side = tryCatchSideEffect_app();
+    println!("  tryCatchSideEffect() = {} (expected 15)", tc_side);
+
+    let throw_pos = throwIfNegative_app(5);
+    println!("  throwIfNegative(5) = {} (expected 5)", throw_pos);
+
+    let throw_neg = throwIfNegative_app(-3);
+    println!("  throwIfNegative(-3) = {} (expected 3)", throw_neg);
+
+    let tc_multi = tryCatchMultiOp_app();
+    println!("  tryCatchMultiOp() = {} (expected 30)", tc_multi);
+
     // Cleanup
     js2rust_deinit();
 
