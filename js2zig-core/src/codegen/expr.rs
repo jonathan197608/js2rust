@@ -229,29 +229,63 @@ impl<'a> ZigCodegen<'a> {
                 self.push(")");
             }
             // Comparison — wrap right operand in same JS type
+            // NOTE: JsAny.gt/lt/ge/le return bool, so in callback contexts (where return type is JsAny),
+            // we need to wrap the result as JsAny.fromBool(...)
             BinaryOperator::LessThan => {
-                self.emit_expr(left);
-                self.push(".lt(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                if self.current_callback_method.is_some() {
+                    self.push("JsAny.fromBool(");
+                    self.emit_expr(left);
+                    self.push(".lt(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push("))");
+                } else {
+                    self.emit_expr(left);
+                    self.push(".lt(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             BinaryOperator::LessEqualThan => {
-                self.emit_expr(left);
-                self.push(".le(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                if self.current_callback_method.is_some() {
+                    self.push("JsAny.fromBool(");
+                    self.emit_expr(left);
+                    self.push(".le(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push("))");
+                } else {
+                    self.emit_expr(left);
+                    self.push(".le(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             BinaryOperator::GreaterThan => {
-                self.emit_expr(left);
-                self.push(".gt(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                if self.current_callback_method.is_some() {
+                    self.push("JsAny.fromBool(");
+                    self.emit_expr(left);
+                    self.push(".gt(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push("))");
+                } else {
+                    self.emit_expr(left);
+                    self.push(".gt(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             BinaryOperator::GreaterEqualThan => {
-                self.emit_expr(left);
-                self.push(".ge(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                if self.current_callback_method.is_some() {
+                    self.push("JsAny.fromBool(");
+                    self.emit_expr(left);
+                    self.push(".ge(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push("))");
+                } else {
+                    self.emit_expr(left);
+                    self.push(".ge(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             BinaryOperator::Equality | BinaryOperator::StrictEquality => {
                 let left_ty = self.inferrer.infer_expr(left);

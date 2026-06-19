@@ -64,14 +64,15 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             Expression::CallExpression(call) => {
-                // Check if this is a map()/filter() call on a dynamic array
+                // Check if this is a map()/filter()/forEach()/reduce()/some()/every() call on a dynamic array
                 // If so, set current_callback_method to force JsAny types for callbacks
-                let mut _is_map_or_filter = false;
+                let callback_methods = ["map", "filter", "forEach", "reduce", "some", "every"];
+                let mut _is_callback_method = false;
                 if let Expression::StaticMemberExpression(mem) = &call.callee {
                     let _method = mem.property.name.as_str();
-                    if (_method == "map" || _method == "filter") && let Expression::Identifier(id) = &mem.object
+                    if callback_methods.contains(&_method) && let Expression::Identifier(id) = &mem.object
                         && self.inferrer.is_dynamic_array(id.name.as_str()) {
-                        _is_map_or_filter = true;
+                        _is_callback_method = true;
                         self.current_callback_method = Some(_method.to_string());
                     }
                 }
@@ -81,7 +82,7 @@ impl<'a> ZigCodegen<'a> {
                         self.scan_expr_for_closures(context_name, fn_params, expr, false);
                     }
                 }
-                if _is_map_or_filter {
+                if _is_callback_method {
                     self.current_callback_method = None;
                 }
             }
@@ -306,8 +307,11 @@ impl<'a> ZigCodegen<'a> {
         // Infer return type of the arrow body, with arrow params registered
         let ret_ty = if self.current_callback_method == Some("filter".to_string()) {
             crate::infer::ZigType::Bool
+        } else if self.current_callback_method == Some("forEach".to_string()) {
+            // forEach callback returns void (return value ignored in JS)
+            crate::infer::ZigType::Void
         } else if self.current_callback_method.is_some() {
-            // map() or other array method: force return type to JsAny
+            // map()/reduce()/some()/every() or other array method: force return type to JsAny
             crate::infer::ZigType::JsAny
         } else {
             self.inferrer.infer_return_type_from_arrow_with_params(arrow, &arrow_param_types)
@@ -505,7 +509,9 @@ impl<'a> ZigCodegen<'a> {
 
         // Emit the arrow body
         if arrow.expression {
-            def.push_str("        return ");
+            if ci.return_type != "void" {
+                def.push_str("        return ");
+            }
             if let Some(first) = arrow.body.statements.first() {
                 match first {
                     Statement::ExpressionStatement(es) => {
@@ -524,7 +530,11 @@ impl<'a> ZigCodegen<'a> {
                     }
                 }
             }
-            def.push_str(";\n");
+            if ci.return_type != "void" {
+                def.push_str(";\n");
+            } else {
+                def.push_str("\n");
+            }
             } else {
                 // Block body — emit each statement in closure context
                 for s in &arrow.body.statements {

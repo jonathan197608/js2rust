@@ -362,6 +362,7 @@ impl<'a> ZigCodegen<'a> {
             }
             "map" => {
                 // arr.map(callback) → for loop with callback.call(item)
+                // callback signature: call(item: JsAny) JsAny
                 self.push("blk: {\n");
                 self.push("    var _result = std.ArrayList(JsAny).empty;\n");
                 self.push("    errdefer _result.deinit(js_allocator.g_alloc());\n");
@@ -384,6 +385,7 @@ impl<'a> ZigCodegen<'a> {
             }
             "filter" => {
                 // arr.filter(callback) → for loop with callback.call(item).toBool()
+                // callback signature: call(item: JsAny) JsAny (truthy check)
                 self.push("blk: {\n");
                 self.push("    var _result = std.ArrayList(JsAny).empty;\n");
                 self.push("    errdefer _result.deinit(js_allocator.g_alloc());\n");
@@ -404,6 +406,101 @@ impl<'a> ZigCodegen<'a> {
                 self.push("    }\n");
                 self.push("    break :blk _result;\n");
                 self.push("}");
+            }
+            "forEach" => {
+                // arr.forEach(callback) → for loop with callback.call(item)
+                // callback signature: call(self: @This(), item: JsAny) void
+                // JS forEach returns undefined (we emit void)
+                self.push("blk: {\n");
+                self.push("    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";\n");
+                self.push("    for (");
+                self.push(&escaped);
+                self.push(".items) |item| {\n");
+                self.push("        _callback.call(item);\n");
+                self.push("    }\n");
+                self.push("    break :blk @as(JsAny, undefined);\n");
+                self.push("}");
+            }
+            "reduce" => {
+                // arr.reduce(callback, initial) → fold with accumulator
+                // callback signature: call(self: @This(), acc: JsAny, item: JsAny) JsAny
+                // If initial is not provided, use arr[0] as initial and start from index 1
+                self.push("blk: {\n");
+                self.push("    var _acc: JsAny = ");
+                if args.len() >= 2 {
+                    if let Some(arg1) = args.get(1) {
+                        // Wrap the initial value as JsAny
+                        self.emit_jsany_arg(arg1);
+                    } else {
+                        self.push("JsAny.fromI64(0)");
+                    }
+                } else {
+                    // No initial value: use first element as initial
+                    self.push("(if (");
+                    self.push(&escaped);
+                    self.push(".items.len > 0) ");
+                    self.push(&escaped);
+                    self.push(".items[0] else JsAny.fromI64(0))");
+                }
+                self.push(";\n");
+                self.push("    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";\n");
+                self.push("    for (");
+                self.push(&escaped);
+                self.push(".items");
+                if args.len() < 2 {
+                    self.push("[1..]");
+                }
+                self.push(") |item| {\n");
+                self.push("        _acc = _callback.call(_acc, item);\n");
+                self.push("    }\n");
+                self.push("    break :blk _acc;\n");
+                self.push("}");
+            }
+            "some" => {
+                // arr.some(callback) → returns true if any element passes test
+                // Returns bool (not JsAny) to match JS semantics
+                self.push("blk: {
+    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";
+    for (");
+                self.push(&escaped);
+                self.push(".items) |item| {
+        if (_callback.call(item).asBool()) {
+            break :blk true;
+        }
+    }
+    break :blk false;
+}");
+            }
+            "every" => {
+                // arr.every(callback) → returns true if all elements pass test
+                // Returns bool (not JsAny) to match JS semantics
+                self.push("blk: {
+    const _callback = ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                }
+                self.push(";
+    for (");
+                self.push(&escaped);
+                self.push(".items) |item| {
+        if (!_callback.call(item).asBool()) {
+            break :blk false;
+        }
+    }
+    break :blk true;
+}");
             }
             _ => {
                 self.push("@compileError(\"unknown array method: ");

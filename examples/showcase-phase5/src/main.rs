@@ -51,6 +51,24 @@ fn main() {
     let filter_ok = testArrayFilter_phase5();
     println!("  testArrayFilter() = {} (expected 0)", filter_ok);
 
+    // ── Array.reduce ─────────────────────────────
+    println!();
+    println!("--- Array.reduce ---");
+    let reduce_ok = testArrayReduce_phase5();
+    println!("  testArrayReduce() = {} (expected 0)", reduce_ok);
+
+    // ── Array.some ───────────────────────────────
+    println!();
+    println!("--- Array.some ---");
+    let some_ok = testArraySome_phase5();
+    println!("  testArraySome() = {} (expected 0)", some_ok);
+
+    // ── Array.every ──────────────────────────────
+    println!();
+    println!("--- Array.every ---");
+    let every_ok = testArrayEvery_phase5();
+    println!("  testArrayEvery() = {} (expected 0)", every_ok);
+
     js2rust_deinit();
 
     println!();

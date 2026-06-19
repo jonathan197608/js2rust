@@ -95,3 +95,36 @@ export function testArrayFilter() {
     }
     return -1;
 }
+
+// ── Array.reduce ─────────────────────────────
+// reduce to sum all elements
+export function testArrayReduce() {
+    const arr = [1, 2, 3, 4, 5];
+    const sum = arr.reduce((acc, x) => acc + x, 0);
+    if (sum === 15) {
+        return 0;
+    }
+    return -1;
+}
+
+// ── Array.some ───────────────────────────────
+// check if any element > 3
+export function testArraySome() {
+    const arr = [1, 2, 3, 4, 5];
+    const has_large = arr.some(x => x > 3);
+    if (has_large) {
+        return 0;
+    }
+    return -1;
+}
+
+// ── Array.every ──────────────────────────────
+// check if all elements > 0
+export function testArrayEvery() {
+    const arr = [1, 2, 3, 4, 5];
+    const all_positive = arr.every(x => x > 0);
+    if (all_positive) {
+        return 0;
+    }
+    return -1;
+}
