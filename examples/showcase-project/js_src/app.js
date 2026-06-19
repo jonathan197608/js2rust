@@ -102,3 +102,71 @@ export function runAllTests() {
     // showcaseSum(3, 7) = 10, testMultiBranch(75) = 2 → 10 + 2 = 12
     return showcaseSum(showcaseSum(3, 7), testMultiBranch(75));
 }
+
+// ══════════════════════════════════════════════════════════════
+// Phase 1: Loops — for / while / do-while / for-of / break / continue
+// [LOCKED] Do not modify once tests pass.
+// ══════════════════════════════════════════════════════════════
+
+// -- C-style for loop: sum 1..n --
+export function forSum(n) {
+    let sum = 0;
+    for (let i = 1; i <= n; i++) {
+        sum = sum + i;
+    }
+    return sum;
+}
+
+// -- while loop: count iterations halving n --
+export function whileHalve(n) {
+    let count = 0;
+    let current = n;
+    while (current > 0) {
+        count = count + 1;
+        current = current / 2;
+    }
+    return count;
+}
+
+// -- do-while: always runs at least once --
+export function doWhileOnce() {
+    let count = 0;
+    do {
+        count = count + 1;
+    } while (false);
+    return count;
+}
+
+// -- for-of: sum static array elements --
+export function forOfSum() {
+    const arr = [10, 20, 30, 40];
+    let sum = 0;
+    for (const item of arr) {
+        sum = sum + item;
+    }
+    return sum;
+}
+
+// -- break: exit loop early when threshold reached --
+export function breakAtFive(n) {
+    let sum = 0;
+    for (let i = 1; i <= n; i++) {
+        if (i > 5) {
+            break;
+        }
+        sum = sum + i;
+    }
+    return sum;
+}
+
+// -- continue: skip odd numbers, sum only evens --
+export function continueEven(n) {
+    let sum = 0;
+    for (let i = 1; i <= n; i++) {
+        if (i % 2 !== 0) {
+            continue;
+        }
+        sum = sum + i;
+    }
+    return sum;
+}

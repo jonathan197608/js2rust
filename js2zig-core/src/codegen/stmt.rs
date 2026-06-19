@@ -797,6 +797,12 @@ impl<'a> ZigCodegen<'a> {
                         let name_str = self.binding_name(&decl.id).to_string();
                         let cap_name = Self::escape_keyword(&name_str);
                         let used = Self::capture_used_in_body(&name_str, &fos.body);
+
+                        // Register the loop variable's type from the iterable's element type
+                        let iterable_ty = self.inferrer.infer_expr(&fos.right);
+                        let elem_ty = iterable_ty.element_type();
+                        self.inferrer.register_binding(&name_str, elem_ty);
+
                         self.emit_indent();
                         self.push("for (");
                         self.emit_expr(&fos.right);

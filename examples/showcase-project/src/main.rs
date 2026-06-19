@@ -86,6 +86,27 @@ fn main() {
     let total = runAllTests_app();
     println!("  runAllTests() = {} (expected 12)", total);
 
+    // ── Phase 1: Loops ─────────────────────────────────────
+    println!();
+    println!("--- Loops (Phase 1) ---");
+    let for_sum = forSum_app(10);
+    println!("  forSum(10) = {} (expected 55)", for_sum);
+
+    let while_halve = whileHalve_app(10);
+    println!("  whileHalve(10) = {} (expected 4)", while_halve);
+
+    let do_once = doWhileOnce_app();
+    println!("  doWhileOnce() = {} (expected 1)", do_once);
+
+    let for_of = forOfSum_app();
+    println!("  forOfSum() = {} (expected 100)", for_of);
+
+    let break5 = breakAtFive_app(100);
+    println!("  breakAtFive(100) = {} (expected 15)", break5);
+
+    let cont_even = continueEven_app(10);
+    println!("  continueEven(10) = {} (expected 30)", cont_even);
+
     // Cleanup
     js2rust_deinit();
 

@@ -246,6 +246,15 @@ impl ZigType {
             | ZigType::Bool | ZigType::String | ZigType::Null | ZigType::Usize)
     }
 
+    /// Extract the element type from container types (Array/Slice).
+    /// Returns `I64` as the default for non-container types.
+    pub fn element_type(&self) -> ZigType {
+        match self {
+            ZigType::Array(elem) | ZigType::Slice(elem) => *elem.clone(),
+            _ => ZigType::I64,
+        }
+    }
+
     /// Check if this type is a static array or object (Layer 1).
     pub fn is_static_aggregate(&self) -> bool {
         matches!(self, ZigType::Array(_) | ZigType::Object { .. } | ZigType::Slice(_))
@@ -728,6 +737,12 @@ impl TypeInferrer {
         ZigType::JsValue
     }
 
+    /// Register a temporary binding (e.g., for-of loop variable) so that
+    /// codegen can look up its type during expression emission.
+    pub fn register_binding(&mut self, name: &str, ty: ZigType) {
+        self.env.insert(name.to_string(), BindingInfo { zig_type: ty, is_const: true });
+    }
+
     /// Check if a variable name is in the dynamic_arrays set
     /// (i.e., push/pop/shift/unshift/splice/sort/reverse was called on it)
     pub fn is_dynamic_array(&self, name: &str) -> bool {
@@ -808,9 +823,11 @@ impl TypeInferrer {
             return init_type;
         }
 
-        // Rule 2.1: var + value type → JsValue (Layer 2)
+        // Rule 2.1: var + value type → keep init type (supports loop accumulators)
+        // JS transpilable code typically doesn't reassign variables to different types.
+        // Keeping the precise type enables correct Zig codegen for loops and arithmetic.
         if init_type.is_value_type() {
-            return ZigType::JsValue;
+            return init_type;
         }
 
         // Function expressions keep their type
