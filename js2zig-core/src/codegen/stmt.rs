@@ -288,10 +288,21 @@ impl<'a> ZigCodegen<'a> {
                 continue;
             }
 
-            let keyword = match vd.kind {
-                VariableDeclarationKind::Const => "const",
-                VariableDeclarationKind::Let | VariableDeclarationKind::Var => "var",
-                _ => "var",
+            // Check if init is new Map/Set/Error() → force `var` (mutating methods need mutable binding)
+            let needs_var = if let Some(init) = &decl.init {
+                Self::is_mutable_constructor(init)
+            } else {
+                false
+            };
+
+            let keyword = if needs_var {
+                "var"
+            } else {
+                match vd.kind {
+                    VariableDeclarationKind::Const => "const",
+                    VariableDeclarationKind::Let | VariableDeclarationKind::Var => "var",
+                    _ => "var",
+                }
             };
 
             let name: String = Self::escape_keyword(name);
@@ -300,8 +311,8 @@ impl<'a> ZigCodegen<'a> {
             self.push(" ");
             self.push(&name);
 
-            // Zig 0.16: add type annotation for var declarations
-            if keyword == "var" {
+            // Zig 0.16: add type annotation for var declarations (skip for Map/Set — let Zig infer)
+            if keyword == "var" && !needs_var {
                 let var_type = self.inferrer.get_var_type(&name);
                 let type_str = var_type.to_zig_str();
                 self.push(": ");

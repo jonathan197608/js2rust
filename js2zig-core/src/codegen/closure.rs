@@ -458,7 +458,7 @@ impl<'a> ZigCodegen<'a> {
                         }
                     }
                     _ => {
-                        def.push_str("/* unsupported expression */");
+                        def.push_str("@compileError(\"unsupported expression in closure body\")");
                     }
                 }
             }
@@ -564,7 +564,7 @@ impl<'a> ZigCodegen<'a> {
             }
             _ => {
                 // Unsupported expression type — emit placeholder
-                buf.push_str("<unsupported_expr>");
+                buf.push_str("@compileError(\"unsupported expression type in closure\")");
             }
         }
         buf

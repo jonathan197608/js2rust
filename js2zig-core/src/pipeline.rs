@@ -242,10 +242,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
         } else {
-            eprintln!(
-                "warning: '{}' not found — no host functions registered",
-                config_path.display()
-            );
+            // No host_config.json found — this is normal for projects that don't use host functions.
         }
     };
 

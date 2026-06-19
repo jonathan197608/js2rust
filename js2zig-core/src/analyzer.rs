@@ -25,6 +25,10 @@ pub fn sanitize_module_name(raw: &str) -> String {
     if !result.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
         result.insert(0, '_');
     }
+    // Prevent collision with the Zig orchestrator file `lib.zig`
+    if result == "lib" {
+        result.push_str("_mod");
+    }
     result
 }
 

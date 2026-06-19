@@ -406,6 +406,27 @@ impl<'a> ZigCodegen<'a> {
                         return;
                     }
                 }
+                // Integer division and modulo require Zig builtins
+                if bin.operator == BinaryOperator::Division || bin.operator == BinaryOperator::Remainder {
+                    let left_ty = self.inferrer.infer_expr(&bin.left);
+                    let right_ty = self.inferrer.infer_expr(&bin.right);
+                    let left_is_int = matches!(left_ty, ZigType::I64 | ZigType::I32 | ZigType::Usize);
+                    let right_is_int = matches!(right_ty, ZigType::I64 | ZigType::I32 | ZigType::Usize);
+                    if left_is_int || right_is_int {
+                        let builtin = if bin.operator == BinaryOperator::Division {
+                            "@divTrunc"
+                        } else {
+                            "@rem"
+                        };
+                        self.push(builtin);
+                        self.push("(");
+                        self.emit_expr(&bin.left);
+                        self.push(", ");
+                        self.emit_expr(&bin.right);
+                        self.push(")");
+                        return;
+                    }
+                }
                 self.emit_expr(&bin.left);
                 self.push(" ");
                 self.push(self.map_binary_op(&bin.operator));
@@ -434,9 +455,18 @@ impl<'a> ZigCodegen<'a> {
             Expression::UnaryExpression(unary) => {
                 match unary.operator {
                     UnaryOperator::Typeof => {
-                        self.push("@TypeOf(");
-                        self.emit_expr(&unary.argument);
-                        self.push(")");
+                        // JS typeof returns a string; map inferred type to the JS convention
+                        let arg_ty = self.inferrer.infer_expr(&unary.argument);
+                        let type_str = match &arg_ty {
+                            ZigType::I64 | ZigType::I32 | ZigType::Usize
+                            | ZigType::F64 | ZigType::F32 => "\"number\"",
+                            ZigType::String => "\"string\"",
+                            ZigType::Bool => "\"boolean\"",
+                            ZigType::Void => "\"undefined\"",
+                            ZigType::Null => "\"object\"",
+                            _ => "\"object\"",
+                        };
+                        self.push(type_str);
                     }
                     UnaryOperator::Void | UnaryOperator::Delete => {
                         self.emit_expr(&unary.argument);

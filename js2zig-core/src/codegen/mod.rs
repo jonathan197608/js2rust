@@ -637,10 +637,33 @@ impl<'a> ZigCodegen<'a> {
                 self.push("JsValue{ .null = {} }");
             }
             _ => {
-                // TODO: use runtime helper for proper type conversion
-                self.push("JsValue{ .int = ");
-                self.emit_expr(expr);
-                self.push(" }");
+                // Infer expression type and pick the correct JsValue variant
+                let expr_ty = self.inferrer.infer_expr(expr);
+                match &expr_ty {
+                    ZigType::F64 | ZigType::F32 => {
+                        self.push("JsValue{ .float = ");
+                        self.emit_expr(expr);
+                        self.push(" }");
+                    }
+                    ZigType::Bool => {
+                        self.push("JsValue{ .bool = ");
+                        self.emit_expr(expr);
+                        self.push(" }");
+                    }
+                    ZigType::String => {
+                        self.push("JsValue{ .string = ");
+                        self.emit_expr(expr);
+                        self.push(" }");
+                    }
+                    ZigType::Null => {
+                        self.push("JsValue{ .null = {} }");
+                    }
+                    _ => {
+                        self.push("JsValue{ .int = ");
+                        self.emit_expr(expr);
+                        self.push(" }");
+                    }
+                }
             }
         }
     }
@@ -728,6 +751,16 @@ impl<'a> ZigCodegen<'a> {
 
     pub(super) fn is_string_literal_expr(expr: &Expression) -> bool {
         matches!(expr, Expression::StringLiteral(_))
+    }
+
+    /// Check if an expression is a `new Map/Set()` constructor that requires a mutable binding.
+    pub(super) fn is_mutable_constructor(expr: &Expression) -> bool {
+        if let Expression::NewExpression(ne) = expr
+            && let Expression::Identifier(id) = &ne.callee
+        {
+            return matches!(id.name.as_str(), "Map" | "Set");
+        }
+        false
     }
 
     // ========== Expression Helpers ==========
