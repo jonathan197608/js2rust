@@ -149,6 +149,21 @@ fn main() {
     let or_ff = logicOr_app(-1, -2);
     println!("  logicOr(-1, -2) = {} (expected 0)", or_ff);
 
+    // ── Phase 4: Collections ───────────────────────────────
+    println!();
+    println!("--- Collections (Phase 4) ---");
+    let map_has = testMapHas_app();
+    println!("  testMapHas() = {} (expected 1)", map_has);
+
+    let map_miss = testMapMissing_app();
+    println!("  testMapMissing() = {} (expected 0)", map_miss);
+
+    let set_has = testSetHas_app();
+    println!("  testSetHas() = {} (expected 1)", set_has);
+
+    let set_miss = testSetMissing_app();
+    println!("  testSetMissing() = {} (expected 0)", set_miss);
+
     // Cleanup
     js2rust_deinit();
 

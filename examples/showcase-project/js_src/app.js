@@ -263,3 +263,52 @@ export function logicOr(a, b) {
     }
     return 0;
 }
+
+// ══════════════════════════════════════════════════════════════
+// Phase 4: Collections — Map / Set
+// [LOCKED] Do not modify once tests pass.
+// ══════════════════════════════════════════════════════════════
+
+// -- Map: set + has (positive) --
+export function testMapHas() {
+    const m = new Map();
+    m.set("hello", 42);
+    m.set("world", 99);
+    if (m.has("hello")) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Map: has returns false for missing key --
+export function testMapMissing() {
+    const m = new Map();
+    m.set("a", 1);
+    if (m.has("b")) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Set: add + has (positive) --
+export function testSetHas() {
+    const s = new Set();
+    s.add(1);
+    s.add(2);
+    s.add(3);
+    if (s.has(2)) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Set: has returns false for missing value --
+export function testSetMissing() {
+    const s = new Set();
+    s.add(10);
+    s.add(20);
+    if (s.has(30)) {
+        return 1;
+    }
+    return 0;
+}
