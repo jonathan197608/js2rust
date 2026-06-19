@@ -71,8 +71,13 @@ impl<'a> ZigCodegen<'a> {
             Statement::FunctionDeclaration(fd) => self.emit_fn_decl(fd),
             Statement::ExpressionStatement(es) => {
                 self.emit_indent();
-                // Zig 0.16: do NOT use `_ = expr;` for expression statements.
-                // This causes "error set is discarded" error.
+                // Zig 0.16: non-void return values must be explicitly ignored.
+                // We add `_ = ` for call expressions (the most common case).
+                // `_ = void_expr;` is valid in Zig 0.16, so this is safe.
+                // Error unions are already handled by builtin templates (catch unreachable).
+                if matches!(&es.expression, Expression::CallExpression(_)) {
+                    self.push("_ = ");
+                }
                 self.emit_expr(&es.expression);
                 self.push(";\n");
             }

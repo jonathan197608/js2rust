@@ -1323,7 +1323,7 @@ impl TypeInferrer {
                 | BinaryOperator::Exponential => {
                     if other.is_numeric() { other.clone() } else { ZigType::I64 }
                 }
-                BinaryOperator::Division => ZigType::F64,
+                BinaryOperator::Division => ZigType::I64,  // transpiler uses @divTrunc (int div)
                 BinaryOperator::ShiftLeft
                 | BinaryOperator::ShiftRight
                 | BinaryOperator::ShiftRightZeroFill => ZigType::I64,
@@ -2019,7 +2019,7 @@ impl TypeInferrer {
                     | BinaryOperator::Multiplication
                     | BinaryOperator::Remainder
                     | BinaryOperator::Exponential => ZigType::widen(&left_ty, &right_ty),
-                    BinaryOperator::Division => ZigType::F64,
+                    BinaryOperator::Division => ZigType::I64,  // @divTrunc, integer division
                     BinaryOperator::ShiftLeft
                     | BinaryOperator::ShiftRight
                     | BinaryOperator::ShiftRightZeroFill
