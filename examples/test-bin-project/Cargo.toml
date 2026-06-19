@@ -1,5 +1,5 @@
 [package]
-name = "js2zig-test-bin-project"
+name = "test-bin-project"
 version = "0.1.0"
 edition = "2021"
 authors = ["jonathan197608"]

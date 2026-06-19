@@ -1,5 +1,5 @@
 [package]
-name = "js2zig-showcase-phase5"
+name = "showcase-phase5"
 version = "0.1.0"
 edition = "2021"
 authors = ["jonathan197608"]

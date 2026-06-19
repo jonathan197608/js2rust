@@ -121,35 +121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "js2zig-showcase-phase5"
-version = "0.1.0"
-dependencies = [
- "js2rust-bridge",
-]
-
-[[package]]
-name = "js2zig-showcase-project"
-version = "0.1.0"
-dependencies = [
- "js2rust-bridge",
-]
-
-[[package]]
-name = "js2zig-test-bin-project"
-version = "0.1.0"
-dependencies = [
- "js2rust-bridge",
- "tokio",
-]
-
-[[package]]
-name = "js2zig-test-lib-project"
-version = "0.1.0"
-dependencies = [
- "js2rust-bridge",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -540,6 +511,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "showcase-phase5"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+]
+
+[[package]]
+name = "showcase-project"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -566,6 +551,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "test-bin-project"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+ "tokio",
+]
+
+[[package]]
+name = "test-lib-project"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
 ]
 
 [[package]]
