@@ -743,6 +743,17 @@ impl TypeInferrer {
         self.env.insert(name.to_string(), BindingInfo { zig_type: ty, is_const: true });
     }
 
+    /// Save the current environment (for temporary modifications).
+    /// Returns a clone of the current env for later restoration.
+    pub fn save_env(&self) -> std::collections::HashMap<String, BindingInfo> {
+        self.env.clone()
+    }
+
+    /// Restore the environment from a saved state.
+    pub fn restore_env(&mut self, saved: std::collections::HashMap<String, BindingInfo>) {
+        self.env = saved;
+    }
+
     /// Check if a variable name is in the dynamic_arrays set
     /// (i.e., push/pop/shift/unshift/splice/sort/reverse was called on it)
     pub fn is_dynamic_array(&self, name: &str) -> bool {

@@ -64,9 +64,10 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             Expression::CallExpression(call) => {
-                // Check if this is a map()/filter()/forEach()/reduce()/some()/every() call on a dynamic array
+                // Check if this is a map()/filter()/reduce()/some()/every() call on a dynamic array
                 // If so, set current_callback_method to force JsAny types for callbacks
-                let callback_methods = ["map", "filter", "forEach", "reduce", "some", "every"];
+                // NOTE: forEach is NOT included here because it uses inlining (no closure struct)
+                let callback_methods = ["map", "filter", "reduce", "some", "every"];
                 let mut _is_callback_method = false;
                 if let Expression::StaticMemberExpression(mem) = &call.callee {
                     let _method = mem.property.name.as_str();
@@ -251,10 +252,29 @@ impl<'a> ZigCodegen<'a> {
         // Collect arrow function parameter info
         let mut params = Vec::new();
         let mut arrow_param_types: Vec<(String, crate::infer::ZigType)> = Vec::new();
-        for p in &arrow.params.items {
+        for (pi, p) in arrow.params.items.iter().enumerate() {
             let pname = self.binding_name(&p.pattern).to_owned();
             let ptype = if self.current_callback_method.is_some() {
-                crate::infer::ZigType::JsAny
+                // Callback methods: types depend on parameter position
+                // JS spec: map/filter/forEach/some/every: (item, index?, array?)
+                //          reduce: (accumulator, item, index?, array?)
+                let method = self.current_callback_method.as_deref().unwrap_or("");
+                if method == "reduce" {
+                    // reduce: (acc, item, index, array)
+                    match pi {
+                        0 => crate::infer::ZigType::JsAny,  // accumulator
+                        1 => crate::infer::ZigType::JsAny,  // current item
+                        2 => crate::infer::ZigType::Usize,   // index
+                        _ => crate::infer::ZigType::JsAny,  // array (rarely used)
+                    }
+                } else {
+                    // map/filter/forEach/some/every: (item, index, array)
+                    match pi {
+                        0 => crate::infer::ZigType::JsAny,  // current item
+                        1 => crate::infer::ZigType::Usize,   // index
+                        _ => crate::infer::ZigType::JsAny,  // array (rarely used)
+                    }
+                }
             } else if let Some(default) = &p.initializer {
                 self.inferrer.infer_expr(default)
             } else {
@@ -310,8 +330,12 @@ impl<'a> ZigCodegen<'a> {
         } else if self.current_callback_method == Some("forEach".to_string()) {
             // forEach callback returns void (return value ignored in JS)
             crate::infer::ZigType::Void
+        } else if self.current_callback_method == Some("some".to_string())
+            || self.current_callback_method == Some("every".to_string()) {
+            // some()/every() callback returns bool
+            crate::infer::ZigType::Bool
         } else if self.current_callback_method.is_some() {
-            // map()/reduce()/some()/every() or other array method: force return type to JsAny
+            // map()/reduce() or other array method: force return type to JsAny
             crate::infer::ZigType::JsAny
         } else {
             self.inferrer.infer_return_type_from_arrow_with_params(arrow, &arrow_param_types)
@@ -517,12 +541,22 @@ impl<'a> ZigCodegen<'a> {
                     Statement::ExpressionStatement(es) => {
                         // Emit expression, replacing captured vars with self. references
                         let expr_code = self.emit_closure_expr(&es.expression, ci);
-                        def.push_str(&expr_code);
+                        // For bool-returning closures (some/every), wrap JsAny result with .asBool()
+                        if ci.return_type == "bool" && (expr_code.contains(".gt(") || expr_code.contains(".lt(") || expr_code.contains(".ge(") || expr_code.contains(".le(") || expr_code.contains(".eq(") || expr_code.contains(".ne(")) {
+                            def.push_str(&format!("{}.asBool()", expr_code));
+                        } else {
+                            def.push_str(&expr_code);
+                        }
                     }
                     Statement::ReturnStatement(rs) => {
                         if let Some(arg) = &rs.argument {
                             let expr_code = self.emit_closure_expr(arg, ci);
-                            def.push_str(&expr_code);
+                            // For bool-returning closures (some/every), wrap JsAny result with .asBool()
+                            if ci.return_type == "bool" && (expr_code.contains(".gt(") || expr_code.contains(".lt(") || expr_code.contains(".ge(") || expr_code.contains(".le(") || expr_code.contains(".eq(") || expr_code.contains(".ne(")) {
+                                def.push_str(&format!("{}.asBool()", expr_code));
+                            } else {
+                                def.push_str(&expr_code);
+                            }
                         }
                     }
                     _ => {
@@ -558,8 +592,36 @@ impl<'a> ZigCodegen<'a> {
     pub(super) fn emit_closure_expr(&mut self, expr: &Expression, ci: &ClosureInfo) -> String {
         // Save output, redirect to new buffer
         let saved = std::mem::take(&mut self.output);
+
+        // Temporarily register closure parameter types in the inferrer
+        // This ensures correct type inference for closure body generation
+        let saved_env = self.inferrer.save_env();
+        for (pname, ptype_str) in &ci.params {
+            // Map Zig type string back to ZigType
+            let ptype = if ptype_str == "JsAny" || ptype_str == "JsValue" {
+                crate::infer::ZigType::JsAny
+            } else if ptype_str == "usize" {
+                crate::infer::ZigType::Usize
+            } else if ptype_str == "i64" {
+                crate::infer::ZigType::I64
+            } else if ptype_str == "bool" {
+                crate::infer::ZigType::Bool
+            } else if ptype_str == "f64" {
+                crate::infer::ZigType::F64
+            } else if ptype_str == "[]const u8" {
+                crate::infer::ZigType::String
+            } else {
+                crate::infer::ZigType::JsAny  // fallback
+            };
+            self.inferrer.register_binding(pname, ptype);
+        }
+
         // Emit using emit_expr (handles JsAny binary ops correctly)
         self.emit_expr(expr);
+
+        // Restore inferrer env
+        self.inferrer.restore_env(saved_env);
+
         // Get the emitted code
         let mut code = std::mem::take(&mut self.output);
         // Restore output
@@ -575,8 +637,35 @@ impl<'a> ZigCodegen<'a> {
 
     /// Emit a closure statement, replacing captured vars with `self.` prefix.
     pub(super) fn emit_closure_stmt(&mut self, stmt: &Statement, ci: &ClosureInfo) -> String {
+        // Save output
         let saved = std::mem::take(&mut self.output);
+
+        // Temporarily register closure parameter types in the inferrer
+        let saved_env = self.inferrer.save_env();
+        for (pname, ptype_str) in &ci.params {
+            let ptype = if ptype_str == "JsAny" || ptype_str == "JsValue" {
+                crate::infer::ZigType::JsAny
+            } else if ptype_str == "usize" {
+                crate::infer::ZigType::Usize
+            } else if ptype_str == "i64" {
+                crate::infer::ZigType::I64
+            } else if ptype_str == "bool" {
+                crate::infer::ZigType::Bool
+            } else if ptype_str == "f64" {
+                crate::infer::ZigType::F64
+            } else if ptype_str == "[]const u8" {
+                crate::infer::ZigType::String
+            } else {
+                crate::infer::ZigType::JsAny  // fallback
+            };
+            self.inferrer.register_binding(pname, ptype);
+        }
+
         self.emit_stmt(stmt);
+
+        // Restore inferrer env
+        self.inferrer.restore_env(saved_env);
+
         let mut code = std::mem::take(&mut self.output);
         self.output = saved;
         for (cap_name, _) in &ci.captured {

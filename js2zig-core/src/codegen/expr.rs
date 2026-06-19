@@ -77,6 +77,32 @@ impl<'a> ZigCodegen<'a> {
         }
     }
 
+    /// Unwrap a JsAny/JsValue expression to the specified primitive type.
+    fn emit_unwrap_js_any(&mut self, expr: &Expression, target_ty: &ZigType) {
+        match target_ty {
+            ZigType::I64 | ZigType::I32 | ZigType::Usize => {
+                self.emit_expr(expr);
+                self.push(".asI64()");
+            }
+            ZigType::F64 | ZigType::F32 => {
+                self.emit_expr(expr);
+                self.push(".asF64()");
+            }
+            ZigType::Bool => {
+                self.emit_expr(expr);
+                self.push(".asBool()");
+            }
+            ZigType::String => {
+                self.emit_expr(expr);
+                self.push(".asString()");
+            }
+            _ => {
+                // Fallback: emit as-is (may cause Zig type error if mismatched)
+                self.emit_expr(expr);
+            }
+        }
+    }
+
     /// Infer the type of a simple assignment target.
     fn infer_simple_target_type(&self, target: &SimpleAssignmentTarget) -> ZigType {
         match target {
@@ -181,6 +207,7 @@ impl<'a> ZigCodegen<'a> {
 
     /// Emit a JS-style binary operation as a method call.
     /// For JsValue/JsAny typed operands, uses .add()/.sub()/.mul() etc.
+    /// If left operand is NOT JsAny/JsValue, emit standard Zig operator instead.
     fn emit_js_binary_op(
         &mut self,
         left: &Expression,
@@ -188,6 +215,19 @@ impl<'a> ZigCodegen<'a> {
         op: &BinaryOperator,
         left_ty: &ZigType,
     ) {
+        // If left operand is NOT JsAny/JsValue, emit standard Zig operator
+        if !Self::is_js_obj_type(left_ty) {
+            self.emit_expr(left);
+            self.push(self.map_binary_op(op));
+            let right_ty = self.inferrer.infer_expr(right);
+            if Self::is_js_obj_type(&right_ty) {
+                // Unwrap JsAny to the left type
+                self.emit_unwrap_js_any(right, left_ty);
+            } else {
+                self.emit_expr(right);
+            }
+            return;
+        }
         // Determine the wider type for method calls
         let right_ty = self.inferrer.infer_expr(right);
         let prefix = if self.current_callback_method.is_some() || matches!(left_ty, ZigType::JsAny) || matches!(&right_ty, ZigType::JsAny) {
@@ -370,6 +410,7 @@ impl<'a> ZigCodegen<'a> {
                 match id.name.as_str() {
                     "NaN" => { self.push("std.math.nan(f64)"); return; }
                     "Infinity" => { self.push("std.math.inf(f64)"); return; }
+                    "undefined" => { self.push("JsAny.undefined"); return; }
                     _ => {}
                 }
                 self.push(&Self::escape_keyword(id.name.as_str()));
@@ -444,16 +485,19 @@ impl<'a> ZigCodegen<'a> {
                         return;
                     }
                     // Check JsValue/JsAny after String check
-                    if Self::is_js_obj_type(&left_ty) || Self::is_js_obj_type(&right_ty) {
+                    // Only use method-call syntax if LEFT operand is JsAny/JsValue
+                    if Self::is_js_obj_type(&left_ty) {
                         self.emit_js_binary_op(&bin.left, &bin.right, &bin.operator, &left_ty);
                         return;
                     }
+                    // If left is primitive and right is JsAny, fall through to standard operator
                 }
                 // For non-Addition binary ops with JsValue/JsAny operands
                 if bin.operator != BinaryOperator::Addition {
                     let left_ty = self.inferrer.infer_expr(&bin.left);
                     let right_ty = self.inferrer.infer_expr(&bin.right);
-                    if Self::is_js_obj_type(&left_ty) || Self::is_js_obj_type(&right_ty) {
+                    // Only use method-call syntax if LEFT operand is JsAny/JsValue
+                    if Self::is_js_obj_type(&left_ty) {
                         self.emit_js_binary_op(&bin.left, &bin.right, &bin.operator, &left_ty);
                         return;
                     }
@@ -479,20 +523,30 @@ impl<'a> ZigCodegen<'a> {
                         return;
                     }
                 }
+                // Standard operator emission (both operands are primitive, or mixed)
+                let left_ty = self.inferrer.infer_expr(&bin.left);
+                let right_ty = self.inferrer.infer_expr(&bin.right);
                 self.emit_expr(&bin.left);
                 self.push(" ");
                 self.push(self.map_binary_op(&bin.operator));
                 self.push(" ");
-                // Zig shift amount must be unsigned: i64 << n requires n: u6
-                if bin.operator == BinaryOperator::ShiftLeft
-                    || bin.operator == BinaryOperator::ShiftRight
-                    || bin.operator == BinaryOperator::ShiftRightZeroFill
-                {
-                    self.push("@as(u6, @intCast(");
-                    self.emit_expr(&bin.right);
-                    self.push("))");
+                // Handle JsAny unwrapping for binary ops with mixed types
+                // e.g., sum (i64) + x (JsAny) → sum + x.asI64()
+                if Self::is_js_obj_type(&right_ty) && !Self::is_js_obj_type(&left_ty) {
+                    // Right is JsAny, left is primitive: unwrap right to left's type
+                    self.emit_unwrap_js_any(&bin.right, &left_ty);
                 } else {
-                    self.emit_expr(&bin.right);
+                    // Zig shift amount must be unsigned: i64 << n requires n: u6
+                    if bin.operator == BinaryOperator::ShiftLeft
+                        || bin.operator == BinaryOperator::ShiftRight
+                        || bin.operator == BinaryOperator::ShiftRightZeroFill
+                    {
+                        self.push("@as(u6, @intCast(");
+                        self.emit_expr(&bin.right);
+                        self.push("))");
+                    } else {
+                        self.emit_expr(&bin.right);
+                    }
                 }
             }
 

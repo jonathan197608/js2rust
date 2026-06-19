@@ -408,22 +408,66 @@ impl<'a> ZigCodegen<'a> {
                 self.push("}");
             }
             "forEach" => {
-                // arr.forEach(callback) → for loop with callback.call(item)
-                // callback signature: call(self: @This(), item: JsAny) void
-                // JS forEach returns undefined (we emit void)
-                self.push("blk: {\n");
-                self.push("    const _callback = ");
-                if let Some(arg0) = args.first() {
-                    self.emit_arg(arg0);
+                // arr.forEach(callback) → inline for-loop (no closure), supports side effects
+                // If callback is an arrow function, inline its body directly.
+                // This allows captured variables to be modified correctly.
+                let arrow = if let Some(arg0) = args.first() {
+                    if let Some(expr) = arg0.as_expression() {
+                        if let Expression::ArrowFunctionExpression(arrow) = expr {
+                            Some(arrow)
+                        } else { None }
+                    } else { None }
+                } else { None };
+                if let Some(arrow) = arrow {
+                    // Arrow function: inline body into a for-loop
+                    let param_names: Vec<String> = arrow.params.items.iter().map(|p| {
+                        self.binding_name(&p.pattern).to_string()
+                    }).collect();
+                    if param_names.is_empty() {
+                        self.push("undefined");
+                        return;
+                    }
+                    let has_index = param_names.len() >= 2;
+                    self.push("blk: {\n");
+                    self.push("    for (");
+                    self.push(&escaped);
+                    self.push(".items");
+                    if has_index {
+                        self.push(", 0..) |");
+                        self.push(&param_names[0]);
+                        self.push(", ");
+                        self.push(&param_names[1]);
+                        self.push("| {\n");
+                    } else {
+                        self.push(") |");
+                        self.push(&param_names[0]);
+                        self.push("| {\n");
+                    }
+                    // Emit arrow body statements directly (no closure, no self. prefix)
+                    for stmt in &arrow.body.statements {
+                        self.push("        ");
+                        self.emit_stmt(stmt);
+                        self.push("\n");
+                    }
+                    self.push("    }\n");
+                    self.push("    break :blk @as(JsAny, undefined);\n");
+                    self.push("}");
+                } else {
+                    // Non-arrow callback: use closure (fallback)
+                    self.push("blk: {\n");
+                    self.push("    const _callback = ");
+                    if let Some(arg0) = args.first() {
+                        self.emit_arg(arg0);
+                    }
+                    self.push(";\n");
+                    self.push("    for (");
+                    self.push(&escaped);
+                    self.push(".items) |item| {\n");
+                    self.push("        _callback.call(item);\n");
+                    self.push("    }\n");
+                    self.push("    break :blk @as(JsAny, undefined);\n");
+                    self.push("}");
                 }
-                self.push(";\n");
-                self.push("    for (");
-                self.push(&escaped);
-                self.push(".items) |item| {\n");
-                self.push("        _callback.call(item);\n");
-                self.push("    }\n");
-                self.push("    break :blk @as(JsAny, undefined);\n");
-                self.push("}");
             }
             "reduce" => {
                 // arr.reduce(callback, initial) → fold with accumulator
@@ -466,41 +510,76 @@ impl<'a> ZigCodegen<'a> {
             }
             "some" => {
                 // arr.some(callback) → returns true if any element passes test
-                // Returns bool (not JsAny) to match JS semantics
-                self.push("blk: {
-    const _callback = ");
+                // callback: (item) or (item, index)
+                // Check arrow param count to decide whether to pass index
+                let has_index = if let Some(arg0) = args.first() {
+                    if let Some(expr) = arg0.as_expression() {
+                        if let Expression::ArrowFunctionExpression(arrow) = expr {
+                            arrow.params.items.len() >= 2
+                        } else { false }
+                    } else { false }
+                } else { false };
+                self.push("blk: {\n");
+                self.push("    const _callback = ");
                 if let Some(arg0) = args.first() {
                     self.emit_arg(arg0);
                 }
-                self.push(";
-    for (");
+                self.push(";\n");
+                self.push("    for (");
                 self.push(&escaped);
-                self.push(".items) |item| {
-        if (_callback.call(item).asBool()) {
-            break :blk true;
-        }
-    }
-    break :blk false;
-}");
+                if has_index {
+                    self.push(".items, 0..) |item, _i| {\n");
+                } else {
+                    self.push(".items) |item| {\n");
+                }
+                self.push("        if (");
+                if has_index {
+                    self.push("_callback.call(item, _i)");
+                } else {
+                    self.push("_callback.call(item)");
+                }
+                self.push(") {\n");
+                self.push("            break :blk true;\n");
+                self.push("        }\n");
+                self.push("    }\n");
+                self.push("    break :blk false;\n");
+                self.push("}");
             }
             "every" => {
                 // arr.every(callback) → returns true if all elements pass test
-                // Returns bool (not JsAny) to match JS semantics
-                self.push("blk: {
-    const _callback = ");
+                // callback: (item) or (item, index)
+                let has_index = if let Some(arg0) = args.first() {
+                    if let Some(expr) = arg0.as_expression() {
+                        if let Expression::ArrowFunctionExpression(arrow) = expr {
+                            arrow.params.items.len() >= 2
+                        } else { false }
+                    } else { false }
+                } else { false };
+                self.push("blk: {\n");
+                self.push("    const _callback = ");
                 if let Some(arg0) = args.first() {
                     self.emit_arg(arg0);
                 }
-                self.push(";
-    for (");
+                self.push(";\n");
+                self.push("    for (");
                 self.push(&escaped);
-                self.push(".items) |item| {
-        if (!_callback.call(item).asBool()) {
-            break :blk false;
-        }
-    }
-    break :blk true;
-}");
+                if has_index {
+                    self.push(".items, 0..) |item, _i| {\n");
+                } else {
+                    self.push(".items) |item| {\n");
+                }
+                self.push("        if (!");
+                if has_index {
+                    self.push("_callback.call(item, _i)");
+                } else {
+                    self.push("_callback.call(item)");
+                }
+                self.push(") {\n");
+                self.push("            break :blk false;\n");
+                self.push("        }\n");
+                self.push("    }\n");
+                self.push("    break :blk true;\n");
+                self.push("}");
             }
             _ => {
                 self.push("@compileError(\"unknown array method: ");

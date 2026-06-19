@@ -128,3 +128,39 @@ export function testArrayEvery() {
     }
     return -1;
 }
+
+// ── Array.forEach (side effects) ────────────────────
+// sum all elements by modifying outer variable
+export function testArrayForEach() {
+    const arr = [1, 2, 3, 4, 5];
+    let sum = 0;
+    arr.forEach(x => {
+        sum = sum + x;
+    });
+    if (sum === 15) {
+        return 0;
+    }
+    return -1;
+}
+
+// ── Array.some with index ─────────────────────────
+// check if any element > 3, using index
+export function testArraySomeIndex() {
+    const arr = [1, 2, 3, 4, 5];
+    const has_large_idx = arr.some((x, i) => i > 2);
+    if (has_large_idx) {
+        return 0;
+    }
+    return -1;
+}
+
+// ── Array.every with index ────────────────────────
+// check if all elements have index < 5
+export function testArrayEveryIndex() {
+    const arr = [10, 20, 30, 40, 50];
+    const all_small_idx = arr.every((x, i) => i < 5);
+    if (all_small_idx) {
+        return 0;
+    }
+    return -1;
+}

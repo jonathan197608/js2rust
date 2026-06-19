@@ -103,10 +103,10 @@ export function runAllTests() {
     return showcaseSum(showcaseSum(3, 7), testMultiBranch(75));
 }
 
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // Phase 1: Loops — for / while / do-while / for-of / break / continue
 // [LOCKED] Do not modify once tests pass.
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 
 // -- C-style for loop: sum 1..n --
 export function forSum(n) {
@@ -171,10 +171,10 @@ export function continueEven(n) {
     return sum;
 }
 
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // Phase 2: Error Handling — try-catch / throw
 // [LOCKED] Do not modify once tests pass.
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 
 // -- Basic throw + catch: catch path taken --
 export function tryCatchBasic() {
@@ -220,10 +220,10 @@ export function tryCatchMultiOp() {
     }
 }
 
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // Phase 3: Operators — div / mod / compound assign / logical
 // [LOCKED] Do not modify once tests pass.
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 
 // -- Integer division via assignment: @divTrunc --
 export function intDivTest() {
@@ -264,10 +264,10 @@ export function logicOr(a, b) {
     return 0;
 }
 
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 // Phase 4: Collections — Map / Set
 // [LOCKED] Do not modify once tests pass.
-// ══════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
 
 // -- Map: set + has (positive) --
 export function testMapHas() {
@@ -312,3 +312,11 @@ export function testSetMissing() {
     }
     return 0;
 }
+
+// ════════════════════════════════════════════════════════
+// Phase 5: Additional tests (expand as features are added)
+// ════════════════════════════════════════════════════════
+
+// TODO: Add tests for Map.get(), Map.delete(), Map.size
+// TODO: Add tests for Set.delete(), Set.size
+// TODO: Fix codegen for optional return types and primitive comparisons

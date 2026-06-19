@@ -57,6 +57,24 @@ fn main() {
     let reduce_ok = testArrayReduce_phase5();
     println!("  testArrayReduce() = {} (expected 0)", reduce_ok);
 
+    // ── Array.forEach (side effects) ───────────────────
+    println!();
+    println!("--- Array.forEach (side effects) ---");
+    let forEach_ok = testArrayForEach_phase5();
+    println!("  testArrayForEach() = {} (expected 0)", forEach_ok);
+
+    // ── Array.some with index ──────────────────────
+    println!();
+    println!("--- Array.some with index ---");
+    let some_idx_ok = testArraySomeIndex_phase5();
+    println!("  testArraySomeIndex() = {} (expected 0)", some_idx_ok);
+
+    // ── Array.every with index ─────────────────────
+    println!();
+    println!("--- Array.every with index ---");
+    let every_idx_ok = testArrayEveryIndex_phase5();
+    println!("  testArrayEveryIndex() = {} (expected 0)", every_idx_ok);
+
     // ── Array.some ───────────────────────────────
     println!();
     println!("--- Array.some ---");
