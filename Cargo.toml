@@ -6,4 +6,5 @@ members = [
     "js2rust-bridge-macro",
     "examples/test-lib-project",
     "examples/test-bin-project",
+    "examples/showcase-project",
 ]
