@@ -135,7 +135,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "js2zig-test-project"
+name = "js2zig-test-lib-project"
 version = "0.1.0"
 dependencies = [
  "js2rust-bridge-macro",

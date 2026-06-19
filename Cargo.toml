@@ -5,6 +5,6 @@ members = [
     "js2zig-build",
     "js2rust-bridge",
     "js2rust-bridge-macro",
-    "examples/test-project",
+    "examples/test-lib-project",
     "examples/test-bin-project",
 ]
