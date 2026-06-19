@@ -219,3 +219,47 @@ export function tryCatchMultiOp() {
         return a * 2;
     }
 }
+
+// ══════════════════════════════════════════════════════════════
+// Phase 3: Operators — div / mod / compound assign / logical
+// [LOCKED] Do not modify once tests pass.
+// ══════════════════════════════════════════════════════════════
+
+// -- Integer division via assignment: @divTrunc --
+export function intDivTest() {
+    let x = 17;
+    x = x / 5;
+    return x;
+}
+
+// -- Modulo via assignment: @rem --
+export function modOpTest() {
+    let x = 17;
+    x = x % 5;
+    return x;
+}
+
+// -- Compound assignment: +=, *=, -= --
+export function compoundOps() {
+    let x = 2;
+    x += 3;
+    x *= 4;
+    x -= 8;
+    return x;
+}
+
+// -- Logical AND: short-circuit --
+export function logicAnd(a, b) {
+    if (a > 0 && b > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Logical OR: short-circuit --
+export function logicOr(a, b) {
+    if (a > 0 || b > 0) {
+        return 1;
+    }
+    return 0;
+}

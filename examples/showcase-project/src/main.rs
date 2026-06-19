@@ -125,6 +125,30 @@ fn main() {
     let tc_multi = tryCatchMultiOp_app();
     println!("  tryCatchMultiOp() = {} (expected 30)", tc_multi);
 
+    // ── Phase 3: Operators ─────────────────────────────────
+    println!();
+    println!("--- Operators (Phase 3) ---");
+    let div_val = intDivTest_app();
+    println!("  intDivTest() = {} (expected 3)", div_val);
+
+    let mod_val = modOpTest_app();
+    println!("  modOpTest() = {} (expected 2)", mod_val);
+
+    let comp = compoundOps_app();
+    println!("  compoundOps() = {} (expected 12)", comp);
+
+    let and_tt = logicAnd_app(5, 3);
+    println!("  logicAnd(5, 3) = {} (expected 1)", and_tt);
+
+    let and_tf = logicAnd_app(-1, 3);
+    println!("  logicAnd(-1, 3) = {} (expected 0)", and_tf);
+
+    let or_tf = logicOr_app(-1, 3);
+    println!("  logicOr(-1, 3) = {} (expected 1)", or_tf);
+
+    let or_ff = logicOr_app(-1, -2);
+    println!("  logicOr(-1, -2) = {} (expected 0)", or_ff);
+
     // Cleanup
     js2rust_deinit();
 
