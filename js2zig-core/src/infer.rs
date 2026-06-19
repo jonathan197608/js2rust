@@ -749,6 +749,11 @@ impl TypeInferrer {
         self.dynamic_arrays.contains(name)
     }
 
+    /// Mark a variable as a dynamic array (e.g., assigned from slice() return value)
+    pub fn mark_as_dynamic_array(&mut self, name: &str) {
+        self.dynamic_arrays.insert(name.to_string());
+    }
+
     /// Check if a name is a parameter of a specific function.
     pub fn is_fn_param_of(&self, fn_name: &str, param_name: &str) -> bool {
         self.fn_param_names.get(fn_name)
@@ -2197,6 +2202,13 @@ impl TypeInferrer {
                     // Fall through to Any — class fields are all i64 anyway
                     ZigType::JsValue
                 }
+                // Dynamic array (JsAny): .length returns i64
+                ZigType::JsAny => {
+                    if self.dynamic_arrays.contains(obj_name) && prop == "length" {
+                        return ZigType::I64;
+                    }
+                    ZigType::JsValue
+                }
                 _ => match (obj_name, prop) {
                     ("Math", "PI" | "E" | "LN2" | "LN10" | "LOG2E" | "LOG10E"
                         | "SQRT2" | "SQRT1_2") => ZigType::F64,
@@ -2609,6 +2621,21 @@ impl TypeInferrer {
                     // If assigning from a dynamic array, mark the new variable as dynamic
                     if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
                         self.dynamic_arrays.insert(bi.name.to_string());
+                    }
+                }
+                // Check for assignment from array-returning methods (slice, filter, map, concat)
+                if let Some(init) = &decl.init
+                    && let Expression::CallExpression(call) = init
+                    && let Expression::StaticMemberExpression(mem) = &call.callee
+                    && let Expression::Identifier(obj_id) = &mem.object
+                    && self.dynamic_arrays.contains(obj_id.name.as_str())
+                {
+                    let method = mem.property.name.as_str();
+                    // Methods that return a new array
+                    if matches!(method, "slice" | "filter" | "map" | "concat") {
+                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(bi) = &decl.id {
+                            self.dynamic_arrays.insert(bi.name.to_string());
+                        }
                     }
                 }
             }

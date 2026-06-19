@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const JsAny = @import("jsany.zig").JsAny;
 
 /// Array.isArray — always true for Zig arrays (type system guarantees).
 pub fn isArray(_: anytype) bool {
@@ -184,4 +185,126 @@ test "unshift" {
     defer std.testing.allocator.free(result);
     try std.testing.expectEqual(@as(usize, 3), result.len);
     try std.testing.expectEqual(@as(i64, 1), result[0]);
+}
+
+// ── ArrayList(JsAny) helpers (for dynamic arrays) ─────────────
+
+/// In-place reverse of ArrayList(JsAny).
+/// Used by arr.reverse() for dynamic arrays.
+/// Returns void (array is mutated in place).
+pub fn reverseInPlace(arr: *std.ArrayList(JsAny)) void {
+    std.mem.reverse(JsAny, arr.items);
+}
+
+/// In-place sort of ArrayList(JsAny) using JsAny.lt() comparator.
+/// Used by arr.sort() for dynamic arrays.
+/// Returns void (array is mutated in place).
+pub fn sortInPlace(arr: *std.ArrayList(JsAny)) void {
+    std.mem.sort(JsAny, arr.items, {}, struct {
+        fn lessThan(_: void, a: JsAny, b: JsAny) bool {
+            return a.lt(b);
+        }
+    }.lessThan);
+}
+
+/// Slice ArrayList(JsAny) and return new ArrayList(JsAny).
+/// Negative indices count from end.
+pub fn sliceAny(alloc: Allocator, arr: *const std.ArrayList(JsAny), start: i64, end: i64) !std.ArrayList(JsAny) {
+    const len: i64 = @intCast(arr.items.len);
+    var st: i64 = start;
+    var en: i64 = end;
+
+    if (st < 0) st = @max(0, len + st);
+    if (en < 0) en = @max(0, len + en);
+
+    st = @min(@max(0, st), len);
+    en = @min(@max(0, en), len);
+    if (st >= en) return std.ArrayList(JsAny).empty;
+
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, @intCast(en - st));
+    for (arr.items[@intCast(st)..@intCast(en)]) |item| {
+        result.appendAssumeCapacity(item);
+    }
+    return result;
+}
+
+/// Join ArrayList(JsAny) elements with separator, returns allocated string.
+pub fn joinAny(alloc: Allocator, arr: *const std.ArrayList(JsAny), sep: []const u8) ![]const u8 {
+    if (arr.items.len == 0) return &[0]u8{};
+
+    var buf = std.ArrayList(u8).empty;
+    errdefer buf.deinit(alloc);
+    try buf.ensureTotalCapacity(alloc, arr.items.len * 4); // estimate: 4 chars per element
+    var writer = buf.writer();
+
+    for (arr.items, 0..) |item, i| {
+        if (i > 0) try writer.writeAll(sep);
+        try writer.print("{f}", .{item});
+    }
+
+    return buf.toOwnedSlice(alloc);
+}
+
+
+/// Map ArrayList(JsAny) by multiplying each element by scalar.
+/// Returns new ArrayList(JsAny).
+pub fn mapAnyScalar(alloc: Allocator, arr: *const std.ArrayList(JsAny), scalar: i64) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (arr.items) |item| {
+        const val = item.asI64();
+        result.appendAssumeCapacity(JsAny.fromI64(val * scalar));
+    }
+    return result;
+}
+
+/// Filter ArrayList(JsAny), keeping elements > threshold.
+/// Returns new ArrayList(JsAny).
+pub fn filterAnyThreshold(alloc: Allocator, arr: *const std.ArrayList(JsAny), threshold: i64) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    for (arr.items) |item| {
+        const val = item.asI64();
+        if (val > threshold) {
+            try result.append(alloc, item);
+        }
+    }
+    return result;
+}
+
+/// Map ArrayList(JsAny) using a comptime function.
+/// Returns new ArrayList(JsAny).
+pub fn mapWithFn(
+    alloc: Allocator,
+    arr: *const std.ArrayList(JsAny),
+    comptime f: fn(JsAny) JsAny,
+) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (arr.items) |item| {
+        result.appendAssumeCapacity(f(item));
+    }
+    return result;
+}
+
+/// Filter ArrayList(JsAny) using a comptime predicate.
+/// Returns new ArrayList(JsAny).
+pub fn filterWithFn(
+    alloc: Allocator,
+    arr: *const std.ArrayList(JsAny),
+    comptime pred: fn(JsAny) bool,
+) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (arr.items) |item| {
+        if (pred(item)) {
+            result.appendAssumeCapacity(item);
+        }
+    }
+    return result;
 }

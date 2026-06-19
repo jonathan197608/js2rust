@@ -226,6 +226,10 @@ impl<'a> ZigCodegen<'a> {
     /// Infer the element type of a dynamic array variable.
     /// Returns the Zig type string for the element (e.g., "i64", "f64").
     pub(super) fn infer_dynamic_array_elem_type(&self, var_name: &str) -> String {
+        // If marked as dynamic array, always use JsAny
+        if self.inferrer.is_dynamic_array(var_name) {
+            return "JsAny".to_string();
+        }
         let var_type = self.inferrer.get_var_type(var_name);
         match var_type {
             ZigType::Array(elem) | ZigType::Slice(elem) => elem.to_zig_str(),

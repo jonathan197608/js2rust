@@ -121,6 +121,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "js2zig-showcase-phase5"
+version = "0.1.0"
+dependencies = [
+ "js2rust-bridge",
+]
+
+[[package]]
 name = "js2zig-showcase-project"
 version = "0.1.0"
 dependencies = [

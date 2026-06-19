@@ -1,0 +1,12 @@
+[package]
+name = "js2zig-showcase-phase5"
+version = "0.1.0"
+edition = "2021"
+authors = ["jonathan197608"]
+description = "Phase 5 showcase: advanced array methods (pop/shift/join/reverse/sort/slice/map/filter)"
+
+[dependencies]
+js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }
+
+[build-dependencies]
+js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }

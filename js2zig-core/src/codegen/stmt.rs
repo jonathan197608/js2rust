@@ -261,8 +261,12 @@ impl<'a> ZigCodegen<'a> {
             }
 
             // Dynamic array: use std.ArrayList(JsAny) for heterogeneous element support
+            // Only apply this logic if the init expression is an array literal.
+            // For method calls that return arrays (slice, filter, map), let the generic
+            // variable declaration handle it (the method call will be generated as the init).
             if self.inferrer.is_dynamic_array(name)
                 && let Some(init) = &decl.init
+                && let Expression::ArrayExpression(_) = init
             {
                 let et = "JsAny".to_string();
                 let escaped = Self::escape_keyword(name);

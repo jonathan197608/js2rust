@@ -254,16 +254,34 @@ impl<'a> ZigCodegen<'a> {
                 self.push(")");
             }
             BinaryOperator::Equality | BinaryOperator::StrictEquality => {
-                self.emit_expr(left);
-                self.push(".eq(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                let left_ty = self.inferrer.infer_expr(left);
+                let right_ty = self.inferrer.infer_expr(right);
+                // If both operands are numeric, use == instead of .eq()
+                if left_ty.is_numeric() && right_ty.is_numeric() {
+                    self.emit_expr(left);
+                    self.push(" == ");
+                    self.emit_expr(right);
+                } else {
+                    self.emit_expr(left);
+                    self.push(".eq(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
-                self.emit_expr(left);
-                self.push(".neq(");
-                self.emit_wrap_js_value(right, prefix);
-                self.push(")");
+                let left_ty = self.inferrer.infer_expr(left);
+                let right_ty = self.inferrer.infer_expr(right);
+                // If both operands are numeric, use != instead of .neq()
+                if left_ty.is_numeric() && right_ty.is_numeric() {
+                    self.emit_expr(left);
+                    self.push(" != ");
+                    self.emit_expr(right);
+                } else {
+                    self.emit_expr(left);
+                    self.push(".neq(");
+                    self.emit_wrap_js_value(right, prefix);
+                    self.push(")");
+                }
             }
             // Fallback: emit raw operator (bitwise, shift, instanceof, in)
             _ => {
