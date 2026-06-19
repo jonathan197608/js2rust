@@ -18,4 +18,8 @@ fn main() {
     // Test multiply() JS function
     let product = multiply_main(3, 4);
     println!("multiply_main(3, 4) = {}", product);
+
+    // Host function calls (JS → Zig → Rust FFI)
+    // To use host functions, see: js2rust-bridge/src/host.rs
+    // Example: hostAdd(a, b) → calls Rust hostAdd via C ABI
 }

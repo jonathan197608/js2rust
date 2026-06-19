@@ -251,6 +251,13 @@ fn generate_module_zig(module: &PerFileModule) -> String {
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push('\n');
 
+    // Host function imports (if this module calls host functions)
+    if module.zig_code.contains("host.") {
+        out.push_str("// Host functions (Rust via C ABI)\n");
+        out.push_str("const host = @import(\"host.zig\");\n");
+        out.push('\n');
+    }
+
     // Deduplicate dependency modules
     let mut dep_modules: Vec<String> = Vec::new();
     let mut seen_modules: HashSet<&str> = HashSet::new();

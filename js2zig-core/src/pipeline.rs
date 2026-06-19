@@ -670,7 +670,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     }
 
     // === Phase 3: Regenerate js2rust-bridge/src/lib.rs ===
-    generate_bridge_lib_rs(&ws, Path::new(&out_dir));
+    // DISABLED: In new architecture, js2rust-bridge/src/lib.rs is manually maintained.
+    // The user's project calls js2rust_bridge!(group_name); in their own code.
+    // generate_bridge_lib_rs(&ws, Path::new(&out_dir));
 
     // === Write build cache ===
     write_build_cache(Path::new(&out_dir), &build_cache);
