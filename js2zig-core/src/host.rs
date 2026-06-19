@@ -66,6 +66,11 @@ impl HostFnRegistry {
         }
     }
 
+    /// Check if the registry is empty (no host functions registered).
+    pub fn is_empty(&self) -> bool {
+        self.fns.is_empty()
+    }
+
     /// Register a sync host function that JS code can call directly.
     pub fn register(&mut self, name: &str, params: Vec<(String, ZigType)>, ret_type: ZigType) {
         self.fns.push(HostFnDef {
@@ -99,6 +104,48 @@ impl HostFnRegistry {
         });
     }
 
+    /// Register an async host function with a simple (non-struct) return type.
+    pub fn register_async_simple(
+        &mut self,
+        name: &str,
+        c_name: &str,
+        params: Vec<(String, ZigType)>,
+        ret_type: ZigType,
+    ) {
+        self.fns.push(HostFnDef {
+            name: name.to_string(),
+            c_name: c_name.to_string(),
+            params,
+            ret_type,
+            is_async: true,
+        });
+    }
+
+    /// Return the JS-side names of all registered async functions.
+    pub fn async_fn_names(&self) -> Vec<String> {
+        self.fns.iter().filter(|f| f.is_async).map(|f| f.name.clone()).collect()
+    }
+
+    /// Return struct field types for all registered host structs.
+    /// Key: Zig struct name, Value: Vec<(field_name, field_zig_type)>
+    pub fn struct_fields_map(&self) -> std::collections::HashMap<String, Vec<(String, ZigType)>> {
+        let mut map = std::collections::HashMap::new();
+        for s in &self.structs {
+            let fields: Vec<(String, ZigType)> = s.fields.iter().map(|f| {
+                let zig_type = match f.zig_type.as_str() {
+                    "i64" | "i32" => ZigType::I64,
+                    "f64" => ZigType::F64,
+                    "bool" => ZigType::Bool,
+                    "[]const u8" => ZigType::String,
+                    _ => ZigType::JsValue,
+                };
+                (f.name.clone(), zig_type)
+            }).collect();
+            map.insert(s.zig_name.clone(), fields);
+        }
+        map
+    }
+
     /// Look up a host function by JS name.
     pub fn lookup(&self, name: &str) -> Option<&HostFnDef> {
         self.fns.iter().find(|f| f.name == name)
@@ -119,6 +166,12 @@ impl HostFnRegistry {
     /// Emits:
     /// - `extern struct` definitions for C ABI types
     /// - `extern "c" fn` declarations for C ABI host functions defined in Rust
+    /// - Wrapper functions for string params/returns (converts `[]const u8` ↔ `[*:0]const u8`)
+    ///
+    /// For functions with string parameters or string return types, a `_cabi` extern
+    /// declaration is emitted alongside a wrapper function with the original name.
+    /// The wrapper converts Zig-level `[]const u8` to null-terminated `[*:0]const u8`
+    /// via `dupeZ`, and converts the return value back via `std.mem.span`.
     ///
     /// Note: `zig build test` (standalone Zig tests) may fail to link if test code
     /// calls host functions. Host-dependent functions are tested via Rust FFI instead.
@@ -130,9 +183,11 @@ impl HostFnRegistry {
         out.push_str("// Auto-generated host function declarations (Rust via C ABI)\n");
         out.push_str("// These symbols are defined in Rust with #[no_mangle] pub extern \"C\".\n");
         out.push_str("// Allocator: uses the global allocator from the runtime.\n");
+        out.push_str("const std = @import(\"std\");\n");
+        out.push_str("const Io = std.Io;\n");
         out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n\n");
 
-        // Emit C ABI struct definitions
+        // Emit C ABI struct definitions (extern structs)
         for s in &self.structs {
             out.push_str(&format!("pub const {} = extern struct {{\n", s.c_name));
             for f in &s.fields {
@@ -141,33 +196,273 @@ impl HostFnRegistry {
             out.push_str("};\n\n");
         }
 
-        // Emit extern "c" function declarations
+        // Emit clean Zig struct definitions (for async wrapper return types)
+        for s in &self.structs {
+            out.push_str(&format!("pub const {} = struct {{\n", s.zig_name));
+            for f in &s.fields {
+                out.push_str(&format!("    {}: {},\n", f.name, f.zig_type));
+            }
+            out.push_str("};\n\n");
+        }
+
+        // Emit host_free declaration if any function returns a string
+        // (needed to free Rust-allocated string memory after copying to Zig allocator)
+        let has_string_return_fn = self.fns.iter().any(|f| f.ret_type == ZigType::String);
+        if has_string_return_fn {
+            out.push_str("// Free string memory allocated by Rust (CString::into_raw)\n");
+            out.push_str("extern \"c\" fn host_free(ptr: ?*anyopaque) callconv(.c) void;\n\n");
+        }
+
+        // Emit extern "c" function declarations and wrappers
         for def in &self.fns {
-            let params_zig: Vec<String> = def
+            // ── Async functions: emit extern + async wrapper, skip _wrap ──
+            if def.is_async {
+                let params_cabi: Vec<String> = def
+                    .params
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, Self::to_c_abi_type(t)))
+                    .collect();
+
+                let ret_cabi = match &def.ret_type {
+                    ZigType::Struct(name) => {
+                        self.structs
+                            .iter()
+                            .find(|s| &s.zig_name == name)
+                            .map(|s| s.c_name.clone())
+                            .unwrap_or_else(|| name.clone())
+                    }
+                    other => Self::to_c_abi_type(other),
+                };
+
+                // Extern declaration (C ABI symbol defined in Rust)
+                out.push_str(&format!(
+                    "extern \"c\" fn {}({}) callconv(.c) {};\n",
+                    def.c_name,
+                    params_cabi.join(", "),
+                    ret_cabi
+                ));
+
+                // Async wrapper function (callable from Zig via host.{name}_async)
+                let ret_type_str = def.ret_type.to_zig_str();
+                let params_zig: Vec<String> = def
+                    .params
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
+                    .collect();
+
+                out.push_str(&format!(
+                    "pub fn {}_async(io: Io, {}) !{} {{\n",
+                    def.name,
+                    params_zig.join(", "),
+                    ret_type_str
+                ));
+                out.push_str("    _ = io;\n");
+
+                // Convert string params to null-terminated C strings
+                for (pname, ptype) in &def.params {
+                    if *ptype == ZigType::String {
+                        out.push_str(&format!(
+                            "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return error.OutOfMemory;\n",
+                            pname, pname
+                        ));
+                    }
+                }
+                for (pname, ptype) in &def.params {
+                    if *ptype == ZigType::String {
+                        out.push_str(&format!("    defer js_allocator.g_alloc().free(c_{});\n", pname));
+                    }
+                }
+                if def.params.iter().any(|(_, t)| *t == ZigType::String) {
+                    out.push('\n');
+                }
+
+                // Build call args (string params use c_ prefix)
+                let call_args: Vec<String> = def
+                    .params
+                    .iter()
+                    .map(|(n, t)| {
+                        if *t == ZigType::String {
+                            format!("c_{}", n)
+                        } else {
+                            n.clone()
+                        }
+                    })
+                    .collect();
+
+                // Call extern and convert return
+                if let ZigType::Struct(ref zig_name) = def.ret_type {
+                    if let Some(s) = self.structs.iter().find(|s| &s.zig_name == zig_name) {
+                        out.push_str(&format!(
+                            "    const raw = {}({});\n",
+                            def.c_name,
+                            call_args.join(", ")
+                        ));
+                        // Convert string fields from fixed buffer to []const u8
+                        for f in &s.fields {
+                            if f.zig_type == "[]const u8" {
+                                out.push_str(&format!(
+                                    "    const {}_len = std.mem.indexOfScalar(u8, &raw.{}, 0) orelse raw.{}.len;\n",
+                                    f.name, f.name, f.name
+                                ));
+                            }
+                        }
+                        let field_inits: Vec<String> = s.fields.iter().map(|f| {
+                            if f.zig_type == "[]const u8" {
+                                format!("    .{} = js_allocator.g_alloc().dupe(u8, raw.{}[0..{}_len]) catch return error.OutOfMemory", f.name, f.name, f.name)
+                            } else {
+                                format!("    .{} = raw.{}", f.name, f.name)
+                            }
+                        }).collect();
+                        out.push_str(&format!(
+                            "    return .{{\n{}\n    }};\n",
+                            field_inits.join(",\n")
+                        ));
+                    }
+                } else {
+                    out.push_str(&format!(
+                        "    return {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
+                }
+
+                out.push_str("}\n\n");
+                continue;
+            }
+
+            // ── Sync functions: existing logic ──
+            let params_cabi: Vec<String> = def
                 .params
                 .iter()
                 .map(|(n, t)| format!("{}: {}", n, Self::to_c_abi_type(t)))
                 .collect();
-            let ret_name = match &def.ret_type {
+
+            // Return type in C ABI representation
+            let ret_cabi = match &def.ret_type {
                 ZigType::Struct(name) => {
-                    // Find the matching struct's C name
                     self.structs
                         .iter()
                         .find(|s| &s.zig_name == name)
                         .map(|s| s.c_name.clone())
                         .unwrap_or_else(|| name.clone())
                 }
-                other => other.to_zig_str(),
+                other => Self::to_c_abi_type(other),
             };
 
-            out.push_str(&format!(
-                "pub extern \"c\" fn {}({}) callconv(.c) {};\n",
-                def.c_name,
-                params_zig.join(", "),
-                ret_name
-            ));
+            // Check if this function needs string conversion wrappers
+            let has_string_params = def.params.iter().any(|(_, t)| *t == ZigType::String);
+            let has_string_return = def.ret_type == ZigType::String;
+
+            if has_string_params || has_string_return {
+                // Extern declaration with original name (matches Rust symbol)
+                out.push_str(&format!(
+                    "extern \"c\" fn {}({}) callconv(.c) {};\n",
+                    def.c_name,
+                    params_cabi.join(", "),
+                    ret_cabi
+                ));
+
+                // Wrapper function with _wrap suffix (Zig-level types)
+                let wrap_name = format!("{}_wrap", def.c_name);
+                let params_zig: Vec<String> = def
+                    .params
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
+                    .collect();
+                let ret_zig = def.ret_type.to_zig_str();
+                let catch_default = Self::default_return_value(&def.ret_type);
+
+                out.push_str(&format!(
+                    "pub fn {}({}) {} {{\n",
+                    wrap_name,
+                    params_zig.join(", "),
+                    ret_zig
+                ));
+
+                // Convert string params to null-terminated C strings
+                let is_void = def.ret_type == ZigType::Void;
+                for (pname, ptype) in &def.params {
+                    if *ptype == ZigType::String {
+                        if is_void {
+                            out.push_str(&format!(
+                                "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return;\n",
+                                pname, pname
+                            ));
+                        } else {
+                            out.push_str(&format!(
+                                "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return {};\n",
+                                pname, pname, catch_default
+                            ));
+                        }
+                        out.push_str(&format!(
+                            "    defer js_allocator.g_alloc().free(c_{});\n",
+                            pname
+                        ));
+                    }
+                }
+
+                // Build call args (string params use c_ prefix)
+                let call_args: Vec<String> = def
+                    .params
+                    .iter()
+                    .map(|(n, t)| {
+                        if *t == ZigType::String {
+                            format!("c_{}", n)
+                        } else {
+                            n.clone()
+                        }
+                    })
+                    .collect();
+
+                // Call extern and convert return if needed
+                if has_string_return {
+                    out.push_str(&format!(
+                        "    const raw = {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
+                    out.push_str("    const span = std.mem.span(raw);\n");
+                    out.push_str("    const owned = js_allocator.g_alloc().dupe(u8, span) catch return \"\";\n");
+                    out.push_str("    host_free(@ptrCast(@constCast(raw)));\n");
+                    out.push_str("    return owned;\n");
+                } else if is_void {
+                    out.push_str(&format!(
+                        "    {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "    return {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
+                }
+
+                out.push_str("}\n\n");
+            } else {
+                // No string conversion needed: direct extern with original name
+                out.push_str(&format!(
+                    "pub extern \"c\" fn {}({}) callconv(.c) {};\n",
+                    def.c_name,
+                    params_cabi.join(", "),
+                    ret_cabi
+                ));
+            }
         }
         out
+    }
+
+    /// Return the default value literal for a ZigType (used in `catch return <default>`).
+    fn default_return_value(ret_type: &ZigType) -> &'static str {
+        match ret_type {
+            ZigType::String => "\"\"",
+            ZigType::I64 | ZigType::I32 | ZigType::Usize => "0",
+            ZigType::F64 => "0.0",
+            ZigType::Bool => "false",
+            ZigType::Void => "",
+            _ => "null",
+        }
     }
 
     /// Convert a ZigType to the corresponding C ABI type string.
@@ -180,136 +475,10 @@ impl HostFnRegistry {
 
     /// Generate async wrapper functions for all registered async host functions.
     ///
-    /// These wrappers are emitted into lib.zig alongside the translated JS code.
-    /// Each wrapper:
-    /// 1. Converts JS-level params to C ABI params (null-terminated strings)
-    /// 2. Calls the C ABI function
-    /// 3. Converts the C ABI return struct to a clean Zig struct
+    /// **Deprecated**: Async wrappers are now generated in `generate_zig_header()`
+    /// as part of host.zig. This method returns an empty string.
     pub fn generate_async_wrappers(&self) -> String {
-        if !self.fns.iter().any(|f| f.is_async) {
-            return String::new();
-        }
-        let mut out = String::new();
-        out.push_str("// ── Async host function wrappers ──\n\n");
-
-        // Collect unique struct defs used by async wrappers
-        let mut emitted_structs: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        for def in &self.fns {
-            if !def.is_async {
-                continue;
-            }
-
-            // Emit clean Zig struct definition
-            if let ZigType::Struct(ref zig_name) = def.ret_type
-                && !emitted_structs.contains(zig_name)
-            {
-                emitted_structs.insert(zig_name.clone());
-                if let Some(s) = self.structs.iter().find(|s| &s.zig_name == zig_name) {
-                    out.push_str(&format!("pub const {} = struct {{\n", s.zig_name));
-                    for f in &s.fields {
-                        out.push_str(&format!("    {}: {},\n", f.name, f.zig_type));
-                    }
-                    out.push_str("};\n\n");
-                }
-            }
-
-            // Generate async wrapper function
-            let ret_type_str = def.ret_type.to_zig_str();
-            let params_str: Vec<String> = def
-                .params
-                .iter()
-                .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
-                .collect();
-
-            out.push_str(&format!(
-                "fn {}(io: Io, {}) !{} {{\n",
-                def.name,
-                params_str.join(", "),
-                ret_type_str
-            ));
-
-            // Emit body
-            out.push_str("    _ = io;\n");
-
-            // Convert string params to null-terminated C strings
-            for (pname, ptype) in &def.params {
-                if *ptype == ZigType::String {
-                    out.push_str(&format!(
-                        "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return error.OutOfMemory;\n",
-                        pname, pname
-                    ));
-                }
-            }
-
-            // Defer-free string params
-            for (pname, ptype) in &def.params {
-                if *ptype == ZigType::String {
-                    out.push_str(&format!("    defer js_allocator.g_alloc().free(c_{});\n", pname));
-                }
-            }
-            out.push('\n');
-
-            // Call C ABI function
-            let call_args: Vec<String> = def
-                .params
-                .iter()
-                .map(|(n, t)| {
-                    if *t == ZigType::String {
-                        format!("c_{}", n)
-                    } else {
-                        n.clone()
-                    }
-                })
-                .collect();
-
-            // Build the call and conversion
-            if matches!(&def.ret_type, ZigType::Struct(_)) {
-                // Return struct: call C function, convert to clean struct
-                if let Some(s) = self.structs.iter().find(|s| s.zig_name == ret_type_str) {
-                    out.push_str(&format!(
-                        "    const raw = host.{}({});\n",
-                        def.c_name,
-                        call_args.join(", ")
-                    ));
-
-                    // Convert each string field from C buffer to []const u8
-                    for f in &s.fields {
-                        if f.zig_type == "[]const u8" {
-                            // Need to find null terminator in fixed buffer
-                            out.push_str(&format!(
-                                "    const {}_len = std.mem.indexOfScalar(u8, &raw.{}, 0) orelse raw.{}.len;\n",
-                                f.name, f.name, f.name
-                            ));
-                        }
-                    }
-
-                    // Build return struct
-                    let field_inits: Vec<String> = s.fields.iter().map(|f| {
-                        if f.zig_type == "[]const u8" {
-                            format!("    .{} = raw.{}[0..{}_len]", f.name, f.name, f.name)
-                        } else {
-                            format!("    .{} = raw.{}", f.name, f.name)
-                        }
-                    }).collect();
-
-                    out.push_str(&format!(
-                        "    return .{{\n{}\n    }};\n",
-                        field_inits.join(",\n")
-                    ));
-                }
-            } else {
-                // Simple return type
-                out.push_str(&format!(
-                    "    return host.{}({});\n",
-                    def.c_name,
-                    call_args.join(", ")
-                ));
-            }
-
-            out.push_str("}\n\n");
-        }
-        out
+        String::new()
     }
 
     /// Load host function definitions from a JSON config file.

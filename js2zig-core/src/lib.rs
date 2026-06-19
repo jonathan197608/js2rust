@@ -15,19 +15,114 @@ pub mod pipeline;
 
 // ── Public API types ─────────────────────────────────────────────
 
+use crate::infer::ZigType;
 use std::path::PathBuf;
+
+/// Host function type for FFI binding generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostType {
+    Void,
+    Bool,
+    I32,
+    I64,
+    F64,
+    Str,  // *const c_char
+}
+
+impl From<HostType> for infer::ZigType {
+    fn from(t: HostType) -> Self {
+        match t {
+            HostType::Void => ZigType::Void,
+            HostType::Bool => ZigType::Bool,
+            HostType::I32 => ZigType::I32,
+            HostType::I64 => ZigType::I64,
+            HostType::F64 => ZigType::F64,
+            HostType::Str => ZigType::String,
+        }
+    }
+}
+
+/// Host function description for FFI binding generation.
+#[derive(Debug, Clone)]
+pub struct HostFunction {
+    pub name: String,
+    pub params: Vec<HostType>,
+    pub return_type: Option<HostType>,
+    /// Whether this is an async function (called with `await` from JS).
+    pub is_async: bool,
+    /// For async functions returning a struct: field name and type pairs.
+    /// Empty for sync functions or async functions with simple return types.
+    pub async_return_fields: Vec<(String, HostType)>,
+}
+
+impl HostFunction {
+    /// Derive a PascalCase struct name from the function name.
+    /// e.g. "fetch_user" → "FetchUserResult"
+    pub fn struct_zig_name(&self) -> String {
+        let pascal: String = self
+            .name
+            .split('_')
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect();
+        format!("{}Result", pascal)
+    }
+
+    /// Derive the C ABI extern struct name.
+    /// e.g. "fetch_user" → "HostFetchUserResult"
+    pub fn struct_c_name(&self) -> String {
+        format!("Host{}", self.struct_zig_name())
+    }
+}
+
+impl HostType {
+    /// Convert to the clean Zig type string used in wrapper structs.
+    pub fn to_zig_field_type(self) -> &'static str {
+        match self {
+            HostType::Void => "void",
+            HostType::Bool => "bool",
+            HostType::I32 => "i32",
+            HostType::I64 => "i64",
+            HostType::F64 => "f64",
+            HostType::Str => "[]const u8",
+        }
+    }
+
+    /// Convert to the C ABI type string used in extern structs.
+    pub fn to_c_field_type(self) -> &'static str {
+        match self {
+            HostType::Void => "void",
+            HostType::Bool => "bool",
+            HostType::I32 => "i32",
+            HostType::I64 => "i64",
+            HostType::F64 => "f64",
+            HostType::Str => "[256]u8",
+        }
+    }
+}
+
+/// Host function configuration.
+#[derive(Debug, Clone)]
+pub struct HostConfig {
+    pub functions: Vec<HostFunction>,
+}
 
 /// Multi-file project configuration.
 #[derive(Debug, Clone)]
 pub struct ProjectConfig {
     /// Project name (also used as Zig library name).
     pub name: String,
-    /// JS source file directory path.
-    pub js_dir: PathBuf,
+    /// Core JS source file path (the entry point; its imports are pulled in transitively).
+    pub js_file: PathBuf,
     /// Output directory path (typically $OUT_DIR).
     pub out_dir: PathBuf,
-    /// Host function configuration file path (optional).
-    pub host_config: Option<PathBuf>,
+    /// Host function configuration (optional).
+    pub host_config: Option<HostConfig>,
     /// Force rebuild (skip incremental cache).
     pub force_rebuild: bool,
     /// Whether to run `zig build` after codegen.
@@ -38,7 +133,7 @@ impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
             name: "js2zig_lib".into(),
-            js_dir: PathBuf::from("in"),
+            js_file: PathBuf::from("main.js"),
             out_dir: PathBuf::from("out"),
             host_config: None,
             force_rebuild: false,
@@ -73,12 +168,10 @@ pub struct ProjectResult {
 
 // ── Public API ───────────────────────────────────────────────────
 
-/// Multi-file project transpilation: JS directory → Zig projects + cabi_exports.json.
+/// Multi-file project transpilation: JS core file → Zig project + cabi_exports.json.
 ///
-/// This is equivalent to `main.rs` in js2rustc, but exposed as a library function.
-/// It does NOT run `zig build` (unless `config.run_zig_build == true`),
-/// and does NOT generate `js2rust-bridge/src/lib.rs`
-/// (that is the responsibility of `js2zig-build`).
+/// The core JS file and its transitive imports form a single group.
+/// Does NOT run `zig build` (unless `config.run_zig_build == true`).
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     pipeline::transpile_project(config)
 }

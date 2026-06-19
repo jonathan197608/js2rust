@@ -1,15 +1,11 @@
 // src/lib.rs
 // Demo: use js2rust_bridge!() macro to generate FFI bindings for JS→Zig transpiled code.
 
-// Import the proc-macro directly (bypass js2rust-bridge re-export for now)
-use js2rust_bridge_macro::js2rust_bridge;
+use js2rust_bridge::js2rust_bridge;
 
-// Generate FFI bindings for the "main" group (from js_src/main.js)
-js2rust_bridge!(main);
-
-// Now you can use the generated safe wrapper functions:
-// - greet_main(name: &str) -> String
-// - add_main(a: i32, b: i32) -> i32
+// Generate FFI bindings: transpiles JS → Zig, generates Rust wrappers.
+// No build.rs config needed — the macro handles everything.
+js2rust_bridge!("js_src/main.js");
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,5 @@
 use crate::host::HostFnRegistry;
+use crate::infer::ZigType;
 use std::collections::HashMap;
 
 /// Result of looking up a JS built-in call
@@ -6,6 +7,26 @@ use std::collections::HashMap;
 pub struct BuiltinTranslation {
     /// The Zig code template, {} placeholders for arguments
     pub template: String,
+    /// Return type of the builtin function (if known)
+    pub return_type: Option<crate::infer::ZigType>,
+}
+
+impl BuiltinTranslation {
+    /// Create a new BuiltinTranslation with template only (return type unknown).
+    pub fn new(template: String) -> Self {
+        Self {
+            template,
+            return_type: None,
+        }
+    }
+
+    /// Create a new BuiltinTranslation with known return type.
+    pub fn with_return_type(template: String, return_type: crate::infer::ZigType) -> Self {
+        Self {
+            template,
+            return_type: Some(return_type),
+        }
+    }
 }
 
 /// Central registry for JS → Zig built-in mappings
@@ -171,6 +192,9 @@ impl BuiltinRegistry {
 
     /// Register host functions from a HostFnRegistry so they can be called
     /// from JS code. These functions are defined in Rust with `#[no_mangle] pub extern "C"`.
+    ///
+    /// For functions with string params/returns, the template calls the `_wrap` variant
+    /// (generated in host.zig) which handles `[]const u8` ↔ `[*:0]const u8` conversion.
     pub fn register_host_fns(&mut self, host_fns: &HostFnRegistry) {
         for def in host_fns.sync_fns() {
             // Build the template: host.fnName(arg1, arg2, ...)
@@ -178,22 +202,30 @@ impl BuiltinRegistry {
                 .map(|i| format!("{{{}}}", i))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let template = format!("host.{}({})", def.name, args);
+
+            // Check if this function needs the string conversion wrapper
+            let has_string = def.params.iter().any(|(_, t)| *t == ZigType::String)
+                || def.ret_type == ZigType::String;
+            let fn_name = if has_string {
+                format!("{}_wrap", def.name)
+            } else {
+                def.name.clone()
+            };
+            let template = format!("host.{}({})", fn_name, args);
+
+            // Store return type
+            let return_type = def.ret_type.clone();
 
             self.globals.insert(
                 def.name.clone(),
-                BuiltinTranslation {
-                    template,
-                },
+                BuiltinTranslation::with_return_type(template, return_type),
             );
         }
     }
 
     fn add_method(&mut self, object: &str, method: &str, template: &str) {
         let key = format!("{}.{}", object, method);
-        self.methods.insert(key, BuiltinTranslation {
-            template: template.to_string(),
-        });
+        self.methods.insert(key, BuiltinTranslation::new(template.to_string()));
     }
 
     fn add_method_runtime(&mut self, object: &str, method: &str, template: &str, _dep: &str) {
@@ -201,9 +233,7 @@ impl BuiltinRegistry {
     }
 
     fn add_global(&mut self, name: &str, template: &str) {
-        self.globals.insert(name.to_string(), BuiltinTranslation {
-            template: template.to_string(),
-        });
+        self.globals.insert(name.to_string(), BuiltinTranslation::new(template.to_string()));
     }
 
     fn add_property(&mut self, object: &str, property: &str, zig_expr: &str) {
@@ -220,6 +250,11 @@ impl BuiltinRegistry {
     /// Look up a global function call: `func(...)` → Zig translation
     pub fn lookup_global(&self, name: &str) -> Option<&BuiltinTranslation> {
         self.globals.get(name)
+    }
+
+    /// Look up the return type of a global function (if known).
+    pub fn lookup_global_return_type(&self, name: &str) -> Option<&crate::infer::ZigType> {
+        self.globals.get(name).and_then(|trans| trans.return_type.as_ref())
     }
 
     /// Look up a static property: `Obj.prop` → Zig expression

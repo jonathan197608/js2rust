@@ -143,29 +143,39 @@ pub struct FileGroup {
     pub imported_names: HashMap<String, Vec<(String, String)>>,
 }
 
-/// Analyze all JS files in `in_dir` and return file groups.
+/// Analyze a single core JS file and its transitive dependencies.
+///
+/// Only processes the specified core file and the files it imports,
+/// rather than scanning an entire directory.
 ///
 /// # Returns
-/// - `groups`: Vec of FileGroup, one per core file.
+/// - `groups`: Vec containing a single FileGroup.
 /// - `groups_json`: JSON-serializable summary for `out/groups.json`.
-pub fn analyze_groups(in_dir: &str) -> (Vec<FileGroup>, String) {
+pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, String) {
     let in_path = Path::new(in_dir);
 
-    // 1. Discover all .js files.
-    let js_files: Vec<String> = std::fs::read_dir(in_path)
-        .unwrap_or_else(|e| panic!("Cannot read in_dir '{}': {}", in_dir, e))
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension()? == "js" {
-                Some(path.file_name()?.to_string_lossy().to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
+    // 1. BFS/DFS from core_file to collect all transitively imported files.
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = vec![core_file.to_string()];
+    let mut js_files: Vec<String> = Vec::new();
 
-    // 2. Parse each file → extract imports, exports, and imported names.
+    while let Some(cur) = stack.pop() {
+        if !visited.insert(cur.clone()) {
+            continue;
+        }
+        js_files.push(cur.clone());
+
+        let src = std::fs::read_to_string(in_path.join(&cur))
+            .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
+        let (file_imports, _exports, _decls, _file_imported_names) = extract_imports(&src, &cur);
+        for dep in &file_imports {
+            if !visited.contains(dep.as_str()) {
+                stack.push(dep.clone());
+            }
+        }
+    }
+
+    // 2. Parse each discovered file for imports + imported names.
     let mut imports: HashMap<String, Vec<String>> = HashMap::new();
     let mut imported_names: HashMap<String, Vec<(String, String)>> = HashMap::new();
     let mut sanitzed: HashMap<String, String> = HashMap::new();
@@ -179,47 +189,21 @@ pub fn analyze_groups(in_dir: &str) -> (Vec<FileGroup>, String) {
         sanitzed.insert(file.clone(), sanitize_name(file));
     }
 
-    // 3. Build reverse dependency map: who imports F?
-    let mut imported_by: HashMap<String, Vec<String>> = HashMap::new();
-    for (importer, deps) in &imports {
-        for dep in deps {
-            imported_by
-                .entry(dep.clone())
-                .or_default()
-                .push(importer.clone());
-        }
-    }
+    // 3. Build the single group.
+    let members = transitive_deps(core_file, &imports);
+    let core_name = sanitzed.get(core_file).cloned().unwrap_or_else(|| {
+        sanitize_name(core_file)
+    });
 
-    // 4. Core files = files NOT imported by any other file.
-    let core_files: Vec<String> = js_files
-        .iter()
-        .filter(|f| {
-            imported_by
-                .get(*f)
-                .is_none_or(|importers| importers.is_empty())
-        })
-        .cloned()
-        .collect();
+    let group = FileGroup {
+        core_name: core_name.clone(),
+        core_file: core_file.to_string(),
+        members,
+        name_map: sanitzed,
+        imported_names,
+    };
 
-    // 5. For each core file, compute transitive closure.
-    let mut groups: Vec<FileGroup> = Vec::new();
-    for core in &core_files {
-        let members = transitive_deps(core, &imports);
-        let core_name = sanitzed.get(core).cloned().unwrap_or_else(|| {
-            sanitize_name(core)
-        });
-        let name_map = sanitzed.clone();
-
-        groups.push(FileGroup {
-            core_name: core_name.clone(),
-            core_file: core.clone(),
-            members,
-            name_map,
-            imported_names: imported_names.clone(),
-        });
-    }
-
-    // 6. Serialize groups.json.
+    let groups = vec![group];
     let groups_json = serde_json::to_string_pretty(&groups_to_json(&groups))
         .expect("Failed to serialize groups.json");
 

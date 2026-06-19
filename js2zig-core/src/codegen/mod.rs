@@ -167,14 +167,38 @@ pub type CodegenResult = (
     SourceMap,
 );
 
+/// Host function type information passed from pipeline to codegen.
+/// Contains return types, parameter types, and struct field types
+/// for both sync and async host functions.
+pub struct HostTypeInfo<'a> {
+    pub return_types: &'a HashMap<String, ZigType>,
+    pub param_types: &'a HashMap<String, Vec<ZigType>>,
+    pub struct_fields: &'a HashMap<String, Vec<(String, ZigType)>>,
+    /// Names of async host functions (used to append `_async` suffix in io.async calls)
+    pub async_fns: &'a HashSet<String>,
+}
+
 pub fn generate(
     program: &Program,
     builtins: &BuiltinRegistry,
     exports: &HashSet<String>,
     source_text: &str,
     source_file: &str,
+    host_info: &HostTypeInfo,
 ) -> CodegenResult {
     let mut inferrer = TypeInferrer::new();
+
+    // Register host function return types before inference
+    for (name, ret_type) in host_info.return_types {
+        inferrer.add_host_return_type(name.clone(), ret_type.clone());
+    }
+
+    // Register host function parameter types for type inference
+    inferrer.register_host_param_types(host_info.param_types);
+
+    // Register host struct field types for member access inference
+    inferrer.register_host_struct_fields(host_info.struct_fields);
+
     inferrer.infer_program(program);
 
     // Extract fn_return_types before inferrer is consumed by ZigCodegen
@@ -189,6 +213,7 @@ pub fn generate(
         exports.clone(),
         source_text,
         source_file,
+        host_info.async_fns.clone(),
     );
     // Header is added by project.rs/generate_lib_zig() — do NOT emit here.
 
@@ -246,6 +271,8 @@ pub struct CabiExport {
     pub ret_type: ZigType,
     /// Whether a corresponding free_xxx function exists
     pub has_free_func: bool,
+    /// Whether this is an async export (impl takes `io: Io` as first param)
+    pub is_async: bool,
 }
 
 struct ZigCodegen<'a> {
@@ -305,6 +332,9 @@ struct ZigCodegen<'a> {
     line_index: LineIndex,
     /// JS source file name
     source_file: String,
+    /// Names of async host functions (to append `_async` in io.async calls)
+    #[allow(dead_code)]
+    async_host_fns: HashSet<String>,
 }
 
 
@@ -316,6 +346,7 @@ impl<'a> ZigCodegen<'a> {
         exports: HashSet<String>,
         source_text: &str,
         source_file: &str,
+        async_host_fns: HashSet<String>,
     ) -> Self {
         Self {
             output: String::new(),
@@ -348,6 +379,7 @@ impl<'a> ZigCodegen<'a> {
             source_map: SourceMap::new(source_file),
             line_index: LineIndex::new(source_text),
             source_file: source_file.to_string(),
+            async_host_fns,
         }
     }
 

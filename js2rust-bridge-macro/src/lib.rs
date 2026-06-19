@@ -1,73 +1,32 @@
 //! Proc-macro for generating Rust FFI bindings from js2rust C ABI export metadata.
 //!
-//! Usage:
+//! ## Usage
+//!
 //! ```rust,ignore
-//! // In your Rust code (after js2zig-build ran in build.rs):
-//! use js2rust_bridge_macro::js2rust_bridge;
-//! js2rust_bridge!(main);  // Looks for $OUT_DIR/js2zig/main/cabi_exports.json
+//! js2rust_bridge! {
+//!     "js_src/main.js",    // core JS file path (relative to CARGO_MANIFEST_DIR)
+//!     // Sync host functions (optional, comma-separated):
+//!     host_add(i64, i64) -> i64,
+//!     host_concat(str, str) -> str,
+//!     // Async host functions (called with `await` from JS):
+//!     async fetch_user(str) -> { id: i64, name: str },
+//! }
 //! ```
 //!
-//! The group name is appended to generated function names to avoid collisions:
-//! `greet` → `greet_main`, `add` → `add_main`.
+//! The macro transpiles JS to Zig inline, writes output to
+//! `.js2zig-cache/{group}/`, and generates Rust FFI bindings.
+//! The group name is derived from the file name (sanitized for Zig identifiers).
+//! A minimal `build.rs` is only needed to link the compiled static library.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
+use syn::{
+    braced, parenthesized, parse::{Parse, ParseStream}, Ident, LitStr, Token
+};
 
-/// Find the workspace root by looking for a Cargo.toml with [workspace].
-fn find_workspace_root(start: &str) -> String {
-    let mut current = std::path::PathBuf::from(start);
-    loop {
-        let cargo_toml = current.join("Cargo.toml");
-        if cargo_toml.exists() {
-            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    return current.to_string_lossy().to_string();
-                }
-            }
-        }
-        if !current.pop() {
-            return std::path::PathBuf::from(start)
-                .parent()
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
-        }
-    }
-}
+// ── C ABI export metadata (mirrors the JSON schema) ───────────────
 
-/// Extract group name from the JSON file path.
-/// e.g. `out/main/cabi_exports.json` → `main`
-fn extract_group_name(path: &std::path::Path) -> String {
-    let raw = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-    sanitize_ident(&raw)
-}
-
-/// Sanitize a string into a valid Rust identifier fragment.
-fn sanitize_ident(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            out.push(ch);
-        } else {
-            out.push('_');
-        }
-    }
-    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("_{}", out);
-    }
-    if out.is_empty() {
-        out.push_str("unknown");
-    }
-    out
-}
-
-/// C ABI export metadata (mirrors the JSON schema written by js2rustc).
 #[derive(Debug, Deserialize)]
 struct CabiExport {
     name: String,
@@ -83,104 +42,276 @@ struct CabiParam {
     zig_type: String,
 }
 
-/// Generate bindings from a `cabi_exports.json` path.
-fn generate_from_path(json_path: &std::path::Path, group_name: &str, span: proc_macro2::Span) -> TokenStream {
-    // Read and parse JSON
-    let json_content = match std::fs::read_to_string(json_path) {
-        Ok(s) => s,
-        Err(e) => {
-            return syn::Error::new(
-                span,
-                format!(
-                    "js2rust_bridge: cannot read '{}': {}",
-                    json_path.display(),
-                    e
-                ),
-            )
-            .to_compile_error()
-            .into();
+// ── Macro input parsing ───────────────────────────────────────────
+
+/// Parsed host function declaration: `[async] name(type1, type2) -> ret_type`
+struct HostFnDecl {
+    name: String,
+    params: Vec<String>,
+    return_type: String,
+    is_async: bool,
+    /// For async functions with struct return: Vec<(field_name, field_type)>
+    async_return_fields: Vec<(String, String)>,
+}
+
+/// Full macro input.
+struct MacroInput {
+    /// Core JS file path (e.g. "js_src/main.js").
+    js_file: String,
+    /// Group name derived from the file stem (sanitized).
+    group: String,
+    host_fns: Vec<HostFnDecl>,
+}
+
+impl Parse for MacroInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Core JS file path (string literal)
+        let js_file_lit: LitStr = input.parse()?;
+        let js_file = js_file_lit.value();
+
+        // Derive group name from file stem, sanitized for Zig identifiers.
+        let stem = std::path::Path::new(&js_file)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("main");
+        let group = js2zig_core::analyzer::sanitize_module_name(stem);
+
+        // Optional host function declarations
+        let mut host_fns = Vec::new();
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+
+            // Parse first — could be `async` keyword or function name
+            let is_async = input.peek(Token![async]);
+            if is_async {
+                input.parse::<Token![async]>()?;
+            }
+            let name: Ident = input.parse()?;
+            let name_str = name.to_string();
+
+            // parameter types in parentheses
+            let paren_content;
+            parenthesized!(paren_content in input);
+            let mut params = Vec::new();
+            while !paren_content.is_empty() {
+                let ty: Ident = paren_content.parse()?;
+                params.push(ty.to_string());
+                if paren_content.peek(Token![,]) {
+                    paren_content.parse::<Token![,]>()?;
+                }
+            }
+
+            // return type after `->`
+            input.parse::<Token![->]>()?;
+
+            // Check for struct return type `{ field: type, ... }` or simple Ident
+            let (return_type, async_fields) = if input.peek(syn::token::Brace) {
+                let struct_content;
+                braced!(struct_content in input);
+                let mut fields = Vec::new();
+                while !struct_content.is_empty() {
+                    let field_name: Ident = struct_content.parse()?;
+                    struct_content.parse::<Token![:]>()?;
+                    let field_type: Ident = struct_content.parse()?;
+                    fields.push((field_name.to_string(), field_type.to_string()));
+                    if struct_content.peek(Token![,]) {
+                        struct_content.parse::<Token![,]>()?;
+                    }
+                }
+                // For struct returns, return_type is "void" (actual type is in async_fields)
+                ("void".to_string(), fields)
+            } else {
+                let ret: Ident = input.parse()?;
+                (ret.to_string(), Vec::new())
+            };
+
+            host_fns.push(HostFnDecl {
+                name: name_str,
+                params,
+                return_type,
+                is_async,
+                async_return_fields: async_fields,
+            });
         }
-    };
 
-    let exports: Vec<CabiExport> = match serde_json::from_str(&json_content) {
-        Ok(v) => v,
-        Err(e) => {
-            return syn::Error::new(
-                span,
-                format!(
-                    "js2rust_bridge: failed to parse '{}': {}",
-                    json_path.display(),
-                    e
-                ),
-            )
-            .to_compile_error()
-            .into();
-        }
-    };
-
-    // Generate code with the group name as suffix for functions
-    let generated = generate_bindings(&exports, group_name);
-
-    match generated.parse::<TokenStream>() {
-        Ok(ts) => ts,
-        Err(e) => syn::Error::new(span, format!("internal error: {}", e))
-            .to_compile_error()
-            .into(),
+        Ok(MacroInput {
+            js_file,
+            group,
+            host_fns,
+        })
     }
 }
 
-/// Function-like proc-macro: `js2rust_bridge!(group_name);`
+// ── Type name conversion ──────────────────────────────────────────
+
+/// Convert macro-level type name to `js2zig_core::HostType`.
+fn type_name_to_host_type(name: &str) -> Result<js2zig_core::HostType, String> {
+    match name {
+        "i64" => Ok(js2zig_core::HostType::I64),
+        "i32" => Ok(js2zig_core::HostType::I32),
+        "f64" => Ok(js2zig_core::HostType::F64),
+        "bool" => Ok(js2zig_core::HostType::Bool),
+        "str" => Ok(js2zig_core::HostType::Str),
+        "void" => Ok(js2zig_core::HostType::Void),
+        other => Err(format!("js2rust_bridge: unknown host type '{}'. \
+            Valid types: i64, i32, f64, bool, str, void", other)),
+    }
+}
+
+// ── Main proc-macro entry point ───────────────────────────────────
+
+/// Function-like proc-macro: `js2rust_bridge!("js_src/main.js", host_fns...)`.
 ///
-/// Simplified syntax: only specify the group name.
-/// The macro automatically looks for `$OUT_DIR/js2zig/{group_name}/cabi_exports.json`.
-///
-/// Generates FFI bindings + safe wrappers for one group.
+/// Transpiles JS to Zig, generates Rust FFI bindings, and optionally
+/// runs `zig build` to compile the static library.
 #[proc_macro]
 pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
-    // Parse input as an identifier (group name)
-    let group_name = match syn::parse::<syn::Ident>(input.clone()) {
-        Ok(ident) => ident.to_string(),
-        Err(_) => {
-            // Fallback: try parsing as string literal (backward compatibility)
-            match syn::parse::<syn::LitStr>(input) {
-                Ok(s) => {
-                    let json_path = s.value();
-                    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-                        .expect("CARGO_MANIFEST_DIR not set");
-                    let workspace_root = find_workspace_root(&manifest_dir);
-                    let resolved_path = std::path::Path::new(&workspace_root).join(&json_path);
-                    let group_name = extract_group_name(&resolved_path);
-                    return generate_from_path(&resolved_path, &group_name, s.span());
-                }
-                Err(e) => return e.to_compile_error().into(),
-            }
-        }
+    let input_tokens: proc_macro2::TokenStream = input.into();
+
+    match syn::parse2::<MacroInput>(input_tokens) {
+        Ok(parsed) => generate(&parsed),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+// ── Transpile + generate FFI ──────────────────────────────────────
+
+fn generate(input: &MacroInput) -> TokenStream {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .unwrap_or_else(|_| ".".to_string());
+
+    // Resolve core JS file path
+    let js_file_path = std::path::Path::new(&manifest_dir).join(&input.js_file);
+
+    // Resolve cache directory for Zig output
+    let cache_dir = std::path::Path::new(&manifest_dir)
+        .join(".js2zig-cache");
+
+    // Convert host function declarations to js2zig_core::HostFunction
+    let mut host_functions = Vec::new();
+    for hf in &input.host_fns {
+        let params: Result<Vec<_>, _> = hf.params.iter()
+            .map(|t| type_name_to_host_type(t))
+            .collect();
+        let params = match params {
+            Ok(p) => p,
+            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
+                .to_compile_error().into(),
+        };
+
+        let return_type = match type_name_to_host_type(&hf.return_type) {
+            Ok(js2zig_core::HostType::Void) => None,
+            Ok(t) => Some(t),
+            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
+                .to_compile_error().into(),
+        };
+
+        // Convert async return fields
+        let async_return_fields: Result<Vec<_>, _> = hf.async_return_fields.iter()
+            .map(|(name, ty)| {
+                type_name_to_host_type(ty).map(|t| (name.clone(), t))
+            })
+            .collect();
+        let async_return_fields = match async_return_fields {
+            Ok(v) => v,
+            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
+                .to_compile_error().into(),
+        };
+
+        host_functions.push(js2zig_core::HostFunction {
+            name: hf.name.clone(),
+            params,
+            return_type,
+            is_async: hf.is_async,
+            async_return_fields,
+        });
+    }
+
+    // Build ProjectConfig
+    let config = js2zig_core::ProjectConfig {
+        name: input.group.clone(),
+        js_file: js_file_path.clone(),
+        out_dir: cache_dir.clone(),
+        host_config: if host_functions.is_empty() {
+            None
+        } else {
+            Some(js2zig_core::HostConfig {
+                functions: host_functions,
+            })
+        },
+        force_rebuild: false,
+        run_zig_build: false,
     };
 
-    // Read OUT_DIR environment variable (set by Cargo during build)
-    let out_dir = match std::env::var("OUT_DIR") {
-        Ok(dir) => dir,
-        Err(_) => {
+    // Transpile!
+    let project_result = match js2zig_core::transpile_project(&config) {
+        Ok(result) => result,
+        Err(e) => {
             return syn::Error::new(
                 proc_macro2::Span::call_site(),
-                "js2rust_bridge: OUT_DIR not set.\n\
-                 Make sure you have a build script that calls `js2zig_build::transpile()`.",
+                format!("js2rust_bridge: transpilation failed: {}", e),
             )
             .to_compile_error()
             .into();
         }
     };
 
-    // Build path: {OUT_DIR}/js2zig/{group_name}/cabi_exports.json
-    let json_path = std::path::Path::new(&out_dir)
-        .join("js2zig")
-        .join(&group_name)
-        .join("cabi_exports.json");
+    // Find the group result (there is exactly one group from analyze_single_group)
+    let group_result = project_result.groups.first();
 
-    generate_from_path(&json_path, &group_name, proc_macro2::Span::call_site())
+    let group_result = match group_result {
+        Some(g) => g,
+        None => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "js2rust_bridge: no groups found in transpilation result",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    // Parse cabi_exports_json
+    let exports: Vec<CabiExport> = match serde_json::from_str(&group_result.cabi_exports_json) {
+        Ok(v) => v,
+        Err(e) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("js2rust_bridge: failed to parse cabi_exports: {}", e),
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    // Optionally run zig build (side effect — generates static library for linking)
+    let zig_project_dir = cache_dir.join(&input.group);
+    if zig_project_dir.join("build.zig").exists() {
+        let _ = std::process::Command::new("zig")
+            .arg("build")
+            .current_dir(&zig_project_dir)
+            .status();
+    }
+
+    // Generate Rust FFI bindings from cabi exports
+    let generated = generate_bindings(&exports, &input.group);
+
+    match generated.parse::<TokenStream>() {
+        Ok(ts) => ts,
+        Err(e) => syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("internal error: {}", e),
+        )
+        .to_compile_error()
+        .into(),
+    }
 }
 
-/// Generate Rust FFI bindings + safe wrappers from C ABI export metadata.
+// ── FFI bindings generation ───────────────────────────────────────
+
 fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
@@ -192,22 +323,15 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
         let fn_name = format_ident!("{}", exp.name);
         let free_fn_name = format_ident!("free_{}", exp.name);
 
-        // Build parameter list for extern declaration
         let mut extern_params = Vec::new();
-        let mut safe_params = Vec::new();
-        let mut call_args = Vec::new();
-
         for (idx, param) in exp.params.iter().enumerate() {
             let param_ident = format_ident!("arg{}", idx);
             let param_ty = zig_type_to_rust_ffi_type(&param.zig_type);
             extern_params.push(quote! { #param_ident: #param_ty });
-            safe_params.push(quote! { #param_ident: #param_ty });
-            call_args.push(quote! { #param_ident });
         }
 
         let ret_ty = zig_ret_type_to_rust_ffi(&exp.ret_type);
 
-        // Generate `unsafe extern "C"` declaration
         extern_fns.push(quote! {
             pub fn #fn_name( #(#extern_params),* ) -> #ret_ty;
         });
@@ -218,12 +342,32 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             });
         }
 
-        // Generate safe wrapper (with group suffix to avoid name collisions)
         let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
         safe_wrappers.push(safe_wrapper);
     }
 
-    // Output: separate mod for raw FFI, then safe wrappers at top level
+    // Always provide js2rust_init/deinit safe wrappers (C ABI exports from lib.zig)
+    let runtime_init = quote! {
+        /// Initialize the Zig runtime (allocator + Io for async functions).
+        /// Call this before any async export function.
+        pub fn js2rust_init() {
+            extern "C" {
+                #[link_name = "js2rust_init"]
+                fn _js2rust_init();
+            }
+            unsafe { _js2rust_init() };
+        }
+        /// Release Zig runtime resources.
+        pub fn js2rust_deinit() {
+            extern "C" {
+                #[link_name = "js2rust_deinit"]
+                fn _js2rust_deinit();
+            }
+            unsafe { _js2rust_deinit() };
+        }
+    };
+    safe_wrappers.push(runtime_init);
+
     let output = quote! {
         #[allow(non_snake_case)]
         #[allow(dead_code)]
@@ -241,14 +385,12 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             #(#safe_wrappers)*
         }
 
-        // Re-export safe wrappers at the invocation site
         pub use #safe_mod::*;
     };
 
     output.to_string()
 }
 
-/// Generate a safe Rust wrapper function for a C ABI export.
 fn generate_safe_wrapper(
     exp: &CabiExport,
     fn_name: &syn::Ident,
@@ -256,12 +398,10 @@ fn generate_safe_wrapper(
     raw_mod: &syn::Ident,
     group_suffix: &str,
 ) -> proc_macro2::TokenStream {
-    // Safe wrapper name: `greet` → `greet_main`
     let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
 
-    // Build safe parameter list (convert &str → *const c_char if needed)
     for (idx, param) in exp.params.iter().enumerate() {
         let param_ident = format_ident!("arg{}", idx);
         let safe_ty = zig_type_to_rust_safe_type(&param.zig_type);
@@ -270,7 +410,6 @@ fn generate_safe_wrapper(
     }
 
     let (ret_ty, call_expr) = if exp.ret_type == "[]const u8" {
-        // String return: call FFI, convert to String, free
         (
             quote! { String },
             quote! {
@@ -308,9 +447,8 @@ fn generate_safe_wrapper(
     }
 }
 
-// ── Type conversion helpers ─────────────────────────────────────────
+// ── Type conversion helpers ───────────────────────────────────────
 
-/// Convert Zig FFI type to Rust FFI type (for `unsafe extern "C"`).
 fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
     match zig_type {
         "[]const u8" => quote! { *const std::ffi::c_char },
@@ -323,7 +461,6 @@ fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
     }
 }
 
-/// Convert Zig return type to Rust FFI return type.
 fn zig_ret_type_to_rust_ffi(ret_type: &str) -> proc_macro2::TokenStream {
     match ret_type {
         "[]const u8" => quote! { *const std::ffi::c_char },
@@ -336,7 +473,6 @@ fn zig_ret_type_to_rust_ffi(ret_type: &str) -> proc_macro2::TokenStream {
     }
 }
 
-/// Convert Zig type to safe Rust type (for wrapper function parameters).
 fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
     match zig_type {
         "[]const u8" => quote! { &str },
@@ -348,7 +484,6 @@ fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
     }
 }
 
-/// Convert safe Rust type to FFI type (for calling `unsafe extern "C"` functions).
 fn convert_safe_to_ffi(zig_type: &str, ident: &syn::Ident) -> proc_macro2::TokenStream {
     match zig_type {
         "[]const u8" => quote! { std::ffi::CString::new(#ident).unwrap().into_raw() },
@@ -356,7 +491,6 @@ fn convert_safe_to_ffi(zig_type: &str, ident: &syn::Ident) -> proc_macro2::Token
     }
 }
 
-/// Convert Zig return type to safe Rust return type.
 fn zig_ret_type_to_rust_safe(ret_type: &str) -> proc_macro2::TokenStream {
     match ret_type {
         "[]const u8" => quote! { String },

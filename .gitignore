@@ -4,3 +4,5 @@
 /*.py
 /*.sh
 /docs-archive/
+/.zig-cache
+.js2zig-cache

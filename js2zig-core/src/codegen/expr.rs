@@ -929,7 +929,7 @@ impl<'a> ZigCodegen<'a> {
                 let task_var = format!("_t{}", self.task_counter);
                 self.task_counter += 1;
 
-                // emit: (blk: { var _tN = io.async(fn, .{io, args...}); defer _tN.cancel(io) catch {}; break :blk try _tN.await(io); })
+                // emit: (blk: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
                 self.push("(blk: {\n");
                 self.indent += 1;
                 self.emit_indent();
@@ -937,7 +937,6 @@ impl<'a> ZigCodegen<'a> {
                 self.push(&task_var);
                 self.push(" = io.async(");
 
-                // Extract the function and arguments from the await argument
                 match &ae.argument {
                     Expression::CallExpression(call) => {
                         self.emit_expr(&call.callee);
@@ -953,17 +952,15 @@ impl<'a> ZigCodegen<'a> {
                         self.push(" });\n");
                     }
                     _ => {
-                        // await non-call expression: treat as io.async(expr, .{io})
                         self.emit_expr(&ae.argument);
                         self.push(", .{ io });\n");
                     }
                 }
 
                 self.emit_indent();
-                self.push("defer ");
+                self.push("defer _ = ");
                 self.push(&task_var);
-                self.push(".cancel(io) catch {};\n");
-
+                self.push(".cancel(io) catch undefined;\n");
                 self.emit_indent();
                 self.push("break :blk try ");
                 self.push(&task_var);

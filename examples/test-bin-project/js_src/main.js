@@ -13,13 +13,34 @@ export function multiply(x, y) {
     return x * y;
 }
 
-// Host function call examples (commented out — requires type annotations)
-// To call Rust host functions from JS:
-// 1. Define a JS function that calls the host function
-// 2. The transpiler will generate Zig code that calls the host function via C ABI
-// Example:
-// export function useHostAdd(a, b) {
-//     // This would call the Rust hostAdd function
-//     // The transpiler needs type annotations to generate correct Zig code
-//     return hostAdd(a, b);
-// }
+// Host function call examples (synchronous, integer)
+export function useHostAdd(a, b) {
+    return host_add(a, b);
+}
+
+export function useHostMultiply(a, b) {
+    return host_multiply(a, b);
+}
+
+// Host function call examples (synchronous, string)
+export function useHostConcat(s1, s2) {
+    return host_concat(s1, s2);
+}
+
+export function useHostStrlen(s) {
+    return host_strlen(s);
+}
+
+// Async host function call example
+// Exported async function — C ABI blocking wrapper uses global Io
+export async function getUserInfo(name) {
+    const user = await fetch_user(name);
+    return user.name;
+}
+
+// Fetch two users sequentially — demonstrates multiple async host calls
+export async function getTwoUserInfo(name1, name2) {
+    const user1 = await fetch_user(name1);
+    const user2 = await fetch_user(name2);
+    return user1.name + " & " + user2.name;
+}

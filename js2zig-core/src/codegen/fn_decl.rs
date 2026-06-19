@@ -148,13 +148,14 @@ impl<'a> ZigCodegen<'a> {
             self.inferrer.get_fn_return_type(raw_name).to_zig_str()
         };
 
-        // Async functions cannot use C ABI (error union return not C-compatible).
-        // For async exports: keep as `pub fn` (Zig-only, no callconv).
+        // Async exports: generate the async function with _impl suffix,
+        // plus a C ABI blocking wrapper that provides Io from js_runtime.getIo().
         if is_async && is_export {
+            // 1. Emit the async impl function (pub, Zig-only, no callconv)
             self.emit_indent();
             self.push("pub fn ");
             self.push(&name);
-            self.push("(");
+            self.push("_impl(");
             self.push("io: Io");
             if !fd.params.items.is_empty() {
                 self.push(", ");
@@ -164,6 +165,32 @@ impl<'a> ZigCodegen<'a> {
             self.push(&ret_type_str);
             self.push(" ");
             self.emit_fn_body(fd, raw_name, true);
+
+            // 2. Generate C ABI blocking wrapper
+            let wrapper = self.generate_async_cabi_wrapper(raw_name, &name, fd, &ret_type_str);
+            self.cabi_wrappers.push(wrapper);
+
+            // 3. Record C ABI export metadata
+            let async_param_types = self.inferrer.get_fn_param_types(raw_name);
+            let async_ret_type = self.inferrer.get_fn_return_type(raw_name);
+            let returns_string = async_ret_type == ZigType::String;
+            let mut params: Vec<(String, ZigType)> = Vec::new();
+            for (i, p) in fd.params.items.iter().enumerate() {
+                let pname = Self::escape_keyword(self.binding_name(&p.pattern));
+                let ptype = if i < async_param_types.len() {
+                    async_param_types[i].clone()
+                } else {
+                    ZigType::JsValue
+                };
+                params.push((pname, ptype));
+            }
+            self.cabi_exports.push(CabiExport {
+                name: name.clone(),
+                params,
+                ret_type: async_ret_type.clone(),
+                has_free_func: returns_string,
+                is_async: true,
+            });
             return;
         }
 
@@ -218,6 +245,7 @@ impl<'a> ZigCodegen<'a> {
                 params,
                 ret_type: ret_type.clone(),
                 has_free_func: returns_string || returns_closure,
+                is_async: false,
             });
         } else if is_export {
             // Simple export: no string/closure types, use direct C ABI.
@@ -256,6 +284,7 @@ impl<'a> ZigCodegen<'a> {
                 params,
                 ret_type: ret_type.clone(),
                 has_free_func: false,
+                is_async: false,
             });
         } else {
             // Non-exported function — `pub` so orchestrator can re-export for tests.
@@ -451,6 +480,114 @@ impl<'a> ZigCodegen<'a> {
         }
 
         if returns_string || returns_closure {
+            self.string_return_fns.insert(raw_name.to_string());
+        }
+
+        w
+    }
+
+    /// Generate a C ABI blocking wrapper for an async exported function.
+    ///
+    /// The wrapper:
+    /// 1. Converts C ABI params to Zig slices (string params)
+    /// 2. Gets Io from js_runtime.getIo()
+    /// 3. Calls `{name}_impl(io, params...) catch @panic("async error")`
+    /// 4. Converts the return value to C ABI (string → [*:0]const u8)
+    pub(super) fn generate_async_cabi_wrapper(
+        &mut self,
+        raw_name: &str,
+        escaped_name: &str,
+        fd: &Function,
+        ret_type_str: &str,
+    ) -> String {
+        let param_types = self.inferrer.get_fn_param_types(raw_name);
+        let ret_type = self.inferrer.get_fn_return_type(raw_name);
+        let returns_string = ret_type == ZigType::String;
+
+        let mut w = String::new();
+        w.push_str(&format!("pub fn {}(", escaped_name));
+
+        // C ABI params (no io — that's injected internally)
+        let mut cabi_params: Vec<String> = Vec::new();
+        for (i, param) in fd.params.items.iter().enumerate() {
+            let pname = self.binding_name(&param.pattern);
+            let safe_pname = Self::escape_keyword(pname);
+            let ptype = if i < param_types.len() {
+                param_types[i].clone()
+            } else {
+                ZigType::JsValue
+            };
+            if ptype == ZigType::String {
+                cabi_params.push(format!("{}: [*:0]const u8", safe_pname));
+            } else {
+                cabi_params.push(format!("{}: {}", safe_pname, ptype.to_zig_str()));
+            }
+        }
+        w.push_str(&cabi_params.join(", "));
+        w.push_str(") callconv(.c) ");
+
+        if returns_string {
+            w.push_str("[*:0]const u8");
+        } else {
+            w.push_str(ret_type_str);
+        }
+        w.push_str(" {\n");
+
+        // Convert C strings → Zig slices
+        for (i, param) in fd.params.items.iter().enumerate() {
+            let pname = self.binding_name(&param.pattern);
+            let safe_pname = Self::escape_keyword(pname);
+            let ptype = if i < param_types.len() {
+                param_types[i].clone()
+            } else {
+                ZigType::JsValue
+            };
+            if ptype == ZigType::String {
+                w.push_str(&format!(
+                    "    const {}_slice: []const u8 = std.mem.span({});\n",
+                    safe_pname, safe_pname
+                ));
+            }
+        }
+
+        // Call impl with Io from global, catch errors
+        w.push_str("    ");
+        if returns_string {
+            w.push_str("const _result = ");
+        } else if ret_type_str != "void" {
+            w.push_str("return ");
+        }
+        w.push_str(&format!("{}_impl(js_runtime.getIo()", escaped_name));
+        for (i, param) in fd.params.items.iter().enumerate() {
+            let pname = self.binding_name(&param.pattern);
+            let safe_pname = Self::escape_keyword(pname);
+            let ptype = if i < param_types.len() {
+                param_types[i].clone()
+            } else {
+                ZigType::JsValue
+            };
+            w.push_str(", ");
+            if ptype == ZigType::String {
+                w.push_str(&format!("{}_slice", safe_pname));
+            } else {
+                w.push_str(&safe_pname);
+            }
+        }
+        w.push_str(") catch @panic(\"async error\");\n");
+
+        // Handle string return
+        if returns_string {
+            w.push_str("    return @ptrCast(_result.ptr);\n");
+        }
+
+        w.push_str("}\n\n");
+
+        // Generate free_xxx for string returns
+        if returns_string {
+            w.push_str(&format!(
+                "pub fn free_{}(ptr: [*:0]const u8) callconv(.c) void {{\n    _ = js_allocator.g_alloc().free(std.mem.span(ptr));\n}}\n\n",
+                escaped_name
+            ));
             self.string_return_fns.insert(raw_name.to_string());
         }
 

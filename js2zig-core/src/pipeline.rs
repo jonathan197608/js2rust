@@ -1,4 +1,4 @@
-use crate::analyzer::{analyze_groups, sanitize_module_name, strip_imports_extract_exports};
+use crate::analyzer::{analyze_single_group, sanitize_module_name, strip_imports_extract_exports};
 use crate::{ProjectConfig, ProjectResult};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -144,140 +144,23 @@ fn write_build_cache(out_dir: &Path, cache: &HashMap<String, String>) {
     }
 }
 
-/// A test case for bridge Rust test code generation.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct BridgeTestCase {
-    /// Test name (e.g., "arr_len" from "test_arr_len")
-    test_name: String,
-    /// Function name being called (e.g., "testArrLen")
-    fn_name: String,
-    /// Rust-formatted arguments (e.g., "3.7" for f64 param)
-    args: Vec<String>,
-    /// Rust-formatted expected value (e.g., "5" for i64, "3.0" for f64)
-    expected: Option<String>,
-    /// CABI return type (e.g., "i64", "f64", "bool", "[]const u8")
-    ret_type: String,
-}
-
-/// Convert Zig expected value to Rust format.
-/// - `@as(i64, N)` → `N`
-/// - `@as(f64, N)` → `N` (with `f64` suffix if needed)
-/// - `true/false` → `true/false`
-/// - `"string"` → `"string"`
-fn zig_expected_to_rust(zig_expected: &str, ret_type: &str) -> String {
-    let s = zig_expected.trim();
-
-    // @as(i64, N) or @as(f64, N)
-    if let Some(inner) = s.strip_prefix("@as(")
-        && let Some(rest) = inner.strip_suffix(')')
-        && let Some(comma) = rest.find(',')
-    {
-        let value = rest[comma + 1..].trim();
-        return if ret_type == "f64" && !value.contains('.') {
-            format!("{}.0", value)
-        } else {
-            value.to_string()
-        };
-    }
-
-    // Bool
-    if s == "true" || s == "false" {
-        return s.to_string();
-    }
-
-    // String literal
-    if s.starts_with('"') && s.ends_with('"') {
-        return s.to_string();
-    }
-
-    // Null — not easily testable in Rust FFI
-    if s == "null" {
-        return s.to_string();
-    }
-
-    s.to_string()
-}
-
-/// Extract function name from an expression like "testArrLen()" or "cabiAdd(3, 5)".
-fn extract_fn_name_from_expr(expr: &str) -> Option<String> {
-    let paren = expr.find('(')?;
-    let name = &expr[..paren];
-    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
-        Some(name.to_string())
-    } else {
-        None
-    }
-}
-
-/// Extract argument strings from an expression like "cabiAdd(3, 5)".
-fn extract_args_from_expr(expr: &str) -> Vec<String> {
-    let Some(open) = expr.find('(') else {
-        return vec![];
-    };
-    let Some(close) = expr.rfind(')') else {
-        return vec![];
-    };
-    let inner = expr[open + 1..close].trim();
-    if inner.is_empty() {
-        return vec![];
-    }
-    // Simple comma split (doesn't handle nested calls, but good enough for test cases)
-    inner.split(',').map(|a| a.trim().to_string()).collect()
-}
-
-/// Convert testgen test cases into bridge-compatible Rust test cases.
-/// `skip_fns`: functions to exclude (e.g. JsAny returns that have no CABI export).
-fn convert_test_cases_for_bridge(
-    test_cases: &[crate::testgen::TestCase],
-    cabi_ret_types: &HashMap<String, String>,
-    skip_fns: &HashSet<String>,
-) -> Vec<BridgeTestCase> {
-    let mut result = Vec::new();
-    for tc in test_cases {
-        let Some(fn_name) = extract_fn_name_from_expr(&tc.expr_text) else {
-            continue;
-        };
-
-        // Skip functions without CABI export (e.g. JsAny returns)
-        if skip_fns.contains(&fn_name) {
-            continue;
-        }
-
-        // Skip functions not in CABI exports (e.g. const arrow functions)
-        let Some(ret_type) = cabi_ret_types.get(&fn_name).cloned() else {
-            continue;
-        };
-
-        let test_name = tc.var_name
-            .strip_prefix("test_")
-            .unwrap_or(&tc.var_name)
-            .to_string();
-
-        let args = extract_args_from_expr(&tc.expr_text);
-
-        let expected = tc.expected.as_ref().map(|e| zig_expected_to_rust(e, &ret_type));
-
-        // Skip cases with null expected or complex expressions
-        if expected.as_deref() == Some("null") {
-            continue;
-        }
-
-        result.push(BridgeTestCase {
-            test_name,
-            fn_name,
-            args,
-            expected,
-            ret_type,
-        });
-    }
-    result
-}
-
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     let ws = workspace_dir();
-    let in_dir = config.js_dir.to_string_lossy().to_string();
+
+    // Derive input directory and core file name from js_file path.
+    let js_file = &config.js_file;
+    let in_path = js_file
+        .parent()
+        .ok_or_else(|| format!("cannot get parent directory of '{}'", js_file.display()))?
+        .to_path_buf();
+    let core_file = js_file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("invalid file name in '{}'", js_file.display()))?
+        .to_string();
+
+    let in_dir = in_path.to_string_lossy().to_string();
     let out_dir: String = config.out_dir.to_string_lossy().to_string();
-    let in_path = config.js_dir.clone();
     let force_rebuild = config.force_rebuild;
 
     // Ensure output directory exists.
@@ -285,8 +168,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         format!("cannot create output directory '{}': {}", out_dir, e)
     })?;
 
-    // === Phase 1: Analyze file groups ===
-    let (groups, groups_json) = analyze_groups(&in_dir);
+    // === Phase 1: Analyze file groups (single core file + transitive deps) ===
+    let (groups, groups_json) = analyze_single_group(&in_dir, &core_file);
 
     let groups_json_path = Path::new(&out_dir).join("groups.json");
     if let Err(e) = fs::write(&groups_json_path, &groups_json) {
@@ -300,35 +183,82 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     }
 
     if groups.is_empty() {
-        return Err(format!("no core files found in '{}'", in_dir));
+        return Err(format!("no groups derived from core file '{}'", core_file));
     }
 
     // === Load host function registry ===
-    let config_path = ws.join("host_config.json");
-    let host_fns = if config_path.exists() {
-        match crate::host::HostFnRegistry::load_from_file(&config_path) {
-            Ok(registry) => registry,
-            Err(e) => {
-                return Err(e);
+    let mut host_fns = crate::host::HostFnRegistry::new();
+
+    // If host_config is provided in ProjectConfig, use it
+    if let Some(ref host_config) = config.host_config {
+        // Convert HostFunction to HostFnDef and register
+        for f in &host_config.functions {
+            let params: Vec<(String, crate::infer::ZigType)> = f.params.iter().enumerate().map(|(i, t)| {
+                (format!("arg{}", i), crate::infer::ZigType::from(*t))
+            }).collect();
+
+            if f.is_async {
+                if f.async_return_fields.is_empty() {
+                    // Async with simple return type
+                    let return_type = f.return_type
+                        .map(crate::infer::ZigType::from)
+                        .unwrap_or(crate::infer::ZigType::Void);
+                    host_fns.register_async_simple(&f.name, &f.name, params, return_type);
+                } else {
+                    // Async with struct return type
+                    let zig_name = f.struct_zig_name();
+                    let c_name = f.struct_c_name();
+                    let fields: Vec<crate::host::HostStructField> = f.async_return_fields.iter()
+                        .map(|(name, ty)| {
+                            crate::host::HostStructField {
+                                name: name.clone(),
+                                zig_type: ty.to_zig_field_type().to_string(),
+                                c_type: ty.to_c_field_type().to_string(),
+                            }
+                        })
+                        .collect();
+                    let struct_def = crate::host::HostStructDef {
+                        zig_name,
+                        c_name,
+                        fields,
+                    };
+                    host_fns.register_async(&f.name, &f.name, params, struct_def);
+                }
+            } else {
+                let return_type = f.return_type.map(crate::infer::ZigType::from);
+                host_fns.register(&f.name, params, return_type.unwrap_or(crate::infer::ZigType::Void));
             }
         }
     } else {
-        eprintln!(
-            "warning: '{}' not found — no host functions registered",
-            config_path.display()
-        );
-        crate::host::HostFnRegistry::new()
+        // Fallback: load from host_config.json file
+        let config_path = ws.join("host_config.json");
+        if config_path.exists() {
+            match crate::host::HostFnRegistry::load_from_file(&config_path) {
+                Ok(registry) => {
+                    host_fns = registry;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        } else {
+            eprintln!(
+                "warning: '{}' not found — no host functions registered",
+                config_path.display()
+            );
+        }
     };
 
     let mut builtins = crate::builtins::BuiltinRegistry::new();
     builtins.register_host_fns(&host_fns);
     let host_header = host_fns.generate_zig_header();
-    let async_wrappers = host_fns.generate_async_wrappers();
+    let async_host_fn_names: Vec<String> = host_fns.async_fn_names();
     let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
 
     // === Incremental compilation: load build cache ===
     let mut build_cache = read_build_cache(Path::new(&out_dir));
     let runtime_path = ws.join("runtime");
+    let mut group_results: Vec<crate::GroupResult> = Vec::new();
 
     // === Phase 2: Generate Zig project per group ===
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
@@ -349,6 +279,18 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             && *cached_hash == current_hash
         {
             println!("  unchanged, skipping (use --force to rebuild)");
+            // Still collect the cabi_exports_json for the result
+            let cabi_path = Path::new(&out_dir)
+                .join(&group.core_name)
+                .join("cabi_exports.json");
+            let cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
+            group_results.push(crate::GroupResult {
+                name: group.core_name.clone(),
+                is_test: is_test_group,
+                cabi_exports_json: cabi_json,
+                diagnostics: Vec::new(),
+                output_files: Vec::new(),
+            });
             continue;
         }
 
@@ -359,7 +301,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut combined_zig = String::new();
             let mut all_cabi_exports: Vec<crate::codegen::CabiExport> = Vec::new();
             let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
-            let mut all_rust_test_cases: Vec<BridgeTestCase> = Vec::new();
             let mut has_error = false;
 
             // --- Pre-scan: collect source, exports, and module names ---
@@ -446,8 +387,33 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 let allocator = oxc_allocator::Allocator::default();
                 let program = crate::parser::parse(&allocator, stripped);
+
+                // Collect host function return types and param types for type inference
+                let mut host_return_types: std::collections::HashMap<String, crate::infer::ZigType> =
+                    std::collections::HashMap::new();
+                let mut host_param_types: std::collections::HashMap<String, Vec<crate::infer::ZigType>> =
+                    std::collections::HashMap::new();
+                for def in host_fns.iter() {
+                    host_return_types.insert(def.name.clone(), def.ret_type.clone());
+                    host_param_types.insert(
+                        def.name.clone(),
+                        def.params.iter().map(|(_, t)| t.clone()).collect(),
+                    );
+                }
+                let host_struct_fields = host_fns.struct_fields_map();
+
+                let async_fns: std::collections::HashSet<String> =
+                    host_fns.async_fn_names().into_iter().collect();
+
+                let host_info = crate::codegen::HostTypeInfo {
+                    return_types: &host_return_types,
+                    param_types: &host_param_types,
+                    struct_fields: &host_struct_fields,
+                    async_fns: &async_fns,
+                };
+
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
-                    crate::codegen::generate(&program, &builtins, &codegen_exports, stripped, member);
+                    crate::codegen::generate(&program, &builtins, &codegen_exports, stripped, member, &host_info);
 
                 let has_file_error = diagnostics
                     .iter()
@@ -501,7 +467,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 all_cabi_exports.extend(cabi_exports);
 
                 if is_test_group {
-                    // Test groups: also generate Zig test code AND bridge test cases
+                    // Test groups: also generate Zig test code
                     let test_cases = crate::testgen::extract_test_cases(&program, stripped);
                     let closure_fn_refs: HashSet<&str> =
                         closure_fns.iter().map(|s| s.as_str()).collect();
@@ -512,21 +478,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     let file_test_code =
                         crate::testgen::generate_test_code(&test_cases, &closure_fn_refs, &ret_type_map);
                     all_test_code.push_str(&file_test_code);
-
-                    // Convert to bridge Rust test cases
-                    // Use all_cabi_exports (actual CABI-exported fns), NOT fn_return_types
-                    // (which includes non-exportable functions like const arrow fns)
-                    let cabi_ret_types: HashMap<String, String> = all_cabi_exports
-                        .iter()
-                        .map(|exp| (exp.name.clone(), exp.ret_type.to_cabi_str()))
-                        .collect();
-                    let skip_fns: HashSet<String> = fn_return_types
-                        .iter()
-                        .filter(|(_, v)| **v == crate::infer::ZigType::JsAny)
-                        .map(|(k, _)| k.clone())
-                        .collect();
-                    let bridge_cases = convert_test_cases_for_bridge(&test_cases, &cabi_ret_types, &skip_fns);
-                    all_rust_test_cases.extend(bridge_cases);
                 }
             }
 
@@ -561,16 +512,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 cabi_names,
                 test_code: all_test_code,
                 runtime_dir: Some(runtime_dir.clone()),
-                host_header: if combined_zig.contains("host.") {
+                host_header: if combined_zig.contains("host.") || !async_host_fn_names.is_empty() {
                     host_header.clone()
                 } else {
                     String::new()
                 },
-                async_host_wrappers: if combined_zig.contains("fetchUser") {
-                    async_wrappers.clone()
-                } else {
-                    String::new()
-                },
+                async_host_fn_names: async_host_fn_names.clone(),
                 include_windows_stub: group_idx == 0,
             };
 
@@ -579,6 +526,19 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 Err(e) => {
                     eprintln!("  FAIL ({})", e);
                     continue;
+                }
+            }
+
+            // Generate host.zig if host functions are registered
+            if !host_fns.is_empty() {
+                let host_zig_path = Path::new(&out_dir)
+                    .join(&group.core_name)
+                    .join("host.zig");
+                let host_zig_content = host_fns.generate_zig_header();
+                if let Err(e) = fs::write(&host_zig_path, &host_zig_content) {
+                    eprintln!("  warning: failed to write host.zig: {}", e);
+                } else {
+                    println!("  Generated: {}/{}", out_dir, host_zig_path.file_name().unwrap().to_string_lossy());
                 }
             }
 
@@ -614,18 +574,29 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let include_init = !is_test_group && group_idx == 0;
             write_cabi_metadata(Path::new(&out_dir), &group.core_name, &all_cabi_exports, &host_fns, include_init);
 
+            // Collect cabi_exports_json for the result
+            let cabi_path = Path::new(&out_dir)
+                .join(&group.core_name)
+                .join("cabi_exports.json");
+            let cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
+
+            group_results.push(crate::GroupResult {
+                name: group.core_name.clone(),
+                is_test: is_test_group,
+                cabi_exports_json: cabi_json,
+                diagnostics: Vec::new(),
+                output_files: Vec::new(),
+            });
+
             // Write test_cases.json for test groups (used by bridge test generation)
-            if is_test_group && !all_rust_test_cases.is_empty() {
-                let tc_path = Path::new(&out_dir)
-                    .join(&group.core_name)
-                    .join("test_cases.json");
-                if let Ok(json_str) = serde_json::to_string_pretty(&all_rust_test_cases) {
-                    let _ = fs::write(&tc_path, json_str);
-                }
-            }
         }
 
         // === Zig build ===
+        if !config.run_zig_build {
+            // Skip zig build/test — caller handles compilation (e.g. proc-macro)
+            continue;
+        }
+
         let project_path = Path::new(&out_dir).join(&group.core_name);
         let mut build_ok = false;
         let build_result = Command::new("zig")
@@ -669,208 +640,13 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
     }
 
-    // === Phase 3: Regenerate js2rust-bridge/src/lib.rs ===
-    // DISABLED: In new architecture, js2rust-bridge/src/lib.rs is manually maintained.
-    // The user's project calls js2rust_bridge!(group_name); in their own code.
-    // generate_bridge_lib_rs(&ws, Path::new(&out_dir));
-
     // === Write build cache ===
     write_build_cache(Path::new(&out_dir), &build_cache);
 
-    // Return result (TODO: populate with actual group results)
-    Ok(ProjectResult::default())
-}
-
-/// Regenerate `js2rust-bridge/src/lib.rs` based on current groups.
-///
-/// - Non-test groups → public `js2rust_bridge!()` invocations
-/// - Test groups → `#[cfg(test)]` scoped `js2rust_bridge!()` + `#[test]` functions
-pub fn generate_bridge_lib_rs(ws: &Path, out_dir: &Path) {
-    let bridge_lib_path = ws.join("js2rust-bridge").join("src").join("lib.rs");
-    if !bridge_lib_path.parent().unwrap().exists() {
-        eprintln!("  warning: js2rust-bridge/src/ not found — skipping bridge generation");
-        return;
-    }
-
-    // Collect normal groups and test groups
-    let mut normal_groups: Vec<String> = Vec::new();
-    let mut test_groups: Vec<String> = Vec::new();
-    if let Ok(entries) = fs::read_dir(out_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Some(name) = path.file_name().and_then(|n| n.to_str())
-                && path.join("cabi_exports.json").exists()
-            {
-                if name.starts_with("test_") {
-                    test_groups.push(name.to_string());
-                } else {
-                    normal_groups.push(name.to_string());
-                }
-            }
-        }
-    }
-    normal_groups.sort();
-    test_groups.sort();
-
-    if normal_groups.is_empty() && test_groups.is_empty() {
-        eprintln!("  warning: no groups with cabi_exports.json — skipping bridge generation");
-        return;
-    }
-
-    // Generate lib.rs content
-    let mut out = String::new();
-    out.push_str("// js2rust-bridge: Rust FFI bindings for translated JS/Zig code.\n");
-    out.push_str("//\n");
-    out.push_str("// AUTO-GENERATED by js2rustc — do not edit manually.\n");
-    out.push_str("// Each `js2rust_bridge!()` invocation reads cabi_exports.json at compile time\n");
-    out.push_str("// and generates `unsafe extern \"C\"` + safe Rust wrappers.\n\n");
-    out.push_str("pub use js2rust_bridge_macro::js2rust_bridge;\n\n");
-    out.push_str("pub mod host;\n\n");
-
-    // === Normal groups: public FFI bindings ===
-    out.push_str("// === Auto-generated FFI bindings for each group ===\n");
-    for group in &normal_groups {
-        out.push_str(&format!(
-            "js2rust_bridge!(\"out/{}/cabi_exports.json\");\n",
-            group
-        ));
-    }
-
-    // === String conversion helpers ===
-    out.push_str("\n// === String conversion helpers ===\n\n");
-    out.push_str("\
-/// Convert a null-terminated C string pointer to a Rust &str.
-///
-/// # Safety
-/// The pointer must be a valid, null-terminated C string allocated by Zig.
-/// The returned &str borrows the memory; call the corresponding `free_*`
-/// function after use to release the memory.
-pub unsafe fn cstr_to_str<'a>(ptr: *const std::ffi::c_char) -> Option<&'a str> {
-    if ptr.is_null() {
-        return None;
-    }
-    let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
-    c_str.to_str().ok()
-}
-");
-
-    // === Test groups: #[cfg(test)] scoped bindings + #[test] functions ===
-    if !test_groups.is_empty() {
-        out.push_str("\n// === Test groups: FFI bindings + tests (only compiled during `cargo test`) ===\n\n");
-        out.push_str("#[cfg(test)]\n");
-        out.push_str("#[allow(non_snake_case)]\n");
-        out.push_str("mod generated_tests {\n");
-        out.push_str("    use js2rust_bridge_macro::js2rust_bridge;\n\n");
-
-        // Import normal group wrappers for potential cross-group testing
-        out.push_str("    // Re-import normal group wrappers\n");
-        out.push_str("    #[allow(unused_imports)]\n");
-        out.push_str("    use super::*;\n\n");
-
-        // FFI bindings for test groups
-        out.push_str("    // Test group FFI bindings\n");
-        for group in &test_groups {
-            out.push_str(&format!(
-                "    js2rust_bridge!(\"out/{}/cabi_exports.json\");\n",
-                group
-            ));
-        }
-
-        // Generate #[test] functions from test_cases.json
-        out.push_str("\n    // === Auto-generated test functions ===\n");
-
-        // Track generated test names to detect duplicates across groups
-        let mut used_test_names: HashSet<String> = HashSet::new();
-
-        for group in &test_groups {
-            let tc_path = Path::new(out_dir).join(group).join("test_cases.json");
-            let test_cases: Vec<BridgeTestCase> = if let Ok(data) = fs::read_to_string(&tc_path) {
-                serde_json::from_str(&data).unwrap_or_default()
-            } else {
-                continue;
-            };
-
-            if test_cases.is_empty() {
-                continue;
-            }
-
-            // Short group suffix for disambiguation (strip "test_" prefix)
-            let group_short = group.strip_prefix("test_").unwrap_or(group);
-
-            out.push_str(&format!("\n    // --- {} ---\n", group));
-            for tc in &test_cases {
-                // Skip string-returning functions: bridge tests don't init Zig allocator,
-                // and some string returns (e.g. trim) are sub-slices of constants that
-                // crash on free. These are covered by Zig-side tests instead.
-                if tc.ret_type == "[]const u8" {
-                    continue;
-                }
-
-                let wrapper_name = format!("{}_{}", tc.fn_name, group);
-                let args_str = tc.args.join(", ");
-                let call = format!("{}({})", wrapper_name, args_str);
-
-                // Disambiguate test names: if already used, append group suffix
-                let base_name = tc.test_name.clone();
-                let test_fn_name = if used_test_names.contains(&base_name) {
-                    format!("{}_{}", base_name, group_short)
-                } else {
-                    base_name.clone()
-                };
-                used_test_names.insert(base_name);
-
-                // Generate appropriate assertion based on return type
-                if let Some(ref expected) = tc.expected {
-                    if tc.ret_type == "f64" {
-                        // Float comparison with tolerance
-                        out.push_str(&format!(
-                            "    #[test]\n    fn test_{name}() {{\n        assert!(({call} - {exp}f64).abs() < 1e-10, \"{name}: got {{}}, expected {exp}\", {call});\n    }}\n\n",
-                            name = test_fn_name,
-                            call = call,
-                            exp = expected,
-                        ));
-                    } else if tc.ret_type == "bool" {
-                        out.push_str(&format!(
-                            "    #[test]\n    fn test_{name}() {{\n        assert_eq!({call}, {exp});\n    }}\n\n",
-                            name = test_fn_name,
-                            call = call,
-                            exp = expected,
-                        ));
-                    } else {
-                        // Default: integer comparison (i64)
-                        out.push_str(&format!(
-                            "    #[test]\n    fn test_{name}() {{\n        assert_eq!({call}, {exp});\n    }}\n\n",
-                            name = test_fn_name,
-                            call = call,
-                            exp = expected,
-                        ));
-                    }
-                } else {
-                    // No expected value: smoke test (call should not panic)
-                    out.push_str(&format!(
-                        "    #[test]\n    fn test_{name}() {{\n        let _ = {call};\n    }}\n\n",
-                        name = test_fn_name,
-                        call = call,
-                    ));
-                }
-            }
-        }
-
-        out.push_str("}\n");
-    }
-
-    // Write the file
-    let total_groups = normal_groups.len() + test_groups.len();
-    match fs::write(&bridge_lib_path, &out) {
-        Ok(()) => println!(
-            "\n  bridge: regenerated lib.rs ({} normal + {} test group{})",
-            normal_groups.len(),
-            test_groups.len(),
-            if total_groups == 1 { "" } else { "s" }
-        ),
-        Err(e) => eprintln!("  error: cannot write bridge lib.rs: {}", e),
-    }
+    Ok(ProjectResult {
+        groups: group_results,
+        diagnostics: Vec::new(),
+    })
 }
 
 /// Generate `pub export fn` wrapper code for lib.zig.
@@ -942,6 +718,113 @@ pub fn gen_cabi_wrappers(
                 pname.clone()
             }
         }).collect::<Vec<_>>().join(", ");
+
+        // ── Async exports: call _impl with js_runtime.getIo(), catch errors ──
+        if exp.is_async {
+            let async_zig_args = if zig_call_args.is_empty() {
+                "js_runtime.getIo()".to_string()
+            } else {
+                format!("js_runtime.getIo(), {}", zig_call_args)
+            };
+            let async_cabi_args = if cabi_call_args.is_empty() {
+                "js_runtime.getIo()".to_string()
+            } else {
+                format!("js_runtime.getIo(), {}", cabi_call_args)
+            };
+
+            if returns_string {
+                // Zig-friendly adapter (for tests) — calls _impl directly
+                out.push_str(&format!(
+                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                    name = name,
+                    params = zig_params.join(", "),
+                    mod = module,
+                    args = async_zig_args,
+                ));
+                // C ABI wrapper
+                let conversions = if cabi_to_zig_conversions.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
+                };
+                out.push_str(&format!(
+                    "pub export fn {name}_cabi({params}) [*:0]const u8 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    return @ptrCast(_result.ptr);\n}}\n",
+                    name = name,
+                    params = cabi_params.join(", "),
+                    conv = conversions,
+                    mod = module,
+                    args = async_cabi_args,
+                ));
+                out.push_str(&format!(
+                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
+                    name = name,
+                ));
+            } else {
+                let ret_zig = if exp.ret_type == crate::infer::ZigType::Void {
+                    "void".to_string()
+                } else {
+                    exp.ret_type.to_zig_str()
+                };
+                let exp_ret_is_js_value = exp.ret_type == crate::infer::ZigType::JsValue;
+                let conversions = if cabi_to_zig_conversions.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
+                };
+
+                if ret_zig == "void" {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                        name = name,
+                        params = cabi_params.join(", "),
+                        conv = conversions,
+                        mod = module,
+                        args = async_cabi_args,
+                    ));
+                } else if exp_ret_is_js_value {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    return _result.int;\n}}\n",
+                        name = name,
+                        params = cabi_params.join(", "),
+                        conv = conversions,
+                        mod = module,
+                        args = async_cabi_args,
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                        name = name,
+                        params = cabi_params.join(", "),
+                        conv = conversions,
+                        ret = ret_zig,
+                        mod = module,
+                        args = async_cabi_args,
+                    ));
+                }
+            }
+
+            // free_xxx wrapper (C ABI, always _cabi suffix for string returns)
+            if exp.has_free_func {
+                let free_fn = format!("free_{}", name);
+                if returns_string {
+                    out.push_str(&format!(
+                        "pub export fn {free_fn}_cabi(ptr: [*:0]const u8) void {{
+    {mod}.free_{name}(ptr);
+}}\n",
+                        free_fn = free_fn,
+                        name = name,
+                        mod = module,
+                    ));
+                    out.push_str(&format!(
+                        "comptime {{ @export(&{free_fn}_cabi, .{{ .name = \"{free_fn}\", .linkage = .strong }}); }}\n",
+                        free_fn = free_fn,
+                    ));
+                }
+            }
+
+            out.push('\n');
+            continue;
+        }
 
         if returns_string {
             // ── Zig-friendly adapter (for tests) — calls _impl directly, no conversion ──

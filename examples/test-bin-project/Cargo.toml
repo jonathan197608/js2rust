@@ -5,8 +5,9 @@ edition = "2021"
 authors = ["jonathan197608"]
 description = "Test binary project for js2rust — JS-to-Zig transpiler"
 
-[build-dependencies]
-js2zig-build = { version = "0.1", path = "../../js2zig-build" }
-
 [dependencies]
-js2rust-bridge = { version = "0.1", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }
+tokio = { version = "1", features = ["rt", "time"] }
+
+[build-dependencies]
+js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }

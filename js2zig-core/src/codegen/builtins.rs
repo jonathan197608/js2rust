@@ -140,6 +140,7 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
+            async_host_fns: std::collections::HashSet::new(),
         };
         tmp.emit_expr(receiver);
         // Static arrays need & to coerce to []const T for runtime functions
@@ -181,6 +182,7 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
+            async_host_fns: std::collections::HashSet::new(),
             };
             tmp2.emit_arg(arg);
             all_args.push(tmp2.output.clone());
@@ -400,6 +402,7 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
+            async_host_fns: std::collections::HashSet::new(),
                 };
                 tmp.emit_arg(arg);
                 tmp.output

@@ -371,6 +371,13 @@ pub struct TypeInferrer {
     /// Also set by codegen before generating each function body,
     /// so that get_var_type() can look up fn_local_types.
     pub(crate) current_fn: Option<String>,
+    /// Host function return types: func_name → return_type
+    host_return_types: HashMap<String, ZigType>,
+    /// Host function parameter types: func_name → param_types
+    host_param_types: HashMap<String, Vec<ZigType>>,
+    /// Host struct field types: struct_name → Vec<(field_name, field_type)>
+    /// Used to infer member access on async host function return values.
+    host_struct_fields: HashMap<String, Vec<(String, ZigType)>>,
 }
 
 /// Pre-indexed function data for O(1) lookup.
@@ -653,6 +660,9 @@ impl TypeInferrer {
             dynamic_arrays: HashSet::new(),
             fn_local_types: HashMap::new(),
             current_fn: None,
+            host_return_types: HashMap::new(),
+            host_param_types: HashMap::new(),
+            host_struct_fields: HashMap::new(),
         }
     }
 
@@ -767,6 +777,13 @@ impl TypeInferrer {
         if is_const && matches!(init,
             Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
         ) {
+            return self.infer_expr(init);
+        }
+
+        // Rule 2.3c: const + await expression → infer from awaited value
+        // This allows `const user = await fetch_user(name)` to get the host
+        // function's return type (e.g., Struct("FetchUserResult"))
+        if is_const && matches!(init, Expression::AwaitExpression(_)) {
             return self.infer_expr(init);
         }
 
@@ -1334,6 +1351,11 @@ impl TypeInferrer {
     }
 
     fn builtin_param_type(&self, callee: &str, arg_idx: usize) -> Option<ZigType> {
+        // Check host function param types first
+        if let Some(params) = self.host_param_types.get(callee) {
+            return params.get(arg_idx).cloned();
+        }
+
         match (callee, arg_idx) {
             ("Math.abs" | "Math.sqrt" | "Math.sin" | "Math.cos" | "Math.tan"
                 | "Math.log" | "Math.floor" | "Math.ceil" | "Math.round"
@@ -2146,7 +2168,14 @@ impl TypeInferrer {
                         .map(|(_, ty)| ty.clone())
                         .unwrap_or(ZigType::JsValue)
                 }
-                ZigType::Struct(_struct_name) => {
+                ZigType::Struct(struct_name) => {
+                    // Check host struct fields first (async host function return types)
+                    if let Some(fields) = self.host_struct_fields.get(struct_name) {
+                        return fields.iter()
+                            .find(|(n, _)| n == prop)
+                            .map(|(_, ty)| ty.clone())
+                            .unwrap_or(ZigType::JsValue);
+                    }
                     // Named struct from class: can't enumerate fields at infer time
                     // Fall through to Any — class fields are all i64 anyway
                     ZigType::JsValue
@@ -2338,6 +2367,10 @@ impl TypeInferrer {
                     && let ZigType::FunctionPtr(sig) = &bi.zig_type {
                         return (*sig.return_type).clone();
                     }
+                // Check host function return types (sync and async)
+                if let Some(ret) = self.host_return_types.get(name) {
+                    return ret.clone();
+                }
                 self.builtin_return_type(name)
             }
             Expression::StaticMemberExpression(mem) => {
@@ -2399,6 +2432,11 @@ impl TypeInferrer {
     }
 
     fn builtin_return_type(&self, name: &str) -> ZigType {
+        // Check host function return types first
+        if let Some(ret) = self.host_return_types.get(name) {
+            return ret.clone();
+        }
+
         match name {
             "parseInt" => ZigType::I64,
             "parseFloat" | "Number" | "Math.random" | "Math.floor" | "Math.ceil"
@@ -2415,6 +2453,25 @@ impl TypeInferrer {
                 | "console.clear" | "console.count" | "console.trace" => ZigType::Void,
             _ => ZigType::JsValue,
         }
+    }
+
+    /// Add a host function return type.
+    pub fn add_host_return_type(&mut self, name: String, return_type: ZigType) {
+        self.host_return_types.insert(name, return_type);
+    }
+
+    /// Register host function parameter types for type inference.
+    /// When a variable is passed to a host function, its type is inferred from
+    /// the host function's parameter type.
+    pub fn register_host_param_types(&mut self, host_params: &HashMap<String, Vec<ZigType>>) {
+        self.host_param_types = host_params.clone();
+    }
+
+    /// Register host struct field types for member access inference.
+    /// When code accesses `struct_var.field_name`, the inferrer looks up
+    /// the field type from this map (keyed by Zig struct name).
+    pub fn register_host_struct_fields(&mut self, fields: &HashMap<String, Vec<(String, ZigType)>>) {
+        self.host_struct_fields = fields.clone();
     }
 
     // ============================================================
