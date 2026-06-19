@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/js2rustc/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/js2rust-bridge/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/test-bin-project/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/test-lib-project/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/test-project/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/js2rust-bridge-macro/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/js2rustc/benches" isTestSource="true" />
