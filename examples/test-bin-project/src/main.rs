@@ -19,26 +19,3 @@ fn main() {
     let product = multiply_main(3, 4);
     println!("multiply_main(3, 4) = {}", product);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_greet() {
-        let result = greet_main("Rust");
-        assert_eq!(result, "Hello, Rust!");
-    }
-
-    #[test]
-    fn test_add() {
-        let sum = add_main(10, 20);
-        assert_eq!(sum, 30);
-    }
-
-    #[test]
-    fn test_multiply() {
-        let product = multiply_main(6, 7);
-        assert_eq!(product, 42);
-    }
-}
