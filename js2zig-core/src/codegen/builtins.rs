@@ -280,6 +280,86 @@ impl<'a> ZigCodegen<'a> {
                 }
                 self.push(") catch {}");
             }
+            "slice" => {
+                // arr.slice(start, end) → js_array.sliceAny()
+                self.push("js_array.sliceAny(js_allocator.g_alloc(), &");
+                self.push(&escaped);
+                self.push(", ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                } else {
+                    self.push("0");
+                }
+                self.push(", ");
+                if args.len() >= 2 {
+                    if let Some(arg1) = args.get(1) {
+                        self.emit_arg(arg1);
+                    } else {
+                        self.push(&format!("{}.items.len", escaped));
+                    }
+                } else {
+                    self.push(&format!("{}.items.len", escaped));
+                }
+                self.push(") catch @panic(\"slice failed\")");
+            }
+            "splice" => {
+                // arr.splice(start, deleteCount, ...items)
+                // Supports: splice(), splice(start), splice(start, deleteCount)
+                self.push("blk: {\n");
+                self.indent += 1;
+
+                self.emit_indent();
+                self.push("const _start: usize = @intCast(@max(0, ");
+                if let Some(arg0) = args.first() {
+                    self.emit_arg(arg0);
+                } else {
+                    self.push("0");
+                }
+                self.push("));\n");
+
+                self.emit_indent();
+                self.push("var _n: usize = @intCast(@max(0, ");
+                if args.len() >= 2 {
+                    if let Some(arg1) = args.get(1) {
+                        self.emit_arg(arg1);
+                    } else {
+                        self.push("0");
+                    }
+                } else {
+                    // splice(start) → deleteCount = all remaining
+                    self.push(&format!("{}.items.len - _start", escaped));
+                }
+                self.push("));\n");
+
+                self.emit_indent();
+                self.push("var _result = std.ArrayList(JsAny).empty;\n");
+                self.emit_indent();
+                self.push("errdefer _result.deinit(js_allocator.g_alloc());\n");
+
+                self.emit_indent();
+                self.push("var _i: usize = 0;\n");
+                self.emit_indent();
+                self.push("while (_i < _n and _start < ");
+                self.push(&escaped);
+                self.push(".items.len) : (_i += 1) {\n");
+                self.indent += 1;
+
+                self.emit_indent();
+                self.push("_result.appendAssumeCapacity(");
+                self.push(&escaped);
+                self.push(".orderedRemove(_start));\n");
+
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}\n");
+
+                self.emit_indent();
+                self.push("break :blk _result;\n");
+
+                self.indent -= 1;
+                self.emit_indent();
+                self.push("}");
+            }
             "reverse" => {
                 // arr.reverse() → std.mem.reverse(JsAny, arr.items);
                 self.push("std.mem.reverse(JsAny, ");
@@ -293,66 +373,11 @@ impl<'a> ZigCodegen<'a> {
                     escaped
                 ));
             }
-            "splice" => {
-                // arr.splice(start, deleteCount, ...items)
-                // Only delete-removal (0–2 args) is fully supported; insertion is a compileError.
-                if args.len() > 2 {
-                    self.push("@compileError(\"splice with insert items not yet supported — use manual insert operations\")");
-                } else {
-                    self.push("(blk: {\n");
-                    self.indent += 1;
-
-                    let elem_ty = self.infer_dynamic_array_elem_type(obj_name);
-                    self.emit_indent();
-                    self.push("const _start: usize = @intCast(@max(0, ");
-                    if let Some(arg0) = args.first() {
-                        self.emit_arg(arg0);
-                    } else {
-                        self.push("0");
-                    }
-                    self.push("));\n");
-
-                    self.emit_indent();
-                    self.push("var _n: usize = @intCast(@max(0, ");
-                    if args.len() >= 2 {
-                        if let Some(arg1) = args.get(1) {
-                            self.emit_arg(arg1);
-                        } else {
-                            self.push("0");
-                        }
-                    } else {
-                        // splice(start) → deleteCount = all remaining
-                        self.push(&format!("{}.items.len -| _start", escaped));
-                    }
-                    self.push("));\n");
-
-                    self.emit_indent();
-                    self.push(&format!("var _result = std.ArrayList({}).init(js_allocator.g_alloc());\n", elem_ty));
-                    self.emit_indent();
-                    self.push("defer _result.deinit();\n");
-
-                    self.emit_indent();
-                    self.push("while (_n > 0 and _start < ");
-                    self.push(&escaped);
-                    self.push(".items.len) : (_n -= 1) {\n");
-                    self.indent += 1;
-
-                    self.emit_indent();
-                    self.push("_result.append(");
-                    self.push(&escaped);
-                    self.push(".orderedRemove(_start)) catch @panic(\"OOM\");\n");
-
-                    self.indent -= 1;
-                    self.emit_indent();
-                    self.push("}\n");
-
-                    self.emit_indent();
-                    self.push("break :blk _result;\n");
-
-                    self.indent -= 1;
-                    self.emit_indent();
-                    self.push("})");
-                }
+            "map" => {
+                self.push("@compileError(\"map() callback inlining not yet implemented\")");
+            }
+            "filter" => {
+                self.push("@compileError(\"filter() callback inlining not yet implemented\")");
             }
             _ => {
                 self.push("@compileError(\"unknown array method: ");

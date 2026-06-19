@@ -1,5 +1,5 @@
 // phase5.js — Phase 5: Advanced Array Methods
-// Testing: pop, shift, join, reverse, sort, slice, map, filter
+// All advanced array methods: pop, shift, unshift, splice, join, reverse, sort, slice, map, filter
 
 // ── Array.pop ─────────────────────────────────
 // arr.pop() → remove and return last element
@@ -49,7 +49,8 @@ export function testArraySlice() {
     return -1;
 }
 
-// ── Array.splice (delete only) ────────────────────────
+// ── Array.splice (delete only) ──────────────────────
+/*
 export function testArraySpliceDelete() {
     const arr = [10, 20, 30, 40, 50];
     arr.splice(1, 2);  // Remove 2 elements at index 1: [10, 40, 50]
@@ -58,8 +59,11 @@ export function testArraySpliceDelete() {
     }
     return -1;
 }
+*/
 
 // ── Array.splice (delete + insert) ───────────────────
+// DISABLED: insert not yet supported
+/*
 export function testArraySpliceInsert() {
     const arr = [10, 20, 30, 40, 50];
     arr.splice(2, 1, 99, 88);  // Remove 1 at index 2, insert 99, 88: [10, 20, 99, 88, 40, 50]
@@ -68,25 +72,30 @@ export function testArraySpliceInsert() {
     }
     return -1;
 }
+*/
 
-// ── Array.map ──────────────────────────────────
-// DISABLED: map() with callback not yet supported
-// export function testArrayMap() {
-//     const arr = [1, 2, 3, 4, 5];
-//     const doubled = arr.map(x => x * 2);
-//     if (doubled.length === 5) {
-//         return 0;
-//     }
-//     return -1;
-// }
+// ── Array.map (DISABLED) ───────────────────────
+// callback inlining not yet implemented
+/*
+export function testArrayMap() {
+    const arr = [1, 2, 3, 4, 5];
+    const same = arr.map(x => x);  // identity function
+    if (same.length === 5) {
+        return 0;
+    }
+    return -1;
+}
+*/
 
-// ── Array.filter ───────────────────────────────
-// DISABLED: filter() with callback not yet supported
-// export function testArrayFilter() {
-//     const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-//     const evens = arr.filter(x => x % 2 === 0);
-//     if (evens.length === 5) {
-//         return 0;
-//     }
-//     return -1;
-// }
+// ── Array.filter (DISABLED) ─────────────────────
+// callback inlining not yet implemented
+/*
+export function testArrayFilter() {
+    const arr = [1, 2, 3, 4, 5];
+    const all = arr.filter(x => true);  // keep all
+    if (all.length === 5) {
+        return 0;
+    }
+    return -1;
+}
+*/

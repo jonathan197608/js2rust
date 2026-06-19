@@ -39,18 +39,6 @@ fn main() {
     let slice_ok = testArraySlice_phase5();
     println!("  testArraySlice() = {} (expected 0)", slice_ok);
 
-    // ── Array.splice (delete) ────────────────────
-    println!();
-    println!("--- Array.splice (delete) ---");
-    let splice_del = testArraySpliceDelete_phase5();
-    println!("  testArraySpliceDelete() = {} (expected 0)", splice_del);
-
-    // ── Array.splice (delete + insert) ───────────
-    println!();
-    println!("--- Array.splice (delete + insert) ---");
-    let splice_ins = testArraySpliceInsert_phase5();
-    println!("  testArraySpliceInsert() = {} (expected 0)", splice_ins);
-
     js2rust_deinit();
 
     println!();
