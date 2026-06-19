@@ -190,7 +190,7 @@ impl<'a> ZigCodegen<'a> {
     ) {
         // Determine the wider type for method calls
         let right_ty = self.inferrer.infer_expr(right);
-        let prefix = if matches!(left_ty, ZigType::JsAny) || matches!(&right_ty, ZigType::JsAny) {
+        let prefix = if self.current_callback_method.is_some() || matches!(left_ty, ZigType::JsAny) || matches!(&right_ty, ZigType::JsAny) {
             "JsAny"
         } else {
             "JsValue"

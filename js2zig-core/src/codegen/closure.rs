@@ -319,6 +319,7 @@ impl<'a> ZigCodegen<'a> {
             params,
             return_type: ret_ty.to_zig_str(),
             struct_def: String::new(),
+            callback_method: self.current_callback_method.clone(),
         };
 
         // Generate struct definition string immediately (avoids storing AST references)
@@ -441,7 +442,11 @@ impl<'a> ZigCodegen<'a> {
         }
     }
 
-    pub(super) fn generate_closure_struct_def(&self, ci: &ClosureInfo, arrow: &ArrowFunctionExpression) -> String {
+    pub(super) fn generate_closure_struct_def(&mut self, ci: &ClosureInfo, arrow: &ArrowFunctionExpression) -> String {
+        // Save and set current_callback_method for the closure body
+        let saved_callback_method = self.current_callback_method.clone();
+        self.current_callback_method = ci.callback_method.clone();
+
         let mut def = String::new();
         def.push_str(&format!("const {} = struct {{\n", ci.struct_name));
 
@@ -530,20 +535,46 @@ impl<'a> ZigCodegen<'a> {
 
         def.push_str("    }\n");
         def.push_str("};\n\n");
+        // Restore current_callback_method
+        self.current_callback_method = saved_callback_method;
         def
     }
 
-    // ========== Object type helpers ==========
+    // ========== Closure body emission helpers ==========
 
-    pub(super) fn emit_closure_expr(&self, expr: &Expression, ci: &ClosureInfo) -> String {
-        let captured_names: HashSet<&str> = ci.captured.iter().map(|(n, _)| n.as_str()).collect();
-        self.emit_expr_with_capture(expr, &captured_names)
+    /// Emit a closure expression, replacing captured vars with `self.` prefix.
+    /// Uses `self.emit_expr()` (which correctly handles JsAny binary ops)
+    /// by temporarily redirecting `self.output`.
+    pub(super) fn emit_closure_expr(&mut self, expr: &Expression, ci: &ClosureInfo) -> String {
+        // Save output, redirect to new buffer
+        let saved = std::mem::take(&mut self.output);
+        // Emit using emit_expr (handles JsAny binary ops correctly)
+        self.emit_expr(expr);
+        // Get the emitted code
+        let mut code = std::mem::take(&mut self.output);
+        // Restore output
+        self.output = saved;
+        // Replace captured var names with `self.` prefix
+        for (cap_name, _) in &ci.captured {
+            let placeholder = Self::escape_keyword(cap_name);
+            let replacement = format!("self.{}", Self::escape_keyword(cap_name));
+            code = code.replace(&placeholder, &replacement);
+        }
+        code
     }
 
-    /// Emit a statement in a closure context, replacing captured vars with `self.` prefix
-    pub(super) fn emit_closure_stmt(&self, stmt: &Statement, ci: &ClosureInfo) -> String {
-        let captured_names: HashSet<&str> = ci.captured.iter().map(|(n, _)| n.as_str()).collect();
-        self.emit_stmt_with_capture(stmt, &captured_names)
+    /// Emit a closure statement, replacing captured vars with `self.` prefix.
+    pub(super) fn emit_closure_stmt(&mut self, stmt: &Statement, ci: &ClosureInfo) -> String {
+        let saved = std::mem::take(&mut self.output);
+        self.emit_stmt(stmt);
+        let mut code = std::mem::take(&mut self.output);
+        self.output = saved;
+        for (cap_name, _) in &ci.captured {
+            let placeholder = Self::escape_keyword(cap_name);
+            let replacement = format!("self.{}", Self::escape_keyword(cap_name));
+            code = code.replace(&placeholder, &replacement);
+        }
+        code
     }
 
     /// Emit an expression, replacing captured variable names with `self.` prefix

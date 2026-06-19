@@ -28,6 +28,9 @@ struct ClosureInfo {
     return_type: String,
     /// Pre-generated struct definition string (filled during record_closure)
     struct_def: String,
+    /// If this closure is a callback for a dynamic array method (map/filter),
+    /// store the method name so the `call()` body can force JsAny binary ops.
+    callback_method: Option<String>,
 }
 
 /// Generate a unique closure struct name from a function name
