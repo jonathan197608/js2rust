@@ -1,7 +1,7 @@
 // js2zig-core/src/native_proto.rs
 //
 // Prototype: new native-type system codegen.
-// Only handles minimum viable target.
+// Phase 2: const, function, if/else, while, call, string concat, var.
 // Usage: cargo test -p js2zig-core -- test_native_proto
 
 use oxc_ast::ast::*;
@@ -12,7 +12,7 @@ use oxc_span::SourceType;
 /// Transpile a JS string to Zig source (native type system).
 pub fn transpile_js(js_source: &str) -> Result<String, String> {
     let alloc = Allocator::default();
-    let source_type = SourceType::default(); // auto-detect module vs script
+    let source_type = SourceType::default();
     let ret = Parser::new(&alloc, js_source, source_type).parse();
     if !ret.errors.is_empty() {
         return Err(format!("Parse errors: {:?}", ret.errors));
@@ -44,28 +44,51 @@ impl Codegen {
 
     fn emit_toplevel(&mut self, stmt: &Statement) {
         match stmt {
-            Statement::VariableDeclaration(vd) => {
-                self.emit_const(vd);
-            }
-            Statement::FunctionDeclaration(fd) => {
-                self.emit_fn(fd);
-            }
-            _ => { /* skip unsupported */ }
+            Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
+            Statement::FunctionDeclaration(fd) => self.emit_fn(fd),
+            _ => { /* skip */ }
         }
     }
 
-    // ── Const declarations ──────────────────────────────────
+    // ── Variable declarations (toplevel and function body) ───────
 
-    fn emit_const(&mut self, vd: &VariableDeclaration) {
+    /// Emit a variable declaration. Toplevel: only `const` allowed.
+    /// Inside functions: `var` with type inference + undefined init.
+    fn emit_var_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
             if let Some(name) = self.binding_name(&decl.id) {
-                if let Some(init) = &decl.init {
-                    let ty = self.infer_type(init);
-                    self.write(&format!("const {}: ", name));
-                    self.write(&ty);
-                    self.write(" = ");
-                    self.emit_expr(init);
-                    self.writeln(";");
+                let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
+
+                // Rule: toplevel var/let → error. Only allow const.
+                if self.indent == 0 && !is_const {
+                    self.write_indent();
+                    self.write(&format!(
+                        "// error: toplevel only allows 'const', not '{}'",
+                        name
+                    ));
+                    self.writeln("");
+                    continue;
+                }
+
+                match &decl.init {
+                    Some(init) => {
+                        let ty = self.infer_type(init);
+                        self.write_indent();
+                        let kw = if is_const { "const" } else { "var" };
+                        self.write(&format!("{} {}: {}", kw, name, ty));
+                        self.write(" = ");
+                        self.emit_expr(init);
+                        self.write(";\n");
+                    }
+                    None => {
+                        // No initializer → undefined (error in new type system).
+                        self.write_indent();
+                        self.write(&format!(
+                            "// error: variable '{}' must be initialized",
+                            name
+                        ));
+                        self.writeln("");
+                    }
                 }
             }
         }
@@ -78,7 +101,6 @@ impl Codegen {
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
 
-        // Collect return expressions for @TypeOf.
         let return_exprs = Self::collect_return_exprs(fd);
         let ret_ty = if return_exprs.is_empty() {
             "void".to_string()
@@ -86,7 +108,6 @@ impl Codegen {
             format!("@TypeOf({})", return_exprs.join(", "))
         };
 
-        // Function signature.
         self.write(&format!("fn {}(", name));
         for (i, param) in fd.params.items.iter().enumerate() {
             if i > 0 { self.write(", "); }
@@ -96,7 +117,6 @@ impl Codegen {
         }
         self.writeln(&format!(") !{} {{", ret_ty));
 
-        // Function body.
         self.indent += 1;
         if let Some(body) = &fd.body {
             for stmt in &body.statements {
@@ -112,19 +132,7 @@ impl Codegen {
     fn emit_fn_stmt(&mut self, stmt: &Statement) {
         match stmt {
             Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(name) = self.binding_name(&decl.id) {
-                        if let Some(init) = &decl.init {
-                            let ty = self.infer_type(init);
-                            self.write_indent();
-                            self.write(&format!("var {}: ", name));
-                            self.write(&ty);
-                            self.write(" = ");
-                            self.emit_expr(init);
-                            self.writeln(";");
-                        }
-                    }
-                }
+                self.emit_var_decl(vd);
             }
             Statement::ReturnStatement(rs) => {
                 self.write_indent();
@@ -137,10 +145,87 @@ impl Codegen {
             Statement::ExpressionStatement(es) => {
                 self.write_indent();
                 self.emit_expr(&es.expression);
-                self.writeln(";");
+                self.write(";\n");
+            }
+            Statement::IfStatement(is) => {
+                self.emit_if(is);
+            }
+            Statement::WhileStatement(ws) => {
+                self.emit_while(ws);
+            }
+            Statement::BlockStatement(bs) => {
+                self.emit_block(bs);
             }
             _ => { /* skip unsupported */ }
         }
+    }
+
+    // ── If / Else ──────────────────────────────────────────────
+
+    fn emit_if(&mut self, is: &IfStatement) {
+        self.write_indent();
+        self.write("if (");
+        self.emit_expr(&is.test);
+        self.writeln(") {");
+
+        self.indent += 1;
+        self.emit_stmt_or_block(&is.consequent);
+        self.indent -= 1;
+
+        if let Some(alt) = &is.alternate {
+            let inner: &Statement = alt;
+            match inner {
+                Statement::IfStatement(else_if) => {
+                    self.write_indent();
+                    self.write("} else ");
+                    self.emit_if(else_if);
+                    return;
+                }
+                other => {
+                    self.writeln("} else {");
+                    self.indent += 1;
+                    self.emit_stmt_or_block(other);
+                    self.indent -= 1;
+                }
+            }
+        }
+        self.writeln("}");
+    }
+
+    fn emit_stmt_or_block(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::BlockStatement(bs) => {
+                for s in &bs.body {
+                    self.emit_fn_stmt(s);
+                }
+            }
+            _ => self.emit_fn_stmt(stmt),
+        }
+    }
+
+    fn emit_block(&mut self, bs: &BlockStatement) {
+        self.writeln("{");
+        self.indent += 1;
+        for stmt in &bs.body {
+            self.emit_fn_stmt(stmt);
+        }
+        self.indent -= 1;
+        self.writeln("}");
+    }
+
+    // ── While loop ────────────────────────────────────────────
+
+    fn emit_while(&mut self, ws: &WhileStatement) {
+        self.write_indent();
+        self.write("while (");
+        self.emit_expr(&ws.test);
+        self.writeln(") {");
+
+        self.indent += 1;
+        self.emit_stmt_or_block(&ws.body);
+        self.indent -= 1;
+
+        self.writeln("}");
     }
 
     // ── Expressions ─────────────────────────────────────────────
@@ -160,13 +245,158 @@ impl Codegen {
                 self.write(id.name.as_str());
             }
             Expression::BinaryExpression(be) => {
-                self.emit_expr(&be.left);
-                self.write(&format!(" {} ", Self::binary_op(be.operator)));
-                self.emit_expr(&be.right);
+                self.emit_binary(be);
+            }
+            Expression::CallExpression(ce) => {
+                self.emit_call(ce);
+            }
+            Expression::AssignmentExpression(ae) => {
+                self.emit_assignment(ae);
+            }
+            Expression::UnaryExpression(ue) => {
+                self.emit_unary(ue);
+            }
+            Expression::LogicalExpression(le) => {
+                self.write("(");
+                self.emit_expr(&le.left);
+                self.write(&format!(" {} ", Self::logical_op(le.operator)));
+                self.emit_expr(&le.right);
+                self.write(")");
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                self.write("(");
+                self.emit_expr(&pe.expression);
+                self.write(")");
+            }
+            Expression::ConditionalExpression(ce) => {
+                self.emit_conditional(ce);
+            }
+            Expression::ArrayExpression(ae) => {
+                self.emit_array(ae);
             }
             _ => {
-                self.write("/* TODO */");
+                self.write("/* TODO expr */");
             }
+        }
+    }
+
+    // ── Binary expression with string-concat special case ──────
+
+    fn emit_binary(&mut self, be: &BinaryExpression) {
+        let left_is_string = matches!(be.left, Expression::StringLiteral(_));
+        let right_is_string = matches!(be.right, Expression::StringLiteral(_));
+
+        if be.operator == BinaryOperator::Addition && (left_is_string || right_is_string) {
+            self.emit_expr(&be.left);
+            self.write(" ++ ");
+            self.emit_expr(&be.right);
+        } else {
+            self.emit_expr(&be.left);
+            self.write(" ");
+            self.write(Self::binary_op(be.operator));
+            self.write(" ");
+            self.emit_expr(&be.right);
+        }
+    }
+
+    // ── Call expression (all calls get `try`) ──────────────────
+
+    fn emit_call(&mut self, ce: &CallExpression) {
+        // Get callee name.
+        let callee_name = match &ce.callee {
+            Expression::Identifier(id) => Some(id.name.to_string()),
+            _ => None,
+        };
+
+        // All function calls use `try`.
+        self.write("try ");
+        if let Some(ref name) = callee_name {
+            self.write(name);
+        } else {
+            self.emit_expr(&ce.callee);
+        }
+        self.write("(");
+        for (i, arg) in ce.arguments.iter().enumerate() {
+            if i > 0 { self.write(", "); }
+            self.emit_expr_arg(arg);
+        }
+        self.write(")");
+    }
+
+    /// Emit argument expression (handles spread etc.).
+    fn emit_expr_arg(&mut self, arg: &Argument) {
+        if let Some(e) = arg.as_expression() {
+            self.emit_expr(e);
+        } else {
+            self.write("/* TODO arg */");
+        }
+    }
+
+    // ── Assignment ────────────────────────────────────────────
+
+    fn emit_assignment(&mut self, ae: &AssignmentExpression) {
+        match &ae.left {
+            AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                self.write(id.name.as_str());
+            }
+            _ => self.write("/* TODO assign target */"),
+        }
+        self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
+        self.emit_expr(&ae.right);
+    }
+
+    // ── Unary expression ──────────────────────────────────────
+
+    fn emit_unary(&mut self, ue: &UnaryExpression) {
+        match ue.operator {
+            UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::LogicalNot => {
+                self.write(Self::unary_prefix(ue.operator));
+                self.emit_expr(&ue.argument);
+            }
+            UnaryOperator::Typeof => {
+                self.write("@typeName(@TypeOf(");
+                self.emit_expr(&ue.argument);
+                self.write("))");
+            }
+            _ => {
+                self.write("/* TODO unary */");
+                self.emit_expr(&ue.argument);
+            }
+        }
+    }
+
+    // ── Conditional (ternary) ──────────────────────────────────
+
+    fn emit_conditional(&mut self, ce: &ConditionalExpression) {
+        self.write("if (");
+        self.emit_expr(&ce.test);
+        self.write(") ");
+        self.emit_expr(&ce.consequent);
+        self.write(" else ");
+        self.emit_expr(&ce.alternate);
+    }
+
+    // ── Array expression ───────────────────────────────────────
+
+    fn emit_array(&mut self, ae: &ArrayExpression) {
+        if ae.elements.is_empty() {
+            self.write("std.ArrayList(JsAny).init(allocator)");
+        } else {
+            self.write(".{");
+            for (i, elem) in ae.elements.iter().enumerate() {
+                if i > 0 { self.write(", "); }
+                match elem {
+                    ArrayExpressionElement::SpreadElement(_) => self.write("/* spread */"),
+                    ArrayExpressionElement::Elision(_) => self.write("undefined"),
+                    _ => {
+                        // Inherited from Expression — use as_expression().
+                        if let Some(e) = elem.as_expression() {
+                            self.emit_expr(e);
+                        }
+                    },
+                }
+            }
+            self.push('}');
         }
     }
 
@@ -176,13 +406,39 @@ impl Codegen {
         match expr {
             Expression::NumericLiteral(n) => {
                 let s = n.value.to_string();
-                if s.contains('.') { "f64".to_string() } else { "i64".to_string() }
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    "f64".to_string()
+                } else {
+                    "i64".to_string()
+                }
             }
             Expression::StringLiteral(_) => "[]const u8".to_string(),
             Expression::BooleanLiteral(_) => "bool".to_string(),
             Expression::Identifier(_) => "i64".to_string(), // placeholder
             Expression::BinaryExpression(be) => {
+                // For string concat (+), result is []const u8.
+                if be.operator == BinaryOperator::Addition {
+                    let left_str = matches!(be.left, Expression::StringLiteral(_));
+                    let right_str = matches!(be.right, Expression::StringLiteral(_));
+                    if left_str || right_str {
+                        return "[]const u8".to_string();
+                    }
+                }
                 self.infer_type(&be.left)
+            }
+            Expression::CallExpression(_) => "JsAny".to_string(),
+            Expression::ArrayExpression(ae) => {
+                if ae.elements.is_empty() {
+                    "std.ArrayList(JsAny)".to_string()
+                } else {
+                    // Infer from first element.
+                    if let Some(first_elem) = ae.elements.first()
+                        && let Some(first) = first_elem.as_expression() {
+                        format!("[{}]const {}", ae.elements.len(), self.infer_type(first))
+                    } else {
+                        "[0] JsAny".to_string()
+                    }
+                }
             }
             _ => "JsAny".to_string(),
         }
@@ -218,6 +474,9 @@ impl Codegen {
                     Self::collect_returns(stmt, exprs);
                 }
             }
+            Statement::WhileStatement(ws) => {
+                Self::collect_returns(&ws.body, exprs);
+            }
             _ => {}
         }
     }
@@ -238,10 +497,7 @@ impl Codegen {
             Expression::BooleanLiteral(b) => b.value.to_string(),
             Expression::Identifier(id) => id.name.to_string(),
             Expression::BinaryExpression(be) => {
-                let left = Self::expr_to_string(&be.left);
-                let right = Self::expr_to_string(&be.right);
-                let op = Self::binary_op(be.operator);
-                format!("{} {} {}", left, op, right)
+                format!("{} {} {}", Self::expr_to_string(&be.left), Self::binary_op(be.operator), Self::expr_to_string(&be.right))
             }
             _ => "undefined".to_string(),
         }
@@ -262,7 +518,46 @@ impl Codegen {
             BinaryOperator::Inequality => "!=",
             BinaryOperator::StrictEquality => "==",
             BinaryOperator::StrictInequality => "!=",
-            _ => "+", // placeholder
+            BinaryOperator::ShiftLeft => "<<",
+            BinaryOperator::ShiftRight => ">>",
+            BinaryOperator::BitwiseAnd => "&",
+            BinaryOperator::BitwiseOR => "|",
+            BinaryOperator::BitwiseXOR => "^",
+            _ => "/* op */",
+        }
+    }
+
+    fn assignment_op(op: AssignmentOperator) -> &'static str {
+        match op {
+            AssignmentOperator::Assign => "=",
+            AssignmentOperator::Addition => "+=",
+            AssignmentOperator::Subtraction => "-=",
+            AssignmentOperator::Multiplication => "*=",
+            AssignmentOperator::Division => "/=",
+            AssignmentOperator::Remainder => "%=",
+            AssignmentOperator::ShiftLeft => "<<=",
+            AssignmentOperator::ShiftRight => ">>=",
+            AssignmentOperator::BitwiseAnd => "&=",
+            AssignmentOperator::BitwiseOR => "|=",
+            AssignmentOperator::BitwiseXOR => "^=",
+            _ => "=",
+        }
+    }
+
+    fn logical_op(op: LogicalOperator) -> &'static str {
+        match op {
+            LogicalOperator::And => "and",
+            LogicalOperator::Or => "or",
+            LogicalOperator::Coalesce => "??",
+        }
+    }
+
+    fn unary_prefix(op: UnaryOperator) -> &'static str {
+        match op {
+            UnaryOperator::UnaryNegation => "-",
+            UnaryOperator::UnaryPlus => "+",
+            UnaryOperator::LogicalNot => "!",
+            _ => "",
         }
     }
 
@@ -272,14 +567,14 @@ impl Codegen {
         self.output.push_str(s);
     }
 
+    fn push(&mut self, ch: char) {
+        self.output.push(ch);
+    }
+
     fn writeln(&mut self, s: &str) {
         self.write_indent();
         self.output.push_str(s);
         self.output.push('\n');
-    }
-
-    fn indent_str(&self) -> String {
-        "    ".repeat(self.indent)
     }
 
     fn write_indent(&mut self) {
@@ -296,7 +591,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_native_proto() {
+    fn test_native_proto_basic() {
         let js = r#"
 const x = 42;
 
@@ -306,9 +601,223 @@ function add(a, b) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Generated Zig ===\n{}", zig);
-        // Basic assertions.
-        assert!(zig.contains("const x: i64 = 42;"), "const x not found");
-        assert!(zig.contains("fn add(a: anytype, b: anytype) !@TypeOf(a + b) {"), "fn add not found");
-        assert!(zig.contains("return a + b;"), "return not found");
+        assert!(zig.contains("const x: i64 = 42;"));
+        assert!(zig.contains("fn add(a: anytype, b: anytype) !@TypeOf(a + b) {"));
+        assert!(zig.contains("return a + b;"));
+    }
+
+    #[test]
+    fn test_native_proto_if_else() {
+        let js = r#"
+function abs(x) {
+    if (x >= 0) {
+        return x;
+    } else {
+        return -x;
+    }
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== If/Else ===\n{}", zig);
+        assert!(zig.contains("fn abs(x: anytype)"));
+        assert!(zig.contains("if (x") && zig.contains(">= 0"), "missing if: {}", zig);
+        assert!(zig.contains("return x;"));
+        assert!(zig.contains("} else {"));
+        assert!(zig.contains("return -x;"));
+    }
+
+    #[test]
+    fn test_native_proto_elseif() {
+        let js = r#"
+function grade(score) {
+    if (score >= 90) {
+        return "A";
+    } else if (score >= 80) {
+        return "B";
+    } else {
+        return "C";
+    }
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== ElseIf ===\n{}", zig);
+        assert!(zig.contains("else") && zig.contains("if (score"), "missing else if: {}", zig);
+        assert!(zig.contains("\"A\""));
+        assert!(zig.contains("\"B\""));
+        assert!(zig.contains("\"C\""));
+    }
+
+    #[test]
+    fn test_native_proto_while() {
+        let js = r#"
+function countdown(n) {
+    while (n > 0) {
+        n = n - 1;
+    }
+    return n;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== While ===\n{}", zig);
+        assert!(zig.contains("while"), "missing while");
+        assert!(zig.contains("n > 0"), "missing n > 0: {}", zig);
+        assert!(zig.contains("n = n - 1;"));
+    }
+
+    #[test]
+    fn test_native_proto_function_call() {
+        let js = r#"
+function greet(name) {
+    return "Hello, " + name;
+}
+
+function main() {
+    var msg = greet("World");
+    return msg;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Function Call ===\n{}", zig);
+        assert!(zig.contains("try greet(")); // all calls get try
+        assert!(zig.contains("++")); // string + → concat
+        assert!(zig.contains("var msg: "));
+    }
+
+    #[test]
+    fn test_native_proto_var_decl() {
+        let js = r#"
+function sum(arr) {
+    var total = 0;
+    total = total + 1;
+    return total;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Var Decl ===\n{}", zig);
+        assert!(zig.contains("var total: i64 = 0;"));
+        assert!(zig.contains("total = total + 1;"));
+    }
+
+    #[test]
+    fn test_native_proto_operators() {
+        let js = r#"
+function ops(a, b) {
+    var x = a + b;
+    var y = a - b;
+    var z = a * b;
+    var w = a / b;
+    var eq = a == b;
+    var ne = a != b;
+    var lt = a < b;
+    var gt = a > b;
+    return x;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Operators ===\n{}", zig);
+        assert!(zig.contains("+") && zig.contains("-") && zig.contains("*") && zig.contains("/"));
+        assert!(zig.contains("==") && zig.contains("!=") && zig.contains("<") && zig.contains(">"));
+    }
+
+    #[test]
+    fn test_native_proto_logical() {
+        let js = r#"
+function check(a, b) {
+    if (a > 0 && b > 0) {
+        return true;
+    }
+    if (a < 0 || b < 0) {
+        return false;
+    }
+    return true;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Logical ===\n{}", zig);
+        assert!(zig.contains("and"));
+        assert!(zig.contains("or"));
+    }
+
+    #[test]
+    fn test_native_proto_toplevel_var_error() {
+        let js = r#"
+let y = 10;
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Toplevel Var Error ===\n{}", zig);
+        assert!(zig.contains("// error: toplevel only allows 'const'"));
+    }
+
+    #[test]
+    fn test_native_proto_unary() {
+        let js = r#"
+function negate(x) {
+    return -x;
+}
+
+function truthy(x) {
+    return !x;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Unary ===\n{}", zig);
+        assert!(zig.contains("-x"));
+        assert!(zig.contains("!x"));
+    }
+
+    #[test]
+    fn test_native_proto_f64_inference() {
+        let js = r#"
+function pi() {
+    return 3.14159;
+}
+
+function divide(a, b) {
+    return a / b;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== F64 Inference ===\n{}", zig);
+        assert!(zig.contains("3.14159"));
+        // Division returns f64 by default? Actually we infer from left operand.
+    }
+
+    #[test]
+    fn test_native_proto_complex() {
+        let js = r#"
+const PI = 3.14;
+
+function circleArea(radius) {
+    var r2 = radius * radius;
+    return PI * r2;
+}
+
+function factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    var rest = factorial(n - 1);
+    return n * rest;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Complex Test ===\n{}", zig);
+        assert!(zig.contains("const PI: f64 = 3.14;"));
+        assert!(zig.contains("fn circleArea(radius: anytype)"));
+        assert!(zig.contains("var r2: i64 = radius * radius;"));
+        assert!(zig.contains("try factorial(")); // call gets try
+        assert!(zig.contains("if (n") && zig.contains("<= 1"), "missing if: {}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_no_return_void() {
+        let js = r#"
+function log(msg) {
+    // no explicit return → void
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Void Return ===\n{}", zig);
+        assert!(zig.contains("!void"));
     }
 }
