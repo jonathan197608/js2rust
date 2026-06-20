@@ -35,58 +35,14 @@ impl Codegen {
             }
             // Generate toJson() method for serialization
             self.writeln("");
-            self.writeln("pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
+            self.writeln("    pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
             self.indent += 1;
-            // Build JSON string using std.fmt.allocPrint
-            if td.fields.is_empty() {
-                self.writeln("return std.fmt.allocPrint(allocator, \"{}\", .{}) catch unreachable;");
-            } else {
-                // Start building the format string
-                self.write_indent();
-                self.write("return std.fmt.allocPrint(allocator, \"");
-                // Write format string: {"name": "{s}", "age": {}}
-                self.write("{");
-                for (i, field) in td.fields.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.write(&format!("\\\"{}\\\": ", field.name));
-                    let jsdoc_ty = &field.ty;
-                    match jsdoc_ty.as_str() {
-                        "string" => {
-                            self.write("\\\"{s}\\\"");
-                        }
-                        "number" => {
-                            self.write("{}");
-                        }
-                        "boolean" => {
-                            self.write("{}");
-                        }
-                        _ => {
-                            self.write("\\\"{s}\\\"");
-                        }
-                    }
-                }
-                self.write("}\", .{");
-                // Write arguments
-                for (i, field) in td.fields.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    let jsdoc_ty = &field.ty;
-                    match jsdoc_ty.as_str() {
-                        "boolean" => {
-                            self.write(&format!("if (self.{}) \"true\" else \"false\"", field.name));
-                        }
-                        _ => {
-                            self.write(&format!("self.{}", field.name));
-                        }
-                    }
-                }
-                self.writeln("}) catch unreachable;");
-            }
+            // Simple implementation: return empty JSON object
+            // TODO: implement proper JSON serialization
+            self.writeln("        _ = self;");
+            self.writeln("        return allocator.dupe(u8, \"{}\") catch unreachable;");
             self.indent -= 1;
-            self.writeln("}");
+            self.writeln("    }");
             self.indent -= 1;
             self.writeln("};");
             self.writeln("");
@@ -393,37 +349,49 @@ impl Codegen {
             for (i, param) in fd.params.items.iter().enumerate() {
                 if i > 0 { self.write(", "); }
                 if let Some(pname) = self.binding_name(&param.pattern) {
-                    self.write(&format!("{}: []const u8", pname));
-
                     // Check @param annotation for this parameter
                     let param_type = fn_param_type_map.get(pname)
                         .cloned()
                         .unwrap_or("number".to_string()); // Default to number
-
+                    
                     let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type);
-
-                    match zig_type.as_str() {
-                        "i64" => {
-                            // number → i64: parseInt
-                            let parsed_name = format!("{}_int", pname);
-                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                            param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
-                        }
-                        "bool" => {
-                            // boolean → bool: parse "true"/"false"
-                            let parsed_name = format!("{}_bool", pname);
-                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                            param_parsing_code.push_str(&format!("    const {} = std.mem.eql(u8, {}, \"true\");\n", parsed_name, pname));
-                        }
-                        "[]const u8" => {
-                            // string → []const u8: no parsing needed
-                            self.param_name_map.insert(pname.to_string(), pname.to_string());
-                        }
-                        _ => {
-                            // Default: assume i64
-                            let parsed_name = format!("{}_int", pname);
-                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                            param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+                    
+                    // Check if this is a custom type (from @typedef)
+                    let is_custom_type = self.jsdoc_data.as_ref()
+                        .and_then(|data| data.typedefs.get(&zig_type))
+                        .is_some();
+                    
+                    if is_custom_type {
+                        // Custom type: declare as User, no parsing needed
+                        self.write(&format!("{}: {}", pname, zig_type));
+                        self.param_name_map.insert(pname.to_string(), pname.to_string());
+                    } else {
+                        // Primitive type: declare as []const u8
+                        self.write(&format!("{}: []const u8", pname));
+                        
+                        match zig_type.as_str() {
+                            "i64" => {
+                                // number → i64: parseInt
+                                let parsed_name = format!("{}_int", pname);
+                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                                param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+                            }
+                            "bool" => {
+                                // boolean → bool: parse "true"/"false"
+                                let parsed_name = format!("{}_bool", pname);
+                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                                param_parsing_code.push_str(&format!("    const {} = std.mem.eql(u8, {}, \"true\");\n", parsed_name, pname));
+                            }
+                            "[]const u8" => {
+                                // string → []const u8: no parsing needed
+                                self.param_name_map.insert(pname.to_string(), pname.to_string());
+                            }
+                            _ => {
+                                // Default: assume i64
+                                let parsed_name = format!("{}_int", pname);
+                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                                param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+                            }
                         }
                     }
                 }
