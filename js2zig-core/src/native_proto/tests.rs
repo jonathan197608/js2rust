@@ -632,6 +632,31 @@ export function log(msg) {
     }
 
     #[test]
+    fn test_native_proto_param_annotation() {
+        // Test @param annotation for export functions.
+        let js = r#"
+/**
+ * @param {string} name
+ * @param {number} age
+ * @returns {string}
+ */
+export function greet(name, age) {
+    return "Hello " + name + ", age " + age;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Param Annotation Test ===\n{}", zig);
+        // @param {string} name: should not generate parsing code (use directly)
+        // @param {number} age: should generate parseInt code
+        assert!(zig.contains("fn greet(allocator: std.mem.Allocator, name: []const u8, age: []const u8) ![]u8 {"));
+        assert!(zig.contains("const age_int = try std.fmt.parseInt(i64, age, 10);"));
+        // name should be used directly (no parsing)
+        assert!(zig.contains("name"));
+        // Should not contain name_int (no parsing for string)
+        assert!(!zig.contains("name_int"));
+    }
+
+    #[test]
     fn test_native_proto_export_requires_returns() {
         // Test that export functions require @returns annotation.
         let js = r#"

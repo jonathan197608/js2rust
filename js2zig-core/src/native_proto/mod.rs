@@ -74,6 +74,8 @@ pub struct JSDocData {
     pub type_annotations: std::collections::HashMap<String, String>,
     /// @returns 注解：函数名 → 类型名
     pub return_types: std::collections::HashMap<String, String>,
+    /// @param 注解：函数名 → [(参数名, 类型名)]
+    pub param_types: std::collections::HashMap<String, Vec<(String, String)>>,
 }
 
 use oxc_parser::Parser;
@@ -89,8 +91,8 @@ mod tests;
 /// Returns error if type inference fails (strict static type system).
 pub fn transpile_js(js_source: &str) -> Result<String, String> {
     // Pass 0: extract JSDoc annotations
-    let (typedefs, type_annotations, return_types) = jsdoc::extract_all_jsdoc(js_source);
-    let jsdoc_data = JSDocData { typedefs, type_annotations, return_types };
+    let (typedefs, type_annotations, return_types, param_types) = jsdoc::extract_all_jsdoc(js_source);
+    let jsdoc_data = JSDocData { typedefs, type_annotations, return_types, param_types };
 
     let alloc = Allocator::default();
     let source_type = SourceType::default();

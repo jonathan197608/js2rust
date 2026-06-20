@@ -37,6 +37,8 @@ pub struct ParsedJSDoc {
     pub type_name: Option<String>,
     /// @returns 标注的类型名（如 "string"）
     pub return_type_name: Option<String>,
+    /// @param 标注的参数类型：Vec<(参数名, 类型)>
+    pub param_types: Vec<(String, String)>,
 }
 
 /// 解析单个 JSDoc 注释字符串，返回 ParsedJSDoc
@@ -72,6 +74,18 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
             let prefix = if stripped.starts_with("@returns") { "@returns" } else { "@return" };
             let ty = extract_braced_type(stripped.strip_prefix(prefix).unwrap_or(""));
             result.return_type_name = Some(ty);
+        } else if stripped.starts_with("@param") {
+            // Parse @param {type} paramName
+            let rest = stripped.strip_prefix("@param").unwrap_or("").trim();
+            if rest.starts_with('{') {
+                let brace_end = rest.find('}').unwrap_or(rest.len());
+                let ty = rest[1..brace_end].trim().to_string();
+                let after_brace = rest[brace_end + 1..].trim();
+                let param_name = after_brace.split_whitespace().next().unwrap_or("").to_string();
+                if !param_name.is_empty() {
+                    result.param_types.push((param_name, ty));
+                }
+            }
         }
     }
 
@@ -85,18 +99,22 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
 
 /// 从 JS 源码中提取所有 JSDoc 注解，并关联到变量名/函数名
 ///
-/// 返回 (typedefs, type_annotations, return_types)：
+/// 返回 (typedefs, type_annotations, return_types, param_types)：
 /// - typedefs:          TypeName → TypedefDef
 /// - type_annotations:  var_name → type_name  （来自 @type）
 /// - return_types:      fn_name  → type_name  （来自 @returns）
+/// - param_types:       fn_name  → [(param_name, type)]  （来自 @param）
+#[allow(clippy::type_complexity)]
 pub fn extract_all_jsdoc(source: &str) -> (
     HashMap<String, TypedefDef>,
     HashMap<String, String>,
     HashMap<String, String>,
+    HashMap<String, Vec<(String, String)>>,
 ) {
     let mut typedefs = HashMap::new();
     let mut type_annotations = HashMap::new();
     let mut return_types = HashMap::new();
+    let mut param_types: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
@@ -134,16 +152,23 @@ pub fn extract_all_jsdoc(source: &str) -> (
                     && let Some(ref ty) = parsed.type_name {
                     type_annotations.insert(var_name, ty.clone());
                 }
-                // 尝试提取函数名（处理 @returns）
+                // 尝试提取函数名（处理 @returns 和 @param）
                 // 先尝试 function 声明
-                if let Some(fn_name) = extract_fn_name(code)
-                    && let Some(ref ty) = parsed.return_type_name {
-                    return_types.insert(fn_name, ty.clone());
-                }
-                // 再尝试变量赋值函数（const foo = function() {} 或 const foo = () => {}）
-                if let Some(var_name) = extract_var_name(code)
-                    && let Some(ref ty) = parsed.return_type_name {
-                    return_types.insert(var_name, ty.clone());
+                let fn_name_opt = if let Some(fn_name) = extract_fn_name(code) {
+                    Some(fn_name)
+                } else {
+                    // 再尝试变量赋值函数（const foo = function() {} 或 const foo = () => {}）
+                    extract_var_name(code)
+                };
+                if let Some(ref fn_name) = fn_name_opt {
+                    // 处理 @returns
+                    if let Some(ref ty) = parsed.return_type_name {
+                        return_types.insert(fn_name.clone(), ty.clone());
+                    }
+                    // 处理 @param
+                    if !parsed.param_types.is_empty() {
+                        param_types.insert(fn_name.clone(), parsed.param_types.clone());
+                    }
                 }
             }
 
@@ -155,7 +180,7 @@ pub fn extract_all_jsdoc(source: &str) -> (
         i += 1;
     }
 
-    (typedefs, type_annotations, return_types)
+    (typedefs, type_annotations, return_types, param_types)
 }
 
 /// 从行中提取变量名（const/let/var 声明）
@@ -369,12 +394,54 @@ function getName(u) {
     return u.name;
 }
 "#;
-        let (typedefs, type_annots, return_types) = extract_all_jsdoc(source);
+        let (typedefs, type_annots, return_types, param_types) = extract_all_jsdoc(source);
         assert_eq!(typedefs.len(), 1);
         assert!(typedefs.contains_key("User"));
         assert_eq!(type_annots.len(), 1);
         assert_eq!(type_annots["user"], "User");
         assert_eq!(return_types.len(), 1);
         assert_eq!(return_types["getName"], "string");
+        assert_eq!(param_types.len(), 0); // No @param in this test
+    }
+
+    #[test]
+    fn test_parse_param() {
+        let jsdoc = r#"
+/**
+ * @param {string} name
+ * @param {number} age
+ * @param {boolean} active
+ * @returns {string}
+ */
+"#;
+        let parsed = parse_jsdoc(jsdoc);
+        assert_eq!(parsed.param_types.len(), 3);
+        assert_eq!(parsed.param_types[0], ("name".to_string(), "string".to_string()));
+        assert_eq!(parsed.param_types[1], ("age".to_string(), "number".to_string()));
+        assert_eq!(parsed.param_types[2], ("active".to_string(), "boolean".to_string()));
+        assert_eq!(parsed.return_type_name, Some("string".to_string()));
+    }
+
+    #[test]
+    fn test_extract_all_jsdoc_with_param() {
+        let source = r#"
+/**
+ * @param {string} name
+ * @param {number} age
+ * @returns {string}
+ */
+function greet(name, age) {
+    return "Hello " + name + ", age " + age;
+}
+"#;
+        let (typedefs, type_annots, return_types, param_types) = extract_all_jsdoc(source);
+        assert_eq!(typedefs.len(), 0);
+        assert_eq!(type_annots.len(), 0);
+        assert_eq!(return_types.len(), 1);
+        assert_eq!(return_types["greet"], "string");
+        assert_eq!(param_types.len(), 1);
+        assert_eq!(param_types["greet"].len(), 2);
+        assert_eq!(param_types["greet"][0], ("name".to_string(), "string".to_string()));
+        assert_eq!(param_types["greet"][1], ("age".to_string(), "number".to_string()));
     }
 }

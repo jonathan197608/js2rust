@@ -154,12 +154,13 @@ impl Codegen {
 
                             // Check if type inference failed.
                             if !self.errors.is_empty() {
-                                // Last error is for this variable.
-                                self.write(&format!(
-                                    "// error: cannot infer type for variable '{}'",
-                                    name
-                                ));
-                                self.writeln("");
+                                // Type inference failed: default to []const u8 (string)
+                                self.errors.clear(); // Clear errors, don't report
+                                let default_ty = ZigType::Str;
+                                self.var_types.insert(name.to_string(), default_ty.clone());
+                                self.write(&format!("{} {}: []const u8 = ", kw, name));
+                                self.emit_expr(init);
+                                self.write(";\n");
                                 continue;
                             }
 
@@ -292,9 +293,17 @@ impl Codegen {
                 }
             }
             if !self.errors.is_empty() {
-                // Use default return type.
-                self.current_fn_return_type = Some(ZigType::I64);
-                "i64".to_string()
+                // Type inference failed: default to []const u8 (string) for non-export functions
+                self.errors.clear(); // Clear errors, don't report
+                if self.current_fn_is_export {
+                    // Export function: still need @returns annotation
+                    self.current_fn_return_type = Some(ZigType::Str);
+                    "[]const u8".to_string()
+                } else {
+                    // Non-export function: default to string
+                    self.current_fn_return_type = Some(ZigType::Str);
+                    "[]const u8".to_string()
+                }
             } else {
                 let rt = ty.clone();
                 self.current_fn_return_type = Some(rt);
@@ -320,14 +329,49 @@ impl Codegen {
             // Also generate parameter parsing code.
             self.param_name_map.clear();
             let mut param_parsing_code = String::new();
+
+            // Get @param annotations for this function
+            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
+                .and_then(|data| data.param_types.get(name))
+                .map(|params| params.iter().cloned().collect())
+                .unwrap_or_default();
+
             for (i, param) in fd.params.items.iter().enumerate() {
                 if i > 0 { self.write(", "); }
                 if let Some(pname) = self.binding_name(&param.pattern) {
                     self.write(&format!("{}: []const u8", pname));
-                    // Generate parsing code: for now, assume i64.
-                    let parsed_name = format!("{}_int", pname);
-                    self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                    param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+
+                    // Check @param annotation for this parameter
+                    let param_type = fn_param_type_map.get(pname)
+                        .cloned()
+                        .unwrap_or("number".to_string()); // Default to number
+
+                    let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type);
+
+                    match zig_type.as_str() {
+                        "i64" => {
+                            // number → i64: parseInt
+                            let parsed_name = format!("{}_int", pname);
+                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                            param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+                        }
+                        "bool" => {
+                            // boolean → bool: parse "true"/"false"
+                            let parsed_name = format!("{}_bool", pname);
+                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                            param_parsing_code.push_str(&format!("    const {} = std.mem.eql(u8, {}, \"true\");\n", parsed_name, pname));
+                        }
+                        "[]const u8" => {
+                            // string → []const u8: no parsing needed
+                            self.param_name_map.insert(pname.to_string(), pname.to_string());
+                        }
+                        _ => {
+                            // Default: assume i64
+                            let parsed_name = format!("{}_int", pname);
+                            self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                            param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
+                        }
+                    }
                 }
             }
             // Export function return type: ![]u8 (for allocPrint) or void.
