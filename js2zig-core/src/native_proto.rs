@@ -187,6 +187,15 @@ impl Codegen {
             Statement::WhileStatement(ws) => {
                 self.emit_while(ws);
             }
+            Statement::DoWhileStatement(dws) => {
+                self.emit_do_while(dws);
+            }
+            Statement::ForOfStatement(fos) => {
+                self.emit_for_of(fos);
+            }
+            Statement::SwitchStatement(ss) => {
+                self.emit_switch(ss);
+            }
             Statement::BlockStatement(bs) => {
                 self.emit_block(bs);
             }
@@ -257,6 +266,104 @@ impl Codegen {
 
         self.indent += 1;
         self.emit_stmt_or_block(&ws.body);
+        self.indent -= 1;
+
+        self.writeln("}");
+    }
+
+    // ── Do-While loop ─────────────────────────────────────────
+    //
+    // JS:  do { ... } while (cond);
+    // Zig: while (true) { ...; if (cond) {} else { break; } }
+
+    fn emit_do_while(&mut self, dws: &DoWhileStatement) {
+        self.write_indent();
+        self.writeln("while (true) {");
+
+        self.indent += 1;
+        self.emit_stmt_or_block(&dws.body);
+        self.write_indent();
+        self.write("if (");
+        self.emit_expr(&dws.test);
+        self.write(") {} else { break; }\n");
+
+        self.indent -= 1;
+
+        self.writeln("}");
+    }
+
+    // ── For-Of loop ───────────────────────────────────────────
+    //
+    // JS:  for (const x of iterable) { ... }
+    // Zig: for (iterable) |x| { ... }
+
+    fn emit_for_of(&mut self, fos: &ForOfStatement) {
+        let var_name = match &fos.left {
+            ForStatementLeft::VariableDeclaration(vd) => {
+                vd.declarations.first()
+                    .and_then(|decl| self.binding_name(&decl.id))
+                    .unwrap_or("item")
+                    .to_string()
+            }
+            _ => "item".to_string(),
+        };
+
+        self.write_indent();
+        self.write("for (");
+        self.emit_expr(&fos.right);
+        self.write(&format!(") |{}| {{\n", var_name));
+
+        self.indent += 1;
+        self.emit_stmt_or_block(&fos.body);
+        self.indent -= 1;
+
+        self.writeln("}");
+    }
+
+    // ── Switch statement (Zig native syntax) ──────────────────
+    //
+    // JS:  switch (expr) { case v: ...; break; default: ... }
+    // Zig: switch (expr) { v => { ... }, else => { ... }, }
+
+    fn emit_switch(&mut self, ss: &SwitchStatement) {
+        self.write_indent();
+        self.write("switch (");
+        self.emit_expr(&ss.discriminant);
+        self.write(") {\n");
+
+        self.indent += 1;
+        let mut has_default = false;
+
+        for case in ss.cases.iter() {
+            self.write_indent();
+            if let Some(test) = &case.test {
+                self.emit_expr(test);
+            } else {
+                has_default = true;
+                self.write("else");
+            }
+            self.write(" => {\n");
+
+            self.indent += 1;
+            for stmt in &case.consequent {
+                // Skip break statements (not needed in Zig switch)
+                if let Statement::BreakStatement(_) = stmt {
+                    continue;
+                }
+                self.emit_fn_stmt(stmt);
+            }
+            self.indent -= 1;
+
+            self.write_indent();
+            self.write("},\n");
+        }
+
+        // Zig switch must be exhaustive; add empty else if no default
+        if !has_default {
+            self.write_indent();
+            self.writeln("else => {},");
+        }
+
         self.indent -= 1;
 
         self.writeln("}");
@@ -940,6 +1047,69 @@ function log(msg) {
         let zig = transpile_js(js).unwrap();
         println!("=== Void Return ===\n{}", zig);
         assert!(zig.contains("!void"));
+    }
+
+    #[test]
+    fn test_native_proto_do_while() {
+        let js = r#"
+function count_down(n) {
+    var x = n;
+    do {
+        x = x - 1;
+    } while (x > 0);
+    return x;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Do-While ===\n{}", zig);
+        assert!(zig.contains("while (true) {"), "missing while true: {}", zig);
+        assert!(zig.contains("if (x > 0)"), "missing if condition: {}", zig);
+        assert!(zig.contains("else { break; }"), "missing break: {}", zig);
+        assert!(zig.contains("return x;"));
+    }
+
+    #[test]
+    fn test_native_proto_for_of() {
+        let js = r#"
+function sum(arr) {
+    var total = 0;
+    for (const x of arr) {
+        total = total + x;
+    }
+    return total;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== For-Of ===\n{}", zig);
+        assert!(zig.contains("for (arr) |x| {"), "missing for-of: {}", zig);
+        assert!(zig.contains("total = total + x;"));
+        assert!(zig.contains("return total;"));
+    }
+
+    #[test]
+    fn test_native_proto_switch() {
+        let js = r#"
+function grade(score) {
+    switch (score) {
+        case 10:
+            return "perfect";
+        case 5:
+            return "good";
+        default:
+            return "bad";
+    }
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Switch (Zig native) ===\n{}", zig);
+        // Should generate Zig native switch syntax
+        assert!(zig.contains("switch (score) {"), "missing switch: {}", zig);
+        assert!(zig.contains("10 => {"), "missing case 10: {}", zig);
+        assert!(zig.contains("5 => {"), "missing case 5: {}", zig);
+        assert!(zig.contains("else => {"), "missing else: {}", zig);
+        assert!(zig.contains("return \"perfect\";"));
+        assert!(zig.contains("return \"good\";"));
+        assert!(zig.contains("return \"bad\";"));
     }
 
     /// End-to-end test: generate Zig code from JS, compile with Zig 0.16.0, run, check output.
