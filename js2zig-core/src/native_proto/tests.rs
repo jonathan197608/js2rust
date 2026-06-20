@@ -787,14 +787,23 @@ export function greet(name) {
 
     #[test]
     fn test_native_proto_typedef_tojson() {
-        // Test: @typedef should generate toJson() method
-        // and the generated code should pass zig ast-check
-        // Use export function (has allocator parameter)
+        // Test: @typedef should generate toJson() method with complex nested structures
+        // including arrays and nested objects
         let js = r#"
+/**
+ * @typedef {Object} Address
+ * @property {string} street
+ * @property {string} city
+ * @property {number} zip
+ */
+
 /**
  * @typedef {Object} User
  * @property {string} name
  * @property {number} age
+ * @property {string[]} tags
+ * @property {number[]} scores
+ * @property {Address} address
  */
 
 /**
@@ -809,11 +818,28 @@ export function getUserJson(user) {
         assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
         let zig = result.unwrap();
 
-        println!("=== Generated Zig code (typedef + toJson) ===\n{}", zig);
+        println!("=== Generated Zig code (complex nested struct) ===\n{}", zig);
 
-        // Verify toJson() method is generated
-        assert!(zig.contains("pub fn toJson"), "Expected toJson() method, got:\n{}", zig);
+        // Verify Address struct is generated
+        assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
+        assert!(zig.contains("street: []const u8,"), "Expected street field, got:\n{}", zig);
+        assert!(zig.contains("city: []const u8,"), "Expected city field, got:\n{}", zig);
+        assert!(zig.contains("zip: i64,"), "Expected zip field, got:\n{}", zig);
         
+        // Verify Address has toJson() method
+        assert!(zig.contains("pub fn toJson") && zig.contains("Address"), "Expected toJson() for Address, got:\n{}", zig);
+
+        // Verify User struct is generated with all field types
+        assert!(zig.contains("const User = struct {"), "Expected User struct, got:\n{}", zig);
+        assert!(zig.contains("name: []const u8,"), "Expected name field, got:\n{}", zig);
+        assert!(zig.contains("age: i64,"), "Expected age field, got:\n{}", zig);
+        assert!(zig.contains("tags: []const []const u8,"), "Expected tags field (string[]), got:\n{}", zig);
+        assert!(zig.contains("scores: []const i64,"), "Expected scores field (number[]), got:\n{}", zig);
+        assert!(zig.contains("address: Address,"), "Expected address field (nested struct), got:\n{}", zig);
+
+        // Verify User has toJson() method
+        assert!(zig.contains("pub fn toJson") && zig.contains("const User"), "Expected toJson() for User, got:\n{}", zig);
+
         // Verify toJson() uses std.json.fmt() for serialization
         assert!(zig.contains("std.json.fmt"), "Expected std.json.fmt() in toJson(), got:\n{}", zig);
         assert!(zig.contains("Writer.Allocating"), "Expected Writer.Allocating in toJson(), got:\n{}", zig);
@@ -823,7 +849,7 @@ export function getUserJson(user) {
 
         // Run zig ast-check to verify the code is syntactically correct
         let tmp_dir = std::env::temp_dir();
-        let zig_path = tmp_dir.join("typedef_tojson_test.zig");
+        let zig_path = tmp_dir.join("typedef_tojson_complex_test.zig");
         std::fs::write(&zig_path, &zig).unwrap();
 
         let check_output = std::process::Command::new("zig.exe")
