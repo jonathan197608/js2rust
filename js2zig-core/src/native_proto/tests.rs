@@ -670,4 +670,54 @@ export function getName(user) {
         let err = result.unwrap_err();
         assert!(err.contains("@returns"), "Expected error about @returns, got: {}", err);
     }
+
+    #[test]
+    fn test_native_proto_param_e2e() {
+        // E2E test for @param annotation support.
+        // Test that generated Zig code with @param annotations compiles correctly.
+        let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+export function multiply(a, b) {
+    return a * b;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== @param E2E Test ===\n{}", zig);
+
+        // Verify the generated code has correct structure
+        assert!(zig.contains("fn multiply(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]u8 {"));
+        assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
+        assert!(zig.contains("const b_int = try std.fmt.parseInt(i64, b, 10);"));
+        assert!(zig.contains("return std.fmt.allocPrint(allocator, \"{}\", .{a_int * b_int}) catch unreachable;"));
+
+        // Run zig ast-check to verify the code is syntactically correct
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join("param_e2e_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+
+        let check_output = std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output();
+
+        match check_output {
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("=== zig ast-check failed ===");
+                    eprintln!("Generated code:\n{}", zig);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
 }
