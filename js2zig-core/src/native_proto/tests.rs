@@ -784,4 +784,64 @@ export function greet(name) {
         // Verify the function signature
         assert!(zig.contains("fn greet(allocator: std.mem.Allocator, name: []const u8) ![]u8 {"));
     }
+
+    #[test]
+    fn test_native_proto_typedef_tojson() {
+        // Test: @typedef should generate toJson() method
+        // and the generated code should pass zig ast-check
+        // Use export function (has allocator parameter)
+        let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ */
+
+/**
+ * @param {User} user
+ * @returns {string}
+ */
+export function getUserJson(user) {
+    return JSON.stringify(user);
+}
+"#;
+        let result = transpile_js(js);
+        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
+        let zig = result.unwrap();
+
+        println!("=== Generated Zig code (typedef + toJson) ===\n{}", zig);
+
+        // Verify toJson() method is generated
+        assert!(zig.contains("pub fn toJson"), "Expected toJson() method, got:\n{}", zig);
+        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for JSON generation, got:\n{}", zig);
+
+        // Verify JSON.stringify() is converted to user.toJson(allocator)
+        assert!(zig.contains("try user.toJson(allocator)"), "Expected try user.toJson(allocator), got:\n{}", zig);
+
+        // Run zig ast-check to verify the code is syntactically correct
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join("typedef_tojson_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+
+        let check_output = std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output();
+
+        match check_output {
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("=== zig ast-check failed ===");
+                    eprintln!("Generated code:\n{}", zig);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
 }

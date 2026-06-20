@@ -33,6 +33,60 @@ impl Codegen {
                 let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty);
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
+            // Generate toJson() method for serialization
+            self.writeln("");
+            self.writeln("pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
+            self.indent += 1;
+            // Build JSON string using std.fmt.allocPrint
+            if td.fields.is_empty() {
+                self.writeln("return std.fmt.allocPrint(allocator, \"{}\", .{}) catch unreachable;");
+            } else {
+                // Start building the format string
+                self.write_indent();
+                self.write("return std.fmt.allocPrint(allocator, \"");
+                // Write format string: {"name": "{s}", "age": {}}
+                self.write("{");
+                for (i, field) in td.fields.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.write(&format!("\\\"{}\\\": ", field.name));
+                    let jsdoc_ty = &field.ty;
+                    match jsdoc_ty.as_str() {
+                        "string" => {
+                            self.write("\\\"{s}\\\"");
+                        }
+                        "number" => {
+                            self.write("{}");
+                        }
+                        "boolean" => {
+                            self.write("{}");
+                        }
+                        _ => {
+                            self.write("\\\"{s}\\\"");
+                        }
+                    }
+                }
+                self.write("}\", .{");
+                // Write arguments
+                for (i, field) in td.fields.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    let jsdoc_ty = &field.ty;
+                    match jsdoc_ty.as_str() {
+                        "boolean" => {
+                            self.write(&format!("if (self.{}) \"true\" else \"false\"", field.name));
+                        }
+                        _ => {
+                            self.write(&format!("self.{}", field.name));
+                        }
+                    }
+                }
+                self.writeln("}) catch unreachable;");
+            }
+            self.indent -= 1;
+            self.writeln("}");
             self.indent -= 1;
             self.writeln("};");
             self.writeln("");
@@ -774,6 +828,19 @@ impl Codegen {
 
     // Call expression (all calls get `try`)
     fn emit_call(&mut self, ce: &CallExpression) {
+        // Check if this is JSON.stringify() call
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee
+            && let Expression::Identifier(ref obj) = mem.object
+            && obj.name == "JSON" && mem.property.name == "stringify" {
+            // JSON.stringify(obj) → try obj.toJson(allocator)
+            if let Some(first_arg) = ce.arguments.first() {
+                self.write("try ");
+                self.emit_expr_arg(first_arg);
+                self.write(".toJson(allocator)");
+                return;
+            }
+        }
+
         // Get callee name.
         let callee_name = match &ce.callee {
             Expression::Identifier(id) => Some(id.name.to_string()),
