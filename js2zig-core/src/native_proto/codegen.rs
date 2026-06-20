@@ -739,8 +739,9 @@ impl Codegen {
 impl Codegen {
     // Binary expression with string-concat special case
     fn emit_binary(&mut self, be: &BinaryExpression) {
-        let left_is_string = matches!(be.left, Expression::StringLiteral(_));
-        let right_is_string = matches!(be.right, Expression::StringLiteral(_));
+        // Check if either operand is a string type
+        let left_is_string = self.expr_is_string(&be.left);
+        let right_is_string = self.expr_is_string(&be.right);
 
         if be.operator == BinaryOperator::Addition && (left_is_string || right_is_string) {
             self.emit_expr(&be.left);
@@ -752,6 +753,22 @@ impl Codegen {
             self.write(Self::binary_op(be.operator));
             self.write(" ");
             self.emit_expr(&be.right);
+        }
+    }
+
+    /// Check if an expression evaluates to a string type
+    fn expr_is_string(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::StringLiteral(_) => true,
+            Expression::Identifier(id) => {
+                self.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
+            }
+            // Handle nested binary expressions: if it's string concatenation, result is string
+            Expression::BinaryExpression(be)
+                if be.operator == BinaryOperator::Addition => {
+                    self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
+                }
+            _ => false,
         }
     }
 

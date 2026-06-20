@@ -720,4 +720,44 @@ export function multiply(a, b) {
             }
         }
     }
+
+    #[test]
+    fn test_native_proto_string_concat() {
+        // Test: string concatenation should use ++ operator
+        // Non-export function: variable type defaults to []const u8 (string)
+        let js = r#"
+function greet(name) {
+    return "Hello " + name;
+}
+"#;
+        let result = transpile_js(js);
+        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
+        let zig = result.unwrap();
+
+        println!("=== Generated Zig code ===\n{}", zig);
+
+        // Verify string concatenation uses ++ operator
+        assert!(zig.contains(" ++ "), "Expected ++ operator for string concat, got:\n{}", zig);
+        assert!(!zig.contains(" + "), "Should not use + operator for string concat, got:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_string_concat_multi() {
+        // Test: multiple string concatenation
+        let js = r#"
+function fullName(first, last) {
+    return first + " " + last;
+}
+"#;
+        let result = transpile_js(js);
+        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
+        let zig = result.unwrap();
+
+        println!("=== Generated Zig code ===\n{}", zig);
+
+        // Verify all concatenations use ++ operator
+        let plus_count = zig.matches(" + ").count();
+        assert_eq!(plus_count, 0, "Found {} instances of + operator, expected 0 for string concat", plus_count);
+        assert!(zig.contains(" ++ "), "Expected ++ operator for string concat, got:\n{}", zig);
+    }
 }
