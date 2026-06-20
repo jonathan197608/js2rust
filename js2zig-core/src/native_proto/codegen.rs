@@ -440,10 +440,10 @@ impl Codegen {
                                 self.write(") \"true\" else \"false\";\n");
                             }
                             Some(ZigType::Str) => {
-                                // []const u8 → []u8: just return (need to dup)
-                                self.write("return ");
+                                // []const u8 → []u8: need to dupe
+                                self.write("return allocator.dupe(u8, ");
                                 self.emit_expr(arg);
-                                self.write(";\n");
+                                self.write(") catch unreachable;\n");
                             }
                             Some(ZigType::F64) => {
                                 // f64 → []u8: use std.fmt.allocPrint

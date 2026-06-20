@@ -760,4 +760,28 @@ function fullName(first, last) {
         assert_eq!(plus_count, 0, "Found {} instances of + operator, expected 0 for string concat", plus_count);
         assert!(zig.contains(" ++ "), "Expected ++ operator for string concat, got:\n{}", zig);
     }
+
+    #[test]
+    fn test_native_proto_export_returns_string() {
+        // Test: @returns {string} should generate dupe for export function
+        let js = r#"
+/**
+ * @param {string} name
+ * @returns {string}
+ */
+export function greet(name) {
+    return "Hello " + name;
+}
+"#;
+        let result = transpile_js(js);
+        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
+        let zig = result.unwrap();
+
+        println!("=== Generated Zig code ===\n{}", zig);
+
+        // Verify return value uses dupe for []const u8 → []u8 conversion
+        assert!(zig.contains("allocator.dupe(u8,"), "Expected allocator.dupe(u8, ...) for string return, got:\n{}", zig);
+        // Verify the function signature
+        assert!(zig.contains("fn greet(allocator: std.mem.Allocator, name: []const u8) ![]u8 {"));
+    }
 }
