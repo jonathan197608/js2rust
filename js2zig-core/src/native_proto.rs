@@ -25,14 +25,24 @@ pub fn transpile_js(js_source: &str) -> Result<String, String> {
 struct Codegen {
     output: String,
     indent: usize,
+    used_names: std::collections::HashSet<String>,
 }
 
 impl Codegen {
     fn new() -> Self {
-        Self { output: String::new(), indent: 0 }
+        Self { output: String::new(), indent: 0, used_names: std::collections::HashSet::new() }
     }
 
     fn generate(&mut self, program: &Program) {
+        // Pass 1: collect identifiers referenced in function bodies.
+        self.used_names.clear();
+        for stmt in &program.body {
+            if let Statement::FunctionDeclaration(fd) = stmt {
+                Self::collect_idents_from_function(fd, &mut self.used_names);
+            }
+        }
+
+        // Pass 2: emit code, skipping unused toplevel constants.
         self.writeln("const std = @import(\"std\");");
         self.writeln("");
         for stmt in &program.body {
@@ -59,6 +69,10 @@ impl Codegen {
             if let Some(name) = self.binding_name(&decl.id) {
                 let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
 
+                // Skip unused toplevel constants to avoid Zig unused warnings.
+                if self.indent == 0 && is_const && !self.used_names.contains(name) {
+                    continue;
+                }
                 // Rule: toplevel var/let → error. Only allow const.
                 if self.indent == 0 && !is_const {
                     self.write_indent();
@@ -109,7 +123,23 @@ impl Codegen {
         let ret_ty = if return_exprs.is_empty() {
             "void".to_string()
         } else {
-            format!("@TypeOf({})", return_exprs.join(", "))
+            // Emit each return expression to get its Zig representation,
+            // then use @TypeOf(expr1, expr2, ...) for the return type.
+            let mut expr_strs = Vec::new();
+            for expr in &return_exprs {
+                let mut tmp = Codegen::new();
+                tmp.emit_expr(expr);
+                let s = tmp.output.trim().to_string();
+                if !s.is_empty() {
+                    expr_strs.push(s);
+                }
+            }
+            if expr_strs.is_empty() {
+                // Cannot infer return type from expressions; fall back to JsAny.
+                "JsAny".to_string()
+            } else {
+                format!("@TypeOf({})", expr_strs.join(", "))
+            }
         };
 
         self.write(&format!("fn {}(", name));
@@ -450,7 +480,7 @@ impl Codegen {
 
     // ── Return expression collection ───────────────────────────
 
-    fn collect_return_exprs(fd: &Function) -> Vec<String> {
+    fn collect_return_exprs<'a>(fd: &'a Function<'a>) -> Vec<&'a Expression<'a>> {
         let mut exprs = Vec::new();
         if let Some(body) = &fd.body {
             for stmt in &body.statements {
@@ -460,11 +490,11 @@ impl Codegen {
         exprs
     }
 
-    fn collect_returns(stmt: &Statement, exprs: &mut Vec<String>) {
+    fn collect_returns<'a>(stmt: &'a Statement<'a>, exprs: &mut Vec<&'a Expression<'a>>) {
         match stmt {
             Statement::ReturnStatement(rs) => {
-                if let Some(arg) = &rs.argument {
-                    exprs.push(Self::expr_to_string(arg));
+                if let Some(ref arg) = rs.argument {
+                    exprs.push(arg);
                 }
             }
             Statement::IfStatement(is) => {
@@ -491,19 +521,6 @@ impl Codegen {
         match pattern {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
             _ => None,
-        }
-    }
-
-    fn expr_to_string(expr: &Expression) -> String {
-        match expr {
-            Expression::NumericLiteral(n) => n.value.to_string(),
-            Expression::StringLiteral(s) => format!("\"{}\"", s.value),
-            Expression::BooleanLiteral(b) => b.value.to_string(),
-            Expression::Identifier(id) => id.name.to_string(),
-            Expression::BinaryExpression(be) => {
-                format!("{} {} {}", Self::expr_to_string(&be.left), Self::binary_op(be.operator), Self::expr_to_string(&be.right))
-            }
-            _ => "undefined".to_string(),
         }
     }
 
@@ -565,6 +582,109 @@ impl Codegen {
         }
     }
 
+    // ── Identifier collection (for unused-constant elimination) ──
+
+    /// Walk a function and collect all identifier names referenced in its body.
+    /// This is used to determine which toplevel constants are actually used.
+    fn collect_idents_from_function<'a>(fd: &'a Function<'a>, names: &mut std::collections::HashSet<String>) {
+        if let Some(body) = &fd.body {
+            for stmt in &body.statements {
+                Self::collect_idents_from_stmt(stmt, names);
+            }
+        }
+    }
+
+    fn collect_idents_from_stmt<'a>(stmt: &'a Statement<'a>, names: &mut std::collections::HashSet<String>) {
+        match stmt {
+            Statement::ExpressionStatement(es) => {
+                Self::collect_idents_from_expr(&es.expression, names);
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(arg) = &rs.argument {
+                    Self::collect_idents_from_expr(arg, names);
+                }
+            }
+            Statement::IfStatement(is) => {
+                Self::collect_idents_from_expr(&is.test, names);
+                Self::collect_idents_from_stmt(&is.consequent, names);
+                if let Some(alt) = &is.alternate {
+                    Self::collect_idents_from_stmt(alt, names);
+                }
+            }
+            Statement::WhileStatement(ws) => {
+                Self::collect_idents_from_expr(&ws.test, names);
+                Self::collect_idents_from_stmt(&ws.body, names);
+            }
+            Statement::BlockStatement(bs) => {
+                for s in &bs.body {
+                    Self::collect_idents_from_stmt(s, names);
+                }
+            }
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(init) = &decl.init {
+                        Self::collect_idents_from_expr(init, names);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_idents_from_expr<'a>(expr: &'a Expression<'a>, names: &mut std::collections::HashSet<String>) {
+        match expr {
+            Expression::Identifier(id) => {
+                names.insert(id.name.to_string());
+            }
+            Expression::BinaryExpression(be) => {
+                Self::collect_idents_from_expr(&be.left, names);
+                Self::collect_idents_from_expr(&be.right, names);
+            }
+            Expression::CallExpression(ce) => {
+                Self::collect_idents_from_expr(&ce.callee, names);
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::collect_idents_from_expr(e, names);
+                    }
+                }
+            }
+            Expression::AssignmentExpression(ae) => {
+                // For `x = expr`, collect idents from both sides.
+                // The left side (target) may be an identifier.
+                match &ae.left {
+                    AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        names.insert(id.name.to_string());
+                    }
+                    _ => {}
+                }
+                Self::collect_idents_from_expr(&ae.right, names);
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::collect_idents_from_expr(&ue.argument, names);
+            }
+            Expression::LogicalExpression(le) => {
+                Self::collect_idents_from_expr(&le.left, names);
+                Self::collect_idents_from_expr(&le.right, names);
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                Self::collect_idents_from_expr(&pe.expression, names);
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::collect_idents_from_expr(&ce.test, names);
+                Self::collect_idents_from_expr(&ce.consequent, names);
+                Self::collect_idents_from_expr(&ce.alternate, names);
+            }
+            Expression::ArrayExpression(ae) => {
+                for elem in &ae.elements {
+                    if let Some(e) = elem.as_expression() {
+                        Self::collect_idents_from_expr(e, names);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     // ── Output helpers ────────────────────────────────────────
 
     fn write(&mut self, s: &str) {
@@ -597,15 +717,12 @@ mod tests {
     #[test]
     fn test_native_proto_basic() {
         let js = r#"
-const x = 42;
-
 function add(a, b) {
     return a + b;
 }
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Generated Zig ===\n{}", zig);
-        assert!(zig.contains("const x: i64 = 42;"));
         assert!(zig.contains("fn add(a: anytype, b: anytype) !@TypeOf(a + b) {"));
         assert!(zig.contains("return a + b;"));
     }
