@@ -8,9 +8,12 @@ impl<'a> ZigCodegen<'a> {
                 if fn_name.is_empty() {
                     continue;
                 }
+                // Set current_fn so get_var_type looks up variables in the correct scope
+                self.inferrer.set_current_fn(fn_name);
                 if let Some(body) = &fd.body {
                     self.scan_fn_body_for_closures(fn_name, &fd.params, body);
                 }
+                self.inferrer.clear_current_fn();
             }
         }
     }
@@ -64,17 +67,30 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             Expression::CallExpression(call) => {
-                // Check if this is a map()/filter()/reduce()/some()/every() call on a dynamic array
+                // Check if this is a callback method call (map/filter/then/catch/etc.)
                 // If so, set current_callback_method to force JsAny types for callbacks
-                // NOTE: forEach is NOT included here because it uses inlining (no closure struct)
-                let callback_methods = ["map", "filter", "reduce", "some", "every"];
+                let callback_methods = ["map", "filter", "reduce", "some", "every", "then", "catch"];
                 let mut _is_callback_method = false;
                 if let Expression::StaticMemberExpression(mem) = &call.callee {
                     let _method = mem.property.name.as_str();
-                    if callback_methods.contains(&_method) && let Expression::Identifier(id) = &mem.object
-                        && self.inferrer.is_dynamic_array(id.name.as_str()) {
-                        _is_callback_method = true;
-                        self.current_callback_method = Some(_method.to_string());
+                    if callback_methods.contains(&_method) {
+                        // For array methods, only set flag if object is a dynamic array
+                        // For Promise methods (then/catch), always set flag
+                        let is_promise_method = _method == "then" || _method == "catch";
+                        let is_array_method = !is_promise_method;
+                        let should_set = if is_array_method {
+                            if let Expression::Identifier(id) = &mem.object {
+                                self.inferrer.is_dynamic_array(id.name.as_str())
+                            } else {
+                                false
+                            }
+                        } else {
+                            true // Promise methods always get JsAny param type
+                        };
+                        if should_set {
+                            _is_callback_method = true;
+                            self.current_callback_method = Some(_method.to_string());
+                        }
                     }
                 }
                 self.scan_expr_for_closures(context_name, fn_params, &call.callee, false);
@@ -334,6 +350,12 @@ impl<'a> ZigCodegen<'a> {
             || self.current_callback_method == Some("every".to_string()) {
             // some()/every() callback returns bool
             crate::infer::ZigType::Bool
+        } else if self.current_callback_method == Some("then".to_string())
+            || self.current_callback_method == Some("catch".to_string()) {
+            // then()/catch() callback return type: use inferred type (not forced)
+            // In JS, the return value is used for Promise chaining (not yet supported).
+            // For now, use the inferred return type from the arrow body.
+            self.inferrer.infer_return_type_from_arrow_with_params(arrow, &arrow_param_types)
         } else if self.current_callback_method.is_some() {
             // map()/reduce() or other array method: force return type to JsAny
             crate::infer::ZigType::JsAny

@@ -96,6 +96,12 @@ pub enum ZigType {
     /// General-purpose container type — maps to Zig `JsAny`.
     /// Used for dynamic arrays (ArrayList), dynamic objects (HashMap), and nested structures.
     JsAny,
+    /// TypedArray element types
+    I16,
+    I8,
+    U32,
+    U16,
+    U8,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,7 +115,12 @@ impl ZigType {
         match self {
             ZigType::I64 => "i64".to_string(),
             ZigType::I32 => "i32".to_string(),
+            ZigType::I16 => "i16".to_string(),
+            ZigType::I8 => "i8".to_string(),
             ZigType::Usize => "usize".to_string(),
+            ZigType::U32 => "u32".to_string(),
+            ZigType::U16 => "u16".to_string(),
+            ZigType::U8 => "u8".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::F32 => "f32".to_string(),
             ZigType::Bool => "bool".to_string(),
@@ -772,6 +783,17 @@ impl TypeInferrer {
             .unwrap_or(false)
     }
 
+    /// Set the current function context (used during codegen closure scanning).
+    /// This ensures get_var_type looks up variables in the correct function's scope.
+    pub fn set_current_fn(&mut self, fn_name: &str) {
+        self.current_fn = Some(fn_name.to_string());
+    }
+
+    /// Clear the current function context.
+    pub fn clear_current_fn(&mut self) {
+        self.current_fn = None;
+    }
+
     /// Check if a name is a parameter of any known function.
     pub fn is_fn_param(&self, name: &str) -> bool {
         self.fn_param_names.values().any(|params| params.iter().any(|p| p == name))
@@ -816,6 +838,15 @@ impl TypeInferrer {
         // function's return type (e.g., Struct("FetchUserResult"))
         if is_const && matches!(init, Expression::AwaitExpression(_)) {
             return self.infer_expr(init);
+        }
+
+        // Rule 2.3d: const + CallExpression → infer return type
+        // Allows `const v = m.get("a")` to get ?i64 (not JsAny)
+        if is_const && matches!(init, Expression::CallExpression(_)) {
+            let ret_ty = self.infer_expr(init);
+            if ret_ty != ZigType::JsValue {
+                return ret_ty;
+            }
         }
 
         // Rule 2.4: const but not constant → JsAny (Layer 3)
@@ -2113,6 +2144,16 @@ impl TypeInferrer {
                     match id.name.as_str() {
                         "Map" => return ZigType::Struct("Map".to_string()),
                         "Set" => return ZigType::Struct("Set".to_string()),
+                        // TypedArray constructors -> Zig slice types
+                        "Int8Array" => return ZigType::Slice(Box::new(ZigType::I8)),
+                        "Uint8Array" => return ZigType::Slice(Box::new(ZigType::U8)),
+                        "Uint8ClampedArray" => return ZigType::Slice(Box::new(ZigType::U8)),
+                        "Int16Array" => return ZigType::Slice(Box::new(ZigType::I16)),
+                        "Uint16Array" => return ZigType::Slice(Box::new(ZigType::U16)),
+                        "Int32Array" => return ZigType::Slice(Box::new(ZigType::I32)),
+                        "Uint32Array" => return ZigType::Slice(Box::new(ZigType::U32)),
+                        "Float32Array" => return ZigType::Slice(Box::new(ZigType::F32)),
+                        "Float64Array" => return ZigType::Slice(Box::new(ZigType::F64)),
                         // For class constructors, return Struct with class name
                         _ => return ZigType::Struct(id.name.to_string()),
                     }
@@ -2194,6 +2235,10 @@ impl TypeInferrer {
                     "slice" | "concat" => ZigType::Array(elem.clone()),
                     _ => ZigType::JsValue,
                 },
+                ZigType::Slice(_) => match prop {
+                    "length" => ZigType::I64,
+                    _ => ZigType::JsValue,
+                },
                 ZigType::Object { fields } => {
                     // Look up the property in the object's field list
                     fields.iter()
@@ -2208,6 +2253,10 @@ impl TypeInferrer {
                             .find(|(n, _)| n == prop)
                             .map(|(_, ty)| ty.clone())
                             .unwrap_or(ZigType::JsValue);
+                    }
+                    // Map/Set: .size property returns usize
+                    if (struct_name == "Map" || struct_name == "Set") && prop == "size" {
+                        return ZigType::Usize;
                     }
                     // Named struct from class: can't enumerate fields at infer time
                     // Fall through to Any — class fields are all i64 anyway
@@ -2242,6 +2291,14 @@ impl TypeInferrer {
                 return ZigType::JsValue;  // JsValue
             }
 
+        // Check if object is a dynamic array (ArrayList) — elements are JsAny
+        // This check is needed because get_var_type may return JsValue (fallback)
+        // for dynamic array variables that aren't in the env during codegen.
+        if let Expression::Identifier(id) = &mem.object
+            && self.dynamic_arrays.contains(id.name.as_str()) {
+                return ZigType::JsAny;
+            }
+
         let obj_type = self.infer_expr(&mem.object);
         match &obj_type {
             ZigType::Array(elem) | ZigType::Slice(elem) => elem.as_ref().clone(),
@@ -2259,11 +2316,11 @@ impl TypeInferrer {
                     ZigType::JsValue
                 }
             }
+            // Dynamic arrays (ArrayList) store JsAny elements
+            ZigType::JsAny => ZigType::JsAny,
             _ => ZigType::JsValue,
         }
     }
-
-    // ============================================================
     // Return type inference
     // ============================================================
 
@@ -2416,7 +2473,18 @@ impl TypeInferrer {
             Expression::StaticMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {
                     let obj_name = id.name.as_str();
-                    let method_key = format!("{}.{}", obj_name, mem.property.name);
+                    let prop_name = mem.property.name.as_str();
+                    // Special case: TypedArray.from() returns slice type
+                    if obj_name == "Int32Array" && prop_name == "from" {
+                        return ZigType::Slice(Box::new(ZigType::I32));
+                    }
+                    if obj_name == "Uint8Array" && prop_name == "from" {
+                        return ZigType::Slice(Box::new(ZigType::U8));
+                    }
+                    if obj_name == "Float64Array" && prop_name == "from" {
+                        return ZigType::Slice(Box::new(ZigType::F64));
+                    }
+                    let method_key = format!("{}.{}", obj_name, prop_name);
                     // Check builtins first (console.log, Math.abs, etc.)
                     let builtin = self.builtin_return_type(&method_key);
                     if builtin != ZigType::JsValue {
@@ -2446,7 +2514,26 @@ impl TypeInferrer {
                     // Check if obj_name is a local variable (e.g., rect.area())
                     // Class structs: fields and method returns are all i64.
                     if let Some(var_info) = self.env.get(obj_name)
-                        && matches!(&var_info.zig_type, ZigType::Struct(_)) {
+                        && let ZigType::Struct(s) = &var_info.zig_type {
+                            // Map/Set: method-specific return types
+                            if s == "Map" {
+                                return match prop_name {
+                                    "get" => ZigType::Optional(Box::new(ZigType::I64)),
+                                    "set" | "delete" | "has" => ZigType::Bool,
+                                    "size" => ZigType::Usize,
+                                    "clear" => ZigType::Void,
+                                    _ => ZigType::JsValue,
+                                };
+                            }
+                            if s == "Set" {
+                                return match prop_name {
+                                    "add" | "delete" | "has" => ZigType::Bool,
+                                    "size" => ZigType::Usize,
+                                    "clear" => ZigType::Void,
+                                    _ => ZigType::JsValue,
+                                };
+                            }
+                            // Generic struct: assume i64 return
                             return ZigType::I64;
                         }
                     // Check array methods (arr.pop(), arr.push(), etc.)
@@ -2459,8 +2546,12 @@ impl TypeInferrer {
                                 "indexOf" | "lastIndexOf" => ZigType::I64,
                                 "includes" => ZigType::Bool,
                                 "join" | "reverse" | "sort" | "slice" | "concat" => ZigType::Array(elem.clone()),
-                                "forEach" | "map" | "filter" | "reduce" | "some" | "every" | "find" | "findIndex"
-                                    | "flatMap" | "flat" => ZigType::Array(elem.clone()),
+                                "map" | "filter" | "flatMap" | "flat" => ZigType::Array(elem.clone()),
+                                "reduce" => ZigType::JsAny,
+                                "some" | "every" => ZigType::Bool,
+                                "find" => ZigType::Optional(elem.clone()),
+                                "findIndex" => ZigType::I64,
+                                "forEach" => ZigType::Void,
                                 _ => ZigType::JsValue,
                             };
                         }

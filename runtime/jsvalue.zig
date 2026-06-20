@@ -13,6 +13,7 @@ pub const JsValue = union(enum) {
     bool: bool,
     string: []const u8,
     null: void,
+    undefined: void,
 
     // --- constructors ---
 
@@ -58,6 +59,10 @@ pub const JsValue = union(enum) {
         return self == .null;
     }
 
+    pub fn isUndefined(self: JsValue) bool {
+        return self == .undefined;
+    }
+
     pub fn isNumber(self: JsValue) bool {
         return self == .int or self == .float;
     }
@@ -69,6 +74,7 @@ pub const JsValue = union(enum) {
             .bool => "boolean",
             .string => "string",
             .null => "object",
+            .undefined => "undefined",
         };
     }
 
@@ -82,6 +88,7 @@ pub const JsValue = union(enum) {
             .bool => |v| try writer.writeAll(if (v) "true" else "false"),
             .string => |s| try writer.writeAll(s),
             .null => try writer.writeAll("null"),
+            .undefined => try writer.writeAll("undefined"),
         }
     }
 
@@ -94,6 +101,7 @@ pub const JsValue = union(enum) {
             .bool => |v| if (v) 1 else 0,
             .string => |v| std.fmt.parseInt(i64, v, 10) catch 0,
             .null => 0,
+            .undefined => 0,
         };
     }
 
@@ -104,6 +112,7 @@ pub const JsValue = union(enum) {
             .bool => |v| if (v) 1.0 else 0.0,
             .string => |v| std.fmt.parseFloat(f64, v) catch 0,
             .null => 0.0,
+            .undefined => std.math.nan(f64),
         };
     }
 
@@ -114,6 +123,7 @@ pub const JsValue = union(enum) {
             .bool => |v| if (v) "true" else "false",
             .string => |v| v,
             .null => "null",
+            .undefined => "undefined",
         };
     }
 
@@ -124,6 +134,7 @@ pub const JsValue = union(enum) {
             .bool => |v| v,
             .string => |v| v.len != 0,
             .null => false,
+            .undefined => false,
         };
     }
 
@@ -190,7 +201,8 @@ pub const JsValue = union(enum) {
             },
             .bool => |a| switch (other) { .bool => |b| a == b, else => false },
             .string => |a| switch (other) { .string => |b| std.mem.eql(u8, a, b), else => false },
-            .null => switch (other) { .null => true, else => false },
+            .null => switch (other) { .null => true, .undefined => true, else => false },
+            .undefined => switch (other) { .undefined => true, .null => true, else => false },
         };
     }
 

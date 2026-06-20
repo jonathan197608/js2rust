@@ -43,6 +43,16 @@ fn main() {
     let host_strlen = useHostStrlen_main("Hello, World!");
     println!("useHostStrlen_main('Hello, World!') = {}", host_strlen);
 
+    // ── TypedArray tests (Task #87) ──────────────────────────
+    let ta_len = testNewInt32Array_main();
+    println!("testNewInt32Array_main() = {} (expect 3)", ta_len);
+
+    let ta_u8_len = testNewUint8Array_main();
+    println!("testNewUint8Array_main() = {} (expect 5)", ta_u8_len);
+
+    let ta_from_len = testInt32ArrayFrom_main();
+    println!("testInt32ArrayFrom_main() = {} (expect 3)", ta_from_len);
+
     // ── Async host function (tokio-backed) ────────────────────
     println!("\n--- Async host function (tokio) ---");
 

@@ -7,11 +7,29 @@ impl<'a> ZigCodegen<'a> {
             let obj_expr = &mem.object;
             let method_name = mem.property.name.as_str();
 
+            // ── TypedArray slice methods (before dynamic array check) ──
+            // Dynamic arrays set is file-global; a TypedArray variable named "arr"
+            // could be incorrectly flagged as dynamic if another function uses arr.push().
+            // Check inferred type first: if it's a Slice, dispatch to TypedArray builtins.
+            // Only check TypedArray-specific keys (int8array, uint8array, etc.),
+            // NOT the generic "array" key — that should go through emit_dynamic_array_method.
+            let obj_ty = self.inferrer.infer_expr(obj_expr);
+            if let Some(type_key) = Self::type_to_builtin_key(&obj_ty)
+                && type_key.ends_with("array")
+                && type_key != "array"
+                && let Some(trans) = self.builtins.lookup_method(type_key, method_name) {
+                    self.emit_builtin_method_call(trans, obj_expr, &call.arguments, &obj_ty);
+                    return true;
+                }
+
             // Dynamic array methods: use ArrayList directly (before any lookup)
             if let Expression::Identifier(id) = obj_expr
                 && self.inferrer.is_dynamic_array(id.name.as_str()) {
-                    self.emit_dynamic_array_method(id.name.as_str(), method_name, &call.arguments);
-                    return true;
+                    // But skip if the inferred type is actually a Slice (TypedArray)
+                    if !matches!(obj_ty, ZigType::Slice(_)) {
+                        self.emit_dynamic_array_method(id.name.as_str(), method_name, &call.arguments);
+                        return true;
+                    }
                 }
 
             // ── Namespace lookup (Math.abs, console.log, Object.keys, …) ──
@@ -77,6 +95,20 @@ impl<'a> ZigCodegen<'a> {
         match ty {
             ZigType::String => Some("string"),
             ZigType::Array(_) => Some("array"),
+            ZigType::Slice(elem) => {
+                // Map TypedArray slices to their type-specific builtin key
+                match elem.as_ref() {
+                    ZigType::I8 => Some("int8array"),
+                    ZigType::U8 => Some("uint8array"),
+                    ZigType::I16 => Some("int16array"),
+                    ZigType::U16 => Some("uint16array"),
+                    ZigType::I32 => Some("int32array"),
+                    ZigType::U32 => Some("uint32array"),
+                    ZigType::F32 => Some("float32array"),
+                    ZigType::F64 => Some("float64array"),
+                    _ => Some("array"),
+                }
+            }
             ZigType::Object { .. } => Some("object"),
             ZigType::Struct(s) => {
                 match s.as_str() {

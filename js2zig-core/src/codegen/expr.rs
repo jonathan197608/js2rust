@@ -78,7 +78,7 @@ impl<'a> ZigCodegen<'a> {
     }
 
     /// Unwrap a JsAny/JsValue expression to the specified primitive type.
-    fn emit_unwrap_js_any(&mut self, expr: &Expression, target_ty: &ZigType) {
+    pub fn emit_unwrap_js_any(&mut self, expr: &Expression, target_ty: &ZigType) {
         match target_ty {
             ZigType::I64 | ZigType::I32 | ZigType::Usize => {
                 self.emit_expr(expr);
@@ -495,7 +495,6 @@ impl<'a> ZigCodegen<'a> {
                 // For non-Addition binary ops with JsValue/JsAny operands
                 if bin.operator != BinaryOperator::Addition {
                     let left_ty = self.inferrer.infer_expr(&bin.left);
-                    let right_ty = self.inferrer.infer_expr(&bin.right);
                     // Only use method-call syntax if LEFT operand is JsAny/JsValue
                     if Self::is_js_obj_type(&left_ty) {
                         self.emit_js_binary_op(&bin.left, &bin.right, &bin.operator, &left_ty);
@@ -682,6 +681,88 @@ impl<'a> ZigCodegen<'a> {
                             self.push(") catch @panic(\"OOM\")");
                             return;
                         }
+                        // ── TypedArray constructors ──
+                        // new Int32Array([1,2,3]) → js_runtime.js_typedarray.fromI32(js_allocator.g_alloc(), &[_]i32{1,2,3}) catch &[_]i32{}
+                        "Int8Array" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsI8(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]i8{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyI8()");
+                            return;
+                        }
+                        "Uint8Array" | "Uint8ClampedArray" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsU8(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]u8{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyU8()");
+                            return;
+                        }
+                        "Int16Array" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsI16(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]i16{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyI16()");
+                            return;
+                        }
+                        "Uint16Array" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsU16(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]u16{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyU16()");
+                            return;
+                        }
+                        "Int32Array" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsI32(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]i32{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyI32()");
+                            return;
+                        }
+                        "Uint32Array" => {
+                            self.push("js_runtime.js_typedarray.fromI64AsU32(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]u32{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyU32()");
+                            return;
+                        }
+                        "Float32Array" => {
+                            self.push("js_runtime.js_typedarray.fromF64AsF32(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]f32{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyF32()");
+                            return;
+                        }
+                        "Float64Array" => {
+                            self.push("js_runtime.js_typedarray.fromF64(js_allocator.g_alloc(), ");
+                            if let Some(arg) = ne.arguments.first() {
+                                self.emit_arg(arg);
+                            } else {
+                                self.push("&[_]f64{}");
+                            }
+                            self.push(") catch js_runtime.js_typedarray.emptyF64()");
+                            return;
+                        }
                         _ => {}
                     }
                 }
@@ -733,16 +814,38 @@ impl<'a> ZigCodegen<'a> {
                 // Map JS .length to Zig .len for arrays and strings
                 if mem.property.name.as_str() == "length" {
                     // Dynamic arrays (ArrayList): use .items.len
+                    // But function parameters with slice type (TypedArray) use .len directly.
+                    // dynamic_arrays is file-global, so a TypedArray parameter named "arr"
+                    // could be incorrectly flagged as dynamic.
                     if let Expression::Identifier(id) = &mem.object
                         && self.inferrer.is_dynamic_array(id.name.as_str())
                     {
-                        self.push("@as(i64, @intCast(");
-                        self.emit_expr(&mem.object);
-                        self.push(".items.len))");
+                        // Check if this variable is a parameter of the CURRENT function.
+                        // If yes, it's a slice (TypedArray) — use .len.
+                        // If no, it's a locally-declared ArrayList — use .items.len.
+                        let is_current_fn_param = self.current_fn.as_ref()
+                            .map(|fn_name| self.inferrer.is_fn_param_of(fn_name, id.name.as_str()))
+                            .unwrap_or(false);
+                        if is_current_fn_param {
+                            self.push("@as(i64, @intCast(");
+                            self.emit_expr(&mem.object);
+                            self.push(".len))");
+                        } else {
+                            self.push("@as(i64, @intCast(");
+                            self.emit_expr(&mem.object);
+                            self.push(".items.len))");
+                        }
                         return;
                     }
                     let obj_ty = self.inferrer.infer_expr(&mem.object);
                     if obj_ty == ZigType::String || matches!(obj_ty, ZigType::Array(_)) {
+                        self.push("@as(i64, @intCast(");
+                        self.emit_expr(&mem.object);
+                        self.push(".len))");
+                        return;
+                    }
+                    // TypedArray (slice types): use .len
+                    if matches!(obj_ty, ZigType::Slice(_)) {
                         self.push("@as(i64, @intCast(");
                         self.emit_expr(&mem.object);
                         self.push(".len))");
@@ -759,13 +862,22 @@ impl<'a> ZigCodegen<'a> {
 
                 self.emit_expr(&mem.object);
                 self.push(".");
-                self.push(mem.property.name.as_str());
+                let prop = mem.property.name.as_str();
+                if prop == "catch" || prop == "async" || prop == "await" {
+                    self.push("@\"");
+                    self.push(prop);
+                    self.push("\"");
+                } else {
+                    self.push(prop);
+                }
             }
 
             Expression::ComputedMemberExpression(mem) => {
                 // Check if object is a dynamic array (ArrayList)
                 // Distinguish: function params with slice type use direct indexing;
                 // locally-declared dynamic arrays use .items[...]
+                // dynamic_arrays is file-global, so a TypedArray parameter named "arr"
+                // could be incorrectly flagged as dynamic — check is_fn_param_of.
                 if let Expression::Identifier(id) = &mem.object
                     && self.inferrer.is_dynamic_array(id.name.as_str())
                 {
@@ -812,9 +924,17 @@ impl<'a> ZigCodegen<'a> {
                     && let Expression::StringLiteral(s) = &mem.expression
                 {
                     // String literal key → direct field access
+                    let field = s.value.to_string();  // String -> String (owned)
+                    let field_str: &str = &field;
                     self.emit_expr(&mem.object);
                     self.push(".");
-                    self.push(s.value.as_str());
+                    if field_str == "catch" || field_str == "async" || field_str == "await" {
+                        self.push("@\"");
+                        self.push(field_str);
+                        self.push("\"");
+                    } else {
+                        self.push(field_str);
+                    }
                     return;
                 }
 
@@ -1134,9 +1254,16 @@ impl<'a> ZigCodegen<'a> {
                         self.push(")");
                     }
                     ChainElement::StaticMemberExpression(mem) => {
+                        let prop = mem.property.name.as_str();
                         self.emit_expr(&mem.object);
                         self.push(".");
-                        self.push(mem.property.name.as_str());
+                        if prop == "catch" || prop == "async" || prop == "await" {
+                            self.push("@\"");
+                            self.push(prop);
+                            self.push("\"");
+                        } else {
+                            self.push(prop);
+                        }
                     }
                     ChainElement::ComputedMemberExpression(mem) => {
                         let obj_type = self.inferrer.infer_expr(&mem.object);

@@ -317,6 +317,66 @@ export function testSetMissing() {
 // Phase 5: Additional tests (expand as features are added)
 // ════════════════════════════════════════════════════════
 
-// TODO: Add tests for Map.get(), Map.delete(), Map.size
-// TODO: Add tests for Set.delete(), Set.size
+// -- Map: size property --
+export function testMapSize() {
+    const m = new Map();
+    m.set("a", 1);
+    m.set("b", 2);
+    m.set("c", 3);
+    if (m.size === 3) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Set: size property --
+export function testSetSize() {
+    const s = new Set();
+    s.add(10);
+    s.add(20);
+    s.add(30);
+    if (s.size === 3) {
+        return 1;
+    }
+    return 0;
+}
+
+// TODO: Add tests for Map.get(), Map.delete()
+// TODO: Add tests for Set.delete()
 // TODO: Fix codegen for optional return types and primitive comparisons
+
+// -- Map: get() method --
+export function testMapGet() {
+    const m = new Map();
+    m.set("a", 100);
+    m.set("b", 200);
+    const v = m.get("a");
+    if (v === 100) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Map: delete() method --
+export function testMapDelete() {
+    const m = new Map();
+    m.set("a", 1);
+    m.set("b", 2);
+    const deleted = m.delete("a");
+    if (deleted === true && m.size === 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// -- Set: delete() method --
+export function testSetDelete() {
+    const s = new Set();
+    s.add(10);
+    s.add(20);
+    const deleted = s.delete(10);
+    if (deleted === true && s.size === 1) {
+        return 1;
+    }
+    return 0;
+}

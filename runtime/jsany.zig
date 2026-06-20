@@ -46,6 +46,71 @@ pub const JsAny = union(enum) {
         return .{ .null = {} };
     }
 
+    pub fn fromUndefined() JsAny {
+        return .{ .value = .{ .undefined = {} } };
+    }
+
+    /// Generic constructor: auto-wrap primitives into JsAny.
+    /// Accepts i64, f64, bool, []const u8, JsAny, JsValue, comptime_int, comptime_float,
+    /// and string literals (*const [N:0]u8).
+    pub fn from(value: anytype) JsAny {
+        const T = @TypeOf(value);
+        // Exact type matches (fast path, no cast)
+        if (T == JsAny) return value;
+        if (T == JsValue) return fromValue(value);
+        if (T == bool) return fromBool(value);
+        if (T == i64) return fromI64(value);
+        if (T == f64) return fromF64(value);
+        if (T == []const u8) return fromString(value);
+        // comptime_int (e.g. `42`) → i64
+        if (switch (@typeInfo(T)) {
+            .comptime_int => true,
+            else => false,
+        }) {
+            return fromI64(@intCast(value));
+        }
+        // comptime_float (e.g. `3.14`) → f64
+        if (switch (@typeInfo(T)) {
+            .comptime_float => true,
+            else => false,
+        }) {
+            return fromF64(@floatCast(value));
+        }
+        // String literals: *const [N:0]u8 → []const u8
+        if (switch (@typeInfo(T)) {
+            .pointer => |ptr| blk: {
+                const child_info = @typeInfo(ptr.child);
+                break :blk switch (child_info) {
+                    .array => |arr| arr.child == u8,
+                    else => false,
+                };
+            },
+            else => false,
+        }) {
+            // value is *const [N:0]u8, convert to []const u8 via slicing
+            const slice: []const u8 = value[0..];
+            return fromString(slice);
+        }
+        // Other integer types (u32, etc.) → i64
+        if (switch (@typeInfo(T)) {
+            .int => true,
+            else => false,
+        }) {
+            return fromI64(@intCast(value));
+        }
+        // Other float types → f64
+        if (switch (@typeInfo(T)) {
+            .float => true,
+            else => false,
+        }) {
+            return fromF64(@floatCast(value));
+        }
+        @compileError("Unsupported type for JsAny.from: " ++ @typeName(T));
+    }
+
+    /// JsAny.undefined constant.
+    pub const undefined_value: JsAny = .{ .value = .{ .undefined = {} } };
+
     /// Create a new empty array on the heap.
     pub fn newArray(alloc: Allocator) !JsAny {
         const arr = try alloc.create(JsArrayList);
@@ -76,6 +141,17 @@ pub const JsAny = union(enum) {
 
     pub fn isNull(self: JsAny) bool {
         return self == .null;
+    }
+
+    pub fn isUndefined(self: JsAny) bool {
+        return switch (self) {
+            .value => |v| v.isUndefined(),
+            else => false,
+        };
+    }
+
+    pub fn isNullish(self: JsAny) bool {
+        return self.isNull() or self.isUndefined();
     }
 
     pub fn isString(self: JsAny) bool {

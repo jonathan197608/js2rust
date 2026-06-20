@@ -93,7 +93,26 @@ impl<'a> ZigCodegen<'a> {
                     self.push("return ");
                 }
                 if let Some(arg) = &rs.argument {
-                    self.emit_expr(arg);
+                    // If the function expects a primitive type but the return expression
+                    // evaluates to JsAny/JsValue (e.g., dynamic array element access),
+                    // generate the appropriate unwrap conversion (.asI64(), .asF64(), etc.)
+                    if let Some(fn_name) = &self.current_fn {
+                        let fn_ret = self.inferrer.get_fn_return_type(fn_name);
+                        let expr_ty = self.inferrer.infer_expr(arg);
+                        let needs_unwrap = matches!(fn_ret, ZigType::I64 | ZigType::I32 | ZigType::Usize | ZigType::F64 | ZigType::F32 | ZigType::Bool | ZigType::String)
+                            && matches!(expr_ty, ZigType::JsAny | ZigType::JsValue);
+                        if needs_unwrap {
+                            self.emit_unwrap_js_any(arg, &fn_ret);
+                        } else if fn_ret == ZigType::JsValue && expr_ty == ZigType::JsAny {
+                            // JsAny → JsValue conversion
+                            self.emit_expr(arg);
+                            self.push(".toValue()");
+                        } else {
+                            self.emit_expr(arg);
+                        }
+                    } else {
+                        self.emit_expr(arg);
+                    }
                 }
                 self.push(";\n");
             }

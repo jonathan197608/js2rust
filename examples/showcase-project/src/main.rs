@@ -164,6 +164,25 @@ fn main() {
     let set_miss = testSetMissing_app();
     println!("  testSetMissing() = {} (expected 0)", set_miss);
 
+    // ── Phase 5: Map/Set size property ──────────────────────
+    println!();
+    println!("--- Map/Set size (Phase 5) ---");
+    let map_size = testMapSize_app();
+    println!("  testMapSize() = {} (expected 1)", map_size);
+
+    let set_size = testSetSize_app();
+    println!("  testSetSize() = {} (expected 1)", set_size);
+
+    // ── Phase 5b: Map/Set methods (get/delete) ────────────
+    let map_get = testMapGet_app();
+    println!("  testMapGet() = {} (expected 1)", map_get);
+
+    let map_del = testMapDelete_app();
+    println!("  testMapDelete() = {} (expected 1)", map_del);
+
+    let set_del = testSetDelete_app();
+    println!("  testSetDelete() = {} (expected 1)", set_del);
+
     // Cleanup
     js2rust_deinit();
 

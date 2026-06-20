@@ -19,11 +19,17 @@ pub const js_uri = @import("js_uri.zig");
 pub const jsvalue = @import("jsvalue.zig");
 pub const jsany = @import("jsany.zig");
 
+pub const js_typedarray = @import("js_typedarray.zig");
+
+pub const js_promise = @import("js_promise.zig");
+pub const Promise = js_promise.Promise;
+
 // Re-export commonly used types at top level for convenience.
 pub const JsValue = jsvalue.JsValue;
 pub const JsAny = jsany.JsAny;
 pub const JsArrayList = jsany.JsArrayList;
 pub const JsObjectMap = jsany.JsObjectMap;
+pub const undefined_value = jsany.undefined_value;
 
 // ── Global Io for C ABI blocking wrappers ──────────────────────
 // When async functions are exported via C ABI, the wrapper needs an Io

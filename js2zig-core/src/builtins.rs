@@ -156,6 +156,13 @@ impl BuiltinRegistry {
         // ── Tier 3: Boolean ──
         registry.add_method_runtime("Boolean", "toString", "if ({}) \"true\" else \"false\"", "js_number");
 
+        // ── Tier 3: Promise (minimal synchronous support) ──
+        // Promise.resolve(value) → js_runtime.Promise.resolve(value)
+        // Promise.reject(reason) → js_runtime.Promise.reject(reason)
+        // js_runtime exports Promise (via js_promise)
+        registry.add_method("Promise", "resolve", "js_runtime.Promise.resolve({})");
+        registry.add_method("Promise", "reject", "js_runtime.Promise.reject({})");
+
         // ── Tier 3: Date ──
         registry.add_method_runtime("Date", "now", "js_date.now()", "js_date");
         registry.add_method_runtime("Date", "getTime", "js_date.getTime({})", "js_date");
@@ -174,16 +181,44 @@ impl BuiltinRegistry {
         registry.add_method_runtime("map", "has", "{0}.has({1})", "js_map");
         registry.add_method_runtime("map", "delete", "{0}.delete({1})", "js_map");
         registry.add_method_runtime("map", "clear", "{0}.clear()", "js_map");
+        registry.add_method_runtime("map", "size", "{0}.size()", "js_map");
 
         // ── Tier 3: Set (instance methods) ──
         registry.add_method_runtime("set", "add", "{0}.add({1}) catch unreachable", "js_set");
         registry.add_method_runtime("set", "has", "{0}.has({1})", "js_set");
         registry.add_method_runtime("set", "delete", "{0}.delete({1})", "js_set");
         registry.add_method_runtime("set", "clear", "{0}.clear()", "js_set");
+        registry.add_method_runtime("set", "size", "{0}.size()", "js_set");
 
         // ── Tier 3: RegExp ──
         registry.add_method_runtime("RegExp", "test", "js_regexp.test_({}, {})", "js_regexp");
         registry.add_method_runtime("RegExp", "exec", "js_regexp.exec(js_allocator.g_alloc(), {}, {})", "js_regexp");
+
+        // ── Tier 3: TypedArray ──
+        // Int32Array
+        registry.add_method_runtime("Int32Array", "from", "(js_runtime.js_typedarray.fromI64AsI32(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyI32())", "js_typedarray");
+        registry.add_method_runtime("int32array", "length", "{}.len", "js_typedarray");
+        registry.add_method_runtime("int32array", "get", "js_runtime.js_typedarray.getI32({}, {})", "js_typedarray");
+        registry.add_method_runtime("int32array", "set", "js_runtime.js_typedarray.setI32({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("int32array", "slice", "js_runtime.js_typedarray.sliceI32({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("int32array", "subarray", "js_runtime.js_typedarray.subarrayI32({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("int32array", "copyWithin", "js_runtime.js_typedarray.copyWithinI32({}, {}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("int32array", "fill", "js_runtime.js_typedarray.fillI32({}, {}, {}, {})", "js_typedarray");
+
+        // Uint8Array
+        registry.add_method_runtime("Uint8Array", "from", "(js_runtime.js_typedarray.fromI64AsU8(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyU8())", "js_typedarray");
+        registry.add_method_runtime("uint8array", "length", "{}.len", "js_typedarray");
+        registry.add_method_runtime("uint8array", "get", "js_runtime.js_typedarray.getU8({}, {})", "js_typedarray");
+        registry.add_method_runtime("uint8array", "set", "js_runtime.js_typedarray.setU8({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("uint8array", "slice", "js_runtime.js_typedarray.sliceU8({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("uint8array", "subarray", "js_runtime.js_typedarray.subarrayU8({}, {}, {})", "js_typedarray");
+
+        // Float64Array
+        registry.add_method_runtime("Float64Array", "from", "(js_runtime.js_typedarray.fromF64(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyF64())", "js_typedarray");
+        registry.add_method_runtime("float64array", "length", "{}.len", "js_typedarray");
+        registry.add_method_runtime("float64array", "get", "js_runtime.js_typedarray.getF64({}, {})", "js_typedarray");
+        registry.add_method_runtime("float64array", "set", "js_runtime.js_typedarray.setF64({}, {}, {})", "js_typedarray");
+        registry.add_method_runtime("float64array", "slice", "js_runtime.js_typedarray.sliceF64({}, {}, {})", "js_typedarray");
 
         // ── Tier 4: Rust via C ABI (reserved for custom host functions) ──
 
