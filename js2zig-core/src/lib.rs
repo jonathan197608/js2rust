@@ -10,6 +10,10 @@ pub mod project;
 pub mod sourcemap;
 pub mod testgen;
 
+/// Prototype: native-type system (anytype + @TypeOf).
+/// Work in progress, not integrated into pipeline yet.
+pub mod native_proto;
+
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
