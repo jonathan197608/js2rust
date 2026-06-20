@@ -130,23 +130,20 @@ pub fn extract_all_jsdoc(source: &str) -> (
             if j < lines.len() {
                 let code = lines[j].trim();
                 // 尝试提取变量名（处理 @type）
-                if let Some(var_name) = extract_var_name(code) {
-                    if let Some(ref ty) = parsed.type_name {
-                        type_annotations.insert(var_name, ty.clone());
-                    }
+                if let Some(var_name) = extract_var_name(code)
+                    && let Some(ref ty) = parsed.type_name {
+                    type_annotations.insert(var_name, ty.clone());
                 }
                 // 尝试提取函数名（处理 @returns）
                 // 先尝试 function 声明
-                if let Some(fn_name) = extract_fn_name(code) {
-                    if let Some(ref ty) = parsed.return_type_name {
-                        return_types.insert(fn_name, ty.clone());
-                    }
+                if let Some(fn_name) = extract_fn_name(code)
+                    && let Some(ref ty) = parsed.return_type_name {
+                    return_types.insert(fn_name, ty.clone());
                 }
                 // 再尝试变量赋值函数（const foo = function() {} 或 const foo = () => {}）
-                if let Some(var_name) = extract_var_name(code) {
-                    if let Some(ref ty) = parsed.return_type_name {
-                        return_types.insert(var_name, ty.clone());
-                    }
+                if let Some(var_name) = extract_var_name(code)
+                    && let Some(ref ty) = parsed.return_type_name {
+                    return_types.insert(var_name, ty.clone());
                 }
             }
 
@@ -183,7 +180,7 @@ fn extract_var_name(code: &str) -> Option<String> {
 
     // 读取标识符，直到 = ; , 或换行
     let end = after_kw
-        .find(|c| c == '=' || c == ';' || c == ',')
+        .find(&['=', ';', ','][..])
         .unwrap_or(after_kw.len());
     let name = after_kw[..end].trim();
     if name.is_empty() { None } else { Some(name.to_string()) }
@@ -214,14 +211,15 @@ fn extract_typedef_name(s: &str) -> String {
     let s = s.trim();
     // 去掉 {...} 包装
     let without_brace = if s.starts_with('{') {
-        let end = s.find('}').unwrap_or(s.len() - 1);
+        let end = s.find('}').unwrap_or(s.len());
         &s[end + 1..]
     } else {
         s
     };
-    // 取第一个 token 作为类型名
+    // 取第一个非空 token 作为类型名
     without_brace
         .split(|c: char| c.is_whitespace() || c == '-')
+        .filter(|s| !s.is_empty())
         .next()
         .unwrap_or("")
         .to_string()

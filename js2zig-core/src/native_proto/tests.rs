@@ -14,7 +14,8 @@ function add(a, b) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Generated Zig ===\n{}", zig);
-        assert!(zig.contains("fn add(a: anytype, b: anytype) !@TypeOf(a + b) {"));
+        // Note: using anytype for parameters, i64 for return type (inferred)
+        assert!(zig.contains("fn add(a: anytype, b: anytype) i64 {"));
         assert!(zig.contains("return a + b;"));
     }
 
@@ -92,7 +93,7 @@ function main() {
         println!("=== Function Call ===\n{}", zig);
         assert!(zig.contains("try greet(")); // all calls get try
         assert!(zig.contains("++")); // string + → concat
-        assert!(zig.contains("var msg =")); // type inferred by Zig
+        assert!(zig.contains("var msg:")); // type annotated
     }
 
     #[test]
@@ -230,7 +231,8 @@ function log(msg) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Void Return ===\n{}", zig);
-        assert!(zig.contains("!void"));
+        // Note: void return type (no error handling)
+        assert!(zig.contains(") void {"));
     }
 
     #[test]
@@ -428,5 +430,137 @@ pub fn main() !void {{
             "expected 'abs(-42)=42' in stderr, got: stdout='{}' stderr='{}'", stdout, stderr);
 
         println!("=== E2E test passed! Generated Zig code compiles and runs correctly ===");
+    }
+
+    #[test]
+    fn test_native_proto_object_struct() {
+        // Scheme C: Only static access → anonymous struct.
+        let js = r#"
+function main() {
+    const pt = { x: 10, y: 20 };
+    const a = pt.x;
+    const b = pt.y;
+    return a + b;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Object Struct ===\n{}", zig);
+        // Should generate anonymous struct literal.
+        assert!(zig.contains(".{"));
+        assert!(zig.contains(".x ="));
+        assert!(zig.contains(".y ="));
+        // Should access fields directly.
+        assert!(zig.contains("pt.x"));
+        assert!(zig.contains("pt.y"));
+    }
+
+    #[test]
+    fn test_native_proto_object_map() {
+        // Scheme C: Dynamic access → StringHashMap.
+        // Note: obj[key] is not allowed in strict type system (compile error).
+        let js = r#"
+function main() {
+    const obj = { x: 1, y: 2 };
+    const key = "x";
+    const val = obj[key];
+    return val;
+}
+"#;
+        // This should fail because obj[key] is not allowed.
+        let result = transpile_js(js);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Dynamic property access"), "Expected error about dynamic property access, got: {}", err);
+    }
+
+    #[test]
+    fn test_native_proto_object_struct_mutation() {
+        // Struct object with property assignment.
+        let js = r#"
+function main() {
+    const pt = { x: 10, y: 20 };
+    pt.x = 30;
+    const val = pt.x;
+    return val;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Object Struct Mutation ===\n{}", zig);
+        // Should use 'var' for the object (because it's mutated).
+        assert!(zig.contains("var pt ="));
+        // Should generate anonymous struct literal.
+        assert!(zig.contains(".{"));
+        // Should assign to field directly.
+        assert!(zig.contains("pt.x = 30"));
+        // Should access field directly.
+        assert!(zig.contains("pt.x;"));
+    }
+
+    #[test]
+    fn test_native_proto_object_map_mutation() {
+        // Map object with property assignment.
+        // Note: obj[key] is not allowed in strict type system (compile error).
+        let js = r#"
+function main() {
+    const obj = { x: 1, y: 2 };
+    const key = "x";
+    obj[key] = 10;
+    const val = obj[key];
+    return val;
+}
+"#;
+        // This should fail because obj[key] is not allowed.
+        let result = transpile_js(js);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Dynamic property access") || err.contains("Dynamic property assignment"),
+                "Expected error about dynamic property access/assignment, got: {}", err);
+    }
+
+    #[test]
+    fn test_native_proto_field_type_mismatch() {
+        // Struct object with field type mismatch.
+        let js = r#"
+function main() {
+    const pt = { x: 10, y: 20 };
+    pt.x = 3.14;  // Assign f64 to i64 field.
+    const val = pt.x;
+    return val;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Field Type Mismatch ===\n{}", zig);
+        // Should use 'var' for the object (because it's mutated).
+        assert!(zig.contains("var pt ="));
+        // Should assign f64 to field.
+        assert!(zig.contains("pt.x = 3.14"));
+        // Field type should be upgraded to JsAny (or handle gracefully).
+        // For now, just check that it compiles (no error).
+    }
+
+    #[test]
+    fn test_native_proto_jsdoc_typedef() {
+        // Test @typedef JSDoc support: should generate Zig struct definition.
+        let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {boolean} active
+ */
+
+function formatUser(user) {
+    return user.name;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== JSDoc @typedef ===\n{}", zig);
+        // Should generate struct definition at the top.
+        assert!(zig.contains("const User = struct {"));
+        assert!(zig.contains("name: []const u8,"));
+        assert!(zig.contains("age: i64,"));
+        assert!(zig.contains("active: bool,"));
+        // Should still generate the function.
+        assert!(zig.contains("fn formatUser"));
     }
 }

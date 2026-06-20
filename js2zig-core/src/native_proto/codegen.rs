@@ -3,20 +3,46 @@
 // This avoids Rust visibility issues across multiple impl blocks in different files.
 
 use oxc_ast::ast::*;
-use crate::native_proto::Codegen;
+use crate::native_proto::{Codegen, ZigType};
 
 // ── Constructor ─────────────────────────────────────
 
 impl Codegen {
     pub fn new() -> Self {
-        Self { output: String::new(), indent: 0, used_names: std::collections::HashSet::new() }
+        Self::default()
     }
 }
 
 // ── Entry point ─────────────────────────────────────
 
 impl Codegen {
+    /// Emit all @typedef struct definitions at the top of the generated file.
+    fn emit_typedefs(&mut self) {
+        // Clone typedefs to avoid borrow checker issues
+        let typedefs = match &self.jsdoc_data {
+            Some(data) => data.typedefs.clone(),
+            None => return,
+        };
+        if typedefs.is_empty() {
+            return;
+        }
+        for (name, td) in &typedefs {
+            self.writeln(&format!("const {} = struct {{", name));
+            self.indent += 1;
+            for field in &td.fields {
+                let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty);
+                self.writeln(&format!("{}: {},", field.name, zig_ty));
+            }
+            self.indent -= 1;
+            self.writeln("};");
+            self.writeln("");
+        }
+    }
+
     pub fn generate(&mut self, program: &Program) {
+        // Pass 0: analyze objects (detect maps and mutations).
+        self.analyze_objects(program);
+
         // Pass 1: collect identifiers referenced in function bodies.
         self.used_names.clear();
         for stmt in &program.body {
@@ -25,7 +51,10 @@ impl Codegen {
             }
         }
 
-        // Pass 2: emit code, skipping unused toplevel constants.
+        // Pass 2: emit struct typedefs (from JSDoc @typedef).
+        self.emit_typedefs();
+
+        // Pass 3: emit code, skipping unused toplevel constants.
         self.writeln("const std = @import(\"std\");");
         self.writeln("");
         for stmt in &program.body {
@@ -52,6 +81,9 @@ impl Codegen {
             if let Some(name) = self.binding_name(&decl.id) {
                 let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
 
+                // Override: if the variable is mutated (assigned to a property), use 'var'.
+                let is_const = is_const && !self.mutated_vars.contains(name);
+
                 // Skip unused toplevel constants to avoid Zig unused warnings.
                 if self.indent == 0 && is_const && !self.used_names.contains(name) {
                     continue;
@@ -69,20 +101,44 @@ impl Codegen {
 
                 match &decl.init {
                     Some(init) => {
-                        let ty = self.infer_type(init);
+                        let ty = self.infer_expr_type(init);
+
+                        // Check if type inference failed.
+                        if !self.errors.is_empty() {
+                            // Last error is for this variable.
+                            self.write_indent();
+                            self.write(&format!(
+                                "// error: cannot infer type for variable '{}'",
+                                name
+                            ));
+                            self.writeln("");
+                            continue;
+                        }
+
                         self.write_indent();
                         let kw = if is_const { "const" } else { "var" };
-                        if ty.is_empty() {
-                            // Unknown type: let Zig infer.
+
+                        // Store the inferred type for later use (e.g., member access).
+                        self.var_types.insert(name.to_string(), ty.clone());
+
+                        // Skip type annotation for Struct (Zig can infer it).
+                        let skip_annotation = matches!(ty, ZigType::Struct(_));
+                        if skip_annotation {
+                            // Inferable type: let Zig infer.
                             self.write(&format!("{} {} = ", kw, name));
                         } else {
-                            self.write(&format!("{} {}: {} = ", kw, name, ty));
+                            self.write(&format!("{} {}: {} = ", kw, name, ty.to_zig_type()));
                         }
                         self.emit_expr(init);
                         self.write(";\n");
+
+                        // Track array element type for ArrayList push type checking.
+                        if let ZigType::ArrayList(elem_ty) = &ty {
+                            self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                        }
                     }
                     None => {
-                        // No initializer → undefined (error in new type system).
+                        // No initializer → error in new type system.
                         self.write_indent();
                         self.write(&format!(
                             "// error: variable '{}' must be initialized",
@@ -104,29 +160,70 @@ impl Codegen {
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
 
+        // Pass 1: insert parameter types into var_types.
+        for param in &fd.params.items {
+            if let Some(pname) = self.binding_name(&param.pattern) {
+                // Default parameter type is i64.
+                self.var_types.insert(pname.to_string(), ZigType::I64);
+            }
+        }
+
+        // Pass 2: walk function body to collect ALL local variable types.
+        if let Some(body) = &fd.body {
+            // Create a temporary codegen to collect types without generating code.
+            let mut type_collector = Codegen::new();
+            type_collector.var_types = self.var_types.clone();
+            type_collector.array_element_types = self.array_element_types.clone();
+
+            // Walk the function body to collect variable types.
+            for stmt in &body.statements {
+                type_collector.walk_stmt_for_types(stmt);
+            }
+
+            // Now type_collector.var_types contains all local variable types.
+            // Merge them into self.var_types.
+            for (k, v) in type_collector.var_types {
+                self.var_types.insert(k, v);
+            }
+            for (k, v) in type_collector.array_element_types {
+                self.array_element_types.insert(k, v);
+            }
+        }
+
+        // Pass 3: infer return type from return expressions.
         let return_exprs = Self::collect_return_exprs(fd);
         let ret_ty = if return_exprs.is_empty() {
             "void".to_string()
         } else {
-            // Emit each return expression to get its Zig representation,
-            // then use @TypeOf(expr1, expr2, ...) for the return type.
-            let mut expr_strs = Vec::new();
+            // Use the first return expression to infer type.
+            let mut ty = ZigType::I64; // default
             for expr in &return_exprs {
-                let mut tmp = Codegen::new();
-                tmp.emit_expr(expr);
-                let s = tmp.output.trim().to_string();
-                if !s.is_empty() {
-                    expr_strs.push(s);
+                let expr_ty = self.infer_expr_type(expr);
+                if !self.errors.is_empty() {
+                    // Type inference failed.
+                    break;
+                }
+                if ty == ZigType::I64 {
+                    ty = expr_ty;
+                } else if ty != expr_ty {
+                    self.errors.push(format!(
+                        "Return type mismatch: expected {:?}, found {:?}",
+                        ty, expr_ty
+                    ));
+                    break;
                 }
             }
-            if expr_strs.is_empty() {
-                // Cannot infer return type from expressions; fall back to JsAny.
-                "JsAny".to_string()
+            if !self.errors.is_empty() {
+                // Use default return type.
+                "i64".to_string()
             } else {
-                format!("@TypeOf({})", expr_strs.join(", "))
+                ty.to_zig_type()
             }
         };
 
+        // Pass 4: generate function code.
+        // Use `anytype` for parameters to let Zig infer types at compile time.
+        // For return type, use the inferred type or i64 as default.
         self.write(&format!("fn {}(", name));
         for (i, param) in fd.params.items.iter().enumerate() {
             if i > 0 { self.write(", "); }
@@ -134,7 +231,17 @@ impl Codegen {
                 self.write(&format!("{}: anytype", pname));
             }
         }
-        self.writeln(&format!(") !{} {{", ret_ty));
+
+        // Use the inferred return type from Pass 3.
+        // Note: ret_ty is already computed in Pass 3.
+        // For now, use the computed ret_ty.
+        let ret_ty_str = if ret_ty == "void" {
+            "void".to_string()
+        } else {
+            ret_ty.clone()
+        };
+
+        self.writeln(&format!(") {} {{", ret_ty_str));
 
         self.indent += 1;
         if let Some(body) = &fd.body {
@@ -400,6 +507,21 @@ impl Codegen {
             Expression::ArrayExpression(ae) => {
                 self.emit_array(ae);
             }
+            Expression::ObjectExpression(oe) => {
+                self.emit_object(oe);
+            }
+            Expression::StaticMemberExpression(mem) => {
+                self.emit_expr(&mem.object);
+                self.write(".");
+                self.write(mem.property.name.as_str());
+            }
+            Expression::ComputedMemberExpression(_mem) => {
+                // Dynamic property access is not allowed in strict type system.
+                self.errors.push(
+                    "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
+                );
+                self.write("/* error: dynamic property access */");
+            }
             _ => {
                 self.write("/* TODO expr */");
             }
@@ -466,6 +588,18 @@ impl Codegen {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
                 self.write(id.name.as_str());
             }
+            AssignmentTarget::StaticMemberExpression(mem) => {
+                self.emit_expr(&mem.object);
+                self.write(".");
+                self.write(mem.property.name.as_str());
+            }
+            AssignmentTarget::ComputedMemberExpression(_mem) => {
+                // Dynamic property access is not allowed in strict type system.
+                self.errors.push(
+                    "Dynamic property assignment (obj[key] = value) is not allowed. Use static property assignment (obj.prop = value).".to_string()
+                );
+                self.write("/* error: dynamic property assignment */");
+            }
             _ => self.write("/* TODO assign target */"),
         }
         self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
@@ -523,50 +657,225 @@ impl Codegen {
             self.push('}');
         }
     }
+
+    /// Emit an object literal as a Zig anonymous struct.
+    fn emit_object(&mut self, oe: &ObjectExpression) {
+        if oe.properties.is_empty() {
+            // Empty object → StringHashMap(JsAny).init(allocator)
+            self.write("std.StringHashMap(JsAny).init(allocator)");
+            return;
+        }
+        self.write(".{ ");
+        for (i, prop) in oe.properties.iter().enumerate() {
+            if i > 0 { self.write(", "); }
+            if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                let field_name = match &p.key {
+                    PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                    PropertyKey::StringLiteral(s) => s.value.to_string(),
+                    _ => continue,
+                };
+                self.write(&format!(".{} = ", field_name));
+                self.emit_expr(&p.value);
+            }
+        }
+        self.write(" }");
+    }
 }
 
-// ── Type inference (simplified) ───────────────────────
+// ── Type inference (ZigType) ───────────────────────
 
 impl Codegen {
-    fn infer_type(&self, expr: &Expression) -> String {
+    /// Infer the type of an expression. Returns ZigType.
+    /// If the type cannot be inferred, reports an error to self.errors
+    /// and returns I64 as a fallback (the generated code will be invalid).
+    fn infer_expr_type(&mut self, expr: &Expression) -> ZigType {
         match expr {
             Expression::NumericLiteral(n) => {
                 let s = n.value.to_string();
                 if s.contains('.') || s.contains('e') || s.contains('E') {
-                    "f64".to_string()
+                    ZigType::F64
                 } else {
-                    "i64".to_string()
+                    ZigType::I64
                 }
             }
-            Expression::StringLiteral(_) => "[]const u8".to_string(),
-            Expression::BooleanLiteral(_) => "bool".to_string(),
-            Expression::Identifier(_) => "i64".to_string(), // placeholder
+            Expression::StringLiteral(_) => ZigType::Str,
+            Expression::BooleanLiteral(_) => ZigType::Bool,
+            Expression::Identifier(id) => {
+                // Look up the variable's type from var_types.
+                if let Some(ty) = self.var_types.get(id.name.as_str()) {
+                    ty.clone()
+                } else {
+                    // Cannot infer type: this is ok in permissive mode,
+                    // but should be an error in strict mode.
+                    // For now, default to I64 to allow code generation.
+                    ZigType::I64 // default fallback
+                }
+            }
             Expression::BinaryExpression(be) => {
-                // For string concat (+), result is []const u8.
-                if be.operator == BinaryOperator::Addition {
-                    let left_str = matches!(be.left, Expression::StringLiteral(_));
-                    let right_str = matches!(be.right, Expression::StringLiteral(_));
-                    if left_str || right_str {
-                        return "[]const u8".to_string();
-                    }
-                }
-                self.infer_type(&be.left)
+                let left_ty = self.infer_expr_type(&be.left);
+                let right_ty = self.infer_expr_type(&be.right);
+                self.infer_binary_type(be.operator, left_ty, right_ty)
             }
-            Expression::CallExpression(_) => "".to_string(), // let Zig infer from context
+            Expression::LogicalExpression(_) => ZigType::Bool,
             Expression::ArrayExpression(ae) => {
                 if ae.elements.is_empty() {
-                    "std.ArrayList(u8)".to_string() // default element type
+                    // Error: cannot infer element type for empty array.
+                    self.errors.push(
+                        "Cannot infer element type for empty array. Use ArrayList with explicit type.".to_string()
+                    );
+                    // Return ArrayList(I64) as fallback.
+                    ZigType::ArrayList(Box::new(ZigType::I64))
                 } else {
-                    // Infer from first element.
-                    if let Some(first_elem) = ae.elements.first()
-                        && let Some(first) = first_elem.as_expression() {
-                        format!("[{}]const {}", ae.elements.len(), self.infer_type(first))
+                    // Infer from first element, then check all elements have the same type.
+                    if let Some(first_elem) = ae.elements.first() {
+                        if let Some(first) = first_elem.as_expression() {
+                            let elem_ty = self.infer_expr_type(first);
+                            // Check all elements have the same type.
+                            for elem in ae.elements.iter().skip(1) {
+                                if let Some(e) = elem.as_expression() {
+                                    let ty = self.infer_expr_type(e);
+                                    if ty != elem_ty {
+                                        self.errors.push(format!(
+                                            "Array elements must have the same type. Expected {:?}, found {:?}",
+                                            elem_ty, ty
+                                        ));
+                                    }
+                                }
+                            }
+                            ZigType::ArrayList(Box::new(elem_ty))
+                        } else {
+                            self.errors.push("Cannot infer array element type (spread/not supported)".to_string());
+                            ZigType::ArrayList(Box::new(ZigType::I64))
+                        }
                     } else {
-                        "[0]u8".to_string()
+                        ZigType::ArrayList(Box::new(ZigType::I64))
                     }
                 }
             }
-            _ => "".to_string(), // unknown: let Zig infer
+            Expression::ObjectExpression(obj) => {
+                if obj.properties.is_empty() {
+                    // Error: empty object literal is not allowed in strict type system.
+                    self.errors.push(
+                        "Empty object literal is not allowed. Use a typed struct.".to_string()
+                    );
+                    // Return a dummy struct as fallback.
+                    ZigType::Struct(Vec::new())
+                } else {
+                    // Generate struct type from properties.
+                    let mut fields = Vec::new();
+                    for prop in &obj.properties {
+                        if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                            let field_name = match &p.key {
+                                PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                                PropertyKey::StringLiteral(s) => s.value.to_string(),
+                                _ => {
+                                    self.errors.push("Unsupported property key type".to_string());
+                                    continue;
+                                }
+                            };
+                            let field_ty = self.infer_expr_type(&p.value);
+                            fields.push((field_name, field_ty));
+                        }
+                    }
+                    ZigType::Struct(fields)
+                }
+            }
+            Expression::CallExpression(_ce) => {
+                // For function calls, return i64 as default (simplified).
+                // In a real implementation, we would look up the function's return type.
+                ZigType::I64 // default fallback
+            }
+            Expression::StaticMemberExpression(mem) => {
+                // For obj.prop, infer the type of prop based on the object's type.
+                let obj_ty = self.infer_expr_type(&mem.object);
+                match obj_ty {
+                    ZigType::Struct(fields) => {
+                        // Look up the field type.
+                        let field_name = mem.property.name.as_str();
+                        for (name, ty) in fields {
+                            if name == field_name {
+                                return ty.clone();
+                            }
+                        }
+                        // Field not found: report error.
+                        self.errors.push(format!(
+                            "Field '{}' not found in struct",
+                            field_name
+                        ));
+                        ZigType::I64 // fallback
+                    }
+                    _ => {
+                        // Not a struct: cannot infer field type.
+                        // For anytype parameters, just return a placeholder type.
+                        // Don't report an error - let Zig handle type checking at compile time.
+                        ZigType::I64 // placeholder, actual type checked by Zig
+                    }
+                }
+            }
+            Expression::UnaryExpression(ue) => {
+                // For unary expressions (-x, !x, etc.), the type is the same as the operand's type.
+                let operand_ty = self.infer_expr_type(&ue.argument);
+                match ue.operator {
+                    UnaryOperator::UnaryNegation => {
+                        // -x: type is same as x
+                        operand_ty
+                    }
+                    UnaryOperator::UnaryPlus => {
+                        // +x: type is same as x
+                        operand_ty
+                    }
+                    UnaryOperator::LogicalNot => {
+                        // !x: type is bool
+                        ZigType::Bool
+                    }
+                    _ => {
+                        // Other unary operators: return operand type
+                        operand_ty
+                    }
+                }
+            }
+            _ => {
+                // Unsupported expression: report error.
+                self.errors.push(format!(
+                    "Unsupported expression for type inference: {:?}",
+                    std::any::type_name::<Expression>()
+                ));
+                ZigType::I64 // fallback
+            }
+        }
+    }
+
+    /// Infer the result type of a binary expression.
+    fn infer_binary_type(&mut self, op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
+        match op {
+            // Arithmetic operators.
+            BinaryOperator::Addition | BinaryOperator::Subtraction |
+            BinaryOperator::Multiplication | BinaryOperator::Division => {
+                // String concatenation.
+                if left == ZigType::Str || right == ZigType::Str {
+                    return ZigType::Str;
+                }
+                // If either operand is f64, result is f64.
+                if left == ZigType::F64 || right == ZigType::F64 {
+                    ZigType::F64
+                } else {
+                    ZigType::I64
+                }
+            }
+            // Comparison operators → bool.
+            BinaryOperator::Equality | BinaryOperator::Inequality |
+            BinaryOperator::LessThan | BinaryOperator::LessEqualThan |
+            BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => {
+                ZigType::Bool
+            }
+            // Default: error.
+            _ => {
+                self.errors.push(format!(
+                    "Unsupported binary operator: {:?}",
+                    op
+                ));
+                ZigType::I64 // fallback
+            }
         }
     }
 }
@@ -680,11 +989,8 @@ impl Codegen {
             Expression::AssignmentExpression(ae) => {
                 // For `x = expr`, collect idents from both sides.
                 // The left side (target) may be an identifier.
-                match &ae.left {
-                    AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                        names.insert(id.name.to_string());
-                    }
-                    _ => {}
+                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
+                    names.insert(id.name.to_string());
                 }
                 Self::collect_idents_from_expr(&ae.right, names);
             }
@@ -804,6 +1110,203 @@ impl Codegen {
     pub fn write_indent(&mut self) {
         for _ in 0..self.indent {
             self.output.push_str("    ");
+        }
+    }
+}
+
+// ── Object analysis (Pass 0) ─────────────────────
+
+impl Codegen {
+    /// Analyze the program to detect object kinds (struct vs map) and mutations.
+    pub fn analyze_objects(&mut self, program: &Program) {
+        for stmt in &program.body {
+            self.walk_stmt_for_analysis(stmt);
+        }
+    }
+
+    /// Walk a statement for analysis.
+    fn walk_stmt_for_analysis(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(init) = &decl.init {
+                        self.walk_expr_for_analysis(init);
+                    }
+                }
+            }
+            Statement::FunctionDeclaration(fd) => {
+                if let Some(body) = &fd.body {
+                    for stmt in &body.statements {
+                        self.walk_stmt_for_analysis(stmt);
+                    }
+                }
+            }
+            Statement::ExpressionStatement(es) => {
+                self.walk_expr_for_analysis(&es.expression);
+            }
+            Statement::IfStatement(is) => {
+                self.walk_expr_for_analysis(&is.test);
+                self.walk_stmt_for_analysis(&is.consequent);
+                if let Some(alt) = &is.alternate {
+                    self.walk_stmt_for_analysis(alt);
+                }
+            }
+            Statement::WhileStatement(ws) => {
+                self.walk_expr_for_analysis(&ws.test);
+                self.walk_stmt_for_analysis(&ws.body);
+            }
+            Statement::BlockStatement(bs) => {
+                for stmt in &bs.body {
+                    self.walk_stmt_for_analysis(stmt);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Walk an expression for analysis (detect ComputedMemberExpression and assignments).
+    fn walk_expr_for_analysis(&mut self, expr: &Expression) {
+        match expr {
+            Expression::ComputedMemberExpression(mem) => {
+                // Dynamic property access is not allowed in strict type system.
+                self.errors.push(
+                    "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
+                );
+                // Still walk into sub-expressions to find more errors.
+                self.walk_expr_for_analysis(&mem.object);
+                self.walk_expr_for_analysis(&mem.expression);
+            }
+            Expression::StaticMemberExpression(mem) => {
+                self.walk_expr_for_analysis(&mem.object);
+            }
+            Expression::AssignmentExpression(ae) => {
+                // Check assignment target for mutation.
+                self.check_assignment_target(&ae.left);
+                self.walk_expr_for_analysis(&ae.right);
+            }
+            Expression::BinaryExpression(be) => {
+                self.walk_expr_for_analysis(&be.left);
+                self.walk_expr_for_analysis(&be.right);
+            }
+            Expression::CallExpression(ce) => {
+                self.walk_expr_for_analysis(&ce.callee);
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        self.walk_expr_for_analysis(e);
+                    }
+                }
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                self.walk_expr_for_analysis(&pe.expression);
+            }
+            Expression::ConditionalExpression(ce) => {
+                self.walk_expr_for_analysis(&ce.test);
+                self.walk_expr_for_analysis(&ce.consequent);
+                self.walk_expr_for_analysis(&ce.alternate);
+            }
+            Expression::UnaryExpression(ue) => {
+                self.walk_expr_for_analysis(&ue.argument);
+            }
+            Expression::LogicalExpression(le) => {
+                self.walk_expr_for_analysis(&le.left);
+                self.walk_expr_for_analysis(&le.right);
+            }
+            Expression::ArrayExpression(ae) => {
+                for elem in &ae.elements {
+                    if let Some(e) = elem.as_expression() {
+                        self.walk_expr_for_analysis(e);
+                    }
+                }
+            }
+            Expression::ObjectExpression(oe) => {
+                for prop in &oe.properties {
+                    if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                        self.walk_expr_for_analysis(&p.value);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Check if an assignment target is a member expression, mark as mutated.
+    fn check_assignment_target(&mut self, target: &AssignmentTarget) {
+        match target {
+            AssignmentTarget::StaticMemberExpression(mem) => {
+                if let Expression::Identifier(id) = &mem.object {
+                    self.mutated_vars.insert(id.name.to_string());
+                }
+            }
+            AssignmentTarget::ComputedMemberExpression(mem) => {
+                // Dynamic property assignment is not allowed, but we still mark as mutated for error reporting.
+                if let Expression::Identifier(id) = &mem.object {
+                    self.mutated_vars.insert(id.name.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ── Type collection (Pass 2) ─────────────────────
+
+impl Codegen {
+    /// Walk a statement to collect variable types (without generating code).
+    /// This is used to populate `var_types` before code generation.
+    fn walk_stmt_for_types(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(name) = self.binding_name(&decl.id) {
+                        if let Some(init) = &decl.init {
+                            let ty = self.infer_expr_type(init);
+                            self.var_types.insert(name.to_string(), ty.clone());
+
+                            // Track array element type for ArrayList push type checking.
+                            if let ZigType::ArrayList(elem_ty) = &ty {
+                                self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                            }
+                        } else {
+                            // No initializer → error in strict type system.
+                            self.errors.push(format!(
+                                "Variable '{}' must be initialized (strict type system)",
+                                name
+                            ));
+                        }
+                    }
+                }
+            }
+            Statement::IfStatement(is) => {
+                self.walk_expr_for_analysis(&is.test); // Check for errors
+                self.walk_stmt_for_types(&is.consequent);
+                if let Some(alt) = &is.alternate {
+                    self.walk_stmt_for_types(alt);
+                }
+            }
+            Statement::WhileStatement(ws) => {
+                self.walk_expr_for_analysis(&ws.test); // Check for errors
+                self.walk_stmt_for_types(&ws.body);
+            }
+            Statement::BlockStatement(bs) => {
+                for stmt in &bs.body {
+                    self.walk_stmt_for_types(stmt);
+                }
+            }
+            Statement::FunctionDeclaration(fd) => {
+                // Nested function: collect its parameter types.
+                for param in &fd.params.items {
+                    if let Some(pname) = self.binding_name(&param.pattern) {
+                        self.var_types.insert(pname.to_string(), ZigType::I64);
+                    }
+                }
+                // Walk the function body.
+                if let Some(body) = &fd.body {
+                    for stmt in &body.statements {
+                        self.walk_stmt_for_types(stmt);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
