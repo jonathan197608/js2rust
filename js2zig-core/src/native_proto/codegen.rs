@@ -65,7 +65,36 @@ impl Codegen {
     fn emit_toplevel(&mut self, stmt: &Statement) {
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
-            Statement::FunctionDeclaration(fd) => self.emit_fn(fd),
+            Statement::FunctionDeclaration(fd) => {
+                // Check if this is an export function (not wrapped in ExportNamedDeclaration)
+                // For now, assume non-export (anytype params)
+                let old_export = self.current_fn_is_export;
+                self.current_fn_is_export = false;
+                self.emit_fn(fd);
+                self.current_fn_is_export = old_export;
+            }
+            Statement::ExportNamedDeclaration(export_decl) => {
+                // Handle export function/var declarations
+                match &export_decl.declaration {
+                    Some(decl) => {
+                        match decl {
+                            oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
+                                // This is an export function
+                                let old_export = self.current_fn_is_export;
+                                self.current_fn_is_export = true;
+                                self.emit_fn(fd);
+                                self.current_fn_is_export = old_export;
+                            }
+                            oxc_ast::ast::Declaration::VariableDeclaration(vd) => {
+                                // This is an export variable
+                                self.emit_var_decl(vd);
+                            }
+                            _ => { /* skip unsupported */ }
+                        }
+                    }
+                    None => { /* skip (e.g., export {{ ... }} */ }
+                }
+            }
             _ => { /* skip */ }
         }
     }
@@ -208,8 +237,32 @@ impl Codegen {
         }
 
         // Pass 3: infer return type from return expressions.
+        // For export functions: require @returns annotation.
         let return_exprs = Self::collect_return_exprs(fd);
-        let ret_ty = if return_exprs.is_empty() {
+        let ret_ty = if self.current_fn_is_export {
+            // Export function: check for @returns annotation.
+            if let Some(ref jsdoc_data) = self.jsdoc_data {
+                if let Some(ret_type_name) = jsdoc_data.return_types.get(name) {
+                    // Use the annotated type.
+                    let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(ret_type_name);
+                    zig_ty
+                } else {
+                    // No @returns annotation: report error.
+                    self.errors.push(format!(
+                        "Export function '{}' must have @returns annotation",
+                        name
+                    ));
+                    "[]const u8".to_string() // default for export functions
+                }
+            } else {
+                // No JSDoc data: report error.
+                self.errors.push(format!(
+                    "Export function '{}' must have @returns annotation (no JSDoc data)",
+                    name
+                ));
+                "[]const u8".to_string() // default for export functions
+            }
+        } else if return_exprs.is_empty() {
             "void".to_string()
         } else {
             // Use the first return expression to infer type.
@@ -239,26 +292,40 @@ impl Codegen {
         };
 
         // Pass 4: generate function code.
-        // Use `anytype` for parameters to let Zig infer types at compile time.
-        // For return type, use the inferred type or i64 as default.
+        // For export functions: parameters are []const u8, return is []const u8 or void.
+        // For non-export functions: use anytype for parameters, inferred return type.
         self.write(&format!("fn {}(", name));
-        for (i, param) in fd.params.items.iter().enumerate() {
-            if i > 0 { self.write(", "); }
-            if let Some(pname) = self.binding_name(&param.pattern) {
-                self.write(&format!("{}: anytype", pname));
+        if self.current_fn_is_export {
+            // Export function: all parameters are []const u8.
+            for (i, param) in fd.params.items.iter().enumerate() {
+                if i > 0 { self.write(", "); }
+                if let Some(pname) = self.binding_name(&param.pattern) {
+                    self.write(&format!("{}: []const u8", pname));
+                }
             }
-        }
-
-        // Use the inferred return type from Pass 3.
-        // Note: ret_ty is already computed in Pass 3.
-        // For now, use the computed ret_ty.
-        let ret_ty_str = if ret_ty == "void" {
-            "void".to_string()
+            // Export function return type: []const u8 or void.
+            let ret_ty_str = if ret_ty == "void" {
+                "void".to_string()
+            } else {
+                "[]const u8".to_string()
+            };
+            self.writeln(&format!(") {} {{", ret_ty_str));
         } else {
-            ret_ty.clone()
-        };
-
-        self.writeln(&format!(") {} {{", ret_ty_str));
+            // Non-export function: use anytype for parameters.
+            for (i, param) in fd.params.items.iter().enumerate() {
+                if i > 0 { self.write(", "); }
+                if let Some(pname) = self.binding_name(&param.pattern) {
+                    self.write(&format!("{}: anytype", pname));
+                }
+            }
+            // Use the inferred return type from Pass 3.
+            let ret_ty_str = if ret_ty == "void" {
+                "void".to_string()
+            } else {
+                ret_ty.clone()
+            };
+            self.writeln(&format!(") {} {{", ret_ty_str));
+        }
 
         self.indent += 1;
         if let Some(body) = &fd.body {

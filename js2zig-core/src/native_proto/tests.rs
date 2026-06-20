@@ -597,4 +597,48 @@ function main() {
         // Should have catch unreachable.
         assert!(zig.contains("catch unreachable"));
     }
+
+    #[test]
+    fn test_native_proto_export_fn_signature() {
+        // Test export function signature: should generate []const u8 params and return.
+        // Export functions require @returns annotation.
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function add(a, b) {
+    return a + b;
+}
+
+/**
+ * @returns {void}
+ */
+export function log(msg) {
+    // no return
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== Export Function Signature ===\n{}", zig);
+        // Export function: parameters should be []const u8.
+        assert!(zig.contains("fn add(a: []const u8, b: []const u8)"));
+        // Export function: return type should be []const u8 (not i64).
+        assert!(zig.contains(") []const u8 {"));
+        // Export function with @returns {void}: should be void.
+        assert!(zig.contains("fn log(msg: []const u8) void {"));
+    }
+
+    #[test]
+    fn test_native_proto_export_requires_returns() {
+        // Test that export functions require @returns annotation.
+        let js = r#"
+export function getName(user) {
+    return user.name;
+}
+"#;
+        let result = transpile_js(js);
+        // Should fail because export function has no @returns annotation.
+        assert!(result.is_err(), "Expected error for missing @returns, got: {:?}", result);
+        let err = result.unwrap_err();
+        assert!(err.contains("@returns"), "Expected error about @returns, got: {}", err);
+    }
 }

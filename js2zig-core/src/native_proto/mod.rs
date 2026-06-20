@@ -125,4 +125,6 @@ pub struct Codegen {
     pub array_element_types: std::collections::HashMap<String, ZigType>,
     /// JSDoc 解析结果（由 transpile_js 填充）
     pub jsdoc_data: Option<JSDocData>,
+    /// Whether the current function being emitted is an export function.
+    pub current_fn_is_export: bool,
 }
