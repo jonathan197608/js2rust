@@ -101,40 +101,57 @@ impl Codegen {
 
                 match &decl.init {
                     Some(init) => {
-                        let ty = self.infer_expr_type(init);
-
-                        // Check if type inference failed.
-                        if !self.errors.is_empty() {
-                            // Last error is for this variable.
-                            self.write_indent();
-                            self.write(&format!(
-                                "// error: cannot infer type for variable '{}'",
-                                name
-                            ));
-                            self.writeln("");
-                            continue;
-                        }
+                        // Check if this is a JSON.parse() call with @type annotation.
+                        let json_parse_type = self.get_json_parse_type(name, init);
 
                         self.write_indent();
                         let kw = if is_const { "const" } else { "var" };
 
-                        // Store the inferred type for later use (e.g., member access).
-                        self.var_types.insert(name.to_string(), ty.clone());
+                        if let Some(type_name) = json_parse_type {
+                            // JSON.parse() with @type annotation: generate std.json.parse(Type, ...)
+                            self.write(&format!("{} {}: {} = std.json.parse({}, ", kw, name, type_name, type_name));
+                            // Emit the argument to JSON.parse()
+                            if let Expression::CallExpression(ce) = init
+                                && let Some(first_arg) = ce.arguments.first() {
+                                self.emit_expr_arg(first_arg);
+                            }
+                            self.write(") catch unreachable;\n");
 
-                        // Skip type annotation for Struct (Zig can infer it).
-                        let skip_annotation = matches!(ty, ZigType::Struct(_));
-                        if skip_annotation {
-                            // Inferable type: let Zig infer.
-                            self.write(&format!("{} {} = ", kw, name));
+                            // Store the type for later use.
+                            self.var_types.insert(name.to_string(), ZigType::Struct(Vec::new()));
                         } else {
-                            self.write(&format!("{} {}: {} = ", kw, name, ty.to_zig_type()));
-                        }
-                        self.emit_expr(init);
-                        self.write(";\n");
+                            // Normal variable declaration with type inference.
+                            let ty = self.infer_expr_type(init);
 
-                        // Track array element type for ArrayList push type checking.
-                        if let ZigType::ArrayList(elem_ty) = &ty {
-                            self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                            // Check if type inference failed.
+                            if !self.errors.is_empty() {
+                                // Last error is for this variable.
+                                self.write(&format!(
+                                    "// error: cannot infer type for variable '{}'",
+                                    name
+                                ));
+                                self.writeln("");
+                                continue;
+                            }
+
+                            // Store the inferred type for later use (e.g., member access).
+                            self.var_types.insert(name.to_string(), ty.clone());
+
+                            // Skip type annotation for Struct (Zig can infer it).
+                            let skip_annotation = matches!(ty, ZigType::Struct(_));
+                            if skip_annotation {
+                                // Inferable type: let Zig infer.
+                                self.write(&format!("{} {} = ", kw, name));
+                            } else {
+                                self.write(&format!("{} {}: {} = ", kw, name, ty.to_zig_type()));
+                            }
+                            self.emit_expr(init);
+                            self.write(";\n");
+
+                            // Track array element type for ArrayList push type checking.
+                            if let ZigType::ArrayList(elem_ty) = &ty {
+                                self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                            }
                         }
                     }
                     None => {
@@ -1029,6 +1046,41 @@ impl Codegen {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
             _ => None,
         }
+    }
+
+    /// Check if an initializer is a JSON.parse() call and return the @type annotation if present.
+    /// Returns Some(type_name) if this is JSON.parse() with @type annotation, None otherwise.
+    fn get_json_parse_type(&self, var_name: &str, init: &Expression) -> Option<String> {
+        // Check if init is a CallExpression
+        let ce = if let Expression::CallExpression(ce) = init {
+            ce
+        } else {
+            return None;
+        };
+
+        // Check if callee is JSON.parse
+        let is_json_parse = if let Expression::StaticMemberExpression(mem) = &ce.callee {
+            // Check if object is Identifier "JSON" and property is "parse"
+            if let Expression::Identifier(obj_id) = &mem.object {
+                obj_id.name.as_str() == "JSON" && mem.property.name.as_str() == "parse"
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !is_json_parse {
+            return None;
+        }
+
+        // Look up @type annotation for this variable
+        if let Some(ref jsdoc_data) = self.jsdoc_data
+            && let Some(type_name) = jsdoc_data.type_annotations.get(var_name) {
+            return Some(type_name.clone());
+        }
+
+        None
     }
 
     fn binary_op(op: BinaryOperator) -> &'static str {

@@ -563,4 +563,38 @@ function formatUser(user) {
         // Should still generate the function.
         assert!(zig.contains("fn formatUser"));
     }
+
+    #[test]
+    fn test_native_proto_jsdoc_json_parse() {
+        // Test @type + JSON.parse() support: should generate std.json.parse(Type, ...)
+        let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ */
+
+/**
+ * @type {User}
+ */
+const user = JSON.parse('{"name":"test","age":10}');
+
+function getName(u) {
+    return u.name;
+}
+
+function main() {
+    const name = getName(user);
+    return name;
+}
+"#;
+        let zig = transpile_js(js).unwrap();
+        println!("=== JSDoc @type + JSON.parse() ===\n{}", zig);
+        // Should generate struct definition.
+        assert!(zig.contains("const User = struct {"));
+        // Should generate std.json.parse(User, ...) for JSON.parse() with @type.
+        assert!(zig.contains("std.json.parse(User,"), "Expected std.json.parse(User, ...), got: {}", zig);
+        // Should have catch unreachable.
+        assert!(zig.contains("catch unreachable"));
+    }
 }

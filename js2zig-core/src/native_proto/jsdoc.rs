@@ -219,8 +219,7 @@ fn extract_typedef_name(s: &str) -> String {
     // 取第一个非空 token 作为类型名
     without_brace
         .split(|c: char| c.is_whitespace() || c == '-')
-        .filter(|s| !s.is_empty())
-        .next()
+        .find(|s| !s.is_empty())
         .unwrap_or("")
         .to_string()
 }
