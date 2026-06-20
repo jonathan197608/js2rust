@@ -813,7 +813,10 @@ export function getUserJson(user) {
 
         // Verify toJson() method is generated
         assert!(zig.contains("pub fn toJson"), "Expected toJson() method, got:\n{}", zig);
-        // Note: toJson() may use allocPrint or return a simple value
+        
+        // Verify toJson() uses std.json.fmt() for serialization
+        assert!(zig.contains("std.json.fmt"), "Expected std.json.fmt() in toJson(), got:\n{}", zig);
+        assert!(zig.contains("Writer.Allocating"), "Expected Writer.Allocating in toJson(), got:\n{}", zig);
 
         // Verify JSON.stringify() is converted to user.toJson(allocator)
         assert!(zig.contains("try user.toJson(allocator)"), "Expected try user.toJson(allocator), got:\n{}", zig);

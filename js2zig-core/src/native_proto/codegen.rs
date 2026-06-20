@@ -33,16 +33,17 @@ impl Codegen {
                 let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty);
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
-            // Generate toJson() method for serialization
+            // Generate toJson() method for serialization using std.json.fmt()
             self.writeln("");
-            self.writeln("    pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
+            self.writeln("pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
             self.indent += 1;
-            // Simple implementation: return empty JSON object
-            // TODO: implement proper JSON serialization
-            self.writeln("        _ = self;");
-            self.writeln("        return allocator.dupe(u8, \"{}\") catch unreachable;");
+            // Use std.io.Writer.Allocating + std.json.fmt() for serialization
+            self.writeln("var string = std.io.Writer.Allocating.init(allocator);");
+            self.writeln("errdefer string.deinit();");
+            self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
+            self.writeln("return string.toOwnedSlice();");
             self.indent -= 1;
-            self.writeln("    }");
+            self.writeln("}");
             self.indent -= 1;
             self.writeln("};");
             self.writeln("");
