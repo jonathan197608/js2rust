@@ -600,7 +600,7 @@ function main() {
 
     #[test]
     fn test_native_proto_export_fn_signature() {
-        // Test export function signature: should generate []const u8 params and return.
+        // Test export function signature: should generate allocator param and []const u8 params.
         // Export functions require @returns annotation.
         let js = r#"
 /**
@@ -619,12 +619,16 @@ export function log(msg) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Export Function Signature ===\n{}", zig);
-        // Export function: parameters should be []const u8.
-        assert!(zig.contains("fn add(a: []const u8, b: []const u8)"));
-        // Export function: return type should be []const u8 (not i64).
-        assert!(zig.contains(") []const u8 {"));
+        // Export function: first parameter is allocator, then []const u8 params.
+        assert!(zig.contains("fn add(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]u8 {"));
+        // Export function: return type should be ![]u8 (for allocPrint).
+        assert!(zig.contains("![]u8 {"));
         // Export function with @returns {void}: should be void.
-        assert!(zig.contains("fn log(msg: []const u8) void {"));
+        assert!(zig.contains("fn log(allocator: std.mem.Allocator, msg: []const u8) void {"));
+        // Export function: should generate return value conversion (allocPrint).
+        assert!(zig.contains("return std.fmt.allocPrint(allocator"));
+        // Export function: should generate parameter parsing code.
+        assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
     }
 
     #[test]

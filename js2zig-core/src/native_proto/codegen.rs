@@ -245,6 +245,14 @@ impl Codegen {
                 if let Some(ret_type_name) = jsdoc_data.return_types.get(name) {
                     // Use the annotated type.
                     let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(ret_type_name);
+                    // Set current_fn_return_type from the annotated type.
+                    self.current_fn_return_type = Some(match zig_ty.as_str() {
+                        "i64" => ZigType::I64,
+                        "f64" => ZigType::F64,
+                        "bool" => ZigType::Bool,
+                        "[]const u8" => ZigType::Str,
+                        _ => ZigType::I64, // default
+                    });
                     zig_ty
                 } else {
                     // No @returns annotation: report error.
@@ -285,31 +293,54 @@ impl Codegen {
             }
             if !self.errors.is_empty() {
                 // Use default return type.
+                self.current_fn_return_type = Some(ZigType::I64);
                 "i64".to_string()
             } else {
+                let rt = ty.clone();
+                self.current_fn_return_type = Some(rt);
                 ty.to_zig_type()
             }
         };
+
+        // Clear return type for void functions.
+        if ret_ty == "void" {
+            self.current_fn_return_type = None;
+        }
 
         // Pass 4: generate function code.
         // For export functions: parameters are []const u8, return is []const u8 or void.
         // For non-export functions: use anytype for parameters, inferred return type.
         self.write(&format!("fn {}(", name));
         if self.current_fn_is_export {
-            // Export function: all parameters are []const u8.
+            // Export function: first parameter is allocator, then []const u8 params.
+            self.write("allocator: std.mem.Allocator");
+            if !fd.params.items.is_empty() {
+                self.write(", ");
+            }
+            // Also generate parameter parsing code.
+            self.param_name_map.clear();
+            let mut param_parsing_code = String::new();
             for (i, param) in fd.params.items.iter().enumerate() {
                 if i > 0 { self.write(", "); }
                 if let Some(pname) = self.binding_name(&param.pattern) {
                     self.write(&format!("{}: []const u8", pname));
+                    // Generate parsing code: for now, assume i64.
+                    let parsed_name = format!("{}_int", pname);
+                    self.param_name_map.insert(pname.to_string(), parsed_name.clone());
+                    param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
                 }
             }
-            // Export function return type: []const u8 or void.
+            // Export function return type: ![]u8 (for allocPrint) or void.
             let ret_ty_str = if ret_ty == "void" {
                 "void".to_string()
             } else {
-                "[]const u8".to_string()
+                "![]u8".to_string()
             };
             self.writeln(&format!(") {} {{", ret_ty_str));
+            // Generate parameter parsing code.
+            if !param_parsing_code.is_empty() {
+                self.write(&param_parsing_code);
+            }
         } else {
             // Non-export function: use anytype for parameters.
             for (i, param) in fd.params.items.iter().enumerate() {
@@ -348,11 +379,51 @@ impl Codegen {
             }
             Statement::ReturnStatement(rs) => {
                 self.write_indent();
-                self.write("return ");
-                if let Some(arg) = &rs.argument {
-                    self.emit_expr(arg);
+                if self.current_fn_is_export {
+                    // Export function: convert return value to []u8 (allocPrint returns []u8)
+                    if let Some(arg) = &rs.argument {
+                        match &self.current_fn_return_type {
+                            Some(ZigType::I64) => {
+                                // i64 → []u8: use std.fmt.allocPrint
+                                self.write("return std.fmt.allocPrint(allocator, \"{}\", .{");
+                                self.emit_expr(arg);
+                                self.write("}) catch unreachable;\n");
+                            }
+                            Some(ZigType::Bool) => {
+                                // bool → []const u8: return "true" or "false"
+                                self.write("return if (");
+                                self.emit_expr(arg);
+                                self.write(") \"true\" else \"false\";\n");
+                            }
+                            Some(ZigType::Str) => {
+                                // []const u8 → []u8: just return (need to dup)
+                                self.write("return ");
+                                self.emit_expr(arg);
+                                self.write(";\n");
+                            }
+                            Some(ZigType::F64) => {
+                                // f64 → []u8: use std.fmt.allocPrint
+                                self.write("return std.fmt.allocPrint(allocator, \"{}\", .{");
+                                self.emit_expr(arg);
+                                self.write("}) catch unreachable;\n");
+                            }
+                            _ => {
+                                // Unknown type: just return as-is
+                                self.write("return ");
+                                self.emit_expr(arg);
+                                self.write(";\n");
+                            }
+                        }
+                    } else {
+                        self.write("return;\n");
+                    }
+                } else {
+                    self.write("return ");
+                    if let Some(arg) = &rs.argument {
+                        self.emit_expr(arg);
+                    }
+                    self.write(";\n");
                 }
-                self.write(";\n");
             }
             Statement::ExpressionStatement(es) => {
                 self.write_indent();
@@ -559,7 +630,13 @@ impl Codegen {
                 self.write(if b.value { "true" } else { "false" });
             }
             Expression::Identifier(id) => {
-                self.write(id.name.as_str());
+                // Check if this is a parameter that was parsed (export function).
+                let var_name = id.name.as_str();
+                if let Some(parsed_name) = self.param_name_map.get(var_name).cloned() {
+                    self.write(&parsed_name);
+                } else {
+                    self.write(var_name);
+                }
             }
             Expression::BinaryExpression(be) => {
                 self.emit_binary(be);

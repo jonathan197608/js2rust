@@ -127,4 +127,8 @@ pub struct Codegen {
     pub jsdoc_data: Option<JSDocData>,
     /// Whether the current function being emitted is an export function.
     pub current_fn_is_export: bool,
+    /// For export functions: maps parameter name → parsed variable name.
+    pub param_name_map: std::collections::HashMap<String, String>,
+    /// The return type of the current function being emitted.
+    pub current_fn_return_type: Option<ZigType>,
 }
