@@ -57,10 +57,25 @@ impl Codegen {
         // Pass 1: collect identifiers referenced in function bodies.
         self.used_names.clear();
         for stmt in &program.body {
-            if let Statement::FunctionDeclaration(fd) = stmt {
-                Self::collect_idents_from_function(fd, &mut self.used_names);
+            match stmt {
+                Statement::FunctionDeclaration(fd) => {
+                    Self::collect_idents_from_function(fd, &mut self.used_names);
+                }
+                Statement::ExportNamedDeclaration(export_decl) => {
+                    // Also collect identifiers from export functions.
+                    if let Some(decl) = &export_decl.declaration {
+                        if let oxc_ast::ast::Declaration::FunctionDeclaration(fd) = decl {
+                            Self::collect_idents_from_function(fd, &mut self.used_names);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
+        
+        // Debug: print used_names
+        println!("=== used_names: {:?}", self.used_names);
+        println!("=== jsdoc_data.type_annotations: {:?}", self.jsdoc_data.as_ref().map(|d| &d.type_annotations));
 
         // Pass 2: emit struct typedefs (from JSDoc @typedef).
         self.emit_typedefs();
@@ -125,7 +140,10 @@ impl Codegen {
                 let is_const = is_const && !self.mutated_vars.contains(name);
 
                 // Skip unused toplevel constants to avoid Zig unused warnings.
-                if self.indent == 0 && is_const && !self.used_names.contains(name) {
+                // But don't skip variables with @type annotation (JSON.parse()).
+                let has_type_annotation = self.jsdoc_data.as_ref()
+                    .map_or(false, |d| d.type_annotations.contains_key(name));
+                if self.indent == 0 && is_const && !self.used_names.contains(name) && !has_type_annotation {
                     continue;
                 }
                 // Rule: toplevel var/let → error. Only allow const.
@@ -691,7 +709,9 @@ impl Codegen {
                 self.write(&n.value.to_string());
             }
             Expression::StringLiteral(s) => {
-                self.write(&format!("\"{}\"", s.value));
+                // Escape double quotes in string value for Zig string literal
+                let escaped = s.value.replace("\"", "\\\"");
+                self.write(&format!("\"{}\"", escaped));
             }
             Expression::BooleanLiteral(b) => {
                 self.write(if b.value { "true" } else { "false" });

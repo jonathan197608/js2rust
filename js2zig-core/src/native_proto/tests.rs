@@ -873,4 +873,83 @@ export function getUserJson(user) {
             }
         }
     }
+
+    #[test]
+    fn test_native_proto_json_parse_nested() {
+        // Test: JSON.parse() with nested structs and arrays should generate correct code
+        let js = r#"
+/**
+ * @typedef {Object} Address
+ * @property {string} street
+ * @property {string} city
+ * @property {number} zip
+ */
+
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {string[]} tags
+ * @property {number[]} scores
+ * @property {Address} address
+ */
+
+/**
+ * @type {User}
+ */
+const data = JSON.parse('{"name":"John","age":30,"tags":["a","b"],"scores":[1,2,3],"address":{"street":"123 Main St","city":"New York","zip":10001}}');
+
+/**
+ * @returns {string}
+ */
+export function processUser() {
+    return data.name + " from " + data.address.city;
+}
+"#;
+        let result = transpile_js(js);
+        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
+        let zig = result.unwrap();
+
+        println!("=== Generated Zig code (JSON.parse with nested structs) ===\n{}", zig);
+
+        // Verify Address and User structs are generated
+        assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
+        assert!(zig.contains("const User = struct {"), "Expected User struct, got:\n{}", zig);
+
+        // Verify JSON.parse() is converted to std.json.parse()
+        assert!(zig.contains("std.json.parse(User,"), "Expected std.json.parse(User, ...), got:\n{}", zig);
+
+        // Verify data variable uses the correct type
+        assert!(zig.contains("const data: User ="), "Expected 'const data: User', got:\n{}", zig);
+
+        // Verify member access works (data.name, data.address.city)
+        assert!(zig.contains("data.name"), "Expected data.name access, got:\n{}", zig);
+        assert!(zig.contains("data.address.city"), "Expected data.address.city access, got:\n{}", zig);
+
+        // Run zig ast-check to verify the code is syntactically correct
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join("json_parse_nested_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+
+        let check_output = std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output();
+
+        match check_output {
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("=== zig ast-check failed ===");
+                    eprintln!("Generated code:\n{}", zig);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
 }
