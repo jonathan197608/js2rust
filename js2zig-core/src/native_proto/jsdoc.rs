@@ -26,6 +26,7 @@ pub struct TypedefDef {
 pub struct TypedefField {
     pub name: String,
     pub ty: String, // JSDoc 类型字符串，如 "string"、"number"、"boolean"
+    pub optional: bool, // 是否为可选属性（[name]）
 }
 
 /// 单次 JSDoc 注释的解析结果
@@ -262,6 +263,7 @@ fn extract_braced_type(s: &str) -> String {
 
 /// 解析 @property 行
 /// 格式：@property {type} fieldName - description
+/// 或：@property {type} [fieldName] - description （可选属性）
 /// 或：@property fieldName {type}
 fn parse_property(s: &str) -> TypedefField {
     let rest = s
@@ -270,35 +272,58 @@ fn parse_property(s: &str) -> TypedefField {
         .unwrap_or("")
         .trim();
 
-    // 尝试格式：{type} name
+    // 尝试格式：{type} name 或 {type} [name]
     if rest.starts_with('{') {
         let brace_end = rest.find('}').unwrap_or(rest.len());
         let ty = rest[1..brace_end].trim().to_string();
         let after_brace = rest[brace_end + 1..].trim();
-        let name = after_brace
-            .split(|c: char| c.is_whitespace() || c == '-')
-            .next()
-            .unwrap_or("")
-            .to_string();
-        return TypedefField { name, ty };
+        
+        // 检查是否为可选属性 [name]
+        let (name, optional) = if after_brace.starts_with('[') {
+            let end = after_brace.find(']').unwrap_or(after_brace.len());
+            let name = after_brace[1..end].trim().to_string();
+            (name, true)
+        } else {
+            let name = after_brace
+                .split(|c: char| c.is_whitespace() || c == '-')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            (name, false)
+        };
+        
+        return TypedefField { name, ty, optional };
     }
 
-    // 尝试格式：name {type}
-    let parts: Vec<&str> = rest.splitn(2, '{').collect();
-    if parts.len() == 2 {
-        let name = parts[0].trim().to_string();
-        let ty = parts[1]
+    // 尝试格式：name {type} 或 [name] {type}
+    let (name_part, optional) = if rest.starts_with('[') {
+        let end = rest.find(']').unwrap_or(rest.len());
+        let name = rest[1..end].trim().to_string();
+        (name, true)
+    } else {
+        let parts: Vec<&str> = rest.splitn(2, '{').collect();
+        if parts.len() == 2 {
+            (parts[0].trim().to_string(), false)
+        } else {
+            (rest.to_string(), false)
+        }
+    };
+    
+    if let Some(brace_pos) = name_part.find('{') {
+        let name = name_part[..brace_pos].trim().to_string();
+        let ty = name_part[brace_pos + 1..]
             .strip_suffix('}')
-            .unwrap_or(parts[1])
+            .unwrap_or(&name_part[brace_pos + 1..])
             .trim()
             .to_string();
-        return TypedefField { name, ty };
+        return TypedefField { name, ty, optional };
     }
-
+    
     // 只有 name，无类型
     TypedefField {
-        name: rest.to_string(),
+        name: name_part,
         ty: "string".to_string(),
+        optional: false,
     }
 }
 
@@ -354,17 +379,21 @@ mod tests {
  * @property {string} name
  * @property {number} age
  * @property {boolean} active
+ * @property {string} [email]  ← 可选属性
  */
 "#;
         let parsed = parse_jsdoc(jsdoc);
         assert!(parsed.typedef.is_some());
         let user = parsed.typedef.unwrap();
         assert_eq!(user.name, "User");
-        assert_eq!(user.fields.len(), 3);
+        assert_eq!(user.fields.len(), 4);
         assert_eq!(user.fields[0].name, "name");
         assert_eq!(user.fields[0].ty, "string");
+        assert_eq!(user.fields[0].optional, false);
         assert_eq!(user.fields[1].name, "age");
         assert_eq!(user.fields[1].ty, "number");
+        assert_eq!(user.fields[3].name, "email");
+        assert_eq!(user.fields[3].optional, true);
     }
 
     #[test]

@@ -31,9 +31,16 @@ impl Codegen {
             self.indent += 1;
             for field in &td.fields {
                 let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty, &typedefs);
+                // Optional field: prepend ? to the type
+                let zig_ty = if field.optional {
+                    format!("?{}", zig_ty)
+                } else {
+                    zig_ty
+                };
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
             // Generate toJson() method for serialization using std.json.fmt()
+            // std.json.fmt() automatically handles optional fields (?T)
             self.writeln("");
             self.writeln("pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
             self.indent += 1;

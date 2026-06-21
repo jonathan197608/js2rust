@@ -1091,4 +1091,74 @@ pub fn main() !void {{
             eprintln!("Executable not found: {:?}", exe_path);
         }
     }
+    
+    // ── Test: Optional properties (@property {type} [name]) ─────────────
+    
+    #[test]
+    fn test_native_proto_optional_property() {
+        // JS source: @typedef with optional property
+        let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {string} [email]  ← optional
+ * @property {number} [score]  ← optional
+ */
+ 
+/**
+ * @param {User} user
+ * @returns {string}
+ */
+export function getUserJson(user) {
+    return JSON.stringify(user);
+}
+
+/**
+ * @returns {string}
+ */
+export function createUser() {
+    /**
+     * @type {User}
+     */
+    const user = JSON.parse('{"name":"Alice","age":30}');
+    // email and score are not provided (undefined)
+    return user.name + " has email: " + (user.email || "none");
+}
+"#;
+        
+        // Step1: generate Zig source from JS
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (optional property) ===\n{}", zig);
+        
+        // Step2: verify optional fields are generated with ?Type
+        assert!(zig.contains("name: []const u8,"), "Expected 'name: []const u8,' in:\n{}", zig);
+        assert!(zig.contains("age: i64,"), "Expected 'age: i64,' in:\n{}", zig);
+        assert!(zig.contains("email: ?[]const u8,"), "Expected 'email: ?[]const u8,' (optional) in:\n{}", zig);
+        assert!(zig.contains("score: ?i64,"), "Expected 'score: ?i64,' (optional) in:\n{}", zig);
+        
+        // Step3: verify toJson() is generated (std.json.fmt() handles ?T automatically)
+        assert!(zig.contains("pub fn toJson"), "Expected toJson() method in:\n{}", zig);
+        
+        // Step4: verify the code passes zig ast-check
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("optional_property_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
 }
