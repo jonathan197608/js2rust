@@ -93,9 +93,10 @@ impl Codegen {
         // self.writeln("");
         self.emit_typedefs();
         
-        // Pass 2.5: emit JsMap/JsSet imports (always include for now)
-        self.writeln("const JsMap = @import(\"./js_map.zig\").JsMap;");
-        self.writeln("const JsSet = @import(\"./js_set.zig\").JsSet;");
+        // Pass 2.5: JsMap/JsSet are already imported by orchestrator (lib.zig)
+        // Per-file modules can access them via `lib.js_map.JsMap` etc.
+        // No need to emit imports here.
+        
         
         // Pass 3: emit code, skipping unused toplevel constants.
         for stmt in &program.body {
