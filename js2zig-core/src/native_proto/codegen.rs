@@ -233,16 +233,18 @@ impl Codegen {
                             self.write_indent();
                             let kw = if is_const { "const" } else { "var" };
                             
-                            // Rule 4: const → no type annotation, let Zig infer.
-                            // For var: also no type annotation (let Zig infer).
-                            // Only function parameters need type annotations.
                             match ty {
                                 Some(inferred_ty) => {
                                     // Definite type: store for later use (e.g., member access).
                                     self.var_types.insert(name.to_string(), inferred_ty.clone());
                                     
-                                    // No type annotation: let Zig infer.
-                                    self.write(&format!("{} {} = ", kw, name));
+                                    // Rule 4: const → no type annotation, let Zig infer.
+                                    // Rule 5: var with definite type → add type annotation.
+                                    if is_const {
+                                        self.write(&format!("{} {} = ", kw, name));
+                                    } else {
+                                        self.write(&format!("{} {}: {} = ", kw, name, inferred_ty.to_zig_type()));
+                                    }
                                     
                                     self.emit_expr(init);
                                     self.write(";\n");
@@ -254,10 +256,9 @@ impl Codegen {
                                 }
                                 None => {
                                     // Rule 3: Type is indeterminate.
-                                    // Rule 8: Report error for var (must have definite type).
-                                    // For const: Rule 4 says no type annotation, let Zig infer.
+                                    // Rule 4: const → no type annotation, let Zig infer.
+                                    // Rule 8: var → report error (indeterminate type).
                                     if is_const {
-                                        // const with indeterminate type: no annotation.
                                         self.write(&format!("{} {} = ", kw, name));
                                         self.emit_expr(init);
                                         self.write(";\n");
@@ -312,11 +313,10 @@ impl Codegen {
         match stmt {
             Statement::VariableDeclaration(vd) => {
                 for decl in &vd.declarations {
-                    if let Some(init) = &decl.init {
-                        if Self::expr_contains_await(init) {
+                    if let Some(init) = &decl.init
+                        && Self::expr_contains_await(init) {
                             return true;
                         }
-                    }
                 }
                 false
             }
@@ -339,11 +339,10 @@ impl Codegen {
                     return true;
                 }
                 // alternate is Option<Box<Statement>>
-                if let Some(alt) = &is.alternate {
-                    if Self::stmt_contains_await(alt) {
+                if let Some(alt) = &is.alternate
+                    && Self::stmt_contains_await(alt) {
                         return true;
                     }
-                }
                 false
             }
             Statement::BlockStatement(bs) => {
@@ -401,11 +400,10 @@ impl Codegen {
                     return true;
                 }
                 for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        if Self::expr_contains_await(e) {
+                    if let Some(e) = arg.as_expression()
+                        && Self::expr_contains_await(e) {
                             return true;
                         }
-                    }
                 }
                 false
             }
@@ -432,11 +430,10 @@ impl Codegen {
             }
             Expression::ArrayExpression(ae) => {
                 for elem in &ae.elements {
-                    if let Some(e) = elem.as_expression() {
-                        if Self::expr_contains_await(e) {
+                    if let Some(e) = elem.as_expression()
+                        && Self::expr_contains_await(e) {
                             return true;
                         }
-                    }
                 }
                 false
             }
@@ -553,16 +550,15 @@ impl Codegen {
                         // First definite type: use it.
                         ty = Some(et.clone());
                     }
-                    (Some(t), Some(et)) => {
+                    (Some(t), Some(et))
                         // Both definite: check if they match.
-                        if *t != *et {
+                        if *t != *et => {
                             self.errors.push(format!(
                                 "Return type mismatch: expected {:?}, found {:?}",
                                 t, et
                             ));
                             break;
                         }
-                    }
                     _ => {
                         // expr_ty is None (indeterminate): skip.
                     }
@@ -776,8 +772,8 @@ impl Codegen {
                 // Special handling for forEach/some/every: they generate 'for' loops (statements), not expressions.
                 // If we add ';' after a 'for' loop, Zig will report a syntax error.
                 let mut need_semi = true;
-                if let Expression::CallExpression(ce) = &es.expression {
-                    if let Some(builtin) = builtins::detect_builtin_call(ce) {
+                if let Expression::CallExpression(ce) = &es.expression
+                    && let Some(builtin) = builtins::detect_builtin_call(ce) {
                         match builtin {
                             builtins::BuiltinCall::ArrayForEach
                             | builtins::BuiltinCall::ArraySome
@@ -788,7 +784,6 @@ impl Codegen {
                             _ => {}
                         }
                     }
-                }
                 
                 self.write_indent();
                 self.emit_expr(&es.expression);
@@ -1113,8 +1108,8 @@ impl Codegen {
                     if obj_name == "Int32Array" {
                         // new Int32Array([...]) → js_typedarray.fromI32(...)
                         self.write("js_typedarray.fromI32(");
-                        if let Some(first_arg) = ne.arguments.first() {
-                            if let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
+                        if let Some(first_arg) = ne.arguments.first()
+                            && let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
                                 self.write("&[_]i64{");
                                 for (i, elem) in ae.elements.iter().enumerate() {
                                     if i > 0 { self.write(", "); }
@@ -1124,14 +1119,13 @@ impl Codegen {
                                 }
                                 self.write("}");
                             }
-                        }
                         self.write(")");
                         return;
                     } else if obj_name == "Uint8Array" {
                         // new Uint8Array([...]) → js_typedarray.fromU8(...)
                         self.write("js_typedarray.fromU8(");
-                        if let Some(first_arg) = ne.arguments.first() {
-                            if let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
+                        if let Some(first_arg) = ne.arguments.first()
+                            && let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
                                 self.write("&[_]u8{");
                                 for (i, elem) in ae.elements.iter().enumerate() {
                                     if i > 0 { self.write(", "); }
@@ -1141,7 +1135,6 @@ impl Codegen {
                                 }
                                 self.write("}");
                             }
-                        }
                         self.write(")");
                         return;
                     } else if obj_name == "Map" {
@@ -1284,9 +1277,9 @@ impl Codegen {
         }
 
         // Check if this is a Promise.resolve() or Promise.reject() call
-        if let Expression::StaticMemberExpression(ref mem) = ce.callee {
-            if let Expression::Identifier(ref obj) = mem.object {
-                if obj.name == "Promise" {
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee
+            && let Expression::Identifier(ref obj) = mem.object
+                && obj.name == "Promise" {
                     let method = mem.property.name.as_str();
                     if method == "resolve" || method == "reject" {
                         self.errors.push(format!(
@@ -1297,8 +1290,6 @@ impl Codegen {
                         return;
                     }
                 }
-            }
-        }
 
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
         if let Some(builtin) = builtins::detect_builtin_call(ce)
@@ -1329,9 +1320,8 @@ impl Codegen {
         // Emit function call (no `try` by default, only for error-returning functions).
         if let Some(ref name) = callee_name {
             // Check if this is a host function call (host_xxx)
-            if name.starts_with("host_") {
+            if let Some(host_func_name) = name.strip_prefix("host_") {
                 // Convert host_add(...) to host.add(...)
-                let host_func_name = &name["host_".len()..];
                 self.write(&format!("host.{}(", host_func_name));
                 for (i, arg) in ce.arguments.iter().enumerate() {
                     if i > 0 { self.write(", "); }
@@ -1745,8 +1735,8 @@ impl Codegen {
                     self.errors.push("Map.set() requires exactly 2 arguments".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("try {}.set(", obj.name.as_str()));
                         // Emit key
                         if let Some(arg) = ce.arguments.first()
@@ -1762,7 +1752,6 @@ impl Codegen {
                         self.write(")");
                         return true;
                     }
-                }
                 false
             }
 
@@ -1772,8 +1761,8 @@ impl Codegen {
                     self.errors.push("Map.get() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("try {}.get(", obj.name.as_str()));
                         if let Some(arg) = ce.arguments.first()
                             && let Some(expr) = arg.as_expression() {
@@ -1782,7 +1771,6 @@ impl Codegen {
                         self.write(")");
                         return true;
                     }
-                }
                 false
             }
 
@@ -1792,8 +1780,8 @@ impl Codegen {
                     self.errors.push("Map.has() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("{}.has(", obj.name.as_str()));
                         if let Some(arg) = ce.arguments.first()
                             && let Some(expr) = arg.as_expression() {
@@ -1802,7 +1790,6 @@ impl Codegen {
                         self.write(")");
                         return true;
                     }
-                }
                 false
             }
 
@@ -1812,8 +1799,8 @@ impl Codegen {
                     self.errors.push("Map.delete() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("{}.delete(", obj.name.as_str()));
                         if let Some(arg) = ce.arguments.first()
                             && let Some(expr) = arg.as_expression() {
@@ -1822,7 +1809,6 @@ impl Codegen {
                         self.write(")");
                         return true;
                     }
-                }
                 false
             }
 
@@ -1833,8 +1819,8 @@ impl Codegen {
                     self.errors.push("Set.add() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("try {}.add(", obj.name.as_str()));
                         if let Some(arg) = ce.arguments.first()
                             && let Some(expr) = arg.as_expression() {
@@ -1843,7 +1829,6 @@ impl Codegen {
                         self.write(")");
                         return true;
                     }
-                }
                 false
             }
 
@@ -2064,13 +2049,12 @@ impl Codegen {
             
             builtins::BuiltinCall::ArrayReduce => {
                 // arr.reduce(fn, init) → init (simplified: return initial value)
-                if ce.arguments.len() >= 2 {
-                    if let Some(arg) = ce.arguments.get(1)
+                if ce.arguments.len() >= 2
+                    && let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression() {
                             self.emit_expr(expr);
                             return true;
                         }
-                }
                 // Fallback: return 0
                 self.write("0");
                 true
@@ -2272,11 +2256,7 @@ impl Codegen {
 
             // Identifier: look up variable type from var_types (Rule 5)
             Expression::Identifier(id) => {
-                if let Some(ty) = self.var_types.get(id.name.as_str()) {
-                    Some(ty.clone())
-                } else {
-                    None
-                }
+                self.var_types.get(id.name.as_str()).cloned()
             }
 
             // StaticMemberExpression: look up field type from struct type (Rule 5)

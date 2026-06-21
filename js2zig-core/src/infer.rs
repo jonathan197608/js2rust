@@ -740,7 +740,7 @@ impl TypeInferrer {
             return ty.clone();
         }
         // If current_fn is set but var not found, try all functions (edge case)
-        for (_fn_name, local_map) in &self.fn_local_types {
+        for local_map in self.fn_local_types.values() {
             if let Some(ty) = local_map.get(name) {
                 return ty.clone();
             }
@@ -1523,7 +1523,7 @@ impl TypeInferrer {
                     saved.push((pn.clone(), old));
                     self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const: true });
                     // Also register in fn_local_types for codegen (after env is cleared)
-                    self.fn_local_types.entry(fn_name.to_string()).or_insert_with(HashMap::new).insert(pn.clone(), ty.clone());
+                    self.fn_local_types.entry(fn_name.to_string()).or_default().insert(pn.clone(), ty.clone());
                 }
             }
         }

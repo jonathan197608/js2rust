@@ -88,18 +88,11 @@ impl<'a> ZigCodegen<'a> {
                 // don't emit .asString()/.asI64() etc. — the field already has the right type.
                 // This fixes the bug where get_var_type returns JsValue during codegen
                 // for struct-typed variables.
-                let is_struct_field_access = if let Some(ref arg) = rs.argument {
-                    if let Expression::StaticMemberExpression(mem) = arg {
-                        if let Expression::Identifier(obj_id) = &mem.object {
-                            // Use is_struct_var to check if obj is a struct type
-                            let result = self.inferrer.is_struct_var(obj_id.name.as_str());
-                            result
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
+                let is_struct_field_access = if let Some(ref arg) = rs.argument
+                    && let Expression::StaticMemberExpression(mem) = arg
+                    && let Expression::Identifier(obj_id) = &mem.object
+                {
+                    self.inferrer.is_struct_var(obj_id.name.as_str())
                 } else {
                     false
                 };
