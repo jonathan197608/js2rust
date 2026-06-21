@@ -226,42 +226,58 @@ impl Codegen {
                             self.var_types.insert(name.to_string(), ZigType::Struct(Vec::new()));
                         } else {
                             // Normal variable declaration with type inference.
+                            // Rule 1-3: infer_expr_type returns Some(ty) only for literals
+                            // or binary with both literals.
                             let ty = self.infer_expr_type(init);
                             
-                            // Check if type inference failed.
-                            if !self.errors.is_empty() {
-                                // Type inference failed: default to []const u8 (string)
-                                self.errors.clear(); // Clear errors, don't report
-                                let default_ty = ZigType::Str;
-                                self.var_types.insert(name.to_string(), default_ty.clone());
-                                // For array literals, don't emit type annotation (let Zig infer)
-                                if matches!(init, Expression::ArrayExpression(_)) {
-                                    self.write(&format!("{} {} = ", kw, name));
-                                } else {
-                                    self.write(&format!("{} {}: []const u8 = ", kw, name));
+                            self.write_indent();
+                            let kw = if is_const { "const" } else { "var" };
+                            
+                            // Rule 4: const → no type annotation, let Zig infer.
+                            // For var: if type is definite (Some), generate annotation;
+                            // if indeterminate (None), report error (Rule 8).
+                            match ty {
+                                Some(inferred_ty) => {
+                                    // Definite type: generate annotation (unless const).
+                                    // Store the inferred type for later use.
+                                    self.var_types.insert(name.to_string(), inferred_ty.clone());
+                                    
+                                    if is_const {
+                                        // Rule 4: const → no type annotation.
+                                        self.write(&format!("{} {} = ", kw, name));
+                                    } else {
+                                        // var with definite type → generate annotation.
+                                        self.write(&format!("{} {}: {} = ", kw, name, inferred_ty.to_zig_type()));
+                                    }
+                                    
+                                    self.emit_expr(init);
+                                    self.write(";\n");
+                                    
+                                    // Track array element type for ArrayList push type checking.
+                                    if let ZigType::ArrayList(elem_ty) = &inferred_ty {
+                                        self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                                    }
                                 }
-                                self.emit_expr(init);
-                                self.write(";\n");
-                                continue;
-                            }
-                            
-                            // Store the inferred type for later use (e.g., member access).
-                            self.var_types.insert(name.to_string(), ty.clone());
-                            
-                            // Skip type annotation for Struct and Array (Zig can infer them).
-                            let skip_annotation = matches!(ty, ZigType::Struct(_)) || matches!(ty, ZigType::ArrayList(_));
-                            if skip_annotation {
-                                // Inferable type: let Zig infer.
-                                self.write(&format!("{} {} = ", kw, name));
-                            } else {
-                                self.write(&format!("{} {}: {} = ", kw, name, ty.to_zig_type()));
-                            }
-                            self.emit_expr(init);
-                            self.write(";\n");
-                            
-                            // Track array element type for ArrayList push type checking.
-                            if let ZigType::ArrayList(elem_ty) = &ty {
-                                self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                                None => {
+                                    // Rule 3: Type is indeterminate.
+                                    // Rule 8: Report error for var (must have definite type).
+                                    // For const: Rule 4 says no type annotation, let Zig infer.
+                                    if is_const {
+                                        // const with indeterminate type: no annotation.
+                                        self.write(&format!("{} {} = ", kw, name));
+                                        self.emit_expr(init);
+                                        self.write(";\n");
+                                    } else {
+                                        // var with indeterminate type → error (Rule 8).
+                                        self.errors.push(format!(
+                                            "Cannot infer type of variable '{}' (Rule 8: indeterminate type). Add a type annotation or initialize with a literal.",
+                                            name
+                                        ));
+                                        self.write(&format!("{} {} = ", kw, name));
+                                        self.emit_expr(init);
+                                        self.write(";\n");
+                                    }
+                                }
                             }
                         }
                     }
@@ -519,40 +535,45 @@ impl Codegen {
         } else if return_exprs.is_empty() {
             "void".to_string()
         } else {
-            // Use the first return expression to infer type.
-            let mut ty = ZigType::I64; // default
+            // Rule 6: Check ALL return expressions, at least one definite.
+            let mut ty: Option<ZigType> = None;
             for expr in &return_exprs {
                 let expr_ty = self.infer_expr_type(expr);
-                if !self.errors.is_empty() {
-                    // Type inference failed.
-                    break;
-                }
-                if ty == ZigType::I64 {
-                    ty = expr_ty;
-                } else if ty != expr_ty {
-                    self.errors.push(format!(
-                        "Return type mismatch: expected {:?}, found {:?}",
-                        ty, expr_ty
-                    ));
-                    break;
+                match (&ty, &expr_ty) {
+                    (None, Some(et)) => {
+                        // First definite type: use it.
+                        ty = Some(et.clone());
+                    }
+                    (Some(t), Some(et)) => {
+                        // Both definite: check if they match.
+                        if *t != *et {
+                            self.errors.push(format!(
+                                "Return type mismatch: expected {:?}, found {:?}",
+                                t, et
+                            ));
+                            break;
+                        }
+                    }
+                    _ => {
+                        // expr_ty is None (indeterminate): skip.
+                    }
                 }
             }
-            if !self.errors.is_empty() {
-                // Type inference failed: default to []const u8 (string) for non-export functions
-                self.errors.clear(); // Clear errors, don't report
-                if self.current_fn_is_export {
-                    // Export function: still need @returns annotation
-                    self.current_fn_return_type = Some(ZigType::Str);
-                    "[]const u8".to_string()
-                } else {
-                    // Non-export function: default to string
-                    self.current_fn_return_type = Some(ZigType::Str);
-                    "[]const u8".to_string()
+            match ty {
+                Some(definite_ty) => {
+                    let rt = definite_ty.clone();
+                    self.current_fn_return_type = Some(rt.clone());
+                    definite_ty.to_zig_type()
                 }
-            } else {
-                let rt = ty.clone();
-                self.current_fn_return_type = Some(rt);
-                ty.to_zig_type()
+                None => {
+                    // Rule 8: No definite return type → report error.
+                    self.errors.push(
+                        "Cannot infer return type: no return expression has a definite type (Rule 6, 8).".to_string()
+                    );
+                    // Default to void for now.
+                    self.current_fn_return_type = Some(ZigType::I64);
+                    "i64".to_string()
+                }
             }
         };
 
@@ -2178,194 +2199,106 @@ impl Codegen {
     /// Infer the type of an expression. Returns ZigType.
     /// If the type cannot be inferred, reports an error to self.errors
     /// and returns I64 as a fallback (the generated code will be invalid).
-    fn infer_expr_type(&mut self, expr: &Expression) -> ZigType {
+    /// Infer the type of an expression.
+    /// Returns `Some(ZigType)` if the type can be determined (literal or binary with both literals),
+    /// `None` if the type is indeterminate (Rule 1-3).
+    /// Rule 1: Literal expressions → definite type
+    /// Rule 2: Binary expressions → definite only if BOTH operands are literals
+    /// Rule 3: Other expressions → indeterminate
+    fn infer_expr_type(&mut self, expr: &Expression) -> Option<ZigType> {
         match expr {
+            // Rule 1: Literals → definite type
             Expression::NumericLiteral(n) => {
                 let s = n.value.to_string();
                 if s.contains('.') || s.contains('e') || s.contains('E') {
-                    ZigType::F64
+                    Some(ZigType::F64)
                 } else {
-                    ZigType::I64
+                    Some(ZigType::I64)
                 }
             }
-            Expression::StringLiteral(_) => ZigType::Str,
-            Expression::BooleanLiteral(_) => ZigType::Bool,
-            Expression::Identifier(id) => {
-                // Look up the variable's type from var_types.
-                if let Some(ty) = self.var_types.get(id.name.as_str()) {
-                    ty.clone()
-                } else {
-                    // Cannot infer type: this is ok in permissive mode,
-                    // but should be an error in strict mode.
-                    // For now, default to I64 to allow code generation.
-                    ZigType::I64 // default fallback
-                }
-            }
-            Expression::BinaryExpression(be) => {
-                let left_ty = self.infer_expr_type(&be.left);
-                let right_ty = self.infer_expr_type(&be.right);
-                self.infer_binary_type(be.operator, left_ty, right_ty)
-            }
-            Expression::LogicalExpression(_) => ZigType::Bool,
-            Expression::ArrayExpression(ae) => {
-                if ae.elements.is_empty() {
-                    // Error: cannot infer element type for empty array.
-                    self.errors.push(
-                        "Cannot infer element type for empty array. Use ArrayList with explicit type.".to_string()
-                    );
-                    // Return ArrayList(I64) as fallback.
-                    ZigType::ArrayList(Box::new(ZigType::I64))
-                } else {
-                    // Infer from first element, then check all elements have the same type.
-                    if let Some(first_elem) = ae.elements.first() {
-                        if let Some(first) = first_elem.as_expression() {
-                            let elem_ty = self.infer_expr_type(first);
-                            // Check all elements have the same type.
-                            for elem in ae.elements.iter().skip(1) {
-                                if let Some(e) = elem.as_expression() {
-                                    let ty = self.infer_expr_type(e);
-                                    if ty != elem_ty {
-                                        self.errors.push(format!(
-                                            "Array elements must have the same type. Expected {:?}, found {:?}",
-                                            elem_ty, ty
-                                        ));
-                                    }
-                                }
-                            }
-                            ZigType::ArrayList(Box::new(elem_ty))
-                        } else {
-                            self.errors.push("Cannot infer array element type (spread/not supported)".to_string());
-                            ZigType::ArrayList(Box::new(ZigType::I64))
-                        }
-                    } else {
-                        ZigType::ArrayList(Box::new(ZigType::I64))
-                    }
-                }
-            }
-            Expression::ObjectExpression(obj) => {
-                if obj.properties.is_empty() {
-                    // Error: empty object literal is not allowed in strict type system.
-                    self.errors.push(
-                        "Empty object literal is not allowed. Use a typed struct.".to_string()
-                    );
-                    // Return a dummy struct as fallback.
-                    ZigType::Struct(Vec::new())
-                } else {
-                    // Generate struct type from properties.
-                    let mut fields = Vec::new();
-                    for prop in &obj.properties {
-                        if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                            let field_name = match &p.key {
-                                PropertyKey::StaticIdentifier(id) => id.name.to_string(),
-                                PropertyKey::StringLiteral(s) => s.value.to_string(),
-                                _ => {
-                                    self.errors.push("Unsupported property key type".to_string());
-                                    continue;
-                                }
-                            };
-                            let field_ty = self.infer_expr_type(&p.value);
-                            fields.push((field_name, field_ty));
-                        }
-                    }
-                    ZigType::Struct(fields)
-                }
-            }
-            Expression::CallExpression(_ce) => {
-                // For function calls, return i64 as default (simplified).
-                // In a real implementation, we would look up the function's return type.
-                ZigType::I64 // default fallback
-            }
-            Expression::StaticMemberExpression(mem) => {
-                // For obj.prop, infer the type of prop based on the object's type.
-                let obj_ty = self.infer_expr_type(&mem.object);
-                match obj_ty {
-                    ZigType::Struct(fields) => {
-                        // Look up the field type.
-                        let field_name = mem.property.name.as_str();
-                        for (name, ty) in fields {
-                            if name == field_name {
-                                return ty.clone();
-                            }
-                        }
-                        // Field not found: report error.
-                        self.errors.push(format!(
-                            "Field '{}' not found in struct",
-                            field_name
-                        ));
-                        ZigType::I64 // fallback
-                    }
-                    _ => {
-                        // Not a struct: cannot infer field type.
-                        // For anytype parameters, just return a placeholder type.
-                        // Don't report an error - let Zig handle type checking at compile time.
-                        ZigType::I64 // placeholder, actual type checked by Zig
-                    }
-                }
-            }
+            Expression::StringLiteral(_) => Some(ZigType::Str),
+            Expression::BooleanLiteral(_) => Some(ZigType::Bool),
+            // NullLiteral → not supported in simplified type system
+            // (Zig doesn't have a direct equivalent, would need Optional)
+            Expression::NullLiteral(_) => None,
             Expression::UnaryExpression(ue) => {
-                // For unary expressions (-x, !x, etc.), the type is the same as the operand's type.
-                let operand_ty = self.infer_expr_type(&ue.argument);
+                // -1, +1, !true → type can be determined from operand
                 match ue.operator {
-                    UnaryOperator::UnaryNegation => {
-                        // -x: type is same as x
-                        operand_ty
-                    }
-                    UnaryOperator::UnaryPlus => {
-                        // +x: type is same as x
-                        operand_ty
+                    UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
+                        // -x or +x: type is same as x (if x is literal)
+                        if Self::is_literal(&ue.argument) {
+                            self.infer_expr_type(&ue.argument)
+                        } else {
+                            None
+                        }
                     }
                     UnaryOperator::LogicalNot => {
-                        // !x: type is bool
-                        ZigType::Bool
+                        // !x → Bool
+                        if Self::is_literal(&ue.argument) {
+                            Some(ZigType::Bool)
+                        } else {
+                            None
+                        }
                     }
-                    _ => {
-                        // Other unary operators: return operand type
-                        operand_ty
-                    }
+                    _ => None,
                 }
             }
-            _ => {
-                // Unsupported expression: report error.
-                self.errors.push(format!(
-                    "Unsupported expression for type inference: {:?}",
-                    std::any::type_name::<Expression>()
-                ));
-                ZigType::I64 // fallback
+
+            // Rule 2: Binary expression → definite only if BOTH operands are literals
+            Expression::BinaryExpression(be) => {
+                if Self::is_literal(&be.left) && Self::is_literal(&be.right) {
+                    // Both are literals: infer types and compute result
+                    let left_ty = self.infer_expr_type(&be.left).unwrap();
+                    let right_ty = self.infer_expr_type(&be.right).unwrap();
+                    Some(Self::infer_binary_type(be.operator, left_ty, right_ty))
+                } else {
+                    // Rule 3: Cannot infer type
+                    None
+                }
             }
+
+            // Rule 3: Other expressions → indeterminate
+            _ => None,
         }
     }
 
-    /// Infer the result type of a binary expression.
-    fn infer_binary_type(&mut self, op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
+    /// Check if an expression is a literal (Rule 1, Rule 2).
+    fn is_literal(expr: &Expression) -> bool {
+        matches!(expr,
+            Expression::NumericLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_)
+        )
+    }
+
+    /// Infer binary expression result type (both operands are literals).
+    fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
         match op {
-            // Arithmetic operators.
+            // Arithmetic operators
             BinaryOperator::Addition | BinaryOperator::Subtraction |
-            BinaryOperator::Multiplication | BinaryOperator::Division => {
-                // String concatenation.
-                if left == ZigType::Str || right == ZigType::Str {
-                    return ZigType::Str;
-                }
-                // If either operand is f64, result is f64.
+            BinaryOperator::Multiplication | BinaryOperator::Division |
+            BinaryOperator::Remainder | BinaryOperator::Exponential => {
                 if left == ZigType::F64 || right == ZigType::F64 {
                     ZigType::F64
                 } else {
                     ZigType::I64
                 }
             }
-            // Comparison operators → bool.
+            // Comparison operators → Bool
             BinaryOperator::Equality | BinaryOperator::Inequality |
+            BinaryOperator::StrictEquality | BinaryOperator::StrictInequality |
             BinaryOperator::LessThan | BinaryOperator::LessEqualThan |
-            BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => {
-                ZigType::Bool
-            }
-            // Default: error.
-            _ => {
-                self.errors.push(format!(
-                    "Unsupported binary operator: {:?}",
-                    op
-                ));
-                ZigType::I64 // fallback
-            }
+            BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => ZigType::Bool,
+            // Logical operators (for BinaryExpression, these are bitwise)
+            BinaryOperator::BitwiseAnd => ZigType::I64,
+            BinaryOperator::BitwiseOR => ZigType::I64,
+            BinaryOperator::BitwiseXOR => ZigType::I64,
+            // Shift operators
+            BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight |
+            BinaryOperator::ShiftRightZeroFill => ZigType::I64,
+            // Default
+            _ => ZigType::I64,
         }
     }
 }
@@ -2794,12 +2727,24 @@ impl Codegen {
                 for decl in &vd.declarations {
                     if let Some(name) = self.binding_name(&decl.id) {
                         if let Some(init) = &decl.init {
+                            // Rule 1-3: infer_expr_type returns Some(ty) only for literals
                             let ty = self.infer_expr_type(init);
-                            self.var_types.insert(name.to_string(), ty.clone());
-
-                            // Track array element type for ArrayList push type checking.
-                            if let ZigType::ArrayList(elem_ty) = &ty {
-                                self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                            match ty {
+                                Some(inferred_ty) => {
+                                    self.var_types.insert(name.to_string(), inferred_ty.clone());
+                                    
+                                    // Track array element type for ArrayList push type checking.
+                                    if let ZigType::ArrayList(elem_ty) = &inferred_ty {
+                                        self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
+                                    }
+                                }
+                                None => {
+                                    // Rule 8: Indeterminate type → report error.
+                                    self.errors.push(format!(
+                                        "Cannot infer type of variable '{}' (Rule 8: indeterminate type). Add a type annotation or initialize with a literal.",
+                                        name
+                                    ));
+                                }
                             }
                         } else {
                             // No initializer → error in strict type system.
