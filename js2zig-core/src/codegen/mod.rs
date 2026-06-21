@@ -221,7 +221,6 @@ pub fn generate(
         exports.clone(),
         source_text,
         source_file,
-        host_info.async_fns.clone(),
     );
     // Header is added by project.rs/generate_lib_zig() — do NOT emit here.
 
@@ -351,9 +350,6 @@ struct ZigCodegen<'a> {
     line_index: LineIndex,
     /// JS source file name
     source_file: String,
-    /// Names of async host functions (to append `_async` in io.async calls)
-    #[allow(dead_code)]
-    async_host_fns: HashSet<String>,
     current_callback_method: Option<String>,
 }
 
@@ -366,7 +362,6 @@ impl<'a> ZigCodegen<'a> {
         exports: HashSet<String>,
         source_text: &str,
         source_file: &str,
-        async_host_fns: HashSet<String>,
     ) -> Self {
         Self {
             output: String::new(),
@@ -399,7 +394,6 @@ impl<'a> ZigCodegen<'a> {
             source_map: SourceMap::new(source_file),
             line_index: LineIndex::new(source_text),
             source_file: source_file.to_string(),
-            async_host_fns,
             current_callback_method: None,
         }
     }

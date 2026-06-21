@@ -172,7 +172,6 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
-            async_host_fns: std::collections::HashSet::new(),
             current_callback_method: None,
         };
         tmp.emit_expr(receiver);
@@ -215,7 +214,6 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
-            async_host_fns: std::collections::HashSet::new(),
                 current_callback_method: None,
             };
             tmp2.emit_arg(arg);
@@ -659,7 +657,6 @@ impl<'a> ZigCodegen<'a> {
             source_map: crate::sourcemap::SourceMap::new(""),
             line_index: crate::sourcemap::LineIndex::new(""),
             source_file: String::new(),
-            async_host_fns: std::collections::HashSet::new(),
                     current_callback_method: None,
                 };
                 tmp.emit_arg(arg);

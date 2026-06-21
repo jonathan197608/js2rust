@@ -6,17 +6,19 @@
 //! belong to multiple groups.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::path::Path;
 
 /// Convert a module name (from filename) to a valid Zig identifier suffix.
 /// Non-ASCII characters are converted to Unicode codepoint format `_uXXXX`.
+#[must_use]
 pub fn sanitize_module_name(raw: &str) -> String {
     let mut result = String::new();
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() || ch == '_' {
             result.push(ch);
         } else {
-            result.push_str(&format!("_u{:04x}", ch as u32));
+            let _ = write!(result, "_u{:04x}", ch as u32);
         }
     }
     if result.is_empty() {
@@ -36,6 +38,7 @@ pub fn sanitize_module_name(raw: &str) -> String {
 /// and collect all exported function/var/class names.
 ///
 /// Returns `(cleaned_source, exports_set)`.
+#[must_use]
 pub fn strip_imports_extract_exports(src: &str) -> (String, HashSet<String>) {
     let mut result = String::with_capacity(src.len());
     let mut exports = HashSet::new();

@@ -2114,9 +2114,9 @@ impl TypeInferrer {
             Expression::CallExpression(call) => self.infer_call_return(&call.callee),
             Expression::AssignmentExpression(assign) => self.infer_expr(&assign.right),
             Expression::ConditionalExpression(cond) => {
-                let cons = self.infer_expr(&cond.consequent);
+                let consequent_type = self.infer_expr(&cond.consequent);
                 let alt = self.infer_expr(&cond.alternate);
-                if cons == alt { cons } else { ZigType::make_union(vec![cons, alt]) }
+                if consequent_type == alt { consequent_type } else { ZigType::make_union(vec![consequent_type, alt]) }
             }
             Expression::ArrayExpression(arr) => {
                 if arr.elements.is_empty() { return ZigType::JsValue; }
