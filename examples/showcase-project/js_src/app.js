@@ -10,33 +10,59 @@ import { testTernary, testSwitch, testParenExpr, testImportedAdd } from './helpe
 
 // ── Export: integer return (C ABI: i64) ─────────────────────────
 
+/**
+ * @param {i64} a
+ * @param {i64} b
+ * @returns {i64}
+ */
 export function showcaseSum(a, b) {
     return a + b;
 }
 
+/**
+ * @param {i64} n
+ * @returns {i64}
+ */
 export function showcaseFactorial(n) {
     if (n <= 1) { return 1; }
     return n * showcaseFactorial(n - 1);
 }
 
+/**
+ * @param {i64} a
+ * @param {i64} b
+ * @returns {i64}
+ */
 export function showcaseMul(a, b) {
     return a * b;
 }
 
 // ── Export: string return (C ABI: [*:0]const u8) ────────────────
 
+/**
+ * @param {string} name
+ * @returns {string}
+ */
 export function showcaseGreet(name) {
     return "Hello, " + name + "!";
 }
 
 // ── Export: bool return (C ABI: bool) ───────────────────────────
 
+/**
+ * @param {i64} x
+ * @returns {bool}
+ */
 export function showcaseIsPositive(x) {
     return x > 0;
 }
 
 // ── Multiple return branches (S3.2) — proven ────────────────────
 
+/**
+ * @param {i64} x
+ * @returns {i64}
+ */
 export function testMultiBranch(x) {
     if (x > 100) { return 3; }
     if (x > 50) { return 2; }
@@ -49,12 +75,21 @@ export function testMultiBranch(x) {
 function helper(x) { return x * 2; }
 function doubleHelper(x) { return helper(helper(x)); }
 
+/**
+ * @returns {i64}
+ */
 export function testNestedCalls() {
     return doubleHelper(5);
 }
 
 // ── Clamp function (multi-branch + comparison) ──────────────────
 
+/**
+ * @param {i64} x
+ * @param {i64} lo
+ * @param {i64} hi
+ * @returns {i64}
+ */
 export function testClamp(x, lo, hi) {
     if (x < lo) { return lo; }
     if (x > hi) { return hi; }
@@ -63,17 +98,31 @@ export function testClamp(x, lo, hi) {
 
 // ── Absolute value via ternary ──────────────────────────────────
 
+/**
+ * @param {i64} x
+ * @returns {i64}
+ */
 export function testAbsTernary(x) {
     return x >= 0 ? x : -x;
 }
 
 // ── Min/max via multi-branch return (avoid const→JsAny issue) ───
 
+/**
+ * @param {i64} a
+ * @param {i64} b
+ * @returns {i64}
+ */
 export function testMin(a, b) {
     if (a < b) { return a; }
     return b;
 }
 
+/**
+ * @param {i64} a
+ * @param {i64} b
+ * @returns {i64}
+ */
 export function testMax(a, b) {
     if (a > b) { return a; }
     return b;
@@ -81,12 +130,21 @@ export function testMax(a, b) {
 
 // ── Template expression with numeric calc ───────────────────────
 
+/**
+ * @param {i64} x
+ * @param {i64} y
+ * @returns {string}
+ */
 export function testTemplate(x, y) {
     return `result=${x + y}`;
 }
 
 // ── Sign function — multi-branch integer ────────────────────────
 
+/**
+ * @param {i64} x
+ * @returns {i64}
+ */
 export function testSign(x) {
     if (x > 0) { return 1; }
     if (x < 0) { return -1; }
@@ -98,6 +156,9 @@ export function testSign(x) {
 // the Zig compilation itself — all imports resolve correctly.
 // Here we verify that exported functions compute correctly.
 
+/**
+ * @returns {i64}
+ */
 export function runAllTests() {
     // showcaseSum(3, 7) = 10, testMultiBranch(75) = 2 → 10 + 2 = 12
     return showcaseSum(showcaseSum(3, 7), testMultiBranch(75));

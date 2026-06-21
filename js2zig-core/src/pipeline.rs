@@ -791,7 +791,7 @@ pub fn gen_cabi_wrappers(
             if returns_string {
                 // Zig-friendly adapter (for tests) — calls _impl directly
                 out.push_str(&format!(
-                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
                     name = name,
                     params = zig_params.join(", "),
                     mod = module,
@@ -809,7 +809,7 @@ pub fn gen_cabi_wrappers(
                     format!("{}, result_len: *usize", cabi_params.join(", "))
                 };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
+                    "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error\");\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
                     name = name,
                     cabi_full_params = cabi_full_params,
                     conv = conversions,
@@ -835,7 +835,7 @@ pub fn gen_cabi_wrappers(
 
                 if ret_zig == "void" {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,
@@ -844,7 +844,7 @@ pub fn gen_cabi_wrappers(
                     ));
                 } else if exp_ret_is_js_value {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    return _result.int;\n}}\n",
+                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error\");\n    return _result.int;\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,
@@ -853,7 +853,7 @@ pub fn gen_cabi_wrappers(
                     ));
                 } else {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}_impl({args}) catch @panic(\"async error\");\n}}\n",
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,
@@ -871,7 +871,7 @@ pub fn gen_cabi_wrappers(
         if returns_string {
             // ── Zig-friendly adapter (for tests) — calls _impl directly, no conversion ──
             out.push_str(&format!(
-                "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}_impl({args});\n}}\n",
+                "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}({args});\n}}\n",
                 name = name,
                 params = zig_params.join(", "),
                 mod = module,
@@ -890,7 +890,7 @@ pub fn gen_cabi_wrappers(
                 format!("{}, result_len: *usize", cabi_params.join(", "))
             };
             out.push_str(&format!(
-                "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}_impl({args});\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
+                "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}({args});\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
                 name = name,
                 cabi_full_params = cabi_full_params,
                 conv = conversions,
