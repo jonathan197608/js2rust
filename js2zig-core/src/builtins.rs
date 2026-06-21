@@ -120,8 +120,8 @@ impl BuiltinRegistry {
         registry.add_method_runtime("console", "warn", "js_console.warn({})", "js_console");
 
         // JSON
-        registry.add_method_runtime("JSON", "stringify", "js_json.stringifyI64({})", "js_json");
-        registry.add_method_runtime("JSON", "parse", "js_json.parse({})", "js_json");
+        registry.add_method_runtime("JSON", "stringify", "js_json.stringifyI64(js_allocator.g_alloc(), {})", "js_json");
+        registry.add_method_runtime("JSON", "parse", "js_json.parse(js_allocator.g_alloc(), {})", "js_json");
 
         // Array
         registry.add_method_runtime("Array", "isArray", "js_array.isArray({})", "js_array");

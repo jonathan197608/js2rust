@@ -131,10 +131,10 @@ export function getUserJson(user) {
 
 /**
  * @returns {string}
+ * TODO: js_json.parse not fully implemented (returns placeholder "{parsed}")
+ * Disabled until JSON.parse support is complete.
  */
-export function parseUserJson() {
-    // TEMPORARILY DISABLED: string escaping error in codegen
-    // const user = JSON.parse("{\"name\":\"Alice\",\"age\":30,\"tags\":[\"a\",\"b\"]}");
-    // return user.name + " is " + user.age + " years old";
-    return "disabled";
-}
+// export function parseUserJson() {
+//     const user = JSON.parse("{\"name\":\"Alice\",\"age\":30,\"tags\":[\"a\",\"b\"]}");
+//     return user.name + " is " + user.age + " years old";
+// }
