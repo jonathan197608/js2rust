@@ -131,7 +131,7 @@ function main() {
         let zig = transpile_js(js).unwrap();
         println!("=== Function Call ===\n{}", zig);
         assert!(zig.contains("greet(")); // function call (no try)
-        assert!(zig.contains("++")); // string + â†?concat
+        assert!(zig.contains("++")); // string + â†’concat
         assert!(zig.contains("var msg:")); // type annotated
     }
 
@@ -266,7 +266,7 @@ function factorial(n) {
     fn test_native_proto_no_return_void() {
         let js = r#"
 function log(msg) {
-    // no explicit return â†?void
+    // no explicit return â†’void
 }
 "#;
         let zig = transpile_js(js).unwrap();
@@ -343,7 +343,7 @@ function grade(score) {
 
     /// End-to-end test: generate Zig code from JS, compile with Zig 0.16.0, run, check output.
     ///
-    /// Strategy: transpile JS â†?Zig, then wrap the generated functions in a `pub fn main() !void`
+    /// Strategy: transpile JS â†’Zig, then wrap the generated functions in a `pub fn main() !void`
     /// that prints results. This validates that the generated function signatures are correct.
     #[test]
     fn test_native_proto_e2e_compile_and_run() {
@@ -477,7 +477,7 @@ pub fn main() !void {{
 
     #[test]
     fn test_native_proto_object_struct() {
-        // Scheme C: Only static access â†?anonymous struct.
+        // Scheme C: Only static access â†’anonymous struct.
         let js = r#"
 function main() {
     const pt = { x: 10, y: 20 };
@@ -499,7 +499,7 @@ function main() {
 
     #[test]
     fn test_native_proto_object_map() {
-        // Scheme C: Dynamic access â†?StringHashMap.
+        // Scheme C: Dynamic access â†’StringHashMap.
         // Note: obj[key] is not allowed in strict type system (compile error).
         let js = r#"
 function main() {
@@ -1151,8 +1151,8 @@ pub fn main() !void {{
  * @typedef {Object} User
  * @property {string} name
  * @property {number} age
- * @property {string} [email]  â†?optional
- * @property {number} [score]  â†?optional
+ * @property {string} [email]  â†’optional
+ * @property {number} [score]  â†’optional
  */
  
 /**
