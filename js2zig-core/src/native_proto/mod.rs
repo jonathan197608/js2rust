@@ -55,6 +55,8 @@ pub enum ZigType {
     ArrayList(Box<ZigType>),
     /// Anonymous struct: .{ .field1 = T1, .field2 = T2 }
     Struct(Vec<(String, ZigType)>),
+    /// anytype (for non-export function parameters)
+    Anytype,
 }
 
 impl ZigType {
@@ -89,6 +91,7 @@ impl ZigType {
                     .collect();
                 crate::infer::ZigType::Object { fields: obj_fields }
             }
+            ZigType::Anytype => crate::infer::ZigType::I64, // Default for anytype
         }
     }
 
@@ -110,6 +113,7 @@ impl ZigType {
                 s.push_str(" }");
                 s
             }
+            ZigType::Anytype => "anytype".to_string(),
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
@@ -121,6 +125,7 @@ impl ZigType {
             ZigType::Str => "[*c]u8".to_string(),  // C pointer
             ZigType::ArrayList(_) => "std.ArrayList".to_string(),  // Not directly supported in C ABI
             ZigType::Struct(_) => "struct".to_string(),  // Not directly supported in C ABI
+            ZigType::Anytype => "i64".to_string(),  // Default for anytype (not used in C ABI)
         }
     }
 

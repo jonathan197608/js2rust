@@ -469,10 +469,25 @@ impl Codegen {
         let is_async = Self::fn_contains_await(fd);
 
         // Pass 1: insert parameter types into var_types.
+        // Rule 7: non-export function params → anytype.
         for param in &fd.params.items {
             if let Some(pname) = self.binding_name(&param.pattern) {
-                // Default parameter type is i64.
-                self.var_types.insert(pname.to_string(), ZigType::I64);
+                // Check if there's a JSDoc @param annotation.
+                let has_param_annotation = self.jsdoc_data.as_ref()
+                    .and_then(|d| d.param_types.get(name))
+                    .is_some_and(|params| params.iter().any(|(pn, _)| pn == pname));
+                
+                if has_param_annotation {
+                    // JSDoc @param annotation: use annotated type.
+                    // TODO: parse JSDoc type and convert to ZigType.
+                    self.var_types.insert(pname.to_string(), ZigType::I64);
+                } else if self.current_fn_is_export {
+                    // Export function: default parameter type is i64.
+                    self.var_types.insert(pname.to_string(), ZigType::I64);
+                } else {
+                    // Rule 7: non-export function → anytype.
+                    self.var_types.insert(pname.to_string(), ZigType::Anytype);
+                }
             }
         }
 
