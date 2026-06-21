@@ -5,6 +5,7 @@
 use oxc_ast::ast::*;
 use crate::native_proto::{Codegen, ZigType};
 use crate::native_proto::builtins;
+use crate::native_proto::ExportedFunction;
 
 // ── Constructor ─────────────────────────────────────
 
@@ -85,10 +86,11 @@ impl Codegen {
         println!("=== jsdoc_data.type_annotations: {:?}", self.jsdoc_data.as_ref().map(|d| &d.type_annotations));
 
         // Pass 2: emit struct typedefs (from JSDoc @typedef).
-        // First, emit std and allocator constants (needed by toJson()).
-        self.writeln("const std = @import(\"std\");");
-        self.writeln("const allocator = std.heap.page_allocator;");
-        self.writeln("");
+        // NOTE: Do NOT emit `const std = @import("std");` here — project.rs will add it
+        // when generating the per-file module wrapper.
+        // self.writeln("const std = @import(\"std\");");
+        // self.writeln("const allocator = std.heap.page_allocator;");
+        // self.writeln("");
         self.emit_typedefs();
 
         // Pass 3: emit code, skipping unused toplevel constants.
@@ -112,10 +114,10 @@ impl Codegen {
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
             Statement::FunctionDeclaration(fd) => {
-                // Check if this is an export function (not wrapped in ExportNamedDeclaration)
-                // For now, assume non-export (anytype params)
+                // HACK: Assume all toplevel functions are export functions.
+                // TODO: properly detect if function is exported (check fd.modifiers?)
                 let old_export = self.current_fn_is_export;
-                self.current_fn_is_export = false;
+                self.current_fn_is_export = true;  // HACK: assume export
                 self.emit_fn(fd);
                 self.current_fn_is_export = old_export;
             }
@@ -248,6 +250,167 @@ impl Codegen {
     }
 }
 
+// ── Async detection (AwaitExpression) ──────────────
+// These helper functions detect if a function contains `await` expressions.
+// If yes, the function needs `io: anytype` parameter.
+
+impl Codegen {
+    /// Check if a function contains any `AwaitExpression`.
+    fn fn_contains_await(fd: &Function) -> bool {
+        if let Some(body) = &fd.body {
+            for stmt in &body.statements {
+                if Self::stmt_contains_await(stmt) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if a statement contains any `AwaitExpression`.
+    fn stmt_contains_await(stmt: &Statement) -> bool {
+        match stmt {
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(init) = &decl.init {
+                        if Self::expr_contains_await(init) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(arg) = &rs.argument {
+                    Self::expr_contains_await(arg)
+                } else {
+                    false
+                }
+            }
+            Statement::ExpressionStatement(es) => {
+                Self::expr_contains_await(&es.expression)
+            }
+            Statement::IfStatement(is) => {
+                if Self::expr_contains_await(&is.test) {
+                    return true;
+                }
+                // consequent is Box<Statement> (not Option)
+                if Self::stmt_contains_await(&is.consequent) {
+                    return true;
+                }
+                // alternate is Option<Box<Statement>>
+                if let Some(alt) = &is.alternate {
+                    if Self::stmt_contains_await(alt) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Statement::BlockStatement(bs) => {
+                for stmt in &bs.body {
+                    if Self::stmt_contains_await(stmt) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Statement::WhileStatement(ws) => {
+                if Self::expr_contains_await(&ws.test) {
+                    return true;
+                }
+                // body is Box<Statement> (not Option)
+                if Self::stmt_contains_await(&ws.body) {
+                    return true;
+                }
+                false
+            }
+            Statement::DoWhileStatement(dws) => {
+                // body is Box<Statement> (not Option)
+                if Self::stmt_contains_await(&dws.body) {
+                    return true;
+                }
+                Self::expr_contains_await(&dws.test)
+            }
+            Statement::ForOfStatement(fos) => {
+                // body is Box<Statement> (not Option)
+                if Self::stmt_contains_await(&fos.body) {
+                    return true;
+                }
+                false
+            }
+            Statement::SwitchStatement(ss) => {
+                for case in &ss.cases {
+                    for stmt in &case.consequent {
+                        if Self::stmt_contains_await(stmt) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if an expression contains any `AwaitExpression`.
+    fn expr_contains_await(expr: &Expression) -> bool {
+        match expr {
+            Expression::AwaitExpression(_) => true,
+            Expression::CallExpression(ce) => {
+                if Self::expr_contains_await(&ce.callee) {
+                    return true;
+                }
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        if Self::expr_contains_await(e) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            Expression::BinaryExpression(be) => {
+                Self::expr_contains_await(&be.left) || Self::expr_contains_await(&be.right)
+            }
+            Expression::AssignmentExpression(ae) => {
+                // Only check `right` (left is AssignmentTarget, not Expression)
+                Self::expr_contains_await(&ae.right)
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::expr_contains_await(&ue.argument)
+            }
+            Expression::LogicalExpression(le) => {
+                Self::expr_contains_await(&le.left) || Self::expr_contains_await(&le.right)
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                Self::expr_contains_await(&pe.expression)
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::expr_contains_await(&ce.test) ||
+                Self::expr_contains_await(&ce.consequent) ||
+                Self::expr_contains_await(&ce.alternate)
+            }
+            Expression::ArrayExpression(ae) => {
+                for elem in &ae.elements {
+                    if let Some(e) = elem.as_expression() {
+                        if Self::expr_contains_await(e) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            Expression::StaticMemberExpression(mem) => {
+                Self::expr_contains_await(&mem.object)
+            }
+            Expression::ComputedMemberExpression(mem) => {
+                Self::expr_contains_await(&mem.object) || Self::expr_contains_await(&mem.expression)
+            }
+            _ => false,
+        }
+    }
+}
+
 // ── Function declarations ──────────────────────────────
 
 impl Codegen {
@@ -255,6 +418,9 @@ impl Codegen {
         let name = fd.id.as_ref()
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
+
+        // Check if function contains await (needs io parameter)
+        let is_async = Self::fn_contains_await(fd);
 
         // Pass 1: insert parameter types into var_types.
         for param in &fd.params.items {
@@ -366,107 +532,80 @@ impl Codegen {
         }
 
         // Pass 4: generate function code.
-        // For export functions: parameters are []const u8, return is [*c]u8 with result_len.
-        // For non-export functions: use anytype for parameters, inferred return type.
-        self.write(&format!("fn {}(", name));
+        // NOTE: Do NOT add 'export' prefix - the pipeline will generate C ABI wrappers.
+        // NOTE: Add 'pub' prefix so lib.zig (C ABI wrapper) can call these functions.
+        // - All functions: `pub fn name(...) { ... }`
+        // - Async functions: `pub fn name(io: anytype, ...) { ... }`
+        // If async (contains await), add `io: anytype` as first parameter.
+        if is_async {
+            self.write(&format!("pub fn {}(io: anytype", name));
+        } else {
+            self.write(&format!("pub fn {}(", name));
+        }
+        // Generate parameter list and return type
         if self.current_fn_is_export {
-            // Export function: no allocator parameter, use global std.heap.page_allocator.
-            // Parameters are []const u8.
-            // Return type is [*c]u8, with result_len: *usize parameter.
-            if !fd.params.items.is_empty() {
-                // Generate parameter list
-            }
-            // Also generate parameter parsing code.
-            self.param_name_map.clear();
-            let mut param_parsing_code = String::new();
+            // Export function: C ABI compatible signature
+            // For now, assume all params are i64 (simple case)
+            // TODO: handle string params (need [*c]const u8 + conversion)
+            let empty_typedefs = std::collections::HashMap::new();
+            let typedefs = self.jsdoc_data.as_ref()
+                .map(|d| &d.typedefs)
+                .unwrap_or(&empty_typedefs);
 
-            // Get @param annotations for this function
             let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
                 .and_then(|data| data.param_types.get(name))
                 .map(|params| params.iter().cloned().collect())
                 .unwrap_or_default();
 
-            for (i, param) in fd.params.items.iter().enumerate() {
-                if i > 0 { self.write(", "); }
+            let mut param_types: Vec<(String, String)> = Vec::new();
+            for param in &fd.params.items {
                 if let Some(pname) = self.binding_name(&param.pattern) {
-                    // Check @param annotation for this parameter
                     let param_type = fn_param_type_map.get(pname)
                         .cloned()
-                        .unwrap_or("number".to_string()); // Default to number
-                    
-                    let empty_typedefs = std::collections::HashMap::new();
-                    let typedefs = self.jsdoc_data.as_ref()
-                        .map(|d| &d.typedefs)
-                        .unwrap_or(&empty_typedefs);
+                        .unwrap_or("number".to_string());
                     let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, typedefs);
-                    
-                    // Check if this is a custom type (from @typedef)
-                    let is_custom_type = self.jsdoc_data.as_ref()
-                        .and_then(|data| data.typedefs.get(&zig_type))
-                        .is_some();
-                    
-                    if is_custom_type {
-                        // Custom type: declare as User, no parsing needed
-                        self.write(&format!("{}: {}", pname, zig_type));
-                        self.param_name_map.insert(pname.to_string(), pname.to_string());
-                    } else {
-                        // Primitive type: declare as []const u8
-                        self.write(&format!("{}: []const u8", pname));
-                        
-                        match zig_type.as_str() {
-                            "i64" => {
-                                // number → i64: parseInt
-                                let parsed_name = format!("{}_int", pname);
-                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                                param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
-                            }
-                            "bool" => {
-                                // boolean → bool: parse "true"/"false"
-                                let parsed_name = format!("{}_bool", pname);
-                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                                param_parsing_code.push_str(&format!("    const {} = std.mem.eql(u8, {}, \"true\");\n", parsed_name, pname));
-                            }
-                            "[]const u8" => {
-                                // string → []const u8: no parsing needed
-                                self.param_name_map.insert(pname.to_string(), pname.to_string());
-                            }
-                            _ => {
-                                // Default: assume i64
-                                let parsed_name = format!("{}_int", pname);
-                                self.param_name_map.insert(pname.to_string(), parsed_name.clone());
-                                param_parsing_code.push_str(&format!("    const {} = try std.fmt.parseInt(i64, {}, 10);\n", parsed_name, pname));
-                            }
-                        }
-                    }
+                    param_types.push((pname.to_string(), zig_type));
                 }
             }
-            // Add result_len parameter for export functions that return non-void
-            if ret_ty != "void" {
-                if !fd.params.items.is_empty() {
+
+            let mut param_idx = 0;
+            for (pname, zig_type) in param_types.iter() {
+                // Skip `io` parameter for async functions (already added as `io: anytype`)
+                if is_async && pname == "io" {
+                    continue;
+                }
+                if param_idx > 0 || is_async {
                     self.write(", ");
                 }
-                self.write("result_len: *usize");
+                self.write(&format!("{}: {}", pname, zig_type));
+                param_idx += 1;
             }
-            // Export function return type: [*c]u8 with result_len parameter.
-            let ret_ty_str = if ret_ty == "void" {
-                "void".to_string()
-            } else {
-                "[*c]u8".to_string()
+
+            // Return type
+            let ret_zig_type = match &self.current_fn_return_type {
+                Some(ZigType::I64) => "i64".to_string(),
+                Some(ZigType::F64) => "f64".to_string(),
+                Some(ZigType::Bool) => "bool".to_string(),
+                Some(ZigType::Str) => "[]const u8".to_string(), // TODO: C ABI string return
+                None => "void".to_string(),
+                _ => "void".to_string(),
             };
-            self.writeln(&format!(") {} {{", ret_ty_str));
-            // Generate parameter parsing code.
-            if !param_parsing_code.is_empty() {
-                self.write(&param_parsing_code);
-            }
-            // Add result_len parameter to function signature
-            // This is a bit tricky: we need to add it after the parameters
-            // For now, let's modify the function signature generation
+            self.writeln(&format!(") {} {{", ret_zig_type));
         } else {
             // Non-export function: use anytype for parameters.
-            for (i, param) in fd.params.items.iter().enumerate() {
-                if i > 0 { self.write(", "); }
+            // `io: anytype, ` is already written above (lines 542-548) for async functions.
+            let mut param_idx = 0;
+            for param in fd.params.items.iter() {
                 if let Some(pname) = self.binding_name(&param.pattern) {
+                    // Skip `io` parameter for async functions (already added as `io: anytype`)
+                    if is_async && pname == "io" {
+                        continue;
+                    }
+                    if param_idx > 0 || is_async {
+                        self.write(", ");
+                    }
                     self.write(&format!("{}: anytype", pname));
+                    param_idx += 1;
                 }
             }
             // Use the inferred return type from Pass 3.
@@ -486,6 +625,54 @@ impl Codegen {
         }
         self.indent -= 1;
         self.writeln("}");
+
+        // If this is an export function, add to exported_fns for C ABI wrapper generation.
+        if self.current_fn_is_export {
+            let func_name = name.to_string();
+            let return_type = self.current_fn_return_type.clone().unwrap_or(ZigType::I64);
+            let returns_string = return_type.is_string();
+
+            // Get parameter types from JSDoc or default to I64.
+            let empty_typedefs = std::collections::HashMap::new();
+            let typedefs = self.jsdoc_data.as_ref()
+                .map(|d| &d.typedefs)
+                .unwrap_or(&empty_typedefs);
+
+            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
+                .and_then(|data| data.param_types.get(name))
+                .map(|params| params.iter().cloned().collect())
+                .unwrap_or_default();
+
+            let mut params: Vec<ZigType> = Vec::new();
+            for param in &fd.params.items {
+                if let Some(pname) = self.binding_name(&param.pattern) {
+                    // Skip `io` parameter for async functions (already added as `io: anytype`)
+                    if is_async && pname == "io" {
+                        continue;
+                    }
+                    let param_type = fn_param_type_map.get(pname)
+                        .cloned()
+                        .unwrap_or("number".to_string());
+                    let zig_type_str = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, typedefs);
+                    // Convert string to ZigType
+                    let zig_type = match zig_type_str.as_str() {
+                        "i64" => ZigType::I64,
+                        "f64" => ZigType::F64,
+                        "bool" => ZigType::Bool,
+                        "[]const u8" => ZigType::Str,
+                        _ => ZigType::I64, // default
+                    };
+                    params.push(zig_type);
+                }
+            }
+
+            self.exported_fns.push(ExportedFunction {
+                name: func_name,
+                params,
+                return_type,
+                returns_string,
+            });
+        }
     }
 }
 
@@ -499,66 +686,12 @@ impl Codegen {
             }
             Statement::ReturnStatement(rs) => {
                 self.write_indent();
-                if self.current_fn_is_export {
-                    // Export function: convert return value to []u8 (allocPrint returns []u8)
-                    if let Some(arg) = &rs.argument {
-                        match &self.current_fn_return_type {
-                            Some(ZigType::I64) => {
-                                // i64 → []u8: use std.fmt.allocPrint with page_allocator
-                                self.write("const result = std.fmt.allocPrint(allocator, \"{}\", .{");
-                                self.emit_expr(arg);
-                                self.write("}) catch unreachable;\n");
-                                self.write_indent();
-                                self.write("result_len.* = result.len;\n");
-                                self.write_indent();
-                                self.write("return result.ptr;\n");
-                            }
-                            Some(ZigType::Bool) => {
-                                // bool → []u8: duplicate "true" or "false" with allocator
-                                self.write("const result = allocator.dupe(u8, if (");
-                                self.emit_expr(arg);
-                                self.write(") \"true\" else \"false\") catch unreachable;\n");
-                                self.write_indent();
-                                self.write("result_len.* = result.len;\n");
-                                self.write_indent();
-                                self.write("return result.ptr;\n");
-                            }
-                            Some(ZigType::Str) => {
-                                // []const u8 → [*c]u8: need to dupe using page_allocator
-                                self.write("const result = allocator.dupe(u8, ");
-                                self.emit_expr(arg);
-                                self.write(") catch unreachable;\n");
-                                self.write_indent();
-                                self.write("result_len.* = result.len;\n");
-                                self.write_indent();
-                                self.write("return result.ptr;\n");
-                            }
-                            Some(ZigType::F64) => {
-                                // f64 → []u8: use std.fmt.allocPrint with page_allocator
-                                self.write("const result = std.fmt.allocPrint(allocator, \"{}\", .{");
-                                self.emit_expr(arg);
-                                self.write("}) catch unreachable;\n");
-                                self.write_indent();
-                                self.write("result_len.* = result.len;\n");
-                                self.write_indent();
-                                self.write("return result.ptr;\n");
-                            }
-                            _ => {
-                                // Unknown type: just return as-is
-                                self.write("return ");
-                                self.emit_expr(arg);
-                                self.write(";\n");
-                            }
-                        }
-                    } else {
-                        self.write("return;\n");
-                    }
-                } else {
+                if let Some(arg) = &rs.argument {
                     self.write("return ");
-                    if let Some(arg) = &rs.argument {
-                        self.emit_expr(arg);
-                    }
+                    self.emit_expr(arg);
                     self.write(";\n");
+                } else {
+                    self.write("return;\n");
                 }
             }
             Statement::ExpressionStatement(es) => {
@@ -831,10 +964,97 @@ impl Codegen {
                     }
                 }
             }
+            Expression::AwaitExpression(ae) => {
+                let task_var = format!("_t{}", self.task_counter);
+                self.task_counter += 1;
+
+                // emit: (blk: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
+                self.write("(blk: {\n");
+                self.indent += 1;
+
+                self.write_indent();
+                self.write(&format!("var {} = io.async(", task_var));
+
+                match &ae.argument {
+                    Expression::CallExpression(call) => {
+                        self.emit_expr(&call.callee);
+                        self.write(", .{ io");
+                        for arg in &call.arguments {
+                            self.write(", ");
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr(expr);
+                            } else {
+                                self.write("undefined");
+                            }
+                        }
+                        self.write(" }");
+                    }
+                    _ => {
+                        self.emit_expr(&ae.argument);
+                        self.write(", .{ io }");
+                    }
+                }
+
+                self.write(");\n");
+
+                self.write_indent();
+                self.write(&format!("defer _ = {}.cancel(io) catch undefined;\n", task_var));
+
+                self.write_indent();
+                self.write(&format!("break :blk try {}.await(io);\n", task_var));
+
+                self.indent -= 1;
+                self.write_indent();
+                self.write("})");
+            }
+            Expression::NewExpression(ne) => {
+                // Check if this is new Int32Array(...) or new Uint8Array(...)
+                if let Expression::Identifier(id) = &ne.callee {
+                    let obj_name = id.name.as_str();
+                    if obj_name == "Int32Array" {
+                        // new Int32Array([...]) → js_typedarray.fromI32(...)
+                        self.write("js_typedarray.fromI32(");
+                        if let Some(first_arg) = ne.arguments.first() {
+                            if let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
+                                self.write("&[_]i64{");
+                                for (i, elem) in ae.elements.iter().enumerate() {
+                                    if i > 0 { self.write(", "); }
+                                    if let Some(e) = elem.as_expression() {
+                                        self.emit_expr(e);
+                                    }
+                                }
+                                self.write("}");
+                            }
+                        }
+                        self.write(")");
+                        return;
+                    } else if obj_name == "Uint8Array" {
+                        // new Uint8Array([...]) → js_typedarray.fromU8(...)
+                        self.write("js_typedarray.fromU8(");
+                        if let Some(first_arg) = ne.arguments.first() {
+                            if let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
+                                self.write("&[_]u8{");
+                                for (i, elem) in ae.elements.iter().enumerate() {
+                                    if i > 0 { self.write(", "); }
+                                    if let Some(e) = elem.as_expression() {
+                                        self.emit_expr(e);
+                                    }
+                                }
+                                self.write("}");
+                            }
+                        }
+                        self.write(")");
+                        return;
+                    }
+                }
+                // Unsupported NewExpression
+                self.errors.push("Unsupported NewExpression (only Int32Array and Uint8Array are supported)".to_string());
+                self.write("@compileError(\"Unsupported NewExpression\")");
+            }
             _ => {
                 // Unsupported expression type
                 self.errors.push("Unsupported expression type".to_string());
-                self.write("/* unsupported expr */");
+                self.write("@compileError(\"Unsupported expression type\")");
             }
         }
     }
@@ -880,6 +1100,36 @@ impl Codegen {
 
     // Call expression (all calls get `try`)
     fn emit_call(&mut self, ce: &CallExpression) {
+        // Check if this is a Promise .then() or .catch() call (not supported in native_proto)
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+            let prop_name = mem.property.name.as_str();
+            if prop_name == "then" || prop_name == "catch" {
+                self.errors.push(format!(
+                    "Promise.{}() is not supported. Use 'await' instead of '.{}()'",
+                    prop_name, prop_name
+                ));
+                self.write(&format!("@compileError(\"Promise.{}() not supported, use 'await' instead\")", prop_name));
+                return;
+            }
+        }
+
+        // Check if this is a Promise.resolve() or Promise.reject() call
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+            if let Expression::Identifier(ref obj) = mem.object {
+                if obj.name == "Promise" {
+                    let method = mem.property.name.as_str();
+                    if method == "resolve" || method == "reject" {
+                        self.errors.push(format!(
+                            "Promise.{}() is not supported in native_proto mode. Use 'await' with async functions instead.",
+                            method
+                        ));
+                        self.write(&format!("@compileError(\"Promise.{}() not supported\")", method));
+                        return;
+                    }
+                }
+            }
+        }
+
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
         if let Some(builtin) = builtins::detect_builtin_call(ce)
             && self.emit_builtin_call(&builtin, ce) {
@@ -906,12 +1156,26 @@ impl Codegen {
             _ => None,
         };
 
-        // All function calls use `try`.
-        self.write("try ");
+        // Emit function call (no `try` by default, only for error-returning functions).
         if let Some(ref name) = callee_name {
+            // Check if this is a host function call (host_xxx)
+            if name.starts_with("host_") {
+                // Convert host_add(...) to host.add(...)
+                let host_func_name = &name["host_".len()..];
+                self.write(&format!("host.{}(", host_func_name));
+                for (i, arg) in ce.arguments.iter().enumerate() {
+                    if i > 0 { self.write(", "); }
+                    self.emit_expr_arg(arg);
+                }
+                self.write(")");
+                return;
+            }
             self.write(name);
         } else {
-            self.emit_expr(&ce.callee);
+            // Member function call (obj.method(...)) — not fully supported
+            self.errors.push("Member function calls (obj.method()) are not fully supported in native_proto mode".to_string());
+            self.write("@compileError(\"Member function calls not supported\")");
+            return;
         }
         self.write("(");
         for (i, arg) in ce.arguments.iter().enumerate() {

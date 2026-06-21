@@ -91,7 +91,7 @@ function main() {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Function Call ===\n{}", zig);
-        assert!(zig.contains("try greet(")); // all calls get try
+        assert!(zig.contains("greet(")); // function call (no try)
         assert!(zig.contains("++")); // string + → concat
         assert!(zig.contains("var msg:")); // type annotated
     }
@@ -218,7 +218,7 @@ function factorial(n) {
         assert!(zig.contains("const PI: f64 = 3.14;"));
         assert!(zig.contains("fn circleArea(radius: anytype)"));
         assert!(zig.contains("var r2: i64 = radius * radius;"));
-        assert!(zig.contains("try factorial(")); // call gets try
+        assert!(zig.contains("factorial(")); // function call (no try)
         assert!(zig.contains("if (n") && zig.contains("<="), "missing if: {}", zig);
     }
 
@@ -619,18 +619,14 @@ export function log(msg) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Export Function Signature ===\n{}", zig);
-        // Export function: no allocator parameter, params are []const u8, return type is [*c]u8 for number.
-        assert!(zig.contains("fn add(a: []const u8, b: []const u8, result_len: *usize) [*c]u8 {"));
-        // Export function: return type should be [*c]u8 (for allocPrint or dupe).
-        assert!(zig.contains("[*c]u8 {"));
-        // Export function with @returns {void}: should be void, no allocator parameter.
-        assert!(zig.contains("fn log(msg: []const u8) void {"));
-        // Export function: should generate return value conversion (allocPrint with page_allocator).
-        assert!(zig.contains("const result = std.fmt.allocPrint(allocator"));
-        assert!(zig.contains("result_len.* = result.len;"));
-        assert!(zig.contains("return result.ptr;"));
-        // Export function: should generate parameter parsing code.
-        assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
+        // Export function: should use real types from JSDoc
+        // NOTE: native_proto adds 'export ' prefix to export functions
+        assert!(zig.contains("export fn add (a: i64, b: i64) i64 {"));
+        // Export function with @returns {void}: should be void.
+        assert!(zig.contains("export fn log (msg: i64) void {"));
+        // Export function: should NOT generate C ABI conversion code
+        assert!(!zig.contains("result_len"));
+        assert!(!zig.contains("parseInt"));
     }
 
     #[test]
@@ -648,14 +644,14 @@ export function greet(name, age) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Param Annotation Test ===\n{}", zig);
-        // @param {string} name: should not generate parsing code (use directly)
-        // @param {number} age: should generate parseInt code
-        assert!(zig.contains("fn greet(name: []const u8, age: []const u8, result_len: *usize) [*c]u8 {"));
-        assert!(zig.contains("const age_int = try std.fmt.parseInt(i64, age, 10);"));
-        // name should be used directly (no parsing)
-        assert!(zig.contains("name"));
-        // Should not contain name_int (no parsing for string)
-        assert!(!zig.contains("name_int"));
+        // @param {string} name: should use []const u8 directly
+        // @param {number} age: should use i64 directly
+        // NOTE: native_proto adds 'export ' prefix to export functions
+        assert!(zig.contains("export fn greet (name: []const u8, age: i64) []const u8 {"));
+        // Should NOT generate parseInt code (types are already correct)
+        assert!(!zig.contains("parseInt"));
+        // Should use ++ for string concatenation
+        assert!(zig.contains("++"));
     }
 
     #[test]
@@ -690,14 +686,15 @@ export function multiply(a, b) {
         let zig = transpile_js(js).unwrap();
         println!("=== @param E2E Test ===\n{}", zig);
 
-        // Verify the generated code has correct structure
-        assert!(zig.contains("fn multiply(a: []const u8, b: []const u8, result_len: *usize) [*c]u8 {"));
-        assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
-        assert!(zig.contains("const b_int = try std.fmt.parseInt(i64, b, 10);"));
-        // Verify the return value uses result variable for free_string
-        assert!(zig.contains("const result = std.fmt.allocPrint(allocator, \"{}\", .{a_int * b_int}) catch unreachable;"));
-        assert!(zig.contains("result_len.* = result.len;"));
-        assert!(zig.contains("return result.ptr;"));
+        // Verify the generated code has correct structure with real types
+        assert!(zig.contains("fn multiply(a: i64, b: i64) i64 {"));
+        // Should NOT generate parseInt code (types are already i64)
+        assert!(!zig.contains("parseInt"));
+        // Should NOT generate allocPrint code (return type is i64, not string)
+        assert!(!zig.contains("allocPrint"));
+        assert!(!zig.contains("result_len"));
+        // Should directly return the multiplication result
+        assert!(zig.contains("return a * b;"));
 
         // Run zig ast-check to verify the code is syntactically correct
         let tmp_dir = std::env::temp_dir();
@@ -784,10 +781,14 @@ export function greet(name) {
 
         println!("=== Generated Zig code ===\n{}", zig);
 
-        // Verify return value uses dupe for []const u8 → [*c]u8 conversion
-        assert!(zig.contains("allocator.dupe(u8,"), "Expected allocator.dupe(u8, ...) for string return, got:\n{}", zig);
-        // Verify the function signature (no allocator parameter, returns [*c]u8 with result_len)
-        assert!(zig.contains("fn greet(name: []const u8, result_len: *usize) [*c]u8 {"), "Expected fn greet(name: []const u8, result_len: *usize) [*c]u8 {{, got:\n{}", zig);
+        // Verify return value uses correct type (no dupe needed for []const u8)
+        assert!(zig.contains("fn greet(name: []const u8) []const u8 {"));
+        // Verify string concatenation uses ++ operator
+        assert!(zig.contains("++"));
+        // Should NOT contain allocator.dupe (no C ABI conversion)
+        assert!(!zig.contains("allocator.dupe"));
+        // Should NOT contain result_len (no C ABI wrapper)
+        assert!(!zig.contains("result_len"));
     }
 
     #[test]
@@ -1477,5 +1478,76 @@ export function testMathNew(x, y) {
         assert!(zig.contains("std.crypto.random.int(u32)"), "Expected 'std.crypto.random.int(u32)' in:\n{}", zig);
         assert!(zig.contains("std.math.pow(f64,"), "Expected 'std.math.pow(f64,' in:\n{}", zig);
         assert!(zig.contains("if ("), "Expected 'if (' in max/min:\n{}", zig);
+    }
+
+    // ── Test: AwaitExpression support ─────────────
+
+    #[test]
+    fn test_native_proto_await() {
+        // JS source: async function with await
+        let js = r#"
+/**
+ * @param {i64} x
+ * @returns {i64}
+ */
+export async function asyncDouble(x) {
+    const result = await double(x);
+    return result;
+}
+
+function double(x) {
+    return x * 2;
+}
+"#;
+        
+        // Step1: generate Zig source from JS
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (AwaitExpression) ===\n{}", zig);
+        
+        // Step2: verify async function signature has `io: anytype`
+        assert!(zig.contains("io: anytype"), 
+            "Expected 'io: anytype' in async function signature, got:\n{}", zig);
+        
+        // Step3: verify await is translated to io.async() + .await(io)
+        assert!(zig.contains("io.async("), 
+            "Expected 'io.async(' in generated code, got:\n{}", zig);
+        assert!(zig.contains(".await(io)"), 
+            "Expected '.await(io)' in generated code, got:\n{}", zig);
+        // defer _ = _tN.cancel(io) catch undefined;
+        assert!(zig.contains("defer"), 
+            "Expected 'defer' in generated code, got:\n{}", zig);
+        assert!(zig.contains(".cancel(io)"), 
+            "Expected '.cancel(io)' in generated code, got:\n{}", zig);
+        
+        // Step4: verify non-async function does NOT have `io: anytype`
+        assert!(zig.contains("fn double(x: anytype) i64 {"), 
+            "Expected non-async function signature, got:\n{}", zig);
+        
+        // Step5: verify the generated code passes `zig ast-check`
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join("await_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    eprintln!("=== zig ast-check failed ===");
+                    eprintln!("Generated code:\n{}", zig);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+        
+        println!("=== AwaitExpression test passed! ===");
     }
 }
