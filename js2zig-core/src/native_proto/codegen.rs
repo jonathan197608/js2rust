@@ -793,7 +793,9 @@ impl Codegen {
                 }
             }
             _ => {
-                self.write("/* TODO expr */");
+                // Unsupported expression type
+                self.errors.push("Unsupported expression type".to_string());
+                self.write("/* unsupported expr */");
             }
         }
     }
@@ -975,6 +977,93 @@ impl Codegen {
                 true
             }
             
+            builtins::BuiltinCall::MathRandom => {
+                // Math.random() → @as(f64, @floatFromInt(std.crypto.random.int(u64))) / @as(f64, std.math.maxInt(u64))
+                // Simplified: use std.time.timestamp() for now
+                if ce.arguments.len() != 0 {
+                    self.errors.push("Math.random() requires no arguments".to_string());
+                    return false;
+                }
+                self.write("(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967295.0))");
+                true
+            }
+            
+            builtins::BuiltinCall::MathPow => {
+                // Math.pow(base, exp) → std.math.pow(f64, base, exp)
+                if ce.arguments.len() != 2 {
+                    self.errors.push("Math.pow() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                self.write("std.math.pow(f64, ");
+                if let Some(arg) = ce.arguments.get(0) {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(", ");
+                if let Some(arg) = ce.arguments.get(1) {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            builtins::BuiltinCall::MathMax => {
+                // Math.max(a, b, ...) → find maximum of all arguments
+                if ce.arguments.len() < 2 {
+                    self.errors.push("Math.max() requires at least 2 arguments".to_string());
+                    return false;
+                }
+                // Generate labeled block with loop
+                self.write("(blk: { var __max = ");
+                if let Some(arg) = ce.arguments.get(0) {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write("; ");
+                // Iterate over remaining arguments
+                for (i, arg) in ce.arguments.iter().enumerate() {
+                    if i == 0 { continue; }
+                    if let Some(expr) = arg.as_expression() {
+                        self.write("if (");
+                        let arg_str = self.emit_expr_to_string(expr);
+                        self.write(&format!("{} > __max) __max = {}; ", arg_str, arg_str));
+                    }
+                }
+                self.write(" break :blk __max; })");
+                true
+            }
+            
+            builtins::BuiltinCall::MathMin => {
+                // Math.min(a, b, ...) → find minimum of all arguments
+                if ce.arguments.len() < 2 {
+                    self.errors.push("Math.min() requires at least 2 arguments".to_string());
+                    return false;
+                }
+                // Generate labeled block with loop
+                self.write("(blk: { var __min = ");
+                if let Some(arg) = ce.arguments.get(0) {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write("; ");
+                // Iterate over remaining arguments
+                for (i, arg) in ce.arguments.iter().enumerate() {
+                    if i == 0 { continue; }
+                    if let Some(expr) = arg.as_expression() {
+                        self.write("if (");
+                        let arg_str = self.emit_expr_to_string(expr);
+                        self.write(&format!("{} < __min) __min = {}; ", arg_str, arg_str));
+                    }
+                }
+                self.write(" break :blk __min; })");
+                true
+            }
+            
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → arr.pop()
@@ -1140,39 +1229,190 @@ impl Codegen {
             
             // ── String methods ─────────────────────────────
             builtins::BuiltinCall::StringIndexOf => {
-                // TODO: str.indexOf(search) requires substring search
-                self.write("/* TODO: String.indexOf() */");
-                true
+                // str.indexOf(search) → std.mem.indexOf(u8, str, search)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("String.indexOf() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::StringLiteral(obj) = &mem.object {
+                        let str_val = obj.value.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "(@as(i64, @intCast(std.mem.indexOf(u8, \"{str_val}\", {arg}) orelse -1)))",
+                            str_val = str_val,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                // Fallback: assume object is a variable
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::StringIncludes => {
-                // TODO: str.includes(search) requires substring search
-                self.write("/* TODO: String.includes() */");
-                true
+                // str.includes(search) → std.mem.indexOf(u8, str, search) != null
+                if ce.arguments.len() != 1 {
+                    self.errors.push("String.includes() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::StringStartsWith => {
-                // TODO: str.startsWith(prefix) requires prefix check
-                self.write("/* TODO: String.startsWith() */");
-                true
+                // str.startsWith(prefix) → std.mem.startsWith(u8, str, prefix)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("String.startsWith() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "std.mem.startsWith(u8, {obj}, {arg})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::StringEndsWith => {
-                // TODO: str.endsWith(suffix) requires suffix check
-                self.write("/* TODO: String.endsWith() */");
-                true
+                // str.endsWith(suffix) → std.mem.endsWith(u8, str, suffix)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("String.endsWith() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "std.mem.endsWith(u8, {obj}, {arg})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::StringTrim => {
-                // TODO: str.trim() requires std.mem.trim
-                self.write("/* TODO: String.trim() */");
-                true
+                // str.trim() → std.mem.trim(u8, str, &std.ascii.whitespace)
+                if ce.arguments.len() != 0 {
+                    self.errors.push("String.trim() requires no arguments".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        self.write(&format!(
+                            "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
+                            obj = obj_name
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::StringSplit => {
-                // TODO: str.split(sep) requires split logic
-                self.write("/* TODO: String.split() */");
-                true
+                // str.split(sep) → std.mem.split(u8, str, sep) (returns iterator)
+                // Simplified: returns array of strings
+                if ce.arguments.len() != 1 {
+                    self.errors.push("String.split() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        // Generate code to split string into array
+                        self.write(&format!(
+                            "(blk: {{ var __split_result = std.ArrayList([]const u8).init(allocator); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
         }
     }
@@ -1182,7 +1422,9 @@ impl Codegen {
         if let Some(e) = arg.as_expression() {
             self.emit_expr(e);
         } else {
-            self.write("/* TODO arg */");
+            // Spread argument not supported yet
+            self.errors.push("Spread argument not supported".to_string());
+            self.write("/* spread arg */");
         }
     }
 
@@ -1204,7 +1446,11 @@ impl Codegen {
                 );
                 self.write("/* error: dynamic property assignment */");
             }
-            _ => self.write("/* TODO assign target */"),
+            _ => {
+                // Unsupported assignment target
+                self.errors.push("Unsupported assignment target".to_string());
+                self.write("/* unsupported assign target */");
+            }
         }
         self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
         self.emit_expr(&ae.right);
@@ -1223,8 +1469,9 @@ impl Codegen {
                 self.write("))");
             }
             _ => {
-                self.write("/* TODO unary */");
-                self.emit_expr(&ue.argument);
+                // Unsupported unary operator (e.g., delete, void)
+                self.errors.push("Unsupported unary operator".to_string());
+                self.write("/* unsupported unary */");
             }
         }
     }

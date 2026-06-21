@@ -1443,4 +1443,34 @@ export function sliceSum() {
             }
         }
     }
+    
+    // ── Test: New Math methods (random, pow, max, min) ─────────────────────
+    
+    #[test]
+    fn test_native_proto_math_new_methods() {
+        // JS source: Math.random(), Math.pow(), Math.max(), Math.min()
+        let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export function testMathNew(x, y) {
+    const rand = Math.random();
+    const powXY = Math.pow(x, y);
+    const maxXY = Math.max(x, y);
+    const minXY = Math.min(x, y);
+    return powXY + maxXY + minXY;
+}
+"#;
+        
+        // Step1: generate Zig source from JS
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Math new methods) ===\n{}", zig);
+        
+        // Step2: verify Math methods are generated correctly
+        assert!(zig.contains("std.crypto.random.int(u32)"), "Expected 'std.crypto.random.int(u32)' in:\n{}", zig);
+        assert!(zig.contains("std.math.pow(f64,"), "Expected 'std.math.pow(f64,' in:\n{}", zig);
+        assert!(zig.contains("if ("), "Expected 'if (' in max/min:\n{}", zig);
+    }
 }
