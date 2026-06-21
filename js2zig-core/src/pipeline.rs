@@ -375,7 +375,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // For normal groups: core file's JS exports → C ABI;
                 //                    dependency file: only re-exported names → C ABI.
                 // NOTE: In native_proto mode, exports are detected from JS source (export keyword).
-                // This variable is passed to transpile_js_with_metadata() for accurate export detection.
+                // This variable is passed to transpile_js() for accurate export detection.
                 let codegen_exports: HashSet<String> = if is_test_group {
                     extract_all_function_names(stripped)
                 } else if *member == group.core_file {
@@ -405,7 +405,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     host_fns.async_fn_names().into_iter().collect();
 
                 // Host function type info (currently not passed to native_proto)
-                // TODO: Modify transpile_js_with_metadata() to accept host function info
+                // TODO: Modify transpile_js() to accept host function info
                 // for better type inference of host function calls.
                 let _host_info = crate::codegen::HostTypeInfo {
                     return_types: &host_return_types,
@@ -415,7 +415,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 };
 
                 // Use native_proto (strict static type system)
-                let transpile_result = crate::native_proto::transpile_js_with_metadata(stripped, Some(codegen_exports));
+                let transpile_result = crate::native_proto::transpile_js(stripped, Some(codegen_exports));
                 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {

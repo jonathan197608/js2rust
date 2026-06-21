@@ -153,18 +153,17 @@ mod jsdoc;
 mod tests;
 
 /// Transpile a JS string to Zig source (native type system).
-/// Returns error if type inference fails (strict static type system).
-/// This is the simple version that returns just the Zig source code
-/// (compatible with existing tests).
-pub fn transpile_js(js_source: &str) -> Result<String, String> {
-    transpile_js_inner(js_source, None).map(|r| r.zig_code)
-}
-
-/// Transpile a JS string to Zig source WITH metadata.
-/// Returns TranspileResult with generated code AND metadata
+///
+/// Returns full `TranspileResult` with generated code AND metadata
 /// (exported functions, diagnostics, etc.).
-/// Used by the pipeline for C ABI wrapper generation.
-pub fn transpile_js_with_metadata(js_source: &str, exported_functions: Option<std::collections::HashSet<String>>) -> Result<TranspileResult, String> {
+///
+/// `exported_functions`: Optional set of exported function names.
+/// If provided, only functions in this set generate `pub fn` (export semantics).
+/// If None, treat all toplevel functions as exports (backward compatibility).
+pub fn transpile_js(
+    js_source: &str,
+    exported_functions: Option<std::collections::HashSet<String>>,
+) -> Result<TranspileResult, String> {
     transpile_js_inner(js_source, exported_functions)
 }
 
