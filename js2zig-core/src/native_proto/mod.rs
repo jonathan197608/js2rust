@@ -243,6 +243,8 @@ pub struct Codegen {
     pub param_name_map: std::collections::HashMap<String, String>,
     /// The return type of the current function being emitted.
     pub current_fn_return_type: Option<ZigType>,
+    /// Cache of function return types (for CallExpression type inference).
+    pub fn_return_types: std::collections::HashMap<String, ZigType>,
     /// Exported functions metadata (for pipeline C ABI wrapper generation).
     pub exported_fns: Vec<ExportedFunction>,
     /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).
