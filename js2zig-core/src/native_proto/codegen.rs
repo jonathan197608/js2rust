@@ -578,6 +578,8 @@ impl Codegen {
                 Some(definite_ty) => {
                     let rt = definite_ty.clone();
                     self.current_fn_return_type = Some(rt.clone());
+                    // Rule 7: cache the return type for CallExpression type inference
+                    self.fn_return_types.insert(name.to_string(), rt);
                     definite_ty.to_zig_type()
                 }
                 None => {
@@ -585,8 +587,10 @@ impl Codegen {
                     self.errors.push(
                         "Cannot infer return type: no return expression has a definite type (Rule 6, 8).".to_string()
                     );
-                    // Default to void for now.
-                    self.current_fn_return_type = Some(ZigType::I64);
+                    // Default to i64 for now.
+                    let default_ty = ZigType::I64;
+                    self.current_fn_return_type = Some(default_ty.clone());
+                    self.fn_return_types.insert(name.to_string(), default_ty);
                     "i64".to_string()
                 }
             }
@@ -2270,6 +2274,20 @@ impl Codegen {
                     // Rule 3: Cannot infer type
                     None
                 }
+            }
+
+            // CallExpression: look up function return type from cache (Rule 5-6)
+            Expression::CallExpression(ce) => {
+                // Get callee name
+                if let Expression::Identifier(id) = &ce.callee {
+                    let fn_name = id.name.as_str();
+                    // Look up return type from cache
+                    if let Some(ret_ty) = self.fn_return_types.get(fn_name) {
+                        return Some(ret_ty.clone());
+                    }
+                }
+                // Cannot determine return type
+                None
             }
 
             // Rule 3: Other expressions → indeterminate
