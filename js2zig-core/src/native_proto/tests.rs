@@ -219,7 +219,7 @@ function main() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_function_call");
         assert!(zig.contains("greet(")); // function call (no try)
-        assert!(zig.contains("++")); // string + →concat
+        assert!(zig.contains("std.fmt.allocPrint")); // string concat → allocPrint
         assert!(zig.contains("var msg:")); // type annotated
     }
 
@@ -316,7 +316,6 @@ function divide(a, b) {
         // Division returns f64 by default? Actually we infer from left operand.
     }
 
-    #[ignore]
     #[test]
     fn test_native_proto_complex() {
         let js = r#"
@@ -760,8 +759,8 @@ export function greet(name, age) {
         assert!(zig.contains("pub fn greet(name: []const u8, age: i64) []const u8 {"));
         // Should NOT generate parseInt code (types are already correct)
         assert!(!zig.contains("parseInt"));
-        // Should use ++ for string concatenation
-        assert!(zig.contains("++"));
+        // Should use std.fmt.allocPrint for string concatenation (Zig 0.16.0: ++ requires comptime-known slices)
+        assert!(zig.contains("std.fmt.allocPrint"));
     }
 
     #[test]
@@ -854,9 +853,9 @@ function greet(name) {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_string_concat");
         
-        // Verify string concatenation uses ++ operator
-        assert!(zig.contains(" ++ "), "Expected ++ operator for string concat, got:\n{}", zig);
-        assert!(!zig.contains(" + "), "Should not use + operator for string concat, got:\n{}", zig);
+        // Verify string concatenation uses std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices)
+        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for string concat, got:\n{}", zig);
+        assert!(!zig.contains(" ++ "), "Should not use ++ operator for string concat, got:\n{}", zig);
     }
 
     #[test]
@@ -871,10 +870,9 @@ function fullName(first, last) {
 
         println!("=== Generated Zig code ===\n{}", zig);
 
-        // Verify all concatenations use ++ operator
-        let plus_count = zig.matches(" + ").count();
-        assert_eq!(plus_count, 0, "Found {} instances of + operator, expected 0 for string concat", plus_count);
-        assert!(zig.contains(" ++ "), "Expected ++ operator for string concat, got:\n{}", zig);
+        // Verify all concatenations use std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices)
+        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for string concat, got:\n{}", zig);
+        assert!(!zig.contains(" ++ "), "Should not use ++ operator for string concat, got:\n{}", zig);
     }
 
     #[test]
@@ -893,8 +891,8 @@ export function greet(name) {
         
         // Verify return value uses correct type (no dupe needed for []const u8)
         assert!(zig.contains("fn greet(name: []const u8) []const u8 {"));
-        // Verify string concatenation uses ++ operator
-        assert!(zig.contains("++"));
+        // Verify string concatenation uses std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices)
+        assert!(zig.contains("std.fmt.allocPrint"));
         // Should NOT contain allocator.dupe (no C ABI conversion)
         assert!(!zig.contains("allocator.dupe"));
         // Should NOT contain result_len (no C ABI wrapper)
@@ -1368,7 +1366,6 @@ export function testMathNew(x, y) {
 
     // ── Test: AwaitExpression support ─────────────
 
-    #[ignore]
     #[test]
     fn test_native_proto_await() {
         // JS source: async function with await.

@@ -19,11 +19,23 @@ pub enum BuiltinCall {
     MathMin,      // Math.min(...args)
     
     // Array methods (non-closure)
-    ArrayPop,     // arr.pop()
+    ArrayPop,      // arr.pop()
+    ArrayShift,    // arr.shift()
+    ArrayUnshift,  // arr.unshift(x)
+    ArrayReverse,  // arr.reverse()
+    ArraySort,     // arr.sort()
     ArrayIndexOf,  // arr.indexOf(x)
     ArrayIncludes, // arr.includes(x)
     ArrayJoin,     // arr.join(sep)
     ArraySlice,    // arr.slice(start, end)
+    
+    // Array methods (with closure)
+    ArrayForEach,  // arr.forEach(fn)
+    ArrayMap,      // arr.map(fn)
+    ArrayFilter,   // arr.filter(fn)
+    ArrayReduce,   // arr.reduce(fn, init)
+    ArraySome,     // arr.some(fn)
+    ArrayEvery,    // arr.every(fn)
     
     // String methods
     StringIndexOf,    // str.indexOf(search)
@@ -32,6 +44,15 @@ pub enum BuiltinCall {
     StringEndsWith,   // str.endsWith(suffix)
     StringTrim,       // str.trim()
     StringSplit,      // str.split(sep)
+    
+    // Map methods (called on local Map variables)
+    MapSet,      // map.set(key, value)
+    MapGet,      // map.get(key)
+    MapHas,      // map.has(key) or set.has(value)
+    MapDelete,   // map.delete(key) or set.delete(value)
+    
+    // Set methods (called on local Set variables)
+    SetAdd,      // set.add(value)
 }
 
 /// Check if a call expression is a built-in object call
@@ -94,8 +115,35 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             
             // Array-specific methods
             "pop" => Some(BuiltinCall::ArrayPop),
+            "shift" => Some(BuiltinCall::ArrayShift),
+            "unshift" => Some(BuiltinCall::ArrayUnshift),
+            "reverse" => Some(BuiltinCall::ArrayReverse),
+            "sort" => Some(BuiltinCall::ArraySort),
             "join" => Some(BuiltinCall::ArrayJoin),
             "slice" => Some(BuiltinCall::ArraySlice),
+            "forEach" => Some(BuiltinCall::ArrayForEach),
+            "map" => Some(BuiltinCall::ArrayMap),
+            "filter" => Some(BuiltinCall::ArrayFilter),
+            "reduce" => Some(BuiltinCall::ArrayReduce),
+            "some" => Some(BuiltinCall::ArraySome),
+            "every" => Some(BuiltinCall::ArrayEvery),
+            
+            // Map methods (called on local Map variables)
+            "set" => Some(BuiltinCall::MapSet),
+            "get" => Some(BuiltinCall::MapGet),
+            "has" => {
+                // Could be Map.has() or Set.has()
+                // Default to Map.has(), will be resolved in codegen
+                Some(BuiltinCall::MapHas)
+            }
+            "delete" => {
+                // Could be Map.delete() or Set.delete()
+                // Default to Map.delete(), will be resolved in codegen
+                Some(BuiltinCall::MapDelete)
+            }
+            
+            // Set methods (called on local Set variables)
+            "add" => Some(BuiltinCall::SetAdd),
             
             _ => None,
         }
