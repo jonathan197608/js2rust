@@ -110,3 +110,31 @@ export function testDynArrayElementAccessIdx1() {
     arr.push(30);
     return arr[1] + 0;
 }
+
+// ── JSON serialization/deserialization tests (native_proto) ──────────
+
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {string[]} tags
+ */
+
+/**
+ * @param {User} user
+ * @returns {string}
+ */
+export function getUserJson(user) {
+    return JSON.stringify(user);
+}
+
+/**
+ * @returns {string}
+ */
+export function parseUserJson() {
+    /**
+     * @type {User}
+     */
+    const user = JSON.parse('{"name":"Alice","age":30,"tags":["a","b"]}');
+    return user.name + " is " + user.age + " years old";
+}

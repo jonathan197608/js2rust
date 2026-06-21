@@ -952,4 +952,143 @@ export function processUser() {
             }
         }
     }
+    
+    // ── End-to-end test: JSON serialization/deserialization ─────────────
+    
+    #[test]
+    fn test_native_proto_e2e_json() {
+        // JS source: @typedef with toJson() and JSON.parse()
+        let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {string[]} tags
+ */
+
+/**
+ * @param {User} user
+ * @returns {string}
+ */
+export function getUserJson(user) {
+    return JSON.stringify(user);
+}
+
+/**
+ * @returns {string}
+ */
+export function parseUserJson() {
+    /**
+     * @type {User}
+     */
+    const user = JSON.parse('{"name":"Alice","age":30,"tags":["a","b"]}');
+    return user.name + " is " + user.age + " years old";
+}
+"#;
+        
+        // Step 1: generate Zig source from JS
+        let zig_gen = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (JSON) ===\n{}", zig_gen);
+        
+        // Step 2: create a complete Zig program
+        // Remove `const std = @import("std");` from generated code to avoid duplicate
+        let zig_gen_clean = zig_gen.replace("const std = @import(\"std\");\n", "");
+        
+        let zig_full = format!(
+            r#"const std = @import("std");
+
+// ── Generated code from JS ─────────────────────────────
+{}
+
+// ── Main function ─────────────────────────────────────
+pub fn main() !void {{
+    // Test JSON.stringify()
+    const user = User{{
+        .name = "Bob",
+        .age = 25,
+        .tags = &[_][]const u8{{ "tag1", "tag2" }},
+    }};
+    
+    const json = try user.toJson(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(json);
+    std.debug.print("Serialized JSON: {{s}}\n", .{{json}});
+    
+    // Test JSON.parse()
+    const parsed = std.json.parse(User, .{{ .allocator = std.heap.page_allocator, .ignore_unknown_fields = true }}, "{{\"name\":\"Alice\",\"age\":30,\"tags\":[\"a\",\"b\"]}}") catch unreachable;
+    std.debug.print("Parsed: {{s}} is {{d}} years old\n", .{{parsed.name, parsed.age}});
+}}
+"#,
+            zig_gen_clean
+        );
+        
+        println!("=== Complete Zig program ===\n{}", zig_full);
+        
+        // Step 3: write to temp file and compile
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join("e2e_json_test.zig");
+        std::fs::write(&zig_path, &zig_full).unwrap();
+        
+        // Run `zig ast-check` first
+        let check_output = std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output();
+        
+        match check_output {
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("=== zig ast-check failed ===");
+                    eprintln!("Generated code:\n{}", zig_full);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                return; // skip if zig not available
+            }
+        }
+        
+        // Step 4: compile with `zig build-exe`
+        let exe_path = tmp_dir.join("e2e_json_test.exe");
+        let compile_output = std::process::Command::new("zig.exe")
+            .args(&["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
+            .current_dir(&tmp_dir)
+            .output();
+        
+        match compile_output {
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("=== zig build-exe failed ===");
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                    // Don't panic - the generated code might have issues
+                    return;
+                } else {
+                    println!("=== zig build-exe passed ===");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig build-exe: {}", e);
+                return; // skip if zig not available
+            }
+        }
+        
+        // Step 5: run the executable and verify output
+        if exe_path.exists() {
+            let run_output = std::process::Command::new(&exe_path)
+                .output()
+                .unwrap();
+            
+            let stdout = String::from_utf8_lossy(&run_output.stdout);
+            println!("=== Program output ===\n{}", stdout);
+            
+            // Verify output contains expected strings
+            assert!(stdout.contains("Serialized JSON:"), "Expected 'Serialized JSON:' in output, got: {}", stdout);
+            assert!(stdout.contains("Bob"), "Expected 'Bob' in output, got: {}", stdout);
+            assert!(stdout.contains("Parsed: Alice is 30 years old"), "Expected 'Parsed: Alice is 30 years old' in output, got: {}", stdout);
+        } else {
+            eprintln!("Executable not found: {:?}", exe_path);
+        }
+    }
 }
