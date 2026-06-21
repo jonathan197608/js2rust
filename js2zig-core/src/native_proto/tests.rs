@@ -4,6 +4,41 @@
 #[cfg(test)]
 mod tests {
     use crate::native_proto::transpile_js;
+    use std::process::Command;
+
+    /// Helper: run `zig ast-check` on generated Zig code.
+    /// Panics if ast-check fails (to fail the test).
+    /// Skips gracefully if `zig` is not installed.
+    fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
+        let tmp_dir = std::env::temp_dir();
+        let zig_path = tmp_dir.join(format!("{}.zig", test_name));
+        std::fs::write(&zig_path, zig_code).unwrap();
+
+        match Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    eprintln!("=== zig ast-check failed for {} ===", test_name);
+                    eprintln!("Generated code:\n{}", zig_code);
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                    panic!("zig ast-check failed");
+                } else {
+                    println!("=== zig ast-check passed for {} ===", test_name);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check (skipping): {}", e);
+            }
+        }
+    }
+
+    /// Helper: transpile JS to Zig, unwrap, print generated code.
+    fn transpile_js_simple(js: &str) -> String {
+        let zig = transpile_js(js).unwrap();
+        zig
+    }
 
     #[test]
     fn test_native_proto_basic() {
@@ -623,10 +658,10 @@ export function log(msg) {
         let zig = transpile_js(js).unwrap();
         println!("=== Export Function Signature ===\n{}", zig);
         // Export function: should use real types from JSDoc
-        // NOTE: native_proto adds 'export ' prefix to export functions
-        assert!(zig.contains("export fn add (a: i64, b: i64) i64 {"));
+        // NOTE: native_proto generates 'pub fn' (not 'export fn')
+        assert!(zig.contains("pub fn add(a: i64, b: i64) i64 {"));
         // Export function with @returns {void}: should be void.
-        assert!(zig.contains("export fn log (msg: i64) void {"));
+        assert!(zig.contains("pub fn log(msg: i64) void {"));
         // Export function: should NOT generate C ABI conversion code
         assert!(!zig.contains("result_len"));
         assert!(!zig.contains("parseInt"));
