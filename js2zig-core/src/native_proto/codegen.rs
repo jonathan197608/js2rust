@@ -114,27 +114,28 @@ impl Codegen {
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
             Statement::FunctionDeclaration(fd) => {
-                // HACK: Assume all toplevel functions are export functions.
-                // TODO: properly detect if function is exported (check fd.modifiers?)
+                // In native_proto mode, treat ALL toplevel functions as export functions.
+                // This is because the pipeline pre-processes the JS source and may strip
+                // the `export` keyword. The ModuleRecord approach doesn't work here.
+                // TODO: find a better way to detect export functions after preprocessing.
                 let old_export = self.current_fn_is_export;
-                self.current_fn_is_export = true;  // HACK: assume export
+                self.current_fn_is_export = true; // HACK: assume export for all toplevel functions
                 self.emit_fn(fd);
                 self.current_fn_is_export = old_export;
             }
             Statement::ExportNamedDeclaration(export_decl) => {
-                // Handle export function/var declarations
+                // Defense in depth: also handle ExportNamedDeclaration (in case the
+                // preprocessor preserves `export` keywords in future versions).
                 match &export_decl.declaration {
                     Some(decl) => {
                         match decl {
                             oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
-                                // This is an export function
                                 let old_export = self.current_fn_is_export;
                                 self.current_fn_is_export = true;
                                 self.emit_fn(fd);
                                 self.current_fn_is_export = old_export;
                             }
                             oxc_ast::ast::Declaration::VariableDeclaration(vd) => {
-                                // This is an export variable
                                 self.emit_var_decl(vd);
                             }
                             _ => { /* skip unsupported */ }

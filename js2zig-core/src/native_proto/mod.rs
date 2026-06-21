@@ -180,6 +180,7 @@ fn transpile_js_inner(js_source: &str) -> Result<TranspileResult, String> {
     if !ret.errors.is_empty() {
         return Err(format!("Parse errors: {:?}", ret.errors));
     }
+
     let mut cg = Codegen::new();
     cg.jsdoc_data = Some(jsdoc_data);
     cg.generate(&ret.program);
