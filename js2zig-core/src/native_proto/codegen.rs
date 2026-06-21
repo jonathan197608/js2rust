@@ -881,6 +881,15 @@ impl Codegen {
         self.write(")");
     }
 
+    /// Emit an expression to a temporary string (preserves self.output and all state).
+    fn emit_expr_to_string(&mut self, expr: &Expression) -> String {
+        let saved = std::mem::take(&mut self.output);
+        self.emit_expr(expr);
+        let result = std::mem::take(&mut self.output);
+        self.output = saved;
+        result
+    }
+
     /// Emit Zig code for a built-in object call
     /// Returns true if the call was handled, false otherwise
     fn emit_builtin_call(&mut self, builtin: &builtins::BuiltinCall, ce: &CallExpression) -> bool {
@@ -979,27 +988,154 @@ impl Codegen {
             }
             
             builtins::BuiltinCall::ArrayIndexOf => {
-                // TODO: arr.indexOf(x) requires loop generation
-                self.write("/* TODO: Array.indexOf() */");
-                true
+                // arr.indexOf(x) → labeled block with loop
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Array.indexOf() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::ArrayIncludes => {
-                // TODO: arr.includes(x) requires loop generation
-                self.write("/* TODO: Array.includes() */");
-                true
+                // arr.includes(x) → labeled block with loop
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Array.includes() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let arg_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        self.write(&format!(
+                            "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::ArrayJoin => {
-                // TODO: arr.join(sep) requires string concatenation
-                self.write("/* TODO: Array.join() */");
-                true
+                // arr.join(sep) → labeled block with std.io.Writer.Allocating
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Array.join() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        let sep_expr = if let Some(arg) = ce.arguments.first() {
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        // Determine format specifier from array element type
+                        let fmt_spec = match self.array_element_types.get(obj_name) {
+                            Some(ZigType::I64) => "{d}",
+                            Some(ZigType::F64) => "{d}",
+                            Some(ZigType::Bool) => "{}",
+                            Some(ZigType::Str) => "{s}",
+                            _ => "{any}",
+                        };
+                        self.write(&format!(
+                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(allocator); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
+                            obj = obj_name,
+                            sep = sep_expr,
+                            fmt = fmt_spec
+                        ));
+                        return true;
+                    }
+                }
+                false
             }
             
             builtins::BuiltinCall::ArraySlice => {
-                // TODO: arr.slice(start, end) requires slice logic
-                self.write("/* TODO: Array.slice() */");
-                true
+                // arr.slice(start, end) → arr.items[start..end]
+                // arr.slice(start) → arr.items[start..]
+                // arr.slice() → arr.items
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        match ce.arguments.len() {
+                            0 => {
+                                self.write(&format!("{}.items", obj_name));
+                            }
+                            1 => {
+                                let arg_expr = if let Some(arg) = ce.arguments.first() {
+                                    if let Some(expr) = arg.as_expression() {
+                                        self.emit_expr_to_string(expr)
+                                    } else {
+                                        "0".to_string()
+                                    }
+                                } else {
+                                    "0".to_string()
+                                };
+                                self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
+                            }
+                            2 => {
+                                let start_expr = if let Some(arg) = ce.arguments.get(0) {
+                                    if let Some(expr) = arg.as_expression() {
+                                        self.emit_expr_to_string(expr)
+                                    } else {
+                                        "0".to_string()
+                                    }
+                                } else {
+                                    "0".to_string()
+                                };
+                                let end_expr = if let Some(arg) = ce.arguments.get(1) {
+                                    if let Some(expr) = arg.as_expression() {
+                                        self.emit_expr_to_string(expr)
+                                    } else {
+                                        "0".to_string()
+                                    }
+                                } else {
+                                    "0".to_string()
+                                };
+                                self.write(&format!("{}.items[{}..{}]", obj_name, start_expr, end_expr));
+                            }
+                            _ => {
+                                self.errors.push("Array.slice() requires 0-2 arguments".to_string());
+                                return false;
+                            }
+                        }
+                        return true;
+                    }
+                }
+                false
             }
             
             // ── String methods ─────────────────────────────

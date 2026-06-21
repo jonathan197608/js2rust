@@ -1258,4 +1258,189 @@ export function popArray() {
             }
         }
     }
+    
+    // ── Test: Array.indexOf() built-in method ─────────────
+    
+    #[test]
+    fn test_native_proto_array_indexof() {
+        // JS source: arr.indexOf(x) - returns index or -1
+        let js = r#"
+/**
+ * @param {number} target
+ * @returns {number}
+ */
+export function findIndex(target) {
+    const arr = [10, 20, 30, 40, 50];
+    return arr.indexOf(target);
+}
+"#;
+        
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Array.indexOf()) ===\n{}", zig);
+        
+        // Verify labeled block with for loop is generated
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(zig.contains(".items"), "Expected .items access in:\n{}", zig);
+        assert!(zig.contains("break :blk"), "Expected break :blk in:\n{}", zig);
+        assert!(zig.contains("@as(i64, -1)"), "Expected @as(i64, -1) fallback in:\n{}", zig);
+        
+        // Verify zig ast-check passes
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("array_indexof_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+            }
+        }
+    }
+    
+    // ── Test: Array.includes() built-in method ─────────────
+    
+    #[test]
+    fn test_native_proto_array_includes() {
+        // JS source: arr.includes(x) - returns bool, used in numeric context
+        let js = r#"
+/**
+ * @param {number} target
+ * @returns {number}
+ */
+export function hasItem(target) {
+    const arr = [10, 20, 30];
+    if (arr.includes(target)) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+        
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Array.includes()) ===\n{}", zig);
+        
+        // Verify labeled block with for loop and bool return
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(zig.contains("break :blk true"), "Expected break :blk true in:\n{}", zig);
+        assert!(zig.contains("break :blk false"), "Expected break :blk false in:\n{}", zig);
+        
+        // Verify zig ast-check passes
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("array_includes_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+            }
+        }
+    }
+    
+    // ── Test: Array.join() built-in method ─────────────
+    
+    #[test]
+    fn test_native_proto_array_join() {
+        // JS source: arr.join(sep) - returns string
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function joinNumbers() {
+    const arr = [1, 2, 3];
+    return arr.join(", ");
+}
+"#;
+        
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Array.join()) ===\n{}", zig);
+        
+        // Verify std.io.Writer.Allocating is used
+        assert!(zig.contains("std.io.Writer.Allocating"), "Expected std.io.Writer.Allocating in:\n{}", zig);
+        assert!(zig.contains("__join_buf"), "Expected __join_buf variable in:\n{}", zig);
+        assert!(zig.contains("writeAll"), "Expected writeAll for separator in:\n{}", zig);
+        // i64 elements should use {d} format
+        assert!(zig.contains("{d}"), "Expected {{d}} format for i64 elements in:\n{}", zig);
+        
+        // Verify zig ast-check passes
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("array_join_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+            }
+        }
+    }
+    
+    // ── Test: Array.slice() built-in method ─────────────
+    
+    #[test]
+    fn test_native_proto_array_slice() {
+        // JS source: arr.slice(start, end) - returns sub-slice
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function sliceSum() {
+    const arr = [10, 20, 30, 40, 50];
+    const sub = arr.slice(1, 4);
+    return sub[0] + sub[1] + sub[2];
+}
+"#;
+        
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Array.slice()) ===\n{}", zig);
+        
+        // Verify slice expression is generated: arr.items[1..4]
+        assert!(zig.contains(".items[1..4]"), "Expected '.items[1..4]' slice in:\n{}", zig);
+        
+        // Verify zig ast-check passes
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("array_slice_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+            }
+        }
+    }
 }
