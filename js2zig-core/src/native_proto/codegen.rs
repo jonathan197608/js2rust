@@ -234,21 +234,15 @@ impl Codegen {
                             let kw = if is_const { "const" } else { "var" };
                             
                             // Rule 4: const → no type annotation, let Zig infer.
-                            // For var: if type is definite (Some), generate annotation;
-                            // if indeterminate (None), report error (Rule 8).
+                            // For var: also no type annotation (let Zig infer).
+                            // Only function parameters need type annotations.
                             match ty {
                                 Some(inferred_ty) => {
-                                    // Definite type: generate annotation (unless const).
-                                    // Store the inferred type for later use.
+                                    // Definite type: store for later use (e.g., member access).
                                     self.var_types.insert(name.to_string(), inferred_ty.clone());
                                     
-                                    if is_const {
-                                        // Rule 4: const → no type annotation.
-                                        self.write(&format!("{} {} = ", kw, name));
-                                    } else {
-                                        // var with definite type → generate annotation.
-                                        self.write(&format!("{} {}: {} = ", kw, name, inferred_ty.to_zig_type()));
-                                    }
+                                    // No type annotation: let Zig infer.
+                                    self.write(&format!("{} {} = ", kw, name));
                                     
                                     self.emit_expr(init);
                                     self.write(";\n");
@@ -2276,6 +2270,33 @@ impl Codegen {
                 }
             }
 
+            // Identifier: look up variable type from var_types (Rule 5)
+            Expression::Identifier(id) => {
+                if let Some(ty) = self.var_types.get(id.name.as_str()) {
+                    Some(ty.clone())
+                } else {
+                    None
+                }
+            }
+
+            // StaticMemberExpression: look up field type from struct type (Rule 5)
+            Expression::StaticMemberExpression(mem) => {
+                let obj_ty = self.infer_expr_type(&mem.object);
+                if let Some(ZigType::Struct(fields)) = obj_ty {
+                    let field_name = mem.property.name.as_str();
+                    for (name, ty) in fields {
+                        if name == field_name {
+                            return Some(ty.clone());
+                        }
+                    }
+                    // Field not found: indeterminate
+                    None
+                } else {
+                    // Object type is indeterminate: cannot infer field type
+                    None
+                }
+            }
+
             // CallExpression: look up function return type from cache (Rule 5-6)
             Expression::CallExpression(ce) => {
                 // Get callee name
@@ -2288,6 +2309,85 @@ impl Codegen {
                 }
                 // Cannot determine return type
                 None
+            }
+
+            // ArrayExpression: if all elements are literals, infer element type
+            Expression::ArrayExpression(ae) => {
+                if ae.elements.is_empty() {
+                    // Empty array: cannot infer element type
+                    None
+                } else {
+                    // Infer element type from first element (if it's a literal)
+                    if let Some(first_elem) = ae.elements.first() {
+                        if let Some(first) = first_elem.as_expression() {
+                            let elem_ty = self.infer_expr_type(first);
+                            // Check all elements have the same definite type
+                            for elem in ae.elements.iter().skip(1) {
+                                if let Some(e) = elem.as_expression() {
+                                    let et = self.infer_expr_type(e);
+                                    match (&elem_ty, &et) {
+                                        (Some(t1), Some(t2)) => {
+                                            if *t1 != *t2 {
+                                                // Type mismatch: indeterminate
+                                                return None;
+                                            }
+                                        }
+                                        _ => {
+                                            // Indeterminate element: cannot infer array type
+                                            return None;
+                                        }
+                                    }
+                                } else {
+                                    // Spread or other: cannot infer
+                                    return None;
+                                }
+                            }
+                            // All elements have definite, matching types
+                            elem_ty.map(|t| ZigType::ArrayList(Box::new(t)))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
+
+            // ObjectExpression: if all field values are literals, infer field types
+            Expression::ObjectExpression(obj) => {
+                if obj.properties.is_empty() {
+                    // Empty object: cannot infer type
+                    None
+                } else {
+                    // Infer field types from literal values
+                    let mut fields: Vec<(String, ZigType)> = Vec::new();
+                    for prop in &obj.properties {
+                        if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                            let field_name = match &p.key {
+                                PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                                PropertyKey::StringLiteral(s) => s.value.to_string(),
+                                _ => {
+                                    // Cannot infer field name: indeterminate
+                                    return None;
+                                }
+                            };
+                            let field_ty = self.infer_expr_type(&p.value);
+                            match field_ty {
+                                Some(t) => {
+                                    fields.push((field_name, t));
+                                }
+                                None => {
+                                    // Indeterminate field value: cannot infer object type
+                                    return None;
+                                }
+                            }
+                        } else {
+                            // Spread property: cannot infer
+                            return None;
+                        }
+                    }
+                    Some(ZigType::Struct(fields))
+                }
             }
 
             // Rule 3: Other expressions → indeterminate
