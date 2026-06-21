@@ -444,10 +444,8 @@ impl<'a> ZigCodegen<'a> {
                 // If callback is an arrow function, inline its body directly.
                 // This allows captured variables to be modified correctly.
                 let arrow = if let Some(arg0) = args.first() {
-                    if let Some(expr) = arg0.as_expression() {
-                        if let Expression::ArrowFunctionExpression(arrow) = expr {
-                            Some(arrow)
-                        } else { None }
+                    if let Some(Expression::ArrowFunctionExpression(arrow)) = arg0.as_expression() {
+                        Some(arrow)
                     } else { None }
                 } else { None };
                 if let Some(arrow) = arrow {
@@ -545,10 +543,8 @@ impl<'a> ZigCodegen<'a> {
                 // callback: (item) or (item, index)
                 // Check arrow param count to decide whether to pass index
                 let has_index = if let Some(arg0) = args.first() {
-                    if let Some(expr) = arg0.as_expression() {
-                        if let Expression::ArrowFunctionExpression(arrow) = expr {
-                            arrow.params.items.len() >= 2
-                        } else { false }
+                    if let Some(Expression::ArrowFunctionExpression(arrow)) = arg0.as_expression() {
+                        arrow.params.items.len() >= 2
                     } else { false }
                 } else { false };
                 self.push("blk: {\n");
@@ -581,10 +577,8 @@ impl<'a> ZigCodegen<'a> {
                 // arr.every(callback) → returns true if all elements pass test
                 // callback: (item) or (item, index)
                 let has_index = if let Some(arg0) = args.first() {
-                    if let Some(expr) = arg0.as_expression() {
-                        if let Expression::ArrowFunctionExpression(arrow) = expr {
-                            arrow.params.items.len() >= 2
-                        } else { false }
+                    if let Some(Expression::ArrowFunctionExpression(arrow)) = arg0.as_expression() {
+                        arrow.params.items.len() >= 2
                     } else { false }
                 } else { false };
                 self.push("blk: {\n");

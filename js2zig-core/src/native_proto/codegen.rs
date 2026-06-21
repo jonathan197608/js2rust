@@ -30,7 +30,7 @@ impl Codegen {
             self.writeln(&format!("const {} = struct {{", name));
             self.indent += 1;
             for field in &td.fields {
-                let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty);
+                let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty, &typedefs);
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
             // Generate toJson() method for serialization using std.json.fmt()
@@ -274,7 +274,7 @@ impl Codegen {
             if let Some(ref jsdoc_data) = self.jsdoc_data {
                 if let Some(ret_type_name) = jsdoc_data.return_types.get(name) {
                     // Use the annotated type.
-                    let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(ret_type_name);
+                    let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(ret_type_name, &jsdoc_data.typedefs);
                     // Set current_fn_return_type from the annotated type.
                     self.current_fn_return_type = Some(match zig_ty.as_str() {
                         "i64" => ZigType::I64,
@@ -373,7 +373,11 @@ impl Codegen {
                         .cloned()
                         .unwrap_or("number".to_string()); // Default to number
                     
-                    let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type);
+                    let empty_typedefs = std::collections::HashMap::new();
+                    let typedefs = self.jsdoc_data.as_ref()
+                        .map(|d| &d.typedefs)
+                        .unwrap_or(&empty_typedefs);
+                    let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, typedefs);
                     
                     // Check if this is a custom type (from @typedef)
                     let is_custom_type = self.jsdoc_data.as_ref()
@@ -763,12 +767,22 @@ impl Codegen {
                 self.write(".");
                 self.write(mem.property.name.as_str());
             }
-            Expression::ComputedMemberExpression(_mem) => {
-                // Dynamic property access is not allowed in strict type system.
-                self.errors.push(
-                    "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
-                );
-                self.write("/* error: dynamic property access */");
+            Expression::ComputedMemberExpression(mem) => {
+                // Check if this is array indexing (numeric literal) or dynamic property access.
+                match &mem.expression {
+                    Expression::NumericLiteral(n) => {
+                        // Array indexing with numeric literal: allow (e.g., arr[0])
+                        self.emit_expr(&mem.object);
+                        self.write(&format!("[{}]", n.value as i64));
+                    }
+                    _ => {
+                        // Dynamic property access is not allowed in strict type system.
+                        self.errors.push(
+                            "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
+                        );
+                        self.write("/* error: dynamic property access */");
+                    }
+                }
             }
             _ => {
                 self.write("/* TODO expr */");
@@ -1481,13 +1495,23 @@ impl Codegen {
     fn walk_expr_for_analysis(&mut self, expr: &Expression) {
         match expr {
             Expression::ComputedMemberExpression(mem) => {
-                // Dynamic property access is not allowed in strict type system.
-                self.errors.push(
-                    "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
-                );
-                // Still walk into sub-expressions to find more errors.
-                self.walk_expr_for_analysis(&mem.object);
-                self.walk_expr_for_analysis(&mem.expression);
+                // Check if this is array indexing (numeric literal) or dynamic property access.
+                match &mem.expression {
+                    Expression::NumericLiteral(_n) => {
+                        // Array indexing with numeric literal: allow (e.g., arr[0])
+                        // Still walk into the object to find more errors.
+                        self.walk_expr_for_analysis(&mem.object);
+                    }
+                    _ => {
+                        // Dynamic property access is not allowed in strict type system.
+                        self.errors.push(
+                            "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
+                        );
+                        // Still walk into sub-expressions to find more errors.
+                        self.walk_expr_for_analysis(&mem.object);
+                        self.walk_expr_for_analysis(&mem.expression);
+                    }
+                }
             }
             Expression::StaticMemberExpression(mem) => {
                 self.walk_expr_for_analysis(&mem.object);

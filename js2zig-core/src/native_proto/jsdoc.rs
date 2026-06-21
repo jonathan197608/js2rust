@@ -306,13 +306,37 @@ fn parse_property(s: &str) -> TypedefField {
 /// "string"  → "[]const u8"
 /// "number"  → "i64"
 /// "boolean" → "bool"
-pub fn jsdoc_type_to_zig(jsdoc_ty: &str) -> String {
-    match jsdoc_ty.trim() {
+/// "string[]" → "[]const []const u8"
+/// "number[]" → "[]const i64"
+/// "User[]"  → "[]const User"  (自定义类型的数组)
+pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>) -> String {
+    let trimmed = jsdoc_ty.trim();
+    
+    // 处理数组类型（以 [] 结尾）
+    if trimmed.ends_with("[]") {
+        let base_type = &trimmed[..trimmed.len() - 2];
+        let base_type = base_type.trim();
+        
+        // 检查 base_type 是否是自定义类型
+        if typedefs.contains_key(base_type) {
+            // 自定义类型的数组：User[] → []const User
+            return format!("[]const {}", base_type);
+        }
+        
+        // 基本类型的数组
+        match base_type {
+            "string" => return "[]const []const u8".to_string(),
+            "number" => return "[]const i64".to_string(),
+            "boolean" => return "[]const bool".to_string(),
+            _ => return format!("[]const {}", base_type), // 未知类型，按自定义类型处理
+        }
+    }
+    
+    // 非数组类型
+    match trimmed {
         "string" => "[]const u8".to_string(),
         "number" => "i64".to_string(),
         "boolean" => "bool".to_string(),
-        "string[]" => "[]const []const u8".to_string(),
-        "number[]" => "[]const i64".to_string(),
         // 自定义类型名（@typedef 定义的），直接返回
         _ => jsdoc_ty.to_string(),
     }
@@ -367,10 +391,11 @@ mod tests {
 
     #[test]
     fn test_jsdoc_type_to_zig() {
-        assert_eq!(jsdoc_type_to_zig("string"), "[]const u8");
-        assert_eq!(jsdoc_type_to_zig("number"), "i64");
-        assert_eq!(jsdoc_type_to_zig("boolean"), "bool");
-        assert_eq!(jsdoc_type_to_zig("User"), "User");
+        let empty_typedefs = HashMap::new();
+        assert_eq!(jsdoc_type_to_zig("string", &empty_typedefs), "[]const u8");
+        assert_eq!(jsdoc_type_to_zig("number", &empty_typedefs), "i64");
+        assert_eq!(jsdoc_type_to_zig("boolean", &empty_typedefs), "bool");
+        assert_eq!(jsdoc_type_to_zig("User", &empty_typedefs), "User");
     }
 
     #[test]

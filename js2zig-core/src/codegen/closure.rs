@@ -589,7 +589,7 @@ impl<'a> ZigCodegen<'a> {
             if ci.return_type != "void" {
                 def.push_str(";\n");
             } else {
-                def.push_str("\n");
+                def.push('\n');
             }
             } else {
                 // Block body — emit each statement in closure context

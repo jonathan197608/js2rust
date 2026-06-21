@@ -803,7 +803,7 @@ export function greet(name) {
  * @property {number} age
  * @property {string[]} tags
  * @property {number[]} scores
- * @property {Address} address
+ * @property {Address[]} addresses
  */
 
 /**
@@ -835,7 +835,7 @@ export function getUserJson(user) {
         assert!(zig.contains("age: i64,"), "Expected age field, got:\n{}", zig);
         assert!(zig.contains("tags: []const []const u8,"), "Expected tags field (string[]), got:\n{}", zig);
         assert!(zig.contains("scores: []const i64,"), "Expected scores field (number[]), got:\n{}", zig);
-        assert!(zig.contains("address: Address,"), "Expected address field (nested struct), got:\n{}", zig);
+        assert!(zig.contains("addresses: []const Address,"), "Expected addresses field (Address[]), got:\n{}", zig);
 
         // Verify User has toJson() method
         assert!(zig.contains("pub fn toJson") && zig.contains("const User"), "Expected toJson() for User, got:\n{}", zig);
@@ -891,19 +891,19 @@ export function getUserJson(user) {
  * @property {number} age
  * @property {string[]} tags
  * @property {number[]} scores
- * @property {Address} address
+ * @property {Address[]} addresses
  */
 
 /**
  * @type {User}
  */
-const data = JSON.parse('{"name":"John","age":30,"tags":["a","b"],"scores":[1,2,3],"address":{"street":"123 Main St","city":"New York","zip":10001}}');
+const data = JSON.parse('{"name":"John","age":30,"tags":["a","b"],"scores":[1,2,3],"addresses":[{"street":"123 Main St","city":"New York","zip":10001}]}');
 
 /**
  * @returns {string}
  */
 export function processUser() {
-    return data.name + " from " + data.address.city;
+    return data.name + " from " + data.addresses[0].city;
 }
 "#;
         let result = transpile_js(js);
@@ -921,10 +921,10 @@ export function processUser() {
 
         // Verify data variable uses the correct type
         assert!(zig.contains("const data: User ="), "Expected 'const data: User', got:\n{}", zig);
-
-        // Verify member access works (data.name, data.address.city)
+        
+        // Verify member access works (data.name, data.addresses[0].city)
         assert!(zig.contains("data.name"), "Expected data.name access, got:\n{}", zig);
-        assert!(zig.contains("data.address.city"), "Expected data.address.city access, got:\n{}", zig);
+        assert!(zig.contains("data.addresses[0].city"), "Expected data.addresses[0].city access, got:\n{}", zig);
 
         // Run zig ast-check to verify the code is syntactically correct
         let tmp_dir = std::env::temp_dir();
