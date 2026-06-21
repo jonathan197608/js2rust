@@ -612,20 +612,34 @@ impl Codegen {
                 _ => "void".to_string(),
             };
             self.writeln(&format!(") {} {{", ret_zig_type));
-        } else {
-            // Non-export function: use anytype for parameters.
-            // `io: anytype, ` is already written above (lines 542-548) for async functions.
+                } else {
+            // Non-export function: use @param annotations if available, else anytype.
+            let empty_typedefs = std::collections::HashMap::new();
+            let typedefs = self.jsdoc_data.as_ref()
+                .map(|d| d.typedefs.clone())
+                .unwrap_or_else(|| empty_typedefs.clone());
+
+            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
+                .and_then(|data| data.param_types.get(name))
+                .map(|params| params.iter().cloned().collect())
+                .unwrap_or_default();
+
             let mut param_idx = 0;
-            for param in fd.params.items.iter() {
+            for param in &fd.params.items {
                 if let Some(pname) = self.binding_name(&param.pattern) {
-                    // Skip `io` parameter for async functions (already added as `io: anytype`)
-                    if is_async && pname == "io" {
-                        continue;
-                    }
+                    if is_async && pname == "io" { continue; }
                     if param_idx > 0 || is_async {
                         self.write(", ");
                     }
-                    self.write(&format!("{}: anytype", pname));
+                    let param_type = fn_param_type_map.get(pname)
+                        .cloned()
+                        .unwrap_or("anytype".to_string());
+                    let zig_type = if param_type == "anytype" {
+                        "anytype".to_string()
+                    } else {
+                        crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, &typedefs)
+                    };
+                    self.write(&format!("{}: {}", pname, zig_type));
                     param_idx += 1;
                 }
             }
