@@ -1324,13 +1324,16 @@ export function testMathNew(x, y) {
     #[ignore]
     #[test]
     fn test_native_proto_await() {
-        // JS source: async function with await
+        // JS source: async function with await.
+        // NOTE: In the real pipeline, `export` is stripped by the preprocessor,
+        // and `exported_functions` is passed to transpile_js() to mark exports.
+        // This test simulates that: no `export` in JS, uses exported_functions param.
         let js = r#"
 /**
  * @param {i64} x
  * @returns {i64}
  */
-export async function asyncDouble(x) {
+async function asyncDouble(x) {
     const result = await double(x);
     return result;
 }
@@ -1339,7 +1342,9 @@ function double(x) {
     return x * 2;
 }
 "#;
-        let zig = transpile_and_check!(js, "test_native_proto_await");
+        let mut exports = std::collections::HashSet::new();
+        exports.insert("asyncDouble".to_string());
+        let zig = transpile_and_check!(js, "test_native_proto_await", exports);
 
         // Step2: verify async function signature has `io: anytype`
         assert!(zig.contains("io: anytype"),
