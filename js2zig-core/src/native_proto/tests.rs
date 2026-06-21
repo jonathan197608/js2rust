@@ -853,18 +853,14 @@ export function getUserJson(user) {
     return JSON.stringify(user);
 }
 "#;
-        let result = transpile_js(js);
-        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
-        let zig = result.unwrap();
-
-        println!("=== Generated Zig code (complex nested struct) ===\n{}", zig);
+        let zig = transpile_and_check!(js, "test_native_proto_typedef_tojson");
 
         // Verify Address struct is generated
         assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
         assert!(zig.contains("street: []const u8,"), "Expected street field, got:\n{}", zig);
         assert!(zig.contains("city: []const u8,"), "Expected city field, got:\n{}", zig);
         assert!(zig.contains("zip: i64,"), "Expected zip field, got:\n{}", zig);
-        
+
         // Verify Address has toJson() method
         assert!(zig.contains("pub fn toJson") && zig.contains("Address"), "Expected toJson() for Address, got:\n{}", zig);
 
@@ -885,32 +881,6 @@ export function getUserJson(user) {
 
         // Verify JSON.stringify() is converted to user.toJson() (no allocator parameter)
         assert!(zig.contains("try user.toJson()"), "Expected try user.toJson(), got:\n{}", zig);
-
-        // Run zig ast-check to verify the code is syntactically correct
-        let tmp_dir = std::env::temp_dir();
-        let zig_path = tmp_dir.join("typedef_tojson_complex_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-
-        let check_output = std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output();
-
-        match check_output {
-            Ok(o) => {
-                if !o.status.success() {
-                    eprintln!("=== zig ast-check failed ===");
-                    eprintln!("Generated code:\n{}", zig);
-                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
-                    panic!("zig ast-check failed");
-                } else {
-                    println!("=== zig ast-check passed ===");
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
     }
 
     #[test]
@@ -945,11 +915,7 @@ export function processUser() {
     return data.name + " from " + data.addresses[0].city;
 }
 "#;
-        let result = transpile_js(js);
-        assert!(result.is_ok(), "Transpile failed: {:?}", result.err());
-        let zig = result.unwrap();
-
-        println!("=== Generated Zig code (JSON.parse with nested structs) ===\n{}", zig);
+        let zig = transpile_and_check!(js, "test_native_proto_json_parse_nested");
 
         // Verify Address and User structs are generated
         assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
@@ -960,36 +926,10 @@ export function processUser() {
 
         // Verify data variable uses the correct type
         assert!(zig.contains("const data: User ="), "Expected 'const data: User', got:\n{}", zig);
-        
+
         // Verify member access works (data.name, data.addresses[0].city)
         assert!(zig.contains("data.name"), "Expected data.name access, got:\n{}", zig);
         assert!(zig.contains("data.addresses[0].city"), "Expected data.addresses[0].city access, got:\n{}", zig);
-
-        // Run zig ast-check to verify the code is syntactically correct
-        let tmp_dir = std::env::temp_dir();
-        let zig_path = tmp_dir.join("json_parse_nested_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-
-        let check_output = std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output();
-
-        match check_output {
-            Ok(o) => {
-                if !o.status.success() {
-                    eprintln!("=== zig ast-check failed ===");
-                    eprintln!("Generated code:\n{}", zig);
-                    eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
-                    panic!("zig ast-check failed");
-                } else {
-                    println!("=== zig ast-check passed ===");
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
     }
     
     // ── End-to-end test: JSON serialization/deserialization ─────────────
@@ -1024,15 +964,14 @@ export function parseUserJson() {
     return user.name + " is " + user.age + " years old";
 }
 "#;
-        
-        // Step 1: generate Zig source from JS
-        let zig_gen = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (JSON) ===\n{}", zig_gen);
-        
+
+        // Step 1: generate Zig source from JS (using macro to reduce duplication)
+        let zig_gen = transpile_and_assert!(js, "test_native_proto_e2e_json");
+
         // Step 2: create a complete Zig program
         // Remove `const std = @import("std");` from generated code to avoid duplicate
         let zig_gen_clean = zig_gen.replace("const std = @import(\"std\");\n", "");
-        
+
         let zig_full = format!(
             r#"const std = @import("std");
 
@@ -1047,11 +986,11 @@ pub fn main() !void {{
         .age = 25,
         .tags = &[_][]const u8{{ "tag1", "tag2" }},
     }};
-    
+
     const json = try user.toJson(std.heap.page_allocator);
     defer std.heap.page_allocator.free(json);
     std.debug.print("Serialized JSON: {{s}}\n", .{{json}});
-    
+
     // Test JSON.parse()
     const parsed = std.json.parse(User, .{{ .allocator = std.heap.page_allocator, .ignore_unknown_fields = true }}, "{{\"name\":\"Alice\",\"age\":30,\"tags\":[\"a\",\"b\"]}}") catch unreachable;
     std.debug.print("Parsed: {{s}} is {{d}} years old\n", .{{parsed.name, parsed.age}});
@@ -1059,19 +998,19 @@ pub fn main() !void {{
 "#,
             zig_gen_clean
         );
-        
+
         println!("=== Complete Zig program ===\n{}", zig_full);
-        
+
         // Step 3: write to temp file and compile
         let tmp_dir = std::env::temp_dir();
         let zig_path = tmp_dir.join("e2e_json_test.zig");
         std::fs::write(&zig_path, &zig_full).unwrap();
-        
+
         // Run `zig ast-check` first
         let check_output = std::process::Command::new("zig.exe")
             .args(&["ast-check", zig_path.to_str().unwrap()])
             .output();
-        
+
         match check_output {
             Ok(o) => {
                 if !o.status.success() {
@@ -1088,14 +1027,14 @@ pub fn main() !void {{
                 return; // skip if zig not available
             }
         }
-        
+
         // Step 4: compile with `zig build-exe`
         let exe_path = tmp_dir.join("e2e_json_test.exe");
         let compile_output = std::process::Command::new("zig.exe")
             .args(&["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
             .current_dir(&tmp_dir)
             .output();
-        
+
         match compile_output {
             Ok(o) => {
                 if !o.status.success() {
@@ -1112,16 +1051,16 @@ pub fn main() !void {{
                 return; // skip if zig not available
             }
         }
-        
+
         // Step 5: run the executable and verify output
         if exe_path.exists() {
             let run_output = std::process::Command::new(&exe_path)
                 .output()
                 .unwrap();
-            
+
             let stdout = String::from_utf8_lossy(&run_output.stdout);
             println!("=== Program output ===\n{}", stdout);
-            
+
             // Verify output contains expected strings
             assert!(stdout.contains("Serialized JSON:"), "Expected 'Serialized JSON:' in output, got: {}", stdout);
             assert!(stdout.contains("Bob"), "Expected 'Bob' in output, got: {}", stdout);
@@ -1144,7 +1083,7 @@ pub fn main() !void {{
  * @property {string} [email]  →optional
  * @property {number} [score]  →optional
  */
- 
+
 /**
  * @param {User} user
  * @returns {string}
@@ -1165,40 +1104,16 @@ export function createUser() {
     return user.name + " has email: " + (user.email || "none");
 }
 "#;
-        
-        // Step1: generate Zig source from JS
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (optional property) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_optional_property");
+
         // Step2: verify optional fields are generated with ?Type
         assert!(zig.contains("name: []const u8,"), "Expected 'name: []const u8,' in:\n{}", zig);
         assert!(zig.contains("age: i64,"), "Expected 'age: i64,' in:\n{}", zig);
         assert!(zig.contains("email: ?[]const u8,"), "Expected 'email: ?[]const u8,' (optional) in:\n{}", zig);
         assert!(zig.contains("score: ?i64,"), "Expected 'score: ?i64,' (optional) in:\n{}", zig);
-        
+
         // Step3: verify toJson() is generated (std.json.fmt() handles ?T automatically)
         assert!(zig.contains("pub fn toJson"), "Expected toJson() method in:\n{}", zig);
-        
-        // Step4: verify the code passes zig ast-check
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("optional_property_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
     }
     
     // ── Test: Math built-in methods ─────────────────────
@@ -1220,38 +1135,14 @@ export function testMath(x) {
     return absX + floorX + ceilX + roundX + sqrtX;
 }
 "#;
-        
-        // Step1: generate Zig source from JS
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Math methods) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_math_methods");
+
         // Step2: verify Math methods are generated correctly
         assert!(zig.contains("@abs("), "Expected '@abs(' in:\n{}", zig);
         assert!(zig.contains("@floor("), "Expected '@floor(' in:\n{}", zig);
         assert!(zig.contains("@ceil("), "Expected '@ceil(' in:\n{}", zig);
         assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
         assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
-        
-        // Step3: verify the code passes zig ast-check
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("math_methods_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
     }
     
     // ── Test: Array.pop() built-in method ─────────────
@@ -1268,34 +1159,10 @@ export function popArray() {
     return arr.pop();
 }
 "#;
-        
-        // Step1: generate Zig source from JS
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Array.pop()) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_array_pop");
+
         // Step2: verify arr.pop() is generated
         assert!(zig.contains("arr.pop()"), "Expected 'arr.pop()' in:\n{}", zig);
-        
-        // Step3: verify the code passes zig ast-check
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("array_pop_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
     }
     
     // ── Test: Array.indexOf() built-in method ─────────────
@@ -1313,36 +1180,14 @@ export function findIndex(target) {
     return arr.indexOf(target);
 }
 "#;
-        
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Array.indexOf()) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_array_indexof");
+
         // Verify labeled block with for loop is generated
         assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(zig.contains(".items"), "Expected .items access in:\n{}", zig);
         assert!(zig.contains("break :blk"), "Expected break :blk in:\n{}", zig);
         assert!(zig.contains("@as(i64, -1)"), "Expected @as(i64, -1) fallback in:\n{}", zig);
-        
-        // Verify zig ast-check passes
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("array_indexof_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-            }
-        }
     }
     
     // ── Test: Array.includes() built-in method ─────────────
@@ -1363,35 +1208,13 @@ export function hasItem(target) {
     return 0;
 }
 "#;
-        
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Array.includes()) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_array_includes");
+
         // Verify labeled block with for loop and bool return
         assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(zig.contains("break :blk true"), "Expected break :blk true in:\n{}", zig);
         assert!(zig.contains("break :blk false"), "Expected break :blk false in:\n{}", zig);
-        
-        // Verify zig ast-check passes
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("array_includes_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-            }
-        }
     }
     
     // ── Test: Array.join() built-in method ─────────────
@@ -1408,36 +1231,14 @@ export function joinNumbers() {
     return arr.join(", ");
 }
 "#;
-        
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Array.join()) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_array_join");
+
         // Verify std.io.Writer.Allocating is used
         assert!(zig.contains("std.io.Writer.Allocating"), "Expected std.io.Writer.Allocating in:\n{}", zig);
         assert!(zig.contains("__join_buf"), "Expected __join_buf variable in:\n{}", zig);
         assert!(zig.contains("writeAll"), "Expected writeAll for separator in:\n{}", zig);
         // i64 elements should use {d} format
         assert!(zig.contains("{d}"), "Expected {{d}} format for i64 elements in:\n{}", zig);
-        
-        // Verify zig ast-check passes
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("array_join_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-            }
-        }
     }
     
     // ── Test: Array.slice() built-in method ─────────────
@@ -1455,32 +1256,10 @@ export function sliceSum() {
     return sub[0] + sub[1] + sub[2];
 }
 "#;
-        
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Array.slice()) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_array_slice");
+
         // Verify slice expression is generated: arr.items[1..4]
         assert!(zig.contains(".items[1..4]"), "Expected '.items[1..4]' slice in:\n{}", zig);
-        
-        // Verify zig ast-check passes
-        let temp_dir = std::env::temp_dir();
-        let zig_path = temp_dir.join("array_slice_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-            }
-        }
     }
     
     // ── Test: New Math methods (random, pow, max, min) ─────────────────────
@@ -1502,11 +1281,8 @@ export function testMathNew(x, y) {
     return powXY + maxXY + minXY;
 }
 "#;
-        
-        // Step1: generate Zig source from JS
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (Math new methods) ===\n{}", zig);
-        
+        let zig = transpile_and_assert!(js, "test_native_proto_math_new_methods");
+
         // Step2: verify Math methods are generated correctly
         assert!(zig.contains("std.crypto.random.int(u32)"), "Expected 'std.crypto.random.int(u32)' in:\n{}", zig);
         assert!(zig.contains("std.math.pow(f64,"), "Expected 'std.math.pow(f64,' in:\n{}", zig);
@@ -1533,56 +1309,26 @@ function double(x) {
     return x * 2;
 }
 "#;
-        
-        // Step1: generate Zig source from JS
-        let zig = transpile_js(js).unwrap();
-        println!("=== Generated Zig code (AwaitExpression) ===\n{}", zig);
-        
+        let zig = transpile_and_check!(js, "test_native_proto_await");
+
         // Step2: verify async function signature has `io: anytype`
-        assert!(zig.contains("io: anytype"), 
+        assert!(zig.contains("io: anytype"),
             "Expected 'io: anytype' in async function signature, got:\n{}", zig);
-        
+
         // Step3: verify await is translated to io.async() + .await(io)
-        assert!(zig.contains("io.async("), 
+        assert!(zig.contains("io.async("),
             "Expected 'io.async(' in generated code, got:\n{}", zig);
-        assert!(zig.contains(".await(io)"), 
+        assert!(zig.contains(".await(io)"),
             "Expected '.await(io)' in generated code, got:\n{}", zig);
         // defer _ = _tN.cancel(io) catch undefined;
-        assert!(zig.contains("defer"), 
+        assert!(zig.contains("defer"),
             "Expected 'defer' in generated code, got:\n{}", zig);
-        assert!(zig.contains(".cancel(io)"), 
+        assert!(zig.contains(".cancel(io)"),
             "Expected '.cancel(io)' in generated code, got:\n{}", zig);
-        
+
         // Step4: verify non-async function does NOT have `io: anytype`
-        assert!(zig.contains("fn double(x: anytype) i64 {"), 
+        assert!(zig.contains("fn double(x: anytype) i64 {"),
             "Expected non-async function signature, got:\n{}", zig);
-        
-        // Step5: verify the generated code passes `zig ast-check`
-        let tmp_dir = std::env::temp_dir();
-        let zig_path = tmp_dir.join("await_test.zig");
-        std::fs::write(&zig_path, &zig).unwrap();
-        
-        match std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
-            .output()
-        {
-            Ok(output) => {
-                if !output.status.success() {
-                    eprintln!("=== zig ast-check failed ===");
-                    eprintln!("Generated code:\n{}", zig);
-                    eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-                    panic!("zig ast-check failed");
-                } else {
-                    println!("=== zig ast-check passed ===");
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to run zig ast-check: {}", e);
-                // Skip if zig not available
-            }
-        }
-        
-        println!("=== AwaitExpression test passed! ===");
     }
 }
 

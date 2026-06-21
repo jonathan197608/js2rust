@@ -186,6 +186,7 @@ fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collectio
     cg.exported_functions = exported_functions;  // ← 存储 exported_functions
     cg.generate(&ret.program);
     // NOTE: Temporarily disabled error check for debugging.
+    // TODO: enable after fixing all codegen bugs.
     // if !cg.errors.is_empty() {
     //     return Err(cg.errors.join("\n"));
     // }
