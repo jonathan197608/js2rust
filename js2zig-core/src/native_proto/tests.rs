@@ -1161,4 +1161,101 @@ export function createUser() {
             }
         }
     }
+    
+    // ── Test: Math built-in methods ─────────────────────
+    
+    #[test]
+    fn test_native_proto_math_methods() {
+        // JS source: Math.abs(), Math.floor(), Math.ceil(), Math.round(), Math.sqrt()
+        let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+export function testMath(x) {
+    const absX = Math.abs(x);
+    const floorX = Math.floor(x);
+    const ceilX = Math.ceil(x);
+    const roundX = Math.round(x);
+    const sqrtX = Math.sqrt(x);
+    return absX + floorX + ceilX + roundX + sqrtX;
+}
+"#;
+        
+        // Step1: generate Zig source from JS
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Math methods) ===\n{}", zig);
+        
+        // Step2: verify Math methods are generated correctly
+        assert!(zig.contains("@abs("), "Expected '@abs(' in:\n{}", zig);
+        assert!(zig.contains("@floor("), "Expected '@floor(' in:\n{}", zig);
+        assert!(zig.contains("@ceil("), "Expected '@ceil(' in:\n{}", zig);
+        assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
+        assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
+        
+        // Step3: verify the code passes zig ast-check
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("math_methods_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
+    
+    // ── Test: Array.pop() built-in method ─────────────
+    
+    #[test]
+    fn test_native_proto_array_pop() {
+        // JS source: arr.pop()
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function popArray() {
+    const arr = [1, 2, 3];
+    return arr.pop();
+}
+"#;
+        
+        // Step1: generate Zig source from JS
+        let zig = transpile_js(js).unwrap();
+        println!("=== Generated Zig code (Array.pop()) ===\n{}", zig);
+        
+        // Step2: verify arr.pop() is generated
+        assert!(zig.contains("arr.pop()"), "Expected 'arr.pop()' in:\n{}", zig);
+        
+        // Step3: verify the code passes zig ast-check
+        let temp_dir = std::env::temp_dir();
+        let zig_path = temp_dir.join("array_pop_test.zig");
+        std::fs::write(&zig_path, &zig).unwrap();
+        
+        match std::process::Command::new("zig.exe")
+            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    panic!("zig ast-check failed:\n{}\nGenerated code:\n{}", stderr, zig);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run zig ast-check: {}", e);
+                // Skip if zig not available
+            }
+        }
+    }
 }

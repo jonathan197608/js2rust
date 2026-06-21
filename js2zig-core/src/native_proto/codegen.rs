@@ -4,6 +4,7 @@
 
 use oxc_ast::ast::*;
 use crate::native_proto::{Codegen, ZigType};
+use crate::native_proto::builtins;
 
 // ── Constructor ─────────────────────────────────────
 
@@ -838,6 +839,14 @@ impl Codegen {
 
     // Call expression (all calls get `try`)
     fn emit_call(&mut self, ce: &CallExpression) {
+        // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
+        if let Some(builtin) = builtins::detect_builtin_call(ce) {
+            if self.emit_builtin_call(&builtin, ce) {
+                return;
+            }
+            // If emit_builtin_call returns false, fall through to normal call handling
+        }
+        
         // Check if this is JSON.stringify() call
         if let Expression::StaticMemberExpression(ref mem) = ce.callee
             && let Expression::Identifier(ref obj) = mem.object
@@ -870,6 +879,166 @@ impl Codegen {
             self.emit_expr_arg(arg);
         }
         self.write(")");
+    }
+
+    /// Emit Zig code for a built-in object call
+    /// Returns true if the call was handled, false otherwise
+    fn emit_builtin_call(&mut self, builtin: &builtins::BuiltinCall, ce: &CallExpression) -> bool {
+        match builtin {
+            // ── Math methods ─────────────────────────────
+            builtins::BuiltinCall::MathAbs => {
+                // Math.abs(x) → @abs(x)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Math.abs() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@abs(");
+                if let Some(arg) = ce.arguments.first() {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            builtins::BuiltinCall::MathFloor => {
+                // Math.floor(x) → @floor(x)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Math.floor() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@floor(");
+                if let Some(arg) = ce.arguments.first() {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            builtins::BuiltinCall::MathCeil => {
+                // Math.ceil(x) → @ceil(x)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Math.ceil() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@ceil(");
+                if let Some(arg) = ce.arguments.first() {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            builtins::BuiltinCall::MathRound => {
+                // Math.round(x) → @round(x)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Math.round() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@round(");
+                if let Some(arg) = ce.arguments.first() {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            builtins::BuiltinCall::MathSqrt => {
+                // Math.sqrt(x) → @sqrt(x)
+                if ce.arguments.len() != 1 {
+                    self.errors.push("Math.sqrt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@sqrt(");
+                if let Some(arg) = ce.arguments.first() {
+                    if let Some(expr) = arg.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
+            }
+            
+            // ── Array methods ─────────────────────────────
+            builtins::BuiltinCall::ArrayPop => {
+                // arr.pop() → arr.pop()
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        self.write(&format!("{}.pop()", obj.name.as_str()));
+                        return true;
+                    }
+                }
+                false
+            }
+            
+            builtins::BuiltinCall::ArrayIndexOf => {
+                // TODO: arr.indexOf(x) requires loop generation
+                self.write("/* TODO: Array.indexOf() */");
+                true
+            }
+            
+            builtins::BuiltinCall::ArrayIncludes => {
+                // TODO: arr.includes(x) requires loop generation
+                self.write("/* TODO: Array.includes() */");
+                true
+            }
+            
+            builtins::BuiltinCall::ArrayJoin => {
+                // TODO: arr.join(sep) requires string concatenation
+                self.write("/* TODO: Array.join() */");
+                true
+            }
+            
+            builtins::BuiltinCall::ArraySlice => {
+                // TODO: arr.slice(start, end) requires slice logic
+                self.write("/* TODO: Array.slice() */");
+                true
+            }
+            
+            // ── String methods ─────────────────────────────
+            builtins::BuiltinCall::StringIndexOf => {
+                // TODO: str.indexOf(search) requires substring search
+                self.write("/* TODO: String.indexOf() */");
+                true
+            }
+            
+            builtins::BuiltinCall::StringIncludes => {
+                // TODO: str.includes(search) requires substring search
+                self.write("/* TODO: String.includes() */");
+                true
+            }
+            
+            builtins::BuiltinCall::StringStartsWith => {
+                // TODO: str.startsWith(prefix) requires prefix check
+                self.write("/* TODO: String.startsWith() */");
+                true
+            }
+            
+            builtins::BuiltinCall::StringEndsWith => {
+                // TODO: str.endsWith(suffix) requires suffix check
+                self.write("/* TODO: String.endsWith() */");
+                true
+            }
+            
+            builtins::BuiltinCall::StringTrim => {
+                // TODO: str.trim() requires std.mem.trim
+                self.write("/* TODO: String.trim() */");
+                true
+            }
+            
+            builtins::BuiltinCall::StringSplit => {
+                // TODO: str.split(sep) requires split logic
+                self.write("/* TODO: String.split() */");
+                true
+            }
+        }
     }
 
     /// Emit argument expression (handles spread etc.).

@@ -82,6 +82,7 @@ use oxc_parser::Parser;
 use oxc_allocator::Allocator;
 use oxc_span::SourceType;
 
+mod builtins;
 mod codegen;
 mod jsdoc;
 #[cfg(test)]
