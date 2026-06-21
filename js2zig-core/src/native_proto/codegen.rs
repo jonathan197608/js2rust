@@ -98,16 +98,20 @@ impl Codegen {
             self.emit_toplevel(stmt);
         }
 
-        // Generate free_string() function for memory management
-        self.writeln("");
-        self.writeln("// Free memory allocated by export functions.");
-        self.writeln("// Call this function from Rust after getting the return value.");
-        self.writeln("export fn free_string(ptr: [*c]u8, len: usize) void {");
-        self.indent += 1;
-        self.writeln("if (ptr == @as([*c]u8, @ptrFromInt(0))) return;");
-        self.writeln("allocator.free(ptr[0..len]);");
-        self.indent -= 1;
-        self.writeln("}");
+        // Generate free_string() function for memory management.
+        // Only generate if there are export functions that return strings.
+        let has_string_export = self.exported_fns.iter().any(|f| f.returns_string);
+        if has_string_export {
+            self.writeln("");
+            self.writeln("// Free memory allocated by export functions.");
+            self.writeln("// Call this function from Rust after getting the return value.");
+            self.writeln("export fn free_string(ptr: [*c]u8, len: usize) void {");
+            self.indent += 1;
+            self.writeln("if (ptr == @as([*c]u8, @ptrFromInt(0))) return;");
+            self.writeln("allocator.free(ptr[0..len]);");
+            self.indent -= 1;
+            self.writeln("}");
+        }
     }
 
     fn emit_toplevel(&mut self, stmt: &Statement) {
@@ -123,8 +127,8 @@ impl Codegen {
                     // Use exported_functions set from pipeline
                     fn_name.is_some_and(|name| exported.contains(name))
                 } else {
-                    // HACK: treat all toplevel functions as exports (backward compatibility)
-                    true
+                    // No export info: default to non-export (pub fn, not C ABI)
+                    false
                 };
                 
                 let old_export = self.current_fn_is_export;
@@ -135,12 +139,19 @@ impl Codegen {
             Statement::ExportNamedDeclaration(export_decl) => {
                 // Defense in depth: also handle ExportNamedDeclaration (in case the
                 // preprocessor preserves `export` keywords in future versions).
+                // Respect exported_functions (same logic as FunctionDeclaration branch).
                 match &export_decl.declaration {
                     Some(decl) => {
                         match decl {
                             oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
+                                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
+                                let is_export = if let Some(ref exported) = self.exported_functions {
+                                    fn_name.is_some_and(|name| exported.contains(name))
+                                } else {
+                                    false
+                                };
                                 let old_export = self.current_fn_is_export;
-                                self.current_fn_is_export = true;
+                                self.current_fn_is_export = is_export;
                                 self.emit_fn(fd);
                                 self.current_fn_is_export = old_export;
                             }
