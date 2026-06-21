@@ -619,14 +619,16 @@ export function log(msg) {
 "#;
         let zig = transpile_js(js).unwrap();
         println!("=== Export Function Signature ===\n{}", zig);
-        // Export function: first parameter is allocator, then []const u8 params.
-        assert!(zig.contains("fn add(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]u8 {"));
-        // Export function: return type should be ![]u8 (for allocPrint).
-        assert!(zig.contains("![]u8 {"));
-        // Export function with @returns {void}: should be void.
-        assert!(zig.contains("fn log(allocator: std.mem.Allocator, msg: []const u8) void {"));
-        // Export function: should generate return value conversion (allocPrint).
-        assert!(zig.contains("return std.fmt.allocPrint(allocator"));
+        // Export function: no allocator parameter, params are []const u8, return type is [*c]u8 for number.
+        assert!(zig.contains("fn add(a: []const u8, b: []const u8, result_len: *usize) [*c]u8 {"));
+        // Export function: return type should be [*c]u8 (for allocPrint or dupe).
+        assert!(zig.contains("[*c]u8 {"));
+        // Export function with @returns {void}: should be void, no allocator parameter.
+        assert!(zig.contains("fn log(msg: []const u8) void {"));
+        // Export function: should generate return value conversion (allocPrint with page_allocator).
+        assert!(zig.contains("const result = std.fmt.allocPrint(allocator"));
+        assert!(zig.contains("result_len.* = result.len;"));
+        assert!(zig.contains("return result.ptr;"));
         // Export function: should generate parameter parsing code.
         assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
     }
@@ -648,7 +650,7 @@ export function greet(name, age) {
         println!("=== Param Annotation Test ===\n{}", zig);
         // @param {string} name: should not generate parsing code (use directly)
         // @param {number} age: should generate parseInt code
-        assert!(zig.contains("fn greet(allocator: std.mem.Allocator, name: []const u8, age: []const u8) ![]u8 {"));
+        assert!(zig.contains("fn greet(name: []const u8, age: []const u8, result_len: *usize) [*c]u8 {"));
         assert!(zig.contains("const age_int = try std.fmt.parseInt(i64, age, 10);"));
         // name should be used directly (no parsing)
         assert!(zig.contains("name"));
@@ -689,10 +691,13 @@ export function multiply(a, b) {
         println!("=== @param E2E Test ===\n{}", zig);
 
         // Verify the generated code has correct structure
-        assert!(zig.contains("fn multiply(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]u8 {"));
+        assert!(zig.contains("fn multiply(a: []const u8, b: []const u8, result_len: *usize) [*c]u8 {"));
         assert!(zig.contains("const a_int = try std.fmt.parseInt(i64, a, 10);"));
         assert!(zig.contains("const b_int = try std.fmt.parseInt(i64, b, 10);"));
-        assert!(zig.contains("return std.fmt.allocPrint(allocator, \"{}\", .{a_int * b_int}) catch unreachable;"));
+        // Verify the return value uses result variable for free_string
+        assert!(zig.contains("const result = std.fmt.allocPrint(allocator, \"{}\", .{a_int * b_int}) catch unreachable;"));
+        assert!(zig.contains("result_len.* = result.len;"));
+        assert!(zig.contains("return result.ptr;"));
 
         // Run zig ast-check to verify the code is syntactically correct
         let tmp_dir = std::env::temp_dir();
@@ -779,10 +784,10 @@ export function greet(name) {
 
         println!("=== Generated Zig code ===\n{}", zig);
 
-        // Verify return value uses dupe for []const u8 → []u8 conversion
+        // Verify return value uses dupe for []const u8 → [*c]u8 conversion
         assert!(zig.contains("allocator.dupe(u8,"), "Expected allocator.dupe(u8, ...) for string return, got:\n{}", zig);
-        // Verify the function signature
-        assert!(zig.contains("fn greet(allocator: std.mem.Allocator, name: []const u8) ![]u8 {"));
+        // Verify the function signature (no allocator parameter, returns [*c]u8 with result_len)
+        assert!(zig.contains("fn greet(name: []const u8, result_len: *usize) [*c]u8 {"), "Expected fn greet(name: []const u8, result_len: *usize) [*c]u8 {{, got:\n{}", zig);
     }
 
     #[test]
@@ -844,8 +849,8 @@ export function getUserJson(user) {
         assert!(zig.contains("std.json.fmt"), "Expected std.json.fmt() in toJson(), got:\n{}", zig);
         assert!(zig.contains("Writer.Allocating"), "Expected Writer.Allocating in toJson(), got:\n{}", zig);
 
-        // Verify JSON.stringify() is converted to user.toJson(allocator)
-        assert!(zig.contains("try user.toJson(allocator)"), "Expected try user.toJson(allocator), got:\n{}", zig);
+        // Verify JSON.stringify() is converted to user.toJson() (no allocator parameter)
+        assert!(zig.contains("try user.toJson()"), "Expected try user.toJson(), got:\n{}", zig);
 
         // Run zig ast-check to verify the code is syntactically correct
         let tmp_dir = std::env::temp_dir();

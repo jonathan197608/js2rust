@@ -338,9 +338,8 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
     let trimmed = jsdoc_ty.trim();
     
     // 处理数组类型（以 [] 结尾）
-    if trimmed.ends_with("[]") {
-        let base_type = &trimmed[..trimmed.len() - 2];
-        let base_type = base_type.trim();
+    if let Some(stripped) = trimmed.strip_suffix("[]") {
+        let base_type = stripped.trim();
         
         // 检查 base_type 是否是自定义类型
         if typedefs.contains_key(base_type) {

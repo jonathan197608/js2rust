@@ -39,13 +39,13 @@ fn main() {
     let slice_ok = testArraySlice_phase5();
     println!("  testArraySlice() = {} (expected 0)", slice_ok);
 
-    // ── Array.map ────────────────────────────────
+    // ── Array.map ─────────────────────────────
     println!();
     println!("--- Array.map ---");
     let map_ok = testArrayMap_phase5();
     println!("  testArrayMap() = {} (expected 0)", map_ok);
 
-    // ── Array.filter ─────────────────────────────
+    // ── Array.filter ────────────────────────────
     println!();
     println!("--- Array.filter ---");
     let filter_ok = testArrayFilter_phase5();
@@ -60,8 +60,8 @@ fn main() {
     // ── Array.forEach (side effects) ───────────────────
     println!();
     println!("--- Array.forEach (side effects) ---");
-    let forEach_ok = testArrayForEach_phase5();
-    println!("  testArrayForEach() = {} (expected 0)", forEach_ok);
+    let for_each_ok = testArrayForEach_phase5();
+    println!("  testArrayForEach() = {} (expected 0)", for_each_ok);
 
     // ── Array.some with index ──────────────────────
     println!();

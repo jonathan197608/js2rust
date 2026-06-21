@@ -684,6 +684,20 @@ pub fn gen_cabi_wrappers(
             continue;
         }
 
+        // Skip functions with JsValue/JsAny parameters (C ABI doesn't support unions)
+        let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
+            *ty == crate::infer::ZigType::JsValue || *ty == crate::infer::ZigType::JsAny
+        });
+        if has_js_obj_param {
+            // Re-export as const alias (no C ABI export)
+            out.push_str(&format!(
+                "pub const {name} = {mod}.{name};\n\n",
+                name = name,
+                mod = module,
+            ));
+            continue;
+        }
+
         // Build parameter lists for all function types
         let mut cabi_params: Vec<String> = Vec::new();
         let mut zig_params: Vec<String> = Vec::new();
@@ -738,16 +752,21 @@ pub fn gen_cabi_wrappers(
                     mod = module,
                     args = async_zig_args,
                 ));
-                // C ABI wrapper
+                // C ABI wrapper (free_string scheme: result_len + dupeZ)
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
+                let cabi_full_params = if cabi_params.is_empty() {
+                    "result_len: *usize".to_string()
+                } else {
+                    format!("{}, result_len: *usize", cabi_params.join(", "))
+                };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({params}) [*:0]const u8 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    return @ptrCast(_result.ptr);\n}}\n",
+                    "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}_impl({args}) catch @panic(\"async error\");\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
                     name = name,
-                    params = cabi_params.join(", "),
+                    cabi_full_params = cabi_full_params,
                     conv = conversions,
                     mod = module,
                     args = async_cabi_args,
@@ -800,25 +819,6 @@ pub fn gen_cabi_wrappers(
                 }
             }
 
-            // free_xxx wrapper (C ABI, always _cabi suffix for string returns)
-            if exp.has_free_func {
-                let free_fn = format!("free_{}", name);
-                if returns_string {
-                    out.push_str(&format!(
-                        "pub export fn {free_fn}_cabi(ptr: [*:0]const u8) void {{
-    {mod}.free_{name}(ptr);
-}}\n",
-                        free_fn = free_fn,
-                        name = name,
-                        mod = module,
-                    ));
-                    out.push_str(&format!(
-                        "comptime {{ @export(&{free_fn}_cabi, .{{ .name = \"{free_fn}\", .linkage = .strong }}); }}\n",
-                        free_fn = free_fn,
-                    ));
-                }
-            }
-
             out.push('\n');
             continue;
         }
@@ -833,16 +833,21 @@ pub fn gen_cabi_wrappers(
                 args = zig_call_args,
             ));
 
-            // ── C ABI wrapper — converts string params and return value ──
+            // ── C ABI wrapper (free_string scheme: result_len + dupeZ) ──
             let conversions = if cabi_to_zig_conversions.is_empty() {
                 String::new()
             } else {
                 format!("{}\n", cabi_to_zig_conversions.join("\n"))
             };
+            let cabi_full_params = if cabi_params.is_empty() {
+                "result_len: *usize".to_string()
+            } else {
+                format!("{}, result_len: *usize", cabi_params.join(", "))
+            };
             out.push_str(&format!(
-                "pub export fn {name}_cabi({params}) [*:0]const u8 {{\n{conv}    const _result = {mod}.{name}_impl({args});\n    return @ptrCast(_result.ptr);\n}}\n",
+                "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}_impl({args});\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
                 name = name,
-                params = cabi_params.join(", "),
+                cabi_full_params = cabi_full_params,
                 conv = conversions,
                 mod = module,
                 args = cabi_call_args,
@@ -888,34 +893,6 @@ pub fn gen_cabi_wrappers(
             }
         }
 
-        // ── free_xxx wrapper (C ABI, always _cabi suffix) ──
-        if exp.has_free_func {
-            let free_fn = format!("free_{}", name);
-            if returns_string {
-                out.push_str(&format!(
-                    "pub export fn {free_fn}_cabi(ptr: [*:0]const u8) void {{
-    {mod}.free_{name}(ptr);
-}}\n",
-                    free_fn = free_fn,
-                    name = name,
-                    mod = module,
-                ));
-                out.push_str(&format!(
-                "comptime {{ @export(&{free_fn}_cabi, .{{ .name = \"{free_fn}\", .linkage = .strong }}); }}\n",
-                    free_fn = free_fn,
-                ));
-            } else {
-                // Closure return: free takes *anyopaque
-                out.push_str(&format!(
-                    "pub export fn {free_fn}(ptr: *anyopaque) void {{
-    {mod}.{free_fn}(ptr);
-}}\n",
-                    free_fn = free_fn,
-                    mod = module,
-                ));
-            }
-        }
-
         out.push('\n');
     }
 
@@ -938,7 +915,8 @@ pub fn write_cabi_metadata(
         .iter()
         .filter(|exp| exp.ret_type != crate::infer::ZigType::JsAny)
         .map(|exp| {
-            let params: Vec<serde_json::Value> = exp
+            // Build params list
+            let mut params: Vec<serde_json::Value> = exp
                 .params
                 .iter()
                 .map(|(name, ty)| {
@@ -948,10 +926,29 @@ pub fn write_cabi_metadata(
                     })
                 })
                 .collect();
+
+            // For functions that need free_string: add result_len parameter
+            // The Zig function signature is: fn name(params..., result_len: *usize) [*c]u8
+            if exp.has_free_func {
+                params.push(serde_json::json!({
+                    "name": "result_len",
+                    "zig_type": "*usize"
+                }));
+            }
+
+            // Determine ret_type string for C ABI
+            // If has_free_func: returns [*c]u8 (C pointer)
+            // Otherwise: use to_cabi_str()
+            let ret_type_str = if exp.has_free_func {
+                "[*c]u8".to_string()
+            } else {
+                exp.ret_type.to_cabi_str()
+            };
+
             serde_json::json!({
                 "name": exp.name,
                 "params": params,
-                "ret_type": exp.ret_type.to_cabi_str(),
+                "ret_type": ret_type_str,
                 "has_free_func": exp.has_free_func
             })
         })

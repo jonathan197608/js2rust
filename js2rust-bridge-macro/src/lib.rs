@@ -315,6 +315,7 @@ fn generate(input: &MacroInput) -> TokenStream {
 fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
+    let mut needs_free_string = false;
 
     let raw_mod = format_ident!("__js2rust_ffi_raw_{group_suffix}");
     let safe_mod = format_ident!("__js2rust_ffi_safe_{group_suffix}");
@@ -324,8 +325,8 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
         let free_fn_name = format_ident!("free_{}", exp.name);
 
         let mut extern_params = Vec::new();
-        for (idx, param) in exp.params.iter().enumerate() {
-            let param_ident = format_ident!("arg{}", idx);
+        for param in &exp.params {
+            let param_ident = format_ident!("{}", param.name);
             let param_ty = zig_type_to_rust_ffi_type(&param.zig_type);
             extern_params.push(quote! { #param_ident: #param_ty });
         }
@@ -336,10 +337,8 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             pub fn #fn_name( #(#extern_params),* ) -> #ret_ty;
         });
 
-        if exp.has_free_func {
-            extern_fns.push(quote! {
-                pub fn #free_fn_name(ptr: *mut std::ffi::c_void);
-            });
+        if exp.has_free_func || exp.ret_type == "[*c]u8" {
+            needs_free_string = true;
         }
 
         let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
@@ -368,9 +367,17 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     };
     safe_wrappers.push(runtime_init);
 
+    // Generate free_string() extern declaration if needed
+    if needs_free_string {
+        extern_fns.push(quote! {
+            pub fn free_string(ptr: *mut std::ffi::c_char, len: usize);
+        });
+    }
+
     let output = quote! {
         #[allow(non_snake_case)]
         #[allow(dead_code)]
+        #[allow(clippy::not_unsafe_ptr_arg_deref)]
         mod #raw_mod {
             unsafe extern "C" {
                 #(#extern_fns)*
@@ -379,6 +386,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
 
         #[allow(non_snake_case)]
         #[allow(dead_code)]
+        #[allow(clippy::not_unsafe_ptr_arg_deref)]
         mod #safe_mod {
             use super::#raw_mod;
 
@@ -401,15 +409,45 @@ fn generate_safe_wrapper(
     let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
+    // For functions that return [*c]u8: need result_len local variable
+    let needs_result_len = exp.ret_type == "[*c]u8" || exp.has_free_func;
 
-    for (idx, param) in exp.params.iter().enumerate() {
-        let param_ident = format_ident!("arg{}", idx);
+    for param in &exp.params {
+        // Skip result_len parameter: it's not part of the safe wrapper signature
+        if param.name == "result_len" {
+            // Still need to pass it to FFI call (as &mut result_len)
+            ffi_args.push(quote! { &mut result_len });
+            continue;
+        }
+
+        let param_ident = format_ident!("{}", param.name);
         let safe_ty = zig_type_to_rust_safe_type(&param.zig_type);
         safe_params.push(quote! { #param_ident: #safe_ty });
         ffi_args.push(convert_safe_to_ffi(&param.zig_type, &param_ident));
     }
 
-    let (ret_ty, call_expr) = if exp.ret_type == "[]const u8" {
+    let (ret_ty, call_expr) = if needs_result_len {
+        // Returns [*c]u8: need to handle result_len and free_string
+        (
+            quote! { String },
+            quote! {
+                {
+                    let mut result_len: usize = 0;
+                    let ptr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
+                    if ptr.is_null() {
+                        String::new()
+                    } else {
+                        // Build &[u8] slice from ptr and result_len
+                        let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, result_len) };
+                        let s = String::from_utf8_lossy(slice).into_owned();
+                        // Call free_string to release memory
+                        unsafe { super::#raw_mod::free_string(ptr, result_len) };
+                        s
+                    }
+                }
+            },
+        )
+    } else if exp.ret_type == "[]const u8" {
         (
             quote! { String },
             quote! {
@@ -457,6 +495,7 @@ fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
         "f64" => quote! { f64 },
         "bool" => quote! { bool },
         "void" => quote! { () },
+        "*usize" => quote! { *mut usize }, // result_len parameter
         _ => quote! { *mut std::ffi::c_void },
     }
 }
@@ -464,6 +503,7 @@ fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
 fn zig_ret_type_to_rust_ffi(ret_type: &str) -> proc_macro2::TokenStream {
     match ret_type {
         "[]const u8" => quote! { *const std::ffi::c_char },
+        "[*c]u8" => quote! { *mut std::ffi::c_char },
         "i32" => quote! { i32 },
         "i64" => quote! { i64 },
         "f64" => quote! { f64 },

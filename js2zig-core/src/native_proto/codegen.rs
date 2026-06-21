@@ -41,9 +41,9 @@ impl Codegen {
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
             // Generate toJson() method for serialization using std.json.fmt()
-            // std.json.fmt() automatically handles optional fields (?T)
+            // Use std.heap.page_allocator directly (don't pass as parameter)
             self.writeln("");
-            self.writeln("pub fn toJson(self: *const @This(), allocator: std.mem.Allocator) ![]u8 {");
+            self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent += 1;
             // Use std.io.Writer.Allocating + std.json.fmt() for serialization
             self.writeln("var string = std.io.Writer.Allocating.init(allocator);");
@@ -71,11 +71,10 @@ impl Codegen {
                 }
                 Statement::ExportNamedDeclaration(export_decl) => {
                     // Also collect identifiers from export functions.
-                    if let Some(decl) = &export_decl.declaration {
-                        if let oxc_ast::ast::Declaration::FunctionDeclaration(fd) = decl {
+                    if let Some(decl) = &export_decl.declaration
+                        && let oxc_ast::ast::Declaration::FunctionDeclaration(fd) = decl {
                             Self::collect_idents_from_function(fd, &mut self.used_names);
                         }
-                    }
                 }
                 _ => {}
             }
@@ -86,14 +85,27 @@ impl Codegen {
         println!("=== jsdoc_data.type_annotations: {:?}", self.jsdoc_data.as_ref().map(|d| &d.type_annotations));
 
         // Pass 2: emit struct typedefs (from JSDoc @typedef).
+        // First, emit std and allocator constants (needed by toJson()).
+        self.writeln("const std = @import(\"std\");");
+        self.writeln("const allocator = std.heap.page_allocator;");
+        self.writeln("");
         self.emit_typedefs();
 
         // Pass 3: emit code, skipping unused toplevel constants.
-        self.writeln("const std = @import(\"std\");");
-        self.writeln("");
         for stmt in &program.body {
             self.emit_toplevel(stmt);
         }
+
+        // Generate free_string() function for memory management
+        self.writeln("");
+        self.writeln("// Free memory allocated by export functions.");
+        self.writeln("// Call this function from Rust after getting the return value.");
+        self.writeln("export fn free_string(ptr: [*c]u8, len: usize) void {");
+        self.indent += 1;
+        self.writeln("if (ptr == @as([*c]u8, @ptrFromInt(0))) return;");
+        self.writeln("allocator.free(ptr[0..len]);");
+        self.indent -= 1;
+        self.writeln("}");
     }
 
     fn emit_toplevel(&mut self, stmt: &Statement) {
@@ -150,7 +162,7 @@ impl Codegen {
                 // Skip unused toplevel constants to avoid Zig unused warnings.
                 // But don't skip variables with @type annotation (JSON.parse()).
                 let has_type_annotation = self.jsdoc_data.as_ref()
-                    .map_or(false, |d| d.type_annotations.contains_key(name));
+                    .is_some_and(|d| d.type_annotations.contains_key(name));
                 if self.indent == 0 && is_const && !self.used_names.contains(name) && !has_type_annotation {
                     continue;
                 }
@@ -354,14 +366,15 @@ impl Codegen {
         }
 
         // Pass 4: generate function code.
-        // For export functions: parameters are []const u8, return is []const u8 or void.
+        // For export functions: parameters are []const u8, return is [*c]u8 with result_len.
         // For non-export functions: use anytype for parameters, inferred return type.
         self.write(&format!("fn {}(", name));
         if self.current_fn_is_export {
-            // Export function: first parameter is allocator, then []const u8 params.
-            self.write("allocator: std.mem.Allocator");
+            // Export function: no allocator parameter, use global std.heap.page_allocator.
+            // Parameters are []const u8.
+            // Return type is [*c]u8, with result_len: *usize parameter.
             if !fd.params.items.is_empty() {
-                self.write(", ");
+                // Generate parameter list
             }
             // Also generate parameter parsing code.
             self.param_name_map.clear();
@@ -427,17 +440,27 @@ impl Codegen {
                     }
                 }
             }
-            // Export function return type: ![]u8 (for allocPrint) or void.
+            // Add result_len parameter for export functions that return non-void
+            if ret_ty != "void" {
+                if !fd.params.items.is_empty() {
+                    self.write(", ");
+                }
+                self.write("result_len: *usize");
+            }
+            // Export function return type: [*c]u8 with result_len parameter.
             let ret_ty_str = if ret_ty == "void" {
                 "void".to_string()
             } else {
-                "![]u8".to_string()
+                "[*c]u8".to_string()
             };
             self.writeln(&format!(") {} {{", ret_ty_str));
             // Generate parameter parsing code.
             if !param_parsing_code.is_empty() {
                 self.write(&param_parsing_code);
             }
+            // Add result_len parameter to function signature
+            // This is a bit tricky: we need to add it after the parameters
+            // For now, let's modify the function signature generation
         } else {
             // Non-export function: use anytype for parameters.
             for (i, param) in fd.params.items.iter().enumerate() {
@@ -481,28 +504,44 @@ impl Codegen {
                     if let Some(arg) = &rs.argument {
                         match &self.current_fn_return_type {
                             Some(ZigType::I64) => {
-                                // i64 → []u8: use std.fmt.allocPrint
-                                self.write("return std.fmt.allocPrint(allocator, \"{}\", .{");
+                                // i64 → []u8: use std.fmt.allocPrint with page_allocator
+                                self.write("const result = std.fmt.allocPrint(allocator, \"{}\", .{");
                                 self.emit_expr(arg);
                                 self.write("}) catch unreachable;\n");
+                                self.write_indent();
+                                self.write("result_len.* = result.len;\n");
+                                self.write_indent();
+                                self.write("return result.ptr;\n");
                             }
                             Some(ZigType::Bool) => {
-                                // bool → []const u8: return "true" or "false"
-                                self.write("return if (");
+                                // bool → []u8: duplicate "true" or "false" with allocator
+                                self.write("const result = allocator.dupe(u8, if (");
                                 self.emit_expr(arg);
-                                self.write(") \"true\" else \"false\";\n");
+                                self.write(") \"true\" else \"false\") catch unreachable;\n");
+                                self.write_indent();
+                                self.write("result_len.* = result.len;\n");
+                                self.write_indent();
+                                self.write("return result.ptr;\n");
                             }
                             Some(ZigType::Str) => {
-                                // []const u8 → []u8: need to dupe
-                                self.write("return allocator.dupe(u8, ");
+                                // []const u8 → [*c]u8: need to dupe using page_allocator
+                                self.write("const result = allocator.dupe(u8, ");
                                 self.emit_expr(arg);
                                 self.write(") catch unreachable;\n");
+                                self.write_indent();
+                                self.write("result_len.* = result.len;\n");
+                                self.write_indent();
+                                self.write("return result.ptr;\n");
                             }
                             Some(ZigType::F64) => {
-                                // f64 → []u8: use std.fmt.allocPrint
-                                self.write("return std.fmt.allocPrint(allocator, \"{}\", .{");
+                                // f64 → []u8: use std.fmt.allocPrint with page_allocator
+                                self.write("const result = std.fmt.allocPrint(allocator, \"{}\", .{");
                                 self.emit_expr(arg);
                                 self.write("}) catch unreachable;\n");
+                                self.write_indent();
+                                self.write("result_len.* = result.len;\n");
+                                self.write_indent();
+                                self.write("return result.ptr;\n");
                             }
                             _ => {
                                 // Unknown type: just return as-is
@@ -842,22 +881,21 @@ impl Codegen {
     // Call expression (all calls get `try`)
     fn emit_call(&mut self, ce: &CallExpression) {
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
-        if let Some(builtin) = builtins::detect_builtin_call(ce) {
-            if self.emit_builtin_call(&builtin, ce) {
+        if let Some(builtin) = builtins::detect_builtin_call(ce)
+            && self.emit_builtin_call(&builtin, ce) {
                 return;
             }
             // If emit_builtin_call returns false, fall through to normal call handling
-        }
         
         // Check if this is JSON.stringify() call
         if let Expression::StaticMemberExpression(ref mem) = ce.callee
             && let Expression::Identifier(ref obj) = mem.object
             && obj.name == "JSON" && mem.property.name == "stringify" {
-            // JSON.stringify(obj) → try obj.toJson(allocator)
+            // JSON.stringify(obj) → try obj.toJson()
             if let Some(first_arg) = ce.arguments.first() {
                 self.write("try ");
                 self.emit_expr_arg(first_arg);
-                self.write(".toJson(allocator)");
+                self.write(".toJson()");
                 return;
             }
         }
@@ -904,11 +942,10 @@ impl Codegen {
                     return false;
                 }
                 self.write("@abs(");
-                if let Some(arg) = ce.arguments.first() {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -920,11 +957,10 @@ impl Codegen {
                     return false;
                 }
                 self.write("@floor(");
-                if let Some(arg) = ce.arguments.first() {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -936,11 +972,10 @@ impl Codegen {
                     return false;
                 }
                 self.write("@ceil(");
-                if let Some(arg) = ce.arguments.first() {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -952,11 +987,10 @@ impl Codegen {
                     return false;
                 }
                 self.write("@round(");
-                if let Some(arg) = ce.arguments.first() {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -968,11 +1002,10 @@ impl Codegen {
                     return false;
                 }
                 self.write("@sqrt(");
-                if let Some(arg) = ce.arguments.first() {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -980,7 +1013,7 @@ impl Codegen {
             builtins::BuiltinCall::MathRandom => {
                 // Math.random() → @as(f64, @floatFromInt(std.crypto.random.int(u64))) / @as(f64, std.math.maxInt(u64))
                 // Simplified: use std.time.timestamp() for now
-                if ce.arguments.len() != 0 {
+                if !ce.arguments.is_empty() {
                     self.errors.push("Math.random() requires no arguments".to_string());
                     return false;
                 }
@@ -995,17 +1028,15 @@ impl Codegen {
                     return false;
                 }
                 self.write("std.math.pow(f64, ");
-                if let Some(arg) = ce.arguments.get(0) {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(", ");
-                if let Some(arg) = ce.arguments.get(1) {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.get(1)
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write(")");
                 true
             }
@@ -1018,11 +1049,10 @@ impl Codegen {
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __max = ");
-                if let Some(arg) = ce.arguments.get(0) {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
@@ -1045,11 +1075,10 @@ impl Codegen {
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __min = ");
-                if let Some(arg) = ce.arguments.get(0) {
-                    if let Some(expr) = arg.as_expression() {
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression() {
                         self.emit_expr(expr);
                     }
-                }
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
@@ -1067,12 +1096,11 @@ impl Codegen {
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → arr.pop()
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         self.write(&format!("{}.pop()", obj.name.as_str()));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1082,8 +1110,8 @@ impl Codegen {
                     self.errors.push("Array.indexOf() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1101,7 +1129,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1111,8 +1138,8 @@ impl Codegen {
                     self.errors.push("Array.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1130,7 +1157,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1140,8 +1166,8 @@ impl Codegen {
                     self.errors.push("Array.join() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let sep_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1161,14 +1187,13 @@ impl Codegen {
                             _ => "{any}",
                         };
                         self.write(&format!(
-                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(allocator); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
+                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(std.heap.page_allocator); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
                             obj = obj_name,
                             sep = sep_expr,
                             fmt = fmt_spec
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1176,8 +1201,8 @@ impl Codegen {
                 // arr.slice(start, end) → arr.items[start..end]
                 // arr.slice(start) → arr.items[start..]
                 // arr.slice() → arr.items
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         match ce.arguments.len() {
                             0 => {
@@ -1196,7 +1221,7 @@ impl Codegen {
                                 self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
                             }
                             2 => {
-                                let start_expr = if let Some(arg) = ce.arguments.get(0) {
+                                let start_expr = if let Some(arg) = ce.arguments.first() {
                                     if let Some(expr) = arg.as_expression() {
                                         self.emit_expr_to_string(expr)
                                     } else {
@@ -1223,7 +1248,6 @@ impl Codegen {
                         }
                         return true;
                     }
-                }
                 false
             }
             
@@ -1234,8 +1258,8 @@ impl Codegen {
                     self.errors.push("String.indexOf() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::StringLiteral(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::StringLiteral(obj) = &mem.object {
                         let str_val = obj.value.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1253,10 +1277,9 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 // Fallback: assume object is a variable
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1274,7 +1297,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1284,8 +1306,8 @@ impl Codegen {
                     self.errors.push("String.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1303,7 +1325,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1313,8 +1334,8 @@ impl Codegen {
                     self.errors.push("String.startsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1332,7 +1353,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1342,8 +1362,8 @@ impl Codegen {
                     self.errors.push("String.endsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1361,18 +1381,17 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
             builtins::BuiltinCall::StringTrim => {
                 // str.trim() → std.mem.trim(u8, str, &std.ascii.whitespace)
-                if ce.arguments.len() != 0 {
+                if !ce.arguments.is_empty() {
                     self.errors.push("String.trim() requires no arguments".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         self.write(&format!(
                             "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
@@ -1380,7 +1399,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
             
@@ -1391,8 +1409,8 @@ impl Codegen {
                     self.errors.push("String.split() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object {
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1411,7 +1429,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                }
                 false
             }
         }

@@ -233,6 +233,10 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     out.push_str("const Io = std.Io;\n");
     out.push_str("const Allocator = std.mem.Allocator;\n");
     out.push('\n');
+    // Global page allocator for C ABI string returns (free_string scheme)
+    out.push_str("// Global page allocator for C ABI string returns (free_string scheme)\n");
+    out.push_str("const allocator = std.heap.page_allocator;\n");
+    out.push('\n');
     out.push_str("// Global allocator for generated code\n");
     out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
     out.push('\n');
@@ -306,6 +310,10 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("const Io = std.Io;\n");
     out.push_str("const Allocator = std.mem.Allocator;\n");
     out.push('\n');
+    // Global page allocator for C ABI string returns (free_string scheme)
+    out.push_str("// Global page allocator for C ABI string returns (free_string scheme)\n");
+    out.push_str("const allocator = std.heap.page_allocator;\n");
+    out.push('\n');
     out.push_str("// Global allocator for generated code\n");
     out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
     out.push('\n');
@@ -374,13 +382,13 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
 
     // --- Global initialization / deinitialization ---
     out.push_str("/// Initialize the global allocator used by all generated functions.\n");
-    out.push_str("pub fn init_js2rust(allocator: std.mem.Allocator) void {\n");
-    out.push_str("    js_allocator.setGlobalAllocator(allocator);\n");
-    out.push_str("    js_runtime.initIo(allocator);\n");
+    out.push_str("pub fn init_js2rust(alloc: std.mem.Allocator) void {\n");
+    out.push_str("    js_allocator.setGlobalAllocator(alloc);\n");
+    out.push_str("    js_runtime.initIo(alloc);\n");
     // Also call init_js2rust on each per-file module that defines its own
     for module in &opts.per_file_code {
         if module.zig_code.contains("pub fn init_js2rust") {
-            out.push_str(&format!("    {}.init_js2rust(allocator);\n", module.mod_name));
+            out.push_str(&format!("    {}.init_js2rust(alloc);\n", module.mod_name));
         }
     }
     out.push_str("}\n\n");
@@ -422,11 +430,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
             }
             // Skip names that already have C ABI pub export fn wrappers
             // (they'd cause duplicate struct member errors in Zig).
-            // Also skip free_xxx variants of C ABI names.
-            if opts.cabi_names.contains(exp_name.as_str())
-                || (exp_name.starts_with("free_")
-                    && opts.cabi_names.contains(&exp_name[5..]))
-            {
+            if opts.cabi_names.contains(exp_name.as_str()) {
                 continue;
             }
             if cabi_string_fns.contains(exp_name.as_str()) {

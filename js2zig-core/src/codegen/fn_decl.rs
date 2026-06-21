@@ -338,6 +338,8 @@ impl<'a> ZigCodegen<'a> {
             // Also set inferrer.current_fn so get_var_type() can look up fn_local_types
             let prev_infer_fn = self.inferrer.current_fn.take();
             self.inferrer.current_fn = Some(raw_name.to_string());
+            // DEBUG: print fn_local_types for this function
+            self.inferrer.debug_print_fn_local_types(raw_name);
             for stmt in &body.statements {
                 self.emit_stmt(stmt);
             }
@@ -386,11 +388,17 @@ impl<'a> ZigCodegen<'a> {
                 cabi_params.push(format!("{}: {}", safe_pname, ptype.to_zig_str()));
             }
         }
+
+        // Add result_len parameter for string-returning functions (new free_string scheme)
+        if returns_string {
+            cabi_params.push("result_len: *usize".to_string());
+        }
+
         w.push_str(&cabi_params.join(", "));
         w.push_str(") callconv(.c) ");
 
         if returns_string {
-            w.push_str("[*:0]const u8");
+            w.push_str("[*:0]u8");  // null-terminated C string
         } else if returns_closure {
             w.push_str("*anyopaque");
         } else if returns_js_obj {
@@ -443,9 +451,12 @@ impl<'a> ZigCodegen<'a> {
         w.push_str(&call_args.join(", "));
         w.push_str(");\n");
 
-        // Handle string return
+        // Handle string return (new scheme: allocate null-terminated string, set result_len)
         if returns_string {
-            w.push_str("    return @ptrCast(_result.ptr);\n");
+            w.push_str("    // Allocate null-terminated C string for Rust to free\n");
+            w.push_str("    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n");
+            w.push_str("    result_len.* = _result.len;\n");
+            w.push_str("    return _result_cstr;\n");
         }
 
         // Handle JsValue/JsAny return: extract .int field for C ABI compatibility
@@ -463,21 +474,8 @@ impl<'a> ZigCodegen<'a> {
 
         w.push_str("}\n\n");
 
-        // Generate free_xxx for string returns
-        if returns_string {
-            w.push_str(&format!(
-                "pub fn free_{}(ptr: [*:0]const u8) callconv(.c) void {{\n    _ = js_allocator.g_alloc().free(std.mem.span(ptr));\n}}\n\n",
-                escaped_name
-            ));
-        }
-
-        // Generate free_xxx for closure returns
-        if returns_closure {
-            w.push_str(&format!(
-                "pub fn free_{}(ptr: *anyopaque) callconv(.c) void {{\n    const alloc = js_allocator.g_alloc();\n    const typed: *{} = @ptrCast(@alignCast(ptr));\n    alloc.destroy(typed);\n}}\n\n",
-                escaped_name, ret_type_str
-            ));
-        }
+        // NOTE: free_xxx() functions are NO LONGER generated here.
+        // Instead, a single free_string() function is generated at the end of the file.
 
         if returns_string || returns_closure {
             self.string_return_fns.insert(raw_name.to_string());
@@ -492,7 +490,7 @@ impl<'a> ZigCodegen<'a> {
     /// 1. Converts C ABI params to Zig slices (string params)
     /// 2. Gets Io from js_runtime.getIo()
     /// 3. Calls `{name}_impl(io, params...) catch @panic("async error")`
-    /// 4. Converts the return value to C ABI (string → [*:0]const u8)
+    /// 4. Converts the return value to C ABI (string → [*:0]u8 with result_len)
     pub(super) fn generate_async_cabi_wrapper(
         &mut self,
         raw_name: &str,
@@ -523,11 +521,17 @@ impl<'a> ZigCodegen<'a> {
                 cabi_params.push(format!("{}: {}", safe_pname, ptype.to_zig_str()));
             }
         }
+
+        // Add result_len parameter for string-returning functions (new free_string scheme)
+        if returns_string {
+            cabi_params.push("result_len: *usize".to_string());
+        }
+
         w.push_str(&cabi_params.join(", "));
         w.push_str(") callconv(.c) ");
 
         if returns_string {
-            w.push_str("[*:0]const u8");
+            w.push_str("[*:0]u8");  // null-terminated C string
         } else {
             w.push_str(ret_type_str);
         }
@@ -575,19 +579,20 @@ impl<'a> ZigCodegen<'a> {
         }
         w.push_str(") catch @panic(\"async error\");\n");
 
-        // Handle string return
+        // Handle string return (new scheme: allocate null-terminated string, set result_len)
         if returns_string {
-            w.push_str("    return @ptrCast(_result.ptr);\n");
+            w.push_str("    // Allocate null-terminated C string for Rust to free\n");
+            w.push_str("    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n");
+            w.push_str("    result_len.* = _result.len;\n");
+            w.push_str("    return _result_cstr;\n");
         }
 
         w.push_str("}\n\n");
 
-        // Generate free_xxx for string returns
+        // NOTE: free_xxx() functions are NO LONGER generated here.
+        // Instead, a single free_string() function is generated at the end of the file.
+
         if returns_string {
-            w.push_str(&format!(
-                "pub fn free_{}(ptr: [*:0]const u8) callconv(.c) void {{\n    _ = js_allocator.g_alloc().free(std.mem.span(ptr));\n}}\n\n",
-                escaped_name
-            ));
             self.string_return_fns.insert(raw_name.to_string());
         }
 

@@ -811,46 +811,34 @@ impl<'a> ZigCodegen<'a> {
                     }
                 }
 
-                // Map JS .length to Zig .len for arrays and strings
+                // Map JS .length to Zig .len / .items.len for arrays and strings
                 if mem.property.name.as_str() == "length" {
-                    // Dynamic arrays (ArrayList): use .items.len
-                    // But function parameters with slice type (TypedArray) use .len directly.
-                    // dynamic_arrays is file-global, so a TypedArray parameter named "arr"
-                    // could be incorrectly flagged as dynamic.
-                    if let Expression::Identifier(id) = &mem.object
+                    let obj_ty = self.inferrer.infer_expr(&mem.object);
+
+                    // Slice or String: use .len (Zig slice / []const u8)
+                    if matches!(obj_ty, ZigType::Slice(_) | ZigType::String) {
+                        self.push("@as(i64, @intCast(");
+                        self.emit_expr(&mem.object);
+                        self.push(".len))");
+                        return;
+                    }
+
+                    // ArrayList (JsAny or Array + dynamic_array): use .items.len
+                    if matches!(obj_ty, ZigType::JsAny | ZigType::Array(_))
+                        && let Expression::Identifier(id) = &mem.object
                         && self.inferrer.is_dynamic_array(id.name.as_str())
                     {
-                        // Check if this variable is a parameter of the CURRENT function.
-                        // If yes, it's a slice (TypedArray) — use .len.
-                        // If no, it's a locally-declared ArrayList — use .items.len.
-                        let is_current_fn_param = self.current_fn.as_ref()
-                            .map(|fn_name| self.inferrer.is_fn_param_of(fn_name, id.name.as_str()))
-                            .unwrap_or(false);
-                        if is_current_fn_param {
-                            self.push("@as(i64, @intCast(");
-                            self.emit_expr(&mem.object);
-                            self.push(".len))");
-                        } else {
-                            self.push("@as(i64, @intCast(");
-                            self.emit_expr(&mem.object);
-                            self.push(".items.len))");
-                        }
-                        return;
-                    }
-                    let obj_ty = self.inferrer.infer_expr(&mem.object);
-                    if obj_ty == ZigType::String || matches!(obj_ty, ZigType::Array(_)) {
                         self.push("@as(i64, @intCast(");
                         self.emit_expr(&mem.object);
-                        self.push(".len))");
+                        self.push(".items.len))");
                         return;
                     }
-                    // TypedArray (slice types): use .len
-                    if matches!(obj_ty, ZigType::Slice(_)) {
-                        self.push("@as(i64, @intCast(");
-                        self.emit_expr(&mem.object);
-                        self.push(".len))");
-                        return;
-                    }
+
+                    // Fixed-size array or other: use .len as fallback
+                    self.push("@as(i64, @intCast(");
+                    self.emit_expr(&mem.object);
+                    self.push(".len))");
+                    return;
                 }
 
                 // Check builtin static properties (e.g., Math.PI → std.math.pi)

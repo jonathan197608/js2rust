@@ -48,8 +48,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         let method_name = mem.property.name.as_str();
         
         // Check if object is "Math" (for Math methods)
-        if let Expression::Identifier(id) = obj_expr {
-            if id.name.as_str() == "Math" {
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Math" {
                 // Math methods
                 match method_name {
                     "abs" => return Some(BuiltinCall::MathAbs),
@@ -64,7 +64,6 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                     _ => return None,
                 }
             }
-        }
         
         // Check if object is a string literal (for String methods)
         let is_string = matches!(obj_expr, Expression::StringLiteral(_));
@@ -72,65 +71,35 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         // Detect methods based on object type and method name
         match method_name {
             // String-specific methods (always String methods)
-            "startsWith" => return Some(BuiltinCall::StringStartsWith),
-            "endsWith" => return Some(BuiltinCall::StringEndsWith),
-            "trim" => return Some(BuiltinCall::StringTrim),
-            "split" => return Some(BuiltinCall::StringSplit),
+            "startsWith" => Some(BuiltinCall::StringStartsWith),
+            "endsWith" => Some(BuiltinCall::StringEndsWith),
+            "trim" => Some(BuiltinCall::StringTrim),
+            "split" => Some(BuiltinCall::StringSplit),
             
             // Methods that exist on both String and Array
             "indexOf" => {
                 if is_string {
-                    return Some(BuiltinCall::StringIndexOf);
+                    Some(BuiltinCall::StringIndexOf)
                 } else {
-                    return Some(BuiltinCall::ArrayIndexOf);
+                    Some(BuiltinCall::ArrayIndexOf)
                 }
             }
             "includes" => {
                 if is_string {
-                    return Some(BuiltinCall::StringIncludes);
+                    Some(BuiltinCall::StringIncludes)
                 } else {
-                    return Some(BuiltinCall::ArrayIncludes);
+                    Some(BuiltinCall::ArrayIncludes)
                 }
             }
             
             // Array-specific methods
-            "pop" => return Some(BuiltinCall::ArrayPop),
-            "join" => return Some(BuiltinCall::ArrayJoin),
-            "slice" => return Some(BuiltinCall::ArraySlice),
+            "pop" => Some(BuiltinCall::ArrayPop),
+            "join" => Some(BuiltinCall::ArrayJoin),
+            "slice" => Some(BuiltinCall::ArraySlice),
             
-            _ => return None,
+            _ => None,
         }
     } else {
         None
-    }
-}
-
-/// Get the return type of a built-in call
-pub fn builtin_return_type(builtin: &BuiltinCall) -> crate::native_proto::ZigType {
-    use crate::native_proto::ZigType;
-    
-    match builtin {
-        BuiltinCall::MathAbs => ZigType::F64,
-        BuiltinCall::MathFloor => ZigType::F64,
-        BuiltinCall::MathCeil => ZigType::F64,
-        BuiltinCall::MathRound => ZigType::F64,
-        BuiltinCall::MathSqrt => ZigType::F64,
-        BuiltinCall::MathRandom => ZigType::F64,
-        BuiltinCall::MathPow => ZigType::F64,
-        BuiltinCall::MathMax => ZigType::F64,
-        BuiltinCall::MathMin => ZigType::F64,
-        
-        BuiltinCall::ArrayPop => ZigType::I64, // TODO: should be ?T
-        BuiltinCall::ArrayIndexOf => ZigType::I64, // TODO: should be ?usize
-        BuiltinCall::ArrayIncludes => ZigType::Bool,
-        BuiltinCall::ArrayJoin => ZigType::Str,
-        BuiltinCall::ArraySlice => ZigType::Str, // TODO: should return new array
-        
-        BuiltinCall::StringIndexOf => ZigType::I64, // TODO: should be ?usize
-        BuiltinCall::StringIncludes => ZigType::Bool,
-        BuiltinCall::StringStartsWith => ZigType::Bool,
-        BuiltinCall::StringEndsWith => ZigType::Bool,
-        BuiltinCall::StringTrim => ZigType::Str,
-        BuiltinCall::StringSplit => ZigType::Str, // TODO: should return []const []const u8
     }
 }
