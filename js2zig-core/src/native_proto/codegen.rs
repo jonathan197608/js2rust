@@ -93,10 +93,9 @@ impl Codegen {
         // self.writeln("");
         self.emit_typedefs();
         
-        // Pass 2.5: JsMap/JsSet are already imported by orchestrator (lib.zig)
-        // Per-file modules can access them via `lib.js_map.JsMap` etc.
-        // No need to emit imports here.
-        
+        // Pass 2.5: runtime imports are added by project.rs (generate_module_zig),
+        // which wraps the per-file module code with necessary imports.
+        // Do NOT emit imports here — they would duplicate.
         
         // Pass 3: emit code, skipping unused toplevel constants.
         for stmt in &program.body {
@@ -1112,12 +1111,12 @@ impl Codegen {
                         self.write(")");
                         return;
                     } else if obj_name == "Map" {
-                        // new Map() → JsMap.init(allocator)
-                        self.write("JsMap.init(allocator)");
+                        // new Map() → js_map.JsMap.init(allocator)
+                        self.write("js_map.JsMap.init(allocator)");
                         return;
                     } else if obj_name == "Set" {
-                        // new Set() → JsSet.init(allocator)
-                        self.write("JsSet.init(allocator)");
+                        // new Set() → js_set.JsSet.init(allocator)
+                        self.write("js_set.JsSet.init(allocator)");
                         return;
                     }
                 }
