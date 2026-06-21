@@ -136,6 +136,7 @@ impl ZigType {
 }
 
 /// JSDoc 解析结果，传递给 Codegen
+#[derive(Debug, Clone)]
 pub struct JSDocData {
     /// @typedef 定义：类型名 → TypedefDef
     pub typedefs: std::collections::HashMap<String, jsdoc::TypedefDef>,

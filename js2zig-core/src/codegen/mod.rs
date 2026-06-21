@@ -262,7 +262,7 @@ pub fn generate(
         cg.output.push_str("// Free function for Rust to release memory allocated by Zig\n");
         cg.output.push_str("export fn free_string(ptr: [*c]u8, len: usize) void {\n");
         cg.output.push_str("    if (ptr == @as([*c]u8, @ptrFromInt(0))) return;\n");
-        cg.output.push_str("    allocator.free(ptr[0..len]);\n");
+        cg.output.push_str("    std.heap.page_allocator.free(ptr[0..len]);\n");
         cg.output.push_str("}\n\n");
     }
 

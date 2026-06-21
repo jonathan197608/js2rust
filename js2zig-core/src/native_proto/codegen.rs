@@ -112,7 +112,7 @@ impl Codegen {
             self.writeln("export fn free_string(ptr: [*c]u8, len: usize) void {");
             self.indent += 1;
             self.writeln("if (ptr == @as([*c]u8, @ptrFromInt(0))) return;");
-            self.writeln("allocator.free(ptr[0..len]);");
+            self.writeln("std.heap.page_allocator.free(ptr[0..len]);");
             self.indent -= 1;
             self.writeln("}");
         }
@@ -125,13 +125,15 @@ impl Codegen {
                 // Determine if this function is an export function.
                 // Priority:
                 // 1. If `exported_functions` is provided (from pipeline), use it.
-                // 2. Otherwise, fall back to HACK (treat all toplevel functions as exports).
+                // 2. Otherwise, check if the function is inside `export {...}` (not supported yet).
+                // 3. Default: non-export (pub fn, not C ABI).
                 let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
                 let is_export = if let Some(ref exported) = self.exported_functions {
                     // Use exported_functions set from pipeline
                     fn_name.is_some_and(|name| exported.contains(name))
                 } else {
-                    // No export info: default to non-export (pub fn, not C ABI)
+                    // No export info: default to non-export.
+                    // NOTE: `function foo() {}` (without `export`) is non-export.
                     false
                 };
                 
@@ -141,21 +143,15 @@ impl Codegen {
                 self.current_fn_is_export = old_export;
             }
             Statement::ExportNamedDeclaration(export_decl) => {
-                // Defense in depth: also handle ExportNamedDeclaration (in case the
-                // preprocessor preserves `export` keywords in future versions).
-                // Respect exported_functions (same logic as FunctionDeclaration branch).
+                // `export function foo() {}` or `export const foo = ...`
+                // These are ALWAYS export functions.
                 match &export_decl.declaration {
                     Some(decl) => {
                         match decl {
                             oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
-                                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
-                                let is_export = if let Some(ref exported) = self.exported_functions {
-                                    fn_name.is_some_and(|name| exported.contains(name))
-                                } else {
-                                    false
-                                };
+                                // ALWAYS treat as export (override exported_functions).
                                 let old_export = self.current_fn_is_export;
-                                self.current_fn_is_export = is_export;
+                                self.current_fn_is_export = true;
                                 self.emit_fn(fd);
                                 self.current_fn_is_export = old_export;
                             }
@@ -574,12 +570,14 @@ impl Codegen {
                 }
                 None => {
                     // Rule 8: No definite return type → report error.
+                    // `anytype` cannot be used as return type in Zig.
+                    // Default to i64 (Zig will report type mismatch if wrong).
                     self.errors.push(
-                        "Cannot infer return type: no return expression has a definite type (Rule 6, 8).".to_string()
+                        "Cannot infer return type: no return expression has a definite type (Rule 6, 8). Defaulting to i64.".to_string()
                     );
-                    // Default to i64 for now.
                     let default_ty = ZigType::I64;
                     self.current_fn_return_type = Some(default_ty.clone());
+                    // Rule 7: cache the return type for CallExpression type inference
                     self.fn_return_types.insert(name.to_string(), default_ty);
                     "i64".to_string()
                 }
