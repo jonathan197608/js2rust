@@ -157,19 +157,19 @@ mod tests;
 /// This is the simple version that returns just the Zig source code
 /// (compatible with existing tests).
 pub fn transpile_js(js_source: &str) -> Result<String, String> {
-    transpile_js_inner(js_source).map(|r| r.zig_code)
+    transpile_js_inner(js_source, None).map(|r| r.zig_code)
 }
 
 /// Transpile a JS string to Zig source WITH metadata.
 /// Returns TranspileResult with generated code AND metadata
 /// (exported functions, diagnostics, etc.).
 /// Used by the pipeline for C ABI wrapper generation.
-pub fn transpile_js_with_metadata(js_source: &str) -> Result<TranspileResult, String> {
-    transpile_js_inner(js_source)
+pub fn transpile_js_with_metadata(js_source: &str, exported_functions: Option<std::collections::HashSet<String>>) -> Result<TranspileResult, String> {
+    transpile_js_inner(js_source, exported_functions)
 }
 
 /// Internal helper: transpile JS to Zig, returning TranspileResult.
-fn transpile_js_inner(js_source: &str) -> Result<TranspileResult, String> {
+fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collections::HashSet<String>>) -> Result<TranspileResult, String> {
     // Pass 0: extract JSDoc annotations
     let (typedefs, type_annotations, return_types, param_types) = jsdoc::extract_all_jsdoc(js_source);
     let jsdoc_data = JSDocData { typedefs, type_annotations, return_types, param_types };
@@ -183,6 +183,7 @@ fn transpile_js_inner(js_source: &str) -> Result<TranspileResult, String> {
 
     let mut cg = Codegen::new();
     cg.jsdoc_data = Some(jsdoc_data);
+    cg.exported_functions = exported_functions;  // ← 存储 exported_functions
     cg.generate(&ret.program);
     // NOTE: Temporarily disabled error check for debugging.
     // if !cg.errors.is_empty() {
@@ -243,4 +244,8 @@ pub struct Codegen {
     pub cabi_exports: Vec<crate::codegen::CabiExport>,
     /// Task counter for generating unique task variable names in async/await code.
     pub task_counter: u32,
+    /// Exported function names (from pipeline's strip_imports_extract_exports).
+    /// If provided, use this to determine if a function is an export function.
+    /// Otherwise, fall back to HACK (treat all toplevel functions as exports).
+    pub exported_functions: Option<std::collections::HashSet<String>>,
 }

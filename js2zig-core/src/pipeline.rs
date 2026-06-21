@@ -375,8 +375,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // For normal groups: core file's JS exports → C ABI;
                 //                    dependency file: only re-exported names → C ABI.
                 // NOTE: In native_proto mode, exports are detected from JS source (export keyword).
-                // This variable is kept for potential future use or fallback to codegen mode.
-                let _codegen_exports: HashSet<String> = if is_test_group {
+                // This variable is passed to transpile_js_with_metadata() for accurate export detection.
+                let codegen_exports: HashSet<String> = if is_test_group {
                     extract_all_function_names(stripped)
                 } else if *member == group.core_file {
                     exports.clone()
@@ -415,7 +415,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 };
 
                 // Use native_proto (strict static type system)
-                let transpile_result = crate::native_proto::transpile_js_with_metadata(stripped);
+                let transpile_result = crate::native_proto::transpile_js_with_metadata(stripped, Some(codegen_exports));
                 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {

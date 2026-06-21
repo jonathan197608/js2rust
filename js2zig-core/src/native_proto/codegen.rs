@@ -114,12 +114,21 @@ impl Codegen {
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
             Statement::FunctionDeclaration(fd) => {
-                // In native_proto mode, treat ALL toplevel functions as export functions.
-                // This is because the pipeline pre-processes the JS source and may strip
-                // the `export` keyword. The ModuleRecord approach doesn't work here.
-                // TODO: find a better way to detect export functions after preprocessing.
+                // Determine if this function is an export function.
+                // Priority:
+                // 1. If `exported_functions` is provided (from pipeline), use it.
+                // 2. Otherwise, fall back to HACK (treat all toplevel functions as exports).
+                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
+                let is_export = if let Some(ref exported) = self.exported_functions {
+                    // Use exported_functions set from pipeline
+                    fn_name.is_some_and(|name| exported.contains(name))
+                } else {
+                    // HACK: treat all toplevel functions as exports (backward compatibility)
+                    true
+                };
+                
                 let old_export = self.current_fn_is_export;
-                self.current_fn_is_export = true; // HACK: assume export for all toplevel functions
+                self.current_fn_is_export = is_export;
                 self.emit_fn(fd);
                 self.current_fn_is_export = old_export;
             }
