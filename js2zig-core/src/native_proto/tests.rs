@@ -8,6 +8,9 @@ mod tests {
     #[test]
     fn test_native_proto_basic() {
         let js = r#"
+/**
+ * @returns {number}
+ */
 function add(a, b) {
     return a + b;
 }
@@ -15,7 +18,7 @@ function add(a, b) {
         let zig = transpile_js(js).unwrap();
         println!("=== Generated Zig ===\n{}", zig);
         // Note: using anytype for parameters, i64 for return type (inferred)
-        assert!(zig.contains("fn add(a: anytype, b: anytype) i64 {"));
+        assert!(zig.contains("pub fn add(a: i64, b: i64) i64 {"));
         assert!(zig.contains("return a + b;"));
     }
 
