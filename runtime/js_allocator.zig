@@ -89,12 +89,14 @@ pub fn deinitGlobalAllocator() void {
 
 /// Reset the arena (free all allocated memory, keep allocator active).
 /// Thread-safe: uses atomic spinlock to protect the reset operation.
+/// This is the MANUAL reset API - it ALWAYS resets the arena.
 /// After reset, memory usage returns to near zero.
-/// This can be called manually or via auto-reset.
+/// Call this from Rust via `js2rust_reset()`.
 pub fn resetGlobalAllocator() void {
     acquireResetLock();
     defer releaseResetLock();
 
+    // Unconditional reset (manual API)
     if (g_arena) |*arena| {
         arena.deinit();
     }
@@ -102,6 +104,39 @@ pub fn resetGlobalAllocator() void {
     // Re-initialize arena
     g_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     g_allocator = g_arena.?.allocator();
+}
+
+/// Try to reset the arena (only if memory usage exceeds the limit).
+/// Thread-safe: uses atomic spinlock and double-check pattern.
+/// This is the AUTOMATIC reset API - it checks the limit again after acquiring the lock.
+/// Returns true if reset was performed.
+fn tryResetGlobalAllocator() bool {
+    // First check (outside the lock, fast path)
+    const used_before = getArenaUsedBytes();
+    if (used_before <= g_max_arena_bytes) {
+        return false; // Under limit, no reset needed
+    }
+
+    // Acquire lock for reset
+    acquireResetLock();
+    defer releaseResetLock();
+
+    // Double-check (inside the lock, after possible reset by another thread)
+    const used_after = getArenaUsedBytes();
+    if (used_after <= g_max_arena_bytes) {
+        return false; // Another thread already reset, memory is under limit now
+    }
+
+    // Memory still exceeds limit, perform reset
+    if (g_arena) |*arena| {
+        arena.deinit();
+    }
+
+    // Re-initialize arena
+    g_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    g_allocator = g_arena.?.allocator();
+
+    return true;
 }
 
 /// Get current arena memory usage in bytes.
@@ -120,15 +155,10 @@ pub fn getMaxArenaBytes() usize {
 }
 
 /// Check if arena should be reset (memory usage exceeds max).
-/// If so, automatically reset the arena.
+/// If so, automatically reset the arena (with double-check for thread safety).
 /// Returns true if reset was performed.
 fn maybeAutoReset() bool {
-    const used = getArenaUsedBytes();
-    if (used > g_max_arena_bytes) {
-        resetGlobalAllocator();
-        return true;
-    }
-    return false;
+    return tryResetGlobalAllocator();
 }
 
 /// Retrieve the global allocator.
