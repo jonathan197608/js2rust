@@ -204,6 +204,11 @@ pub fn generate(
 
     inferrer.infer_program(program);
 
+    // Clear temporary env after inference — codegen should use fn_local_types
+    // This fixes the bug where get_var_type returns stale JsValue from env
+    // instead of the correct type from fn_local_types
+    inferrer.clear_env();
+
     // Extract fn_return_types before inferrer is consumed by ZigCodegen
     let fn_return_types = inferrer.all_fn_return_types();
 
@@ -248,6 +253,17 @@ pub fn generate(
     // Emit C ABI export wrappers (after all functions, before tests)
     for wrapper in &cg.cabi_wrappers {
         cg.output.push_str(wrapper);
+    }
+
+    // Emit free_string() function if any export function returns a string
+    // (new scheme: single free function for all string-returning exports)
+    if !cg.string_return_fns.is_empty() {
+        cg.output.push('\n');
+        cg.output.push_str("// Free function for Rust to release memory allocated by Zig\n");
+        cg.output.push_str("export fn free_string(ptr: [*c]u8, len: usize) void {\n");
+        cg.output.push_str("    if (ptr == @as([*c]u8, @ptrFromInt(0))) return;\n");
+        cg.output.push_str("    allocator.free(ptr[0..len]);\n");
+        cg.output.push_str("}\n\n");
     }
 
     // Emit init_js2rust() function if there are dynamic access variables
@@ -603,7 +619,7 @@ impl<'a> ZigCodegen<'a> {
                 }
             }
             Expression::StringLiteral(lit) => {
-                format!(".{{ .string = \"{}\" }}", lit.value)
+                format!(".{{ .string = \"{}\" }}", Self::escape_zig_string(&lit.value))
             }
             Expression::BooleanLiteral(lit) => {
                 format!(".{{ .bool = {} }}", if lit.value { "true" } else { "false" })
@@ -697,8 +713,8 @@ impl<'a> ZigCodegen<'a> {
         // Always generate init_js2rust() — empty if no dynamic access vars
         self.push("\n");
         self.push("/// Initialize global allocator and all objects that use dynamic property access.\n");
-        self.push("pub fn init_js2rust(allocator: std.mem.Allocator) void {\n");
-        self.push("    js_allocator.setGlobalAllocator(allocator);\n");
+        self.push("pub fn init_js2rust(alloc: std.mem.Allocator) void {\n");
+        self.push("    js_allocator.setGlobalAllocator(alloc);\n");
         // Collect init code to avoid borrowing self twice
         let init_code: String = self.init_globals_code.iter().cloned().collect();
         if !init_code.is_empty() {

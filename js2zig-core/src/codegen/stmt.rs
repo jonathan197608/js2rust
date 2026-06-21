@@ -83,38 +83,79 @@ impl<'a> ZigCodegen<'a> {
             }
             Statement::ReturnStatement(rs) => {
                 self.emit_indent();
-                if let Some(ref label) = self.catch_label {
-                    // Inside a catch block: break to catch label (provides default value)
-                    self.push(&format!("break :{} ", label));
-                } else if let Some(ref label) = self.try_label {
-                    // Inside a try block: break to the try label
-                    self.push(&format!("break :{} ", label));
+
+                // Special case: if return expr is `obj.field` and obj is a Struct type,
+                // don't emit .asString()/.asI64() etc. — the field already has the right type.
+                // This fixes the bug where get_var_type returns JsValue during codegen
+                // for struct-typed variables.
+                let is_struct_field_access = if let Some(ref arg) = rs.argument {
+                    if let Expression::StaticMemberExpression(mem) = arg {
+                        if let Expression::Identifier(obj_id) = &mem.object {
+                            // Use is_struct_var to check if obj is a struct type
+                            let result = self.inferrer.is_struct_var(obj_id.name.as_str());
+                            eprintln!("[DEBUG] return stmt: is_struct_var('{}') = {}", obj_id.name.as_str(), result);
+                            result
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
                 } else {
-                    self.push("return ");
-                }
-                if let Some(arg) = &rs.argument {
-                    // If the function expects a primitive type but the return expression
-                    // evaluates to JsAny/JsValue (e.g., dynamic array element access),
-                    // generate the appropriate unwrap conversion (.asI64(), .asF64(), etc.)
-                    if let Some(fn_name) = &self.current_fn {
-                        let fn_ret = self.inferrer.get_fn_return_type(fn_name);
-                        let expr_ty = self.inferrer.infer_expr(arg);
-                        let needs_unwrap = matches!(fn_ret, ZigType::I64 | ZigType::I32 | ZigType::Usize | ZigType::F64 | ZigType::F32 | ZigType::Bool | ZigType::String)
-                            && matches!(expr_ty, ZigType::JsAny | ZigType::JsValue);
-                        if needs_unwrap {
-                            self.emit_unwrap_js_any(arg, &fn_ret);
-                        } else if fn_ret == ZigType::JsValue && expr_ty == ZigType::JsAny {
-                            // JsAny → JsValue conversion
-                            self.emit_expr(arg);
-                            self.push(".toValue()");
+                    false
+                };
+
+                if is_struct_field_access {
+                    // Struct field access — emit directly without unwrap
+                    if let Some(ref label) = self.catch_label {
+                        self.push(&format!("break :{} ", label));
+                    } else if let Some(ref label) = self.try_label {
+                        self.push(&format!("break :{} ", label));
+                    } else {
+                        self.push("return ");
+                    }
+                    if let Some(ref arg) = rs.argument {
+                        eprintln!("[DEBUG] return stmt: struct field access detected, emitting directly");
+                        self.emit_expr(arg);
+                    }
+                    self.push(";\n");
+                } else {
+                    // Normal return statement handling
+                    if let Some(ref label) = self.catch_label {
+                        // Inside a catch block: break to catch label (provides default value)
+                        self.push(&format!("break :{} ", label));
+                    } else if let Some(ref label) = self.try_label {
+                        // Inside a try block: break to the try label
+                        self.push(&format!("break :{} ", label));
+                    } else {
+                        self.push("return ");
+                    }
+                    if let Some(arg) = &rs.argument {
+                        // If the function expects a primitive type but the return expression
+                        // evaluates to JsAny/JsValue (e.g., dynamic array element access),
+                        // generate the appropriate unwrap conversion (.asI64(), .asF64(), etc.)
+                        if let Some(fn_name) = &self.current_fn {
+                            let fn_ret = self.inferrer.get_fn_return_type(fn_name);
+                            let expr_ty = self.inferrer.infer_expr(arg);
+                            let needs_unwrap = matches!(fn_ret, ZigType::I64 | ZigType::I32 | ZigType::Usize | ZigType::F64 | ZigType::F32 | ZigType::Bool | ZigType::String)
+                                && matches!(expr_ty, ZigType::JsAny | ZigType::JsValue);
+                            eprintln!("[DEBUG] return stmt: fn_name={}, fn_ret={:?}, expr={:?}, expr_ty={:?}, needs_unwrap={}", fn_name, fn_ret, arg, expr_ty, needs_unwrap);
+                            if needs_unwrap {
+                                eprintln!("[DEBUG] return stmt: emitting unwrap for {:?}", fn_ret);
+                                self.emit_unwrap_js_any(arg, &fn_ret);
+                            } else if fn_ret == ZigType::JsValue && expr_ty == ZigType::JsAny {
+                                // JsAny → JsValue conversion
+                                self.emit_expr(arg);
+                                self.push(".toValue()");
+                            } else {
+                                self.emit_expr(arg);
+                            }
                         } else {
                             self.emit_expr(arg);
                         }
-                    } else {
-                        self.emit_expr(arg);
                     }
+                    self.push(";\n");
                 }
-                self.push(";\n");
             }
             Statement::IfStatement(if_stmt) => self.emit_if_stmt(if_stmt),
             Statement::BlockStatement(block) => {

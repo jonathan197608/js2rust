@@ -729,6 +729,7 @@ impl TypeInferrer {
     pub fn get_var_type(&self, name: &str) -> ZigType {
         // Check temporary env first (populated during inference)
         if let Some(ty) = self.env.get(name).map(|bi| bi.zig_type.clone()) {
+            eprintln!("[DEBUG] get_var_type('{}') = {:?} (from env), current_fn={:?}", name, ty, self.current_fn);
             return ty;
         }
         // Fall back to persistent fn_local_types (populated during inference,
@@ -737,21 +738,38 @@ impl TypeInferrer {
             && let Some(local_map) = self.fn_local_types.get(fn_name)
             && let Some(ty) = local_map.get(name)
         {
+            eprintln!("[DEBUG] get_var_type('{}') = {:?} (from fn_local_types['{}'])", name, ty, fn_name);
             return ty.clone();
         }
         // If current_fn is set but var not found, try all functions (edge case)
-        for local_map in self.fn_local_types.values() {
+        for (fn_name, local_map) in &self.fn_local_types {
             if let Some(ty) = local_map.get(name) {
+                eprintln!("[DEBUG] get_var_type('{}') = {:?} (from fn_local_types['{}'] fallback)", name, ty, fn_name);
                 return ty.clone();
             }
         }
+        eprintln!("[DEBUG] get_var_type('{}') = JsValue (not found!), current_fn={:?}, fn_local_types keys={:?}", name, self.current_fn, self.fn_local_types.keys().collect::<Vec<_>>());
         ZigType::JsValue
+    }
+
+    /// Check if a variable is a struct type (for codegen to detect struct field access).
+    /// This is used to avoid emitting .asString()/.asI64() etc. for struct fields.
+    pub fn is_struct_var(&self, name: &str) -> bool {
+        let ty = self.get_var_type(name);
+        matches!(ty, ZigType::Struct(_))
     }
 
     /// Register a temporary binding (e.g., for-of loop variable) so that
     /// codegen can look up its type during expression emission.
     pub fn register_binding(&mut self, name: &str, ty: ZigType) {
         self.env.insert(name.to_string(), BindingInfo { zig_type: ty, is_const: true });
+    }
+
+    /// Clear the temporary environment after inference.
+    /// This should be called before codegen to ensure get_var_type()
+    /// uses fn_local_types instead of stale env entries.
+    pub fn clear_env(&mut self) {
+        self.env.clear();
     }
 
     /// Save the current environment (for temporary modifications).
@@ -801,6 +819,15 @@ impl TypeInferrer {
 
     pub fn get_fn_return_type(&self, name: &str) -> ZigType {
         self.fn_return_types.get(name).cloned().unwrap_or(ZigType::JsValue)
+    }
+
+    /// Debug helper: print fn_local_types for a given function
+    pub fn debug_print_fn_local_types(&self, fn_name: &str) {
+        if let Some(local_map) = self.fn_local_types.get(fn_name) {
+            eprintln!("[DEBUG] fn_local_types['{}'] = {:?}", fn_name, local_map);
+        } else {
+            eprintln!("[DEBUG] fn_local_types['{}'] NOT FOUND", fn_name);
+        }
     }
 
     pub fn all_fn_return_types(&self) -> HashMap<String, ZigType> {
@@ -1508,6 +1535,8 @@ impl TypeInferrer {
                     let old = self.env.remove(pn);
                     saved.push((pn.clone(), old));
                     self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const: true });
+                    // Also register in fn_local_types for codegen (after env is cleared)
+                    self.fn_local_types.entry(fn_name.to_string()).or_insert_with(HashMap::new).insert(pn.clone(), ty.clone());
                 }
             }
         }
@@ -1681,6 +1710,7 @@ impl TypeInferrer {
             self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const });
             // Also persist the type in fn_local_types for codegen use
             if let Some(ref fn_name) = self.current_fn {
+                eprintln!("[DEBUG] register_fn_env: inserting var '{}' with type {:?} into fn_local_types['{}']", pn, ty, fn_name);
                 self.fn_local_types
                     .entry(fn_name.clone())
                     .or_default()
@@ -2248,11 +2278,15 @@ impl TypeInferrer {
                 }
                 ZigType::Struct(struct_name) => {
                     // Check host struct fields first (async host function return types)
+                    eprintln!("[DEBUG] infer_member_expr: Struct('{}'), prop='{}', host_struct_fields has {} entries", struct_name, prop, self.host_struct_fields.len());
                     if let Some(fields) = self.host_struct_fields.get(struct_name) {
-                        return fields.iter()
+                        eprintln!("[DEBUG] infer_member_expr: found fields for '{}': {:?}", struct_name, fields);
+                        let result = fields.iter()
                             .find(|(n, _)| n == prop)
                             .map(|(_, ty)| ty.clone())
                             .unwrap_or(ZigType::JsValue);
+                        eprintln!("[DEBUG] infer_member_expr: result for '{}.{}' = {:?}", struct_name, prop, result);
+                        return result;
                     }
                     // Map/Set: .size property returns usize
                     if (struct_name == "Map" || struct_name == "Set") && prop == "size" {
@@ -2726,11 +2760,12 @@ impl TypeInferrer {
                     }
                 }
                 // Check for assignment from array-returning methods (slice, filter, map, concat)
+                // Always treat the result as a dynamic array (ArrayList), because these
+                // methods always return a new array in generated Zig code.
                 if let Some(init) = &decl.init
                     && let Expression::CallExpression(call) = init
                     && let Expression::StaticMemberExpression(mem) = &call.callee
-                    && let Expression::Identifier(obj_id) = &mem.object
-                    && self.dynamic_arrays.contains(obj_id.name.as_str())
+                    && let Expression::Identifier(_obj_id) = &mem.object
                 {
                     let method = mem.property.name.as_str();
                     // Methods that return a new array
