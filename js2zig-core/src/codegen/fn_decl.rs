@@ -338,8 +338,6 @@ impl<'a> ZigCodegen<'a> {
             // Also set inferrer.current_fn so get_var_type() can look up fn_local_types
             let prev_infer_fn = self.inferrer.current_fn.take();
             self.inferrer.current_fn = Some(raw_name.to_string());
-            // DEBUG: print fn_local_types for this function
-            self.inferrer.debug_print_fn_local_types(raw_name);
             for stmt in &body.statements {
                 self.emit_stmt(stmt);
             }

@@ -93,7 +93,6 @@ impl<'a> ZigCodegen<'a> {
                         if let Expression::Identifier(obj_id) = &mem.object {
                             // Use is_struct_var to check if obj is a struct type
                             let result = self.inferrer.is_struct_var(obj_id.name.as_str());
-                            eprintln!("[DEBUG] return stmt: is_struct_var('{}') = {}", obj_id.name.as_str(), result);
                             result
                         } else {
                             false
@@ -115,7 +114,6 @@ impl<'a> ZigCodegen<'a> {
                         self.push("return ");
                     }
                     if let Some(ref arg) = rs.argument {
-                        eprintln!("[DEBUG] return stmt: struct field access detected, emitting directly");
                         self.emit_expr(arg);
                     }
                     self.push(";\n");
@@ -139,9 +137,7 @@ impl<'a> ZigCodegen<'a> {
                             let expr_ty = self.inferrer.infer_expr(arg);
                             let needs_unwrap = matches!(fn_ret, ZigType::I64 | ZigType::I32 | ZigType::Usize | ZigType::F64 | ZigType::F32 | ZigType::Bool | ZigType::String)
                                 && matches!(expr_ty, ZigType::JsAny | ZigType::JsValue);
-                            eprintln!("[DEBUG] return stmt: fn_name={}, fn_ret={:?}, expr={:?}, expr_ty={:?}, needs_unwrap={}", fn_name, fn_ret, arg, expr_ty, needs_unwrap);
                             if needs_unwrap {
-                                eprintln!("[DEBUG] return stmt: emitting unwrap for {:?}", fn_ret);
                                 self.emit_unwrap_js_any(arg, &fn_ret);
                             } else if fn_ret == ZigType::JsValue && expr_ty == ZigType::JsAny {
                                 // JsAny → JsValue conversion

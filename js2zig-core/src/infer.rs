@@ -729,7 +729,6 @@ impl TypeInferrer {
     pub fn get_var_type(&self, name: &str) -> ZigType {
         // Check temporary env first (populated during inference)
         if let Some(ty) = self.env.get(name).map(|bi| bi.zig_type.clone()) {
-            eprintln!("[DEBUG] get_var_type('{}') = {:?} (from env), current_fn={:?}", name, ty, self.current_fn);
             return ty;
         }
         // Fall back to persistent fn_local_types (populated during inference,
@@ -738,17 +737,14 @@ impl TypeInferrer {
             && let Some(local_map) = self.fn_local_types.get(fn_name)
             && let Some(ty) = local_map.get(name)
         {
-            eprintln!("[DEBUG] get_var_type('{}') = {:?} (from fn_local_types['{}'])", name, ty, fn_name);
             return ty.clone();
         }
         // If current_fn is set but var not found, try all functions (edge case)
-        for (fn_name, local_map) in &self.fn_local_types {
+        for (_fn_name, local_map) in &self.fn_local_types {
             if let Some(ty) = local_map.get(name) {
-                eprintln!("[DEBUG] get_var_type('{}') = {:?} (from fn_local_types['{}'] fallback)", name, ty, fn_name);
                 return ty.clone();
             }
         }
-        eprintln!("[DEBUG] get_var_type('{}') = JsValue (not found!), current_fn={:?}, fn_local_types keys={:?}", name, self.current_fn, self.fn_local_types.keys().collect::<Vec<_>>());
         ZigType::JsValue
     }
 
@@ -819,15 +815,6 @@ impl TypeInferrer {
 
     pub fn get_fn_return_type(&self, name: &str) -> ZigType {
         self.fn_return_types.get(name).cloned().unwrap_or(ZigType::JsValue)
-    }
-
-    /// Debug helper: print fn_local_types for a given function
-    pub fn debug_print_fn_local_types(&self, fn_name: &str) {
-        if let Some(local_map) = self.fn_local_types.get(fn_name) {
-            eprintln!("[DEBUG] fn_local_types['{}'] = {:?}", fn_name, local_map);
-        } else {
-            eprintln!("[DEBUG] fn_local_types['{}'] NOT FOUND", fn_name);
-        }
     }
 
     pub fn all_fn_return_types(&self) -> HashMap<String, ZigType> {
@@ -1710,7 +1697,6 @@ impl TypeInferrer {
             self.env.insert(pn.clone(), BindingInfo { zig_type: ty.clone(), is_const });
             // Also persist the type in fn_local_types for codegen use
             if let Some(ref fn_name) = self.current_fn {
-                eprintln!("[DEBUG] register_fn_env: inserting var '{}' with type {:?} into fn_local_types['{}']", pn, ty, fn_name);
                 self.fn_local_types
                     .entry(fn_name.clone())
                     .or_default()
@@ -2278,14 +2264,11 @@ impl TypeInferrer {
                 }
                 ZigType::Struct(struct_name) => {
                     // Check host struct fields first (async host function return types)
-                    eprintln!("[DEBUG] infer_member_expr: Struct('{}'), prop='{}', host_struct_fields has {} entries", struct_name, prop, self.host_struct_fields.len());
                     if let Some(fields) = self.host_struct_fields.get(struct_name) {
-                        eprintln!("[DEBUG] infer_member_expr: found fields for '{}': {:?}", struct_name, fields);
                         let result = fields.iter()
                             .find(|(n, _)| n == prop)
                             .map(|(_, ty)| ty.clone())
                             .unwrap_or(ZigType::JsValue);
-                        eprintln!("[DEBUG] infer_member_expr: result for '{}.{}' = {:?}", struct_name, prop, result);
                         return result;
                     }
                     // Map/Set: .size property returns usize
