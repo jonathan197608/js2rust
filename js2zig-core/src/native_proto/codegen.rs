@@ -47,7 +47,7 @@ impl Codegen {
             self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent += 1;
             // Use std.io.Writer.Allocating + std.json.fmt() for serialization
-            self.writeln("var string = std.io.Writer.Allocating.init(allocator);");
+            self.writeln("var string = std.io.Writer.Allocating.init(std.heap.page_allocator);");
             self.writeln("errdefer string.deinit();");
             self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
             self.writeln("return string.toOwnedSlice();");
