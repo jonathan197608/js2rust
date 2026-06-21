@@ -346,16 +346,31 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     }
 
     // Always provide js2rust_init/deinit safe wrappers (C ABI exports from lib.zig)
+    // Use Once to ensure js2rust_init() is called exactly once before any FFI call.
     let runtime_init = quote! {
+        use std::sync::Once;
+
+        static INIT: Once = Once::new();
+
         /// Initialize the Zig runtime (allocator + Io for async functions).
         /// Call this before any async export function.
+        /// Safe to call multiple times (uses Once internally).
         pub fn js2rust_init() {
             extern "C" {
                 #[link_name = "js2rust_init"]
                 fn _js2rust_init();
             }
-            unsafe { _js2rust_init() };
+            INIT.call_once(|| {
+                unsafe { _js2rust_init() };
+            });
         }
+
+        /// Ensure the Zig runtime is initialized (calls js2rust_init() exactly once).
+        /// Called automatically by all generated wrapper functions.
+        fn ensure_initialized() {
+            js2rust_init();
+        }
+
         /// Release Zig runtime resources.
         pub fn js2rust_deinit() {
             extern "C" {
@@ -480,6 +495,8 @@ fn generate_safe_wrapper(
     quote! {
         #[allow(non_snake_case)]
         pub fn #wrapper_name( #(#safe_params),* ) -> #ret_ty {
+            // Ensure Zig runtime (allocator) is initialized before calling FFI
+            ensure_initialized();
             #call_expr
         }
     }

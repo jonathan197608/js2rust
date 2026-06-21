@@ -713,8 +713,9 @@ impl<'a> ZigCodegen<'a> {
         // Always generate init_js2rust() — empty if no dynamic access vars
         self.push("\n");
         self.push("/// Initialize global allocator and all objects that use dynamic property access.\n");
-        self.push("pub fn init_js2rust(alloc: std.mem.Allocator) void {\n");
-        self.push("    js_allocator.setGlobalAllocator(alloc);\n");
+        self.push("/// The allocator is created internally using ArenaAllocator (Zig 0.16.0: lock-free, thread-safe).\n");
+        self.push("pub fn init_js2rust() void {\n");
+        self.push("    js_allocator.initGlobalAllocator();\n");
         // Collect init code to avoid borrowing self twice
         let init_code: String = self.init_globals_code.iter().cloned().collect();
         if !init_code.is_empty() {
@@ -738,6 +739,12 @@ impl<'a> ZigCodegen<'a> {
         }
         // Skip generation when no resources need cleanup — lib.zig still provides the shell
         if hashmap_names.is_empty() {
+            // Still need to deinit the allocator
+            self.push("\n");
+            self.push("/// Deinitialize all global objects created by init_js2rust().\n");
+            self.push("pub fn deinit_js2rust() void {\n");
+            self.push("    js_allocator.deinitGlobalAllocator();\n");
+            self.push("}\n");
             return;
         }
         self.push("\n");
@@ -746,6 +753,7 @@ impl<'a> ZigCodegen<'a> {
         for name in &hashmap_names {
             self.push(&format!("    {}.deinit();\n", name));
         }
+        self.push("    js_allocator.deinitGlobalAllocator();\n");
         self.push("}\n");
     }
 

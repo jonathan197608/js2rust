@@ -385,7 +385,9 @@ impl<'a> ZigCodegen<'a> {
 
             Expression::StringLiteral(lit) => {
                 self.push("\"");
-                self.push(&lit.value);
+                // Escape the string value for Zig: \ -> \\, " -> \"
+                let escaped = lit.value.replace('\\', "\\\\").replace('"', "\\\"");
+                self.push(&escaped);
                 self.push("\"");
             }
 

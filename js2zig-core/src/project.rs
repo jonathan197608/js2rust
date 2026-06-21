@@ -382,23 +382,24 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
 
     // --- Global initialization / deinitialization ---
     out.push_str("/// Initialize the global allocator used by all generated functions.\n");
-    out.push_str("pub fn init_js2rust(alloc: std.mem.Allocator) void {\n");
-    out.push_str("    js_allocator.setGlobalAllocator(alloc);\n");
-    out.push_str("    js_runtime.initIo(alloc);\n");
+    out.push_str("/// The allocator is created internally using ArenaAllocator (Zig 0.16.0: lock-free, thread-safe).\n");
+    out.push_str("pub fn init_js2rust() void {\n");
+    out.push_str("    js_allocator.initGlobalAllocator();\n");
+    out.push_str("    js_runtime.initIo(js_allocator.getAllocator());\n");
     // Also call init_js2rust on each per-file module that defines its own
     for module in &opts.per_file_code {
         if module.zig_code.contains("pub fn init_js2rust") {
-            out.push_str(&format!("    {}.init_js2rust(alloc);\n", module.mod_name));
+            out.push_str(&format!("    {}.init_js2rust();\n", module.mod_name));
         }
     }
     out.push_str("}\n\n");
     // C ABI compatible init/deinit (callable from Rust via FFI)
     // Only generate in one group to avoid duplicate symbols when linking multiple groups.
     if opts.include_windows_stub {
-        out.push_str("/// Initialize with a default allocator (page_allocator).\n");
+        out.push_str("/// Initialize with ArenaAllocator (lock-free, thread-safe).\n");
         out.push_str("/// Call this from Rust via C ABI before using any function that allocates.\n");
         out.push_str("pub export fn js2rust_init() void {\n");
-        out.push_str("    init_js2rust(std.heap.page_allocator);\n");
+        out.push_str("    init_js2rust();\n");
         out.push_str("}\n\n");
         out.push_str("/// Release global resources. Call this when done.\n");
         out.push_str("pub export fn js2rust_deinit() void {\n");
@@ -413,6 +414,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
             out.push_str(&format!("    {}.deinit_js2rust();\n", module.mod_name));
         }
     }
+    out.push_str("    js_allocator.deinitGlobalAllocator();\n");
     out.push_str("}\n\n");
 
     // Build a set of functions that return C ABI strings ([*:0]const u8),

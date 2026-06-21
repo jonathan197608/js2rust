@@ -160,7 +160,7 @@ pub fn generate_test_code(
         out.push_str("    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);\n");
         out.push_str("    defer arena.deinit();\n");
         out.push_str("    const allocator = arena.allocator();\n");
-        out.push_str("    init_js2rust(allocator);\n");
+        out.push_str("    init_js2rust();\n");
         out.push_str("    defer deinit_js2rust();\n");
 
         if let Some(ref expected) = tc.expected {
