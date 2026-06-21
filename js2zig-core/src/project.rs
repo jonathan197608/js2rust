@@ -405,6 +405,12 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push_str("pub export fn js2rust_deinit() void {\n");
         out.push_str("    deinit_js2rust();\n");
         out.push_str("}\n\n");
+        out.push_str("/// Reset the arena allocator (free all allocated memory, keep allocator active).\n");
+        out.push_str("/// Call this periodically to prevent excessive memory usage.\n");
+        out.push_str("/// Thread-safe: uses atomic spinlock internally.\n");
+        out.push_str("pub export fn js2rust_reset() void {\n");
+        out.push_str("    js_allocator.resetGlobalAllocator();\n");
+        out.push_str("}\n\n");
     }
     out.push_str("/// Release global resources allocated via init_js2rust.\n");
     out.push_str("pub fn deinit_js2rust() void {\n");
