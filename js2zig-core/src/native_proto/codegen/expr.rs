@@ -498,12 +498,7 @@ impl Codegen {
             if let Some(host_func_name) = name.strip_prefix("host_") {
                 // Convert host_add(...) to host.add(...)
                 self.write(&format!("host.{}(", host_func_name));
-                for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr_arg(arg);
-                }
+                self.emit_comma_separated_args(&ce.arguments);
                 self.write(")");
                 return;
             }
@@ -517,12 +512,7 @@ impl Codegen {
             return;
         }
         self.write("(");
-        for (i, arg) in ce.arguments.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
-            }
-            self.emit_expr_arg(arg);
-        }
+        self.emit_comma_separated_args(&ce.arguments);
         self.write(")");
     }
 
@@ -720,14 +710,7 @@ impl Codegen {
                     let obj_name = obj.name.as_str();
                     self.write(&format!("{}.unshift(", obj_name));
                     // Emit arguments
-                    for (i, arg) in ce.arguments.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                    }
+                    self.emit_comma_separated_args(&ce.arguments);
                     self.write(")");
                     return true;
                 }

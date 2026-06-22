@@ -131,6 +131,16 @@ impl Codegen {
             self.emit_expr(expr);
         }
     }
+
+    /// Emit all call arguments separated by ", ".
+    pub(crate) fn emit_comma_separated_args(&mut self, args: &[Argument]) {
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            self.emit_expr_arg(arg);
+        }
+    }
 }
 
 // ── emit_toplevel helpers ──────────────────────────
