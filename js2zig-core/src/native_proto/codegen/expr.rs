@@ -139,14 +139,7 @@ impl Codegen {
                                 first_arg.as_expression().unwrap()
                         {
                             self.write("&[_]i64{");
-                            for (i, elem) in ae.elements.iter().enumerate() {
-                                if i > 0 {
-                                    self.write(", ");
-                                }
-                                if let Some(e) = elem.as_expression() {
-                                    self.emit_expr(e);
-                                }
-                            }
+                            self.emit_comma_separated_array_elements(&ae.elements);
                             self.write("}");
                         }
                         self.write(")");
@@ -159,14 +152,7 @@ impl Codegen {
                                 first_arg.as_expression().unwrap()
                         {
                             self.write("&[_]u8{");
-                            for (i, elem) in ae.elements.iter().enumerate() {
-                                if i > 0 {
-                                    self.write(", ");
-                                }
-                                if let Some(e) = elem.as_expression() {
-                                    self.emit_expr(e);
-                                }
-                            }
+                            self.emit_comma_separated_array_elements(&ae.elements);
                             self.write("}");
                         }
                         self.write(")");

@@ -141,6 +141,22 @@ impl Codegen {
             self.emit_expr_arg(arg);
         }
     }
+
+    /// Emit array expression elements separated by ", ".
+    /// Skips elements that are not expressions (spread, elision).
+    pub(crate) fn emit_comma_separated_array_elements(
+        &mut self,
+        elements: &[ArrayExpressionElement],
+    ) {
+        for (i, elem) in elements.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            if let Some(e) = elem.as_expression() {
+                self.emit_expr(e);
+            }
+        }
+    }
 }
 
 // ── emit_toplevel helpers ──────────────────────────
