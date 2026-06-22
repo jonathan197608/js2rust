@@ -6,7 +6,7 @@ authors = ["jonathan197608"]
 description = "Phase 5 showcase: advanced array methods (pop/shift/join/reverse/sort/slice/map/filter)"
 
 [dependencies]
-js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.3", path = "../../js2rust-bridge" }
 
 [build-dependencies]
-js2rust-bridge = { version = "0.2", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.3", path = "../../js2rust-bridge" }
