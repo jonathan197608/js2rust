@@ -2007,4 +2007,88 @@ function reject(val) {
         );
         assert_zig_ast_check(&zig, "test_native_proto_throw_bare");
     }
+
+    // ── Test: ** operator (exponentiation) ─────────────
+
+    #[test]
+    fn test_native_proto_exponential_operator() {
+        // Integer exponentiation: 2 ** 3 → loop-based implementation
+        let js = r#"
+/**
+ * @param {number} base
+ * @param {number} exp
+ * @returns {number}
+ */
+export function intPow(base, exp) {
+    return base ** exp;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_exponential_operator");
+        println!("=== Exponential (int) ===\n{}", zig);
+        // Should generate std.math.pow for exponentiation
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "Expected std.math.pow for exponentiation:\n{}",
+            zig
+        );
+        // Should cast operands to f64
+        assert!(
+            zig.contains("@as(f64,"),
+            "Expected @as(f64, ...) cast for exponentiation:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_exponential_operator");
+    }
+
+    #[test]
+    fn test_native_proto_exponential_float() {
+        // Float exponentiation: 2.0 ** 3.0 → std.math.pow(f64, ...)
+        let js = r#"
+/**
+ * @param {number} base
+ * @param {number} exp
+ * @returns {number}
+ */
+export function floatPow(base, exp) {
+    return base ** exp;
+}
+"#;
+        // Note: without type annotations, base and exp are inferred as i64.
+        // To test float exponentiation, we need to use float literals.
+        let js_float = r#"
+export function powFloat() {
+    return 2.0 ** 3.0;
+}
+"#;
+        let zig = transpile_and_assert!(js_float, "test_native_proto_exponential_float");
+        println!("=== Exponential (float) ===\n{}", zig);
+        // Should generate std.math.pow for float exponentiation
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "Expected std.math.pow for float exponentiation:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_exponential_float");
+    }
+
+    #[test]
+    fn test_native_proto_exponential_mixed() {
+        // Mixed: integer ** float → should use std.math.pow(f64, ...)
+        let js = r#"
+export function powMixed() {
+    const base = 2;
+    const exp = 3.0;
+    return base ** exp;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_exponential_mixed");
+        println!("=== Exponential (mixed) ===\n{}", zig);
+        // Should cast integer to f64 and use std.math.pow
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "Expected std.math.pow for mixed exponentiation:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_exponential_mixed");
+    }
 }

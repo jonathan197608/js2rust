@@ -423,6 +423,16 @@ impl Codegen {
             self.write(", ");
             self.emit_expr(&be.right);
             self.write(")");
+        } else if be.operator == BinaryOperator::Exponential {
+            // ** operator: JS exponentiation
+            // JS `**` always returns number (f64), even for integer operands.
+            // Use std.math.pow(f64, ...) with temporary f64 variables.
+            self.write("(blk: { ");
+            self.write("const _base_f64: f64 = @as(f64, ");
+            self.emit_expr(&be.left);
+            self.write("); const _exp_f64: f64 = @as(f64, ");
+            self.emit_expr(&be.right);
+            self.write("); break :blk std.math.pow(f64, _base_f64, _exp_f64); })");
         } else {
             self.emit_expr(&be.left);
             self.write(" ");
@@ -1586,14 +1596,15 @@ impl Codegen {
             | BinaryOperator::Subtraction
             | BinaryOperator::Multiplication
             | BinaryOperator::Division
-            | BinaryOperator::Remainder
-            | BinaryOperator::Exponential => {
+            | BinaryOperator::Remainder => {
                 if left == ZigType::F64 || right == ZigType::F64 {
                     ZigType::F64
                 } else {
                     ZigType::I64
                 }
             }
+            // Exponential: JS `**` always returns number (f64)
+            BinaryOperator::Exponential => ZigType::F64,
             // Comparison operators → Bool
             BinaryOperator::Equality
             | BinaryOperator::Inequality
