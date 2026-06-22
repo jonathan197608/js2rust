@@ -12,9 +12,10 @@
 use js2rust_bridge::js2rust_bridge;
 
 // Transpile JS -> Zig and generate FFI bindings.
-// Core file: app.js -> imports lib.js -> imports utils.js (2-level dependency)
+// Multi-root mode: app.js + phase5.js merged into one group.
 js2rust_bridge! {
     "js_src/app.js",
+    "js_src/phase5.js",
 }
 
 fn main() {
@@ -182,6 +183,49 @@ fn main() {
 
     let set_del = testSetDelete_app();
     println!("  testSetDelete() = {} (expected 1)", set_del);
+
+    // ── Phase 5: Array Methods ────────────────────────────
+    println!();
+    println!("--- Array Methods (Phase 5) ---");
+
+    let pop_val = testArrayPop_app();
+    println!("  testArrayPop() = {} (expected 0)", pop_val);
+
+    let shift_val = testArrayShift_app();
+    println!("  testArrayShift() = {} (expected 0)", shift_val);
+
+    let rev_ok = testArrayReverse_app();
+    println!("  testArrayReverse() = {} (expected 0)", rev_ok);
+
+    let sort_ok = testArraySort_app();
+    println!("  testArraySort() = {} (expected 0)", sort_ok);
+
+    let slice_ok = testArraySlice_app();
+    println!("  testArraySlice() = {} (expected 0)", slice_ok);
+
+    let map_ok = testArrayMap_app();
+    println!("  testArrayMap() = {} (expected 0)", map_ok);
+
+    let filter_ok = testArrayFilter_app();
+    println!("  testArrayFilter() = {} (expected 0)", filter_ok);
+
+    let reduce_ok = testArrayReduce_app();
+    println!("  testArrayReduce() = {} (expected 0)", reduce_ok);
+
+    let for_each_ok = testArrayForEach_app();
+    println!("  testArrayForEach() = {} (expected 0)", for_each_ok);
+
+    let some_idx_ok = testArraySomeIndex_app();
+    println!("  testArraySomeIndex() = {} (expected 0)", some_idx_ok);
+
+    let every_idx_ok = testArrayEveryIndex_app();
+    println!("  testArrayEveryIndex() = {} (expected 0)", every_idx_ok);
+
+    let some_ok = testArraySome_app();
+    println!("  testArraySome() = {} (expected 0)", some_ok);
+
+    let every_ok = testArrayEvery_app();
+    println!("  testArrayEvery() = {} (expected 0)", every_ok);
 
     // Cleanup
     js2rust_deinit();

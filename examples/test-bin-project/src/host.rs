@@ -154,6 +154,7 @@ pub extern "C" fn fetch_user(name: *const c_char) -> HostFetchUserResult {
 }
 
 /// Timing helper for benchmarking async calls from main.
+#[allow(dead_code)]
 pub fn timed<F: FnOnce() -> R, R>(label: &str, f: F) -> R {
     let start = Instant::now();
     let result = f();

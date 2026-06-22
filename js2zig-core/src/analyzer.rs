@@ -92,15 +92,20 @@ impl fmt::Debug for FileGroup {
     }
 }
 
-/// Analyze a single core JS file and its transitive dependencies.
+/// Analyze a single core JS file (and optional additional roots) and their
+/// transitive dependencies, merging everything into one group.
 ///
-/// Only processes the specified core file and the files it imports,
+/// Only processes the specified core file(s) and the files they import,
 /// rather than scanning an entire directory.
 ///
 /// # Returns
 /// - `groups`: Vec containing a single FileGroup.
 /// - `groups_json`: JSON-serializable summary for `out/groups.json`.
-pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, String) {
+pub fn analyze_single_group(
+    in_dir: &str,
+    core_file: &str,
+    additional_core_files: &[String],
+) -> (Vec<FileGroup>, String) {
     let in_path = Path::new(in_dir);
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
@@ -108,6 +113,11 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
     // parsed Program for codegen reuse (eliminates double-parsing).
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = vec![core_file.to_string()];
+    for addl_file in additional_core_files {
+        stack.push(addl_file.clone());
+    }
+    // Reverse so the primary core_file is popped first (we parse it first).
+    stack.reverse();
 
     let mut imports: HashMap<String, Vec<String>> = HashMap::new();
     let mut imported_names: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -148,8 +158,11 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
         parsed_programs.insert(cur, program);
     }
 
-    // Build the single group.
-    let members = transitive_deps(core_file, &imports);
+    // Build the single group — all files from all roots merged.
+    let all_roots: Vec<String> = std::iter::once(core_file.to_string())
+        .chain(additional_core_files.iter().cloned())
+        .collect();
+    let members = transitive_deps_multi(&all_roots, &imports);
     let core_name = sanitzed
         .get(core_file)
         .cloned()
@@ -174,10 +187,11 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
     (groups, groups_json)
 }
 
-/// Compute transitive dependencies of `file` (including itself).
-fn transitive_deps(file: &str, imports: &HashMap<String, Vec<String>>) -> Vec<String> {
+/// Compute transitive dependencies starting from multiple root files.
+/// All roots and their transitive deps are merged into one topological list.
+fn transitive_deps_multi(roots: &[String], imports: &HashMap<String, Vec<String>>) -> Vec<String> {
     let mut visited: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = vec![file.to_string()];
+    let mut stack: Vec<String> = roots.to_vec();
     let mut result: Vec<String> = Vec::new();
 
     // DFS produces core-first order; reverse for topological (deps-first).

@@ -59,6 +59,8 @@ struct HostFnDecl {
 struct MacroInput {
     /// Core JS file path (e.g. "js_src/main.js").
     js_file: String,
+    /// Additional JS file paths (multi-root mode).
+    additional_js_files: Vec<String>,
     /// Group name derived from the file stem (sanitized).
     group: String,
     host_fns: Vec<HostFnDecl>,
@@ -77,13 +79,26 @@ impl Parse for MacroInput {
             .unwrap_or("main");
         let group = js2zig_core::analyzer::sanitize_module_name(stem);
 
-        // Optional host function declarations
+        // After the primary JS file: additional JS files or host functions
+        // (all comma-separated).  Additional JS files are LitStr; host functions
+        // start with an optional `async` keyword followed by an Ident.
+        let mut additional_js_files = Vec::new();
         let mut host_fns = Vec::new();
-        while input.peek(Token![,]) {
+        loop {
+            if !input.peek(Token![,]) {
+                break;
+            }
             input.parse::<Token![,]>()?;
             if input.is_empty() {
                 break;
             }
+            // Decide: LitStr → additional JS file; async/Ident → host function
+            if input.peek(LitStr) {
+                let additional: LitStr = input.parse()?;
+                additional_js_files.push(additional.value());
+                continue;
+            }
+            // Must be a host function declaration
 
             // Parse first — could be `async` keyword or function name
             let is_async = input.peek(Token![async]);
@@ -140,6 +155,7 @@ impl Parse for MacroInput {
 
         Ok(MacroInput {
             js_file,
+            additional_js_files,
             group,
             host_fns,
         })
@@ -243,10 +259,18 @@ fn generate(input: &MacroInput) -> TokenStream {
         });
     }
 
+    // Resolve additional JS file paths (multi-root mode)
+    let additional_js_paths: Vec<std::path::PathBuf> = input
+        .additional_js_files
+        .iter()
+        .map(|f| std::path::Path::new(&manifest_dir).join(f))
+        .collect();
+
     // Build ProjectConfig
     let config = js2zig_core::ProjectConfig {
         name: input.group.clone(),
         js_file: js_file_path.clone(),
+        additional_js_files: additional_js_paths,
         out_dir: cache_dir.clone(),
         host_config: if host_functions.is_empty() {
             None

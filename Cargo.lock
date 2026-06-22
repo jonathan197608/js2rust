@@ -511,13 +511,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "showcase-phase5"
-version = "0.1.0"
-dependencies = [
- "js2rust-bridge",
-]
-
-[[package]]
 name = "showcase-project"
 version = "0.1.0"
 dependencies = [

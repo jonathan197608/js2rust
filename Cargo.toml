@@ -7,5 +7,4 @@ members = [
     "examples/test-lib-project",
     "examples/test-bin-project",
     "examples/showcase-project",
-    "examples/showcase-phase5",
 ]

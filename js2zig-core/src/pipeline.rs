@@ -142,8 +142,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     fs::create_dir_all(&out_dir)
         .map_err(|e| format!("cannot create output directory '{}': {}", out_dir, e))?;
 
-    // === Phase 1: Analyze file groups (single core file + transitive deps) ===
-    let (groups, groups_json) = analyze_single_group(&in_dir, &core_file);
+    // === Phase 1: Analyze file groups (single or multi-root core files + transitive deps) ===
+    let additional_js_files: Vec<String> = config
+        .additional_js_files
+        .iter()
+        .filter_map(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    let (groups, groups_json) = analyze_single_group(&in_dir, &core_file, &additional_js_files);
 
     let groups_json_path = Path::new(&out_dir).join("groups.json");
     if let Err(e) = fs::write(&groups_json_path, &groups_json) {
@@ -305,6 +314,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
+            // Additional core files (multi-root): treat their exports as CABI-exportable too.
+            let additional_core_set: HashSet<String> =
+                additional_js_files.iter().cloned().collect();
+
             for member in &group.members {
                 let src = match group.file_sources.get(member) {
                     Some(s) => s.clone(),
@@ -326,10 +339,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 // For test groups: ALL toplevel functions → C ABI.
                 // For normal groups: core file's JS exports → C ABI;
+                //                    additional core files → C ABI (full exports);
                 //                    dependency file: only re-exported names → C ABI.
                 let codegen_exports: HashSet<String> = if is_test_group {
                     group.all_fn_names.get(member).cloned().unwrap_or_default()
-                } else if *member == group.core_file {
+                } else if *member == group.core_file || additional_core_set.contains(member) {
                     group
                         .exported_names
                         .get(member)
