@@ -2122,4 +2122,52 @@ export function powMixed() {
         // NOTE: We skip zig ast-check here because the testArrow function
         // has incorrect return type inference (separate issue to fix later).
     }
+    // ── Test: Template literal (complex nesting) ──────────
+
+    #[test]
+    fn test_native_proto_template_literal_complex() {
+        // Complex template: multiple expressions, nested property, function call
+        let js = r#"export function buildMessage(user, scores) {
+    const name = user.name;
+    const avg = scores[0] + scores[1];
+    return `Hello ${name}, your average score is ${avg}!`;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_template_literal_complex");
+        println!("=== Template literal (complex) ===
+{}", zig);
+        // Should generate std.fmt.allocPrint for template with expressions
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for template with expressions:
+{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_template_literal_complex");
+    }
+
+    // ── Test: ** operator (edge cases) ──────────────
+
+    #[test]
+    fn test_native_proto_exponential_edge() {
+        // Edge cases: zero exponent, negative exponent, float base
+        let js = r#"export function powEdge() {
+    const x = 2.0;
+    const a = x ** 0;   // x^0 = 1
+    const b = x ** -1;  // x^(-1) = 0.5
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_exponential_edge");
+        println!("=== Exponential (edge) ===
+{}", zig);
+        // Should generate std.math.pow for exponentiation
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "Expected std.math.pow for edge case exponentiation:
+{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_exponential_edge");
+    }
 }
