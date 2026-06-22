@@ -97,4 +97,40 @@ impl Codegen {
     }
 }
 
+// ── Argument extraction helpers ───────────────────
+
+impl Codegen {
+    /// Extract the first call argument as a string (via emit_expr_to_string).
+    /// Returns empty string if no argument or argument is not an expression.
+    pub(crate) fn first_arg_string(&mut self, args: &[Argument]) -> String {
+        if let Some(arg) = args.first()
+            && let Some(expr) = arg.as_expression()
+        {
+            self.emit_expr_to_string(expr)
+        } else {
+            String::new()
+        }
+    }
+
+    /// Extract the first call argument as a string, with a custom fallback.
+    pub(crate) fn first_arg_string_or(&mut self, args: &[Argument], default: &str) -> String {
+        if let Some(arg) = args.first()
+            && let Some(expr) = arg.as_expression()
+        {
+            self.emit_expr_to_string(expr)
+        } else {
+            default.to_string()
+        }
+    }
+
+    /// Emit the first call argument directly. Silently does nothing if none.
+    pub(crate) fn emit_first_arg(&mut self, args: &[Argument]) {
+        if let Some(arg) = args.first()
+            && let Some(expr) = arg.as_expression()
+        {
+            self.emit_expr(expr);
+        }
+    }
+}
+
 // ── emit_toplevel helpers ──────────────────────────

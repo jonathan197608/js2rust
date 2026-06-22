@@ -527,7 +527,7 @@ impl Codegen {
     }
 
     /// Emit an expression to a temporary string (preserves self.output and all state).
-    fn emit_expr_to_string(&mut self, expr: &Expression) -> String {
+    pub(crate) fn emit_expr_to_string(&mut self, expr: &Expression) -> String {
         let saved = std::mem::take(&mut self.output);
         self.emit_expr(expr);
         let result = std::mem::take(&mut self.output);
@@ -549,11 +549,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("@abs(");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
@@ -566,11 +562,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("@floor(");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
@@ -583,11 +575,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("@ceil(");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
@@ -600,11 +588,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("@round(");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
@@ -617,11 +601,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("@sqrt(");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
@@ -646,11 +626,7 @@ impl Codegen {
                     return false;
                 }
                 self.write("std.math.pow(f64, ");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write(", ");
                 if let Some(arg) = ce.arguments.get(1)
                     && let Some(expr) = arg.as_expression()
@@ -670,11 +646,7 @@ impl Codegen {
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __max = ");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
@@ -700,11 +672,7 @@ impl Codegen {
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __min = ");
-                if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                }
+                self.emit_first_arg(&ce.arguments);
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
@@ -802,15 +770,7 @@ impl Codegen {
                     if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
                         // Treat as string indexOf
                         let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
+                        let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
                             obj = obj_name,
@@ -819,15 +779,7 @@ impl Codegen {
                         return true;
                     }
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                             "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
                             obj = obj_name,
@@ -852,15 +804,7 @@ impl Codegen {
                     if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
                         // Treat as string includes
                         let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
+                        let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
                             obj = obj_name,
@@ -869,15 +813,7 @@ impl Codegen {
                         return true;
                     }
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                             "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
                             obj = obj_name,
@@ -899,15 +835,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let sep_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let sep_expr = self.first_arg_string(&ce.arguments);
                     // Determine format specifier from array element type
                     let fmt_spec = match self.type_info.array_element_types.get(obj_name) {
                         Some(ZigType::I64) => "{d}",
@@ -940,27 +868,11 @@ impl Codegen {
                             self.write(&format!("{}.items", obj_name));
                         }
                         1 => {
-                            let arg_expr = if let Some(arg) = ce.arguments.first() {
-                                if let Some(expr) = arg.as_expression() {
-                                    self.emit_expr_to_string(expr)
-                                } else {
-                                    "0".to_string()
-                                }
-                            } else {
-                                "0".to_string()
-                            };
+                            let arg_expr = self.first_arg_string_or(&ce.arguments, "0");
                             self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
                         }
                         2 => {
-                            let start_expr = if let Some(arg) = ce.arguments.first() {
-                                if let Some(expr) = arg.as_expression() {
-                                    self.emit_expr_to_string(expr)
-                                } else {
-                                    "0".to_string()
-                                }
-                            } else {
-                                "0".to_string()
-                            };
+                            let start_expr = self.first_arg_string_or(&ce.arguments, "0");
                             let end_expr = if let Some(arg) = ce.arguments.get(1) {
                                 if let Some(expr) = arg.as_expression() {
                                     self.emit_expr_to_string(expr)
@@ -1001,11 +913,7 @@ impl Codegen {
                 {
                     self.write(&format!("{}.set(", obj.name.as_str()));
                     // Emit key
-                    if let Some(arg) = ce.arguments.first()
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr(expr);
-                    }
+                    self.emit_first_arg(&ce.arguments);
                     self.write(", ");
                     // Emit value
                     if let Some(arg) = ce.arguments.get(1)
@@ -1030,11 +938,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     self.write(&format!("try {}.get(", obj.name.as_str()));
-                    if let Some(arg) = ce.arguments.first()
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr(expr);
-                    }
+                    self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
                 }
@@ -1052,11 +956,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     self.write(&format!("{}.has(", obj.name.as_str()));
-                    if let Some(arg) = ce.arguments.first()
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr(expr);
-                    }
+                    self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
                 }
@@ -1074,11 +974,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     self.write(&format!("{}.delete(", obj.name.as_str()));
-                    if let Some(arg) = ce.arguments.first()
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr(expr);
-                    }
+                    self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
                 }
@@ -1097,11 +993,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     self.write(&format!("{}.add(", obj.name.as_str()));
-                    if let Some(arg) = ce.arguments.first()
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr(expr);
-                    }
+                    self.emit_first_arg(&ce.arguments);
                     self.write(") catch unreachable");
                     return true;
                 }
@@ -1120,15 +1012,7 @@ impl Codegen {
                     && let Expression::StringLiteral(obj) = &mem.object
                 {
                     let str_val = obj.value.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "(@as(i64, @intCast(std.mem.indexOf(u8, \"{str_val}\", {arg}) orelse -1)))",
                         str_val = str_val,
@@ -1141,15 +1025,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
                         obj = obj_name,
@@ -1171,15 +1047,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
                         obj = obj_name,
@@ -1201,15 +1069,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "std.mem.startsWith(u8, {obj}, {arg})",
                         obj = obj_name,
@@ -1231,15 +1091,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "std.mem.endsWith(u8, {obj}, {arg})",
                         obj = obj_name,
@@ -1282,15 +1134,7 @@ impl Codegen {
                     && let Expression::Identifier(obj) = &mem.object
                 {
                     let obj_name = obj.name.as_str();
-                    let arg_expr = if let Some(arg) = ce.arguments.first() {
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                    let arg_expr = self.first_arg_string(&ce.arguments);
                     // Generate code to split string into array
                     self.write(&format!(
                             "(blk: {{ var __split_result = std.ArrayList([]const u8).init(js_allocator.getAllocator()); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
