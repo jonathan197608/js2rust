@@ -43,6 +43,14 @@ impl Codegen {
                 }
 
                 match &decl.init {
+                    Some(Expression::ArrowFunctionExpression(arrow)) => {
+                        // Generate arrow function
+                        let fn_name = self.emit_arrow_function(arrow);
+                        // Assign function to variable
+                        self.write_indent();
+                        self.write(&format!("const {} = {};
+", name, fn_name));
+                    }
                     Some(init) => {
                         self.write_indent();
                         // Force 'var' for Map/Set/ArrayList types (mutated via methods).
@@ -1002,5 +1010,70 @@ impl Codegen {
             }
             _ => {}
         }
+    }
+}
+
+// ── Arrow function support ─────────────────────────────
+
+impl Codegen {
+    /// Emit an arrow function as a Zig function.
+    /// Generates the function definition and returns the function name.
+    pub(crate) fn emit_arrow_function(&mut self, arrow: &ArrowFunctionExpression) -> String {
+        // Generate unique function name
+        let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
+        self.arrow_counter += 1;
+        
+        // Generate function signature (in a single string to avoid whitespace issues)
+        let mut sig = format!("fn {}(", fn_name);
+        
+        // Generate params
+        let mut param_idx = 0;
+        for param in &arrow.params.items {
+            if param_idx > 0 {
+                sig.push_str(", ");
+            }
+            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                sig.push_str(&format!("{}: anytype", pname));
+            }
+            param_idx += 1;
+        }
+        
+        // TODO: get return type from type_info
+        // For now, assume i64
+        sig.push_str(") i64 {");
+        self.write_indent();
+        self.writeln(&sig);
+        
+        // Generate function body
+        self.indent += 1;
+        
+        // Handle body: for single-expression arrows, the body is a FunctionBody
+        // with a single ExpressionStatement.
+        // We need to generate "return expr;" for the expression.
+        if arrow.body.statements.len() == 1 {
+            if let Statement::ExpressionStatement(es) = &arrow.body.statements[0] {
+                // Single-expression arrow: generate "return expr;"
+                self.write_indent();
+                self.write("return ");
+                self.emit_expr(&es.expression);
+                self.write(";
+");
+            } else {
+                // Block body with a single statement (not expression)
+                for stmt in &arrow.body.statements {
+                    self.emit_fn_stmt(stmt);
+                }
+            }
+        } else {
+            // Block body with multiple statements
+            for stmt in &arrow.body.statements {
+                self.emit_fn_stmt(stmt);
+            }
+        }
+        
+        self.indent -= 1;
+        self.writeln("}");
+        
+        fn_name
     }
 }
