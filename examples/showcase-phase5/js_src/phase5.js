@@ -3,6 +3,9 @@
 
 // ── Array.pop ─────────────────────────────────
 // arr.pop() → remove and return last element
+/**
+ * @returns {i64}
+ */
 export function testArrayPop() {
     const arr = [10, 20, 30];
     arr.pop();
@@ -12,6 +15,9 @@ export function testArrayPop() {
 
 // ── Array.shift ───────────────────────────────────────
 // arr.shift() → remove and return first element
+/**
+ * @returns {i64}
+ */
 export function testArrayShift() {
     const arr = [10, 20, 30];
     arr.shift();
@@ -21,6 +27,9 @@ export function testArrayShift() {
 
 // ── Array.reverse ─────────────────────────────────────
 // arr.reverse() → in-place reverse
+/**
+ * @returns {i64}
+ */
 export function testArrayReverse() {
     const arr = [1, 2, 3];
     arr.reverse();
@@ -30,6 +39,9 @@ export function testArrayReverse() {
 
 // ── Array.sort ────────────────────────────────────────
 // arr.sort() → in-place sort
+/**
+ * @returns {i64}
+ */
 export function testArraySort() {
     const arr = [3, 1, 4, 1, 5, 9, 2, 6];
     arr.sort();
@@ -39,6 +51,9 @@ export function testArraySort() {
 
 // ── Array.slice ───────────────────────────────────────
 // arr.slice(start, end) → return shallow copy
+/**
+ * @returns {i64}
+ */
 export function testArraySlice() {
     const arr = [10, 20, 30, 40, 50];
     const sub = arr.slice(1, 4);
@@ -49,7 +64,7 @@ export function testArraySlice() {
     return -1;
 }
 
-// ── Array.splice (delete only) ──────────────────────
+// DISABLED: delete not yet supported
 /*
 export function testArraySpliceDelete() {
     const arr = [10, 20, 30, 40, 50];
@@ -61,7 +76,6 @@ export function testArraySpliceDelete() {
 }
 */
 
-// ── Array.splice (delete + insert) ───────────────────
 // DISABLED: insert not yet supported
 /*
 export function testArraySpliceInsert() {
@@ -76,6 +90,9 @@ export function testArraySpliceInsert() {
 
 // ── Array.map ───────────────────────────────
 // callback inlining: identity function
+/**
+ * @returns {i64}
+ */
 export function testArrayMap() {
     const arr = [1, 2, 3, 4, 5];
     const same = arr.map(x => x);  // identity function
@@ -87,6 +104,9 @@ export function testArrayMap() {
 
 // ── Array.filter ─────────────────────────────
 // callback inlining: keep all
+/**
+ * @returns {i64}
+ */
 export function testArrayFilter() {
     const arr = [1, 2, 3, 4, 5];
     const all = arr.filter(x => true);  // keep all
@@ -98,6 +118,9 @@ export function testArrayFilter() {
 
 // ── Array.reduce ─────────────────────────────
 // reduce to sum all elements
+/**
+ * @returns {i64}
+ */
 export function testArrayReduce() {
     const arr = [1, 2, 3, 4, 5];
     const sum = arr.reduce((acc, x) => acc + x, 0);
@@ -109,6 +132,9 @@ export function testArrayReduce() {
 
 // ── Array.some ───────────────────────────────
 // check if any element > 3
+/**
+ * @returns {i64}
+ */
 export function testArraySome() {
     const arr = [1, 2, 3, 4, 5];
     const has_large = arr.some(x => x > 3);
@@ -120,6 +146,9 @@ export function testArraySome() {
 
 // ── Array.every ──────────────────────────────
 // check if all elements > 0
+/**
+ * @returns {i64}
+ */
 export function testArrayEvery() {
     const arr = [1, 2, 3, 4, 5];
     const all_positive = arr.every(x => x > 0);
@@ -131,6 +160,9 @@ export function testArrayEvery() {
 
 // ── Array.forEach (side effects) ────────────────────
 // sum all elements by modifying outer variable
+/**
+ * @returns {i64}
+ */
 export function testArrayForEach() {
     const arr = [1, 2, 3, 4, 5];
     let sum = 0;
@@ -145,6 +177,9 @@ export function testArrayForEach() {
 
 // ── Array.some with index ─────────────────────────
 // check if any element > 3, using index
+/**
+ * @returns {i64}
+ */
 export function testArraySomeIndex() {
     const arr = [1, 2, 3, 4, 5];
     const has_large_idx = arr.some((x, i) => i > 2);
@@ -156,6 +191,9 @@ export function testArraySomeIndex() {
 
 // ── Array.every with index ────────────────────────
 // check if all elements have index < 5
+/**
+ * @returns {i64}
+ */
 export function testArrayEveryIndex() {
     const arr = [10, 20, 30, 40, 50];
     const all_small_idx = arr.every((x, i) => i < 5);
