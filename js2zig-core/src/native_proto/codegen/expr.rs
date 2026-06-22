@@ -215,7 +215,10 @@ impl Codegen {
 
     /// Recursively collect all operands in a string concatenation chain.
     /// Takes &BinaryExpression directly (avoids type wrapping issues).
-    pub(crate) fn collect_concat_from_be<'a>(be: &'a BinaryExpression<'a>, out: &mut Vec<&'a Expression<'a>>) {
+    pub(crate) fn collect_concat_from_be<'a>(
+        be: &'a BinaryExpression<'a>,
+        out: &mut Vec<&'a Expression<'a>>,
+    ) {
         // Left side
         if let Expression::BinaryExpression(ref left_be) = be.left {
             if left_be.operator == BinaryOperator::Addition {
@@ -491,7 +494,6 @@ impl Codegen {
     /// Returns true if the call was handled, false otherwise
     fn emit_builtin_call(&mut self, builtin: &builtins::BuiltinCall, ce: &CallExpression) -> bool {
         match builtin {
-
             // ── Math methods ─────────────────────────────
             builtins::BuiltinCall::MathAbs => {
                 // Math.abs(x) → @abs(x)
@@ -644,10 +646,8 @@ impl Codegen {
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → arr.pop()
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.pop()", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.pop()", obj_name));
                     return true;
                 }
                 false
@@ -655,10 +655,8 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayShift => {
                 // arr.shift() → arr.shift()
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.shift()", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.shift()", obj_name));
                     return true;
                 }
                 false
@@ -666,10 +664,7 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayUnshift => {
                 // arr.unshift(x) → arr.unshift(x)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!("{}.unshift(", obj_name));
                     // Emit arguments
                     self.emit_comma_separated_args(&ce.arguments);
@@ -681,10 +676,8 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayReverse => {
                 // arr.reverse() → arr.reverse()
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.reverse()", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.reverse()", obj_name));
                     return true;
                 }
                 false
@@ -692,10 +685,8 @@ impl Codegen {
 
             builtins::BuiltinCall::ArraySort => {
                 // arr.sort() → arr.sort()
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.sort()", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.sort()", obj_name));
                     return true;
                 }
                 false
@@ -709,13 +700,10 @@ impl Codegen {
                     return false;
                 }
                 // Redirect to String.indexOf if the object variable is a string type
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if self.type_info.var_types.get(obj_name) == Some(&ZigType::Str) {
                         // Treat as string indexOf
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = self.first_arg_string(&ce.arguments);
+                            let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
                             obj = obj_name,
@@ -723,7 +711,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                    let obj_name = obj.name.as_str();
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                             "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
@@ -743,13 +730,10 @@ impl Codegen {
                     return false;
                 }
                 // Redirect to String.includes if the object variable is a string type
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if self.type_info.var_types.get(obj_name) == Some(&ZigType::Str) {
                         // Treat as string includes
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = self.first_arg_string(&ce.arguments);
+                            let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
                             obj = obj_name,
@@ -757,7 +741,6 @@ impl Codegen {
                         ));
                         return true;
                     }
-                    let obj_name = obj.name.as_str();
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                             "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
@@ -776,10 +759,7 @@ impl Codegen {
                         .push("Array.join() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let sep_expr = self.first_arg_string(&ce.arguments);
                     // Determine format specifier from array element type
                     let fmt_spec = match self.type_info.array_element_types.get(obj_name) {
@@ -804,10 +784,7 @@ impl Codegen {
                 // arr.slice(start, end) → arr.items[start..end]
                 // arr.slice(start) → arr.items[start..]
                 // arr.slice() → arr.items
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     match ce.arguments.len() {
                         0 => {
                             self.write(&format!("{}.items", obj_name));
@@ -853,10 +830,8 @@ impl Codegen {
                         .push("Map.set() requires exactly 2 arguments".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.set(", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.set(", obj_name));
                     // Emit key
                     self.emit_first_arg(&ce.arguments);
                     self.write(", ");
@@ -879,10 +854,8 @@ impl Codegen {
                         .push("Map.get() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("try {}.get(", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("try {}.get(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
@@ -897,10 +870,8 @@ impl Codegen {
                         .push("Map.has() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.has(", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.has(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
@@ -915,10 +886,8 @@ impl Codegen {
                         .push("Map.delete() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.delete(", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.delete(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
@@ -934,10 +903,8 @@ impl Codegen {
                         .push("Set.add() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("{}.add(", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.add(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch unreachable");
                     return true;
@@ -966,10 +933,7 @@ impl Codegen {
                     return true;
                 }
                 // Fallback: assume object is a variable
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
@@ -988,10 +952,7 @@ impl Codegen {
                         .push("String.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
@@ -1010,10 +971,7 @@ impl Codegen {
                         .push("String.startsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "std.mem.startsWith(u8, {obj}, {arg})",
@@ -1032,10 +990,7 @@ impl Codegen {
                         .push("String.endsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "std.mem.endsWith(u8, {obj}, {arg})",
@@ -1054,10 +1009,7 @@ impl Codegen {
                         .push("String.trim() requires no arguments".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
                         "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
                         obj = obj_name
@@ -1075,10 +1027,7 @@ impl Codegen {
                         .push("String.split() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    let obj_name = obj.name.as_str();
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     // Generate code to split string into array
                     self.write(&format!(
@@ -1097,10 +1046,8 @@ impl Codegen {
             builtins::BuiltinCall::ArrayForEach => {
                 // arr.forEach(fn) → for (arr.items) |_| {} (simplified: ignore fn)
                 // Note: forEach is a statement in Zig (no return value)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(&format!("for ({}.items) |_| {{}}", obj.name.as_str()));
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("for ({}.items) |_| {{}}", obj_name));
                     return true;
                 }
                 false
@@ -1108,10 +1055,8 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayMap => {
                 // arr.map(fn) → arr (simplified: return original array)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(obj.name.as_str());
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(obj_name);
                     return true;
                 }
                 false
@@ -1119,10 +1064,8 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayFilter => {
                 // arr.filter(fn) → arr (simplified: return original array)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object
-                {
-                    self.write(obj.name.as_str());
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(obj_name);
                     return true;
                 }
                 false

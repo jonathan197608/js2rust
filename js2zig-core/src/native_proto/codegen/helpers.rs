@@ -162,6 +162,18 @@ impl Codegen {
 // ── Template / format string helpers ───────────────
 
 impl Codegen {
+    /// If the callee is `obj.method()`, return `Some("obj")`.
+    /// Returns `None` if it's not a static member expression on an identifier.
+    pub(crate) fn callee_object_name<'a>(&self, callee: &'a Expression) -> Option<&'a str> {
+        if let Expression::StaticMemberExpression(mem) = callee
+            && let Expression::Identifier(obj) = &mem.object
+        {
+            Some(obj.name.as_str())
+        } else {
+            None
+        }
+    }
+
     /// Emit a format string expression: either a plain string literal (no args)
     /// or an allocPrint call (when interpolating args).
     ///
