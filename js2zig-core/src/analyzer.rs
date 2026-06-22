@@ -6,7 +6,7 @@
 //! belong to multiple groups.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
+use std::fmt::{self, Write};
 use std::path::Path;
 
 use oxc_allocator::Allocator;
@@ -44,7 +44,6 @@ fn sanitize_name(filename: &str) -> String {
 }
 
 /// A file group: one core file + all files transitively imported by it.
-#[derive(Debug, Clone)]
 pub struct FileGroup {
     /// Sanitized core file name (used as Zig project name).
     pub core_name: String,
@@ -63,6 +62,28 @@ pub struct FileGroup {
     pub all_fn_names: HashMap<String, HashSet<String>>,
     /// Cached source text per file (eliminates repeated I/O in the codegen pass).
     pub file_sources: HashMap<String, String>,
+    /// Parsed AST programs (one per file).  Allocators are leaked via Box::leak
+    /// so programs carry 'static lifetime — safe for a CLI transpiler where the
+    /// process exits shortly after.  Stored here so codegen can reuse the AST
+    /// without re-parsing the source text.
+    pub parsed_programs: HashMap<String, Program<'static>>,
+}
+
+// Manual Debug: skip parsed_programs (AST is huge, not useful for debug output).
+impl fmt::Debug for FileGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileGroup")
+            .field("core_name", &self.core_name)
+            .field("core_file", &self.core_file)
+            .field("members", &self.members)
+            .field("name_map", &self.name_map)
+            .field("imported_names", &self.imported_names)
+            .field("exported_names", &self.exported_names)
+            .field("all_fn_names", &self.all_fn_names)
+            .field("file_sources", &format_args!("{} files", self.file_sources.len()))
+            .field("parsed_programs", &format_args!("{} programs", self.parsed_programs.len()))
+            .finish()
+    }
 }
 
 /// Analyze a single core JS file and its transitive dependencies.
@@ -77,7 +98,8 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
     let in_path = Path::new(in_dir);
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
-    // metadata straight from the AST, and cache the source text for codegen.
+    // metadata straight from the AST, and cache both the source text and the
+    // parsed Program for codegen reuse (eliminates double-parsing).
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = vec![core_file.to_string()];
 
@@ -86,6 +108,7 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
     let mut exported_names: HashMap<String, HashSet<String>> = HashMap::new();
     let mut all_fn_names: HashMap<String, HashSet<String>> = HashMap::new();
     let mut file_sources: HashMap<String, String> = HashMap::new();
+    let mut parsed_programs: HashMap<String, Program<'static>> = HashMap::new();
     let mut sanitzed: HashMap<String, String> = HashMap::new();
 
     while let Some(cur) = stack.pop() {
@@ -96,13 +119,13 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
         let src = std::fs::read_to_string(in_path.join(&cur))
             .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
 
-        // Parse once; `program` borrows `src`, so confine it to an inner scope
-        // and let it drop before `src` is moved into the cache below.
-        let info = {
-            let allocator = Allocator::default();
-            let program = crate::parser::parse(&allocator, &src);
-            analyze_module_ast(&program)
-        };
+        // Parse ONCE: leak allocator + source for 'static lifetime, so the
+        // Program can be stored in the HashMap and reused by codegen later.
+        let allocator: &'static Allocator = Box::leak(Box::new(Allocator::default()));
+        let src_static: &'static str = Box::leak(src.clone().into_boxed_str());
+        let program: Program<'static> = crate::parser::parse(allocator, src_static);
+
+        let info = analyze_module_ast(&program);
 
         for dep in &info.imported_files {
             if !visited.contains(dep.as_str()) {
@@ -116,6 +139,7 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
         exported_names.insert(cur.clone(), info.exported_names);
         all_fn_names.insert(cur.clone(), info.all_toplevel_fn_names);
         file_sources.insert(cur.clone(), src);
+        parsed_programs.insert(cur, program);
     }
 
     // Build the single group.
@@ -134,6 +158,7 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
         exported_names,
         all_fn_names,
         file_sources,
+        parsed_programs,
     };
 
     let groups = vec![group];

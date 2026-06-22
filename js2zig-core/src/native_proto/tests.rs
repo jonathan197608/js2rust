@@ -7,6 +7,17 @@ mod tests {
     use crate::native_proto::TranspileResult;
     use std::process::Command;
 
+    /// Helper: parse JS source, then call transpile_js with the parsed Program.
+    /// Wraps the new two-arg API for test convenience.
+    fn parse_and_transpile(
+        js: &str,
+        exports: Option<std::collections::HashSet<String>>,
+    ) -> Result<TranspileResult, String> {
+        let alloc = oxc_allocator::Allocator::default();
+        let program = crate::parser::parse(&alloc, js);
+        transpile_js(&program, js, exports)
+    }
+
     /// Helper: run `zig ast-check` on generated Zig code.
     /// Panics if ast-check fails (to fail the test).
     /// Skips gracefully if `zig` is not installed.
@@ -62,13 +73,12 @@ mod tests {
     ///   let zig = transpile_and_assert!(js, "test_name", exports);  // with exported_functions
     macro_rules! transpile_and_assert {
         ($js:expr, $test_name:expr) => {{
-            let result = transpile_js($js, None).unwrap();
+            let result = parse_and_transpile($js, None).unwrap();
             println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
             result.zig_code
         }};
         ($js:expr, $test_name:expr, $exports:expr) => {{
-            let exports_set: Option<std::collections::HashSet<String>> = Some($exports);
-            let result = transpile_js($js, exports_set).unwrap();
+            let result = parse_and_transpile($js, Some($exports)).unwrap();
             println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
             result.zig_code
         }};
@@ -80,14 +90,13 @@ mod tests {
     ///   let zig = transpile_and_check!(js, "test_name", exports);  // with exported_functions
     macro_rules! transpile_and_check {
         ($js:expr, $test_name:expr) => {{
-            let result = transpile_js($js, None).unwrap();
+            let result = parse_and_transpile($js, None).unwrap();
             println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
             assert_zig_ast_check(&result.zig_code, $test_name);
             result.zig_code
         }};
         ($js:expr, $test_name:expr, $exports:expr) => {{
-            let exports_set: Option<std::collections::HashSet<String>> = Some($exports);
-            let result = transpile_js($js, exports_set).unwrap();
+            let result = parse_and_transpile($js, Some($exports)).unwrap();
             println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
             assert_zig_ast_check(&result.zig_code, $test_name);
             result.zig_code
@@ -101,12 +110,11 @@ mod tests {
     ///   assert_transpile_err!(js, "expected error message", exports);
     macro_rules! assert_transpile_err {
         ($js:expr, $expected_err:expr) => {{
-            let result = transpile_js($js, None);
+            let result = parse_and_transpile($js, None);
             check_transpile_err(result, $expected_err);
         }};
         ($js:expr, $expected_err:expr, $exports:expr) => {{
-            let exports_set: Option<std::collections::HashSet<String>> = Some($exports);
-            let result = transpile_js($js, exports_set);
+            let result = parse_and_transpile($js, Some($exports));
             check_transpile_err(result, $expected_err);
         }};
     }
@@ -340,7 +348,7 @@ function factorial(n) {
     return n * rest;
 }
 "#;
-        let zig = transpile_js(js, None).unwrap().zig_code;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== Complex Test ===\n{}", zig);
         // Rule 4: const doesn't need type annotation
         assert!(zig.contains("const PI = 3.14;"));
@@ -454,7 +462,7 @@ function main() {
 }
 "#;
         // Step 1: generate Zig source from JS
-        let zig_gen = transpile_js(js, None).unwrap().zig_code;
+        let zig_gen = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== Generated Zig code ===\n{}", zig_gen);
 
         // Step 2: run `zig ast-check` on the generated code to catch semantic errors
@@ -571,7 +579,7 @@ function main() {
     return a + b;
 }
 "#;
-        let zig = transpile_js(js, None).unwrap().zig_code;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== Object Struct ===\n{}", zig);
         // Should generate anonymous struct literal.
         assert!(zig.contains(".{"));
@@ -674,7 +682,7 @@ function formatUser(user) {
     return user.name;
 }
 "#;
-        let zig = transpile_js(js, None).unwrap().zig_code;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== JSDoc @typedef ===\n{}", zig);
         // Should generate struct definition at the top.
         assert!(zig.contains("const User = struct {"));
@@ -709,7 +717,7 @@ function main() {
     return name;
 }
 "#;
-        let zig = transpile_js(js, None).unwrap().zig_code;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== JSDoc @type + JSON.parse() ===\n{}", zig);
         // Should generate struct definition.
         assert!(zig.contains("const User = struct {"));
@@ -791,7 +799,7 @@ function getName(user) {
         exports.insert("getName".to_string());
         // This should error because export function needs @returns
         // But currently errors are in result.errors, not Err
-        let result = transpile_js(js, Some(exports));
+        let result = parse_and_transpile(js, Some(exports));
         assert!(result.is_ok(), "transpile should succeed (errors in .errors field)");
         let tr = result.unwrap();
         assert!(!tr.errors.is_empty(), "should have errors");
@@ -813,7 +821,7 @@ export function multiply(a, b) {
     return a * b;
 }
 "#;
-        let zig = transpile_js(js, None).unwrap().zig_code;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== @param E2E Test ===\n{}", zig);
 
         // Verify the generated code has correct structure with real types

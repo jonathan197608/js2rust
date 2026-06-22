@@ -360,10 +360,20 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let _async_fns: std::collections::HashSet<String> =
                     host_fns.async_fn_names().into_iter().collect();
 
-                // Use native_proto (strict static type system) — raw source,
-                // no stripping needed (parser is now always in module mode).
+                // Use native_proto (strict static type system) — pre-parsed AST
+                // from analyze_single_group, no re-parsing of source text.
                 let exports_for_all_modules = codegen_exports.clone();
-                let transpile_result = crate::native_proto::transpile_js(&src, Some(codegen_exports));
+
+                let program = match group.parsed_programs.get(member) {
+                    Some(p) => p,
+                    None => {
+                        eprintln!("  skip '{}': no parsed program in group", member);
+                        continue;
+                    }
+                };
+
+                let transpile_result =
+                    crate::native_proto::transpile_js(program, &src, Some(codegen_exports));
                 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {
@@ -458,9 +468,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 if is_test_group {
                     // Test groups: also generate Zig test code
-                    let allocator = oxc_allocator::Allocator::default();
-                    let program = crate::parser::parse(&allocator, &src);
-                    let test_cases = crate::testgen::extract_test_cases(&program, &src);
+                    // (reuses the already-parsed program from group.parsed_programs)
+                    let test_cases = crate::testgen::extract_test_cases(program, &src);
                     let closure_fn_refs: HashSet<&str> =
                         closure_fns.iter().map(|s| s.as_str()).collect();
                     let ret_type_map: HashMap<String, String> = fn_return_types

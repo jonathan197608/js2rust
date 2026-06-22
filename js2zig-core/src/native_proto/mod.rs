@@ -181,9 +181,7 @@ pub struct JSDocData {
     pub param_types: std::collections::HashMap<String, Vec<(String, String)>>,
 }
 
-use oxc_parser::Parser;
-use oxc_allocator::Allocator;
-use oxc_span::SourceType;
+use oxc_ast::ast::Program;
 
 mod builtins;
 mod codegen;
@@ -191,7 +189,11 @@ mod jsdoc;
 #[cfg(test)]
 mod tests;
 
-/// Transpile a JS string to Zig source (native type system).
+/// Transpile JS source text to Zig (native type system).
+///
+/// **New API** — accepts a pre-parsed `&Program` plus the original source text
+/// (needed for JSDoc extraction).  The caller should obtain the `Program` from
+/// `analyze_single_group` so that the AST is only built once.
 ///
 /// Returns full `TranspileResult` with generated code AND metadata
 /// (exported functions, diagnostics, etc.).
@@ -200,31 +202,27 @@ mod tests;
 /// If provided, only functions in this set generate `pub fn` (export semantics).
 /// If None, treat all toplevel functions as exports (backward compatibility).
 pub fn transpile_js(
+    program: &Program<'_>,
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
 ) -> Result<TranspileResult, String> {
-    transpile_js_inner(js_source, exported_functions)
+    transpile_js_inner(program, js_source, exported_functions)
 }
 
-/// Internal helper: transpile JS to Zig, returning TranspileResult.
-fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collections::HashSet<String>>) -> Result<TranspileResult, String> {
-    // Pass 0: extract JSDoc annotations
+/// Internal helper: transpile JS AST to Zig, returning TranspileResult.
+fn transpile_js_inner(
+    program: &Program<'_>,
+    js_source: &str,
+    exported_functions: Option<std::collections::HashSet<String>>,
+) -> Result<TranspileResult, String> {
+    // Pass 0: extract JSDoc annotations (still needs raw source text)
     let (typedefs, type_annotations, return_types, param_types) = jsdoc::extract_all_jsdoc(js_source);
     let jsdoc_data = JSDocData { typedefs, type_annotations, return_types, param_types };
-
-    let alloc = Allocator::default();
-    // Always parse in module mode so codegen sees import/export nodes directly
-    // in `program.body` (no pre-strip of the raw source needed).
-    let source_type = SourceType::default().with_module(true);
-    let ret = Parser::new(&alloc, js_source, source_type).parse();
-    if !ret.errors.is_empty() {
-        return Err(format!("Parse errors: {:?}", ret.errors));
-    }
 
     let mut cg = Codegen::new();
     cg.jsdoc_data = Some(jsdoc_data);
     cg.exported_functions = exported_functions;  // ← 存储 exported_functions
-    cg.generate(&ret.program);
+    cg.generate(program);
     // NOTE: Temporarily disabled error check for debugging.
     // TODO: enable after fixing all codegen bugs.
     // if !cg.errors.is_empty() {
