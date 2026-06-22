@@ -289,7 +289,11 @@ fn generate(input: &MacroInput) -> TokenStream {
         Err(e) => {
             return syn::Error::new(
                 proc_macro2::Span::call_site(),
-                format!("js2rust_bridge: transpilation failed: {}", e),
+                format!(
+                    "js2rust_bridge: transpilation failed for '{}': {}",
+                    js_file_path.display(),
+                    e
+                ),
             )
             .to_compile_error()
             .into();
@@ -302,12 +306,19 @@ fn generate(input: &MacroInput) -> TokenStream {
     let group_result = match group_result {
         Some(g) => g,
         None => {
-            return syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "js2rust_bridge: no groups found in transpilation result",
-            )
-            .to_compile_error()
-            .into();
+            let mut msg = format!(
+                "js2rust_bridge: no groups found in transpilation result for '{}'.",
+                js_file_path.display()
+            );
+            if !project_result.diagnostics.is_empty() {
+                msg.push_str("\n\nTranspilation diagnostics:");
+                for diag in &project_result.diagnostics {
+                    msg.push_str(&format!("\n  - {}", diag));
+                }
+            }
+            return syn::Error::new(proc_macro2::Span::call_site(), msg)
+                .to_compile_error()
+                .into();
         }
     };
 
@@ -317,7 +328,10 @@ fn generate(input: &MacroInput) -> TokenStream {
         Err(e) => {
             return syn::Error::new(
                 proc_macro2::Span::call_site(),
-                format!("js2rust_bridge: failed to parse cabi_exports: {}", e),
+                format!(
+                    "js2rust_bridge: failed to parse cabi_exports for group '{}': {}",
+                    group_result.name, e
+                ),
             )
             .to_compile_error()
             .into();
@@ -340,7 +354,11 @@ fn generate(input: &MacroInput) -> TokenStream {
         Ok(ts) => ts,
         Err(e) => syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!("internal error: {}", e),
+            format!(
+                "js2rust_bridge: internal error generating bindings for '{}': {}",
+                js_file_path.display(),
+                e
+            ),
         )
         .to_compile_error()
         .into(),

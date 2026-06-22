@@ -67,6 +67,14 @@ impl Codegen {
                 self.emit_object(oe);
             }
             Expression::StaticMemberExpression(mem) => {
+                // Check for Math.PI
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Math"
+                    && mem.property.name.as_str() == "PI"
+                {
+                    self.write("std.math.pi");
+                    return;
+                }
                 self.emit_expr(&mem.object);
                 let prop_name = mem.property.name.as_str();
                 // Map/Set .size is a method call, not a field access
@@ -1185,6 +1193,20 @@ impl Codegen {
                 self.write("true");
                 true
             }
+
+            // ── Global functions ─────────────────────────
+            builtins::BuiltinCall::ParseInt => {
+                // parseInt(s) → std.fmt.parseInt(i64, s, 10) catch 0
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.write("std.fmt.parseInt(i64, ");
+                    self.emit_expr(expr);
+                    self.write(", 10) catch 0");
+                    return true;
+                }
+                false
+            }
         }
     }
 
@@ -1420,6 +1442,13 @@ impl Codegen {
 
             // StaticMemberExpression: look up field type from struct type (Rule 5)
             Expression::StaticMemberExpression(mem) => {
+                // Math.PI → f64
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Math"
+                    && mem.property.name.as_str() == "PI"
+                {
+                    return Some(ZigType::F64);
+                }
                 let obj_ty = self.infer_expr_type(&mem.object);
                 if let Some(ZigType::Struct(fields)) = obj_ty {
                     let field_name = mem.property.name.as_str();
@@ -1441,6 +1470,10 @@ impl Codegen {
                 // Get callee name
                 if let Expression::Identifier(id) = &ce.callee {
                     let fn_name = id.name.as_str();
+                    // Global builtin return types
+                    if fn_name == "parseInt" {
+                        return Some(ZigType::I64);
+                    }
                     // Look up return type from cache
                     if let Some(ret_ty) = self.type_info.fn_return_types.get(fn_name) {
                         return Some(ret_ty.clone());

@@ -53,12 +53,23 @@ pub enum BuiltinCall {
 
     // Set methods (called on local Set variables)
     SetAdd, // set.add(value)
+
+    // Global functions
+    ParseInt, // parseInt(s)
 }
 
 /// Check if a call expression is a built-in object call
 /// Returns Some(BuiltinCall) if it is, None otherwise
 pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinCall> {
     use oxc_ast::ast::*;
+
+    // Global function calls (plain identifier callee)
+    if let Expression::Identifier(id) = &ce.callee {
+        match id.name.as_str() {
+            "parseInt" => return Some(BuiltinCall::ParseInt),
+            _ => return None,
+        }
+    }
 
     // Check if callee is a StaticMemberExpression (obj.method())
     if let Expression::StaticMemberExpression(mem) = &ce.callee {

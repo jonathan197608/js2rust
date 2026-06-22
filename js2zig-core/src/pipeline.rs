@@ -276,7 +276,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 name: group.core_name.clone(),
                 is_test: is_test_group,
                 cabi_exports_json: cabi_json,
-                diagnostics: Vec::new(),
+                diagnostics: Vec::new(), // incremental cache — no diagnostics needed
                 output_files: Vec::new(),
             });
             continue;
@@ -290,6 +290,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut all_cabi_exports: Vec<crate::native_proto::NativeCabiExport> = Vec::new();
             let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
             let mut has_error = false;
+            let mut file_diagnostics: Vec<String> = Vec::new();
 
             // --- Codegen pass (all metadata from group AST, no source scanning) ---
             let core_exports = group
@@ -470,6 +471,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     for diag in &diagnostics {
                         if diag.kind == crate::native_proto::DiagnosticKind::Error {
                             eprintln!("    {}", diag.message.as_str());
+                            file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
                         }
                     }
                     has_error = true;
@@ -480,6 +482,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
                     for diag in &diagnostics {
                         eprintln!("    {}", diag.message.as_str());
+                        file_diagnostics.push(format!("{}: {}", member, diag.message));
                     }
                 }
 
@@ -639,7 +642,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 name: group.core_name.clone(),
                 is_test: is_test_group,
                 cabi_exports_json: cabi_json,
-                diagnostics: Vec::new(),
+                diagnostics: file_diagnostics.clone(),
                 output_files: Vec::new(),
             });
 
@@ -698,9 +701,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // === Write build cache ===
     write_build_cache(Path::new(&out_dir), &build_cache);
 
+    let all_diagnostics: Vec<String> = group_results
+        .iter()
+        .flat_map(|g| g.diagnostics.clone())
+        .collect();
+
     Ok(ProjectResult {
         groups: group_results,
-        diagnostics: Vec::new(),
+        diagnostics: all_diagnostics,
     })
 }
 
