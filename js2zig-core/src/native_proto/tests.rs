@@ -2186,4 +2186,20 @@ export function powMixed() {
         assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
         assert!(zig.contains("const double = _arrow_fn_"), "Expected assignment");
     }
+    // ── Test: Arrow function (block body) ────────────
+
+    #[test]
+    fn test_native_proto_arrow_block_body() {
+        // Arrow function with block body
+        let js = r#"export function testBlockArrow() {
+    const f = x => { return x + 1; };
+    return f(5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_arrow_block_body");
+        println!("=== Arrow function (block) ===
+{}", zig);
+        assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
+        assert!(zig.contains("return x + 1;"), "Expected return in block body");
+    }
 }
