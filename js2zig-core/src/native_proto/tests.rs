@@ -2170,4 +2170,20 @@ export function powMixed() {
         );
         assert_zig_ast_check(&zig, "test_native_proto_exponential_edge");
     }
+    // ── Test: Arrow function (single param + block body) ──────────
+
+    #[test]
+    fn test_native_proto_arrow_single_param() {
+        // Arrow function with single parameter
+        let js = r#"export function testSingleParam() {
+    const double = x => x * 2;
+    return double(5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_arrow_single_param");
+        println!("=== Arrow function (single param) ===
+{}", zig);
+        assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
+        assert!(zig.contains("const double = _arrow_fn_"), "Expected assignment");
+    }
 }
