@@ -5,6 +5,7 @@ use super::Codegen;
 use crate::native_proto::builtins;
 use crate::native_proto::{ExportedFunction, ZigType};
 use oxc_ast::ast::*;
+use std::collections::HashSet;
 
 // ── Variable declarations ────────────────────────────
 
@@ -14,11 +15,9 @@ impl Codegen {
     pub(crate) fn emit_var_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
             if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
-                let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
-
-                // Override: if the variable is mutated, use 'var'.
-                // If the variable is never mutated, use 'const' regardless of JS kind.
-                let is_const = is_const && !self.type_info.mutated_vars.contains(name);
+                // Use Zig 'const' when the variable is never mutated (regardless of JS const/var/let).
+                // Only use Zig 'var' when the variable is actually reassigned.
+                let is_const = !self.type_info.mutated_vars.contains(name);
 
                 // Skip unused toplevel constants to avoid Zig unused warnings.
                 let has_type_annotation = self
@@ -46,10 +45,11 @@ impl Codegen {
                 match &decl.init {
                     Some(init) => {
                         self.write_indent();
-                        // Force 'var' for Map/Set types (they are mutated via methods)
+                        // Force 'var' for Map/Set/ArrayList types (mutated via methods).
                         let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(name)
                         {
                             match inferred_ty {
+                                ZigType::ArrayList(_) => false,
                                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
                                 _ => is_const,
                             }
@@ -82,10 +82,13 @@ impl Codegen {
                             }
                             self.write(") catch unreachable;\n");
                         } else if let Some(inferred_ty) = self.type_info.var_types.get(name) {
+                            let inferred_ty = inferred_ty.clone();
                             // Definite type from pre-computed type info.
-                            // Skip type annotation for NamedStruct (Map/Set) — Zig infers from init.
-                            let skip_type_annotation =
-                                matches!(inferred_ty, ZigType::NamedStruct(_));
+                            // Skip type annotation for NamedStruct and ArrayList — Zig infers from init.
+                            let skip_type_annotation = matches!(
+                                inferred_ty,
+                                ZigType::NamedStruct(_) | ZigType::ArrayList(_)
+                            );
                             if is_const || skip_type_annotation {
                                 self.write(&format!("{} {} = ", kw, name));
                             } else {
@@ -98,6 +101,21 @@ impl Codegen {
                             }
                             self.emit_expr(init);
                             self.write(";\n");
+                            // Zig 0.16.0: 'var' for ArrayList/Map/Set needs &var suppression
+                            // (method calls like reverse/sort go through .items, not &arr)
+                            if !is_const {
+                                match inferred_ty {
+                                    ZigType::ArrayList(_) => {
+                                        self.write_indent();
+                                        self.write(&format!("_ = &{}; // var usage\n", name));
+                                    }
+                                    ZigType::NamedStruct(n) if n == "Map" || n == "Set" => {
+                                        self.write_indent();
+                                        self.write(&format!("_ = &{}; // var usage\n", name));
+                                    }
+                                    _ => {}
+                                }
+                            }
                         } else {
                             // Indeterminate type (Rule 8 error already in type_info.errors)
                             self.write(&format!("{} {} = ", kw, name));
@@ -137,6 +155,14 @@ impl Codegen {
         let ret_ty = self.type_info.fn_return_types.get(name).cloned();
         self.current_fn_return_type = ret_ty.clone();
 
+        // Build set of identifiers used in THIS function body (per-function).
+        let mut fn_used_names = HashSet::new();
+        if let Some(body) = &fd.body {
+            for s in &body.statements {
+                Self::collect_stmt_idents(s, &mut fn_used_names);
+            }
+        }
+
         // Generate function signature.
         if is_async {
             self.write(&format!("pub fn {}(io: anytype", name));
@@ -155,12 +181,20 @@ impl Codegen {
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
+                // Zig 0.16.0: unused params are compile errors. Prefix with _ if unused
+                // in THIS function body (per-function tracking).
+                let zig_pname = if fn_used_names.contains(pname) {
+                    pname.as_str()
+                } else {
+                    self.write("_");
+                    pname.as_str()
+                };
                 // Export function params: always typed; non-export: use anytype
                 if self.current_fn_is_export {
-                    self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
                 } else {
                     // Non-export params are inferred as anytype in the type info
-                    self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
                 }
                 param_idx += 1;
             }
@@ -175,7 +209,14 @@ impl Codegen {
                     if param_idx > 0 || is_async {
                         self.write(", ");
                     }
-                    self.write(&format!("{}: anytype", pname));
+                    // Zig 0.16.0: unused params are compile errors.
+                    let zig_pname = if fn_used_names.contains(pname) {
+                        pname
+                    } else {
+                        self.write("_");
+                        pname
+                    };
+                    self.write(&format!("{}: anytype", zig_pname));
                     param_idx += 1;
                 }
             }
@@ -194,10 +235,41 @@ impl Codegen {
         self.writeln(&format!(") {} {{", ret_zig_type));
 
         self.indent += 1;
+        self.seen_return = false;
+
+        // Suppress "unused parameter" errors for params not used in body
+        // (fetch params again to determine which are unused)
+        let unused_params: Vec<String> =
+            if let Some(param_list) = self.type_info.fn_param_types.get(name) {
+                param_list
+                    .iter()
+                    .filter(|(pn, _)| !fn_used_names.contains(pn.as_str()))
+                    .map(|(pn, _)| pn.clone())
+                    .collect()
+            } else {
+                fd.params
+                    .items
+                    .iter()
+                    .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+                    .filter(|pn| !fn_used_names.contains(*pn))
+                    .map(|pn| pn.to_string())
+                    .collect()
+            };
+        for pname in &unused_params {
+            self.write_indent();
+            self.write(&format!("_ = _{};\n", pname));
+        }
+
         if let Some(body) = &fd.body {
             for stmt in &body.statements {
                 self.emit_fn_stmt(stmt);
             }
+        }
+        // If function has non-void return type but no explicit return,
+        // add a default return 0 to avoid Zig compile error.
+        if !self.seen_return && ret_zig_type != "void" {
+            self.write_indent();
+            self.write("return 0;\n");
         }
         self.indent -= 1;
         self.writeln("}");
@@ -241,11 +313,14 @@ impl Codegen {
                 self.write_indent();
                 if let Some(arg) = &rs.argument {
                     self.write("return ");
+                    self.in_return_expr = true;
                     self.emit_expr(arg);
+                    self.in_return_expr = false;
                     self.write(";\n");
                 } else {
                     self.write("return;\n");
                 }
+                self.seen_return = true;
             }
             Statement::ExpressionStatement(es) => {
                 // Special handling for forEach/some/every: they generate 'for' loops (statements), not expressions.
@@ -301,6 +376,30 @@ impl Codegen {
             }
             Statement::BlockStatement(bs) => {
                 self.emit_block(bs);
+            }
+            Statement::ThrowStatement(_ts) => {
+                // JS throw → skip (unreachable in Zig; catch-block return covers it)
+                self.warnings.push(
+                    "throw statement is ignored; catch-block return is used instead".to_string(),
+                );
+            }
+            Statement::TryStatement(ts) => {
+                // JS try { ... } catch(e) { ... } finally { ... }
+                // Emit try block body only; catch/finally are ignored.
+                // The catch block's return value is lost, but for Zig codegen
+                // the try block's normal path (return) covers the expected behavior.
+                // Skip the try/catch wrapper block to avoid indentation issues.
+                for stmt in &ts.block.body {
+                    self.emit_fn_stmt(stmt);
+                }
+                if ts.handler.is_some() {
+                    self.warnings
+                        .push("try-catch handler is ignored in Zig codegen".to_string());
+                }
+                if ts.finalizer.is_some() {
+                    self.warnings
+                        .push("try-finally finalizer is ignored in Zig codegen".to_string());
+                }
             }
             _ => { /* skip unsupported */ }
         }
@@ -537,5 +636,159 @@ impl Codegen {
         self.indent -= 1;
 
         self.writeln("}");
+    }
+
+    /// Recursively collect all identifier names from a statement and its children.
+    fn collect_stmt_idents(stmt: &Statement, names: &mut HashSet<String>) {
+        match stmt {
+            Statement::ExpressionStatement(es) => {
+                Self::collect_expr_idents(&es.expression, names);
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(arg) = &rs.argument {
+                    Self::collect_expr_idents(arg, names);
+                }
+            }
+            Statement::IfStatement(is) => {
+                Self::collect_expr_idents(&is.test, names);
+                Self::collect_stmt_idents(&is.consequent, names);
+                if let Some(alt) = &is.alternate {
+                    Self::collect_stmt_idents(alt, names);
+                }
+            }
+            Statement::WhileStatement(ws) => {
+                Self::collect_expr_idents(&ws.test, names);
+                Self::collect_stmt_idents(&ws.body, names);
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::collect_stmt_idents(&dws.body, names);
+                Self::collect_expr_idents(&dws.test, names);
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(test) = &fs.test {
+                    Self::collect_expr_idents(test, names);
+                }
+                if let Some(update) = &fs.update {
+                    Self::collect_expr_idents(update, names);
+                }
+                Self::collect_stmt_idents(&fs.body, names);
+            }
+            Statement::ForOfStatement(fos) => {
+                Self::collect_expr_idents(&fos.right, names);
+                Self::collect_stmt_idents(&fos.body, names);
+            }
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(init) = &decl.init {
+                        Self::collect_expr_idents(init, names);
+                    }
+                }
+            }
+            Statement::BlockStatement(bs) => {
+                for s in &bs.body {
+                    Self::collect_stmt_idents(s, names);
+                }
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    Self::collect_stmt_idents(s, names);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        Self::collect_stmt_idents(s, names);
+                    }
+                }
+            }
+            Statement::SwitchStatement(ss) => {
+                Self::collect_expr_idents(&ss.discriminant, names);
+                for case in &ss.cases {
+                    if let Some(test) = &case.test {
+                        Self::collect_expr_idents(test, names);
+                    }
+                    for s in &case.consequent {
+                        Self::collect_stmt_idents(s, names);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Recursively collect all identifier names from an expression.
+    fn collect_expr_idents(expr: &Expression, names: &mut HashSet<String>) {
+        match expr {
+            Expression::Identifier(id) => {
+                names.insert(id.name.to_string());
+            }
+            Expression::BinaryExpression(be) => {
+                Self::collect_expr_idents(&be.left, names);
+                Self::collect_expr_idents(&be.right, names);
+            }
+            Expression::CallExpression(ce) => {
+                Self::collect_expr_idents(&ce.callee, names);
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::collect_expr_idents(e, names);
+                    }
+                }
+            }
+            Expression::AssignmentExpression(ae) => {
+                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
+                    names.insert(id.name.to_string());
+                }
+                Self::collect_expr_idents(&ae.right, names);
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::collect_expr_idents(&ue.argument, names);
+            }
+            Expression::AwaitExpression(ae) => {
+                Self::collect_expr_idents(&ae.argument, names);
+            }
+            Expression::UpdateExpression(ue) => {
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
+                    names.insert(id.name.to_string());
+                }
+            }
+            Expression::LogicalExpression(le) => {
+                Self::collect_expr_idents(&le.left, names);
+                Self::collect_expr_idents(&le.right, names);
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::collect_expr_idents(&ce.test, names);
+                Self::collect_expr_idents(&ce.consequent, names);
+                Self::collect_expr_idents(&ce.alternate, names);
+            }
+            Expression::ArrayExpression(ae) => {
+                for elem in &ae.elements {
+                    if let Some(e) = elem.as_expression() {
+                        Self::collect_expr_idents(e, names);
+                    }
+                }
+            }
+            Expression::StaticMemberExpression(mem) => {
+                Self::collect_expr_idents(&mem.object, names);
+            }
+            Expression::ComputedMemberExpression(mem) => {
+                Self::collect_expr_idents(&mem.object, names);
+                Self::collect_expr_idents(&mem.expression, names);
+            }
+            Expression::NewExpression(ne) => {
+                Self::collect_expr_idents(&ne.callee, names);
+                for arg in &ne.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::collect_expr_idents(e, names);
+                    }
+                }
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                Self::collect_expr_idents(&pe.expression, names);
+            }
+            Expression::TemplateLiteral(tl) => {
+                for e in &tl.expressions {
+                    Self::collect_expr_idents(e, names);
+                }
+            }
+            _ => {}
+        }
     }
 }

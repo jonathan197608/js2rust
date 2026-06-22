@@ -20,6 +20,7 @@ impl Codegen {
             output: String::new(),
             indent: 0,
             errors: Vec::new(),
+            warnings: Vec::new(),
             type_info,
             jsdoc_data: Some(jsdoc_data),
             current_fn_is_export: false,
@@ -28,6 +29,8 @@ impl Codegen {
             cabi_exports: Vec::new(),
             task_counter: 0,
             exported_functions,
+            seen_return: false,
+            in_return_expr: false,
         }
     }
 }

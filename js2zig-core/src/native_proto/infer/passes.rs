@@ -34,6 +34,25 @@ impl TypeInferrer {
                     }
                 }
             }
+            Statement::ExportNamedDeclaration(export_decl) => {
+                if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration
+                    && let Some(body) = &fd.body
+                {
+                    for s in &body.statements {
+                        self.walk_stmt_for_analysis(s);
+                    }
+                }
+            }
+            Statement::ExportDefaultDeclaration(export_decl) => {
+                if let ExportDefaultDeclarationKind::FunctionDeclaration(fd) =
+                    &export_decl.declaration
+                    && let Some(body) = &fd.body
+                {
+                    for s in &body.statements {
+                        self.walk_stmt_for_analysis(s);
+                    }
+                }
+            }
             Statement::ExpressionStatement(es) => {
                 self.walk_expr_for_analysis(&es.expression);
             }
@@ -44,9 +63,51 @@ impl TypeInferrer {
                     self.walk_stmt_for_analysis(alt);
                 }
             }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    self.walk_stmt_for_analysis(s);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        self.walk_stmt_for_analysis(s);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        self.walk_stmt_for_analysis(s);
+                    }
+                }
+            }
             Statement::WhileStatement(ws) => {
                 self.walk_expr_for_analysis(&ws.test);
                 self.walk_stmt_for_analysis(&ws.body);
+            }
+            Statement::DoWhileStatement(dws) => {
+                self.walk_stmt_for_analysis(&dws.body);
+                self.walk_expr_for_analysis(&dws.test);
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(init) = &fs.init {
+                    if let ForStatementInit::VariableDeclaration(vd) = init {
+                        self.walk_expr_for_stmt_init_vardecl(vd);
+                    } else if let Some(expr) = init.as_expression() {
+                        self.walk_expr_for_analysis(expr);
+                    }
+                }
+                if let Some(test) = &fs.test {
+                    self.walk_expr_for_analysis(test);
+                }
+                if let Some(update) = &fs.update {
+                    self.walk_expr_for_analysis(update);
+                }
+                self.walk_stmt_for_analysis(&fs.body);
+            }
+            Statement::ForOfStatement(fos) => {
+                if let ForStatementLeft::VariableDeclaration(vd) = &fos.left {
+                    self.walk_expr_for_stmt_init_vardecl(vd);
+                }
+                self.walk_expr_for_analysis(&fos.right);
+                self.walk_stmt_for_analysis(&fos.body);
             }
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {
@@ -54,6 +115,15 @@ impl TypeInferrer {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Walk a VariableDeclaration inside a for-statement init for analysis.
+    fn walk_expr_for_stmt_init_vardecl(&mut self, vd: &VariableDeclaration) {
+        for decl in &vd.declarations {
+            if let Some(init) = &decl.init {
+                self.walk_expr_for_analysis(init);
+            }
         }
     }
 
@@ -174,6 +244,17 @@ impl TypeInferrer {
         }
     }
 
+    pub(crate) fn collect_idents_from_vardecl(
+        vd: &VariableDeclaration,
+        names: &mut HashSet<String>,
+    ) {
+        for decl in &vd.declarations {
+            if let Some(init) = &decl.init {
+                Self::collect_idents_from_expr(init, names);
+            }
+        }
+    }
+
     pub(crate) fn collect_idents_from_stmt(stmt: &Statement, names: &mut HashSet<String>) {
         match stmt {
             Statement::ExpressionStatement(es) => {
@@ -194,6 +275,33 @@ impl TypeInferrer {
             Statement::WhileStatement(ws) => {
                 Self::collect_idents_from_expr(&ws.test, names);
                 Self::collect_idents_from_stmt(&ws.body, names);
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::collect_idents_from_stmt(&dws.body, names);
+                Self::collect_idents_from_expr(&dws.test, names);
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(init) = &fs.init {
+                    if let ForStatementInit::VariableDeclaration(vd) = init {
+                        Self::collect_idents_from_vardecl(vd, names);
+                    } else if let Some(expr) = init.as_expression() {
+                        Self::collect_idents_from_expr(expr, names);
+                    }
+                }
+                if let Some(test) = &fs.test {
+                    Self::collect_idents_from_expr(test, names);
+                }
+                if let Some(update) = &fs.update {
+                    Self::collect_idents_from_expr(update, names);
+                }
+                Self::collect_idents_from_stmt(&fs.body, names);
+            }
+            Statement::ForOfStatement(fos) => {
+                if let ForStatementLeft::VariableDeclaration(vd) = &fos.left {
+                    Self::collect_idents_from_vardecl(vd, names);
+                }
+                Self::collect_idents_from_expr(&fos.right, names);
+                Self::collect_idents_from_stmt(&fos.body, names);
             }
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {
@@ -290,6 +398,33 @@ impl TypeInferrer {
             }
             Statement::WhileStatement(ws) => {
                 self.walk_stmt_for_types(&ws.body);
+            }
+            Statement::DoWhileStatement(dws) => {
+                self.walk_stmt_for_types(&dws.body);
+            }
+            Statement::ForStatement(fs) => {
+                self.walk_stmt_for_types(&fs.body);
+                if let Some(ForStatementInit::VariableDeclaration(vd)) = &fs.init {
+                    self.collect_var_types_from_decl(vd);
+                }
+            }
+            Statement::ForOfStatement(fos) => {
+                self.walk_stmt_for_types(&fos.body);
+                // For-of loop variables have no initializer in the AST;
+                // infer their type from the iterable expression.
+                if let ForStatementLeft::VariableDeclaration(vd) = &fos.left {
+                    // Try to get element type from the iterable
+                    let elem_ty = match self.infer_expr_type(&fos.right) {
+                        InferResult::Definite(ZigType::ArrayList(box_elem)) => *box_elem,
+                        InferResult::Definite(ZigType::Str) => ZigType::Str,
+                        _ => ZigType::I64,
+                    };
+                    for decl in &vd.declarations {
+                        if let Some(name) = Self::binding_name(&decl.id) {
+                            self.var_types.insert(name.to_string(), elem_ty.clone());
+                        }
+                    }
+                }
             }
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {

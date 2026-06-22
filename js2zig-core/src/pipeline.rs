@@ -379,7 +379,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     match transpile_result {
                         Ok(result) => {
                             // Convert errors to diagnostics
-                            let diagnostics: Vec<crate::native_proto::Diagnostic> = result
+                            let mut diagnostics: Vec<crate::native_proto::Diagnostic> = result
                                 .errors
                                 .iter()
                                 .map(|err| crate::native_proto::Diagnostic {
@@ -388,6 +388,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                                     message: err.clone(),
                                 })
                                 .collect();
+                            // Convert warnings to diagnostics (non-fatal)
+                            diagnostics.extend(result.warnings.iter().map(|w| {
+                                crate::native_proto::Diagnostic {
+                                    kind: crate::native_proto::DiagnosticKind::Warning,
+                                    span: None,
+                                    message: w.clone(),
+                                }
+                            }));
 
                             // Extract cabi_exports from result
                             let cabi_exports = result.cabi_exports;

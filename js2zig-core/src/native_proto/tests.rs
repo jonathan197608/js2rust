@@ -260,7 +260,7 @@ function main() {
         let zig = transpile_and_assert!(js, "test_native_proto_function_call");
         assert!(zig.contains("greet(")); // function call (no try)
         assert!(zig.contains("std.fmt.allocPrint")); // string concat → allocPrint
-        assert!(zig.contains("var msg:")); // type annotated
+        assert!(zig.contains("const msg = greet")); // assigned once, type inferred
     }
 
     #[test]
@@ -322,8 +322,10 @@ function check(a, b) {
 
     #[test]
     fn test_native_proto_toplevel_var_error() {
+        // Toplevel 'let' with mutation → error (cannot use 'var' at toplevel in Zig)
         let js = r#"
 let y = 10;
+y = 20;
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_toplevel_var_error");
         assert!(zig.contains("// error: toplevel only allows 'const'"));
@@ -385,7 +387,7 @@ function factorial(n) {
         assert!(zig.contains("const PI = 3.14;"));
         assert!(zig.contains("fn circleArea(radius: anytype)"));
         // Rule 5: var type annotation only if type is definite (radius is anytype, so r2 type is indeterminate)
-        assert!(zig.contains("var r2 = radius * radius;"));
+        assert!(zig.contains("const r2 = radius * radius;"));
         assert!(zig.contains("factorial(")); // function call (no try)
         assert!(
             zig.contains("if (n") && zig.contains("<="),
@@ -803,7 +805,7 @@ export function log(msg) {
         // For export functions without @param: default to i64 (not anytype)
         assert!(zig.contains("pub fn add(a: i64, b: i64) i64 {"));
         // Export function with @returns {void}: should be void.
-        assert!(zig.contains("pub fn log(msg: i64) void {"));
+        assert!(zig.contains("pub fn log(_msg: i64) void {"));
         // Export function: should NOT generate C ABI conversion code
         assert!(!zig.contains("result_len"));
         assert!(!zig.contains("parseInt"));

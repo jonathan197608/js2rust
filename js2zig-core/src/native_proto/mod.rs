@@ -47,6 +47,8 @@ pub struct TranspileResult {
     pub zig_code: String,
     /// Compile errors (type inference failures, etc.).
     pub errors: Vec<String>,
+    /// Non-fatal warnings (try-catch limitations, etc.) — do NOT block file generation.
+    pub warnings: Vec<String>,
     /// Exported functions: (name, param_types, return_type).
     pub exports: Vec<ExportedFunction>,
     /// Inferred variable types (for cross-file type propagation, future use).
@@ -249,10 +251,12 @@ fn transpile_js_inner(
     // Merge TypeInferrer errors with Codegen errors.
     let mut combined_errors = infer_errors;
     combined_errors.append(&mut cg.errors.clone());
+    let warnings = cg.warnings.clone();
 
     Ok(TranspileResult {
         zig_code: cg.output,
         errors: combined_errors,
+        warnings,
         exports: cg.exported_fns.clone(),
         var_types: cg.type_info.var_types.clone(),
         cabi_exports: cg
@@ -286,6 +290,8 @@ pub struct Codegen {
     pub indent: usize,
     /// Compile errors collected during codegen.
     pub errors: Vec<String>,
+    /// Non-fatal warnings (try-catch limitations, etc.) — do NOT block file generation.
+    pub warnings: Vec<String>,
     /// Pre-computed type information (read-only during codegen).
     pub type_info: TypeCheckResult,
     /// JSDoc data for typedef generation.
@@ -302,4 +308,9 @@ pub struct Codegen {
     pub task_counter: u32,
     /// Exported function names (from pipeline).
     pub exported_functions: Option<std::collections::HashSet<String>>,
+    /// Whether a return/throw statement was seen in the current function body.
+    pub seen_return: bool,
+    /// Whether we are currently emitting the return value expression.
+    /// When true, array methods that normally discard with `_ = ` should skip the prefix.
+    pub in_return_expr: bool,
 }

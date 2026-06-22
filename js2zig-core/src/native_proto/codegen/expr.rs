@@ -61,8 +61,38 @@ impl Codegen {
             }
             Expression::StaticMemberExpression(mem) => {
                 self.emit_expr(&mem.object);
-                self.write(".");
-                self.write(mem.property.name.as_str());
+                let prop_name = mem.property.name.as_str();
+                // Map/Set .size is a method call, not a field access
+                let is_map_set_size_method = prop_name == "size"
+                    && if let Expression::Identifier(id) = &mem.object {
+                        self.type_info.var_types.get(id.name.as_str()).is_some_and(
+                            |t| matches!(t, ZigType::NamedStruct(s) if s == "Map" || s == "Set"),
+                        )
+                    } else {
+                        false
+                    };
+                if is_map_set_size_method {
+                    self.write(".size()");
+                } else if prop_name == "length" {
+                    // .length → .items.len for ArrayList, .len for slices/strings
+                    if let Expression::Identifier(id) = &mem.object {
+                        if self
+                            .type_info
+                            .var_types
+                            .get(id.name.as_str())
+                            .is_some_and(|t| matches!(t, ZigType::ArrayList(_)))
+                        {
+                            self.write(".items.len");
+                        } else {
+                            self.write(".len");
+                        }
+                    } else {
+                        self.write(".len");
+                    }
+                } else {
+                    self.write(".");
+                    self.write(prop_name);
+                }
             }
             Expression::ComputedMemberExpression(mem) => {
                 // Check if this is array indexing (numeric literal) or dynamic property access.
@@ -645,8 +675,12 @@ impl Codegen {
 
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
-                // arr.pop() → arr.pop()
+                // arr.pop() → _ = arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
+                // In return context, skip the _ = prefix.
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !self.in_return_expr {
+                        self.write("_ = ");
+                    }
                     self.write(&format!("{}.pop()", obj_name));
                     return true;
                 }
@@ -654,39 +688,69 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayShift => {
-                // arr.shift() → arr.shift()
+                // arr.shift() → if (arr.items.len > 0) _ = arr.orderedRemove(0);
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.shift()", obj_name));
+                    self.write(&format!(
+                        "if ({obj}.items.len > 0) _ = {obj}.orderedRemove(0)",
+                        obj = obj_name
+                    ));
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::ArrayUnshift => {
-                // arr.unshift(x) → arr.unshift(x)
+                // arr.unshift(x) → arr.insert(alloc, 0, x) catch unreachable
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.unshift(", obj_name));
-                    // Emit arguments
+                    self.write(&format!(
+                        "{}.insert(js_allocator.getAllocator(), 0, ",
+                        obj_name
+                    ));
                     self.emit_comma_separated_args(&ce.arguments);
-                    self.write(")");
+                    self.write(") catch unreachable");
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::ArrayReverse => {
-                // arr.reverse() → arr.reverse()
+                // arr.reverse() → std.mem.reverse(T, arr.items);
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.reverse()", obj_name));
+                    let elem_ty = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| match t {
+                            ZigType::I64 => "i64",
+                            ZigType::F64 => "f64",
+                            ZigType::Bool => "bool",
+                            _ => "i64",
+                        })
+                        .unwrap_or("i64");
+                    self.write(&format!("std.mem.reverse({}, {}.items)", elem_ty, obj_name));
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::ArraySort => {
-                // arr.sort() → arr.sort()
+                // arr.sort() → std.mem.sort(T, arr.items, {{}}, comptime std.sort.asc(T));
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.sort()", obj_name));
+                    let elem_ty = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| match t {
+                            ZigType::I64 => "i64",
+                            ZigType::F64 => "f64",
+                            ZigType::Bool => "bool",
+                            _ => "i64",
+                        })
+                        .unwrap_or("i64");
+                    self.write(&format!(
+                        "std.mem.sort({}, {}.items, {{}}, comptime std.sort.asc({}))",
+                        elem_ty, obj_name, elem_ty
+                    ));
                     return true;
                 }
                 false
@@ -781,17 +845,22 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArraySlice => {
-                // arr.slice(start, end) → arr.items[start..end]
-                // arr.slice(start) → arr.items[start..]
-                // arr.slice() → arr.items
+                // arr.slice(start, end) → new ArrayList with appended slice
+                // arr.slice(start) → new ArrayList with appended slice
+                // arr.slice() → new ArrayList clone
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    match ce.arguments.len() {
-                        0 => {
-                            self.write(&format!("{}.items", obj_name));
-                        }
+                    // Get element type for the new ArrayList
+                    let elem_type = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| t.to_zig_type())
+                        .unwrap_or_else(|| "i64".to_string());
+                    let slice_expr = match ce.arguments.len() {
+                        0 => format!("{}.items", obj_name),
                         1 => {
                             let arg_expr = self.first_arg_string_or(&ce.arguments, "0");
-                            self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
+                            format!("{}.items[{}..]", obj_name, arg_expr)
                         }
                         2 => {
                             let start_expr = self.first_arg_string_or(&ce.arguments, "0");
@@ -804,17 +873,18 @@ impl Codegen {
                             } else {
                                 "0".to_string()
                             };
-                            self.write(&format!(
-                                "{}.items[{}..{}]",
-                                obj_name, start_expr, end_expr
-                            ));
+                            format!("{}.items[{}..{}]", obj_name, start_expr, end_expr)
                         }
                         _ => {
                             self.errors
                                 .push("Array.slice() requires 0-2 arguments".to_string());
                             return false;
                         }
-                    }
+                    };
+                    self.write(&format!(
+                        "(blk: {{ var __slice: std.ArrayList({0}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {1}) catch unreachable; break :blk __slice; }})",
+                        elem_type, slice_expr
+                    ));
                     return true;
                 }
                 false
@@ -848,14 +918,14 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MapGet => {
-                // map.get(key) → try map.get(key)
+                // map.get(key) → map.get(key)  (returns ?i64, not error union)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.get() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("try {}.get(", obj_name));
+                    self.write(&format!("{}.get(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(")");
                     return true;
@@ -1173,7 +1243,7 @@ impl Codegen {
     // Array expression
     fn emit_array(&mut self, ae: &ArrayExpression) {
         if ae.elements.is_empty() {
-            self.write("std.ArrayList(JsAny).init(js_allocator.getAllocator())");
+            self.write("std.ArrayList(JsAny).empty");
         } else {
             // Determine element type from first element
             let elem_type = ae
@@ -1195,7 +1265,7 @@ impl Codegen {
                 })
                 .unwrap_or("i64");
             self.write(&format!(
-                "(blk: {{ var __arr = js_array.JsArray({}).init(js_allocator.getAllocator()); ",
+                "(blk: {{ var __arr: std.ArrayList({}) = .empty; ",
                 elem_type
             ));
             for elem in ae.elements.iter() {
@@ -1204,7 +1274,7 @@ impl Codegen {
                     ArrayExpressionElement::Elision(_) => self.write("/* elision */"),
                     _ => {
                         if let Some(e) = elem.as_expression() {
-                            self.write("__arr.append(");
+                            self.write("__arr.append(js_allocator.getAllocator(), ");
                             self.emit_expr(e);
                             self.write(") catch unreachable; ");
                         }
