@@ -2043,16 +2043,6 @@ export function intPow(base, exp) {
     #[test]
     fn test_native_proto_exponential_float() {
         // Float exponentiation: 2.0 ** 3.0 → std.math.pow(f64, ...)
-        let js = r#"
-/**
- * @param {number} base
- * @param {number} exp
- * @returns {number}
- */
-export function floatPow(base, exp) {
-    return base ** exp;
-}
-"#;
         // Note: without type annotations, base and exp are inferred as i64.
         // To test float exponentiation, we need to use float literals.
         let js_float = r#"
