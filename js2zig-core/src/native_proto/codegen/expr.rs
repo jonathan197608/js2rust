@@ -15,8 +15,15 @@ impl Codegen {
                 self.write(&n.value.to_string());
             }
             Expression::StringLiteral(s) => {
-                // Escape double quotes in string value for Zig string literal
-                let escaped = s.value.replace("\"", "\\\"");
+                // Escape special characters for Zig string literal.
+                // Order matters: backslash first, then double-quote, then control chars.
+                let escaped = s
+                    .value
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
                 self.write(&format!("\"{}\"", escaped));
             }
             Expression::BooleanLiteral(b) => {
@@ -285,8 +292,20 @@ impl Codegen {
 
         for op in &operands {
             if let Expression::StringLiteral(sl) = op {
-                let escaped = sl.value.replace("{", "{{").replace("}", "}}");
-                fmt.push_str(&escaped);
+                // Escape for a Zig format string literal:
+                // backslash, double-quote, and {/} must be escaped.
+                for ch in sl.value.chars() {
+                    match ch {
+                        '\\' => fmt.push_str("\\\\"),
+                        '"' => fmt.push_str("\\\""),
+                        '\n' => fmt.push_str("\\n"),
+                        '\r' => fmt.push_str("\\r"),
+                        '\t' => fmt.push_str("\\t"),
+                        '{' => fmt.push_str("{{"),
+                        '}' => fmt.push_str("}}"),
+                        c => fmt.push(c),
+                    }
+                }
             } else {
                 fmt.push_str("{s}");
                 let arg_str = self.emit_expr_to_string(op);

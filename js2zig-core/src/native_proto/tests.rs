@@ -1760,4 +1760,84 @@ function double(x) {
             zig
         );
     }
+
+    // ── Test: TypedArray support ─────────────
+
+    #[test]
+    fn test_native_proto_typedarray_basic() {
+        // JS source: new Int32Array(), .length, index access
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function sumInt32() {
+    const arr = new Int32Array([1, 2, 3]);
+    const len = arr.length;
+    return len;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_basic");
+        println!("=== TypedArray basic ===\n{}", zig);
+        // Verify fromI32 is generated
+        assert!(
+            zig.contains("fromI32"),
+            "Expected 'fromI32' in generated code:\n{}",
+            zig
+        );
+        // Verify .length is generated as .len
+        assert!(
+            zig.contains(".len"),
+            "Expected '.len' for TypedArray length:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_string_escape_backslash() {
+        // Verify that backslashes in string literals are properly escaped for Zig output.
+        // Without escaping, a string like "hello\nworld" would produce an invalid Zig string.
+        let js = r#"function hasNewline() { return "hello\\nworld"; }"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_escape_backslash");
+        println!("=== String escape ===\n{}", zig);
+        // The JS string "hello\\nworld" has the actual value: hello\nworld (backslash-n)
+        // In Zig, this should be emitted as "hello\\nworld"
+        assert!(
+            zig.contains("hello\\\\nworld"),
+            "Expected escaped backslash in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_string_escape_quote() {
+        // Verify that double quotes in string literals are properly escaped for Zig output.
+        let js = r#"function hasQuote() { return 'he said "hello"'; }"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_escape_quote");
+        println!("=== String escape quote ===\n{}", zig);
+        // The JS string 'he said "hello"' has actual double quotes
+        // In Zig, this should be emitted as \"he said \\\"hello\\\"\"
+        assert!(
+            zig.contains(r#"\"hello\""#),
+            "Expected escaped double quote in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_uint8() {
+        // JS source: new Uint8Array()
+        let js = r#"
+function makeBytes() {
+    const bytes = new Uint8Array([1, 2, 3]);
+    return bytes.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_uint8");
+        println!("=== TypedArray Uint8 ===\n{}", zig);
+        assert!(
+            zig.contains("fromU8"),
+            "Expected 'fromU8' in generated code:\n{}",
+            zig
+        );
+    }
 }
