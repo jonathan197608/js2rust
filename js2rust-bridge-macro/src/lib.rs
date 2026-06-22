@@ -32,7 +32,6 @@ struct CabiExport {
     name: String,
     params: Vec<CabiParam>,
     ret_type: String,
-    has_free_func: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -315,7 +314,7 @@ fn generate(input: &MacroInput) -> TokenStream {
 fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
-    let mut needs_free_string = false;
+    let mut needs_jsstr = false;
 
     let raw_mod = format_ident!("__js2rust_ffi_raw_{group_suffix}");
     let safe_mod = format_ident!("__js2rust_ffi_safe_{group_suffix}");
@@ -337,8 +336,8 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             pub fn #fn_name( #(#extern_params),* ) -> #ret_ty;
         });
 
-        if exp.has_free_func || exp.ret_type == "[*c]u8" {
-            needs_free_string = true;
+        if exp.ret_type == "StrRet" {
+            needs_jsstr = true;
         }
 
         let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
@@ -395,18 +394,22 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     };
     safe_wrappers.push(runtime_init);
 
-    // Generate free_string() extern declaration if needed
-    if needs_free_string {
-        extern_fns.push(quote! {
-            pub fn free_string(ptr: *mut std::ffi::c_char, len: usize);
-        });
-    }
+    // Conditionally define __JsStr in raw_mod for StrRet-returning functions.
+    let jsstr_def = if needs_jsstr {
+        quote! {
+            #[repr(C)]
+            pub struct __JsStr { pub ptr: *const u8, pub len: usize }
+        }
+    } else {
+        quote! {}
+    };
 
     let output = quote! {
         #[allow(non_snake_case)]
         #[allow(dead_code)]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         mod #raw_mod {
+            #jsstr_def
             unsafe extern "C" {
                 #(#extern_fns)*
             }
@@ -437,40 +440,28 @@ fn generate_safe_wrapper(
     let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
-    // For functions that return [*c]u8: need result_len local variable
-    let needs_result_len = exp.ret_type == "[*c]u8" || exp.has_free_func;
+    // For functions that return StrRet: need JsStr struct
+    let needs_jsstr = exp.ret_type == "StrRet";
 
     for param in &exp.params {
-        // Skip result_len parameter: it's not part of the safe wrapper signature
-        if param.name == "result_len" {
-            // Still need to pass it to FFI call (as &mut result_len)
-            ffi_args.push(quote! { &mut result_len });
-            continue;
-        }
-
         let param_ident = format_ident!("{}", param.name);
         let safe_ty = zig_type_to_rust_safe_type(&param.zig_type);
         safe_params.push(quote! { #param_ident: #safe_ty });
         ffi_args.push(convert_safe_to_ffi(&param.zig_type, &param_ident));
     }
 
-    let (ret_ty, call_expr) = if needs_result_len {
-        // Returns [*c]u8: need to handle result_len and free_string
+    let (ret_ty, call_expr) = if needs_jsstr {
+        // Returns StrRet (extern struct { ptr, len }): zero-copy, no free needed
         (
             quote! { String },
             quote! {
                 {
-                    let mut result_len: usize = 0;
-                    let ptr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
-                    if ptr.is_null() {
+                    let ret: #raw_mod::__JsStr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
+                    if ret.ptr.is_null() {
                         String::new()
                     } else {
-                        // Build &[u8] slice from ptr and result_len
-                        let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, result_len) };
-                        let s = String::from_utf8_lossy(slice).into_owned();
-                        // Call free_string to release memory
-                        unsafe { super::#raw_mod::free_string(ptr, result_len) };
-                        s
+                        let slice = unsafe { std::slice::from_raw_parts(ret.ptr, ret.len) };
+                        String::from_utf8_lossy(slice).into_owned()
                     }
                 }
             },
@@ -533,7 +524,7 @@ fn zig_type_to_rust_ffi_type(zig_type: &str) -> proc_macro2::TokenStream {
 fn zig_ret_type_to_rust_ffi(ret_type: &str) -> proc_macro2::TokenStream {
     match ret_type {
         "[]const u8" => quote! { *const std::ffi::c_char },
-        "[*c]u8" => quote! { *mut std::ffi::c_char },
+        "StrRet" => quote! { __JsStr },
         "i32" => quote! { i32 },
         "i64" => quote! { i64 },
         "f64" => quote! { f64 },

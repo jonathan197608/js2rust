@@ -18,6 +18,10 @@ fn main() {
     let result = add_main(1, 2);
     println!("add_main(1, 2) = {}", result);
 
+    // ── String return test (StrRet) ─────────────────────────
+    let greeting = greet_main("World");
+    println!("greet_main('World') = '{}'", greeting);
+
     // Cleanup
     js2rust_deinit();
 }

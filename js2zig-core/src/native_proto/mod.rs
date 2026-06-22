@@ -18,8 +18,6 @@ pub struct NativeCabiExport {
     /// (param_name, param_type)
     pub params: Vec<(String, ZigType)>,
     pub ret_type: ZigType,
-    /// Whether a corresponding free_xxx function exists (returns string).
-    pub has_free_func: bool,
     /// Whether this is an async export (impl takes io: Io as first param).
     pub is_async: bool,
 }
@@ -49,8 +47,7 @@ pub struct TranspileResult {
     pub zig_code: String,
     /// Compile errors (type inference failures, etc.).
     pub errors: Vec<String>,
-    /// Exported functions: (name, param_types, return_type, returns_string)
-    /// `returns_string` = true if return type is Str (needs free_string scheme).
+    /// Exported functions: (name, param_types, return_type).
     pub exports: Vec<ExportedFunction>,
     /// Inferred variable types (for cross-file type propagation, future use).
     pub var_types: std::collections::HashMap<String, ZigType>,
@@ -65,8 +62,6 @@ pub struct ExportedFunction {
     pub name: String,
     pub params: Vec<ZigType>,
     pub return_type: ZigType,
-    /// True if this function returns a string (needs free_string scheme).
-    pub returns_string: bool,
 }
 
 /// Zig type representation for type inference.
@@ -141,7 +136,7 @@ impl ZigType {
             ZigType::I64 => "i64".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "[*c]u8".to_string(),  // C pointer
+            ZigType::Str => "StrRet".to_string(),  // C ABI: extern struct { ptr, len }
             ZigType::ArrayList(_) => "std.ArrayList".to_string(),  // Not directly supported in C ABI
             ZigType::Struct(_) => "struct".to_string(),  // Anonymous struct - not directly supported in C ABI
             ZigType::NamedStruct(_) => "struct".to_string(),  // Named struct - C ABI name depends on HostStructDef
@@ -149,7 +144,7 @@ impl ZigType {
         }
     }
 
-    /// Check if this type is a string type (needs free_string scheme).
+    /// Check if this type is a string type (returns StrRet in C ABI).
     pub fn is_string(&self) -> bool {
         matches!(self, ZigType::Str)
     }
@@ -218,7 +213,9 @@ fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collectio
     let jsdoc_data = JSDocData { typedefs, type_annotations, return_types, param_types };
 
     let alloc = Allocator::default();
-    let source_type = SourceType::default();
+    // Always parse in module mode so codegen sees import/export nodes directly
+    // in `program.body` (no pre-strip of the raw source needed).
+    let source_type = SourceType::default().with_module(true);
     let ret = Parser::new(&alloc, js_source, source_type).parse();
     if !ret.errors.is_empty() {
         return Err(format!("Parse errors: {:?}", ret.errors));
@@ -248,7 +245,6 @@ fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collectio
                 name: ef.name,
                 params,
                 ret_type: ef.return_type,
-                has_free_func: ef.returns_string,
                 is_async: false, // TODO: support async
             }
         }).collect(),

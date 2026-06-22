@@ -233,12 +233,9 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     out.push_str("const Io = std.Io;\n");
     out.push_str("const Allocator = std.mem.Allocator;\n");
     out.push('\n');
-    // Global page allocator for C ABI string returns (free_string scheme)
-    out.push_str("// Global page allocator for C ABI string returns (free_string scheme)\n");
-    out.push_str("const allocator = std.heap.page_allocator;\n");
-    out.push('\n');
     out.push_str("// Global allocator for generated code\n");
     out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
+    out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n");
     out.push('\n');
     out.push_str("// Tier-3 runtime library imports\n");
     out.push_str("const js_string = @import(\"js_runtime/js_string.zig\");\n");
@@ -310,12 +307,9 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("const Io = std.Io;\n");
     out.push_str("const Allocator = std.mem.Allocator;\n");
     out.push('\n');
-    // Global page allocator for C ABI string returns (free_string scheme)
-    out.push_str("// Global page allocator for C ABI string returns (free_string scheme)\n");
-    out.push_str("const allocator = std.heap.page_allocator;\n");
-    out.push('\n');
     out.push_str("// Global allocator for generated code\n");
     out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
+    out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n");
     out.push('\n');
     out.push_str("// Tier-3 runtime library imports\n");
     out.push_str("const js_string = @import(\"js_runtime/js_string.zig\");\n");
@@ -486,9 +480,9 @@ fn collect_cabi_string_fns(per_file_code: &[PerFileModule]) -> HashSet<String> {
     for module in per_file_code {
         for line in module.zig_code.lines() {
             let trimmed = line.trim();
-            // Match: pub export fn greet(name: ...) callconv(.c) [*:0]const u8 {
+            // Match: pub export fn greet(name: ...) StrRet {
             if (trimmed.starts_with("pub export fn ") || trimmed.starts_with("pub fn "))
-                && trimmed.contains("[*:0]const u8")
+                && trimmed.contains("StrRet")
                 && let Some(open_paren) = trimmed.find('(')
             {
                 // Extract function name between `fn ` and `(`

@@ -19,6 +19,11 @@ mod tests {
             let mut w = String::new();
             w.push_str("const std = @import(\"std\");\n");
             w.push_str("const allocator = std.heap.page_allocator;\n");
+            // Declare js_allocator so generated code referencing it passes ast-check.
+            // (ast-check does not load the imported file, so the path need not exist.)
+            if zig_code.contains("js_allocator") {
+                w.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
+            }
             w.push('\n');
             w.push_str(zig_code);
             w
@@ -882,6 +887,50 @@ function fullName(first, last) {
     }
 
     #[test]
+    fn test_native_proto_template_literal_basic() {
+        // Template literal with a single numeric interpolation → allocPrint via arena.
+        let js = r#"
+function label() {
+    const n = 42;
+    return `n=${n}`;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_template_literal_basic");
+        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for template literal, got:\n{}", zig);
+        assert!(zig.contains("js_allocator.getAllocator()"), "Expected arena allocator, got:\n{}", zig);
+        assert!(zig.contains("\"n={d}\""), "Expected type-aware `n={{d}}` format string, got:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_template_literal_multiline() {
+        // Multi-line template with multiple interpolations → newline escaped as \n in fmt.
+        let js = r#"
+function lines() {
+    const a = 1;
+    const b = 2;
+    return `a=${a}
+sum=${a + b}`;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_template_literal_multiline");
+        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint, got:\n{}", zig);
+        assert!(zig.contains("\\n"), "Expected escaped newline in format string, got:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_template_literal_text_only() {
+        // Pure-text template (no interpolation) degrades to a plain string literal.
+        let js = r#"
+function banner() {
+    return `hello world`;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_template_literal_text_only");
+        assert!(zig.contains("\"hello world\""), "Expected plain string literal, got:\n{}", zig);
+        assert!(!zig.contains("allocPrint"), "Pure-text template should not allocate, got:\n{}", zig);
+    }
+
+    #[test]
     fn test_native_proto_export_returns_string() {
         // Test: @returns {string} should generate dupe for export function
         let js = r#"
@@ -1053,6 +1102,7 @@ export function parseUserJson() {
 
         let zig_full = format!(
             r#"const std = @import("std");
+const js_allocator = @import("js_runtime/js_allocator.zig");
 
 // ── Generated code from JS ─────────────────────────────
 {}

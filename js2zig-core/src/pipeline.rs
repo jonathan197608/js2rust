@@ -1,4 +1,4 @@
-use crate::analyzer::{analyze_single_group, sanitize_module_name, strip_imports_extract_exports};
+use crate::analyzer::{analyze_single_group, sanitize_module_name};
 use crate::{ProjectConfig, ProjectResult};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -40,28 +40,6 @@ fn build_dep_imports(
 }
 
 /// Extract all top-level function names from JS source text.
-/// Used for test groups where ALL functions should be CABI-exported (not just `export`-prefixed).
-fn extract_all_function_names(source: &str) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for line in source.lines() {
-        let trimmed = line.trim();
-        let rest = if let Some(r) = trimmed.strip_prefix("export function ") {
-            r
-        } else if let Some(r) = trimmed.strip_prefix("function ") {
-            r
-        } else {
-            continue;
-        };
-        if let Some(paren) = rest.find('(') {
-            let name = rest[..paren].trim();
-            if !name.is_empty() {
-                names.insert(name.to_string());
-            }
-        }
-    }
-    names
-}
-
 /// Scan zig_code for all `pub fn xxx(` and `pub export fn xxx(` declarations.
 /// Returns the function names so the orchestrator can re-export them.
 fn scan_pub_functions(zig_code: &str) -> Vec<String> {
@@ -300,48 +278,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
             let mut has_error = false;
 
-            // --- Pre-scan: collect source, exports, and module names ---
-            struct MemberMeta {
-                stripped: String,
-                exports: HashSet<String>,
-                module_name: String,
-            }
-            let mut member_metas: Vec<MemberMeta> = Vec::new();
-            let mut core_exports: HashSet<String> = HashSet::new();
-
-            for member in &group.members {
-                let src = match fs::read_to_string(in_path.join(member)) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("  warning: cannot read '{}': {}", member, e);
-                        continue;
-                    }
-                };
-                let (stripped, exports) = strip_imports_extract_exports(&src);
-
-                let module_name = group
-                    .name_map
-                    .get(member)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        let stem = member.strip_suffix(".js").unwrap_or(member);
-                        sanitize_module_name(stem)
-                    });
-
-                if *member == group.core_file {
-                    core_exports = exports.clone();
-                }
-
-                member_metas.push(MemberMeta {
-                    stripped,
-                    exports,
-                    module_name,
-                });
-            }
+            // --- Codegen pass (all metadata from group AST, no source scanning) ---
+            let core_exports = group
+                .exported_names
+                .get(&group.core_file)
+                .cloned()
+                .unwrap_or_default();
 
             // --- Compute re-exported names per dependency ---
-            // Names that the core file re-exports from a dependency file should
-            // also get `pub export fn` in that dependency module.
             let core_imports = group
                 .imported_names
                 .get(&group.core_file)
@@ -357,35 +301,47 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
+            for member in &group.members {
+                let src = match group.file_sources.get(member) {
+                    Some(s) => s.clone(),
+                    None => {
+                        eprintln!("  skip '{}': no cached source", member);
+                        continue;
+                    }
+                };
 
-            // --- Codegen pass ---
-            for (member, meta) in group.members.iter().zip(member_metas.iter()) {
-                let MemberMeta {
-                    ref stripped,
-                    ref exports,
-                    ref module_name,
-                } = *meta;
-
-                if stripped.trim().is_empty() {
-                    eprintln!("  skip '{}': empty after stripping imports", member);
+                if src.trim().is_empty() {
+                    eprintln!("  skip '{}': empty source", member);
                     continue;
                 }
 
-                // For test groups: export ALL functions for CABI bridge testing.
+                let module_name = group
+                    .name_map
+                    .get(member)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let stem = member.strip_suffix(".js").unwrap_or(member);
+                        sanitize_module_name(stem)
+                    });
+
+                // For test groups: ALL toplevel functions → C ABI.
                 // For normal groups: core file's JS exports → C ABI;
                 //                    dependency file: only re-exported names → C ABI.
-                // NOTE: In native_proto mode, exports are detected from JS source (export keyword).
-                // This variable is passed to transpile_js() for accurate export detection.
                 let codegen_exports: HashSet<String> = if is_test_group {
-                    extract_all_function_names(stripped)
+                    group
+                        .all_fn_names
+                        .get(member)
+                        .cloned()
+                        .unwrap_or_default()
                 } else if *member == group.core_file {
-                    exports.clone()
+                    group
+                        .exported_names
+                        .get(member)
+                        .cloned()
+                        .unwrap_or_default()
                 } else {
                     dep_re_exports.get(member).cloned().unwrap_or_default()
                 };
-
-                let allocator = oxc_allocator::Allocator::default();
-                let program = crate::parser::parse(&allocator, stripped);
 
                 // Collect host function return types and param types for type inference
                 let mut host_return_types: std::collections::HashMap<String, crate::native_proto::ZigType> =
@@ -404,8 +360,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let _async_fns: std::collections::HashSet<String> =
                     host_fns.async_fn_names().into_iter().collect();
 
-                // Use native_proto (strict static type system)
-                let transpile_result = crate::native_proto::transpile_js(stripped, Some(codegen_exports));
+                // Use native_proto (strict static type system) — raw source,
+                // no stripping needed (parser is now always in module mode).
+                let exports_for_all_modules = codegen_exports.clone();
+                let transpile_result = crate::native_proto::transpile_js(&src, Some(codegen_exports));
                 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {
@@ -472,12 +430,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     }
                 }
 
-                for exp in exports {
+                for exp in &exports_for_all_modules {
                     all_module_exports.push((exp.clone(), module_name.clone()));
                 }
                 // Also scan all pub fn / pub export fn for test re-export
                 for fn_name in scan_pub_functions(&zig_code) {
-                    if !exports.contains(&fn_name) {
+                    if !exports_for_all_modules.contains(&fn_name) {
                         all_module_exports.push((fn_name, module_name.clone()));
                     }
                 }
@@ -500,7 +458,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 if is_test_group {
                     // Test groups: also generate Zig test code
-                    let test_cases = crate::testgen::extract_test_cases(&program, stripped);
+                    let allocator = oxc_allocator::Allocator::default();
+                    let program = crate::parser::parse(&allocator, &src);
+                    let test_cases = crate::testgen::extract_test_cases(&program, &src);
                     let closure_fn_refs: HashSet<&str> =
                         closure_fns.iter().map(|s| s.as_str()).collect();
                     let ret_type_map: HashMap<String, String> = fn_return_types
@@ -787,21 +747,16 @@ pub fn gen_cabi_wrappers(
                     mod = module,
                     args = async_zig_args,
                 ));
-                // C ABI wrapper (free_string scheme: result_len + dupeZ)
+                // C ABI wrapper (StrRet — zero-copy)
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
-                let cabi_full_params = if cabi_params.is_empty() {
-                    "result_len: *usize".to_string()
-                } else {
-                    format!("{}, result_len: *usize", cabi_params.join(", "))
-                };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error\");\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
+                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch @panic(\"async error\")));\n}}\n",
                     name = name,
-                    cabi_full_params = cabi_full_params,
+                    cabi_params = cabi_params.join(", "),
                     conv = conversions,
                     mod = module,
                     args = async_cabi_args,
@@ -868,21 +823,16 @@ pub fn gen_cabi_wrappers(
                 args = zig_call_args,
             ));
 
-            // ── C ABI wrapper (free_string scheme: result_len + dupeZ) ──
+            // ── C ABI wrapper (StrRet — zero-copy) ──
             let conversions = if cabi_to_zig_conversions.is_empty() {
                 String::new()
             } else {
                 format!("{}\n", cabi_to_zig_conversions.join("\n"))
             };
-            let cabi_full_params = if cabi_params.is_empty() {
-                "result_len: *usize".to_string()
-            } else {
-                format!("{}, result_len: *usize", cabi_params.join(", "))
-            };
             out.push_str(&format!(
-                "pub export fn {name}_cabi({cabi_full_params}) [*:0]u8 {{\n{conv}    const _result = {mod}.{name}({args});\n    const _result_cstr = allocator.dupeZ(u8, _result) catch unreachable;\n    result_len.* = _result.len;\n    return _result_cstr;\n}}\n",
+                "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}));\n}}\n",
                 name = name,
-                cabi_full_params = cabi_full_params,
+                cabi_params = cabi_params.join(", "),
                 conv = conversions,
                 mod = module,
                 args = cabi_call_args,
@@ -951,7 +901,7 @@ pub fn write_cabi_metadata(
         .filter(|exp| exp.ret_type != crate::native_proto::ZigType::Anytype)
         .map(|exp| {
             // Build params list
-            let mut params: Vec<serde_json::Value> = exp
+            let params: Vec<serde_json::Value> = exp
                 .params
                 .iter()
                 .map(|(name, ty)| {
@@ -962,29 +912,15 @@ pub fn write_cabi_metadata(
                 })
                 .collect();
 
-            // For functions that need free_string: add result_len parameter
-            // The Zig function signature is: fn name(params..., result_len: *usize) [*c]u8
-            if exp.has_free_func {
-                params.push(serde_json::json!({
-                    "name": "result_len",
-                    "zig_type": "*usize"
-                }));
-            }
+            // StrRet-returning functions: no result_len parameter needed
 
             // Determine ret_type string for C ABI
-            // If has_free_func: returns [*c]u8 (C pointer)
-            // Otherwise: use to_cabi_str()
-            let ret_type_str = if exp.has_free_func {
-                "[*c]u8".to_string()
-            } else {
-                exp.ret_type.to_cabi_str()
-            };
+            let ret_type_str = exp.ret_type.to_cabi_str();
 
             serde_json::json!({
                 "name": exp.name,
                 "params": params,
                 "ret_type": ret_type_str,
-                "has_free_func": exp.has_free_func
             })
         })
         .collect();
@@ -995,13 +931,11 @@ pub fn write_cabi_metadata(
             "name": "js2rust_init",
             "params": [],
             "ret_type": "void",
-            "has_free_func": false
         }));
         exports_value.push(serde_json::json!({
             "name": "js2rust_deinit",
             "params": [],
             "ret_type": "void",
-            "has_free_func": false
         }));
     }
 

@@ -42,12 +42,12 @@ impl Codegen {
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
             // Generate toJson() method for serialization using std.json.fmt()
-            // Use std.heap.page_allocator directly (don't pass as parameter)
+            // Use the global arena allocator (js_allocator.getAllocator()).
             self.writeln("");
             self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent += 1;
             // Use std.io.Writer.Allocating + std.json.fmt() for serialization
-            self.writeln("var string = std.io.Writer.Allocating.init(std.heap.page_allocator);");
+            self.writeln("var string = std.io.Writer.Allocating.init(js_allocator.getAllocator());");
             self.writeln("errdefer string.deinit();");
             self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
             self.writeln("return string.toOwnedSlice();");
@@ -81,16 +81,9 @@ impl Codegen {
             }
         }
         
-        // Debug: print used_names
-        println!("=== used_names: {:?}", self.used_names);
-        println!("=== jsdoc_data.type_annotations: {:?}", self.jsdoc_data.as_ref().map(|d| &d.type_annotations));
-
         // Pass 2: emit struct typedefs (from JSDoc @typedef).
         // NOTE: Do NOT emit `const std = @import("std");` here — project.rs will add it
         // when generating the per-file module wrapper.
-        // self.writeln("const std = @import(\"std\");");
-        // self.writeln("const allocator = std.heap.page_allocator;");
-        // self.writeln("");
         self.emit_typedefs();
         
         // Pass 2.5: runtime imports are added by project.rs (generate_module_zig),
@@ -100,21 +93,6 @@ impl Codegen {
         // Pass 3: emit code, skipping unused toplevel constants.
         for stmt in &program.body {
             self.emit_toplevel(stmt);
-        }
-
-        // Generate free_string() function for memory management.
-        // Only generate if there are export functions that return strings.
-        let has_string_export = self.exported_fns.iter().any(|f| f.returns_string);
-        if has_string_export {
-            self.writeln("");
-            self.writeln("// Free memory allocated by export functions.");
-            self.writeln("// Call this function from Rust after getting the return value.");
-            self.writeln("export fn free_string(ptr: [*c]u8, len: usize) void {");
-            self.indent += 1;
-            self.writeln("if (ptr == @as([*c]u8, @ptrFromInt(0))) return;");
-            self.writeln("std.heap.page_allocator.free(ptr[0..len]);");
-            self.indent -= 1;
-            self.writeln("}");
         }
     }
 
@@ -149,9 +127,14 @@ impl Codegen {
                     Some(decl) => {
                         match decl {
                             oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
-                                // ALWAYS treat as export (override exported_functions).
+                                // is_export determined by exported_functions set,
+                                // NOT always-true — dependency files only
+                                // export names that the core file re-exports.
+                                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
+                                let is_export = self.exported_functions.as_ref()
+                                    .is_some_and(|ex| fn_name.is_some_and(|n| ex.contains(n)));
                                 let old_export = self.current_fn_is_export;
-                                self.current_fn_is_export = true;
+                                self.current_fn_is_export = is_export;
                                 self.emit_fn(fd);
                                 self.current_fn_is_export = old_export;
                             }
@@ -569,17 +552,40 @@ impl Codegen {
                     definite_ty.to_zig_type()
                 }
                 None => {
-                    // Rule 8: No definite return type → report error.
-                    // `anytype` cannot be used as return type in Zig.
-                    // Default to i64 (Zig will report type mismatch if wrong).
-                    self.errors.push(
-                        "Cannot infer return type: no return expression has a definite type (Rule 6, 8). Defaulting to i64.".to_string()
-                    );
-                    let default_ty = ZigType::I64;
-                    self.current_fn_return_type = Some(default_ty.clone());
-                    // Rule 7: cache the return type for CallExpression type inference
-                    self.fn_return_types.insert(name.to_string(), default_ty);
-                    "i64".to_string()
+                    // 推断失败：先尝试 @returns 注解。
+                    // 注解对非 export 内部函数（pipeline 合并依赖后 strip 掉 export
+                    // 关键字的函数）同样有效，否则像 Math.floor 这类无法推断返回
+                    // 类型的内部函数永远无法生成。
+                    if let Some(ref jsdoc_data) = self.jsdoc_data
+                        && let Some(ret_type_name) = jsdoc_data.return_types.get(name)
+                    {
+                        let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(
+                            ret_type_name,
+                            &jsdoc_data.typedefs,
+                        );
+                        let rt = match zig_ty.as_str() {
+                            "i64" => ZigType::I64,
+                            "f64" => ZigType::F64,
+                            "bool" => ZigType::Bool,
+                            "[]const u8" => ZigType::Str,
+                            _ => ZigType::I64,
+                        };
+                        self.current_fn_return_type = Some(rt.clone());
+                        self.fn_return_types.insert(name.to_string(), rt);
+                        zig_ty
+                    } else {
+                        // Rule 8: No definite return type and no annotation → report error.
+                        // `anytype` cannot be used as return type in Zig.
+                        // Default to i64 (Zig will report type mismatch if wrong).
+                        self.errors.push(
+                            "Cannot infer return type: no return expression has a definite type (Rule 6, 8). Defaulting to i64.".to_string()
+                        );
+                        let default_ty = ZigType::I64;
+                        self.current_fn_return_type = Some(default_ty.clone());
+                        // Rule 7: cache the return type for CallExpression type inference
+                        self.fn_return_types.insert(name.to_string(), default_ty);
+                        "i64".to_string()
+                    }
                 }
             }
         };
@@ -702,7 +708,6 @@ impl Codegen {
         if self.current_fn_is_export {
             let func_name = name.to_string();
             let return_type = self.current_fn_return_type.clone().unwrap_or(ZigType::I64);
-            let returns_string = return_type.is_string();
 
             // Get parameter types from JSDoc or default to I64.
             let empty_typedefs = std::collections::HashMap::new();
@@ -742,7 +747,6 @@ impl Codegen {
                 name: func_name,
                 params,
                 return_type,
-                returns_string,
             });
         }
     }
@@ -1136,12 +1140,12 @@ impl Codegen {
                         self.write(")");
                         return;
                     } else if obj_name == "Map" {
-                        // new Map() → js_map.JsMap.init(allocator)
-                        self.write("js_map.JsMap.init(allocator)");
+                        // new Map() → js_map.JsMap.init(js_allocator.getAllocator())
+                        self.write("js_map.JsMap.init(js_allocator.getAllocator())");
                         return;
                     } else if obj_name == "Set" {
-                        // new Set() → js_set.JsSet.init(allocator)
-                        self.write("js_set.JsSet.init(allocator)");
+                        // new Set() → js_set.JsSet.init(js_allocator.getAllocator())
+                        self.write("js_set.JsSet.init(js_allocator.getAllocator())");
                         return;
                     }
                 }
@@ -1149,9 +1153,13 @@ impl Codegen {
                 self.errors.push("Unsupported NewExpression (only Int32Array and Uint8Array are supported)".to_string());
                 self.write("@compileError(\"Unsupported NewExpression\")");
             }
-            _ => {
+            Expression::TemplateLiteral(tpl) => self.emit_template_literal(tpl),
+            other => {
                 // Unsupported expression type
-                self.errors.push("Unsupported expression type".to_string());
+                self.errors.push(format!(
+                    "Unsupported expression type: {:?}",
+                    std::mem::discriminant(other)
+                ));
                 self.write("@compileError(\"Unsupported expression type\")");
             }
         }
@@ -1212,14 +1220,83 @@ impl Codegen {
             }
         }
 
-        // Generate: std.fmt.allocPrint(std.heap.page_allocator, "fmt", .{args}) catch unreachable
+        // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch unreachable
         if args.is_empty() {
             // All operands are string literals - just emit the concatenated literal
             self.write(&format!("\"{}\"", fmt.replace("{{", "{").replace("}}", "}")));
         } else {
             let args_str = format!(".{{{}}}", args.join(", "));
             self.write(&format!(
-                "std.fmt.allocPrint(std.heap.page_allocator, \"{}\", {}) catch unreachable",
+                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
+                fmt, args_str
+            ));
+        }
+    }
+
+    /// Emit a template literal `\`a=${x}\`` using std.fmt.allocPrint.
+    /// Text segments form the format string (with `{`/`}` doubled and special
+    /// chars escaped for a Zig string literal). Each interpolation picks a
+    /// placeholder from the inferred type: Str→{s}, I64/F64→{d}, Bool→{},
+    /// otherwise expr_is_string ? {s} : {}. Pure-text templates (no
+    /// interpolation) degrade to a plain string literal (no allocation).
+    /// Allocates from the global arena via js_allocator.getAllocator().
+    fn emit_template_literal(&mut self, tpl: &TemplateLiteral) {
+        let mut fmt = String::new();
+        let mut args: Vec<String> = Vec::new();
+
+        for (i, quasi) in tpl.quasis.iter().enumerate() {
+            // Text segment: prefer cooked (JS escapes resolved), fallback to raw.
+            let text: String = quasi
+                .value
+                .cooked
+                .as_ref()
+                .map(|c| c.as_str().to_string())
+                .unwrap_or_else(|| quasi.value.raw.as_str().to_string());
+            // Escape for a Zig string literal that is also a fmt template.
+            for ch in text.chars() {
+                match ch {
+                    '\\' => fmt.push_str("\\\\"),
+                    '"' => fmt.push_str("\\\""),
+                    '\n' => fmt.push_str("\\n"),
+                    '\r' => fmt.push_str("\\r"),
+                    '\t' => fmt.push_str("\\t"),
+                    '{' => fmt.push_str("{{"),
+                    '}' => fmt.push_str("}}"),
+                    c => fmt.push(c),
+                }
+            }
+
+            // Interpolation following this text segment (if any).
+            if i < tpl.expressions.len() {
+                let expr = &tpl.expressions[i];
+                let placeholder = match self.infer_expr_type(expr) {
+                    Some(ZigType::Str) => "{s}",
+                    Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
+                    Some(ZigType::Bool) => "{}",
+                    _ => {
+                        if self.expr_is_string(expr) {
+                            "{s}"
+                        } else {
+                            "{}"
+                        }
+                    }
+                };
+                fmt.push_str(placeholder);
+                let arg_str = self.emit_expr_to_string(expr);
+                args.push(arg_str);
+            }
+        }
+
+        if args.is_empty() {
+            // Pure-text template → plain string literal (no allocation).
+            self.write(&format!(
+                "\"{}\"",
+                fmt.replace("{{", "{").replace("}}", "}")
+            ));
+        } else {
+            let args_str = format!(".{{{}}}", args.join(", "));
+            self.write(&format!(
+                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
                 fmt, args_str
             ));
         }
@@ -1247,6 +1324,7 @@ impl Codegen {
     fn expr_is_string(&self, expr: &Expression) -> bool {
         match expr {
             Expression::StringLiteral(_) => true,
+            Expression::TemplateLiteral(_) => true,
             Expression::Identifier(id) => {
                 self.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
             }
@@ -1660,7 +1738,7 @@ impl Codegen {
                             _ => "{any}",
                         };
                         self.write(&format!(
-                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(std.heap.page_allocator); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
+                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
                             obj = obj_name,
                             sep = sep_expr,
                             fmt = fmt_spec
@@ -2002,7 +2080,7 @@ impl Codegen {
                         };
                         // Generate code to split string into array
                         self.write(&format!(
-                            "(blk: {{ var __split_result = std.ArrayList([]const u8).init(allocator); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
+                            "(blk: {{ var __split_result = std.ArrayList([]const u8).init(js_allocator.getAllocator()); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
                             obj = obj_name,
                             arg = arg_expr
                         ));
@@ -2144,7 +2222,7 @@ impl Codegen {
     // Array expression
     fn emit_array(&mut self, ae: &ArrayExpression) {
         if ae.elements.is_empty() {
-            self.write("std.ArrayList(JsAny).init(allocator)");
+            self.write("std.ArrayList(JsAny).init(js_allocator.getAllocator())");
         } else {
             self.write(".{");
             for (i, elem) in ae.elements.iter().enumerate() {
@@ -2167,8 +2245,8 @@ impl Codegen {
     /// Emit an object literal as a Zig anonymous struct.
     fn emit_object(&mut self, oe: &ObjectExpression) {
         if oe.properties.is_empty() {
-            // Empty object → StringHashMap(JsAny).init(allocator)
-            self.write("std.StringHashMap(JsAny).init(allocator)");
+            // Empty object → StringHashMap(JsAny).init(js_allocator.getAllocator())
+            self.write("std.StringHashMap(JsAny).init(js_allocator.getAllocator())");
             return;
         }
         self.write(".{ ");
@@ -2212,6 +2290,7 @@ impl Codegen {
                 }
             }
             Expression::StringLiteral(_) => Some(ZigType::Str),
+            Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             // NullLiteral → not supported in simplified type system
             // (Zig doesn't have a direct equivalent, would need Optional)

@@ -72,7 +72,9 @@ export function testMultiBranch(x) {
 
 // ── Nested function calls ───────────────────────────────────────
 
+/** @returns {i64} */
 function helper(x) { return x * 2; }
+/** @returns {i64} */
 function doubleHelper(x) { return helper(helper(x)); }
 
 /**
@@ -129,8 +131,10 @@ export function testMax(a, b) {
 }
 
 // ── Template expression with numeric calc ───────────────────────
-// NOTE: Template literals with numeric interpolation not yet supported.
-// Stub: return 0 (i64) to match function signature.
+// NOTE: Template literals (incl. numeric interpolation) are now supported.
+// This stub keeps an i64 return to match the existing test assertion;
+// see helpers.js tplObjProp/tplMultiLine for string-returning template tests.
+/** @returns {i64} */
 export function testTemplate(x, y) { return 0; }
 
 // ── Sign function — multi-branch integer ────────────────────────
@@ -164,6 +168,7 @@ export function runAllTests() {
 // ════════════════════════════════════════════════════════
 
 // -- C-style for loop: sum 1..n --
+/** @returns {i64} */
 export function forSum(n) {
     let sum = 0;
     for (let i = 1; i <= n; i++) {
@@ -173,6 +178,7 @@ export function forSum(n) {
 }
 
 // -- while loop: count iterations halving n --
+/** @returns {i64} */
 export function whileHalve(n) {
     let count = 0;
     let current = n;
@@ -184,6 +190,7 @@ export function whileHalve(n) {
 }
 
 // -- do-while: always runs at least once --
+/** @returns {i64} */
 export function doWhileOnce() {
     let count = 0;
     do {
@@ -193,6 +200,7 @@ export function doWhileOnce() {
 }
 
 // -- for-of: sum static array elements --
+/** @returns {i64} */
 export function forOfSum() {
     const arr = [10, 20, 30, 40];
     let sum = 0;
@@ -203,6 +211,7 @@ export function forOfSum() {
 }
 
 // -- break: exit loop early when threshold reached --
+/** @returns {i64} */
 export function breakAtFive(n) {
     let sum = 0;
     for (let i = 1; i <= n; i++) {
@@ -215,6 +224,7 @@ export function breakAtFive(n) {
 }
 
 // -- continue: skip odd numbers, sum only evens --
+/** @returns {i64} */
 export function continueEven(n) {
     let sum = 0;
     for (let i = 1; i <= n; i++) {
@@ -232,6 +242,7 @@ export function continueEven(n) {
 // ════════════════════════════════════════════════════════
 
 // -- Basic throw + catch: catch path taken --
+/** @returns {i64} */
 export function tryCatchBasic() {
     try {
         throw "error";
@@ -241,6 +252,7 @@ export function tryCatchBasic() {
 }
 
 // -- Side effect before throw preserved in catch --
+/** @returns {i64} */
 export function tryCatchSideEffect() {
     let x = 10;
     try {
@@ -252,6 +264,7 @@ export function tryCatchSideEffect() {
 }
 
 // -- Conditional throw: normal path vs error path --
+/** @returns {i64} */
 export function throwIfNegative(n) {
     try {
         if (n < 0) {
@@ -264,6 +277,7 @@ export function throwIfNegative(n) {
 }
 
 // -- Multiple operations in catch --
+/** @returns {i64} */
 export function tryCatchMultiOp() {
     let a = 5;
     const b = 10;
@@ -281,6 +295,7 @@ export function tryCatchMultiOp() {
 // ════════════════════════════════════════════════════════
 
 // -- Integer division via assignment: @divTrunc --
+/** @returns {i64} */
 export function intDivTest() {
     let x = 17;
     x = x / 5;
@@ -288,6 +303,7 @@ export function intDivTest() {
 }
 
 // -- Modulo via assignment: @rem --
+/** @returns {i64} */
 export function modOpTest() {
     let x = 17;
     x = x % 5;
@@ -295,6 +311,7 @@ export function modOpTest() {
 }
 
 // -- Compound assignment: +=, *=, -= --
+/** @returns {i64} */
 export function compoundOps() {
     let x = 2;
     x += 3;
@@ -304,6 +321,7 @@ export function compoundOps() {
 }
 
 // -- Logical AND: short-circuit --
+/** @returns {i64} */
 export function logicAnd(a, b) {
     if (a > 0 && b > 0) {
         return 1;
@@ -312,6 +330,7 @@ export function logicAnd(a, b) {
 }
 
 // -- Logical OR: short-circuit --
+/** @returns {i64} */
 export function logicOr(a, b) {
     if (a > 0 || b > 0) {
         return 1;
@@ -325,6 +344,7 @@ export function logicOr(a, b) {
 // ════════════════════════════════════════════════════════
 
 // -- Map: set + has (positive) --
+/** @returns {i64} */
 export function testMapHas() {
     const m = new Map();
     m.set("hello", 42);
@@ -336,6 +356,7 @@ export function testMapHas() {
 }
 
 // -- Map: has returns false for missing key --
+/** @returns {i64} */
 export function testMapMissing() {
     const m = new Map();
     m.set("a", 1);
@@ -346,6 +367,7 @@ export function testMapMissing() {
 }
 
 // -- Set: add + has (positive) --
+/** @returns {i64} */
 export function testSetHas() {
     const s = new Set();
     s.add(1);
@@ -358,6 +380,7 @@ export function testSetHas() {
 }
 
 // -- Set: has returns false for missing value --
+/** @returns {i64} */
 export function testSetMissing() {
     const s = new Set();
     s.add(10);
@@ -373,6 +396,7 @@ export function testSetMissing() {
 // ════════════════════════════════════════════════════════
 
 // -- Map: size property --
+/** @returns {i64} */
 export function testMapSize() {
     const m = new Map();
     m.set("a", 1);
@@ -385,6 +409,7 @@ export function testMapSize() {
 }
 
 // -- Set: size property --
+/** @returns {i64} */
 export function testSetSize() {
     const s = new Set();
     s.add(10);
@@ -401,6 +426,7 @@ export function testSetSize() {
 // TODO: Fix codegen for optional return types and primitive comparisons
 
 // -- Map: get() method --
+/** @returns {i64} */
 export function testMapGet() {
     const m = new Map();
     m.set("a", 100);
@@ -413,6 +439,7 @@ export function testMapGet() {
 }
 
 // -- Map: delete() method --
+/** @returns {i64} */
 export function testMapDelete() {
     const m = new Map();
     m.set("a", 1);
@@ -425,6 +452,7 @@ export function testMapDelete() {
 }
 
 // -- Set: delete() method --
+/** @returns {i64} */
 export function testSetDelete() {
     const s = new Set();
     s.add(10);

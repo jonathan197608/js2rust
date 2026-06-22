@@ -48,7 +48,15 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
     let mut current_typedef: Option<TypedefDef> = None;
 
     for line in comment.lines() {
-        let trimmed = line.trim();
+        let mut trimmed = line.trim();
+        // 剥离单行 JSDoc 的 `/**` 前缀（如 `/** @returns {f64} */`）
+        if let Some(rest) = trimmed.strip_prefix("/**") {
+            trimmed = rest.trim();
+        }
+        // 剥离行尾的 `*/`
+        if let Some(rest) = trimmed.strip_suffix("*/") {
+            trimmed = rest.trim();
+        }
         // 去掉开头的 * 和多余空格
         let stripped = trimmed.strip_prefix('*').unwrap_or(trimmed).trim();
 
@@ -415,6 +423,24 @@ mod tests {
 "#;
         let parsed = parse_jsdoc(jsdoc);
         assert_eq!(parsed.return_type_name, Some("string".to_string()));
+    }
+
+    #[test]
+    fn test_parse_returns_single_line() {
+        // 单行 JSDoc：/** @returns {f64} */
+        let parsed = parse_jsdoc("/** @returns {f64} */");
+        assert_eq!(parsed.return_type_name, Some("f64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_all_jsdoc_single_line() {
+        // 单行 JSDoc 必须能关联到紧随其后的函数
+        let source = r#"
+/** @returns {f64} */
+export function mathFloor(x) { return Math.floor(x); }
+"#;
+        let (_typedefs, _type_annots, return_types, _param_types) = extract_all_jsdoc(source);
+        assert_eq!(return_types.get("mathFloor"), Some(&"f64".to_string()));
     }
 
     #[test]

@@ -9,6 +9,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::Path;
 
+use oxc_allocator::Allocator;
+use oxc_ast::ast::*;
+
 /// Convert a module name (from filename) to a valid Zig identifier suffix.
 /// Non-ASCII characters are converted to Unicode codepoint format `_uXXXX`.
 #[must_use]
@@ -34,100 +37,6 @@ pub fn sanitize_module_name(raw: &str) -> String {
     result
 }
 
-/// Strip `import` and `export` statements from JS source,
-/// and collect all exported function/var/class names.
-///
-/// Returns `(cleaned_source, exports_set)`.
-#[must_use]
-pub fn strip_imports_extract_exports(src: &str) -> (String, HashSet<String>) {
-    let mut result = String::with_capacity(src.len());
-    let mut exports = HashSet::new();
-
-    for line in src.lines() {
-        let trimmed = line.trim();
-
-        // Skip import statements entirely
-        if trimmed.starts_with("import ") {
-            continue;
-        }
-
-        // export function foo() → keep "function foo()", record "foo"
-        if let Some(rest) = trimmed.strip_prefix("export ") {
-            if let Some(after) = rest.strip_prefix("function ") {
-                if let Some(paren) = after.find('(') {
-                    exports.insert(after[..paren].trim().to_string());
-                }
-                // Keep the line without "export " prefix
-                result.push_str(rest);
-            } else if let Some(after) = rest.strip_prefix("async function ") {
-                if let Some(paren) = after.find('(') {
-                    exports.insert(after[..paren].trim().to_string());
-                }
-                result.push_str(rest);
-            } else if rest.starts_with("const ") || rest.starts_with("let ") || rest.starts_with("var ") {
-                let kw_len = if rest.starts_with("const ") { 6 } else { 4 };
-                if let Some(eq) = rest[kw_len..].find('=') {
-                    let name = rest[kw_len..kw_len + eq].trim();
-                    exports.insert(name.to_string());
-                }
-                result.push_str(rest);
-            } else if let Some(after_class) = rest.strip_prefix("class ") {
-                if let Some(br) = after_class.find([' ', '{']) {
-                    exports.insert(after_class[..br].trim().to_string());
-                }
-                result.push_str(rest);
-            } else if let Some(after_default) = rest.strip_prefix("default ") {
-                // export default function/class → unwrap, extract name
-                if let Some(after_fn) = after_default.strip_prefix("function ") {
-                    if let Some(paren) = after_fn.find('(') {
-                        let name = after_fn[..paren].trim();
-                        if !name.is_empty() {
-                            exports.insert(name.to_string());
-                        }
-                    }
-                } else if let Some(after_class) = after_default.strip_prefix("class ")
-                    && let Some(br) = after_class.find([' ', '{'])
-                {
-                    exports.insert(after_class[..br].trim().to_string());
-                }
-                result.push_str(after_default);
-            } else if rest.starts_with('{') {
-                // export { name1, name2, ... } — extract names, skip the whole line
-                if let Some(braces) = rest.strip_prefix('{')
-                    .and_then(|s| s.strip_suffix('}'))
-                    .or_else(|| rest.strip_prefix('{').and_then(|s| {
-                        // Multi-line export { ... } — try to find closing brace
-                        s.find('}').map(|i| &s[..i])
-                    }))
-                {
-                    for name in braces.split(',') {
-                        let name = name.trim();
-                        // Also handle `foo as bar` → export "bar" (the exported name)
-                        if let Some(alias) = name.strip_prefix("as ") {
-                            let alias = alias.trim();
-                            if !alias.is_empty() {
-                                exports.insert(alias.to_string());
-                            }
-                        } else if !name.is_empty() && !name.starts_with("as ") {
-                            exports.insert(name.to_string());
-                        }
-                    }
-                }
-                continue;
-            } else {
-                // export * or other unknown syntax — skip the whole line
-                continue;
-            }
-            result.push('\n');
-        } else {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    (result, exports)
-}
-
 /// Strip .js extension then sanitize for Zig identifier.
 fn sanitize_name(filename: &str) -> String {
     let stem = filename.strip_suffix(".js").unwrap_or(filename);
@@ -148,6 +57,12 @@ pub struct FileGroup {
     /// Map: original filename → Vec<(imported_name, source_filename)>.
     /// e.g. "main.js" → [("add","math.js"), ("multiply","math.js"), ("greet","string_utils.js")]
     pub imported_names: HashMap<String, Vec<(String, String)>>,
+    /// Map: original filename → exported function/var/class names (from AST).
+    pub exported_names: HashMap<String, HashSet<String>>,
+    /// Map: original filename → ALL toplevel function names (from AST, for test groups).
+    pub all_fn_names: HashMap<String, HashSet<String>>,
+    /// Cached source text per file (eliminates repeated I/O in the codegen pass).
+    pub file_sources: HashMap<String, String>,
 }
 
 /// Analyze a single core JS file and its transitive dependencies.
@@ -161,46 +76,54 @@ pub struct FileGroup {
 pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, String) {
     let in_path = Path::new(in_dir);
 
-    // 1. BFS/DFS from core_file to collect all transitively imported files.
+    // Single DFS pass: read + parse each file ONCE, extract import/export
+    // metadata straight from the AST, and cache the source text for codegen.
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = vec![core_file.to_string()];
-    let mut js_files: Vec<String> = Vec::new();
+
+    let mut imports: HashMap<String, Vec<String>> = HashMap::new();
+    let mut imported_names: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    let mut exported_names: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut all_fn_names: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut file_sources: HashMap<String, String> = HashMap::new();
+    let mut sanitzed: HashMap<String, String> = HashMap::new();
 
     while let Some(cur) = stack.pop() {
         if !visited.insert(cur.clone()) {
             continue;
         }
-        js_files.push(cur.clone());
 
         let src = std::fs::read_to_string(in_path.join(&cur))
             .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
-        let (file_imports, _exports, _decls, _file_imported_names) = extract_imports(&src, &cur);
-        for dep in &file_imports {
+
+        // Parse once; `program` borrows `src`, so confine it to an inner scope
+        // and let it drop before `src` is moved into the cache below.
+        let info = {
+            let allocator = Allocator::default();
+            let program = crate::parser::parse(&allocator, &src);
+            analyze_module_ast(&program)
+        };
+
+        for dep in &info.imported_files {
             if !visited.contains(dep.as_str()) {
                 stack.push(dep.clone());
             }
         }
+
+        sanitzed.insert(cur.clone(), sanitize_name(&cur));
+        imports.insert(cur.clone(), info.imported_files);
+        imported_names.insert(cur.clone(), info.imported_names);
+        exported_names.insert(cur.clone(), info.exported_names);
+        all_fn_names.insert(cur.clone(), info.all_toplevel_fn_names);
+        file_sources.insert(cur.clone(), src);
     }
 
-    // 2. Parse each discovered file for imports + imported names.
-    let mut imports: HashMap<String, Vec<String>> = HashMap::new();
-    let mut imported_names: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    let mut sanitzed: HashMap<String, String> = HashMap::new();
-
-    for file in &js_files {
-        let src = std::fs::read_to_string(in_path.join(file))
-            .unwrap_or_else(|e| panic!("Cannot read '{}': {}", file, e));
-        let (file_imports, _exports, _decls, file_imported_names) = extract_imports(&src, file);
-        imports.insert(file.clone(), file_imports);
-        imported_names.insert(file.clone(), file_imported_names);
-        sanitzed.insert(file.clone(), sanitize_name(file));
-    }
-
-    // 3. Build the single group.
+    // Build the single group.
     let members = transitive_deps(core_file, &imports);
-    let core_name = sanitzed.get(core_file).cloned().unwrap_or_else(|| {
-        sanitize_name(core_file)
-    });
+    let core_name = sanitzed
+        .get(core_file)
+        .cloned()
+        .unwrap_or_else(|| sanitize_name(core_file));
 
     let group = FileGroup {
         core_name: core_name.clone(),
@@ -208,6 +131,9 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
         members,
         name_map: sanitzed,
         imported_names,
+        exported_names,
+        all_fn_names,
+        file_sources,
     };
 
     let groups = vec![group];
@@ -244,114 +170,6 @@ fn transitive_deps(
     result
 }
 
-/// Return type for extract_imports.
-type ImportMeta = (Vec<String>, Vec<String>, Vec<String>, Vec<(String, String)>);
-
-/// Extract `import { ... } from '...'` statements from JS source.
-///
-/// Returns (imported_files, exported_names, top_level_declarations, imported_names).
-///
-/// `imported_names`: Vec<(imported_name, source_filename)> — e.g. [("add","math.js"), ("multiply","math.js")]
-fn extract_imports(
-    src: &str,
-    _filename: &str,
-) -> ImportMeta {
-    // Use a simple regex-free approach: scan lines for "import" keyword.
-    let mut imported_files: Vec<String> = Vec::new();
-    let mut exported_names: Vec<String> = Vec::new();
-    let mut declarations: Vec<String> = Vec::new();
-    let mut imported_names: Vec<(String, String)> = Vec::new();
-
-    for line in src.lines() {
-        let trimmed = line.trim();
-
-        // import { foo, bar } from './math.js';
-        if trimmed.starts_with("import ")
-            && let Some(from_idx) = trimmed.find(" from ") {
-                // Extract the path
-                let specifier = &trimmed[from_idx + 6..];
-                let specifier = specifier.trim();
-                let path_str = if let Some(stripped) = specifier.strip_prefix('\'') {
-                    stripped.find('\'').map(|end| &stripped[..end])
-                } else if let Some(stripped) = specifier.strip_prefix('"') {
-                    stripped.find('"').map(|end| &stripped[..end])
-                } else {
-                    None
-                };
-
-                let source_filename = path_str
-                    .and_then(path_to_filename);
-
-                if let Some(ref sf) = source_filename {
-                    imported_files.push(sf.clone());
-                }
-
-                // Extract imported names from between `import ` and ` from `
-                let import_clause = &trimmed["import ".len()..from_idx].trim();
-                if let Some(brace_open) = import_clause.find('{')
-                    && let Some(brace_close) = import_clause[brace_open..].find('}')
-                {
-                    let names_str = &import_clause[brace_open + 1..brace_open + brace_close];
-                    for name in names_str.split(',') {
-                        let name = name.trim();
-                        if !name.is_empty()
-                            && let Some(ref sf) = source_filename
-                        {
-                            imported_names.push((name.to_string(), sf.clone()));
-                        }
-                    }
-                }
-            }
-
-        // export function foo() {}  or  export const foo = ...
-        if let Some(rest) = trimmed.strip_prefix("export ") {
-            if let Some(after) = rest.strip_prefix("function ") {
-                if let Some(name_end) = after.find('(') {
-                    exported_names.push(after[..name_end].trim().to_string());
-                }
-            } else if rest.starts_with("const ") || rest.starts_with("let ") || rest.starts_with("var ") {
-                // export const foo = ... → extract "foo"
-                let after = &rest[6..];
-                if let Some(eq) = after.find('=') {
-                    let name = after[..eq].trim();
-                    exported_names.push(name.to_string());
-                }
-            } else if let Some(after) = rest.strip_prefix("class ") {
-                if let Some(name_end) = after.find([' ', '{']) {
-                    exported_names.push(after[..name_end].trim().to_string());
-                }
-            } else if rest.starts_with("async function ")
-                && let Some(name_end) = rest[16..].find('(') {
-                    exported_names.push(rest[16..16 + name_end].trim().to_string());
-                }
-        }
-
-        // Top-level declarations (for conflict detection).
-        if trimmed.starts_with("function ") && !trimmed.starts_with("//")
-            && let Some(name_end) = trimmed[9..].find('(') {
-                declarations.push(trimmed[9..9 + name_end].trim().to_string());
-            }
-        if (trimmed.starts_with("const ") || trimmed.starts_with("let ") || trimmed.starts_with("var "))
-            && !trimmed.contains("export ")
-        {
-            let prefix = if trimmed.starts_with("const ") { 6 } else { 4 };
-            let after = &trimmed[prefix..];
-            if let Some(eq) = after.find('=') {
-                let name = after[..eq].trim();
-                declarations.push(name.to_string());
-            }
-        }
-    }
-
-    // Deduplicate.
-    imported_files.sort();
-    imported_files.dedup();
-    imported_names.sort();
-    imported_names.dedup();
-
-    (imported_files, exported_names, declarations, imported_names)
-}
-
 /// Convert an import path like './math.js' or './math' to a filename.
 fn path_to_filename(path: &str) -> Option<String> {
     let fname = Path::new(path).file_name()?.to_string_lossy().to_string();
@@ -360,6 +178,112 @@ fn path_to_filename(path: &str) -> Option<String> {
     } else {
         Some(format!("{}.js", fname))
     }
+}
+
+/// AST-extracted metadata for a single JS module file.
+struct ModuleInfo {
+    imported_files: Vec<String>,
+    imported_names: Vec<(String, String)>,
+    exported_names: HashSet<String>,
+    all_toplevel_fn_names: HashSet<String>,
+}
+
+/// Extract import/export metadata from an oxc `Program` AST.
+/// Replaces the old line-scanning `extract_imports` with accurate AST traversal.
+fn analyze_module_ast(program: &Program) -> ModuleInfo {
+    let mut imported_files = Vec::new();
+    let mut imported_names = Vec::new();
+    let mut exported_names = HashSet::new();
+    let mut all_toplevel_fn_names = HashSet::new();
+
+    for stmt in &program.body {
+        match stmt {
+            Statement::ImportDeclaration(import) => {
+                let source_str = import.source.value.as_str();
+                if let Some(sf) = path_to_filename(source_str) {
+                    imported_files.push(sf.clone());
+                    if let Some(specifiers) = &import.specifiers {
+                        for spec in specifiers {
+                            let name = match spec {
+                                ImportDeclarationSpecifier::ImportSpecifier(s) => {
+                                    s.local.name.as_str().to_string()
+                                }
+                                ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => {
+                                    s.local.name.as_str().to_string()
+                                }
+                                ImportDeclarationSpecifier::ImportNamespaceSpecifier(s) => {
+                                    s.local.name.as_str().to_string()
+                                }
+                            };
+                            imported_names.push((name, sf.clone()));
+                        }
+                    }
+                }
+            }
+            Statement::ExportNamedDeclaration(e) => {
+                // `export function foo() {}` / `export const foo = ...` / `export class Foo {}`
+                if let Some(decl) = &e.declaration {
+                    match decl {
+                        Declaration::FunctionDeclaration(fd) => {
+                            if let Some(id) = &fd.id {
+                                let name = id.name.as_str().to_string();
+                                exported_names.insert(name.clone());
+                                all_toplevel_fn_names.insert(name);
+                            }
+                        }
+                        Declaration::VariableDeclaration(vd) => {
+                            for d in &vd.declarations {
+                                if let BindingPattern::BindingIdentifier(id) = &d.id {
+                                    exported_names.insert(id.name.as_str().to_string());
+                                }
+                            }
+                        }
+                        Declaration::ClassDeclaration(cd) => {
+                            if let Some(id) = &cd.id {
+                                exported_names.insert(id.name.as_str().to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // `export { foo, bar as baz }`
+                for spec in &e.specifiers {
+                    if let ModuleExportName::IdentifierName(id) = &spec.exported {
+                        exported_names.insert(id.name.as_str().to_string());
+                    }
+                }
+            }
+            Statement::ExportDefaultDeclaration(e) => {
+                // `export default function foo() {}` → "foo"
+                // `export default class Foo {}` → "Foo"
+                if let Some(name) = match &e.declaration {
+                    ExportDefaultDeclarationKind::FunctionDeclaration(fd) => {
+                        fd.id.as_ref().map(|id| id.name.as_str().to_string())
+                    }
+                    ExportDefaultDeclarationKind::ClassDeclaration(cd) => {
+                        cd.id.as_ref().map(|id| id.name.as_str().to_string())
+                    }
+                    _ => None,
+                } {
+                    exported_names.insert(name.clone());
+                    all_toplevel_fn_names.insert(name);
+                }
+            }
+            Statement::FunctionDeclaration(fd) => {
+                if let Some(id) = &fd.id {
+                    all_toplevel_fn_names.insert(id.name.as_str().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    imported_files.sort();
+    imported_files.dedup();
+    imported_names.sort();
+    imported_names.dedup();
+
+    ModuleInfo { imported_files, imported_names, exported_names, all_toplevel_fn_names }
 }
 
 /// Convert groups to JSON-serializable map.

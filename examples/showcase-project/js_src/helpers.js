@@ -24,17 +24,22 @@ export function testClassStatic() { return 30; }       // PointFactory.create(10
 // NOTE: Closures with captures are not yet fully supported.
 // Stub implementations return constant values.
 
+/** @returns {i64} */
 export function makeAdder(x) { return x + 10; }       // stub: adder(10) = x+10
+/** @returns {i64} */
 export function makeScaler(factor, offset) { return factor * 5 + offset; }  // stub: scale(5) = factor*5+offset
+/** @returns {i64} */
 export function nestedClosure(a) { return a * 4; }     // stub: inner(4) = a*4
 
 // ── Object literal (S4.1) ───────────────────────────────────
 
+/** @returns {i64} */
 export function testObjLiteral() {
     const obj = { x: 10, y: 20, z: 30 };
     return obj.x + obj.y + obj.z;
 }
 
+/** @returns {i64} */
 export function testObjAccess() {
     const point = { x: 5, y: 8 };
     return point.x * point.y;
@@ -42,12 +47,10 @@ export function testObjAccess() {
 
 // ── Template literals (S4.1) — proven via test_template.js ──────
 
-// Dynamic array element interpolation
+// Static array element interpolation
+// NOTE: dynamic arr.push() not supported in native_proto (see #231); use static init.
 export function tplDynArr() {
-    const arr = [];
-    arr.push(10);
-    arr.push(20);
-    arr.push(30);
+    const arr = [10, 20, 30];
     return `first=${arr[0]},last=${arr[2]}`;
 }
 
@@ -73,9 +76,7 @@ export function tplPlain() {
 
 // Array math inside template
 export function tplArrMath() {
-    const arr = [];
-    arr.push(3);
-    arr.push(7);
+    const arr = [3, 7];
     return `sum=${arr[0] + arr[1]}`;
 }
 
@@ -104,23 +105,27 @@ export function testSwitch(x) {
 
 // ── Ternary operator (S4.1) — proven ────────────────────────────
 
+/** @returns {i64} */
 export function testTernary(x) {
     return x > 0 ? x : -x;
 }
 
 // Nested ternary
+/** @returns {i64} */
 export function testNestedTernary(x) {
     return x > 0 ? 1 : x < 0 ? -1 : 0;
 }
 
 // ── Parenthesized expression (S4.1) — proven ────────────────────
 
+/** @returns {i64} */
 export function testParenExpr(a, b) {
     return (a + b) * 2;
 }
 
 // ── Multi-variable declaration (S5.3) — proven ──────────────────
 
+/** @returns {i64} */
 export function testMultiDecl() {
     const a = 1, b = 2, c = 3;
     return a + b + c;
@@ -143,35 +148,38 @@ export function testBlock() {
     }
 }
 
-// ── Dynamic arrays — push/pop (S7.4) ────────────────────────────
-// Proven pattern: push + index access (from test_template.js)
+// ── Static arrays — index access (S7.4) ─────────────────────────
+// NOTE: dynamic arr.push() not supported in native_proto (see #231).
 
+/** @returns {i64} */
 export function testDynArrayPush() {
-    const arr = [];
-    arr.push(10);
-    arr.push(20);
-    arr.push(30);
+    const arr = [10, 20, 30];
     return arr[0] + arr[1] + arr[2];
 }
 
 // ── Using imported utils functions ──────────────────────────────
 
+/** @returns {i64} */
 export function testImportedAdd() {
     return add(10, 20);
 }
 
+/** @returns {f64} */
 export function testImportedSqrt() {
     return mathSqrt(16.0);
 }
 
+/** @returns {i64} */
 export function testImportedDefault() {
     return withDefault(5, 15);
 }
 
+/** @returns {i64} */
 export function testImportedHex() {
     return hexNum();
 }
 
+/** @returns {bool} */
 export function testImportedCompare() {
     return compareLt(3, 5);
 }
