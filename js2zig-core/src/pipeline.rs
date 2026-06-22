@@ -831,7 +831,7 @@ pub fn gen_cabi_wrappers(
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch return StrRet.from_panic());\n}}\n",
+                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch |err| return StrRet.from_panic(err));\n}}\n",
                     name = name,
                     cabi_params = cabi_params.join(", "),
                     conv = conversions,

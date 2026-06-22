@@ -517,7 +517,14 @@ fn generate_safe_wrapper(
                 {
                     let ret: #raw_mod::__JsStr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
                     if ret.len < 0 {
-                        return Err("async function panicked".to_string());
+                        let err_len = (-ret.len) as usize;
+                        let err_msg = if err_len > 0 && !ret.ptr.is_null() {
+                            let slice = unsafe { std::slice::from_raw_parts(ret.ptr, err_len) };
+                            String::from_utf8_lossy(slice).into_owned()
+                        } else {
+                            "unknown async error".to_string()
+                        };
+                        return Err(err_msg);
                     }
                     if ret.ptr.is_null() {
                         Ok(String::new())
