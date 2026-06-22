@@ -1225,10 +1225,10 @@ impl Codegen {
         if let Some(e) = arg.as_expression() {
             self.emit_expr(e);
         } else {
-            // Spread argument not supported yet
+            // Spread argument not supported: generate @compileError
             self.errors
                 .push("Spread argument not supported".to_string());
-            self.write("/* spread arg */");
+            self.write("@compileError(\"Spread argument not supported\")");
         }
     }
 

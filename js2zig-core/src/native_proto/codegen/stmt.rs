@@ -621,7 +621,11 @@ impl Codegen {
                     }
                 }
             }
-            _ => { /* skip unsupported */ }
+            _ => {
+                // Unsupported statement type: generate @compileError
+                self.write_indent();
+                self.write("@compileError(\"Unsupported statement type\")");
+            }
         }
     }
 }
