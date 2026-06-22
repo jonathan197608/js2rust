@@ -80,8 +80,14 @@ impl fmt::Debug for FileGroup {
             .field("imported_names", &self.imported_names)
             .field("exported_names", &self.exported_names)
             .field("all_fn_names", &self.all_fn_names)
-            .field("file_sources", &format_args!("{} files", self.file_sources.len()))
-            .field("parsed_programs", &format_args!("{} programs", self.parsed_programs.len()))
+            .field(
+                "file_sources",
+                &format_args!("{} files", self.file_sources.len()),
+            )
+            .field(
+                "parsed_programs",
+                &format_args!("{} programs", self.parsed_programs.len()),
+            )
             .finish()
     }
 }
@@ -169,10 +175,7 @@ pub fn analyze_single_group(in_dir: &str, core_file: &str) -> (Vec<FileGroup>, S
 }
 
 /// Compute transitive dependencies of `file` (including itself).
-fn transitive_deps(
-    file: &str,
-    imports: &HashMap<String, Vec<String>>,
-) -> Vec<String> {
+fn transitive_deps(file: &str, imports: &HashMap<String, Vec<String>>) -> Vec<String> {
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = vec![file.to_string()];
     let mut result: Vec<String> = Vec::new();
@@ -308,7 +311,12 @@ fn analyze_module_ast(program: &Program) -> ModuleInfo {
     imported_names.sort();
     imported_names.dedup();
 
-    ModuleInfo { imported_files, imported_names, exported_names, all_toplevel_fn_names }
+    ModuleInfo {
+        imported_files,
+        imported_names,
+        exported_names,
+        all_toplevel_fn_names,
+    }
 }
 
 /// Convert groups to JSON-serializable map.

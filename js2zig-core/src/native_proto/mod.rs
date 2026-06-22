@@ -119,7 +119,9 @@ impl ZigType {
                 // Generate anonymous struct type.
                 let mut s = ".{ ".to_string();
                 for (i, (name, ty)) in fields.iter().enumerate() {
-                    if i > 0 { s.push_str(", "); }
+                    if i > 0 {
+                        s.push_str(", ");
+                    }
                     s.push_str(&format!(".{} = {}", name, ty.to_zig_type()));
                 }
                 s.push_str(" }");
@@ -136,11 +138,11 @@ impl ZigType {
             ZigType::I64 => "i64".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "StrRet".to_string(),  // C ABI: extern struct { ptr, len }
-            ZigType::ArrayList(_) => "std.ArrayList".to_string(),  // Not directly supported in C ABI
-            ZigType::Struct(_) => "struct".to_string(),  // Anonymous struct - not directly supported in C ABI
-            ZigType::NamedStruct(_) => "struct".to_string(),  // Named struct - C ABI name depends on HostStructDef
-            ZigType::Anytype => "i64".to_string(),  // Default for anytype (not used in C ABI)
+            ZigType::Str => "StrRet".to_string(), // C ABI: extern struct { ptr, len }
+            ZigType::ArrayList(_) => "std.ArrayList".to_string(), // Not directly supported in C ABI
+            ZigType::Struct(_) => "struct".to_string(), // Anonymous struct - not directly supported in C ABI
+            ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
+            ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
         }
     }
 
@@ -154,19 +156,19 @@ impl ZigType {
     }
 }
 
-    /// Convert HostType to ZigType.
-    impl From<crate::HostType> for ZigType {
-        fn from(t: crate::HostType) -> Self {
-            match t {
-                crate::HostType::Void => ZigType::Void,
-                crate::HostType::Bool => ZigType::Bool,
-                crate::HostType::I32 => ZigType::I64,  // i32 widens to i64
-                crate::HostType::I64 => ZigType::I64,
-                crate::HostType::F64 => ZigType::F64,
-                crate::HostType::Str => ZigType::Str,
-            }
+/// Convert HostType to ZigType.
+impl From<crate::HostType> for ZigType {
+    fn from(t: crate::HostType) -> Self {
+        match t {
+            crate::HostType::Void => ZigType::Void,
+            crate::HostType::Bool => ZigType::Bool,
+            crate::HostType::I32 => ZigType::I64, // i32 widens to i64
+            crate::HostType::I64 => ZigType::I64,
+            crate::HostType::F64 => ZigType::F64,
+            crate::HostType::Str => ZigType::Str,
         }
     }
+}
 
 /// JSDoc 解析结果，传递给 Codegen
 #[derive(Debug, Clone)]
@@ -185,9 +187,12 @@ use oxc_ast::ast::Program;
 
 mod builtins;
 mod codegen;
+mod infer;
 mod jsdoc;
 #[cfg(test)]
 mod tests;
+
+pub use infer::TypeCheckResult;
 
 /// Transpile JS source text to Zig (native type system).
 ///
@@ -210,79 +215,91 @@ pub fn transpile_js(
 }
 
 /// Internal helper: transpile JS AST to Zig, returning TranspileResult.
+///
+/// Two-pass flow (Phase A):
+///   1. TypeInferrer::infer_all() — walk AST once, collect all type info
+///   2. Codegen::generate() — read pre-computed type info, emit Zig code
 fn transpile_js_inner(
     program: &Program<'_>,
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
 ) -> Result<TranspileResult, String> {
-    // Pass 0: extract JSDoc annotations (still needs raw source text)
-    let (typedefs, type_annotations, return_types, param_types) = jsdoc::extract_all_jsdoc(js_source);
-    let jsdoc_data = JSDocData { typedefs, type_annotations, return_types, param_types };
+    // JSDoc extraction (still needs raw source text)
+    let (typedefs, type_annotations, return_types, param_types) =
+        jsdoc::extract_all_jsdoc(js_source);
+    let jsdoc_data = JSDocData {
+        typedefs,
+        type_annotations,
+        return_types,
+        param_types,
+    };
 
-    let mut cg = Codegen::new();
-    cg.jsdoc_data = Some(jsdoc_data);
-    cg.exported_functions = exported_functions;  // ← 存储 exported_functions
+    // ── Pass 1: Type inference ──
+    let mut inferrer = infer::TypeInferrer::new();
+    inferrer.set_jsdoc_data(jsdoc_data.clone());
+    let type_info = inferrer.infer_all(program, exported_functions.clone());
+
+    // Extract TypeInferrer errors before type_info is moved to Codegen.
+    let infer_errors = type_info.errors.clone();
+
+    // ── Pass 2: Code generation ──
+    let mut cg = Codegen::new(type_info, jsdoc_data, exported_functions);
     cg.generate(program);
-    // NOTE: Temporarily disabled error check for debugging.
-    // TODO: enable after fixing all codegen bugs.
-    // if !cg.errors.is_empty() {
-    //     return Err(cg.errors.join("\n"));
-    // }
+
+    // Merge TypeInferrer errors with Codegen errors.
+    let mut combined_errors = infer_errors;
+    combined_errors.append(&mut cg.errors.clone());
 
     Ok(TranspileResult {
         zig_code: cg.output,
-        errors: cg.errors.clone(),
+        errors: combined_errors,
         exports: cg.exported_fns.clone(),
-        var_types: cg.var_types.clone(),
-        cabi_exports: cg.exported_fns.into_iter().map(|ef| {
-            let params: Vec<(String, ZigType)> = ef.params.iter()
-                .enumerate()
-                .map(|(i, p)| (format!("arg{}", i), p.clone()))
-                .collect();
-            NativeCabiExport {
-                name: ef.name,
-                params,
-                ret_type: ef.return_type,
-                is_async: false, // TODO: support async
-            }
-        }).collect(),
+        var_types: cg.type_info.var_types.clone(),
+        cabi_exports: cg
+            .exported_fns
+            .into_iter()
+            .map(|ef| {
+                let params: Vec<(String, ZigType)> = ef
+                    .params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (format!("arg{}", i), p.clone()))
+                    .collect();
+                NativeCabiExport {
+                    name: ef.name,
+                    params,
+                    ret_type: ef.return_type,
+                    is_async: false,
+                }
+            })
+            .collect(),
     })
 }
 
 /// Shared state for native-type codegen.
-#[derive(Default)]
+///
+/// Phase A: Codegen is now purely generative — all type inference runs in
+/// `TypeInferrer::infer_all()` before codegen.  `type_info` holds the
+/// pre-computed type snapshot.
 pub struct Codegen {
     pub output: String,
     pub indent: usize,
-    pub used_names: std::collections::HashSet<String>,
-    /// Compile errors (type inference failures, etc.)
+    /// Compile errors collected during codegen.
     pub errors: Vec<String>,
-    /// Variables that are mutated (assigned to a property) → must use 'var'.
-    pub mutated_vars: std::collections::HashSet<String>,
-    /// Tracks the inferred type of each variable (for intermediate variables).
-    pub var_types: std::collections::HashMap<String, ZigType>,
-    /// Tracks the inferred field types of each struct object.
-    pub struct_field_types: std::collections::HashMap<String, std::collections::HashMap<String, ZigType>>,
-    /// Tracks array element types: variable name → element type.
-    pub array_element_types: std::collections::HashMap<String, ZigType>,
-    /// JSDoc 解析结果（由 transpile_js 填充）
+    /// Pre-computed type information (read-only during codegen).
+    pub type_info: TypeCheckResult,
+    /// JSDoc data for typedef generation.
     pub jsdoc_data: Option<JSDocData>,
     /// Whether the current function being emitted is an export function.
     pub current_fn_is_export: bool,
-    /// For export functions: maps parameter name → parsed variable name.
-    pub param_name_map: std::collections::HashMap<String, String>,
-    /// The return type of the current function being emitted.
+    /// The return type of the current function (derived from type_info).
     pub current_fn_return_type: Option<ZigType>,
-    /// Cache of function return types (for CallExpression type inference).
-    pub fn_return_types: std::collections::HashMap<String, ZigType>,
     /// Exported functions metadata (for pipeline C ABI wrapper generation).
     pub exported_fns: Vec<ExportedFunction>,
     /// C ABI exports metadata (for pipeline C ABI wrapper generation).
     pub cabi_exports: Vec<NativeCabiExport>,
     /// Task counter for generating unique task variable names in async/await code.
     pub task_counter: u32,
-    /// Exported function names (from pipeline's strip_imports_extract_exports).
-    /// If provided, use this to determine if a function is an export function.
-    /// Otherwise, fall back to HACK (treat all toplevel functions as exports).
+    /// Exported function names (from pipeline).
     pub exported_functions: Option<std::collections::HashSet<String>>,
 }

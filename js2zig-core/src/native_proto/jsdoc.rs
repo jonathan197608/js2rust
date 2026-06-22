@@ -25,7 +25,7 @@ pub struct TypedefDef {
 #[derive(Debug, Clone)]
 pub struct TypedefField {
     pub name: String,
-    pub ty: String, // JSDoc 类型字符串，如 "string"、"number"、"boolean"
+    pub ty: String,     // JSDoc 类型字符串，如 "string"、"number"、"boolean"
     pub optional: bool, // 是否为可选属性（[name]）
 }
 
@@ -80,7 +80,11 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
             let ty_name = extract_braced_type(stripped.strip_prefix("@type").unwrap_or(""));
             result.type_name = Some(ty_name);
         } else if stripped.starts_with("@returns") || stripped.starts_with("@return") {
-            let prefix = if stripped.starts_with("@returns") { "@returns" } else { "@return" };
+            let prefix = if stripped.starts_with("@returns") {
+                "@returns"
+            } else {
+                "@return"
+            };
             let ty = extract_braced_type(stripped.strip_prefix(prefix).unwrap_or(""));
             result.return_type_name = Some(ty);
         } else if stripped.starts_with("@param") {
@@ -90,7 +94,11 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
                 let brace_end = rest.find('}').unwrap_or(rest.len());
                 let ty = rest[1..brace_end].trim().to_string();
                 let after_brace = rest[brace_end + 1..].trim();
-                let param_name = after_brace.split_whitespace().next().unwrap_or("").to_string();
+                let param_name = after_brace
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 if !param_name.is_empty() {
                     result.param_types.push((param_name, ty));
                 }
@@ -114,7 +122,9 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
 /// - return_types:      fn_name  → type_name  （来自 @returns）
 /// - param_types:       fn_name  → [(param_name, type)]  （来自 @param）
 #[allow(clippy::type_complexity)]
-pub fn extract_all_jsdoc(source: &str) -> (
+pub fn extract_all_jsdoc(
+    source: &str,
+) -> (
     HashMap<String, TypedefDef>,
     HashMap<String, String>,
     HashMap<String, String>,
@@ -158,7 +168,8 @@ pub fn extract_all_jsdoc(source: &str) -> (
                 let code = lines[j].trim();
                 // 尝试提取变量名（处理 @type）
                 if let Some(var_name) = extract_var_name(code)
-                    && let Some(ref ty) = parsed.type_name {
+                    && let Some(ref ty) = parsed.type_name
+                {
                     type_annotations.insert(var_name, ty.clone());
                 }
                 // 尝试提取函数名（处理 @returns 和 @param）
@@ -200,7 +211,9 @@ fn extract_var_name(code: &str) -> Option<String> {
     // 去掉 export 关键字
     let s = if let Some(rest) = s.strip_prefix("export") {
         rest.trim_start()
-    } else { s };
+    } else {
+        s
+    };
 
     let after_kw = if let Some(rest) = s.strip_prefix("const") {
         rest.trim_start()
@@ -217,7 +230,11 @@ fn extract_var_name(code: &str) -> Option<String> {
         .find(&['=', ';', ','][..])
         .unwrap_or(after_kw.len());
     let name = after_kw[..end].trim();
-    if name.is_empty() { None } else { Some(name.to_string()) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 /// 从行中提取函数名（function 声明）
@@ -226,14 +243,20 @@ fn extract_fn_name(code: &str) -> Option<String> {
     let s = code.trim();
     let s = if let Some(rest) = s.strip_prefix("export") {
         rest.trim_start()
-    } else { s };
+    } else {
+        s
+    };
     if let Some(rest) = s.strip_prefix("function") {
         let rest = rest.trim_start();
         let end = rest
             .find(|c: char| !c.is_alphanumeric() && c != '_')
             .unwrap_or(rest.len());
         let name = rest[..end].trim();
-        if name.is_empty() { None } else { Some(name.to_string()) }
+        if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        }
     } else {
         None
     }
@@ -285,7 +308,7 @@ fn parse_property(s: &str) -> TypedefField {
         let brace_end = rest.find('}').unwrap_or(rest.len());
         let ty = rest[1..brace_end].trim().to_string();
         let after_brace = rest[brace_end + 1..].trim();
-        
+
         // 检查是否为可选属性 [name]
         let (name, optional) = if after_brace.starts_with('[') {
             let end = after_brace.find(']').unwrap_or(after_brace.len());
@@ -299,7 +322,7 @@ fn parse_property(s: &str) -> TypedefField {
                 .to_string();
             (name, false)
         };
-        
+
         return TypedefField { name, ty, optional };
     }
 
@@ -316,7 +339,7 @@ fn parse_property(s: &str) -> TypedefField {
             (rest.to_string(), false)
         }
     };
-    
+
     if let Some(brace_pos) = name_part.find('{') {
         let name = name_part[..brace_pos].trim().to_string();
         let ty = name_part[brace_pos + 1..]
@@ -326,7 +349,7 @@ fn parse_property(s: &str) -> TypedefField {
             .to_string();
         return TypedefField { name, ty, optional };
     }
-    
+
     // 只有 name，无类型
     TypedefField {
         name: name_part,
@@ -344,17 +367,17 @@ fn parse_property(s: &str) -> TypedefField {
 /// "User[]"  → "[]const User"  (自定义类型的数组)
 pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>) -> String {
     let trimmed = jsdoc_ty.trim();
-    
+
     // 处理数组类型（以 [] 结尾）
     if let Some(stripped) = trimmed.strip_suffix("[]") {
         let base_type = stripped.trim();
-        
+
         // 检查 base_type 是否是自定义类型
         if typedefs.contains_key(base_type) {
             // 自定义类型的数组：User[] → []const User
             return format!("[]const {}", base_type);
         }
-        
+
         // 基本类型的数组
         match base_type {
             "string" => return "[]const []const u8".to_string(),
@@ -363,7 +386,7 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
             _ => return format!("[]const {}", base_type), // 未知类型，按自定义类型处理
         }
     }
-    
+
     // 非数组类型
     match trimmed {
         "string" => "[]const u8".to_string(),
@@ -495,9 +518,18 @@ function getName(u) {
 "#;
         let parsed = parse_jsdoc(jsdoc);
         assert_eq!(parsed.param_types.len(), 3);
-        assert_eq!(parsed.param_types[0], ("name".to_string(), "string".to_string()));
-        assert_eq!(parsed.param_types[1], ("age".to_string(), "number".to_string()));
-        assert_eq!(parsed.param_types[2], ("active".to_string(), "boolean".to_string()));
+        assert_eq!(
+            parsed.param_types[0],
+            ("name".to_string(), "string".to_string())
+        );
+        assert_eq!(
+            parsed.param_types[1],
+            ("age".to_string(), "number".to_string())
+        );
+        assert_eq!(
+            parsed.param_types[2],
+            ("active".to_string(), "boolean".to_string())
+        );
         assert_eq!(parsed.return_type_name, Some("string".to_string()));
     }
 
@@ -520,7 +552,13 @@ function greet(name, age) {
         assert_eq!(return_types["greet"], "string");
         assert_eq!(param_types.len(), 1);
         assert_eq!(param_types["greet"].len(), 2);
-        assert_eq!(param_types["greet"][0], ("name".to_string(), "string".to_string()));
-        assert_eq!(param_types["greet"][1], ("age".to_string(), "number".to_string()));
+        assert_eq!(
+            param_types["greet"][0],
+            ("name".to_string(), "string".to_string())
+        );
+        assert_eq!(
+            param_types["greet"][1],
+            ("age".to_string(), "number".to_string())
+        );
     }
 }

@@ -2,16 +2,32 @@
 // All Codegen impl methods in one file.
 // This avoids Rust visibility issues across multiple impl blocks in different files.
 
-use oxc_ast::ast::*;
-use crate::native_proto::{Codegen, ZigType};
-use crate::native_proto::builtins;
 use crate::native_proto::ExportedFunction;
+use crate::native_proto::builtins;
+use crate::native_proto::{Codegen, ZigType};
+use oxc_ast::ast::*;
 
 // ── Constructor ─────────────────────────────────────
 
 impl Codegen {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(
+        type_info: crate::native_proto::TypeCheckResult,
+        jsdoc_data: crate::native_proto::JSDocData,
+        exported_functions: Option<std::collections::HashSet<String>>,
+    ) -> Self {
+        Self {
+            output: String::new(),
+            indent: 0,
+            errors: Vec::new(),
+            type_info,
+            jsdoc_data: Some(jsdoc_data),
+            current_fn_is_export: false,
+            current_fn_return_type: None,
+            exported_fns: Vec::new(),
+            cabi_exports: Vec::new(),
+            task_counter: 0,
+            exported_functions,
+        }
     }
 }
 
@@ -47,7 +63,9 @@ impl Codegen {
             self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent += 1;
             // Use std.io.Writer.Allocating + std.json.fmt() for serialization
-            self.writeln("var string = std.io.Writer.Allocating.init(js_allocator.getAllocator());");
+            self.writeln(
+                "var string = std.io.Writer.Allocating.init(js_allocator.getAllocator());",
+            );
             self.writeln("errdefer string.deinit();");
             self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
             self.writeln("return string.toOwnedSlice();");
@@ -60,37 +78,13 @@ impl Codegen {
     }
 
     pub fn generate(&mut self, program: &Program) {
-        // Pass 0: analyze objects (detect maps and mutations).
-        self.analyze_objects(program);
+        // Phase A: analyze_objects, collect_used_names, walk_stmt_for_types
+        // are all handled by TypeInferrer::infer_all() before codegen starts.
 
-        // Pass 1: collect identifiers referenced in function bodies.
-        self.used_names.clear();
-        for stmt in &program.body {
-            match stmt {
-                Statement::FunctionDeclaration(fd) => {
-                    Self::collect_idents_from_function(fd, &mut self.used_names);
-                }
-                Statement::ExportNamedDeclaration(export_decl) => {
-                    // Also collect identifiers from export functions.
-                    if let Some(decl) = &export_decl.declaration
-                        && let oxc_ast::ast::Declaration::FunctionDeclaration(fd) = decl {
-                            Self::collect_idents_from_function(fd, &mut self.used_names);
-                        }
-                }
-                _ => {}
-            }
-        }
-        
-        // Pass 2: emit struct typedefs (from JSDoc @typedef).
-        // NOTE: Do NOT emit `const std = @import("std");` here — project.rs will add it
-        // when generating the per-file module wrapper.
+        // Emit struct typedefs (from JSDoc @typedef).
         self.emit_typedefs();
-        
-        // Pass 2.5: runtime imports are added by project.rs (generate_module_zig),
-        // which wraps the per-file module code with necessary imports.
-        // Do NOT emit imports here — they would duplicate.
-        
-        // Pass 3: emit code, skipping unused toplevel constants.
+
+        // Emit code, skipping unused toplevel constants.
         for stmt in &program.body {
             self.emit_toplevel(stmt);
         }
@@ -114,7 +108,7 @@ impl Codegen {
                     // NOTE: `function foo() {}` (without `export`) is non-export.
                     false
                 };
-                
+
                 let old_export = self.current_fn_is_export;
                 self.current_fn_is_export = is_export;
                 self.emit_fn(fd);
@@ -126,19 +120,21 @@ impl Codegen {
                 match &export_decl.declaration {
                     Some(decl) => {
                         match decl {
-                            oxc_ast::ast::Declaration::FunctionDeclaration(fd) => {
+                            Declaration::FunctionDeclaration(fd) => {
                                 // is_export determined by exported_functions set,
                                 // NOT always-true — dependency files only
                                 // export names that the core file re-exports.
                                 let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
-                                let is_export = self.exported_functions.as_ref()
+                                let is_export = self
+                                    .exported_functions
+                                    .as_ref()
                                     .is_some_and(|ex| fn_name.is_some_and(|n| ex.contains(n)));
                                 let old_export = self.current_fn_is_export;
                                 self.current_fn_is_export = is_export;
                                 self.emit_fn(fd);
                                 self.current_fn_is_export = old_export;
                             }
-                            oxc_ast::ast::Declaration::VariableDeclaration(vd) => {
+                            Declaration::VariableDeclaration(vd) => {
                                 self.emit_var_decl(vd);
                             }
                             _ => { /* skip unsupported */ }
@@ -159,17 +155,23 @@ impl Codegen {
     /// Inside functions: `var` with type inference + undefined init.
     fn emit_var_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
-            if let Some(name) = self.binding_name(&decl.id) {
+            if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                 let is_const = matches!(vd.kind, VariableDeclarationKind::Const);
 
-                // Override: if the variable is mutated (assigned to a property), use 'var'.
-                let is_const = is_const && !self.mutated_vars.contains(name);
+                // Override: if the variable is mutated, use 'var'.
+                // If the variable is never mutated, use 'const' regardless of JS kind.
+                let is_const = is_const && !self.type_info.mutated_vars.contains(name);
 
                 // Skip unused toplevel constants to avoid Zig unused warnings.
-                // But don't skip variables with @type annotation (JSON.parse()).
-                let has_type_annotation = self.jsdoc_data.as_ref()
+                let has_type_annotation = self
+                    .jsdoc_data
+                    .as_ref()
                     .is_some_and(|d| d.type_annotations.contains_key(name));
-                if self.indent == 0 && is_const && !self.used_names.contains(name) && !has_type_annotation {
+                if self.indent == 0
+                    && is_const
+                    && !self.type_info.used_names.contains(name)
+                    && !has_type_annotation
+                {
                     continue;
                 }
                 // Rule: toplevel var/let → error. Only allow const.
@@ -185,78 +187,68 @@ impl Codegen {
 
                 match &decl.init {
                     Some(init) => {
-                        // Check if this is a JSON.parse() call with @type annotation.
-                        let json_parse_type = self.get_json_parse_type(name, init);
-
                         self.write_indent();
+                        // Force 'var' for Map/Set types (they are mutated via methods)
+                        let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(name)
+                        {
+                            match inferred_ty {
+                                ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
+                                _ => is_const,
+                            }
+                        } else {
+                            is_const
+                        };
                         let kw = if is_const { "const" } else { "var" };
 
-                        if let Some(type_name) = json_parse_type {
-                            // JSON.parse() with @type annotation: generate std.json.parse(Type, ...)
-                            self.write(&format!("{} {}: {} = std.json.parse({}, ", kw, name, type_name, type_name));
-                            // Emit the argument to JSON.parse()
+                        let is_json_parse = self.type_info.has_json_parse_types.contains(name);
+
+                        if is_json_parse {
+                            // JSDoc-annotated JSON.parse: type is NamedStruct
+                            let type_name = self
+                                .type_info
+                                .var_types
+                                .get(name)
+                                .and_then(|t| match t {
+                                    ZigType::NamedStruct(n) => Some(n.as_str()),
+                                    _ => None,
+                                })
+                                .unwrap_or("i64");
+                            self.write(&format!(
+                                "{} {}: {} = std.json.parse({}, ",
+                                kw, name, type_name, type_name
+                            ));
                             if let Expression::CallExpression(ce) = init
-                                && let Some(first_arg) = ce.arguments.first() {
+                                && let Some(first_arg) = ce.arguments.first()
+                            {
                                 self.emit_expr_arg(first_arg);
                             }
                             self.write(") catch unreachable;\n");
-
-                            // Store the type for later use.
-                            self.var_types.insert(name.to_string(), ZigType::Struct(Vec::new()));
-                        } else {
-                            // Normal variable declaration with type inference.
-                            // Rule 1-3: infer_expr_type returns Some(ty) only for literals
-                            // or binary with both literals.
-                            let ty = self.infer_expr_type(init);
-                            
-                            self.write_indent();
-                            let kw = if is_const { "const" } else { "var" };
-                            
-                            match ty {
-                                Some(inferred_ty) => {
-                                    // Definite type: store for later use (e.g., member access).
-                                    self.var_types.insert(name.to_string(), inferred_ty.clone());
-                                    
-                                    // Rule 4: const → no type annotation, let Zig infer.
-                                    // Rule 5: var with definite type → add type annotation.
-                                    if is_const {
-                                        self.write(&format!("{} {} = ", kw, name));
-                                    } else {
-                                        self.write(&format!("{} {}: {} = ", kw, name, inferred_ty.to_zig_type()));
-                                    }
-                                    
-                                    self.emit_expr(init);
-                                    self.write(";\n");
-                                    
-                                    // Track array element type for ArrayList push type checking.
-                                    if let ZigType::ArrayList(elem_ty) = &inferred_ty {
-                                        self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
-                                    }
-                                }
-                                None => {
-                                    // Rule 3: Type is indeterminate.
-                                    // Rule 4: const → no type annotation, let Zig infer.
-                                    // Rule 8: var → report error (indeterminate type).
-                                    if is_const {
-                                        self.write(&format!("{} {} = ", kw, name));
-                                        self.emit_expr(init);
-                                        self.write(";\n");
-                                    } else {
-                                        // var with indeterminate type → error (Rule 8).
-                                        self.errors.push(format!(
-                                            "Cannot infer type of variable '{}' (Rule 8: indeterminate type). Add a type annotation or initialize with a literal.",
-                                            name
-                                        ));
-                                        self.write(&format!("{} {} = ", kw, name));
-                                        self.emit_expr(init);
-                                        self.write(";\n");
-                                    }
-                                }
+                        } else if let Some(inferred_ty) = self.type_info.var_types.get(name) {
+                            // Definite type from pre-computed type info.
+                            // Skip type annotation for NamedStruct (Map/Set) — Zig infers from init.
+                            let skip_type_annotation =
+                                matches!(inferred_ty, ZigType::NamedStruct(_));
+                            if is_const || skip_type_annotation {
+                                self.write(&format!("{} {} = ", kw, name));
+                            } else {
+                                self.write(&format!(
+                                    "{} {}: {} = ",
+                                    kw,
+                                    name,
+                                    inferred_ty.to_zig_type()
+                                ));
                             }
+                            self.emit_expr(init);
+                            self.write(";\n");
+                        } else {
+                            // Indeterminate type (Rule 8 error already in type_info.errors)
+                            self.write(&format!("{} {} = ", kw, name));
+                            self.emit_expr(init);
+                            self.write(";\n");
                         }
                     }
                     None => {
-                        // No initializer → error in new type system.
+                        // No initializer → error.
                         self.write_indent();
                         self.write(&format!(
                             "// error: variable '{}' must be initialized",
@@ -270,430 +262,78 @@ impl Codegen {
     }
 }
 
-// ── Async detection (AwaitExpression) ──────────────
-// These helper functions detect if a function contains `await` expressions.
-// If yes, the function needs `io: anytype` parameter.
-
-impl Codegen {
-    /// Check if a function contains any `AwaitExpression`.
-    fn fn_contains_await(fd: &Function) -> bool {
-        if let Some(body) = &fd.body {
-            for stmt in &body.statements {
-                if Self::stmt_contains_await(stmt) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Check if a statement contains any `AwaitExpression`.
-    fn stmt_contains_await(stmt: &Statement) -> bool {
-        match stmt {
-            Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(init) = &decl.init
-                        && Self::expr_contains_await(init) {
-                            return true;
-                        }
-                }
-                false
-            }
-            Statement::ReturnStatement(rs) => {
-                if let Some(arg) = &rs.argument {
-                    Self::expr_contains_await(arg)
-                } else {
-                    false
-                }
-            }
-            Statement::ExpressionStatement(es) => {
-                Self::expr_contains_await(&es.expression)
-            }
-            Statement::IfStatement(is) => {
-                if Self::expr_contains_await(&is.test) {
-                    return true;
-                }
-                // consequent is Box<Statement> (not Option)
-                if Self::stmt_contains_await(&is.consequent) {
-                    return true;
-                }
-                // alternate is Option<Box<Statement>>
-                if let Some(alt) = &is.alternate
-                    && Self::stmt_contains_await(alt) {
-                        return true;
-                    }
-                false
-            }
-            Statement::BlockStatement(bs) => {
-                for stmt in &bs.body {
-                    if Self::stmt_contains_await(stmt) {
-                        return true;
-                    }
-                }
-                false
-            }
-            Statement::WhileStatement(ws) => {
-                if Self::expr_contains_await(&ws.test) {
-                    return true;
-                }
-                // body is Box<Statement> (not Option)
-                if Self::stmt_contains_await(&ws.body) {
-                    return true;
-                }
-                false
-            }
-            Statement::DoWhileStatement(dws) => {
-                // body is Box<Statement> (not Option)
-                if Self::stmt_contains_await(&dws.body) {
-                    return true;
-                }
-                Self::expr_contains_await(&dws.test)
-            }
-            Statement::ForOfStatement(fos) => {
-                // body is Box<Statement> (not Option)
-                if Self::stmt_contains_await(&fos.body) {
-                    return true;
-                }
-                false
-            }
-            Statement::SwitchStatement(ss) => {
-                for case in &ss.cases {
-                    for stmt in &case.consequent {
-                        if Self::stmt_contains_await(stmt) {
-                            return true;
-                        }
-                    }
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
-    /// Check if an expression contains any `AwaitExpression`.
-    fn expr_contains_await(expr: &Expression) -> bool {
-        match expr {
-            Expression::AwaitExpression(_) => true,
-            Expression::CallExpression(ce) => {
-                if Self::expr_contains_await(&ce.callee) {
-                    return true;
-                }
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression()
-                        && Self::expr_contains_await(e) {
-                            return true;
-                        }
-                }
-                false
-            }
-            Expression::BinaryExpression(be) => {
-                Self::expr_contains_await(&be.left) || Self::expr_contains_await(&be.right)
-            }
-            Expression::AssignmentExpression(ae) => {
-                // Only check `right` (left is AssignmentTarget, not Expression)
-                Self::expr_contains_await(&ae.right)
-            }
-            Expression::UnaryExpression(ue) => {
-                Self::expr_contains_await(&ue.argument)
-            }
-            Expression::LogicalExpression(le) => {
-                Self::expr_contains_await(&le.left) || Self::expr_contains_await(&le.right)
-            }
-            Expression::ParenthesizedExpression(pe) => {
-                Self::expr_contains_await(&pe.expression)
-            }
-            Expression::ConditionalExpression(ce) => {
-                Self::expr_contains_await(&ce.test) ||
-                Self::expr_contains_await(&ce.consequent) ||
-                Self::expr_contains_await(&ce.alternate)
-            }
-            Expression::ArrayExpression(ae) => {
-                for elem in &ae.elements {
-                    if let Some(e) = elem.as_expression()
-                        && Self::expr_contains_await(e) {
-                            return true;
-                        }
-                }
-                false
-            }
-            Expression::StaticMemberExpression(mem) => {
-                Self::expr_contains_await(&mem.object)
-            }
-            Expression::ComputedMemberExpression(mem) => {
-                Self::expr_contains_await(&mem.object) || Self::expr_contains_await(&mem.expression)
-            }
-            _ => false,
-        }
-    }
-}
-
 // ── Function declarations ──────────────────────────────
 
 impl Codegen {
     fn emit_fn(&mut self, fd: &Function) {
-        let name = fd.id.as_ref()
+        let name = fd
+            .id
+            .as_ref()
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
 
-        // Check if function contains await (needs io parameter)
-        let is_async = Self::fn_contains_await(fd);
+        // Check if function contains await (from pre-computed type_info)
+        let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
 
-        // Pass 1: insert parameter types into var_types.
-        // Rule 7: non-export function params → anytype.
-        for param in &fd.params.items {
-            if let Some(pname) = self.binding_name(&param.pattern) {
-                // Check if there's a JSDoc @param annotation.
-                let has_param_annotation = self.jsdoc_data.as_ref()
-                    .and_then(|d| d.param_types.get(name))
-                    .is_some_and(|params| params.iter().any(|(pn, _)| pn == pname));
-                
-                if has_param_annotation {
-                    // JSDoc @param annotation: use annotated type.
-                    // TODO: parse JSDoc type and convert to ZigType.
-                    self.var_types.insert(pname.to_string(), ZigType::I64);
-                } else if self.current_fn_is_export {
-                    // Export function: default parameter type is i64.
-                    self.var_types.insert(pname.to_string(), ZigType::I64);
-                } else {
-                    // Rule 7: non-export function → anytype.
-                    self.var_types.insert(pname.to_string(), ZigType::Anytype);
-                }
-            }
-        }
+        // Read pre-computed return type from TypeInferResult.
+        let ret_ty = self.type_info.fn_return_types.get(name).cloned();
+        self.current_fn_return_type = ret_ty.clone();
 
-        // Pass 2: walk function body to collect ALL local variable types.
-        if let Some(body) = &fd.body {
-            // Create a temporary codegen to collect types without generating code.
-            let mut type_collector = Codegen::new();
-            type_collector.var_types = self.var_types.clone();
-            type_collector.array_element_types = self.array_element_types.clone();
-
-            // Walk the function body to collect variable types.
-            for stmt in &body.statements {
-                type_collector.walk_stmt_for_types(stmt);
-            }
-
-            // Now type_collector.var_types contains all local variable types.
-            // Merge them into self.var_types.
-            for (k, v) in type_collector.var_types {
-                self.var_types.insert(k, v);
-            }
-            for (k, v) in type_collector.array_element_types {
-                self.array_element_types.insert(k, v);
-            }
-        }
-
-        // Pass 3: infer return type from return expressions.
-        // For export functions: require @returns annotation.
-        let return_exprs = Self::collect_return_exprs(fd);
-        let ret_ty = if self.current_fn_is_export {
-            // Export function: check for @returns annotation.
-            if let Some(ref jsdoc_data) = self.jsdoc_data {
-                if let Some(ret_type_name) = jsdoc_data.return_types.get(name) {
-                    // Use the annotated type.
-                    let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(ret_type_name, &jsdoc_data.typedefs);
-                    // Set current_fn_return_type from the annotated type.
-                    self.current_fn_return_type = Some(match zig_ty.as_str() {
-                        "i64" => ZigType::I64,
-                        "f64" => ZigType::F64,
-                        "bool" => ZigType::Bool,
-                        "[]const u8" => ZigType::Str,
-                        _ => ZigType::I64, // default
-                    });
-                    zig_ty
-                } else {
-                    // No @returns annotation: report error.
-                    self.errors.push(format!(
-                        "Export function '{}' must have @returns annotation",
-                        name
-                    ));
-                    "[]const u8".to_string() // default for export functions
-                }
-            } else {
-                // No JSDoc data: report error.
-                self.errors.push(format!(
-                    "Export function '{}' must have @returns annotation (no JSDoc data)",
-                    name
-                ));
-                "[]const u8".to_string() // default for export functions
-            }
-        } else if return_exprs.is_empty() {
-            "void".to_string()
-        } else {
-            // Rule 6: Check ALL return expressions, at least one definite.
-            let mut ty: Option<ZigType> = None;
-            for expr in &return_exprs {
-                let expr_ty = self.infer_expr_type(expr);
-                match (&ty, &expr_ty) {
-                    (None, Some(et)) => {
-                        // First definite type: use it.
-                        ty = Some(et.clone());
-                    }
-                    (Some(t), Some(et))
-                        // Both definite: check if they match.
-                        if *t != *et => {
-                            self.errors.push(format!(
-                                "Return type mismatch: expected {:?}, found {:?}",
-                                t, et
-                            ));
-                            break;
-                        }
-                    _ => {
-                        // expr_ty is None (indeterminate): skip.
-                    }
-                }
-            }
-            match ty {
-                Some(definite_ty) => {
-                    let rt = definite_ty.clone();
-                    self.current_fn_return_type = Some(rt.clone());
-                    // Rule 7: cache the return type for CallExpression type inference
-                    self.fn_return_types.insert(name.to_string(), rt);
-                    definite_ty.to_zig_type()
-                }
-                None => {
-                    // 推断失败：先尝试 @returns 注解。
-                    // 注解对非 export 内部函数（pipeline 合并依赖后 strip 掉 export
-                    // 关键字的函数）同样有效，否则像 Math.floor 这类无法推断返回
-                    // 类型的内部函数永远无法生成。
-                    if let Some(ref jsdoc_data) = self.jsdoc_data
-                        && let Some(ret_type_name) = jsdoc_data.return_types.get(name)
-                    {
-                        let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(
-                            ret_type_name,
-                            &jsdoc_data.typedefs,
-                        );
-                        let rt = match zig_ty.as_str() {
-                            "i64" => ZigType::I64,
-                            "f64" => ZigType::F64,
-                            "bool" => ZigType::Bool,
-                            "[]const u8" => ZigType::Str,
-                            _ => ZigType::I64,
-                        };
-                        self.current_fn_return_type = Some(rt.clone());
-                        self.fn_return_types.insert(name.to_string(), rt);
-                        zig_ty
-                    } else {
-                        // Rule 8: No definite return type and no annotation → report error.
-                        // `anytype` cannot be used as return type in Zig.
-                        // Default to i64 (Zig will report type mismatch if wrong).
-                        self.errors.push(
-                            "Cannot infer return type: no return expression has a definite type (Rule 6, 8). Defaulting to i64.".to_string()
-                        );
-                        let default_ty = ZigType::I64;
-                        self.current_fn_return_type = Some(default_ty.clone());
-                        // Rule 7: cache the return type for CallExpression type inference
-                        self.fn_return_types.insert(name.to_string(), default_ty);
-                        "i64".to_string()
-                    }
-                }
-            }
-        };
-
-        // Clear return type for void functions.
-        if ret_ty == "void" {
-            self.current_fn_return_type = None;
-        }
-
-        // Pass 4: generate function code.
-        // NOTE: Do NOT add 'export' prefix - the pipeline will generate C ABI wrappers.
-        // NOTE: Add 'pub' prefix so lib.zig (C ABI wrapper) can call these functions.
-        // - All functions: `pub fn name(...) { ... }`
-        // - Async functions: `pub fn name(io: anytype, ...) { ... }`
-        // If async (contains await), add `io: anytype` as first parameter.
+        // Generate function signature.
         if is_async {
             self.write(&format!("pub fn {}(io: anytype", name));
         } else {
             self.write(&format!("pub fn {}(", name));
         }
-        // Generate parameter list and return type
-        if self.current_fn_is_export {
-            // Export function: C ABI compatible signature
-            // For now, assume all params are i64 (simple case)
-            // TODO: handle string params (need [*c]const u8 + conversion)
-            let empty_typedefs = std::collections::HashMap::new();
-            let typedefs = self.jsdoc_data.as_ref()
-                .map(|d| &d.typedefs)
-                .unwrap_or(&empty_typedefs);
 
-            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
-                .and_then(|data| data.param_types.get(name))
-                .map(|params| params.iter().cloned().collect())
-                .unwrap_or_default();
-
-            let mut param_types: Vec<(String, String)> = Vec::new();
-            for param in &fd.params.items {
-                if let Some(pname) = self.binding_name(&param.pattern) {
-                    let param_type = fn_param_type_map.get(pname)
-                        .cloned()
-                        .unwrap_or("number".to_string());
-                    let zig_type = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, typedefs);
-                    param_types.push((pname.to_string(), zig_type));
-                }
-            }
-
+        // Generate parameter list (read param types from type_info).
+        let param_list = self.type_info.fn_param_types.get(name).cloned();
+        if let Some(params) = param_list {
             let mut param_idx = 0;
-            for (pname, zig_type) in param_types.iter() {
-                // Skip `io` parameter for async functions (already added as `io: anytype`)
+            for (pname, ptype) in &params {
                 if is_async && pname == "io" {
                     continue;
                 }
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
-                self.write(&format!("{}: {}", pname, zig_type));
+                // Export function params: always typed; non-export: use anytype
+                if self.current_fn_is_export {
+                    self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
+                } else {
+                    // Non-export params are inferred as anytype in the type info
+                    self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
+                }
                 param_idx += 1;
             }
-
-            // Return type
-            let ret_zig_type = match &self.current_fn_return_type {
-                Some(ZigType::I64) => "i64".to_string(),
-                Some(ZigType::F64) => "f64".to_string(),
-                Some(ZigType::Bool) => "bool".to_string(),
-                Some(ZigType::Str) => "[]const u8".to_string(), // TODO: C ABI string return
-                None => "void".to_string(),
-                _ => "void".to_string(),
-            };
-            self.writeln(&format!(") {} {{", ret_zig_type));
-                } else {
-            // Non-export function: use @param annotations if available, else anytype.
-            let empty_typedefs = std::collections::HashMap::new();
-            let typedefs = self.jsdoc_data.as_ref()
-                .map(|d| d.typedefs.clone())
-                .unwrap_or_else(|| empty_typedefs.clone());
-
-            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
-                .and_then(|data| data.param_types.get(name))
-                .map(|params| params.iter().cloned().collect())
-                .unwrap_or_default();
-
+        } else {
+            // Fallback: generate params from AST with anytype
             let mut param_idx = 0;
             for param in &fd.params.items {
-                if let Some(pname) = self.binding_name(&param.pattern) {
-                    if is_async && pname == "io" { continue; }
+                if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                    if is_async && pname == "io" {
+                        continue;
+                    }
                     if param_idx > 0 || is_async {
                         self.write(", ");
                     }
-                    let param_type = fn_param_type_map.get(pname)
-                        .cloned()
-                        .unwrap_or("anytype".to_string());
-                    let zig_type = if param_type == "anytype" {
-                        "anytype".to_string()
-                    } else {
-                        crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, &typedefs)
-                    };
-                    self.write(&format!("{}: {}", pname, zig_type));
+                    self.write(&format!("{}: anytype", pname));
                     param_idx += 1;
                 }
             }
-            // Use the inferred return type from Pass 3.
-            let ret_ty_str = if ret_ty == "void" {
-                "void".to_string()
-            } else {
-                ret_ty.clone()
-            };
-            self.writeln(&format!(") {} {{", ret_ty_str));
         }
+
+        // Return type
+        let ret_zig_type = match &self.current_fn_return_type {
+            Some(ZigType::I64) => "i64".to_string(),
+            Some(ZigType::F64) => "f64".to_string(),
+            Some(ZigType::Bool) => "bool".to_string(),
+            Some(ZigType::Str) => "[]const u8".to_string(),
+            Some(ZigType::Void) => "void".to_string(),
+            None => "void".to_string(),
+            Some(other) => other.to_zig_type(),
+        };
+        self.writeln(&format!(") {} {{", ret_zig_type));
 
         self.indent += 1;
         if let Some(body) = &fd.body {
@@ -709,39 +349,18 @@ impl Codegen {
             let func_name = name.to_string();
             let return_type = self.current_fn_return_type.clone().unwrap_or(ZigType::I64);
 
-            // Get parameter types from JSDoc or default to I64.
-            let empty_typedefs = std::collections::HashMap::new();
-            let typedefs = self.jsdoc_data.as_ref()
-                .map(|d| &d.typedefs)
-                .unwrap_or(&empty_typedefs);
-
-            let fn_param_type_map: std::collections::HashMap<String, String> = self.jsdoc_data.as_ref()
-                .and_then(|data| data.param_types.get(name))
-                .map(|params| params.iter().cloned().collect())
+            // Get parameter types from type_info.
+            let params: Vec<ZigType> = self
+                .type_info
+                .fn_param_types
+                .get(name)
+                .map(|p| {
+                    p.iter()
+                        .filter(|(n, _)| !is_async || n != "io")
+                        .map(|(_, t)| t.clone())
+                        .collect()
+                })
                 .unwrap_or_default();
-
-            let mut params: Vec<ZigType> = Vec::new();
-            for param in &fd.params.items {
-                if let Some(pname) = self.binding_name(&param.pattern) {
-                    // Skip `io` parameter for async functions (already added as `io: anytype`)
-                    if is_async && pname == "io" {
-                        continue;
-                    }
-                    let param_type = fn_param_type_map.get(pname)
-                        .cloned()
-                        .unwrap_or("number".to_string());
-                    let zig_type_str = crate::native_proto::jsdoc::jsdoc_type_to_zig(&param_type, typedefs);
-                    // Convert string to ZigType
-                    let zig_type = match zig_type_str.as_str() {
-                        "i64" => ZigType::I64,
-                        "f64" => ZigType::F64,
-                        "bool" => ZigType::Bool,
-                        "[]const u8" => ZigType::Str,
-                        _ => ZigType::I64, // default
-                    };
-                    params.push(zig_type);
-                }
-            }
 
             self.exported_fns.push(ExportedFunction {
                 name: func_name,
@@ -775,18 +394,19 @@ impl Codegen {
                 // If we add ';' after a 'for' loop, Zig will report a syntax error.
                 let mut need_semi = true;
                 if let Expression::CallExpression(ce) = &es.expression
-                    && let Some(builtin) = builtins::detect_builtin_call(ce) {
-                        match builtin {
-                            builtins::BuiltinCall::ArrayForEach
-                            | builtins::BuiltinCall::ArraySome
-                            | builtins::BuiltinCall::ArrayEvery => {
-                                // These generate 'for' loops (statements), no ';' needed
-                                need_semi = false;
-                            }
-                            _ => {}
+                    && let Some(builtin) = builtins::detect_builtin_call(ce)
+                {
+                    match builtin {
+                        builtins::BuiltinCall::ArrayForEach
+                        | builtins::BuiltinCall::ArraySome
+                        | builtins::BuiltinCall::ArrayEvery => {
+                            // These generate 'for' loops (statements), no ';' needed
+                            need_semi = false;
                         }
+                        _ => {}
                     }
-                
+                }
+
                 self.write_indent();
                 self.emit_expr(&es.expression);
                 if need_semi {
@@ -804,11 +424,22 @@ impl Codegen {
             Statement::DoWhileStatement(dws) => {
                 self.emit_do_while(dws);
             }
+            Statement::ForStatement(fs) => {
+                self.emit_for(fs);
+            }
             Statement::ForOfStatement(fos) => {
                 self.emit_for_of(fos);
             }
             Statement::SwitchStatement(ss) => {
                 self.emit_switch(ss);
+            }
+            Statement::BreakStatement(_) => {
+                self.write_indent();
+                self.write("break;\n");
+            }
+            Statement::ContinueStatement(_) => {
+                self.write_indent();
+                self.write("continue;\n");
             }
             Statement::BlockStatement(bs) => {
                 self.emit_block(bs);
@@ -907,22 +538,93 @@ impl Codegen {
         self.writeln("}");
     }
 
+    // JS:  for (init; test; update) { ... }
+    // Zig: { init; while (test) : (update) { ... } }
+    fn emit_for(&mut self, fs: &ForStatement) {
+        self.write_indent();
+        self.write("{\n");
+        self.indent += 1;
+
+        // init
+        if let Some(init) = &fs.init {
+            if let ForStatementInit::VariableDeclaration(vd) = init {
+                for decl in &vd.declarations {
+                    if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
+                        self.write_indent();
+                        self.write(&format!("var {}: i64 = 0;\n", name));
+                    }
+                }
+            } else {
+                // Expression init: emit as statement
+                if let Some(expr) = init.as_expression() {
+                    self.write_indent();
+                    self.emit_expr(expr);
+                    self.write(";\n");
+                }
+            }
+        }
+
+        // test — generate a while loop
+        self.write_indent();
+        self.write("while (");
+        if let Some(test) = &fs.test {
+            self.emit_expr(test);
+        } else {
+            self.write("true");
+        }
+        self.write(")");
+
+        // update
+        if let Some(update) = &fs.update {
+            self.write(" : (");
+            self.emit_expr(update);
+            self.write(")");
+        }
+
+        self.write(" {\n");
+        self.indent += 1;
+        self.emit_stmt_or_block(&fs.body);
+        self.indent -= 1;
+
+        self.write_indent();
+        self.write("}\n");
+
+        // Close the block
+        self.indent -= 1;
+        self.write_indent();
+        self.write("}\n");
+    }
+
     // JS:  for (const x of iterable) { ... }
     // Zig: for (iterable) |x| { ... }
     fn emit_for_of(&mut self, fos: &ForOfStatement) {
         let var_name = match &fos.left {
-            ForStatementLeft::VariableDeclaration(vd) => {
-                vd.declarations.first()
-                    .and_then(|decl| self.binding_name(&decl.id))
-                    .unwrap_or("item")
-                    .to_string()
-            }
+            ForStatementLeft::VariableDeclaration(vd) => vd
+                .declarations
+                .first()
+                .and_then(|decl| self.binding_name(&decl.id))
+                .unwrap_or("item")
+                .to_string(),
             _ => "item".to_string(),
+        };
+
+        // Check if the iterable is an ArrayList variable
+        let iterable_is_arraylist = match &fos.right {
+            Expression::Identifier(id) => self
+                .type_info
+                .var_types
+                .get(id.name.as_str())
+                .map(|t| matches!(t, ZigType::ArrayList(_)))
+                .unwrap_or(false),
+            _ => false,
         };
 
         self.write_indent();
         self.write("for (");
         self.emit_expr(&fos.right);
+        if iterable_is_arraylist {
+            self.write(".items");
+        }
         self.write(&format!(") |{}| {{\n", var_name));
 
         self.indent += 1;
@@ -997,13 +699,8 @@ impl Codegen {
                 self.write(if b.value { "true" } else { "false" });
             }
             Expression::Identifier(id) => {
-                // Check if this is a parameter that was parsed (export function).
                 let var_name = id.name.as_str();
-                if let Some(parsed_name) = self.param_name_map.get(var_name).cloned() {
-                    self.write(&parsed_name);
-                } else {
-                    self.write(var_name);
-                }
+                self.write(var_name);
             }
             Expression::BinaryExpression(be) => {
                 self.emit_binary(be);
@@ -1094,7 +791,10 @@ impl Codegen {
                 self.write(");\n");
 
                 self.write_indent();
-                self.write(&format!("defer _ = {}.cancel(io) catch undefined;\n", task_var));
+                self.write(&format!(
+                    "defer _ = {}.cancel(io) catch undefined;\n",
+                    task_var
+                ));
 
                 self.write_indent();
                 self.write(&format!("break :blk try {}.await(io);\n", task_var));
@@ -1111,32 +811,40 @@ impl Codegen {
                         // new Int32Array([...]) → js_typedarray.fromI32(...)
                         self.write("js_typedarray.fromI32(");
                         if let Some(first_arg) = ne.arguments.first()
-                            && let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
-                                self.write("&[_]i64{");
-                                for (i, elem) in ae.elements.iter().enumerate() {
-                                    if i > 0 { self.write(", "); }
-                                    if let Some(e) = elem.as_expression() {
-                                        self.emit_expr(e);
-                                    }
+                            && let Expression::ArrayExpression(ae) =
+                                first_arg.as_expression().unwrap()
+                        {
+                            self.write("&[_]i64{");
+                            for (i, elem) in ae.elements.iter().enumerate() {
+                                if i > 0 {
+                                    self.write(", ");
                                 }
-                                self.write("}");
+                                if let Some(e) = elem.as_expression() {
+                                    self.emit_expr(e);
+                                }
                             }
+                            self.write("}");
+                        }
                         self.write(")");
                         return;
                     } else if obj_name == "Uint8Array" {
                         // new Uint8Array([...]) → js_typedarray.fromU8(...)
                         self.write("js_typedarray.fromU8(");
                         if let Some(first_arg) = ne.arguments.first()
-                            && let Expression::ArrayExpression(ae) = first_arg.as_expression().unwrap() {
-                                self.write("&[_]u8{");
-                                for (i, elem) in ae.elements.iter().enumerate() {
-                                    if i > 0 { self.write(", "); }
-                                    if let Some(e) = elem.as_expression() {
-                                        self.emit_expr(e);
-                                    }
+                            && let Expression::ArrayExpression(ae) =
+                                first_arg.as_expression().unwrap()
+                        {
+                            self.write("&[_]u8{");
+                            for (i, elem) in ae.elements.iter().enumerate() {
+                                if i > 0 {
+                                    self.write(", ");
                                 }
-                                self.write("}");
+                                if let Some(e) = elem.as_expression() {
+                                    self.emit_expr(e);
+                                }
                             }
+                            self.write("}");
+                        }
                         self.write(")");
                         return;
                     } else if obj_name == "Map" {
@@ -1150,10 +858,34 @@ impl Codegen {
                     }
                 }
                 // Unsupported NewExpression
-                self.errors.push("Unsupported NewExpression (only Int32Array and Uint8Array are supported)".to_string());
+                self.errors.push(
+                    "Unsupported NewExpression (only Int32Array and Uint8Array are supported)"
+                        .to_string(),
+                );
                 self.write("@compileError(\"Unsupported NewExpression\")");
             }
             Expression::TemplateLiteral(tpl) => self.emit_template_literal(tpl),
+            Expression::UpdateExpression(ue) => {
+                // i++ → i += 1, i-- → i -= 1
+                let op = match ue.operator {
+                    UpdateOperator::Increment => " += 1",
+                    UpdateOperator::Decrement => " -= 1",
+                };
+                // Emit the target (SimpleAssignmentTarget)
+                match &ue.argument {
+                    SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        self.write(id.name.as_str());
+                        self.write(op);
+                    }
+                    _ => {
+                        self.errors.push(
+                            "Unsupported UpdateExpression target (only simple identifiers)"
+                                .to_string(),
+                        );
+                        self.write("@compileError(\"Unsupported UpdateExpression target\")");
+                    }
+                }
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
@@ -1170,7 +902,6 @@ impl Codegen {
 
 impl Codegen {
     // Binary expression with string-concat special case
-
 
     /// Recursively collect all operands in a string concatenation chain.
     /// Takes &BinaryExpression directly (avoids type wrapping issues).
@@ -1223,7 +954,10 @@ impl Codegen {
         // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch unreachable
         if args.is_empty() {
             // All operands are string literals - just emit the concatenated literal
-            self.write(&format!("\"{}\"", fmt.replace("{{", "{").replace("}}", "}")));
+            self.write(&format!(
+                "\"{}\"",
+                fmt.replace("{{", "{").replace("}}", "}")
+            ));
         } else {
             let args_str = format!(".{{{}}}", args.join(", "));
             self.write(&format!(
@@ -1311,6 +1045,38 @@ impl Codegen {
             // Use std.fmt.allocPrint for runtime string concatenation
             // (Zig 0.16.0: ++ requires comptime-known slices)
             self.emit_string_concat(be);
+        } else if (be.operator == BinaryOperator::Equality
+            || be.operator == BinaryOperator::StrictEquality)
+            && (left_is_string || right_is_string)
+        {
+            // String equality: use std.mem.eql(u8, a, b)
+            self.write("std.mem.eql(u8, ");
+            self.emit_expr(&be.left);
+            self.write(", ");
+            self.emit_expr(&be.right);
+            self.write(")");
+        } else if (be.operator == BinaryOperator::Inequality
+            || be.operator == BinaryOperator::StrictInequality)
+            && (left_is_string || right_is_string)
+        {
+            // String inequality: !std.mem.eql(u8, a, b)
+            self.write("!std.mem.eql(u8, ");
+            self.emit_expr(&be.left);
+            self.write(", ");
+            self.emit_expr(&be.right);
+            self.write(")");
+        } else if be.operator == BinaryOperator::Division {
+            self.write("@divTrunc(");
+            self.emit_expr(&be.left);
+            self.write(", ");
+            self.emit_expr(&be.right);
+            self.write(")");
+        } else if be.operator == BinaryOperator::Remainder {
+            self.write("@rem(");
+            self.emit_expr(&be.left);
+            self.write(", ");
+            self.emit_expr(&be.right);
+            self.write(")");
         } else {
             self.emit_expr(&be.left);
             self.write(" ");
@@ -1326,13 +1092,12 @@ impl Codegen {
             Expression::StringLiteral(_) => true,
             Expression::TemplateLiteral(_) => true,
             Expression::Identifier(id) => {
-                self.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
+                self.type_info.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
             }
             // Handle nested binary expressions: if it's string concatenation, result is string
-            Expression::BinaryExpression(be)
-                if be.operator == BinaryOperator::Addition => {
-                    self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
-                }
+            Expression::BinaryExpression(be) if be.operator == BinaryOperator::Addition => {
+                self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
+            }
             _ => false,
         }
     }
@@ -1347,7 +1112,10 @@ impl Codegen {
                     "Promise.{}() is not supported. Use 'await' instead of '.{}()'",
                     prop_name, prop_name
                 ));
-                self.write(&format!("@compileError(\"Promise.{}() not supported, use 'await' instead\")", prop_name));
+                self.write(&format!(
+                    "@compileError(\"Promise.{}() not supported, use 'await' instead\")",
+                    prop_name
+                ));
                 return;
             }
         }
@@ -1355,29 +1123,36 @@ impl Codegen {
         // Check if this is a Promise.resolve() or Promise.reject() call
         if let Expression::StaticMemberExpression(ref mem) = ce.callee
             && let Expression::Identifier(ref obj) = mem.object
-                && obj.name == "Promise" {
-                    let method = mem.property.name.as_str();
-                    if method == "resolve" || method == "reject" {
-                        self.errors.push(format!(
+            && obj.name == "Promise"
+        {
+            let method = mem.property.name.as_str();
+            if method == "resolve" || method == "reject" {
+                self.errors.push(format!(
                             "Promise.{}() is not supported in native_proto mode. Use 'await' with async functions instead.",
                             method
                         ));
-                        self.write(&format!("@compileError(\"Promise.{}() not supported\")", method));
-                        return;
-                    }
-                }
+                self.write(&format!(
+                    "@compileError(\"Promise.{}() not supported\")",
+                    method
+                ));
+                return;
+            }
+        }
 
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
         if let Some(builtin) = builtins::detect_builtin_call(ce)
-            && self.emit_builtin_call(&builtin, ce) {
-                return;
-            }
-            // If emit_builtin_call returns false, fall through to normal call handling
-        
+            && self.emit_builtin_call(&builtin, ce)
+        {
+            return;
+        }
+        // If emit_builtin_call returns false, fall through to normal call handling
+
         // Check if this is JSON.stringify() call
         if let Expression::StaticMemberExpression(ref mem) = ce.callee
             && let Expression::Identifier(ref obj) = mem.object
-            && obj.name == "JSON" && mem.property.name == "stringify" {
+            && obj.name == "JSON"
+            && mem.property.name == "stringify"
+        {
             // JSON.stringify(obj) → try obj.toJson()
             if let Some(first_arg) = ce.arguments.first() {
                 self.write("try ");
@@ -1400,7 +1175,9 @@ impl Codegen {
                 // Convert host_add(...) to host.add(...)
                 self.write(&format!("host.{}(", host_func_name));
                 for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i > 0 { self.write(", "); }
+                    if i > 0 {
+                        self.write(", ");
+                    }
                     self.emit_expr_arg(arg);
                 }
                 self.write(")");
@@ -1417,7 +1194,9 @@ impl Codegen {
         }
         self.write("(");
         for (i, arg) in ce.arguments.iter().enumerate() {
-            if i > 0 { self.write(", "); }
+            if i > 0 {
+                self.write(", ");
+            }
             self.emit_expr_arg(arg);
         }
         self.write(")");
@@ -1440,125 +1219,143 @@ impl Codegen {
             builtins::BuiltinCall::MathAbs => {
                 // Math.abs(x) → @abs(x)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Math.abs() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Math.abs() requires exactly 1 argument".to_string());
                     return false;
                 }
                 self.write("@abs(");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathFloor => {
                 // Math.floor(x) → @floor(x)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Math.floor() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Math.floor() requires exactly 1 argument".to_string());
                     return false;
                 }
                 self.write("@floor(");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathCeil => {
                 // Math.ceil(x) → @ceil(x)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Math.ceil() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Math.ceil() requires exactly 1 argument".to_string());
                     return false;
                 }
                 self.write("@ceil(");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathRound => {
                 // Math.round(x) → @round(x)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Math.round() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Math.round() requires exactly 1 argument".to_string());
                     return false;
                 }
                 self.write("@round(");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathSqrt => {
                 // Math.sqrt(x) → @sqrt(x)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Math.sqrt() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Math.sqrt() requires exactly 1 argument".to_string());
                     return false;
                 }
                 self.write("@sqrt(");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathRandom => {
                 // Math.random() → @as(f64, @floatFromInt(std.crypto.random.int(u64))) / @as(f64, std.math.maxInt(u64))
                 // Simplified: use std.time.timestamp() for now
                 if !ce.arguments.is_empty() {
-                    self.errors.push("Math.random() requires no arguments".to_string());
+                    self.errors
+                        .push("Math.random() requires no arguments".to_string());
                     return false;
                 }
                 self.write("(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967295.0))");
                 true
             }
-            
+
             builtins::BuiltinCall::MathPow => {
                 // Math.pow(base, exp) → std.math.pow(f64, base, exp)
                 if ce.arguments.len() != 2 {
-                    self.errors.push("Math.pow() requires exactly 2 arguments".to_string());
+                    self.errors
+                        .push("Math.pow() requires exactly 2 arguments".to_string());
                     return false;
                 }
                 self.write("std.math.pow(f64, ");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(", ");
                 if let Some(arg) = ce.arguments.get(1)
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write(")");
                 true
             }
-            
+
             builtins::BuiltinCall::MathMax => {
                 // Math.max(a, b, ...) → find maximum of all arguments
                 if ce.arguments.len() < 2 {
-                    self.errors.push("Math.max() requires at least 2 arguments".to_string());
+                    self.errors
+                        .push("Math.max() requires at least 2 arguments".to_string());
                     return false;
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __max = ");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i == 0 { continue; }
+                    if i == 0 {
+                        continue;
+                    }
                     if let Some(expr) = arg.as_expression() {
                         self.write("if (");
                         let arg_str = self.emit_expr_to_string(expr);
@@ -1568,23 +1365,27 @@ impl Codegen {
                 self.write(" break :blk __max; })");
                 true
             }
-            
+
             builtins::BuiltinCall::MathMin => {
                 // Math.min(a, b, ...) → find minimum of all arguments
                 if ce.arguments.len() < 2 {
-                    self.errors.push("Math.min() requires at least 2 arguments".to_string());
+                    self.errors
+                        .push("Math.min() requires at least 2 arguments".to_string());
                     return false;
                 }
                 // Generate labeled block with loop
                 self.write("(blk: { var __min = ");
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
                 self.write("; ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i == 0 { continue; }
+                    if i == 0 {
+                        continue;
+                    }
                     if let Some(expr) = arg.as_expression() {
                         self.write("if (");
                         let arg_str = self.emit_expr_to_string(expr);
@@ -1594,349 +1395,87 @@ impl Codegen {
                 self.write(" break :blk __min; })");
                 true
             }
-            
+
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → arr.pop()
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.pop()", obj.name.as_str()));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.pop()", obj.name.as_str()));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayShift => {
                 // arr.shift() → arr.shift()
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.shift()", obj.name.as_str()));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.shift()", obj.name.as_str()));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayUnshift => {
                 // arr.unshift(x) → arr.unshift(x)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        self.write(&format!("{}.unshift(", obj_name));
-                        // Emit arguments
-                        for (i, arg) in ce.arguments.iter().enumerate() {
-                            if i > 0 { self.write(", "); }
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr(expr);
-                            }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    self.write(&format!("{}.unshift(", obj_name));
+                    // Emit arguments
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
                         }
-                        self.write(")");
-                        return true;
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
                     }
+                    self.write(")");
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayReverse => {
                 // arr.reverse() → arr.reverse()
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.reverse()", obj.name.as_str()));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.reverse()", obj.name.as_str()));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArraySort => {
                 // arr.sort() → arr.sort()
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.sort()", obj.name.as_str()));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.sort()", obj.name.as_str()));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayIndexOf => {
                 // arr.indexOf(x) → labeled block with loop
                 if ce.arguments.len() != 1 {
-                    self.errors.push("Array.indexOf() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Array.indexOf() requires exactly 1 argument".to_string());
                     return false;
                 }
+                // Redirect to String.indexOf if the object variable is a string type
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-                        self.write(&format!(
-                            "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
-                            obj = obj_name,
-                            arg = arg_expr
-                        ));
-                        return true;
-                    }
-                false
-            }
-            
-            builtins::BuiltinCall::ArrayIncludes => {
-                // arr.includes(x) → labeled block with loop
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Array.includes() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-                        self.write(&format!(
-                            "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
-                            obj = obj_name,
-                            arg = arg_expr
-                        ));
-                        return true;
-                    }
-                false
-            }
-            
-            builtins::BuiltinCall::ArrayJoin => {
-                // arr.join(sep) → labeled block with std.io.Writer.Allocating
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Array.join() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let sep_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-                        // Determine format specifier from array element type
-                        let fmt_spec = match self.array_element_types.get(obj_name) {
-                            Some(ZigType::I64) => "{d}",
-                            Some(ZigType::F64) => "{d}",
-                            Some(ZigType::Bool) => "{}",
-                            Some(ZigType::Str) => "{s}",
-                            _ => "{any}",
-                        };
-                        self.write(&format!(
-                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
-                            obj = obj_name,
-                            sep = sep_expr,
-                            fmt = fmt_spec
-                        ));
-                        return true;
-                    }
-                false
-            }
-            
-            builtins::BuiltinCall::ArraySlice => {
-                // arr.slice(start, end) → arr.items[start..end]
-                // arr.slice(start) → arr.items[start..]
-                // arr.slice() → arr.items
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        match ce.arguments.len() {
-                            0 => {
-                                self.write(&format!("{}.items", obj_name));
-                            }
-                            1 => {
-                                let arg_expr = if let Some(arg) = ce.arguments.first() {
-                                    if let Some(expr) = arg.as_expression() {
-                                        self.emit_expr_to_string(expr)
-                                    } else {
-                                        "0".to_string()
-                                    }
-                                } else {
-                                    "0".to_string()
-                                };
-                                self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
-                            }
-                            2 => {
-                                let start_expr = if let Some(arg) = ce.arguments.first() {
-                                    if let Some(expr) = arg.as_expression() {
-                                        self.emit_expr_to_string(expr)
-                                    } else {
-                                        "0".to_string()
-                                    }
-                                } else {
-                                    "0".to_string()
-                                };
-                                let end_expr = if let Some(arg) = ce.arguments.get(1) {
-                                    if let Some(expr) = arg.as_expression() {
-                                        self.emit_expr_to_string(expr)
-                                    } else {
-                                        "0".to_string()
-                                    }
-                                } else {
-                                    "0".to_string()
-                                };
-                                self.write(&format!("{}.items[{}..{}]", obj_name, start_expr, end_expr));
-                            }
-                            _ => {
-                                self.errors.push("Array.slice() requires 0-2 arguments".to_string());
-                                return false;
-                            }
-                        }
-                        return true;
-                    }
-                false
-            }
-            
-            //             }
-
-            // ── Map methods ─────────────────────────────
-            builtins::BuiltinCall::MapSet => {
-                // map.set(key, value) → try map.set(key, value)
-                if ce.arguments.len() != 2 {
-                    self.errors.push("Map.set() requires exactly 2 arguments".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("try {}.set(", obj.name.as_str()));
-                        // Emit key
-                        if let Some(arg) = ce.arguments.first()
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(", ");
-                        // Emit value
-                        if let Some(arg) = ce.arguments.get(1)
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(")");
-                        return true;
-                    }
-                false
-            }
-
-            builtins::BuiltinCall::MapGet => {
-                // map.get(key) → try map.get(key)
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Map.get() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("try {}.get(", obj.name.as_str()));
-                        if let Some(arg) = ce.arguments.first()
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(")");
-                        return true;
-                    }
-                false
-            }
-
-            builtins::BuiltinCall::MapHas => {
-                // map.has(key) → map.has(key)
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Map.has() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.has(", obj.name.as_str()));
-                        if let Some(arg) = ce.arguments.first()
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(")");
-                        return true;
-                    }
-                false
-            }
-
-            builtins::BuiltinCall::MapDelete => {
-                // map.delete(key) → map.delete(key)
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Map.delete() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("{}.delete(", obj.name.as_str()));
-                        if let Some(arg) = ce.arguments.first()
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(")");
-                        return true;
-                    }
-                false
-            }
-
-            // ── Set methods ─────────────────────────────
-            builtins::BuiltinCall::SetAdd => {
-                // set.add(value) → try set.add(value)
-                if ce.arguments.len() != 1 {
-                    self.errors.push("Set.add() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("try {}.add(", obj.name.as_str()));
-                        if let Some(arg) = ce.arguments.first()
-                            && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                        self.write(")");
-                        return true;
-                    }
-                false
-            }
-
-            // ── String methods ─────────────────────────────
-            builtins::BuiltinCall::StringIndexOf => {
-                // str.indexOf(search) → std.mem.indexOf(u8, str, search)
-                if ce.arguments.len() != 1 {
-                    self.errors.push("String.indexOf() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::StringLiteral(obj) = &mem.object {
-                        let str_val = obj.value.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-                        self.write(&format!(
-                            "(@as(i64, @intCast(std.mem.indexOf(u8, \"{str_val}\", {arg}) orelse -1)))",
-                            str_val = str_val,
-                            arg = arg_expr
-                        ));
-                        return true;
-                    }
-                // Fallback: assume object is a variable
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
+                        // Treat as string indexOf
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1954,17 +1493,39 @@ impl Codegen {
                         ));
                         return true;
                     }
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                            "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                    return true;
+                }
                 false
             }
-            
-            builtins::BuiltinCall::StringIncludes => {
-                // str.includes(search) → std.mem.indexOf(u8, str, search) != null
+
+            builtins::BuiltinCall::ArrayIncludes => {
+                // arr.includes(x) → labeled block with loop
                 if ce.arguments.len() != 1 {
-                    self.errors.push("String.includes() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("Array.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
+                // Redirect to String.includes if the object variable is a string type
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    if self.type_info.var_types.get(obj.name.as_str()) == Some(&ZigType::Str) {
+                        // Treat as string includes
                         let obj_name = obj.name.as_str();
                         let arg_expr = if let Some(arg) = ce.arguments.first() {
                             if let Some(expr) = arg.as_expression() {
@@ -1982,113 +1543,440 @@ impl Codegen {
                         ));
                         return true;
                     }
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                            "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
+                            obj = obj_name,
+                            arg = arg_expr
+                        ));
+                    return true;
+                }
                 false
             }
-            
+
+            builtins::BuiltinCall::ArrayJoin => {
+                // arr.join(sep) → labeled block with std.io.Writer.Allocating
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Array.join() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let sep_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    // Determine format specifier from array element type
+                    let fmt_spec = match self.type_info.array_element_types.get(obj_name) {
+                        Some(ZigType::I64) => "{d}",
+                        Some(ZigType::F64) => "{d}",
+                        Some(ZigType::Bool) => "{}",
+                        Some(ZigType::Str) => "{s}",
+                        _ => "{any}",
+                    };
+                    self.write(&format!(
+                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
+                            obj = obj_name,
+                            sep = sep_expr,
+                            fmt = fmt_spec
+                        ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArraySlice => {
+                // arr.slice(start, end) → arr.items[start..end]
+                // arr.slice(start) → arr.items[start..]
+                // arr.slice() → arr.items
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    match ce.arguments.len() {
+                        0 => {
+                            self.write(&format!("{}.items", obj_name));
+                        }
+                        1 => {
+                            let arg_expr = if let Some(arg) = ce.arguments.first() {
+                                if let Some(expr) = arg.as_expression() {
+                                    self.emit_expr_to_string(expr)
+                                } else {
+                                    "0".to_string()
+                                }
+                            } else {
+                                "0".to_string()
+                            };
+                            self.write(&format!("{}.items[{}..]", obj_name, arg_expr));
+                        }
+                        2 => {
+                            let start_expr = if let Some(arg) = ce.arguments.first() {
+                                if let Some(expr) = arg.as_expression() {
+                                    self.emit_expr_to_string(expr)
+                                } else {
+                                    "0".to_string()
+                                }
+                            } else {
+                                "0".to_string()
+                            };
+                            let end_expr = if let Some(arg) = ce.arguments.get(1) {
+                                if let Some(expr) = arg.as_expression() {
+                                    self.emit_expr_to_string(expr)
+                                } else {
+                                    "0".to_string()
+                                }
+                            } else {
+                                "0".to_string()
+                            };
+                            self.write(&format!(
+                                "{}.items[{}..{}]",
+                                obj_name, start_expr, end_expr
+                            ));
+                        }
+                        _ => {
+                            self.errors
+                                .push("Array.slice() requires 0-2 arguments".to_string());
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                false
+            }
+
+            //             }
+
+            // ── Map methods ─────────────────────────────
+            builtins::BuiltinCall::MapSet => {
+                // map.set(key, value) → map.set(key, value) catch unreachable
+                if ce.arguments.len() != 2 {
+                    self.errors
+                        .push("Map.set() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.set(", obj.name.as_str()));
+                    // Emit key
+                    if let Some(arg) = ce.arguments.first()
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(", ");
+                    // Emit value
+                    if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(") catch unreachable");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::MapGet => {
+                // map.get(key) → try map.get(key)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Map.get() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("try {}.get(", obj.name.as_str()));
+                    if let Some(arg) = ce.arguments.first()
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::MapHas => {
+                // map.has(key) → map.has(key)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Map.has() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.has(", obj.name.as_str()));
+                    if let Some(arg) = ce.arguments.first()
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::MapDelete => {
+                // map.delete(key) → map.delete(key)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Map.delete() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.delete(", obj.name.as_str()));
+                    if let Some(arg) = ce.arguments.first()
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
+            // ── Set methods ─────────────────────────────
+            builtins::BuiltinCall::SetAdd => {
+                // set.add(value) → set.add(value) catch unreachable
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Set.add() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("{}.add(", obj.name.as_str()));
+                    if let Some(arg) = ce.arguments.first()
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                    }
+                    self.write(") catch unreachable");
+                    return true;
+                }
+                false
+            }
+
+            // ── String methods ─────────────────────────────
+            builtins::BuiltinCall::StringIndexOf => {
+                // str.indexOf(search) → std.mem.indexOf(u8, str, search)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.indexOf() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::StringLiteral(obj) = &mem.object
+                {
+                    let str_val = obj.value.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                        "(@as(i64, @intCast(std.mem.indexOf(u8, \"{str_val}\", {arg}) orelse -1)))",
+                        str_val = str_val,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                // Fallback: assume object is a variable
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                        "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringIncludes => {
+                // str.includes(search) → std.mem.indexOf(u8, str, search) != null
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.includes() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                        "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
             builtins::BuiltinCall::StringStartsWith => {
                 // str.startsWith(prefix) → std.mem.startsWith(u8, str, prefix)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("String.startsWith() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("String.startsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
                         } else {
                             String::new()
-                        };
-                        self.write(&format!(
-                            "std.mem.startsWith(u8, {obj}, {arg})",
-                            obj = obj_name,
-                            arg = arg_expr
-                        ));
-                        return true;
-                    }
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                        "std.mem.startsWith(u8, {obj}, {arg})",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::StringEndsWith => {
                 // str.endsWith(suffix) → std.mem.endsWith(u8, str, suffix)
                 if ce.arguments.len() != 1 {
-                    self.errors.push("String.endsWith() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("String.endsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
                         } else {
                             String::new()
-                        };
-                        self.write(&format!(
-                            "std.mem.endsWith(u8, {obj}, {arg})",
-                            obj = obj_name,
-                            arg = arg_expr
-                        ));
-                        return true;
-                    }
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.write(&format!(
+                        "std.mem.endsWith(u8, {obj}, {arg})",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::StringTrim => {
                 // str.trim() → std.mem.trim(u8, str, &std.ascii.whitespace)
                 if !ce.arguments.is_empty() {
-                    self.errors.push("String.trim() requires no arguments".to_string());
+                    self.errors
+                        .push("String.trim() requires no arguments".to_string());
                     return false;
                 }
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        self.write(&format!(
-                            "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
-                            obj = obj_name
-                        ));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    self.write(&format!(
+                        "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
+                        obj = obj_name
+                    ));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::StringSplit => {
                 // str.split(sep) → std.mem.split(u8, str, sep) (returns iterator)
                 // Simplified: returns array of strings
                 if ce.arguments.len() != 1 {
-                    self.errors.push("String.split() requires exactly 1 argument".to_string());
+                    self.errors
+                        .push("String.split() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        let arg_expr = if let Some(arg) = ce.arguments.first() {
-                            if let Some(expr) = arg.as_expression() {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                String::new()
-                            }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    let arg_expr = if let Some(arg) = ce.arguments.first() {
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
                         } else {
                             String::new()
-                        };
-                        // Generate code to split string into array
-                        self.write(&format!(
+                        }
+                    } else {
+                        String::new()
+                    };
+                    // Generate code to split string into array
+                    self.write(&format!(
                             "(blk: {{ var __split_result = std.ArrayList([]const u8).init(js_allocator.getAllocator()); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
                             obj = obj_name,
                             arg = arg_expr
                         ));
-                        return true;
-                    }
+                    return true;
+                }
                 false
             }
-            
+
             // ── Array methods (with closure) ─────────────────────────────
             // These methods require closure support, which is not fully implemented yet.
             // Generate simplified implementations for now (incorrect but compilable).
@@ -2096,52 +1984,56 @@ impl Codegen {
                 // arr.forEach(fn) → for (arr.items) |_| {} (simplified: ignore fn)
                 // Note: forEach is a statement in Zig (no return value)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(&format!("for ({}.items) |_| {{}}", obj.name.as_str()));
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(&format!("for ({}.items) |_| {{}}", obj.name.as_str()));
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayMap => {
                 // arr.map(fn) → arr (simplified: return original array)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(obj.name.as_str());
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(obj.name.as_str());
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayFilter => {
                 // arr.filter(fn) → arr (simplified: return original array)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(obj) = &mem.object {
-                        self.write(obj.name.as_str());
-                        return true;
-                    }
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    self.write(obj.name.as_str());
+                    return true;
+                }
                 false
             }
-            
+
             builtins::BuiltinCall::ArrayReduce => {
                 // arr.reduce(fn, init) → init (simplified: return initial value)
                 if ce.arguments.len() >= 2
                     && let Some(arg) = ce.arguments.get(1)
-                        && let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                            return true;
-                        }
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                    return true;
+                }
                 // Fallback: return 0
                 self.write("0");
                 true
             }
-            
+
             builtins::BuiltinCall::ArraySome => {
                 // arr.some(fn) → true (simplified: always return true)
                 self.write("true");
                 true
             }
-            
+
             builtins::BuiltinCall::ArrayEvery => {
                 // arr.every(fn) → true (simplified: always return true)
                 self.write("true");
@@ -2156,7 +2048,8 @@ impl Codegen {
             self.emit_expr(e);
         } else {
             // Spread argument not supported yet
-            self.errors.push("Spread argument not supported".to_string());
+            self.errors
+                .push("Spread argument not supported".to_string());
             self.write("/* spread arg */");
         }
     }
@@ -2181,7 +2074,8 @@ impl Codegen {
             }
             _ => {
                 // Unsupported assignment target
-                self.errors.push("Unsupported assignment target".to_string());
+                self.errors
+                    .push("Unsupported assignment target".to_string());
                 self.write("/* unsupported assign target */");
             }
         }
@@ -2224,21 +2118,43 @@ impl Codegen {
         if ae.elements.is_empty() {
             self.write("std.ArrayList(JsAny).init(js_allocator.getAllocator())");
         } else {
-            self.write(".{");
-            for (i, elem) in ae.elements.iter().enumerate() {
-                if i > 0 { self.write(", "); }
+            // Determine element type from first element
+            let elem_type = ae
+                .elements
+                .first()
+                .and_then(|e| e.as_expression())
+                .map(|expr| match expr {
+                    Expression::NumericLiteral(n) => {
+                        let s = n.value.to_string();
+                        if s.contains('.') || s.contains('e') || s.contains('E') {
+                            "f64"
+                        } else {
+                            "i64"
+                        }
+                    }
+                    Expression::StringLiteral(_) => "[]const u8",
+                    Expression::BooleanLiteral(_) => "bool",
+                    _ => "i64",
+                })
+                .unwrap_or("i64");
+            self.write(&format!(
+                "(blk: {{ var __arr = js_array.JsArray({}).init(js_allocator.getAllocator()); ",
+                elem_type
+            ));
+            for elem in ae.elements.iter() {
                 match elem {
                     ArrayExpressionElement::SpreadElement(_) => self.write("/* spread */"),
-                    ArrayExpressionElement::Elision(_) => self.write("undefined"),
+                    ArrayExpressionElement::Elision(_) => self.write("/* elision */"),
                     _ => {
-                        // Inherited from Expression — use as_expression().
                         if let Some(e) = elem.as_expression() {
+                            self.write("__arr.append(");
                             self.emit_expr(e);
+                            self.write(") catch unreachable; ");
                         }
-                    },
+                    }
                 }
             }
-            self.push('}');
+            self.write("break :blk __arr; })");
         }
     }
 
@@ -2251,7 +2167,9 @@ impl Codegen {
         }
         self.write(".{ ");
         for (i, prop) in oe.properties.iter().enumerate() {
-            if i > 0 { self.write(", "); }
+            if i > 0 {
+                self.write(", ");
+            }
             if let ObjectPropertyKind::ObjectProperty(p) = prop {
                 let field_name = match &p.key {
                     PropertyKey::StaticIdentifier(id) => id.name.to_string(),
@@ -2266,7 +2184,11 @@ impl Codegen {
     }
 }
 
-// ── Type inference (ZigType) ───────────────────────
+// ============================================================
+// Phase A: Type inference has been moved to infer.rs.
+// Codegen is now purely generative — it reads from
+// self.type_info (TypeCheckResult) pre-computed by TypeInferrer.
+// ============================================================
 
 impl Codegen {
     /// Infer the type of an expression. Returns ZigType.
@@ -2332,9 +2254,7 @@ impl Codegen {
             }
 
             // Identifier: look up variable type from var_types (Rule 5)
-            Expression::Identifier(id) => {
-                self.var_types.get(id.name.as_str()).cloned()
-            }
+            Expression::Identifier(id) => self.type_info.var_types.get(id.name.as_str()).cloned(),
 
             // StaticMemberExpression: look up field type from struct type (Rule 5)
             Expression::StaticMemberExpression(mem) => {
@@ -2360,7 +2280,7 @@ impl Codegen {
                 if let Expression::Identifier(id) = &ce.callee {
                     let fn_name = id.name.as_str();
                     // Look up return type from cache
-                    if let Some(ret_ty) = self.fn_return_types.get(fn_name) {
+                    if let Some(ret_ty) = self.type_info.fn_return_types.get(fn_name) {
                         return Some(ret_ty.clone());
                     }
                 }
@@ -2454,11 +2374,12 @@ impl Codegen {
 
     /// Check if an expression is a literal (Rule 1, Rule 2).
     fn is_literal(expr: &Expression) -> bool {
-        matches!(expr,
+        matches!(
+            expr,
             Expression::NumericLiteral(_)
-            | Expression::StringLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral(_)
+                | Expression::StringLiteral(_)
+                | Expression::BooleanLiteral(_)
+                | Expression::NullLiteral(_)
         )
     }
 
@@ -2466,9 +2387,12 @@ impl Codegen {
     fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
         match op {
             // Arithmetic operators
-            BinaryOperator::Addition | BinaryOperator::Subtraction |
-            BinaryOperator::Multiplication | BinaryOperator::Division |
-            BinaryOperator::Remainder | BinaryOperator::Exponential => {
+            BinaryOperator::Addition
+            | BinaryOperator::Subtraction
+            | BinaryOperator::Multiplication
+            | BinaryOperator::Division
+            | BinaryOperator::Remainder
+            | BinaryOperator::Exponential => {
                 if left == ZigType::F64 || right == ZigType::F64 {
                     ZigType::F64
                 } else {
@@ -2476,160 +2400,24 @@ impl Codegen {
                 }
             }
             // Comparison operators → Bool
-            BinaryOperator::Equality | BinaryOperator::Inequality |
-            BinaryOperator::StrictEquality | BinaryOperator::StrictInequality |
-            BinaryOperator::LessThan | BinaryOperator::LessEqualThan |
-            BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => ZigType::Bool,
+            BinaryOperator::Equality
+            | BinaryOperator::Inequality
+            | BinaryOperator::StrictEquality
+            | BinaryOperator::StrictInequality
+            | BinaryOperator::LessThan
+            | BinaryOperator::LessEqualThan
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterEqualThan => ZigType::Bool,
             // Logical operators (for BinaryExpression, these are bitwise)
             BinaryOperator::BitwiseAnd => ZigType::I64,
             BinaryOperator::BitwiseOR => ZigType::I64,
             BinaryOperator::BitwiseXOR => ZigType::I64,
             // Shift operators
-            BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight |
-            BinaryOperator::ShiftRightZeroFill => ZigType::I64,
+            BinaryOperator::ShiftLeft
+            | BinaryOperator::ShiftRight
+            | BinaryOperator::ShiftRightZeroFill => ZigType::I64,
             // Default
             _ => ZigType::I64,
-        }
-    }
-}
-
-// ── Return expression collection ─────────────────────
-
-impl Codegen {
-    fn collect_return_exprs<'a>(fd: &'a Function<'a>) -> Vec<&'a Expression<'a>> {
-        let mut exprs = Vec::new();
-        if let Some(body) = &fd.body {
-            for stmt in &body.statements {
-                Self::collect_returns(stmt, &mut exprs);
-            }
-        }
-        exprs
-    }
-
-    fn collect_returns<'a>(stmt: &'a Statement<'a>, exprs: &mut Vec<&'a Expression<'a>>) {
-        match stmt {
-            Statement::ReturnStatement(rs) => {
-                if let Some(ref arg) = rs.argument {
-                    exprs.push(arg);
-                }
-            }
-            Statement::IfStatement(is) => {
-                Self::collect_returns(&is.consequent, exprs);
-                if let Some(alt) = &is.alternate {
-                    Self::collect_returns(alt, exprs);
-                }
-            }
-            Statement::BlockStatement(bs) => {
-                for stmt in &bs.body {
-                    Self::collect_returns(stmt, exprs);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                Self::collect_returns(&ws.body, exprs);
-            }
-            _ => {}
-        }
-    }
-}
-
-// ── Identifier collection (for unused-constant elimination) ──
-
-impl Codegen {
-    /// Walk a function and collect all identifier names referenced in its body.
-    /// This is used to determine which toplevel constants are actually used.
-    fn collect_idents_from_function<'a>(fd: &'a Function<'a>, names: &mut std::collections::HashSet<String>) {
-        if let Some(body) = &fd.body {
-            for stmt in &body.statements {
-                Self::collect_idents_from_stmt(stmt, names);
-            }
-        }
-    }
-
-    fn collect_idents_from_stmt<'a>(stmt: &'a Statement<'a>, names: &mut std::collections::HashSet<String>) {
-        match stmt {
-            Statement::ExpressionStatement(es) => {
-                Self::collect_idents_from_expr(&es.expression, names);
-            }
-            Statement::ReturnStatement(rs) => {
-                if let Some(arg) = &rs.argument {
-                    Self::collect_idents_from_expr(arg, names);
-                }
-            }
-            Statement::IfStatement(is) => {
-                Self::collect_idents_from_expr(&is.test, names);
-                Self::collect_idents_from_stmt(&is.consequent, names);
-                if let Some(alt) = &is.alternate {
-                    Self::collect_idents_from_stmt(alt, names);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                Self::collect_idents_from_expr(&ws.test, names);
-                Self::collect_idents_from_stmt(&ws.body, names);
-            }
-            Statement::BlockStatement(bs) => {
-                for s in &bs.body {
-                    Self::collect_idents_from_stmt(s, names);
-                }
-            }
-            Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(init) = &decl.init {
-                        Self::collect_idents_from_expr(init, names);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn collect_idents_from_expr<'a>(expr: &'a Expression<'a>, names: &mut std::collections::HashSet<String>) {
-        match expr {
-            Expression::Identifier(id) => {
-                names.insert(id.name.to_string());
-            }
-            Expression::BinaryExpression(be) => {
-                Self::collect_idents_from_expr(&be.left, names);
-                Self::collect_idents_from_expr(&be.right, names);
-            }
-            Expression::CallExpression(ce) => {
-                Self::collect_idents_from_expr(&ce.callee, names);
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        Self::collect_idents_from_expr(e, names);
-                    }
-                }
-            }
-            Expression::AssignmentExpression(ae) => {
-                // For `x = expr`, collect idents from both sides.
-                // The left side (target) may be an identifier.
-                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
-                    names.insert(id.name.to_string());
-                }
-                Self::collect_idents_from_expr(&ae.right, names);
-            }
-            Expression::UnaryExpression(ue) => {
-                Self::collect_idents_from_expr(&ue.argument, names);
-            }
-            Expression::LogicalExpression(le) => {
-                Self::collect_idents_from_expr(&le.left, names);
-                Self::collect_idents_from_expr(&le.right, names);
-            }
-            Expression::ParenthesizedExpression(pe) => {
-                Self::collect_idents_from_expr(&pe.expression, names);
-            }
-            Expression::ConditionalExpression(ce) => {
-                Self::collect_idents_from_expr(&ce.test, names);
-                Self::collect_idents_from_expr(&ce.consequent, names);
-                Self::collect_idents_from_expr(&ce.alternate, names);
-            }
-            Expression::ArrayExpression(ae) => {
-                for elem in &ae.elements {
-                    if let Some(e) = elem.as_expression() {
-                        Self::collect_idents_from_expr(e, names);
-                    }
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -2642,41 +2430,6 @@ impl Codegen {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
             _ => None,
         }
-    }
-
-    /// Check if an initializer is a JSON.parse() call and return the @type annotation if present.
-    /// Returns Some(type_name) if this is JSON.parse() with @type annotation, None otherwise.
-    fn get_json_parse_type(&self, var_name: &str, init: &Expression) -> Option<String> {
-        // Check if init is a CallExpression
-        let ce = if let Expression::CallExpression(ce) = init {
-            ce
-        } else {
-            return None;
-        };
-
-        // Check if callee is JSON.parse
-        let is_json_parse = if let Expression::StaticMemberExpression(mem) = &ce.callee {
-            // Check if object is Identifier "JSON" and property is "parse"
-            if let Expression::Identifier(obj_id) = &mem.object {
-                obj_id.name.as_str() == "JSON" && mem.property.name.as_str() == "parse"
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if !is_json_parse {
-            return None;
-        }
-
-        // Look up @type annotation for this variable
-        if let Some(ref jsdoc_data) = self.jsdoc_data
-            && let Some(type_name) = jsdoc_data.type_annotations.get(var_name) {
-            return Some(type_name.clone());
-        }
-
-        None
     }
 
     fn binary_op(op: BinaryOperator) -> &'static str {
@@ -2762,221 +2515,4 @@ impl Codegen {
     }
 }
 
-// ── Object analysis (Pass 0) ─────────────────────
-
-impl Codegen {
-    /// Analyze the program to detect object kinds (struct vs map) and mutations.
-    pub fn analyze_objects(&mut self, program: &Program) {
-        for stmt in &program.body {
-            self.walk_stmt_for_analysis(stmt);
-        }
-    }
-
-    /// Walk a statement for analysis.
-    fn walk_stmt_for_analysis(&mut self, stmt: &Statement) {
-        match stmt {
-            Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(init) = &decl.init {
-                        self.walk_expr_for_analysis(init);
-                    }
-                }
-            }
-            Statement::FunctionDeclaration(fd) => {
-                if let Some(body) = &fd.body {
-                    for stmt in &body.statements {
-                        self.walk_stmt_for_analysis(stmt);
-                    }
-                }
-            }
-            Statement::ExpressionStatement(es) => {
-                self.walk_expr_for_analysis(&es.expression);
-            }
-            Statement::IfStatement(is) => {
-                self.walk_expr_for_analysis(&is.test);
-                self.walk_stmt_for_analysis(&is.consequent);
-                if let Some(alt) = &is.alternate {
-                    self.walk_stmt_for_analysis(alt);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                self.walk_expr_for_analysis(&ws.test);
-                self.walk_stmt_for_analysis(&ws.body);
-            }
-            Statement::BlockStatement(bs) => {
-                for stmt in &bs.body {
-                    self.walk_stmt_for_analysis(stmt);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Walk an expression for analysis (detect ComputedMemberExpression and assignments).
-    fn walk_expr_for_analysis(&mut self, expr: &Expression) {
-        match expr {
-            Expression::ComputedMemberExpression(mem) => {
-                // Check if this is array indexing (numeric literal) or dynamic property access.
-                match &mem.expression {
-                    Expression::NumericLiteral(_n) => {
-                        // Array indexing with numeric literal: allow (e.g., arr[0])
-                        // Still walk into the object to find more errors.
-                        self.walk_expr_for_analysis(&mem.object);
-                    }
-                    _ => {
-                        // Dynamic property access is not allowed in strict type system.
-                        self.errors.push(
-                            "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
-                        );
-                        // Still walk into sub-expressions to find more errors.
-                        self.walk_expr_for_analysis(&mem.object);
-                        self.walk_expr_for_analysis(&mem.expression);
-                    }
-                }
-            }
-            Expression::StaticMemberExpression(mem) => {
-                self.walk_expr_for_analysis(&mem.object);
-            }
-            Expression::AssignmentExpression(ae) => {
-                // Check assignment target for mutation.
-                self.check_assignment_target(&ae.left);
-                self.walk_expr_for_analysis(&ae.right);
-            }
-            Expression::BinaryExpression(be) => {
-                self.walk_expr_for_analysis(&be.left);
-                self.walk_expr_for_analysis(&be.right);
-            }
-            Expression::CallExpression(ce) => {
-                self.walk_expr_for_analysis(&ce.callee);
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        self.walk_expr_for_analysis(e);
-                    }
-                }
-            }
-            Expression::ParenthesizedExpression(pe) => {
-                self.walk_expr_for_analysis(&pe.expression);
-            }
-            Expression::ConditionalExpression(ce) => {
-                self.walk_expr_for_analysis(&ce.test);
-                self.walk_expr_for_analysis(&ce.consequent);
-                self.walk_expr_for_analysis(&ce.alternate);
-            }
-            Expression::UnaryExpression(ue) => {
-                self.walk_expr_for_analysis(&ue.argument);
-            }
-            Expression::LogicalExpression(le) => {
-                self.walk_expr_for_analysis(&le.left);
-                self.walk_expr_for_analysis(&le.right);
-            }
-            Expression::ArrayExpression(ae) => {
-                for elem in &ae.elements {
-                    if let Some(e) = elem.as_expression() {
-                        self.walk_expr_for_analysis(e);
-                    }
-                }
-            }
-            Expression::ObjectExpression(oe) => {
-                for prop in &oe.properties {
-                    if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                        self.walk_expr_for_analysis(&p.value);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Check if an assignment target is a member expression, mark as mutated.
-    fn check_assignment_target(&mut self, target: &AssignmentTarget) {
-        match target {
-            AssignmentTarget::StaticMemberExpression(mem) => {
-                if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars.insert(id.name.to_string());
-                }
-            }
-            AssignmentTarget::ComputedMemberExpression(mem) => {
-                // Dynamic property assignment is not allowed, but we still mark as mutated for error reporting.
-                if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars.insert(id.name.to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-// ── Type collection (Pass 2) ─────────────────────
-
-impl Codegen {
-    /// Walk a statement to collect variable types (without generating code).
-    /// This is used to populate `var_types` before code generation.
-    fn walk_stmt_for_types(&mut self, stmt: &Statement) {
-        match stmt {
-            Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(name) = self.binding_name(&decl.id) {
-                        if let Some(init) = &decl.init {
-                            // Rule 1-3: infer_expr_type returns Some(ty) only for literals
-                            let ty = self.infer_expr_type(init);
-                            match ty {
-                                Some(inferred_ty) => {
-                                    self.var_types.insert(name.to_string(), inferred_ty.clone());
-                                    
-                                    // Track array element type for ArrayList push type checking.
-                                    if let ZigType::ArrayList(elem_ty) = &inferred_ty {
-                                        self.array_element_types.insert(name.to_string(), (**elem_ty).clone());
-                                    }
-                                }
-                                None => {
-                                    // Rule 8: Indeterminate type → report error.
-                                    self.errors.push(format!(
-                                        "Cannot infer type of variable '{}' (Rule 8: indeterminate type). Add a type annotation or initialize with a literal.",
-                                        name
-                                    ));
-                                }
-                            }
-                        } else {
-                            // No initializer → error in strict type system.
-                            self.errors.push(format!(
-                                "Variable '{}' must be initialized (strict type system)",
-                                name
-                            ));
-                        }
-                    }
-                }
-            }
-            Statement::IfStatement(is) => {
-                self.walk_expr_for_analysis(&is.test); // Check for errors
-                self.walk_stmt_for_types(&is.consequent);
-                if let Some(alt) = &is.alternate {
-                    self.walk_stmt_for_types(alt);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                self.walk_expr_for_analysis(&ws.test); // Check for errors
-                self.walk_stmt_for_types(&ws.body);
-            }
-            Statement::BlockStatement(bs) => {
-                for stmt in &bs.body {
-                    self.walk_stmt_for_types(stmt);
-                }
-            }
-            Statement::FunctionDeclaration(fd) => {
-                // Nested function: collect its parameter types.
-                for param in &fd.params.items {
-                    if let Some(pname) = self.binding_name(&param.pattern) {
-                        self.var_types.insert(pname.to_string(), ZigType::I64);
-                    }
-                }
-                // Walk the function body.
-                if let Some(body) = &fd.body {
-                    for stmt in &body.statements {
-                        self.walk_stmt_for_types(stmt);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
+// ── emit_toplevel helpers ──────────────────────────

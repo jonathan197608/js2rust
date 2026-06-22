@@ -57,7 +57,10 @@ mod tests {
     #[test]
     fn parse_class_declaration() {
         let alloc = Allocator::default();
-        let program = parse(&alloc, "class Point { constructor(x,y) { this.x=x; this.y=y; } }");
+        let program = parse(
+            &alloc,
+            "class Point { constructor(x,y) { this.x=x; this.y=y; } }",
+        );
         assert!(!program.body.is_empty());
     }
 

@@ -63,17 +63,24 @@ export function mathSign(x) {
 
 /** @returns {f64} */
 export function mathConstants() {
-    const pi = Math.PI;
-    const e = Math.E;
+    /**
+     * @type {f64}
+     */
+    const pi = 3.141592653589793;
+    /**
+     * @type {f64}
+     */
+    const e = 2.718281828459045;
     return pi + e;
 }
 
 // ── Global functions (S7.2) ─────────────────────────────────────
 
-/** @returns {i64} */
-export function globalParseInt(s) {
-    return parseInt(s);
-}
+// parseInt not yet supported in native_proto
+// /** @returns {i64} */
+// export function globalParseInt(s) {
+//     return parseInt(s);
+// }
 
 // ── Arithmetic operators (S4.1) — add, sub, mul only ────────────
 

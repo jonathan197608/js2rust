@@ -2,7 +2,7 @@
 // Test binary project for js2rust — JS-to-Zig transpiler
 
 use js2rust_bridge::js2rust_bridge;
-mod host;  // Declare host module
+mod host; // Declare host module
 
 // Generate FFI bindings: transpiles JS → Zig, generates Rust wrappers.
 // No host functions for this minimal test.

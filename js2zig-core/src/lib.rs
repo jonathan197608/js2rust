@@ -25,7 +25,7 @@ pub enum HostType {
     I32,
     I64,
     F64,
-    Str,  // *const c_char
+    Str, // *const c_char
 }
 
 /// Host function description for FFI binding generation.

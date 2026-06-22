@@ -136,27 +136,24 @@ pub fn generate_test_code(
             && let Some(ret_type) = fn_return_types.get(&fn_name)
             && let Some(ref expected) = tc.expected
         {
-                if !expected.starts_with('"') {
-                    // Numeric comparison: extract .int
-                    if ret_type == "JsValue" {
-                        call_expr = format!("{}.int", call_expr);
-                    } else if ret_type == "JsAny" {
-                        call_expr = format!("{}.value.int", call_expr);
-                    }
-                } else {
-                    // String comparison: extract .string / .value.string
-                    if ret_type == "JsValue" {
-                        call_expr = format!("{}.string", call_expr);
-                    } else if ret_type == "JsAny" {
-                        call_expr = format!("{}.value.string", call_expr);
-                    }
+            if !expected.starts_with('"') {
+                // Numeric comparison: extract .int
+                if ret_type == "JsValue" {
+                    call_expr = format!("{}.int", call_expr);
+                } else if ret_type == "JsAny" {
+                    call_expr = format!("{}.value.int", call_expr);
                 }
+            } else {
+                // String comparison: extract .string / .value.string
+                if ret_type == "JsValue" {
+                    call_expr = format!("{}.string", call_expr);
+                } else if ret_type == "JsAny" {
+                    call_expr = format!("{}.value.string", call_expr);
+                }
+            }
         }
 
-        out.push_str(&format!(
-            "test \"{}\" {{\n",
-            sanitize_name(test_name)
-        ));
+        out.push_str(&format!("test \"{}\" {{\n", sanitize_name(test_name)));
         out.push_str("    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);\n");
         out.push_str("    defer arena.deinit();\n");
         out.push_str("    const allocator = arena.allocator();\n");
@@ -248,9 +245,7 @@ fn expr_to_string(expr: &Expression) -> String {
             let elements: Vec<String> = arr
                 .elements
                 .iter()
-                .filter_map(|elem| {
-                    elem.as_expression().map(|e| expr_to_string(e))
-                })
+                .filter_map(|elem| elem.as_expression().map(|e| expr_to_string(e)))
                 .collect();
             format!("&[_]i64{{ {} }}", elements.join(", "))
         }
@@ -291,10 +286,12 @@ fn expr_to_string(expr: &Expression) -> String {
             format!("({} {} {})", left, op, right)
         }
         Expression::ConditionalExpression(cond) => {
-            format!("({} ? {} : {})",
+            format!(
+                "({} ? {} : {})",
                 expr_to_string(&cond.test),
                 expr_to_string(&cond.consequent),
-                expr_to_string(&cond.alternate))
+                expr_to_string(&cond.alternate)
+            )
         }
         Expression::LogicalExpression(logic) => {
             let left = expr_to_string(&logic.left);
@@ -307,8 +304,10 @@ fn expr_to_string(expr: &Expression) -> String {
             format!("({} {} {})", left, op, right)
         }
         Expression::ObjectExpression(obj) => {
-            let props: Vec<String> = obj.properties.iter().filter_map(|prop| {
-                match prop {
+            let props: Vec<String> = obj
+                .properties
+                .iter()
+                .filter_map(|prop| match prop {
                     ObjectPropertyKind::ObjectProperty(p) => {
                         let key = match &p.key {
                             PropertyKey::StaticIdentifier(id) => id.name.to_string(),
@@ -318,15 +317,16 @@ fn expr_to_string(expr: &Expression) -> String {
                         Some(format!(".{} = {}", key, val))
                     }
                     _ => None,
-                }
-            }).collect();
+                })
+                .collect();
             format!(".{{ {} }}", props.join(", "))
         }
         Expression::ParenthesizedExpression(parens) => {
             format!("({})", expr_to_string(&parens.expression))
         }
         Expression::TemplateLiteral(tl) => {
-            if tl.expressions.is_empty() && tl.quasis.len() == 1
+            if tl.expressions.is_empty()
+                && tl.quasis.len() == 1
                 && let Some(cooked) = &tl.quasis[0].value.cooked
             {
                 return format!("\"{}\"", cooked);
@@ -346,7 +346,11 @@ fn expr_to_string(expr: &Expression) -> String {
             parts.join(", ")
         }
         Expression::AssignmentExpression(assign) => {
-            format!("({} = {})", expr_to_string_simple(&assign.left), expr_to_string(&assign.right))
+            format!(
+                "({} = {})",
+                expr_to_string_simple(&assign.left),
+                expr_to_string(&assign.right)
+            )
         }
         _ => "<expr>".to_string(),
     }
@@ -393,7 +397,10 @@ fn extract_callee_name(expr: &str) -> Option<String> {
     let first_paren = expr.find('(')?;
     let fn_name = &expr[..first_paren];
     // Verify it's a simple identifier (not a complex expression)
-    if fn_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
+    if fn_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    {
         Some(fn_name.to_string())
     } else {
         None
@@ -450,9 +457,6 @@ mod tests {
         );
         // Not a closure function — no rewrite
         let empty: HashSet<&str> = HashSet::new();
-        assert_eq!(
-            rewrite_closure_calls("add(1, 2)", &empty),
-            "add(1, 2)"
-        );
+        assert_eq!(rewrite_closure_calls("add(1, 2)", &empty), "add(1, 2)");
     }
 }

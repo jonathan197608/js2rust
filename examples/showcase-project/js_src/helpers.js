@@ -14,10 +14,15 @@ import { add, mathSqrt, compareLt, withDefault, hexNum } from './utils.js';
 // Stub implementations return 0 to allow compilation.
 // TODO: Enable after class support is added.
 
+/** @returns {i64} */
 export function testClassBasic() { return 12; }       // Rectangle(3,4).area() = 12
+/** @returns {i64} */
 export function testClassSettings() { return 50; }     // Settings().getVolume() = 50
+/** @returns {i64} */
 export function testClassVec2() { return 10; }        // Vec2(3,7).sum() = 10
+/** @returns {i64} */
 export function testClassVec2Product() { return 30; }  // Vec2(5,6).product() = 30
+/** @returns {i64} */
 export function testClassStatic() { return 30; }       // PointFactory.create(10,20) getX+getY = 30
 
 // ── Closures (S8) ───────────────────────────────────────
@@ -49,18 +54,21 @@ export function testObjAccess() {
 
 // Static array element interpolation
 // NOTE: dynamic arr.push() not supported in native_proto (see #231); use static init.
+/** @returns {string} */
 export function tplDynArr() {
     const arr = [10, 20, 30];
     return `first=${arr[0]},last=${arr[2]}`;
 }
 
 // Object property interpolation
+/** @returns {string} */
 export function tplObjProp() {
     const point = { x: 10, y: 20 };
     return `(${point.x},${point.y})`;
 }
 
 // Multi-line with interpolation
+/** @returns {string} */
 export function tplMultiLine() {
     const a = 100;
     const b = 200;
@@ -70,11 +78,13 @@ sum=${a + b}`;
 }
 
 // Plain template (no interpolation)
+/** @returns {string} */
 export function tplPlain() {
     return `hello world`;
 }
 
 // Array math inside template
+/** @returns {string} */
 export function tplArrMath() {
     const arr = [3, 7];
     return `sum=${arr[0] + arr[1]}`;
@@ -83,6 +93,7 @@ export function tplArrMath() {
 // ── Control flow (S5.1) ─────────────────────────────────────────
 
 // if-else chain (proven)
+/** @returns {i64} */
 export function testIfElse(x) {
     if (x > 0) {
         return 1;
@@ -94,6 +105,7 @@ export function testIfElse(x) {
 }
 
 // Switch-case (proven)
+/** @returns {i64} */
 export function testSwitch(x) {
     switch (x) {
         case 1: return 10;
@@ -133,6 +145,7 @@ export function testMultiDecl() {
 
 // ── Boolean/null literals (S4.1) ───────────────────────────────
 
+/** @returns {i64} */
 export function testBoolLiteral() {
     const t = true;
     if (t) { return 1; }
@@ -141,6 +154,7 @@ export function testBoolLiteral() {
 
 // ── Block statement (S5.1) ──────────────────────────────────────
 
+/** @returns {i64} */
 export function testBlock() {
     {
         const x = 42;

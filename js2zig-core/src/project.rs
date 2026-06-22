@@ -62,8 +62,7 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     // 1. build.zig.zon - first pass without fingerprint
     let zon_path = project_dir.join("build.zig.zon");
     let zon_no_fp = generate_zon(&opts.name, None);
-    fs::write(&zon_path, &zon_no_fp)
-        .map_err(|e| format!("write build.zig.zon: {}", e))?;
+    fs::write(&zon_path, &zon_no_fp).map_err(|e| format!("write build.zig.zon: {}", e))?;
 
     // 2. build.zig
     let build_zig = generate_build_zig(&opts.name);
@@ -80,8 +79,7 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
 
     // Generate orchestrator lib.zig
     let lib_zig = generate_orchestrator_lib(opts);
-    fs::write(src_dir.join("lib.zig"), lib_zig)
-        .map_err(|e| format!("write lib.zig: {}", e))?;
+    fs::write(src_dir.join("lib.zig"), lib_zig).map_err(|e| format!("write lib.zig: {}", e))?;
 
     // 3.5 src/host.zig — host function extern "c" declarations
     if !opts.host_header.is_empty() {
@@ -126,7 +124,8 @@ fn compute_fingerprint(project_dir: &Path) -> Option<String> {
         let after = &stderr[pos + prefix.len()..];
         let fp = after.split_whitespace().next()?;
         // Validate it looks like 0xHEX (length varies: 16–18 chars)
-        if fp.starts_with("0x") && fp.len() >= 16 && fp[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        if fp.starts_with("0x") && fp.len() >= 16 && fp[2..].chars().all(|c| c.is_ascii_hexdigit())
+        {
             return Some(fp.to_string());
         }
     }
@@ -278,7 +277,10 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     if !dep_modules.is_empty() {
         out.push_str("// --- Dependency module imports ---\n");
         for mod_name in &dep_modules {
-            out.push_str(&format!("const {} = @import(\"{}.zig\");\n", mod_name, mod_name));
+            out.push_str(&format!(
+                "const {} = @import(\"{}.zig\");\n",
+                mod_name, mod_name
+            ));
         }
         out.push('\n');
 
@@ -340,7 +342,9 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     // Uses platform-independent types so it compiles on all targets (native, WASM).
     if opts.include_windows_stub {
         out.push_str("// Windows stub for Zig std.debug.SelfInfo.Windows\n");
-        out.push_str("// Uses raw types (u32/i32) to avoid importing std.os.windows on non-Windows.\n");
+        out.push_str(
+            "// Uses raw types (u32/i32) to avoid importing std.os.windows on non-Windows.\n",
+        );
         out.push_str("pub export fn LdrRegisterDllNotification(\n");
         out.push_str("    Flags: u32,\n");
         out.push_str("    NotificationFunction: ?*const anyopaque,\n");
@@ -391,7 +395,9 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     // Only generate in one group to avoid duplicate symbols when linking multiple groups.
     if opts.include_windows_stub {
         out.push_str("/// Initialize with ArenaAllocator (lock-free, thread-safe).\n");
-        out.push_str("/// Call this from Rust via C ABI before using any function that allocates.\n");
+        out.push_str(
+            "/// Call this from Rust via C ABI before using any function that allocates.\n",
+        );
         out.push_str("pub export fn js2rust_init() void {\n");
         out.push_str("    init_js2rust();\n");
         out.push_str("}\n\n");
@@ -399,7 +405,9 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push_str("pub export fn js2rust_deinit() void {\n");
         out.push_str("    deinit_js2rust();\n");
         out.push_str("}\n\n");
-        out.push_str("/// Reset the arena allocator (free all allocated memory, keep allocator active).\n");
+        out.push_str(
+            "/// Reset the arena allocator (free all allocated memory, keep allocator active).\n",
+        );
         out.push_str("/// Call this periodically to prevent excessive memory usage.\n");
         out.push_str("/// Thread-safe: uses atomic spinlock internally.\n");
         out.push_str("pub export fn js2rust_reset() void {\n");

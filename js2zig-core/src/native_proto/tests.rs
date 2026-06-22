@@ -3,8 +3,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::native_proto::transpile_js;
     use crate::native_proto::TranspileResult;
+    use crate::native_proto::transpile_js;
     use std::process::Command;
 
     /// Helper: parse JS source, then call transpile_js with the parsed Program.
@@ -34,6 +34,9 @@ mod tests {
             // (ast-check does not load the imported file, so the path need not exist.)
             if zig_code.contains("js_allocator") {
                 w.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
+            }
+            if zig_code.contains("js_array") {
+                w.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
             }
             w.push('\n');
             w.push_str(zig_code);
@@ -74,12 +77,18 @@ mod tests {
     macro_rules! transpile_and_assert {
         ($js:expr, $test_name:expr) => {{
             let result = parse_and_transpile($js, None).unwrap();
-            println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
+            println!(
+                "=== Generated Zig ({}) ===\n{}",
+                $test_name, result.zig_code
+            );
             result.zig_code
         }};
         ($js:expr, $test_name:expr, $exports:expr) => {{
             let result = parse_and_transpile($js, Some($exports)).unwrap();
-            println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
+            println!(
+                "=== Generated Zig ({}) ===\n{}",
+                $test_name, result.zig_code
+            );
             result.zig_code
         }};
     }
@@ -91,13 +100,19 @@ mod tests {
     macro_rules! transpile_and_check {
         ($js:expr, $test_name:expr) => {{
             let result = parse_and_transpile($js, None).unwrap();
-            println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
+            println!(
+                "=== Generated Zig ({}) ===\n{}",
+                $test_name, result.zig_code
+            );
             assert_zig_ast_check(&result.zig_code, $test_name);
             result.zig_code
         }};
         ($js:expr, $test_name:expr, $exports:expr) => {{
             let result = parse_and_transpile($js, Some($exports)).unwrap();
-            println!("=== Generated Zig ({}) ===\n{}", $test_name, result.zig_code);
+            println!(
+                "=== Generated Zig ({}) ===\n{}",
+                $test_name, result.zig_code
+            );
             assert_zig_ast_check(&result.zig_code, $test_name);
             result.zig_code
         }};
@@ -124,7 +139,9 @@ mod tests {
         if let Err(ref err) = result {
             assert!(
                 err.contains(expected_err),
-                "Expected error containing '{}', got: {}", expected_err, err
+                "Expected error containing '{}', got: {}",
+                expected_err,
+                err
             );
             return;
         }
@@ -135,7 +152,8 @@ mod tests {
                 assert!(
                     all_errors.contains(expected_err),
                     "Expected error containing '{}', got errors: {}",
-                    expected_err, all_errors
+                    expected_err,
+                    all_errors
                 );
                 return;
             }
@@ -176,8 +194,12 @@ function abs(x) {
         let zig = transpile_and_assert!(js, "test_native_proto_if_else");
         // Rule 7: non-export function param is anytype
         // Rule 6: return type is anytype (both return expressions have type anytype)
-        assert!(zig.contains("fn abs(x: anytype) anytype {"));
-        assert!(zig.contains("if (x") && zig.contains(">= 0"), "missing if: {}", zig);
+        assert!(zig.contains("fn abs(x: anytype) i64 {"));
+        assert!(
+            zig.contains("if (x") && zig.contains(">= 0"),
+            "missing if: {}",
+            zig
+        );
         assert!(zig.contains("return x;"));
         assert!(zig.contains("} else {"));
         assert!(zig.contains("return -x;"));
@@ -197,7 +219,11 @@ function grade(score) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_elseif");
-        assert!(zig.contains("else") && zig.contains("if (score"), "missing else if: {}", zig);
+        assert!(
+            zig.contains("else") && zig.contains("if (score"),
+            "missing else if: {}",
+            zig
+        );
         assert!(zig.contains("\"A\""));
         assert!(zig.contains("\"B\""));
         assert!(zig.contains("\"C\""));
@@ -267,7 +293,12 @@ function ops(a, b) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_operators");
-        assert!(zig.contains("+") && zig.contains("-") && zig.contains("*") && zig.contains("/"));
+        assert!(
+            zig.contains("+")
+                && zig.contains("-")
+                && zig.contains("*")
+                && zig.contains("@divTrunc")
+        );
         assert!(zig.contains("==") && zig.contains("!=") && zig.contains("<") && zig.contains(">"));
     }
 
@@ -356,7 +387,11 @@ function factorial(n) {
         // Rule 5: var type annotation only if type is definite (radius is anytype, so r2 type is indeterminate)
         assert!(zig.contains("var r2 = radius * radius;"));
         assert!(zig.contains("factorial(")); // function call (no try)
-        assert!(zig.contains("if (n") && zig.contains("<="), "missing if: {}", zig);
+        assert!(
+            zig.contains("if (n") && zig.contains("<="),
+            "missing if: {}",
+            zig
+        );
     }
 
     #[test]
@@ -383,7 +418,11 @@ function count_down(n) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_do_while");
-        assert!(zig.contains("while (true) {"), "missing while true: {}", zig);
+        assert!(
+            zig.contains("while (true) {"),
+            "missing while true: {}",
+            zig
+        );
         assert!(zig.contains("if (x > 0)"), "missing if condition: {}", zig);
         assert!(zig.contains("else { break; }"), "missing break: {}", zig);
         assert!(zig.contains("return x;"));
@@ -527,7 +566,8 @@ pub fn main() !void {{
             .args(&[
                 "build-exe",
                 zig_path_full.to_str().unwrap(),
-                "-O", "Debug",
+                "-O",
+                "Debug",
                 &format!("-femit-bin={}", exe_path.to_str().unwrap()),
             ])
             .output();
@@ -560,10 +600,18 @@ pub fn main() !void {{
         println!("Program stderr: {}", stderr);
 
         // Step 6: verify output (std.debug.print outputs to stderr)
-        assert!(stderr.contains("add(10,20)=30"),
-            "expected 'add(10,20)=30' in stderr, got: stdout='{}' stderr='{}'", stdout, stderr);
-        assert!(stderr.contains("abs(-42)=42"),
-            "expected 'abs(-42)=42' in stderr, got: stdout='{}' stderr='{}'", stdout, stderr);
+        assert!(
+            stderr.contains("add(10,20)=30"),
+            "expected 'add(10,20)=30' in stderr, got: stdout='{}' stderr='{}'",
+            stdout,
+            stderr
+        );
+        assert!(
+            stderr.contains("abs(-42)=42"),
+            "expected 'abs(-42)=42' in stderr, got: stdout='{}' stderr='{}'",
+            stdout,
+            stderr
+        );
 
         println!("=== E2E test passed! Generated Zig code compiles and runs correctly ===");
     }
@@ -722,7 +770,11 @@ function main() {
         // Should generate struct definition.
         assert!(zig.contains("const User = struct {"));
         // Should generate std.json.parse(User, ...) for JSON.parse() with @type.
-        assert!(zig.contains("std.json.parse(User,"), "Expected std.json.parse(User, ...), got: {}", zig);
+        assert!(
+            zig.contains("std.json.parse(User,"),
+            "Expected std.json.parse(User, ...), got: {}",
+            zig
+        );
         // Should have catch unreachable.
         assert!(zig.contains("catch unreachable"));
     }
@@ -800,11 +852,18 @@ function getName(user) {
         // This should error because export function needs @returns
         // But currently errors are in result.errors, not Err
         let result = parse_and_transpile(js, Some(exports));
-        assert!(result.is_ok(), "transpile should succeed (errors in .errors field)");
+        assert!(
+            result.is_ok(),
+            "transpile should succeed (errors in .errors field)"
+        );
         let tr = result.unwrap();
         assert!(!tr.errors.is_empty(), "should have errors");
         let all_errs = tr.errors.join("; ");
-        assert!(all_errs.contains("@returns"), "should mention @returns, got: {}", all_errs);
+        assert!(
+            all_errs.contains("@returns"),
+            "should mention @returns, got: {}",
+            all_errs
+        );
     }
 
     #[test]
@@ -871,10 +930,18 @@ function greet(name) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_string_concat");
-        
+
         // Verify string concatenation uses std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices)
-        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for string concat, got:\n{}", zig);
-        assert!(!zig.contains(" ++ "), "Should not use ++ operator for string concat, got:\n{}", zig);
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for string concat, got:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains(" ++ "),
+            "Should not use ++ operator for string concat, got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -890,8 +957,16 @@ function fullName(first, last) {
         println!("=== Generated Zig code ===\n{}", zig);
 
         // Verify all concatenations use std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices)
-        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for string concat, got:\n{}", zig);
-        assert!(!zig.contains(" ++ "), "Should not use ++ operator for string concat, got:\n{}", zig);
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for string concat, got:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains(" ++ "),
+            "Should not use ++ operator for string concat, got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -904,9 +979,21 @@ function label() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_template_literal_basic");
-        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint for template literal, got:\n{}", zig);
-        assert!(zig.contains("js_allocator.getAllocator()"), "Expected arena allocator, got:\n{}", zig);
-        assert!(zig.contains("\"n={d}\""), "Expected type-aware `n={{d}}` format string, got:\n{}", zig);
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for template literal, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_allocator.getAllocator()"),
+            "Expected arena allocator, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("\"n={d}\""),
+            "Expected type-aware `n={{d}}` format string, got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -921,8 +1008,16 @@ sum=${a + b}`;
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_template_literal_multiline");
-        assert!(zig.contains("std.fmt.allocPrint"), "Expected allocPrint, got:\n{}", zig);
-        assert!(zig.contains("\\n"), "Expected escaped newline in format string, got:\n{}", zig);
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("\\n"),
+            "Expected escaped newline in format string, got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -934,8 +1029,16 @@ function banner() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_template_literal_text_only");
-        assert!(zig.contains("\"hello world\""), "Expected plain string literal, got:\n{}", zig);
-        assert!(!zig.contains("allocPrint"), "Pure-text template should not allocate, got:\n{}", zig);
+        assert!(
+            zig.contains("\"hello world\""),
+            "Expected plain string literal, got:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains("allocPrint"),
+            "Pure-text template should not allocate, got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -951,7 +1054,7 @@ export function greet(name) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_export_returns_string");
-        
+
         // Rule 1: JSDoc @returns should be used correctly
         assert!(zig.contains("pub fn greet(name: []const u8) []const u8 {"));
         // Note: string return from export function needs free_string scheme
@@ -992,31 +1095,91 @@ export function getUserJson(user) {
         let zig = transpile_and_check!(js, "test_native_proto_typedef_tojson");
 
         // Verify Address struct is generated
-        assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
-        assert!(zig.contains("street: []const u8,"), "Expected street field, got:\n{}", zig);
-        assert!(zig.contains("city: []const u8,"), "Expected city field, got:\n{}", zig);
-        assert!(zig.contains("zip: i64,"), "Expected zip field, got:\n{}", zig);
+        assert!(
+            zig.contains("const Address = struct {"),
+            "Expected Address struct, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("street: []const u8,"),
+            "Expected street field, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("city: []const u8,"),
+            "Expected city field, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("zip: i64,"),
+            "Expected zip field, got:\n{}",
+            zig
+        );
 
         // Verify Address has toJson() method
-        assert!(zig.contains("pub fn toJson") && zig.contains("Address"), "Expected toJson() for Address, got:\n{}", zig);
+        assert!(
+            zig.contains("pub fn toJson") && zig.contains("Address"),
+            "Expected toJson() for Address, got:\n{}",
+            zig
+        );
 
         // Verify User struct is generated with all field types
-        assert!(zig.contains("const User = struct {"), "Expected User struct, got:\n{}", zig);
-        assert!(zig.contains("name: []const u8,"), "Expected name field, got:\n{}", zig);
-        assert!(zig.contains("age: i64,"), "Expected age field, got:\n{}", zig);
-        assert!(zig.contains("tags: []const []const u8,"), "Expected tags field (string[]), got:\n{}", zig);
-        assert!(zig.contains("scores: []const i64,"), "Expected scores field (number[]), got:\n{}", zig);
-        assert!(zig.contains("addresses: []const Address,"), "Expected addresses field (Address[]), got:\n{}", zig);
+        assert!(
+            zig.contains("const User = struct {"),
+            "Expected User struct, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("name: []const u8,"),
+            "Expected name field, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("age: i64,"),
+            "Expected age field, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("tags: []const []const u8,"),
+            "Expected tags field (string[]), got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("scores: []const i64,"),
+            "Expected scores field (number[]), got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("addresses: []const Address,"),
+            "Expected addresses field (Address[]), got:\n{}",
+            zig
+        );
 
         // Verify User has toJson() method
-        assert!(zig.contains("pub fn toJson") && zig.contains("const User"), "Expected toJson() for User, got:\n{}", zig);
+        assert!(
+            zig.contains("pub fn toJson") && zig.contains("const User"),
+            "Expected toJson() for User, got:\n{}",
+            zig
+        );
 
         // Verify toJson() uses std.json.fmt() for serialization
-        assert!(zig.contains("std.json.fmt"), "Expected std.json.fmt() in toJson(), got:\n{}", zig);
-        assert!(zig.contains("Writer.Allocating"), "Expected Writer.Allocating in toJson(), got:\n{}", zig);
+        assert!(
+            zig.contains("std.json.fmt"),
+            "Expected std.json.fmt() in toJson(), got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("Writer.Allocating"),
+            "Expected Writer.Allocating in toJson(), got:\n{}",
+            zig
+        );
 
         // Verify JSON.stringify() is converted to user.toJson() (no allocator parameter)
-        assert!(zig.contains("try user.toJson()"), "Expected try user.toJson(), got:\n{}", zig);
+        assert!(
+            zig.contains("try user.toJson()"),
+            "Expected try user.toJson(), got:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -1054,22 +1217,46 @@ export function processUser() {
         let zig = transpile_and_check!(js, "test_native_proto_json_parse_nested");
 
         // Verify Address and User structs are generated
-        assert!(zig.contains("const Address = struct {"), "Expected Address struct, got:\n{}", zig);
-        assert!(zig.contains("const User = struct {"), "Expected User struct, got:\n{}", zig);
+        assert!(
+            zig.contains("const Address = struct {"),
+            "Expected Address struct, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("const User = struct {"),
+            "Expected User struct, got:\n{}",
+            zig
+        );
 
         // Verify JSON.parse() is converted to std.json.parse()
-        assert!(zig.contains("std.json.parse(User,"), "Expected std.json.parse(User, ...), got:\n{}", zig);
+        assert!(
+            zig.contains("std.json.parse(User,"),
+            "Expected std.json.parse(User, ...), got:\n{}",
+            zig
+        );
 
         // Verify data variable uses the correct type
-        assert!(zig.contains("const data: User ="), "Expected 'const data: User', got:\n{}", zig);
+        assert!(
+            zig.contains("const data: User ="),
+            "Expected 'const data: User', got:\n{}",
+            zig
+        );
 
         // Verify member access works (data.name, data.addresses[0].city)
-        assert!(zig.contains("data.name"), "Expected data.name access, got:\n{}", zig);
-        assert!(zig.contains("data.addresses[0].city"), "Expected data.addresses[0].city access, got:\n{}", zig);
+        assert!(
+            zig.contains("data.name"),
+            "Expected data.name access, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("data.addresses[0].city"),
+            "Expected data.addresses[0].city access, got:\n{}",
+            zig
+        );
     }
-    
+
     // ── End-to-end test: JSON serialization/deserialization ─────────────
-    
+
     #[test]
     fn test_native_proto_e2e_json() {
         // JS source: @typedef with toJson() and JSON.parse()
@@ -1191,24 +1378,34 @@ pub fn main() !void {{
 
         // Step 5: run the executable and verify output
         if exe_path.exists() {
-            let run_output = std::process::Command::new(&exe_path)
-                .output()
-                .unwrap();
+            let run_output = std::process::Command::new(&exe_path).output().unwrap();
 
             let stdout = String::from_utf8_lossy(&run_output.stdout);
             println!("=== Program output ===\n{}", stdout);
 
             // Verify output contains expected strings
-            assert!(stdout.contains("Serialized JSON:"), "Expected 'Serialized JSON:' in output, got: {}", stdout);
-            assert!(stdout.contains("Bob"), "Expected 'Bob' in output, got: {}", stdout);
-            assert!(stdout.contains("Parsed: Alice is 30 years old"), "Expected 'Parsed: Alice is 30 years old' in output, got: {}", stdout);
+            assert!(
+                stdout.contains("Serialized JSON:"),
+                "Expected 'Serialized JSON:' in output, got: {}",
+                stdout
+            );
+            assert!(
+                stdout.contains("Bob"),
+                "Expected 'Bob' in output, got: {}",
+                stdout
+            );
+            assert!(
+                stdout.contains("Parsed: Alice is 30 years old"),
+                "Expected 'Parsed: Alice is 30 years old' in output, got: {}",
+                stdout
+            );
         } else {
             eprintln!("Executable not found: {:?}", exe_path);
         }
     }
-    
+
     // ── Test: Optional properties (@property {type} [name]) ─────────────
-    
+
     #[test]
     fn test_native_proto_optional_property() {
         // JS source: @typedef with optional property
@@ -1244,17 +1441,37 @@ export function createUser() {
         let zig = transpile_and_check!(js, "test_native_proto_optional_property");
 
         // Step2: verify optional fields are generated with ?Type
-        assert!(zig.contains("name: []const u8,"), "Expected 'name: []const u8,' in:\n{}", zig);
-        assert!(zig.contains("age: i64,"), "Expected 'age: i64,' in:\n{}", zig);
-        assert!(zig.contains("email: ?[]const u8,"), "Expected 'email: ?[]const u8,' (optional) in:\n{}", zig);
-        assert!(zig.contains("score: ?i64,"), "Expected 'score: ?i64,' (optional) in:\n{}", zig);
+        assert!(
+            zig.contains("name: []const u8,"),
+            "Expected 'name: []const u8,' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("age: i64,"),
+            "Expected 'age: i64,' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("email: ?[]const u8,"),
+            "Expected 'email: ?[]const u8,' (optional) in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("score: ?i64,"),
+            "Expected 'score: ?i64,' (optional) in:\n{}",
+            zig
+        );
 
         // Step3: verify toJson() is generated (std.json.fmt() handles ?T automatically)
-        assert!(zig.contains("pub fn toJson"), "Expected toJson() method in:\n{}", zig);
+        assert!(
+            zig.contains("pub fn toJson"),
+            "Expected toJson() method in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: Math built-in methods ─────────────────────
-    
+
     #[test]
     fn test_native_proto_math_methods() {
         // JS source: Math.abs(), Math.floor(), Math.ceil(), Math.round(), Math.sqrt()
@@ -1281,9 +1498,9 @@ export function testMath(x) {
         assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
         assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
     }
-    
+
     // ── Test: Array.pop() built-in method ─────────────
-    
+
     #[test]
     fn test_native_proto_array_pop() {
         // JS source: arr.pop()
@@ -1299,11 +1516,15 @@ export function popArray() {
         let zig = transpile_and_check!(js, "test_native_proto_array_pop");
 
         // Step2: verify arr.pop() is generated
-        assert!(zig.contains("arr.pop()"), "Expected 'arr.pop()' in:\n{}", zig);
+        assert!(
+            zig.contains("arr.pop()"),
+            "Expected 'arr.pop()' in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: Array.indexOf() built-in method ─────────────
-    
+
     #[test]
     fn test_native_proto_array_indexof() {
         // JS source: arr.indexOf(x) - returns index or -1
@@ -1322,13 +1543,25 @@ export function findIndex(target) {
         // Verify labeled block with for loop is generated
         assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
-        assert!(zig.contains(".items"), "Expected .items access in:\n{}", zig);
-        assert!(zig.contains("break :blk"), "Expected break :blk in:\n{}", zig);
-        assert!(zig.contains("@as(i64, -1)"), "Expected @as(i64, -1) fallback in:\n{}", zig);
+        assert!(
+            zig.contains(".items"),
+            "Expected .items access in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk"),
+            "Expected break :blk in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("@as(i64, -1)"),
+            "Expected @as(i64, -1) fallback in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: Array.includes() built-in method ─────────────
-    
+
     #[test]
     fn test_native_proto_array_includes() {
         // JS source: arr.includes(x) - returns bool, used in numeric context
@@ -1350,12 +1583,20 @@ export function hasItem(target) {
         // Verify labeled block with for loop and bool return
         assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
-        assert!(zig.contains("break :blk true"), "Expected break :blk true in:\n{}", zig);
-        assert!(zig.contains("break :blk false"), "Expected break :blk false in:\n{}", zig);
+        assert!(
+            zig.contains("break :blk true"),
+            "Expected break :blk true in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk false"),
+            "Expected break :blk false in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: Array.join() built-in method ─────────────
-    
+
     #[test]
     fn test_native_proto_array_join() {
         // JS source: arr.join(sep) - returns string
@@ -1371,15 +1612,31 @@ export function joinNumbers() {
         let zig = transpile_and_check!(js, "test_native_proto_array_join");
 
         // Verify std.io.Writer.Allocating is used
-        assert!(zig.contains("std.io.Writer.Allocating"), "Expected std.io.Writer.Allocating in:\n{}", zig);
-        assert!(zig.contains("__join_buf"), "Expected __join_buf variable in:\n{}", zig);
-        assert!(zig.contains("writeAll"), "Expected writeAll for separator in:\n{}", zig);
+        assert!(
+            zig.contains("std.io.Writer.Allocating"),
+            "Expected std.io.Writer.Allocating in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("__join_buf"),
+            "Expected __join_buf variable in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("writeAll"),
+            "Expected writeAll for separator in:\n{}",
+            zig
+        );
         // i64 elements should use {d} format
-        assert!(zig.contains("{d}"), "Expected {{d}} format for i64 elements in:\n{}", zig);
+        assert!(
+            zig.contains("{d}"),
+            "Expected {{d}} format for i64 elements in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: Array.slice() built-in method ─────────────
-    
+
     #[test]
     fn test_native_proto_array_slice() {
         // JS source: arr.slice(start, end) - returns sub-slice
@@ -1396,11 +1653,15 @@ export function sliceSum() {
         let zig = transpile_and_check!(js, "test_native_proto_array_slice");
 
         // Verify slice expression is generated: arr.items[1..4]
-        assert!(zig.contains(".items[1..4]"), "Expected '.items[1..4]' slice in:\n{}", zig);
+        assert!(
+            zig.contains(".items[1..4]"),
+            "Expected '.items[1..4]' slice in:\n{}",
+            zig
+        );
     }
-    
+
     // ── Test: New Math methods (random, pow, max, min) ─────────────────────
-    
+
     #[test]
     fn test_native_proto_math_new_methods() {
         // JS source: Math.random(), Math.pow(), Math.max(), Math.min()
@@ -1421,8 +1682,16 @@ export function testMathNew(x, y) {
         let zig = transpile_and_assert!(js, "test_native_proto_math_new_methods");
 
         // Step2: verify Math methods are generated correctly
-        assert!(zig.contains("std.crypto.random.int(u32)"), "Expected 'std.crypto.random.int(u32)' in:\n{}", zig);
-        assert!(zig.contains("std.math.pow(f64,"), "Expected 'std.math.pow(f64,' in:\n{}", zig);
+        assert!(
+            zig.contains("std.crypto.random.int(u32)"),
+            "Expected 'std.crypto.random.int(u32)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "Expected 'std.math.pow(f64,' in:\n{}",
+            zig
+        );
         assert!(zig.contains("if ("), "Expected 'if (' in max/min:\n{}", zig);
     }
 
@@ -1453,23 +1722,40 @@ function double(x) {
         let zig = transpile_and_check!(js, "test_native_proto_await", exports);
 
         // Step2: verify async function signature has `io: anytype`
-        assert!(zig.contains("io: anytype"),
-            "Expected 'io: anytype' in async function signature, got:\n{}", zig);
+        assert!(
+            zig.contains("io: anytype"),
+            "Expected 'io: anytype' in async function signature, got:\n{}",
+            zig
+        );
 
         // Step3: verify await is translated to io.async() + .await(io)
-        assert!(zig.contains("io.async("),
-            "Expected 'io.async(' in generated code, got:\n{}", zig);
-        assert!(zig.contains(".await(io)"),
-            "Expected '.await(io)' in generated code, got:\n{}", zig);
+        assert!(
+            zig.contains("io.async("),
+            "Expected 'io.async(' in generated code, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".await(io)"),
+            "Expected '.await(io)' in generated code, got:\n{}",
+            zig
+        );
         // defer _ = _tN.cancel(io) catch undefined;
-        assert!(zig.contains("defer"),
-            "Expected 'defer' in generated code, got:\n{}", zig);
-        assert!(zig.contains(".cancel(io)"),
-            "Expected '.cancel(io)' in generated code, got:\n{}", zig);
+        assert!(
+            zig.contains("defer"),
+            "Expected 'defer' in generated code, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".cancel(io)"),
+            "Expected '.cancel(io)' in generated code, got:\n{}",
+            zig
+        );
 
         // Step4: verify non-async function does NOT have `io: anytype`
-        assert!(zig.contains("fn double(x: anytype) i64 {"),
-            "Expected non-async function signature, got:\n{}", zig);
+        assert!(
+            zig.contains("fn double(x: anytype) i64 {"),
+            "Expected non-async function signature, got:\n{}",
+            zig
+        );
     }
 }
-

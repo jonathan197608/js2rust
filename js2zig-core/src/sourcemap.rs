@@ -22,7 +22,9 @@ impl LineIndex {
                 starts.push((i + 1) as u32);
             }
         }
-        Self { line_starts: starts }
+        Self {
+            line_starts: starts,
+        }
     }
 
     /// Convert a byte offset to (line, col), both 1-based.
@@ -69,13 +71,7 @@ impl SourceMap {
     }
 
     /// Record a mapping. `zig_line` is 1-based.
-    pub fn add(
-        &mut self,
-        zig_line: u32,
-        js_line: u32,
-        js_col: u32,
-        kind: &str,
-    ) {
+    pub fn add(&mut self, zig_line: u32, js_line: u32, js_col: u32, kind: &str) {
         self.mappings.push(SourceMapping {
             zig_line,
             js_file: self.source_file.clone(),

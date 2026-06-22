@@ -22,7 +22,9 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
 use syn::{
-    braced, parenthesized, parse::{Parse, ParseStream}, Ident, LitStr, Token
+    braced, parenthesized,
+    parse::{Parse, ParseStream},
+    Ident, LitStr, Token,
 };
 
 // ── C ABI export metadata (mirrors the JSON schema) ───────────────
@@ -155,8 +157,11 @@ fn type_name_to_host_type(name: &str) -> Result<js2zig_core::HostType, String> {
         "bool" => Ok(js2zig_core::HostType::Bool),
         "str" => Ok(js2zig_core::HostType::Str),
         "void" => Ok(js2zig_core::HostType::Void),
-        other => Err(format!("js2rust_bridge: unknown host type '{}'. \
-            Valid types: i64, i32, f64, bool, str, void", other)),
+        other => Err(format!(
+            "js2rust_bridge: unknown host type '{}'. \
+            Valid types: i64, i32, f64, bool, str, void",
+            other
+        )),
     }
 }
 
@@ -179,45 +184,54 @@ pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
 // ── Transpile + generate FFI ──────────────────────────────────────
 
 fn generate(input: &MacroInput) -> TokenStream {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| ".".to_string());
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 
     // Resolve core JS file path
     let js_file_path = std::path::Path::new(&manifest_dir).join(&input.js_file);
 
     // Resolve cache directory for Zig output
-    let cache_dir = std::path::Path::new(&manifest_dir)
-        .join(".js2zig-cache");
+    let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
 
     // Convert host function declarations to js2zig_core::HostFunction
     let mut host_functions = Vec::new();
     for hf in &input.host_fns {
-        let params: Result<Vec<_>, _> = hf.params.iter()
+        let params: Result<Vec<_>, _> = hf
+            .params
+            .iter()
             .map(|t| type_name_to_host_type(t))
             .collect();
         let params = match params {
             Ok(p) => p,
-            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
-                .to_compile_error().into(),
+            Err(e) => {
+                return syn::Error::new(proc_macro2::Span::call_site(), e)
+                    .to_compile_error()
+                    .into()
+            }
         };
 
         let return_type = match type_name_to_host_type(&hf.return_type) {
             Ok(js2zig_core::HostType::Void) => None,
             Ok(t) => Some(t),
-            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
-                .to_compile_error().into(),
+            Err(e) => {
+                return syn::Error::new(proc_macro2::Span::call_site(), e)
+                    .to_compile_error()
+                    .into()
+            }
         };
 
         // Convert async return fields
-        let async_return_fields: Result<Vec<_>, _> = hf.async_return_fields.iter()
-            .map(|(name, ty)| {
-                type_name_to_host_type(ty).map(|t| (name.clone(), t))
-            })
+        let async_return_fields: Result<Vec<_>, _> = hf
+            .async_return_fields
+            .iter()
+            .map(|(name, ty)| type_name_to_host_type(ty).map(|t| (name.clone(), t)))
             .collect();
         let async_return_fields = match async_return_fields {
             Ok(v) => v,
-            Err(e) => return syn::Error::new(proc_macro2::Span::call_site(), e)
-                .to_compile_error().into(),
+            Err(e) => {
+                return syn::Error::new(proc_macro2::Span::call_site(), e)
+                    .to_compile_error()
+                    .into()
+            }
         };
 
         host_functions.push(js2zig_core::HostFunction {
@@ -340,7 +354,8 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             needs_jsstr = true;
         }
 
-        let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
+        let safe_wrapper =
+            generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
         safe_wrappers.push(safe_wrapper);
     }
 

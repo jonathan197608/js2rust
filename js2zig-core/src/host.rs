@@ -123,7 +123,11 @@ impl HostFnRegistry {
 
     /// Return the JS-side names of all registered async functions.
     pub fn async_fn_names(&self) -> Vec<String> {
-        self.fns.iter().filter(|f| f.is_async).map(|f| f.name.clone()).collect()
+        self.fns
+            .iter()
+            .filter(|f| f.is_async)
+            .map(|f| f.name.clone())
+            .collect()
     }
 
     /// Return struct field types for all registered host structs.
@@ -131,16 +135,20 @@ impl HostFnRegistry {
     pub fn struct_fields_map(&self) -> std::collections::HashMap<String, Vec<(String, ZigType)>> {
         let mut map = std::collections::HashMap::new();
         for s in &self.structs {
-            let fields: Vec<(String, ZigType)> = s.fields.iter().map(|f| {
-                let zig_type = match f.zig_type.as_str() {
-                    "i64" | "i32" => ZigType::I64,
-                    "f64" => ZigType::F64,
-                    "bool" => ZigType::Bool,
-                    "[]const u8" => ZigType::Str,
-                    _ => ZigType::Void,
-                };
-                (f.name.clone(), zig_type)
-            }).collect();
+            let fields: Vec<(String, ZigType)> = s
+                .fields
+                .iter()
+                .map(|f| {
+                    let zig_type = match f.zig_type.as_str() {
+                        "i64" | "i32" => ZigType::I64,
+                        "f64" => ZigType::F64,
+                        "bool" => ZigType::Bool,
+                        "[]const u8" => ZigType::Str,
+                        _ => ZigType::Void,
+                    };
+                    (f.name.clone(), zig_type)
+                })
+                .collect();
             map.insert(s.zig_name.clone(), fields);
         }
         map
@@ -224,13 +232,12 @@ impl HostFnRegistry {
                     .collect();
 
                 let ret_cabi = match &def.ret_type {
-                    ZigType::NamedStruct(name) => {
-                        self.structs
-                            .iter()
-                            .find(|s| &s.zig_name == name)
-                            .map(|s| s.c_name.clone())
-                            .unwrap_or_else(|| name.clone())
-                    }
+                    ZigType::NamedStruct(name) => self
+                        .structs
+                        .iter()
+                        .find(|s| &s.zig_name == name)
+                        .map(|s| s.c_name.clone())
+                        .unwrap_or_else(|| name.clone()),
                     other => Self::to_c_abi_type(other),
                 };
 
@@ -269,7 +276,10 @@ impl HostFnRegistry {
                 }
                 for (pname, ptype) in &def.params {
                     if *ptype == ZigType::Str {
-                        out.push_str(&format!("    defer js_allocator.g_alloc().free(c_{});\n", pname));
+                        out.push_str(&format!(
+                            "    defer js_allocator.g_alloc().free(c_{});\n",
+                            pname
+                        ));
                     }
                 }
                 if def.params.iter().any(|(_, t)| *t == ZigType::Str) {
@@ -339,13 +349,12 @@ impl HostFnRegistry {
 
             // Return type in C ABI representation
             let ret_cabi = match &def.ret_type {
-                ZigType::NamedStruct(name) => {
-                    self.structs
-                        .iter()
-                        .find(|s| &s.zig_name == name)
-                        .map(|s| s.c_name.clone())
-                        .unwrap_or_else(|| name.clone())
-                }
+                ZigType::NamedStruct(name) => self
+                    .structs
+                    .iter()
+                    .find(|s| &s.zig_name == name)
+                    .map(|s| s.c_name.clone())
+                    .unwrap_or_else(|| name.clone()),
                 other => Self::to_c_abi_type(other),
             };
 
@@ -426,11 +435,7 @@ impl HostFnRegistry {
                     out.push_str("    host_free(@ptrCast(@constCast(raw)));\n");
                     out.push_str("    return owned;\n");
                 } else if is_void {
-                    out.push_str(&format!(
-                        "    {}({});\n",
-                        def.c_name,
-                        call_args.join(", ")
-                    ));
+                    out.push_str(&format!("    {}({});\n", def.c_name, call_args.join(", ")));
                 } else {
                     out.push_str(&format!(
                         "    return {}({});\n",
@@ -547,7 +552,8 @@ impl HostFnRegistry {
                     .iter()
                     .map(|p| {
                         let n = p["name"].as_str().ok_or("missing param name")?;
-                        let t = Self::parse_type_str(p["type"].as_str().ok_or("missing param type")?);
+                        let t =
+                            Self::parse_type_str(p["type"].as_str().ok_or("missing param type")?);
                         Ok((n.into(), t))
                     })
                     .collect::<Result<Vec<_>, &str>>()?;
@@ -555,14 +561,17 @@ impl HostFnRegistry {
 
                 if is_async {
                     let c_name = f["c_name"].as_str().ok_or("async fn missing c_name")?;
-                    let ret_struct_name = f["ret_struct"].as_str().ok_or("async fn missing ret_struct")?;
+                    let ret_struct_name = f["ret_struct"]
+                        .as_str()
+                        .ok_or("async fn missing ret_struct")?;
                     let ret_struct = struct_map
                         .get(ret_struct_name)
                         .cloned()
                         .ok_or_else(|| format!("undefined struct: {}", ret_struct_name))?;
                     registry.register_async(name, c_name, params, ret_struct);
                 } else {
-                    let ret_type = Self::parse_type_str(f["ret_type"].as_str().ok_or("missing ret_type")?);
+                    let ret_type =
+                        Self::parse_type_str(f["ret_type"].as_str().ok_or("missing ret_type")?);
                     registry.register(name, params, ret_type);
                 }
             }
