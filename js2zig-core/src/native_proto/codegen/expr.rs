@@ -1148,12 +1148,39 @@ impl Codegen {
             }
 
             // ── Array methods (with closure) ─────────────────────────────
-            // These methods require closure support, which is not fully implemented yet.
-            // Generate simplified implementations for now (incorrect but compilable).
+            // ForEach: generate for loop that inlines the callback body
             builtins::BuiltinCall::ArrayForEach => {
-                // arr.forEach(fn) → for (arr.items) |_| {} (simplified: ignore fn)
-                // Note: forEach is a statement in Zig (no return value)
+                // arr.forEach(fn) → for (arr.items) |item| { /* fn body */ }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    // Check if first argument is an arrow function
+                    if ce.arguments.len() >= 1
+                        && let Some(arg) = ce.arguments.get(0)
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
+                    {
+                        // Generate for loop
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        // Print arrow function parameters
+                        if arrow.params.items.len() == 1 {
+                            if let Some(param_name) = crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern) {
+                                self.write(&format!("{}| {{ ", param_name));
+                            } else {
+                                self.write("_| {{ ");
+                            }
+                        } else {
+                            self.write("_| {{ ");
+                        }
+                        // Print arrow function body (statements)
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            self.emit_fn_stmt(stmt);
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        return true;
+                    }
+                    // Fallback: empty for loop
                     self.write(&format!("for ({}.items) |_| {{}}", obj_name));
                     return true;
                 }
@@ -1179,17 +1206,85 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayReduce => {
-                // arr.reduce(fn, init) → init (simplified: return initial value)
-                if ce.arguments.len() >= 2
-                    && let Some(arg) = ce.arguments.get(1)
-                    && let Some(expr) = arg.as_expression()
-                {
-                    self.emit_expr(expr);
-                    return true;
+                // arr.reduce(fn, init) → generate for loop with accumulator
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    // Get initial value from second argument
+                    let init_expr = if ce.arguments.len() >= 2
+                        && let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "0".to_string()
+                    };
+                    // Check if first argument is an arrow function
+                    if ce.arguments.len() >= 1
+                        && let Some(arg) = ce.arguments.get(0)
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
+                    {
+                        // Generate labeled block with accumulator
+                        self.write("(blk: { ");
+                        // Determine accumulator type from init expression
+                        let acc_type = if init_expr.contains(".") { "f64" } else { "i64" };
+                        self.write(&format!("var acc: {} = {}; ", acc_type, init_expr));
+                        // Generate for loop
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        // Print arrow function parameters
+                        if arrow.params.items.len() >= 2 {
+                            // First param is accumulator, second is current item
+                            if let Some(param_name) = crate::native_proto::infer::binding_name(&arrow.params.items[1].pattern) {
+                                self.write(&format!("{}| {{ ", param_name));
+                            } else {
+                                self.write("_| { ");
+                            }
+                        } else {
+                            self.write("_| { ");
+                        }
+                        // Print arrow function body
+                        // arrow.body is FunctionBody, which has .statements field
+                        // For concise body (acc, x) => acc + x, oxc converts it to
+                        // FunctionBody with a single ExpressionStatement
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            // For return statements in reduce callback, replace "return expr;" with "acc = expr;"
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("acc = ");
+                                    self.emit_expr(expr);
+                                    self.write(";");
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                // Concise body: (acc, x) => acc + x
+                                // oxc converts to ExpressionStatement
+                                // For reduce, we need to assign the expression to acc
+                                self.write("acc = ");
+                                self.emit_expr(&es.expression);
+                                self.write(";");
+                            } else {
+                                self.emit_fn_stmt(stmt);
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk acc; })");
+                        return true;
+                    }
+                    // Fallback: just return initial value
+                    if ce.arguments.len() >= 2
+                        && let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr(expr);
+                        return true;
+                    }
+                    self.write("0");
+                    true
+                } else {
+                    false
                 }
-                // Fallback: return 0
-                self.write("0");
-                true
             }
 
             builtins::BuiltinCall::ArraySome => {

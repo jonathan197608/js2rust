@@ -17,7 +17,14 @@ impl Codegen {
             if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                 // Use Zig 'const' when the variable is never mutated (regardless of JS const/var/let).
                 // Only use Zig 'var' when the variable is actually reassigned.
-                let is_const = !self.type_info.mutated_vars.contains(name);
+                let fn_prefix = self
+                    .current_fn
+                    .as_deref()
+                    .unwrap_or("__toplevel__");
+                let is_const = !self
+                    .type_info
+                    .mutated_vars
+                    .contains(&format!("{}::{}", fn_prefix, name));
 
                 // Skip unused toplevel constants to avoid Zig unused warnings.
                 let has_type_annotation = self
@@ -240,6 +247,8 @@ impl Codegen {
             .as_ref()
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
+        let saved_current_fn = std::mem::take(&mut self.current_fn);
+        self.current_fn = Some(name.to_string());
 
         // Check if function contains await (from pre-computed type_info)
         let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
@@ -404,6 +413,7 @@ impl Codegen {
                 can_throw: self.fn_has_throw,
             });
         }
+        self.current_fn = saved_current_fn;
     }
 }
 

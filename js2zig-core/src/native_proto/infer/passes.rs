@@ -28,29 +28,39 @@ impl TypeInferrer {
                 }
             }
             Statement::FunctionDeclaration(fd) => {
+                let saved_current_fn = std::mem::take(&mut self.current_fn);
+                self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
                 if let Some(body) = &fd.body {
                     for s in &body.statements {
                         self.walk_stmt_for_analysis(s);
                     }
                 }
+                self.current_fn = saved_current_fn;
             }
             Statement::ExportNamedDeclaration(export_decl) => {
-                if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration
-                    && let Some(body) = &fd.body
-                {
-                    for s in &body.statements {
-                        self.walk_stmt_for_analysis(s);
+                if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
+                    let saved_current_fn = std::mem::take(&mut self.current_fn);
+                    self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
+                    if let Some(body) = &fd.body {
+                        for s in &body.statements {
+                            self.walk_stmt_for_analysis(s);
+                        }
                     }
+                    self.current_fn = saved_current_fn;
                 }
             }
             Statement::ExportDefaultDeclaration(export_decl) => {
                 if let ExportDefaultDeclarationKind::FunctionDeclaration(fd) =
                     &export_decl.declaration
-                    && let Some(body) = &fd.body
                 {
-                    for s in &body.statements {
-                        self.walk_stmt_for_analysis(s);
+                    let saved_current_fn = std::mem::take(&mut self.current_fn);
+                    self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
+                    if let Some(body) = &fd.body {
+                        for s in &body.statements {
+                            self.walk_stmt_for_analysis(s);
+                        }
                     }
+                    self.current_fn = saved_current_fn;
                 }
             }
             Statement::ExpressionStatement(es) => {
@@ -191,24 +201,38 @@ impl TypeInferrer {
                     }
                 }
             }
+            Expression::ArrowFunctionExpression(arrow) => {
+                // Walk arrow function body to detect mutations to outer variables.
+                // Arrow functions capture from the outer scope, so mutations
+                // inside the arrow function affect the outer scope's variables.
+                for stmt in &arrow.body.statements {
+                    self.walk_stmt_for_analysis(stmt);
+                }
+            }
             _ => {}
         }
     }
 
     pub(crate) fn check_assignment_target(&mut self, target: &AssignmentTarget) {
+        let prefix = self
+            .current_fn
+            .as_deref()
+            .unwrap_or("__toplevel__");
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                // Simple variable assignment: e.g., `total = total + 1`
-                self.mutated_vars.insert(id.name.to_string());
+                self.mutated_vars
+                    .insert(format!("{}::{}", prefix, id.name));
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars.insert(id.name.to_string());
+                    self.mutated_vars
+                        .insert(format!("{}::{}", prefix, id.name));
                 }
             }
             AssignmentTarget::ComputedMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars.insert(id.name.to_string());
+                    self.mutated_vars
+                        .insert(format!("{}::{}", prefix, id.name));
                 }
             }
             _ => {}

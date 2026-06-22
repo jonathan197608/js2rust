@@ -94,6 +94,8 @@ pub struct TypeInferrer {
     pub(crate) host_return_types: HashMap<String, ZigType>,
     /// Host struct field types: struct_name → (field_name → ZigType)
     pub(crate) host_struct_fields: HashMap<String, HashMap<String, ZigType>>,
+    /// Current function name being analyzed (for function-scoped mutated_vars)
+    pub(crate) current_fn: Option<String>,
 }
 
 impl TypeInferrer {
@@ -112,6 +114,7 @@ impl TypeInferrer {
             exported_functions: None,
             host_return_types: HashMap::new(),
             host_struct_fields: HashMap::new(),
+            current_fn: None,
         }
     }
 

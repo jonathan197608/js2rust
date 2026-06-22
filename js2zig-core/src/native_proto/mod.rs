@@ -339,4 +339,6 @@ pub struct Codegen {
     /// throw statements inside the try block emit `break :label error.JsThrow`
     /// instead of `return error.JsThrow`.
     pub inside_try_block: Option<String>,
+    /// Current function name being generated (for function-scoped mutated_vars).
+    pub current_fn: Option<String>,
 }
