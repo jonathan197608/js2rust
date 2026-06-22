@@ -193,16 +193,16 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     if let Some(ref host_config) = config.host_config {
         // Convert HostFunction to HostFnDef and register
         for f in &host_config.functions {
-            let params: Vec<(String, crate::infer::ZigType)> = f.params.iter().enumerate().map(|(i, t)| {
-                (format!("arg{}", i), crate::infer::ZigType::from(*t))
+            let params: Vec<(String, crate::native_proto::ZigType)> = f.params.iter().enumerate().map(|(i, t)| {
+                (format!("arg{}", i), crate::native_proto::ZigType::from(*t))
             }).collect();
 
             if f.is_async {
                 if f.async_return_fields.is_empty() {
                     // Async with simple return type
                     let return_type = f.return_type
-                        .map(crate::infer::ZigType::from)
-                        .unwrap_or(crate::infer::ZigType::Void);
+                        .map(crate::native_proto::ZigType::from)
+                        .unwrap_or(crate::native_proto::ZigType::Void);
                     host_fns.register_async_simple(&f.name, &f.name, params, return_type);
                 } else {
                     // Async with struct return type
@@ -225,8 +225,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     host_fns.register_async(&f.name, &f.name, params, struct_def);
                 }
             } else {
-                let return_type = f.return_type.map(crate::infer::ZigType::from);
-                host_fns.register(&f.name, params, return_type.unwrap_or(crate::infer::ZigType::Void));
+                let return_type = f.return_type.map(crate::native_proto::ZigType::from);
+                host_fns.register(&f.name, params, return_type.unwrap_or(crate::native_proto::ZigType::Void));
             }
         }
     } else {
@@ -296,7 +296,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut all_module_exports: Vec<(String, String)> = Vec::new();
             let mut all_test_code = String::new();
             let mut combined_zig = String::new();
-            let mut all_cabi_exports: Vec<crate::codegen::CabiExport> = Vec::new();
+            let mut all_cabi_exports: Vec<crate::native_proto::NativeCabiExport> = Vec::new();
             let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
             let mut has_error = false;
 
@@ -388,9 +388,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let program = crate::parser::parse(&allocator, stripped);
 
                 // Collect host function return types and param types for type inference
-                let mut host_return_types: std::collections::HashMap<String, crate::infer::ZigType> =
+                let mut host_return_types: std::collections::HashMap<String, crate::native_proto::ZigType> =
                     std::collections::HashMap::new();
-                let mut host_param_types: std::collections::HashMap<String, Vec<crate::infer::ZigType>> =
+                let mut host_param_types: std::collections::HashMap<String, Vec<crate::native_proto::ZigType>> =
                     std::collections::HashMap::new();
                 for def in host_fns.iter() {
                     host_return_types.insert(def.name.clone(), def.ret_type.clone());
@@ -399,20 +399,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         def.params.iter().map(|(_, t)| t.clone()).collect(),
                     );
                 }
-                let host_struct_fields = host_fns.struct_fields_map();
+                let _host_struct_fields = host_fns.struct_fields_map();
 
-                let async_fns: std::collections::HashSet<String> =
+                let _async_fns: std::collections::HashSet<String> =
                     host_fns.async_fn_names().into_iter().collect();
-
-                // Host function type info (currently not passed to native_proto)
-                // TODO: Modify transpile_js() to accept host function info
-                // for better type inference of host function calls.
-                let _host_info = crate::codegen::HostTypeInfo {
-                    return_types: &host_return_types,
-                    param_types: &host_param_types,
-                    struct_fields: &host_struct_fields,
-                    async_fns: &async_fns,
-                };
 
                 // Use native_proto (strict static type system)
                 let transpile_result = crate::native_proto::transpile_js(stripped, Some(codegen_exports));
@@ -421,9 +411,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     match transpile_result {
                         Ok(result) => {
                             // Convert errors to diagnostics
-                            let diagnostics: Vec<crate::infer::Diagnostic> = result.errors.iter()
-                                .map(|err| crate::infer::Diagnostic {
-                                    kind: crate::infer::DiagnosticKind::Error,
+                            let diagnostics: Vec<crate::native_proto::Diagnostic> = result.errors.iter()
+                                .map(|err| crate::native_proto::Diagnostic {
+                                    kind: crate::native_proto::DiagnosticKind::Error,
                                     span: None,
                                     message: err.clone(),
                                 })
@@ -435,10 +425,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             // closure_fns: not supported in native_proto yet, use empty
                             let closure_fns: std::collections::HashSet<String> = std::collections::HashSet::new();
                             
-                            // fn_return_types: use var_types (convert to infer::ZigType)
-                            let fn_return_types: std::collections::HashMap<String, crate::infer::ZigType> = 
+                            // fn_return_types: use var_types (native_proto::ZigType)
+                            let fn_return_types: std::collections::HashMap<String, crate::native_proto::ZigType> =
                                 result.var_types.iter()
-                                    .map(|(k, v)| (k.clone(), v.to_infer_type()))
+                                    .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect();
                             
                             // source_map: not generated by native_proto yet
@@ -448,27 +438,27 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         }
                         Err(e) => {
                             // Return error as diagnostic
-                            let diagnostics = vec![crate::infer::Diagnostic {
-                                kind: crate::infer::DiagnosticKind::Error,
+                            let diagnostics = vec![crate::native_proto::Diagnostic {
+                                kind: crate::native_proto::DiagnosticKind::Error,
                                 span: None,
                                 message: e,
                             }];
-                            (String::new(), diagnostics, HashSet::new(), HashMap::new(), Vec::<crate::codegen::CabiExport>::new(), crate::sourcemap::SourceMap::new(""))
+                            (String::new(), diagnostics, HashSet::new(), HashMap::new(), Vec::<crate::native_proto::NativeCabiExport>::new(), crate::sourcemap::SourceMap::new(""))
                         }
                     };
 
                 let has_file_error = diagnostics
                     .iter()
-                    .any(|d| d.kind == crate::infer::DiagnosticKind::Error);
+                    .any(|d| d.kind == crate::native_proto::DiagnosticKind::Error);
                 if has_file_error {
                     let err_count = diagnostics
                         .iter()
-                        .filter(|d| d.kind == crate::infer::DiagnosticKind::Error)
+                        .filter(|d| d.kind == crate::native_proto::DiagnosticKind::Error)
                         .count();
                     eprintln!("  skip '{}': {} codegen error(s)", member, err_count);
                     for diag in &diagnostics {
-                        if diag.kind == crate::infer::DiagnosticKind::Error {
-                            eprintln!("    {}", diag.format_with_source(stripped));
+                        if diag.kind == crate::native_proto::DiagnosticKind::Error {
+                            eprintln!("    {}", diag.message.as_str());
                         }
                     }
                     has_error = true;
@@ -478,7 +468,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 if !diagnostics.is_empty() {
                     eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
                     for diag in &diagnostics {
-                        eprintln!("    {}", diag.format_with_source(stripped));
+                        eprintln!("    {}", diag.message.as_str());
                     }
                 }
 
@@ -496,7 +486,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 per_file_modules.push(crate::project::PerFileModule {
                     mod_name: module_name.clone(),
-                    zig_code: zig_code.clone(),
+                    zig_code: zig_code.to_string(),
                     dep_imports,
                 });
 
@@ -515,7 +505,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         closure_fns.iter().map(|s| s.as_str()).collect();
                     let ret_type_map: HashMap<String, String> = fn_return_types
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.to_zig_str()))
+                        .map(|(k, v)| (k.clone(), v.to_zig_type()))
                         .collect();
                     let file_test_code =
                         crate::testgen::generate_test_code(&test_cases, &closure_fn_refs, &ret_type_map);
@@ -537,7 +527,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             for (exp_name, mod_name) in &all_module_exports {
                 name_to_module.entry(exp_name).or_insert(mod_name);
             }
-            let mut name_to_cabi: HashMap<&str, &crate::codegen::CabiExport> = HashMap::new();
+            let mut name_to_cabi: HashMap<&str, &crate::native_proto::NativeCabiExport> = HashMap::new();
             for exp in &all_cabi_exports {
                 name_to_cabi.entry(&exp.name).or_insert(exp);
             }
@@ -700,7 +690,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 /// the function with idiomatic Zig string types.
 pub fn gen_cabi_wrappers(
     name_to_module: &HashMap<&str, &str>,
-    name_to_cabi: &HashMap<&str, &crate::codegen::CabiExport>,
+    name_to_cabi: &HashMap<&str, &crate::native_proto::NativeCabiExport>,
 ) -> String {
     use std::collections::HashSet;
 
@@ -715,8 +705,8 @@ pub fn gen_cabi_wrappers(
             continue;
         };
 
-        let returns_string = exp.ret_type == crate::infer::ZigType::String;
-        let ret_is_js_any = exp.ret_type == crate::infer::ZigType::JsAny;
+        let returns_string = exp.ret_type == crate::native_proto::ZigType::Str;
+        let ret_is_js_any = exp.ret_type == crate::native_proto::ZigType::Anytype;
 
         // JsAny returns: re-export as const alias (no CABI export).
         // This lets Zig test code call the function, but no C ABI symbol is emitted.
@@ -731,7 +721,7 @@ pub fn gen_cabi_wrappers(
 
         // Skip functions with JsValue/JsAny parameters (C ABI doesn't support unions)
         let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
-            *ty == crate::infer::ZigType::JsValue || *ty == crate::infer::ZigType::JsAny
+            *ty == crate::native_proto::ZigType::Void || *ty == crate::native_proto::ZigType::Anytype
         });
         if has_js_obj_param {
             // Re-export as const alias (no C ABI export)
@@ -751,7 +741,7 @@ pub fn gen_cabi_wrappers(
 
         for (pname, ptype) in &exp.params {
             arg_names.push(pname.clone());
-            if *ptype == crate::infer::ZigType::String {
+            if *ptype == crate::native_proto::ZigType::Str {
                 cabi_params.push(format!("{}: [*:0]const u8", pname));
                 zig_params.push(format!("{}: []const u8", pname));
                 cabi_to_zig_conversions.push(format!(
@@ -759,7 +749,7 @@ pub fn gen_cabi_wrappers(
                     p = pname
                 ));
             } else {
-                let zig_ty = ptype.to_zig_str();
+                let zig_ty = ptype.to_zig_type();
                 cabi_params.push(format!("{}: {}", pname, zig_ty));
                 zig_params.push(format!("{}: {}", pname, zig_ty));
             }
@@ -768,7 +758,7 @@ pub fn gen_cabi_wrappers(
         // Build call args: for CABI wrapper, string params use _slice version
         let zig_call_args: String = arg_names.join(", ");
         let cabi_call_args: String = exp.params.iter().map(|(pname, ptype)| {
-            if *ptype == crate::infer::ZigType::String {
+            if *ptype == crate::native_proto::ZigType::Str {
                 format!("{}_slice", pname)
             } else {
                 pname.clone()
@@ -821,12 +811,12 @@ pub fn gen_cabi_wrappers(
                     name = name,
                 ));
             } else {
-                let ret_zig = if exp.ret_type == crate::infer::ZigType::Void {
+                let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
                     "void".to_string()
                 } else {
-                    exp.ret_type.to_zig_str()
+                    exp.ret_type.to_zig_type()
                 };
-                let exp_ret_is_js_value = exp.ret_type == crate::infer::ZigType::JsValue;
+                let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
@@ -902,12 +892,12 @@ pub fn gen_cabi_wrappers(
                 name = name,
             ));
         } else {
-            let ret_zig = if exp.ret_type == crate::infer::ZigType::Void {
+            let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
                 "void".to_string()
             } else {
-                exp.ret_type.to_zig_str()
+                exp.ret_type.to_zig_type()
             };
-            let exp_ret_is_js_value = exp.ret_type == crate::infer::ZigType::JsValue;
+            let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
 
             if ret_zig == "void" {
                 out.push_str(&format!(
@@ -948,7 +938,7 @@ pub fn gen_cabi_wrappers(
 pub fn write_cabi_metadata(
     out_dir: &Path,
     group_name: &str,
-    cabi_exports: &[crate::codegen::CabiExport],
+    cabi_exports: &[crate::native_proto::NativeCabiExport],
     host_fns: &crate::host::HostFnRegistry,
     include_init: bool,
 ) {
@@ -958,7 +948,7 @@ pub fn write_cabi_metadata(
     let exports_path = project_dir.join("cabi_exports.json");
     let mut exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
-        .filter(|exp| exp.ret_type != crate::infer::ZigType::JsAny)
+        .filter(|exp| exp.ret_type != crate::native_proto::ZigType::Anytype)
         .map(|exp| {
             // Build params list
             let mut params: Vec<serde_json::Value> = exp
@@ -967,7 +957,7 @@ pub fn write_cabi_metadata(
                 .map(|(name, ty)| {
                     serde_json::json!({
                         "name": name,
-                        "zig_type": ty.to_zig_str()
+                        "zig_type": ty.to_zig_type()
                     })
                 })
                 .collect();

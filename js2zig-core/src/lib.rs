@@ -2,9 +2,7 @@
 
 pub mod analyzer;
 pub mod builtins;
-pub mod codegen;
 pub mod host;
-pub mod infer;
 pub mod parser;
 pub mod project;
 pub mod sourcemap;
@@ -17,9 +15,6 @@ pub mod native_proto;
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
-// ── Public API types ─────────────────────────────────────────────
-
-use crate::infer::ZigType;
 use std::path::PathBuf;
 
 /// Host function type for FFI binding generation.
@@ -31,19 +26,6 @@ pub enum HostType {
     I64,
     F64,
     Str,  // *const c_char
-}
-
-impl From<HostType> for infer::ZigType {
-    fn from(t: HostType) -> Self {
-        match t {
-            HostType::Void => ZigType::Void,
-            HostType::Bool => ZigType::Bool,
-            HostType::I32 => ZigType::I32,
-            HostType::I64 => ZigType::I64,
-            HostType::F64 => ZigType::F64,
-            HostType::Str => ZigType::String,
-        }
-    }
 }
 
 /// Host function description for FFI binding generation.
@@ -185,7 +167,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 pub fn write_cabi_metadata(
     out_dir: &std::path::Path,
     group_name: &str,
-    cabi_exports: &[codegen::CabiExport],
+    cabi_exports: &[native_proto::NativeCabiExport],
     host_fns: &host::HostFnRegistry,
     include_init: bool,
 ) {

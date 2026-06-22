@@ -10,6 +10,36 @@
 // - Array elements must all have the same type.
 // - push() must push the same type as the array element type.
 
+/// C ABI export metadata for a single function.
+/// Used by pipeline.rs to generate C ABI wrappers.
+#[derive(Debug, Clone)]
+pub struct NativeCabiExport {
+    pub name: String,
+    /// (param_name, param_type)
+    pub params: Vec<(String, ZigType)>,
+    pub ret_type: ZigType,
+    /// Whether a corresponding free_xxx function exists (returns string).
+    pub has_free_func: bool,
+    /// Whether this is an async export (impl takes io: Io as first param).
+    pub is_async: bool,
+}
+
+/// Diagnostic severity level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticKind {
+    Error,
+    Warning,
+}
+
+/// A single diagnostic message (compile error/warning).
+#[derive(Debug, Clone)]
+pub struct Diagnostic {
+    pub kind: DiagnosticKind,
+    /// (line, col) in JS source — None for non-location errors.
+    pub span: Option<(usize, usize)>,
+    pub message: String,
+}
+
 /// Result of transpiling a JS file to Zig.
 /// Contains the generated Zig source AND metadata needed by the pipeline
 /// (exported functions, diagnostics, etc.).
@@ -26,7 +56,7 @@ pub struct TranspileResult {
     pub var_types: std::collections::HashMap<String, ZigType>,
     /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).
     /// Uses `codegen::CabiExport` for compatibility with the pipeline.
-    pub cabi_exports: Vec<crate::codegen::CabiExport>,
+    pub cabi_exports: Vec<NativeCabiExport>,
 }
 
 /// An exported function from a JS file.
@@ -43,6 +73,8 @@ pub struct ExportedFunction {
 /// Only static types are supported; unknown types are compile errors.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ZigType {
+    /// No return value
+    Void,
     /// i64
     I64,
     /// f64
@@ -55,6 +87,8 @@ pub enum ZigType {
     ArrayList(Box<ZigType>),
     /// Anonymous struct: .{ .field1 = T1, .field2 = T2 }
     Struct(Vec<(String, ZigType)>),
+    /// Named struct (defined in HostStructDef, e.g. "UserInfo")
+    NamedStruct(String),
     /// anytype (for non-export function parameters)
     Anytype,
 }
@@ -70,34 +104,17 @@ impl ZigType {
             (ZigType::I64, ZigType::F64) => true,
             // F64 cannot be narrowed to I64 (would lose precision).
             (ZigType::F64, ZigType::I64) => false,
+            // Void is only compatible with Void.
+            (ZigType::Void, ZigType::Void) => true,
             // Otherwise, not compatible.
             _ => false,
-        }
-    }
-
-    /// Convert native_proto::ZigType to infer::ZigType (for pipeline integration).
-    pub fn to_infer_type(&self) -> crate::infer::ZigType {
-        match self {
-            ZigType::I64 => crate::infer::ZigType::I64,
-            ZigType::F64 => crate::infer::ZigType::F64,
-            ZigType::Bool => crate::infer::ZigType::Bool,
-            ZigType::Str => crate::infer::ZigType::String,
-            ZigType::ArrayList(inner) => crate::infer::ZigType::Array(Box::new(inner.to_infer_type())),
-            ZigType::Struct(fields) => {
-                // Convert native_proto struct fields to infer::ZigType::Object fields
-                let obj_fields: Vec<(String, crate::infer::ZigType)> = fields
-                    .iter()
-                    .map(|(name, ty)| (name.clone(), ty.to_infer_type()))
-                    .collect();
-                crate::infer::ZigType::Object { fields: obj_fields }
-            }
-            ZigType::Anytype => crate::infer::ZigType::I64, // Default for anytype
         }
     }
 
     /// Get the Zig type string for code generation.
     pub fn to_zig_type(&self) -> String {
         match self {
+            ZigType::Void => "void".to_string(),
             ZigType::I64 => "i64".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
@@ -113,18 +130,21 @@ impl ZigType {
                 s.push_str(" }");
                 s
             }
+            ZigType::NamedStruct(name) => name.clone(),
             ZigType::Anytype => "anytype".to_string(),
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
     pub fn to_cabi_str(&self) -> String {
         match self {
+            ZigType::Void => "void".to_string(),
             ZigType::I64 => "i64".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
             ZigType::Str => "[*c]u8".to_string(),  // C pointer
             ZigType::ArrayList(_) => "std.ArrayList".to_string(),  // Not directly supported in C ABI
-            ZigType::Struct(_) => "struct".to_string(),  // Not directly supported in C ABI
+            ZigType::Struct(_) => "struct".to_string(),  // Anonymous struct - not directly supported in C ABI
+            ZigType::NamedStruct(_) => "struct".to_string(),  // Named struct - C ABI name depends on HostStructDef
             ZigType::Anytype => "i64".to_string(),  // Default for anytype (not used in C ABI)
         }
     }
@@ -133,7 +153,25 @@ impl ZigType {
     pub fn is_string(&self) -> bool {
         matches!(self, ZigType::Str)
     }
+    /// Check if this type is void (no return value).
+    pub fn is_void(&self) -> bool {
+        matches!(self, ZigType::Void)
+    }
 }
+
+    /// Convert HostType to ZigType.
+    impl From<crate::HostType> for ZigType {
+        fn from(t: crate::HostType) -> Self {
+            match t {
+                crate::HostType::Void => ZigType::Void,
+                crate::HostType::Bool => ZigType::Bool,
+                crate::HostType::I32 => ZigType::I64,  // i32 widens to i64
+                crate::HostType::I64 => ZigType::I64,
+                crate::HostType::F64 => ZigType::F64,
+                crate::HostType::Str => ZigType::Str,
+            }
+        }
+    }
 
 /// JSDoc 解析结果，传递给 Codegen
 #[derive(Debug, Clone)]
@@ -202,18 +240,15 @@ fn transpile_js_inner(js_source: &str, exported_functions: Option<std::collectio
         exports: cg.exported_fns.clone(),
         var_types: cg.var_types.clone(),
         cabi_exports: cg.exported_fns.into_iter().map(|ef| {
-            // Convert ExportedFunction to codegen::CabiExport
-            let ret_type = ef.return_type.to_infer_type();
-            let has_free_func = ef.returns_string;
-            let params: Vec<(String, crate::infer::ZigType)> = ef.params.iter()
+            let params: Vec<(String, ZigType)> = ef.params.iter()
                 .enumerate()
-                .map(|(i, p)| (format!("arg{}", i), p.to_infer_type()))
+                .map(|(i, p)| (format!("arg{}", i), p.clone()))
                 .collect();
-            crate::codegen::CabiExport {
+            NativeCabiExport {
                 name: ef.name,
                 params,
-                ret_type,
-                has_free_func,
+                ret_type: ef.return_type,
+                has_free_func: ef.returns_string,
                 is_async: false, // TODO: support async
             }
         }).collect(),
@@ -248,8 +283,8 @@ pub struct Codegen {
     pub fn_return_types: std::collections::HashMap<String, ZigType>,
     /// Exported functions metadata (for pipeline C ABI wrapper generation).
     pub exported_fns: Vec<ExportedFunction>,
-    /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).
-    pub cabi_exports: Vec<crate::codegen::CabiExport>,
+    /// C ABI exports metadata (for pipeline C ABI wrapper generation).
+    pub cabi_exports: Vec<NativeCabiExport>,
     /// Task counter for generating unique task variable names in async/await code.
     pub task_counter: u32,
     /// Exported function names (from pipeline's strip_imports_extract_exports).

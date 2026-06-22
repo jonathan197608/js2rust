@@ -9,7 +9,7 @@
 //! In `main.rs`, create a `HostFnRegistry`, register Rust functions, and pass it
 //! to `project.rs` for metadata generation and to `builtins`/`codegen` for translation.
 
-use crate::infer::ZigType;
+use crate::native_proto::ZigType;
 use std::path::Path;
 
 // ── Struct definitions ──
@@ -99,7 +99,7 @@ impl HostFnRegistry {
             name: name.to_string(),
             c_name: c_name.to_string(),
             params,
-            ret_type: ZigType::Struct(struct_zig_name),
+            ret_type: ZigType::NamedStruct(struct_zig_name),
             is_async: true,
         });
     }
@@ -136,8 +136,8 @@ impl HostFnRegistry {
                     "i64" | "i32" => ZigType::I64,
                     "f64" => ZigType::F64,
                     "bool" => ZigType::Bool,
-                    "[]const u8" => ZigType::String,
-                    _ => ZigType::JsValue,
+                    "[]const u8" => ZigType::Str,
+                    _ => ZigType::Void,
                 };
                 (f.name.clone(), zig_type)
             }).collect();
@@ -207,7 +207,7 @@ impl HostFnRegistry {
 
         // Emit host_free declaration if any function returns a string
         // (needed to free Rust-allocated string memory after copying to Zig allocator)
-        let has_string_return_fn = self.fns.iter().any(|f| f.ret_type == ZigType::String);
+        let has_string_return_fn = self.fns.iter().any(|f| f.ret_type == ZigType::Str);
         if has_string_return_fn {
             out.push_str("// Free string memory allocated by Rust (CString::into_raw)\n");
             out.push_str("extern \"c\" fn host_free(ptr: ?*anyopaque) callconv(.c) void;\n\n");
@@ -224,7 +224,7 @@ impl HostFnRegistry {
                     .collect();
 
                 let ret_cabi = match &def.ret_type {
-                    ZigType::Struct(name) => {
+                    ZigType::NamedStruct(name) => {
                         self.structs
                             .iter()
                             .find(|s| &s.zig_name == name)
@@ -243,11 +243,11 @@ impl HostFnRegistry {
                 ));
 
                 // Async wrapper function (callable from Zig via host.{name}_async)
-                let ret_type_str = def.ret_type.to_zig_str();
+                let ret_type_str = def.ret_type.to_zig_type();
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
                     .collect();
 
                 out.push_str(&format!(
@@ -260,7 +260,7 @@ impl HostFnRegistry {
 
                 // Convert string params to null-terminated C strings
                 for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::String {
+                    if *ptype == ZigType::Str {
                         out.push_str(&format!(
                             "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return error.OutOfMemory;\n",
                             pname, pname
@@ -268,11 +268,11 @@ impl HostFnRegistry {
                     }
                 }
                 for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::String {
+                    if *ptype == ZigType::Str {
                         out.push_str(&format!("    defer js_allocator.g_alloc().free(c_{});\n", pname));
                     }
                 }
-                if def.params.iter().any(|(_, t)| *t == ZigType::String) {
+                if def.params.iter().any(|(_, t)| *t == ZigType::Str) {
                     out.push('\n');
                 }
 
@@ -281,7 +281,7 @@ impl HostFnRegistry {
                     .params
                     .iter()
                     .map(|(n, t)| {
-                        if *t == ZigType::String {
+                        if *t == ZigType::Str {
                             format!("c_{}", n)
                         } else {
                             n.clone()
@@ -290,7 +290,7 @@ impl HostFnRegistry {
                     .collect();
 
                 // Call extern and convert return
-                if let ZigType::Struct(ref zig_name) = def.ret_type {
+                if let ZigType::NamedStruct(ref zig_name) = def.ret_type {
                     if let Some(s) = self.structs.iter().find(|s| &s.zig_name == zig_name) {
                         out.push_str(&format!(
                             "    const raw = {}({});\n",
@@ -339,7 +339,7 @@ impl HostFnRegistry {
 
             // Return type in C ABI representation
             let ret_cabi = match &def.ret_type {
-                ZigType::Struct(name) => {
+                ZigType::NamedStruct(name) => {
                     self.structs
                         .iter()
                         .find(|s| &s.zig_name == name)
@@ -350,8 +350,8 @@ impl HostFnRegistry {
             };
 
             // Check if this function needs string conversion wrappers
-            let has_string_params = def.params.iter().any(|(_, t)| *t == ZigType::String);
-            let has_string_return = def.ret_type == ZigType::String;
+            let has_string_params = def.params.iter().any(|(_, t)| *t == ZigType::Str);
+            let has_string_return = def.ret_type == ZigType::Str;
 
             if has_string_params || has_string_return {
                 // Extern declaration with original name (matches Rust symbol)
@@ -367,9 +367,9 @@ impl HostFnRegistry {
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_str()))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
                     .collect();
-                let ret_zig = def.ret_type.to_zig_str();
+                let ret_zig = def.ret_type.to_zig_type();
                 let catch_default = Self::default_return_value(&def.ret_type);
 
                 out.push_str(&format!(
@@ -382,7 +382,7 @@ impl HostFnRegistry {
                 // Convert string params to null-terminated C strings
                 let is_void = def.ret_type == ZigType::Void;
                 for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::String {
+                    if *ptype == ZigType::Str {
                         if is_void {
                             out.push_str(&format!(
                                 "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return;\n",
@@ -406,7 +406,7 @@ impl HostFnRegistry {
                     .params
                     .iter()
                     .map(|(n, t)| {
-                        if *t == ZigType::String {
+                        if *t == ZigType::Str {
                             format!("c_{}", n)
                         } else {
                             n.clone()
@@ -456,8 +456,8 @@ impl HostFnRegistry {
     /// Return the default value literal for a ZigType (used in `catch return <default>`).
     fn default_return_value(ret_type: &ZigType) -> &'static str {
         match ret_type {
-            ZigType::String => "\"\"",
-            ZigType::I64 | ZigType::I32 | ZigType::Usize => "0",
+            ZigType::Str => "\"\"",
+            ZigType::I64 => "0",
             ZigType::F64 => "0.0",
             ZigType::Bool => "false",
             ZigType::Void => "",
@@ -468,8 +468,8 @@ impl HostFnRegistry {
     /// Convert a ZigType to the corresponding C ABI type string.
     fn to_c_abi_type(ty: &ZigType) -> String {
         match ty {
-            ZigType::String => "[*:0]const u8".to_string(),
-            other => other.to_zig_str(),
+            ZigType::Str => "[*:0]const u8".to_string(),
+            other => other.to_zig_type(),
         }
     }
 
@@ -577,13 +577,13 @@ impl HostFnRegistry {
             "i64" => ZigType::I64,
             "f64" => ZigType::F64,
             "bool" => ZigType::Bool,
-            "string" => ZigType::String,
-            "any" => ZigType::JsValue,
-            "jsvalue" => ZigType::JsValue,
-            "jsany" => ZigType::JsAny,
+            "string" => ZigType::Str,
+            "any" => ZigType::Void,
+            "jsvalue" => ZigType::Void,
+            "jsany" => ZigType::Anytype,
             "void" => ZigType::Void,
-            other if other.starts_with("struct:") => ZigType::Struct(other[7..].into()),
-            _ => ZigType::JsValue,
+            other if other.starts_with("struct:") => ZigType::NamedStruct(other[7..].to_string()),
+            _ => ZigType::Void,
         }
     }
 
@@ -597,14 +597,14 @@ impl HostFnRegistry {
                 .map(|(n, t)| {
                     serde_json::json!({
                         "name": n,
-                        "zig_type": t.to_zig_str()
+                        "zig_type": t.to_zig_type()
                     })
                 })
                 .collect();
             imports.push(serde_json::json!({
                 "name": def.c_name,
                 "params": params,
-                "ret_type": def.ret_type.to_zig_str(),
+                "ret_type": def.ret_type.to_zig_type(),
             }));
         }
         imports

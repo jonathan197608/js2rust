@@ -1,5 +1,5 @@
 use crate::host::HostFnRegistry;
-use crate::infer::ZigType;
+use crate::native_proto::ZigType;
 use std::collections::HashMap;
 
 /// Result of looking up a JS built-in call
@@ -8,7 +8,7 @@ pub struct BuiltinTranslation {
     /// The Zig code template, {} placeholders for arguments
     pub template: String,
     /// Return type of the builtin function (if known)
-    pub return_type: Option<crate::infer::ZigType>,
+    pub return_type: Option<crate::native_proto::ZigType>,
 }
 
 impl BuiltinTranslation {
@@ -21,7 +21,7 @@ impl BuiltinTranslation {
     }
 
     /// Create a new BuiltinTranslation with known return type.
-    pub fn with_return_type(template: String, return_type: crate::infer::ZigType) -> Self {
+    pub fn with_return_type(template: String, return_type: crate::native_proto::ZigType) -> Self {
         Self {
             template,
             return_type: Some(return_type),
@@ -239,8 +239,8 @@ impl BuiltinRegistry {
                 .join(", ");
 
             // Check if this function needs the string conversion wrapper
-            let has_string = def.params.iter().any(|(_, t)| *t == ZigType::String)
-                || def.ret_type == ZigType::String;
+            let has_string = def.params.iter().any(|(_, t)| *t == ZigType::Str)
+                || def.ret_type == ZigType::Str;
             let fn_name = if has_string {
                 format!("{}_wrap", def.name)
             } else {
@@ -288,7 +288,7 @@ impl BuiltinRegistry {
     }
 
     /// Look up the return type of a global function (if known).
-    pub fn lookup_global_return_type(&self, name: &str) -> Option<&crate::infer::ZigType> {
+    pub fn lookup_global_return_type(&self, name: &str) -> Option<&crate::native_proto::ZigType> {
         self.globals.get(name).and_then(|trans| trans.return_type.as_ref())
     }
 
