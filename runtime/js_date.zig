@@ -10,7 +10,7 @@ pub fn now() i64 {
     return milliTimestamp();
 }
 
-fn milliTimestamp() i64 {
+pub fn milliTimestamp() i64 {
     return switch (builtin.os.tag) {
         .windows => milliTimestampWindows(),
         else => milliTimestampPosix(),

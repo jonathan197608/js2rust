@@ -1,4 +1,5 @@
 const std = @import("std");
+const js_date = @import("js_date.zig");
 
 /// Global allocator: dual-arena hot-swap design.
 ///
@@ -16,22 +17,21 @@ const std = @import("std");
 /// stays alive so any pointer Rust still holds across the FFI boundary remains
 /// valid) and the backup becomes active. A `cooling` instance is only reset
 /// (memory reclaimed) after it has been cooling for at least
-/// JS2RUST_ARENA_GRACE_SEC seconds, guaranteeing returned strings outlive any
-/// single FFI consumption window.
+/// JS2RUST_ARENA_GRACE_MS milliseconds, guaranteeing returned strings outlive
+/// any single FFI consumption window.
 ///
-/// No background thread is used (Zig 0.16.0 has no std.Thread in this target):
-/// the rotate/reclaim check runs lazily inside getAllocator(), protected by the
-/// existing compare-and-swap spinlock.
+/// Cooling is time-based using the cross-platform milliTimestamp() from
+/// js_date.zig. No background thread is needed: the timer check runs lazily
+/// inside getAllocator(), protected by the existing compare-and-swap spinlock.
 
 const DEFAULT_MAX_ARENA_SIZE_MB: usize = 100;
 const ENV_MAX_ARENA_MB: [:0]const u8 = "JS2RUST_MAX_ARENA_MB";
 
-/// Number of getAllocator() calls a cooling instance must survive before it may
-/// be reset. This replaces a time-based grace period (which would require a
-/// wall-clock source that is not available in Zig 0.16.0's constrained targets).
-/// Configurable via JS2RUST_ARENA_GRACE_CALLS (default 1000).
-const DEFAULT_GRACE_CALLS: u64 = 1000;
-const ENV_GRACE_CALLS: [:0]const u8 = "JS2RUST_ARENA_GRACE_CALLS";
+/// Grace period in milliseconds a cooling instance must survive before it may
+/// be reset. Uses the cross-platform milliTimestamp() from js_date.zig.
+/// Configurable via JS2RUST_ARENA_GRACE_MS (default 5000 = 5 seconds).
+const DEFAULT_GRACE_MS: u64 = 5000;
+const ENV_GRACE_MS: [:0]const u8 = "JS2RUST_ARENA_GRACE_MS";
 
 const State = enum { ready, active, cooling };
 
@@ -44,13 +44,11 @@ var arena_b: std.heap.ArenaAllocator = undefined;
 var state_a: State = .ready;
 var state_b: State = .ready;
 
-/// Grace call counter for each instance. When an instance enters `cooling`, its
-/// counter is set to `g_grace_calls`. Each `getAllocator()` call decrements the
-/// counter of any cooling instance; when it reaches 0 the instance may be reset.
-/// This guarantees that any pointer returned across the FFI boundary stays valid
-/// for at least N allocator-fetch operations after the swap.
-var grace_calls_remaining_a: u64 = 0;
-var grace_calls_remaining_b: u64 = 0;
+/// Timestamp (milliseconds since epoch) when each instance entered `cooling`.
+/// 0 means the instance is not in cooling. When an instance is cooling and
+/// `milliTimestamp() - cooling_since >= g_grace_ms`, the instance is reclaimed.
+var cooling_since_a: i64 = 0;
+var cooling_since_b: i64 = 0;
 
 /// Which instance is currently active.
 var active_is_a: bool = true;
@@ -66,9 +64,9 @@ var g_lock: bool = false;
 /// Capacity threshold (bytes) that triggers an active->backup swap.
 var g_max_arena_bytes: usize = DEFAULT_MAX_ARENA_SIZE_MB * 1024 * 1024;
 
-/// Minimum number of getAllocator() calls a cooling instance must survive before
-/// it may be reset. See grace_calls_remaining_a/b above.
-var g_grace_calls: u64 = DEFAULT_GRACE_CALLS;
+/// Minimum time in milliseconds a cooling instance must survive before it
+/// may be reset. See cooling_since_a/b above.
+var g_grace_ms: u64 = DEFAULT_GRACE_MS;
 
 /// Read JS2RUST_MAX_ARENA_MB (default 100). Returns bytes.
 fn readMaxArenaBytes() usize {
@@ -80,13 +78,13 @@ fn readMaxArenaBytes() usize {
     return mb * 1024 * 1024;
 }
 
-/// Read JS2RUST_ARENA_GRACE_CALLS (default 1000). Returns call count.
-fn readGraceCalls() u64 {
-    const env = std.c.getenv(ENV_GRACE_CALLS.ptr);
-    if (env == null) return DEFAULT_GRACE_CALLS;
+/// Read JS2RUST_ARENA_GRACE_MS (default 5000). Returns milliseconds.
+fn readGraceMs() u64 {
+    const env = std.c.getenv(ENV_GRACE_MS.ptr);
+    if (env == null) return DEFAULT_GRACE_MS;
     const env_str = std.mem.span(env.?);
-    const n = std.fmt.parseInt(u64, env_str, 10) catch return DEFAULT_GRACE_CALLS;
-    if (n == 0) return DEFAULT_GRACE_CALLS;
+    const n = std.fmt.parseInt(u64, env_str, 10) catch return DEFAULT_GRACE_MS;
+    if (n == 0) return DEFAULT_GRACE_MS;
     return n;
 }
 
@@ -108,15 +106,15 @@ pub fn initGlobalAllocator() void {
     if (g_initialized) return;
 
     g_max_arena_bytes = readMaxArenaBytes();
-    g_grace_calls = readGraceCalls();
+    g_grace_ms = readGraceMs();
 
     arena_a = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     arena_b = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
     state_a = .active;
     state_b = .ready;
-    grace_calls_remaining_a = 0;
-    grace_calls_remaining_b = 0;
+    cooling_since_a = 0;
+    cooling_since_b = 0;
     active_is_a = true;
 
     g_initialized = true;
@@ -133,31 +131,27 @@ pub fn deinitGlobalAllocator() void {
     arena_b.deinit();
     state_a = .ready;
     state_b = .ready;
-    grace_calls_remaining_a = 0;
-    grace_calls_remaining_b = 0;
+    cooling_since_a = 0;
+    cooling_since_b = 0;
     g_initialized = false;
 }
 
-/// Decrement grace counters for any cooling instance. If a counter reaches 0
-/// the instance is reset (memory reclaimed) and its state becomes `ready`.
+/// Check cooling timers for any cooling instance. If the grace period has
+/// elapsed, the instance is reset (memory reclaimed) and its state becomes `ready`.
 /// Must hold the lock. Called at the start of getAllocator().
-fn tickGraceCounters() void {
-    if (state_a == .cooling) {
-        if (grace_calls_remaining_a > 0) {
-            grace_calls_remaining_a -= 1;
-        }
-        if (grace_calls_remaining_a == 0) {
+fn tickGraceTimers(now: i64) void {
+    if (state_a == .cooling and cooling_since_a > 0) {
+        if (now - cooling_since_a >= @as(i64, @intCast(g_grace_ms))) {
             _ = arena_a.reset(.free_all);
             state_a = .ready;
+            cooling_since_a = 0;
         }
     }
-    if (state_b == .cooling) {
-        if (grace_calls_remaining_b > 0) {
-            grace_calls_remaining_b -= 1;
-        }
-        if (grace_calls_remaining_b == 0) {
+    if (state_b == .cooling and cooling_since_b > 0) {
+        if (now - cooling_since_b >= @as(i64, @intCast(g_grace_ms))) {
             _ = arena_b.reset(.free_all);
             state_b = .ready;
+            cooling_since_b = 0;
         }
     }
 }
@@ -166,16 +160,17 @@ fn tickGraceCounters() void {
 /// (which must be `ready`) becomes active. Must hold the lock.
 /// No-op if the backup is not `ready` (cannot swap safely).
 fn swapActive() void {
+    const now = js_date.milliTimestamp();
     if (active_is_a) {
         if (state_b != .ready) return; // backup not available, keep current active
         state_a = .cooling;
-        grace_calls_remaining_a = g_grace_calls;
+        cooling_since_a = now;
         state_b = .active;
         active_is_a = false;
     } else {
         if (state_a != .ready) return;
         state_b = .cooling;
-        grace_calls_remaining_b = g_grace_calls;
+        cooling_since_b = now;
         state_a = .active;
         active_is_a = true;
     }
@@ -188,14 +183,15 @@ fn activeCapacity() usize {
 }
 
 /// Run one rotate/reclaim cycle.
-/// - Always ticks grace counters first (may reclaim a cooled-down backup).
+/// - Always ticks grace timers first (may reclaim a cooled-down backup).
 /// - Then, if `force` or the active arena exceeds the size limit, swaps to the
 ///   backup (when the backup is ready).
 /// Must hold the lock.
 fn checkAndRotate(force: bool) void {
-    tickGraceCounters();
+    const now = js_date.milliTimestamp();
+    tickGraceTimers(now);
 
-    // 2. Swap: when active is full (or forced) and a ready backup exists.
+    // Swap: when active is full (or forced) and a ready backup exists.
     if (force or activeCapacity() > g_max_arena_bytes) {
         swapActive();
     }
@@ -224,9 +220,9 @@ pub fn getMaxArenaBytes() usize {
     return g_max_arena_bytes;
 }
 
-/// Get the configured grace call count.
-pub fn getGraceCalls() u64 {
-    return g_grace_calls;
+/// Get the configured grace period in milliseconds.
+pub fn getGraceMs() u64 {
+    return g_grace_ms;
 }
 
 /// Retrieve the global allocator (the active arena's allocator).
@@ -277,25 +273,25 @@ test "forced rotate parks active in cooling and swaps to backup" {
     try std.testing.expect(!active_is_a);
 }
 
-test "cooling backup reclaimed after grace calls expire" {
+test "cooling backup reclaimed after grace time expires" {
     initGlobalAllocator();
     defer deinitGlobalAllocator();
 
-    g_grace_calls = 1; // reset after 1 getAllocator() call
+    g_grace_ms = 0; // instant reclaim
 
     resetGlobalAllocator(); // A -> cooling, B -> active
 
-    // Next allocator fetch should tick the grace counter and reclaim A.
+    // Next allocator fetch should check the timer and reclaim A immediately.
     _ = getAllocator();
 
     try std.testing.expect(state_a == .ready);
     try std.testing.expect(state_b == .active);
 }
 
-test "grace calls env var" {
+test "grace ms env var" {
     // Just verify the default is applied; actual env parsing is tested indirectly
-    // through initGlobalAllocator reading JS2RUST_ARENA_GRACE_CALLS.
+    // through initGlobalAllocator reading JS2RUST_ARENA_GRACE_MS.
     initGlobalAllocator();
     defer deinitGlobalAllocator();
-    try std.testing.expect(getGraceCalls() > 0);
+    try std.testing.expect(getGraceMs() > 0);
 }
