@@ -1027,15 +1027,13 @@ impl Codegen {
         let mut sig = format!("fn {}(", fn_name);
         
         // Generate params
-        let mut param_idx = 0;
-        for param in &arrow.params.items {
+        for (param_idx, param) in arrow.params.items.iter().enumerate() {
             if param_idx > 0 {
                 sig.push_str(", ");
             }
             if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
                 sig.push_str(&format!("{}: anytype", pname));
             }
-            param_idx += 1;
         }
         
         // TODO: get return type from type_info
