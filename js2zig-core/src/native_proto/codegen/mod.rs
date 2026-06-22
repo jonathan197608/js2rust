@@ -4,9 +4,9 @@
 use crate::native_proto::Codegen;
 use oxc_ast::ast::*;
 
-pub mod stmt;
 pub mod expr;
 pub mod helpers;
+pub mod stmt;
 
 // ── Constructor ─────────────────────────────────────
 

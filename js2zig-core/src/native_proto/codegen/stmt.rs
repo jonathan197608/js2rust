@@ -2,8 +2,8 @@
 // Statement-level code generation: toplevel, var_decl, fn, if, while, for, switch.
 
 use super::Codegen;
-use crate::native_proto::{ZigType, ExportedFunction};
 use crate::native_proto::builtins;
+use crate::native_proto::{ExportedFunction, ZigType};
 use oxc_ast::ast::*;
 
 // ── Variable declarations ────────────────────────────

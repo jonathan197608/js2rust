@@ -17,7 +17,12 @@ impl TypeInferrer {
     /// Helper: process a function for type inference (params, return type, body).
     /// Extracted so both `Statement::FunctionDeclaration` and
     /// `Statement::ExportNamedDeclaration` paths can share the same logic.
-    pub(crate) fn walk_fn_for_types(&mut self, fd: &Function, fn_name: &str, from_export_decl: bool) {
+    pub(crate) fn walk_fn_for_types(
+        &mut self,
+        fd: &Function,
+        fn_name: &str,
+        from_export_decl: bool,
+    ) {
         // Async detection
         if Self::fn_contains_await(fd) {
             self.is_async.insert(fn_name.to_string(), true);
@@ -145,7 +150,10 @@ impl TypeInferrer {
         exprs
     }
 
-    pub(crate) fn collect_returns<'a>(stmt: &'a Statement<'a>, exprs: &mut Vec<&'a Expression<'a>>) {
+    pub(crate) fn collect_returns<'a>(
+        stmt: &'a Statement<'a>,
+        exprs: &mut Vec<&'a Expression<'a>>,
+    ) {
         match stmt {
             Statement::ReturnStatement(rs) => {
                 if let Some(ref arg) = rs.argument {
@@ -337,7 +345,10 @@ impl TypeInferrer {
     }
 
     /// Convert a JSDoc type string to ZigType.
-    pub(crate) fn jsdoc_str_to_zig_type(s: &str, typedefs: &HashMap<String, jsdoc::TypedefDef>) -> ZigType {
+    pub(crate) fn jsdoc_str_to_zig_type(
+        s: &str,
+        typedefs: &HashMap<String, jsdoc::TypedefDef>,
+    ) -> ZigType {
         let zig_str = jsdoc::jsdoc_type_to_zig(s, typedefs);
         Self::zig_str_to_type(&zig_str)
     }

@@ -703,7 +703,7 @@ impl Codegen {
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     if self.type_info.var_types.get(obj_name) == Some(&ZigType::Str) {
                         // Treat as string indexOf
-                            let arg_expr = self.first_arg_string(&ce.arguments);
+                        let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
                             obj = obj_name,
@@ -733,7 +733,7 @@ impl Codegen {
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     if self.type_info.var_types.get(obj_name) == Some(&ZigType::Str) {
                         // Treat as string includes
-                            let arg_expr = self.first_arg_string(&ce.arguments);
+                        let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
                             "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
                             obj = obj_name,

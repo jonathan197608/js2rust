@@ -106,7 +106,9 @@ impl TypeInferrer {
                     }
                     // Method calls: arr.slice(), arr.map(), arr.filter(), etc.
                     Expression::StaticMemberExpression(mem) => {
-                        if let Some(obj_name) = super::helpers::extract_expr_identifier_name(&mem.object) {
+                        if let Some(obj_name) =
+                            super::helpers::extract_expr_identifier_name(&mem.object)
+                        {
                             // Array methods
                             if let Some(elem_ty) = self.array_element_types.get(&obj_name) {
                                 return self.infer_array_method_return(

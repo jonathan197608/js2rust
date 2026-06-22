@@ -379,12 +379,12 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
         }
 
         // 基本类型的数组
-        match base_type {
-            "string" => return "[]const []const u8".to_string(),
-            "number" => return "[]const i64".to_string(),
-            "boolean" => return "[]const bool".to_string(),
-            _ => return format!("[]const {}", base_type), // 未知类型，按自定义类型处理
-        }
+        return match base_type {
+            "string" => "[]const []const u8".to_string(),
+            "number" => "[]const i64".to_string(),
+            "boolean" => "[]const bool".to_string(),
+            _ => format!("[]const {}", base_type), // 未知类型，按自定义类型处理
+        };
     }
 
     // 非数组类型

@@ -21,9 +21,9 @@ use crate::native_proto::JSDocData;
 use crate::native_proto::ZigType;
 
 pub mod expr;
-pub mod passes;
 pub mod fn_types;
 pub mod helpers;
+pub mod passes;
 
 // Re-export public utilities for backward compatibility
 // (codegen uses crate::native_proto::infer::binding_name)
