@@ -455,7 +455,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let jsstr_def = if needs_jsstr {
         quote! {
             #[repr(C)]
-            pub struct __JsStr { pub ptr: *const u8, pub len: usize }
+            pub struct __JsStr { pub ptr: *const u8, pub len: isize }
         }
     } else {
         quote! {}
@@ -508,17 +508,23 @@ fn generate_safe_wrapper(
     }
 
     let (ret_ty, call_expr) = if needs_jsstr {
-        // Returns StrRet (extern struct { ptr, len }): zero-copy, no free needed
+        // Returns StrRet (extern struct { ptr: *const u8, len: isize }).
+        // Sign-bit convention: len >= 0 → normal string; len < 0 → async panic.
+        // Rust safe wrapper converts to Result<String, String>.
         (
-            quote! { String },
+            quote! { Result<String, String> },
             quote! {
                 {
                     let ret: #raw_mod::__JsStr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
+                    if ret.len < 0 {
+                        return Err("async function panicked".to_string());
+                    }
                     if ret.ptr.is_null() {
-                        String::new()
+                        Ok(String::new())
                     } else {
-                        let slice = unsafe { std::slice::from_raw_parts(ret.ptr, ret.len) };
-                        String::from_utf8_lossy(slice).into_owned()
+                        let len = ret.len as usize;
+                        let slice = unsafe { std::slice::from_raw_parts(ret.ptr, len) };
+                        Ok(String::from_utf8_lossy(slice).into_owned())
                     }
                 }
             },

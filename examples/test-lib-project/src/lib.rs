@@ -13,7 +13,7 @@ mod tests {
 
     #[test]
     fn test_greet() {
-        let result = greet_main("World");
+        let result = greet_main("World").unwrap();
         assert_eq!(result, "Hello, World!");
     }
 

@@ -1,26 +1,44 @@
 //! Return type for C ABI string functions.
-//! Zig side: `{ .ptr = slice.ptr, .len = slice.len }`
-//! Rust side: `#[repr(C)] struct JsStr { ptr: *const u8, len: usize }`
+//!
+//! ## Sign-bit convention
+//! `len >= 0` → normal string of that length (arena-allocated, owned by Zig).
+//! `len <  0` → panic occurred (async error propagated via CABI wrapper).
+//!             The caller MUST NOT dereference `ptr` when `len < 0`.  Rust
+//!             bridge macro converts this to `Result::Err(...)`.
+//!
+//! Zig side: `StrRet.from(slice)` / `StrRet.from_panic()`
+//! Rust side: `#[repr(C)] struct __JsStr { ptr: *const u8, len: isize }`
 
 const std = @import("std");
 
-/// C-ABI-compatible string return type.
-/// Instead of returning `[*:0]u8` + `result_len: *usize` output parameter,
-/// string-returning C ABI functions now return a `StrRet` by value.
+/// C-ABI-compatible string-or-panic return type.
 pub const StrRet = extern struct {
     ptr: [*c]const u8,
-    len: usize,
+    /// Positive → string length.  Negative → panic flag.
+    len: isize,
 
     /// Build a StrRet from a `[]const u8` (arena-allocated slice).
     pub fn from(s: []const u8) StrRet {
-        return StrRet{ .ptr = s.ptr, .len = s.len };
+        return StrRet{ .ptr = s.ptr, .len = @intCast(s.len) };
+    }
+
+    /// Build a StrRet signalling that an async error occurred.
+    /// `len = -1` tells the Rust bridge to return `Err(...)`.
+    pub fn from_panic() StrRet {
+        return StrRet{ .ptr = null, .len = -1 };
+    }
+
+    /// Check if this StrRet signals a panic (async error).
+    pub fn is_panic(self: StrRet) bool {
+        return self.len < 0;
     }
 
     /// Convert to a `[]const u8` slice (caller must ensure pointer validity).
+    /// Returns empty string for panic or null pointers.
     pub fn toSlice(self: StrRet) []const u8 {
-        if (self.ptr == @as([*c]const u8, undefined) or self.ptr == 0) {
+        if (self.is_panic() or self.ptr == null) {
             return "";
         }
-        return self.ptr[0..self.len];
+        return self.ptr[0..@intCast(self.len)];
     }
 };

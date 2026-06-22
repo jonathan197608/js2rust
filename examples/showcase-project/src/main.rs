@@ -40,7 +40,7 @@ fn main() {
     // ── String functions ────────────────────────────────────
     println!();
     println!("--- String functions ---");
-    let greeting = showcaseGreet_app("World");
+    let greeting = showcaseGreet_app("World").unwrap();
     println!("  showcaseGreet('World') = {}", greeting);
 
     let tpl = testTemplate_app(10, 20);

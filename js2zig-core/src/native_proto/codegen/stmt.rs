@@ -80,7 +80,7 @@ impl Codegen {
                             {
                                 self.emit_expr_arg(first_arg);
                             }
-                            self.write(") catch unreachable;\n");
+                            self.write(") catch @panic(\"OOM: JSON.parse alloc\");\n");
                         } else if let Some(inferred_ty) = self.type_info.var_types.get(name) {
                             let inferred_ty = inferred_ty.clone();
                             // Definite type from pre-computed type info.

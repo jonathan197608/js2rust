@@ -818,20 +818,20 @@ pub fn gen_cabi_wrappers(
             if returns_string {
                 // Zig-friendly adapter (for tests) — calls _impl directly
                 out.push_str(&format!(
-                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
+                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
                     name = name,
                     params = zig_params.join(", "),
                     mod = module,
                     args = async_zig_args,
                 ));
-                // C ABI wrapper (StrRet — zero-copy)
+                // C ABI wrapper (StrRet — zero-copy, panic via negative len)
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch @panic(\"async error\"));\n}}\n",
+                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch return StrRet.from_panic());\n}}\n",
                     name = name,
                     cabi_params = cabi_params.join(", "),
                     conv = conversions,
@@ -857,7 +857,7 @@ pub fn gen_cabi_wrappers(
 
                 if ret_zig == "void" {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
+                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,
@@ -866,7 +866,7 @@ pub fn gen_cabi_wrappers(
                     ));
                 } else if exp_ret_is_js_value {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error\");\n    return _result.int;\n}}\n",
+                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n    return _result.int;\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,
@@ -875,7 +875,7 @@ pub fn gen_cabi_wrappers(
                     ));
                 } else {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}) catch @panic(\"async error\");\n}}\n",
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
                         name = name,
                         params = cabi_params.join(", "),
                         conv = conversions,

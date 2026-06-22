@@ -20,7 +20,7 @@ fn main() {
     js2rust_init();
 
     // ── Synchronous JS functions ──────────────────────────────
-    let result = greet_main("World");
+    let result = greet_main("World").unwrap();
     println!("greet_main('World') = {}", result);
 
     let sum = add_main(1, 2);
@@ -34,7 +34,7 @@ fn main() {
     println!("useHostMultiply_main(3, 4) = {}", host_product);
 
     // ── Synchronous host functions (string) ───────────────────
-    let host_concat = useHostConcat_main("Hello, ", "World!");
+    let host_concat = useHostConcat_main("Hello, ", "World!").unwrap();
     println!("useHostConcat_main('Hello, ', 'World!') = {}", host_concat);
 
     let host_strlen = useHostStrlen_main("Hello, World!");
@@ -45,19 +45,19 @@ fn main() {
 
     // Single user lookup — should take ~50ms (simulated network latency)
     let user_name = host::timed("getUserInfo_main('alice')", || {
-        getUserInfo_main("alice")
+        getUserInfo_main("alice").unwrap()
     });
     println!("  getUserInfo_main('alice') = {}", user_name);
 
     // Another lookup
     let user_name = host::timed("getUserInfo_main('bob')", || {
-        getUserInfo_main("bob")
+        getUserInfo_main("bob").unwrap()
     });
     println!("  getUserInfo_main('bob') = {}", user_name);
 
     // Two sequential lookups — should take ~100ms total (2 x 50ms)
     let two_users = host::timed("getTwoUserInfo_main('alice', 'charlie')", || {
-        getTwoUserInfo_main("alice", "charlie")
+        getTwoUserInfo_main("alice", "charlie").unwrap()
     });
     println!("  getTwoUserInfo_main('alice', 'charlie') = {}", two_users);
 

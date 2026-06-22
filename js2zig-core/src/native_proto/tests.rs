@@ -777,8 +777,8 @@ function main() {
             "Expected std.json.parse(User, ...), got: {}",
             zig
         );
-        // Should have catch unreachable.
-        assert!(zig.contains("catch unreachable"));
+        // Should have catch @panic for allocation error.
+        assert!(zig.contains("catch @panic"));
     }
 
     #[test]

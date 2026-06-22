@@ -189,7 +189,7 @@ impl Codegen {
         } else {
             let args_str = format!(".{{{}}}", args.join(", "));
             self.write(&format!(
-                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
+                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
                 fmt, args_str
             ));
         }

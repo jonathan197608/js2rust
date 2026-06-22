@@ -321,7 +321,7 @@ impl Codegen {
             }
         }
 
-        // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch unreachable
+        // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch @panic("OOM: template literal allocPrint")
         self.emit_format_string(&fmt, &args);
     }
 
@@ -727,14 +727,14 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayUnshift => {
-                // arr.unshift(x) → arr.insert(alloc, 0, x) catch unreachable
+                // arr.unshift(x) → arr.insert(alloc, 0, x) catch @panic("OOM: Array.unshift insert")
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
                         "{}.insert(js_allocator.getAllocator(), 0, ",
                         obj_name
                     ));
                     self.emit_comma_separated_args(&ce.arguments);
-                    self.write(") catch unreachable");
+                    self.write(") catch @panic(\"OOM: allocation\")");
                     return true;
                 }
                 false
@@ -909,7 +909,7 @@ impl Codegen {
                         }
                     };
                     self.write(&format!(
-                        "(blk: {{ var __slice: std.ArrayList({0}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {1}) catch unreachable; break :blk __slice; }})",
+                        "(blk: {{ var __slice: std.ArrayList({0}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {1}) catch @panic(\"OOM: Array.slice appendSlice\"); break :blk __slice; }})",
                         elem_type, slice_expr
                     ));
                     return true;
@@ -921,7 +921,7 @@ impl Codegen {
 
             // ── Map methods ─────────────────────────────
             builtins::BuiltinCall::MapSet => {
-                // map.set(key, value) → map.set(key, value) catch unreachable
+                // map.set(key, value) → map.set(key, value) catch @panic("OOM: Map.set")
                 if ce.arguments.len() != 2 {
                     self.errors
                         .push("Map.set() requires exactly 2 arguments".to_string());
@@ -938,7 +938,7 @@ impl Codegen {
                     {
                         self.emit_expr(expr);
                     }
-                    self.write(") catch unreachable");
+                    self.write(") catch @panic(\"OOM: allocation\")");
                     return true;
                 }
                 false
@@ -994,7 +994,7 @@ impl Codegen {
 
             // ── Set methods ─────────────────────────────
             builtins::BuiltinCall::SetAdd => {
-                // set.add(value) → set.add(value) catch unreachable
+                // set.add(value) → set.add(value) catch @panic("OOM: Set.add")
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Set.add() requires exactly 1 argument".to_string());
@@ -1003,7 +1003,7 @@ impl Codegen {
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!("{}.add(", obj_name));
                     self.emit_first_arg(&ce.arguments);
-                    self.write(") catch unreachable");
+                    self.write(") catch @panic(\"OOM: allocation\")");
                     return true;
                 }
                 false
@@ -1333,7 +1333,7 @@ impl Codegen {
                         if let Some(e) = elem.as_expression() {
                             self.write("__arr.append(js_allocator.getAllocator(), ");
                             self.emit_expr(e);
-                            self.write(") catch unreachable; ");
+                            self.write(") catch @panic(\"OOM: Array.push append\"); ");
                         }
                     }
                 }
