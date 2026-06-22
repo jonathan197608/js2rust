@@ -262,19 +262,7 @@ impl Codegen {
         }
 
         // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch unreachable
-        if args.is_empty() {
-            // All operands are string literals - just emit the concatenated literal
-            self.write(&format!(
-                "\"{}\"",
-                fmt.replace("{{", "{").replace("}}", "}")
-            ));
-        } else {
-            let args_str = format!(".{{{}}}", args.join(", "));
-            self.write(&format!(
-                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
-                fmt, args_str
-            ));
-        }
+        self.emit_format_string(&fmt, &args);
     }
 
     /// Emit a template literal `\`a=${x}\`` using std.fmt.allocPrint.
@@ -331,19 +319,7 @@ impl Codegen {
             }
         }
 
-        if args.is_empty() {
-            // Pure-text template → plain string literal (no allocation).
-            self.write(&format!(
-                "\"{}\"",
-                fmt.replace("{{", "{").replace("}}", "}")
-            ));
-        } else {
-            let args_str = format!(".{{{}}}", args.join(", "));
-            self.write(&format!(
-                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
-                fmt, args_str
-            ));
-        }
+        self.emit_format_string(&fmt, &args);
     }
 
     fn emit_binary(&mut self, be: &BinaryExpression) {

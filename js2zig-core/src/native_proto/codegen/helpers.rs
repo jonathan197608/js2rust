@@ -159,4 +159,29 @@ impl Codegen {
     }
 }
 
+// ── Template / format string helpers ───────────────
+
+impl Codegen {
+    /// Emit a format string expression: either a plain string literal (no args)
+    /// or an allocPrint call (when interpolating args).
+    ///
+    /// `fmt` is a Zig format string (with `{{` / `}}` escaped).
+    /// `args` are the already-emitted argument strings.
+    pub(crate) fn emit_format_string(&mut self, fmt: &str, args: &[String]) {
+        if args.is_empty() {
+            // Pure-text → plain string literal (no allocation).
+            self.write(&format!(
+                "\"{}\"",
+                fmt.replace("{{", "{").replace("}}", "}")
+            ));
+        } else {
+            let args_str = format!(".{{{}}}", args.join(", "));
+            self.write(&format!(
+                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch unreachable",
+                fmt, args_str
+            ));
+        }
+    }
+}
+
 // ── emit_toplevel helpers ──────────────────────────
