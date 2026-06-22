@@ -1177,8 +1177,14 @@ impl Codegen {
         // Detect captured variables (closure check)
         let captured = self.collect_captured_vars(arrow);
         if !captured.is_empty() {
-            // Has captured vars: generate closure struct
-            return self.emit_closure_struct(arrow, captured);
+            // Closures (capturing outer variables) are not yet supported.
+            let names: Vec<&str> = captured.iter().map(|(n, _, _)| n.as_str()).collect();
+            self.errors.push(format!(
+                "error: arrow function captures variables: {:?} (closure support is not yet implemented)",
+                names
+            ));
+            // Generate a placeholder to avoid panic
+            return "_unsupported_closure".to_string();
         }
         // No captured vars: generate plain nested function (current behavior)
         let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
