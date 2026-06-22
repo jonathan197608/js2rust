@@ -212,8 +212,9 @@ pub fn transpile_js(
     program: &Program<'_>,
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
+    host_fns: Option<&crate::host::HostFnRegistry>,
 ) -> Result<TranspileResult, String> {
-    transpile_js_inner(program, js_source, exported_functions)
+    transpile_js_inner(program, js_source, exported_functions, host_fns)
 }
 
 /// Internal helper: transpile JS AST to Zig, returning TranspileResult.
@@ -225,6 +226,7 @@ fn transpile_js_inner(
     program: &Program<'_>,
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
+    host_fns: Option<&crate::host::HostFnRegistry>,
 ) -> Result<TranspileResult, String> {
     // JSDoc extraction (still needs raw source text)
     let (typedefs, type_annotations, return_types, param_types) =
@@ -239,6 +241,9 @@ fn transpile_js_inner(
     // ── Pass 1: Type inference ──
     let mut inferrer = infer::TypeInferrer::new();
     inferrer.set_jsdoc_data(jsdoc_data.clone());
+    if let Some(hf) = host_fns {
+        inferrer.set_host_fn_types(hf);
+    }
     let type_info = inferrer.infer_all(program, exported_functions.clone());
 
     // Extract TypeInferrer errors before type_info is moved to Codegen.
@@ -269,11 +274,12 @@ fn transpile_js_inner(
                     .enumerate()
                     .map(|(i, p)| (format!("arg{}", i), p.clone()))
                     .collect();
+                let is_async = cg.type_info.is_async.get(&ef.name).copied().unwrap_or(false);
                 NativeCabiExport {
                     name: ef.name,
                     params,
                     ret_type: ef.return_type,
-                    is_async: false,
+                    is_async,
                 }
             })
             .collect(),

@@ -455,6 +455,32 @@ impl HostFnRegistry {
                 ));
             }
         }
+
+        // ── Aliases for native_proto codegen ──
+        // The native_proto codegen strips the `host_` prefix from host function
+        // calls (e.g. host_add → host.add). Add short-name aliases so that
+        // `host.add(...)` resolves to the correct extern/wrapper function.
+        let has_aliases = self.fns.iter().any(|f| !f.is_async && f.name.starts_with("host_"));
+        if has_aliases {
+            out.push_str("\n// Aliases for native_proto codegen (strips host_ prefix)\n");
+            for def in &self.fns {
+                if def.is_async {
+                    continue; // async aliases are generated in lib.zig
+                }
+                let Some(short) = def.name.strip_prefix("host_") else {
+                    continue;
+                };
+                let has_string = def.params.iter().any(|(_, t)| *t == ZigType::Str)
+                    || def.ret_type == ZigType::Str;
+                if has_string {
+                    out.push_str(&format!("pub const {} = {}_wrap;\n", short, def.name));
+                } else {
+                    out.push_str(&format!("pub const {} = {};\n", short, def.name));
+                }
+            }
+            out.push('\n');
+        }
+
         out
     }
 

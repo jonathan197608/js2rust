@@ -246,6 +246,12 @@ fn extract_fn_name(code: &str) -> Option<String> {
     } else {
         s
     };
+    // Handle "async function" declarations
+    let s = if let Some(rest) = s.strip_prefix("async") {
+        rest.trim_start()
+    } else {
+        s
+    };
     if let Some(rest) = s.strip_prefix("function") {
         let rest = rest.trim_start();
         let end = rest

@@ -90,6 +90,10 @@ pub struct TypeInferrer {
     pub(crate) jsdoc_data: Option<JSDocData>,
     /// Exported function names (from pipeline)
     pub(crate) exported_functions: Option<HashSet<String>>,
+    /// Host function return types: fn_name → ZigType
+    pub(crate) host_return_types: HashMap<String, ZigType>,
+    /// Host struct field types: struct_name → (field_name → ZigType)
+    pub(crate) host_struct_fields: HashMap<String, HashMap<String, ZigType>>,
 }
 
 impl TypeInferrer {
@@ -106,12 +110,34 @@ impl TypeInferrer {
             errors: Vec::new(),
             jsdoc_data: None,
             exported_functions: None,
+            host_return_types: HashMap::new(),
+            host_struct_fields: HashMap::new(),
         }
     }
 
     /// Set JSDoc data for type annotations
     pub fn set_jsdoc_data(&mut self, data: JSDocData) {
         self.jsdoc_data = Some(data);
+    }
+
+    /// Pre-populate host function return types and struct field info.
+    /// Called from pipeline after host_fns are registered.
+    pub fn set_host_fn_types(&mut self, host_fns: &crate::host::HostFnRegistry) {
+        for def in host_fns.iter() {
+            self.host_return_types
+                .insert(def.name.clone(), def.ret_type.clone());
+            // Populate struct field types for async return structs
+            if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = def.ret_type
+                && let Some(fields) = host_fns.struct_fields_map().get(struct_name)
+            {
+                let field_map: std::collections::HashMap<String, ZigType> = fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), t.clone()))
+                    .collect();
+                self.host_struct_fields
+                    .insert(struct_name.clone(), field_map);
+            }
+        }
     }
 
     // ============================================================

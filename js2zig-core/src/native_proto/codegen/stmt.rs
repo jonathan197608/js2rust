@@ -222,7 +222,7 @@ impl Codegen {
             }
         }
 
-        // Return type
+        // Return type — async functions return error unions
         let ret_zig_type = match &self.current_fn_return_type {
             Some(ZigType::I64) => "i64".to_string(),
             Some(ZigType::F64) => "f64".to_string(),
@@ -231,6 +231,11 @@ impl Codegen {
             Some(ZigType::Void) => "void".to_string(),
             None => "void".to_string(),
             Some(other) => other.to_zig_type(),
+        };
+        let ret_zig_type = if is_async && ret_zig_type != "void" {
+            format!("!{}", ret_zig_type)
+        } else {
+            ret_zig_type
         };
         self.writeln(&format!(") {} {{", ret_zig_type));
 

@@ -387,7 +387,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 };
 
                 let transpile_result =
-                    crate::native_proto::transpile_js(program, &src, Some(codegen_exports));
+                    crate::native_proto::transpile_js(program, &src, Some(codegen_exports), Some(&host_fns));
 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {
@@ -823,7 +823,7 @@ pub fn gen_cabi_wrappers(
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
                 out.push_str(&format!(
-                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch @panic(\"async error\")));\n}}\n",
+                    "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}) catch @panic(\"async error\"));\n}}\n",
                     name = name,
                     cabi_params = cabi_params.join(", "),
                     conv = conversions,
@@ -920,29 +920,32 @@ pub fn gen_cabi_wrappers(
 
             if ret_zig == "void" {
                 out.push_str(&format!(
-                    "pub export fn {name}({params}) void {{\n    {mod}.{name}({args});\n}}\n",
+                    "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args});\n}}\n",
                     name = name,
                     params = cabi_params.join(", "),
+                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
                     mod = module,
-                    args = zig_call_args,
+                    args = cabi_call_args,
                 ));
             } else if exp_ret_is_js_value {
                 // JsValue: extract .int for C ABI (i64)
                 out.push_str(&format!(
-                    "pub export fn {name}({params}) i64 {{\n    const _result = {mod}.{name}({args});\n    return _result.int;\n}}\n",
+                    "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args});\n    return _result.int;\n}}\n",
                     name = name,
                     params = cabi_params.join(", "),
+                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
                     mod = module,
-                    args = zig_call_args,
+                    args = cabi_call_args,
                 ));
             } else {
                 out.push_str(&format!(
-                    "pub export fn {name}({params}) {ret} {{\n    return {mod}.{name}({args});\n}}\n",
+                    "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args});\n}}\n",
                     name = name,
                     params = cabi_params.join(", "),
                     ret = ret_zig,
+                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
                     mod = module,
-                    args = zig_call_args,
+                    args = cabi_call_args,
                 ));
             }
         }

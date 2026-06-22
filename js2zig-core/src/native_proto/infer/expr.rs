@@ -96,11 +96,14 @@ impl TypeInferrer {
                 }
             }
 
-            // CallExpression: look up from fn_return_types cache
+            // CallExpression: look up from fn_return_types cache, then host_return_types
             Expression::CallExpression(ce) => {
                 match &ce.callee {
                     Expression::Identifier(id) => {
                         if let Some(ret_ty) = self.fn_return_types.get(id.name.as_str()) {
+                            return InferResult::Definite(ret_ty.clone());
+                        }
+                        if let Some(ret_ty) = self.host_return_types.get(id.name.as_str()) {
                             return InferResult::Definite(ret_ty.clone());
                         }
                     }
@@ -144,6 +147,18 @@ impl TypeInferrer {
                         }
                         InferResult::Indeterminate
                     }
+                    // Host struct field access (e.g. fetch_user().name)
+                    InferResult::Definite(ZigType::NamedStruct(ref struct_name))
+                        if self.host_struct_fields.contains_key(struct_name.as_str()) =>
+                    {
+                        if let Some(fields) = self.host_struct_fields.get(struct_name.as_str()) {
+                            let field_name = mem.property.name.as_str();
+                            if let Some(field_ty) = fields.get(field_name) {
+                                return InferResult::Definite(field_ty.clone());
+                            }
+                        }
+                        InferResult::Indeterminate
+                    }
                     // Map/Set property access: .size
                     InferResult::Definite(ZigType::NamedStruct(ref name))
                         if name == "Map" || name == "Set" =>
@@ -156,6 +171,9 @@ impl TypeInferrer {
                     _ => InferResult::Indeterminate,
                 }
             }
+
+            // AwaitExpression: strip the await, infer inner expression type
+            Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
 
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,

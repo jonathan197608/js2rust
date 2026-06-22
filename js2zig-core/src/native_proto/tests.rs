@@ -15,7 +15,7 @@ mod tests {
     ) -> Result<TranspileResult, String> {
         let alloc = oxc_allocator::Allocator::default();
         let program = crate::parser::parse(&alloc, js);
-        transpile_js(&program, js, exports)
+        transpile_js(&program, js, exports, None)
     }
 
     /// Helper: run `zig ast-check` on generated Zig code.
