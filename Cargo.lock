@@ -90,14 +90,14 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "js2rust-bridge"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "js2rust-bridge-macro",
 ]
 
 [[package]]
 name = "js2rust-bridge-macro"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "js2zig-core",
  "proc-macro2",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "js2zig-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "glob",
  "oxc_allocator",
