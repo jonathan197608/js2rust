@@ -20,6 +20,9 @@ pub struct NativeCabiExport {
     pub ret_type: ZigType,
     /// Whether this is an async export (impl takes io: Io as first param).
     pub is_async: bool,
+    /// Whether this function can throw (contains throw/try-catch).
+    /// When true, C ABI wrappers generate error propagation (StrRet sign-bit or _err out-param).
+    pub can_throw: bool,
 }
 
 /// Diagnostic severity level.
@@ -64,6 +67,8 @@ pub struct ExportedFunction {
     pub name: String,
     pub params: Vec<ZigType>,
     pub return_type: ZigType,
+    /// Whether this function contains throw/try-catch statements.
+    pub can_throw: bool,
 }
 
 /// Zig type representation for type inference.
@@ -280,6 +285,7 @@ fn transpile_js_inner(
                     params,
                     ret_type: ef.return_type,
                     is_async,
+                    can_throw: ef.can_throw,
                 }
             })
             .collect(),
@@ -316,7 +322,17 @@ pub struct Codegen {
     pub exported_functions: Option<std::collections::HashSet<String>>,
     /// Whether a return/throw statement was seen in the current function body.
     pub seen_return: bool,
+    /// Whether the current function contains `throw` or `try-catch` statements.
+    /// Determined by pre-scan before signature generation. When true, the function
+    /// return type is `!T` (error union) instead of plain `T`.
+    pub fn_has_throw: bool,
     /// Whether we are currently emitting the return value expression.
     /// When true, array methods that normally discard with `_ = ` should skip the prefix.
     pub in_return_expr: bool,
+    /// Counter for generating unique try-block labels (for nested try-catch).
+    pub try_label_counter: u32,
+    /// When inside a try block, the label name for `break :label`.
+    /// throw statements inside the try block emit `break :label error.JsThrow`
+    /// instead of `return error.JsThrow`.
+    pub inside_try_block: Option<String>,
 }

@@ -855,33 +855,59 @@ pub fn gen_cabi_wrappers(
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
 
+                // Async non-string: add _err out-param for can_throw exports
+                let mut cabi_params_with_err = cabi_params.clone();
+                if exp.can_throw {
+                    cabi_params_with_err.push("err_out: *?[*:0]const u8".to_string());
+                }
+                let cabi_params_str = cabi_params_with_err.join(", ");
+
+                let catch_clause = if exp.can_throw {
+                    format!(
+                        " catch |err| {{\n        err_out.* = @errorName(err);\n        return {default};\n    }}",
+                        default = if ret_zig == "void" { "".to_string() } else { "0".to_string() },
+                    )
+                } else {
+                    format!(" catch @panic(\"async error in {name}\")", name = name)
+                };
+
+                let err_setup = if exp.can_throw && ret_zig == "void" {
+                    "    err_out.* = null;\n"
+                } else {
+                    ""
+                };
+
                 if ret_zig == "void" {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
+                        "pub export fn {name}({params}) void {{\n{conv}{err_setup}    {mod}.{name}({args}){catch_clause};\n}}\n",
                         name = name,
-                        params = cabi_params.join(", "),
+                        params = cabi_params_str,
                         conv = conversions,
+                        err_setup = err_setup,
                         mod = module,
                         args = async_cabi_args,
+                        catch_clause = catch_clause,
                     ));
                 } else if exp_ret_is_js_value {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n    return _result.int;\n}}\n",
+                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}){catch_clause};\n    return _result.int;\n}}\n",
                         name = name,
-                        params = cabi_params.join(", "),
+                        params = cabi_params_str,
                         conv = conversions,
                         mod = module,
                         args = async_cabi_args,
+                        catch_clause = catch_clause,
                     ));
                 } else {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}){catch_clause};\n}}\n",
                         name = name,
-                        params = cabi_params.join(", "),
+                        params = cabi_params_str,
                         conv = conversions,
                         ret = ret_zig,
                         mod = module,
                         args = async_cabi_args,
+                        catch_clause = catch_clause,
                     ));
                 }
             }
@@ -892,27 +918,50 @@ pub fn gen_cabi_wrappers(
 
         if returns_string {
             // ── Zig-friendly adapter (for tests) — calls _impl directly, no conversion ──
+            let test_call = if exp.can_throw {
+                format!(
+                    "{mod}.{name}({args}) catch @panic(\"error in {name}\")",
+                    mod = module,
+                    name = name,
+                    args = zig_call_args,
+                )
+            } else {
+                format!("{mod}.{name}({args})", mod = module, name = name, args = zig_call_args)
+            };
             out.push_str(&format!(
-                "pub fn {name}({params}) []const u8 {{\n    return {mod}.{name}({args});\n}}\n",
+                "pub fn {name}({params}) []const u8 {{\n    return {test_call};\n}}\n",
                 name = name,
                 params = zig_params.join(", "),
-                mod = module,
-                args = zig_call_args,
+                test_call = test_call,
             ));
 
-            // ── C ABI wrapper (StrRet — zero-copy) ──
+            // ── C ABI wrapper (StrRet — zero-copy, error via sign-bit) ──
             let conversions = if cabi_to_zig_conversions.is_empty() {
                 String::new()
             } else {
                 format!("{}\n", cabi_to_zig_conversions.join("\n"))
             };
+            let cabi_call = if exp.can_throw {
+                format!(
+                    "{mod}.{name}({args}) catch |err| return StrRet.from_panic(err)",
+                    mod = module,
+                    name = name,
+                    args = cabi_call_args,
+                )
+            } else {
+                format!(
+                    "{mod}.{name}({args})",
+                    mod = module,
+                    name = name,
+                    args = cabi_call_args,
+                )
+            };
             out.push_str(&format!(
-                "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{name}({args}));\n}}\n",
+                "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({cabi_call});\n}}\n",
                 name = name,
                 cabi_params = cabi_params.join(", "),
                 conv = conversions,
-                mod = module,
-                args = cabi_call_args,
+                cabi_call = cabi_call,
             ));
             out.push_str(&format!(
                 "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
@@ -926,35 +975,113 @@ pub fn gen_cabi_wrappers(
             };
             let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
 
-            if ret_zig == "void" {
-                out.push_str(&format!(
-                    "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args});\n}}\n",
-                    name = name,
-                    params = cabi_params.join(", "),
-                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
+            // Build C ABI param list: add _err out-param for can_throw non-string exports
+            let mut cabi_params_with_err = cabi_params.clone();
+            if exp.can_throw {
+                cabi_params_with_err.push("err_out: *?[*:0]const u8".to_string());
+            }
+            let cabi_params_str = cabi_params_with_err.join(", ");
+
+            // Build the call expression with error handling for can_throw
+            let (call_expr, err_setup) = if exp.can_throw {
+                let err_handle = if ret_zig == "void" {
+                    // Void: call without assignment
+                    format!(
+                        "    {mod}.{name}({args}) catch |err| {{\n        err_out.* = @errorName(err);\n        return;\n    }};",
+                        mod = module,
+                        name = name,
+                        args = cabi_call_args,
+                    )
+                } else {
+                    format!(
+                        "    const _result = {mod}.{name}({args}) catch |err| {{\n        err_out.* = @errorName(err);\n        return 0;\n    }};",
+                        mod = module,
+                        name = name,
+                        args = cabi_call_args,
+                    )
+                };
+                let setup = if ret_zig == "void" {
+                    "    err_out.* = null;\n".to_string()
+                } else {
+                    String::new()
+                };
+                (err_handle, setup)
+            } else {
+                (format!(
+                    "{mod}.{name}({args})",
                     mod = module,
+                    name = name,
                     args = cabi_call_args,
-                ));
+                ), String::new())
+            };
+
+            let conversions = if cabi_to_zig_conversions.is_empty() {
+                String::new()
+            } else {
+                format!("{}\n", cabi_to_zig_conversions.join("\n"))
+            };
+
+            if ret_zig == "void" {
+                if exp.can_throw {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) void {{\n{conv}{err_setup}{call_expr}\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        conv = conversions,
+                        err_setup = err_setup,
+                        call_expr = call_expr,
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) void {{\n{conv}    {mod}.{name}({args});\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        conv = conversions,
+                        mod = module,
+                        args = cabi_call_args,
+                    ));
+                }
             } else if exp_ret_is_js_value {
                 // JsValue: extract .int for C ABI (i64)
-                out.push_str(&format!(
-                    "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args});\n    return _result.int;\n}}\n",
-                    name = name,
-                    params = cabi_params.join(", "),
-                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
-                    mod = module,
-                    args = cabi_call_args,
-                ));
+                if exp.can_throw {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) i64 {{\n{conv}{call_expr}\n    return _result.int;\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        conv = conversions,
+                        call_expr = call_expr,
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args});\n    return _result.int;\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        conv = conversions,
+                        mod = module,
+                        args = cabi_call_args,
+                    ));
+                }
             } else {
-                out.push_str(&format!(
-                    "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args});\n}}\n",
-                    name = name,
-                    params = cabi_params.join(", "),
-                    ret = ret_zig,
-                    conv = if cabi_to_zig_conversions.is_empty() { String::new() } else { format!("{}\n", cabi_to_zig_conversions.join("\n")) },
-                    mod = module,
-                    args = cabi_call_args,
-                ));
+                if exp.can_throw {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) {ret} {{\n{conv}{call_expr}\n    return _result;\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        conv = conversions,
+                        ret = ret_zig,
+                        call_expr = call_expr,
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args});\n}}\n",
+                        name = name,
+                        params = cabi_params_str,
+                        ret = ret_zig,
+                        conv = conversions,
+                        mod = module,
+                        args = cabi_call_args,
+                    ));
+                }
             }
         }
 
@@ -1001,6 +1128,7 @@ pub fn write_cabi_metadata(
                 "name": exp.name,
                 "params": params,
                 "ret_type": ret_type_str,
+                "can_throw": exp.can_throw,
             })
         })
         .collect();

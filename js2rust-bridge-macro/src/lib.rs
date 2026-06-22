@@ -34,6 +34,8 @@ struct CabiExport {
     name: String,
     params: Vec<CabiParam>,
     ret_type: String,
+    #[serde(default)]
+    can_throw: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,6 +388,12 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             extern_params.push(quote! { #param_ident: #param_ty });
         }
 
+        // For non-StrRet can_throw functions: add err_out parameter
+        let has_err_out = exp.can_throw && exp.ret_type != "StrRet";
+        if has_err_out {
+            extern_params.push(quote! { err_out: *mut *const std::ffi::c_char });
+        }
+
         let ret_ty = zig_ret_type_to_rust_ffi(&exp.ret_type);
 
         extern_fns.push(quote! {
@@ -397,7 +405,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
         }
 
         let safe_wrapper =
-            generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix);
+            generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix, has_err_out);
         safe_wrappers.push(safe_wrapper);
     }
 
@@ -493,6 +501,7 @@ fn generate_safe_wrapper(
     free_fn_name: &syn::Ident,
     raw_mod: &syn::Ident,
     group_suffix: &str,
+    has_err_out: bool,
 ) -> proc_macro2::TokenStream {
     let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
     let mut safe_params = Vec::new();
@@ -537,22 +546,80 @@ fn generate_safe_wrapper(
             },
         )
     } else if exp.ret_type == "[]const u8" {
+        if has_err_out {
+            // Non-StrRet string return with throw: Result<String, String> via err_out
+            let mut all_ffi_args: Vec<proc_macro2::TokenStream> = ffi_args.clone();
+            all_ffi_args.push(quote! { &mut err_ptr });
+            (
+                quote! { Result<String, String> },
+                quote! {
+                    {
+                        let mut err_ptr: *const std::ffi::c_char = std::ptr::null();
+                        let ptr = unsafe { super::#raw_mod::#fn_name(#(#all_ffi_args),*) };
+                        if !err_ptr.is_null() {
+                            let err_msg = unsafe { std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().into_owned() };
+                            return Err(err_msg);
+                        }
+                        if ptr.is_null() {
+                            Ok(String::new())
+                        } else {
+                            let s = unsafe {
+                                std::ffi::CStr::from_ptr(ptr)
+                                    .to_string_lossy()
+                                    .into_owned()
+                            };
+                            unsafe { super::#raw_mod::#free_fn_name(ptr as *mut std::ffi::c_void) };
+                            Ok(s)
+                        }
+                    }
+                },
+            )
+        } else {
+            (
+                quote! { String },
+                quote! {
+                    {
+                        let ptr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
+                        if ptr.is_null() {
+                            String::new()
+                        } else {
+                            let s = unsafe {
+                                std::ffi::CStr::from_ptr(ptr)
+                                    .to_string_lossy()
+                                    .into_owned()
+                            };
+                            unsafe { super::#raw_mod::#free_fn_name(ptr as *mut std::ffi::c_void) };
+                            s
+                        }
+                    }
+                },
+            )
+        }
+    } else if has_err_out {
+        // Non-StrRet can_throw: Result<T, String> via err_out
+        let rust_ret = zig_ret_type_to_rust_safe(&exp.ret_type);
+        let rust_ret_wrapped = match exp.ret_type.as_str() {
+            "void" => quote! { Result<(), String> },
+            _ => quote! { Result<#rust_ret, String> },
+        };
+        let extract_result = match exp.ret_type.as_str() {
+            "void" => quote! { Ok(()) },
+            _ => quote! { Ok(result) },
+        };
+        // Build all ffi args including err_out
+        let mut all_ffi_args: Vec<proc_macro2::TokenStream> = ffi_args.clone();
+        all_ffi_args.push(quote! { &mut err_ptr });
         (
-            quote! { String },
+            rust_ret_wrapped,
             quote! {
                 {
-                    let ptr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
-                    if ptr.is_null() {
-                        String::new()
-                    } else {
-                        let s = unsafe {
-                            std::ffi::CStr::from_ptr(ptr)
-                                .to_string_lossy()
-                                .into_owned()
-                        };
-                        unsafe { super::#raw_mod::#free_fn_name(ptr as *mut std::ffi::c_void) };
-                        s
+                    let mut err_ptr: *const std::ffi::c_char = std::ptr::null();
+                    let result = unsafe { super::#raw_mod::#fn_name(#(#all_ffi_args),*) };
+                    if !err_ptr.is_null() {
+                        let err_msg = unsafe { std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().into_owned() };
+                        return Err(err_msg);
                     }
+                    #extract_result
                 }
             },
         )

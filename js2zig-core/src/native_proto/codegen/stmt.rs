@@ -141,6 +141,91 @@ impl Codegen {
 // ── Function declarations ──────────────────────────────
 
 impl Codegen {
+    pub(crate) fn has_throw_in_body(body: &FunctionBody) -> bool {
+        fn stmt_has_throw(stmt: &Statement) -> bool {
+            match stmt {
+                Statement::ThrowStatement(_) | Statement::TryStatement(_) => true,
+                Statement::IfStatement(s) => {
+                    stmt_or_expr_has_throw(&s.consequent)
+                        || s.alternate.as_ref().is_some_and(|a| stmt_or_expr_has_throw(a))
+                }
+                Statement::WhileStatement(s) => stmt_or_expr_has_throw(&s.body),
+                Statement::DoWhileStatement(s) => stmt_or_expr_has_throw(&s.body),
+                Statement::ForStatement(s) => stmt_or_expr_has_throw(&s.body),
+                Statement::ForOfStatement(s) => stmt_or_expr_has_throw(&s.body),
+                Statement::ForInStatement(s) => stmt_or_expr_has_throw(&s.body),
+                Statement::BlockStatement(s) => s.body.iter().any(stmt_has_throw),
+                Statement::SwitchStatement(s) => {
+                    s.cases.iter().any(|c| c.consequent.iter().any(stmt_has_throw))
+                }
+                _ => false,
+            }
+        }
+
+        fn stmt_or_expr_has_throw(stmt: &Statement) -> bool {
+            match stmt {
+                Statement::BlockStatement(s) => s.body.iter().any(stmt_has_throw),
+                other => stmt_has_throw(other),
+            }
+        }
+
+        body.statements.iter().any(stmt_has_throw)
+    }
+
+    /// Check if a single statement contains a throw (does NOT count try-catch blocks).
+    /// Used for pre-scanning try blocks to decide whether to generate catch handler.
+    pub(crate) fn stmt_has_throw_any(stmt: &Statement) -> bool {
+        match stmt {
+            Statement::ThrowStatement(_) => true,
+            Statement::IfStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.consequent)
+                    || s.alternate.as_ref().is_some_and(|a| {
+                        crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(a)
+                    })
+            }
+            Statement::WhileStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
+            Statement::DoWhileStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
+            Statement::ForStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
+            Statement::ForOfStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
+            Statement::ForInStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
+            Statement::BlockStatement(s) => s.body.iter().any(|s1| Self::stmt_has_throw_any(s1)),
+            Statement::SwitchStatement(s) => s
+                .cases
+                .iter()
+                .any(|c| c.consequent.iter().any(|s1| Self::stmt_has_throw_any(s1))),
+            _ => false,
+        }
+    }
+
+    fn stmt_has_throw_any_alt(stmt: &Statement) -> bool {
+        match stmt {
+            Statement::BlockStatement(s) => s.body.iter().any(|s1| Self::stmt_has_throw_any(s1)),
+            other => Self::stmt_has_throw_any(other),
+        }
+    }
+
+    /// Enter a try block. Sets `inside_try_block` so that `throw` statements
+    /// inside the block generate `break :label error.JsThrow` instead of
+    /// `return error.JsThrow`.
+    pub(crate) fn start_try_block(&mut self, label: &str) {
+        self.inside_try_block = Some(label.to_string());
+    }
+
+    /// Exit a try block. Clears `inside_try_block`.
+    pub(crate) fn end_try_block(&mut self) {
+        self.inside_try_block = None;
+    }
+
     pub(crate) fn emit_fn(&mut self, fd: &Function) {
         let name = fd
             .id
@@ -150,6 +235,11 @@ impl Codegen {
 
         // Check if function contains await (from pre-computed type_info)
         let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
+
+        // Pre-scan: check if function contains throw or try-catch.
+        // This must happen BEFORE generating the return signature (need !T for throw).
+        let has_throw = fd.body.as_ref().is_some_and(|b| Codegen::has_throw_in_body(b));
+        self.fn_has_throw = has_throw;
 
         // Read pre-computed return type from TypeInferResult.
         let ret_ty = self.type_info.fn_return_types.get(name).cloned();
@@ -222,7 +312,7 @@ impl Codegen {
             }
         }
 
-        // Return type — async functions return error unions
+        // Return type — async + throw functions return error unions
         let ret_zig_type = match &self.current_fn_return_type {
             Some(ZigType::I64) => "i64".to_string(),
             Some(ZigType::F64) => "f64".to_string(),
@@ -232,8 +322,10 @@ impl Codegen {
             None => "void".to_string(),
             Some(other) => other.to_zig_type(),
         };
-        let ret_zig_type = if is_async && ret_zig_type != "void" {
+        let ret_zig_type = if (is_async || self.fn_has_throw) && ret_zig_type != "void" {
             format!("!{}", ret_zig_type)
+        } else if self.fn_has_throw && ret_zig_type == "void" {
+            "!void".to_string()
         } else {
             ret_zig_type
         };
@@ -301,6 +393,7 @@ impl Codegen {
                 name: func_name,
                 params,
                 return_type,
+                can_throw: self.fn_has_throw,
             });
         }
     }
@@ -382,28 +475,142 @@ impl Codegen {
             Statement::BlockStatement(bs) => {
                 self.emit_block(bs);
             }
-            Statement::ThrowStatement(_ts) => {
-                // JS throw → skip (unreachable in Zig; catch-block return covers it)
-                self.warnings.push(
-                    "throw statement is ignored; catch-block return is used instead".to_string(),
-                );
+            Statement::ThrowStatement(ts) => {
+                // JS throw expr → Zig: evaluate expr for side effects, then propagate error.
+                // If inside a try block, use `break :label error.JsThrow` so the catch handler
+                // catches it. Otherwise, `return error.JsThrow`.
+                self.write_indent();
+                self.write("_ = ");
+                self.in_return_expr = true;
+                self.emit_expr(&ts.argument);
+                self.in_return_expr = false;
+                self.write(";\n");
+
+                if let Some(ref label) = self.inside_try_block.clone() {
+                    // Inside try-catch: break the try block with error
+                    self.write_indent();
+                    self.writeln(&format!("break :{} error.JsThrow;", label));
+                } else {
+                    // Bare throw: propagate to function return
+                    self.write_indent();
+                    self.writeln("return error.JsThrow;");
+                }
+                self.seen_return = true;
             }
             Statement::TryStatement(ts) => {
                 // JS try { ... } catch(e) { ... } finally { ... }
-                // Emit try block body only; catch/finally are ignored.
-                // The catch block's return value is lost, but for Zig codegen
-                // the try block's normal path (return) covers the expected behavior.
-                // Skip the try/catch wrapper block to avoid indentation issues.
+                //
+                // Two code paths:
+                //   A) Try body has throw → labeled block + catch handler (real semantics)
+                //   B) Try body has no throw → emit body inline, skip catch (unreachable)
+
+                // Pre-scan: does the try body contain throw statements?
+                let has_throw = ts.block.body.iter().any(|s| Self::stmt_has_throw_any(s));
+
+                if !has_throw && ts.handler.is_none() {
+                    // Case B1 (finally only, no throw, no catch):
+                    // emit body, then emit finally inline after (not defer).
+                    for stmt in &ts.block.body {
+                        self.emit_fn_stmt(stmt);
+                    }
+                    if let Some(ref finalizer) = ts.finalizer {
+                        for stmt in &finalizer.body {
+                            self.emit_fn_stmt(stmt);
+                        }
+                    }
+                    return; // caller continues
+                }
+
+                if !has_throw {
+                    // Case B2 (with catch handler, no throw):
+                    // emit body, emit finally inline after, handler unreachable.
+                    for stmt in &ts.block.body {
+                        self.emit_fn_stmt(stmt);
+                    }
+                    if let Some(ref finalizer) = ts.finalizer {
+                        for stmt in &finalizer.body {
+                            self.emit_fn_stmt(stmt);
+                        }
+                    }
+                    return; // caller continues
+                }
+
+                // Case A: try body has throw → full labeled block + catch handler
+
+                let label_id = self.try_label_counter;
+                self.try_label_counter += 1;
+                let blk_label = format!("_js_try_blk_{}", label_id);
+                let result_var = format!("_js_try_{}", label_id);
+
+                // ── Try body wrapped in labeled block ──
+                self.start_try_block(&blk_label);
+                self.write_indent();
+                self.writeln(&format!(
+                    "const {}: anyerror!void = {blk}: {{",
+                    result_var,
+                    blk = blk_label,
+                ));
+                self.indent += 1;
+
+                // Emit try body — throw statements will use break :blk_label
+                // Track whether body exited early (return/throw) to skip normal completion break.
+                let seen_before = self.seen_return;
+                self.seen_return = false;
                 for stmt in &ts.block.body {
                     self.emit_fn_stmt(stmt);
                 }
-                if ts.handler.is_some() {
-                    self.warnings
-                        .push("try-catch handler is ignored in Zig codegen".to_string());
+                let body_exited = self.seen_return;
+                self.seen_return = seen_before;
+
+                // Normal completion: break with void (only if body didn't exit early)
+                if !body_exited {
+                    self.write_indent();
+                    self.writeln(&format!("break :{blk} {{}};", blk = blk_label));
                 }
-                if ts.finalizer.is_some() {
-                    self.warnings
-                        .push("try-finally finalizer is ignored in Zig codegen".to_string());
+
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("};");
+
+                // ── Catch handler ──
+                if let Some(ref handler) = ts.handler {
+                    self.write_indent();
+                    self.write(&format!(
+                        "_ = {} catch |err| {{\n",
+                        result_var
+                    ));
+                    self.indent += 1;
+
+                    // Bind catch parameter: JS `catch(e)` → suppress caught err.
+                    // TODO: when catch body references `e`, map it to `err`.
+                    if let Some(ref param) = handler.param
+                        && let BindingPattern::BindingIdentifier(ref _id) = param.pattern
+                    {
+                        self.write_indent();
+                        self.writeln("_ = @intFromError(err);");
+                    }
+
+                    for stmt in &handler.body.body {
+                        self.emit_fn_stmt(stmt);
+                    }
+
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.writeln("};");
+                } else {
+                    // No handler: discard the result (error still propagates naturally
+                    // for throw-only cases, and for cleanup-only the void is consumed)
+                    self.write_indent();
+                    self.writeln(&format!("_ = {};", result_var));
+                }
+
+                self.end_try_block();
+
+                // ── Emit finally body inline (after try-catch, before subsequent code) ──
+                if let Some(ref finalizer) = ts.finalizer {
+                    for stmt in &finalizer.body {
+                        self.emit_fn_stmt(stmt);
+                    }
                 }
             }
             _ => { /* skip unsupported */ }

@@ -30,7 +30,10 @@ impl Codegen {
             task_counter: 0,
             exported_functions,
             seen_return: false,
+            fn_has_throw: false,
             in_return_expr: false,
+            try_label_counter: 0,
+            inside_try_block: None,
         }
     }
 }

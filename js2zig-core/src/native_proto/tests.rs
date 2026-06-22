@@ -1840,4 +1840,171 @@ function makeBytes() {
             zig
         );
     }
+
+    // ── Try-catch tests ──────────────────────────────────
+
+    #[test]
+    fn test_native_proto_try_catch_basic() {
+        // Basic try-catch: throw in try, caught in catch handler.
+        let js = r##"
+function safeDivide(a, b) {
+    try {
+        if (b === 0) throw "div by zero";
+        return a / b;
+    } catch (e) {
+        return -1;
+    }
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_basic");
+        println!("=== Try-catch basic ===\n{}", zig);
+        // Should generate the labeled block pattern
+        assert!(zig.contains("_js_try_blk_"), "Expected labeled block:\n{}", zig);
+        // Should generate catch |err| for the handler
+        assert!(zig.contains("catch |err|"), "Expected catch |err|:\n{}", zig);
+        // Should NOT have "handler is ignored" warning
+        assert!(
+            !zig.contains("handler is ignored"),
+            "Should not ignore handler:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_basic");
+    }
+
+    #[test]
+    fn test_native_proto_try_catch_throw_break() {
+        // Inside try block, throw should use break :label, not return.
+        let js = r##"
+function check(val) {
+    try {
+        if (val < 0) throw "negative";
+        return val;
+    } catch (e) {
+        return 0;
+    }
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_throw_break");
+        println!("=== Try-catch throw break ===\n{}", zig);
+        // Inside try: throw should use break, not return
+        assert!(
+            zig.contains("break :"),
+            "Expected break :label for throw inside try:\n{}",
+            zig
+        );
+        // Should have catch handler
+        assert!(zig.contains("catch |err|"), "Expected catch handler:\n{}", zig);
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_throw_break");
+    }
+
+    #[test]
+    fn test_native_proto_try_finally() {
+        // try-finally without catch handler.
+        let js = r#"
+function withCleanup() {
+    let x = 0;
+    try {
+        x = 42;
+    } finally {
+        x = 0;
+    }
+    return x;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_finally");
+        println!("=== Try-finally ===\n{}", zig);
+        // Finally body should be inlined after the try body (not defer).
+        // The cleanup x=0 should appear after x=42.
+        assert!(
+            zig.contains("x = 42;") && zig.contains("x = 0;"),
+            "Expected finally body inlined after try body:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_finally");
+    }
+
+    #[test]
+    fn test_native_proto_try_catch_finally() {
+        // try-catch-finally: catch handler + finally cleanup.
+        let js = r##"
+function process(val) {
+    let result = 0;
+    try {
+        if (val < 0) throw "bad";
+        result = val * 2;
+    } catch (e) {
+        result = -1;
+    } finally {
+        val = 0;
+    }
+    return result;
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_finally");
+        println!("=== Try-catch-finally ===\n{}", zig);
+        // Finally body should be inlined after catch, before return result.
+        assert!(
+            zig.contains("val = 0;"),
+            "Expected finally body inlined after catch:\n{}",
+            zig
+        );
+        // Should have catch handler
+        assert!(
+            zig.contains("catch |err|"),
+            "Expected catch handler:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_finally");
+    }
+
+    #[test]
+    fn test_native_proto_try_catch_no_throw() {
+        // try-catch without throw statement: body emitted inline, handler skipped.
+        let js = r#"
+function safeOp(x) {
+    try {
+        return x + 1;
+    } catch (e) {
+        return 0;
+    }
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_no_throw");
+        println!("=== Try-catch no throw ===\n{}", zig);
+        // Body should be emitted (return x + 1)
+        assert!(zig.contains("return x + 1"), "Expected body:\n{}", zig);
+        // Catch handler is unreachable — not generated
+        assert!(
+            !zig.contains("catch |err|"),
+            "Should not have catch for throw-free try:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_no_throw");
+    }
+
+    #[test]
+    fn test_native_proto_throw_bare() {
+        // Bare throw (outside try-catch) should still use return error.JsThrow.
+        let js = r##"
+function reject(val) {
+    if (val < 0) throw "bad";
+    return val;
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_throw_bare");
+        println!("=== Throw bare ===\n{}", zig);
+        // Bare throw should generate return error.JsThrow (not break)
+        assert!(
+            zig.contains("return error.JsThrow"),
+            "Expected return error.JsThrow for bare throw:\n{}",
+            zig
+        );
+        // Should NOT contain break
+        assert!(
+            !zig.contains("break :"),
+            "Should not have break for bare throw:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_throw_bare");
+    }
 }

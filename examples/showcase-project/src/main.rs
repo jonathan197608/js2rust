@@ -16,6 +16,7 @@ use js2rust_bridge::js2rust_bridge;
 js2rust_bridge! {
     "js_src/app.js",
     "js_src/phase5.js",
+    "js_src/test_throw.js",
 }
 
 fn main() {
@@ -109,22 +110,24 @@ fn main() {
     println!("  continueEven(10) = {} (expected 30)", cont_even);
 
     // ── Phase 2: Error Handling ────────────────────────────
+    // Note: try-catch body is not yet implemented (P0-2 pending),
+    // so functions with try-catch will propagate throw to Rust as Err.
     println!();
     println!("--- Error Handling (Phase 2) ---");
     let tc_basic = tryCatchBasic_app();
-    println!("  tryCatchBasic() = {} (expected 42)", tc_basic);
+    println!("  tryCatchBasic() = {:?} (expected Err before P0-2)", tc_basic);
 
     let tc_side = tryCatchSideEffect_app();
-    println!("  tryCatchSideEffect() = {} (expected 15)", tc_side);
+    println!("  tryCatchSideEffect() = {:?} (expected Err before P0-2)", tc_side);
 
     let throw_pos = throwIfNegative_app(5);
-    println!("  throwIfNegative(5) = {} (expected 5)", throw_pos);
+    println!("  throwIfNegative(5) = {:?} (expected Err before P0-2)", throw_pos);
 
     let throw_neg = throwIfNegative_app(-3);
-    println!("  throwIfNegative(-3) = {} (expected 3)", throw_neg);
+    println!("  throwIfNegative(-3) = {:?} (expected Err)", throw_neg);
 
     let tc_multi = tryCatchMultiOp_app();
-    println!("  tryCatchMultiOp() = {} (expected 30)", tc_multi);
+    println!("  tryCatchMultiOp() = {:?} (expected Err before P0-2)", tc_multi);
 
     // ── Phase 3: Operators ─────────────────────────────────
     println!();
@@ -226,6 +229,57 @@ fn main() {
 
     let every_ok = testArrayEvery_app();
     println!("  testArrayEvery() = {} (expected 0)", every_ok);
+
+    // ── P0-3: throw→error end-to-end ────────────────────
+    println!();
+    println!("--- Throw → Error Propagation (P0-3) ---");
+
+    // 1. bareThrowStr: string return with bare throw → Result<String, String>
+    let str_ok = bareThrowStr_app(false);
+    println!("  bareThrowStr(false) = {:?} (expected Ok(\"ok\"))", str_ok);
+    assert!(str_ok.as_deref() == Ok("ok"), "bareThrowStr(false) should return Ok(\"ok\"), got {:?}", str_ok);
+
+    let str_err = bareThrowStr_app(true);
+    println!("  bareThrowStr(true) = {:?} (expected Err)", str_err);
+    assert!(str_err.is_err(), "bareThrowStr(true) should be Err, got {:?}", str_err);
+
+    // 2. bareThrowI64: i64 return with bare throw → Result<i64, String>
+    let i64_ok = bareThrowI64_app(false);
+    println!("  bareThrowI64(false) = {:?} (expected Ok(42))", i64_ok);
+    assert_eq!(i64_ok, Ok(42), "bareThrowI64(false) should be Ok(42)");
+
+    let i64_err = bareThrowI64_app(true);
+    println!("  bareThrowI64(true) = {:?} (expected Err)", i64_err);
+    assert!(i64_err.is_err(), "bareThrowI64(true) should be Err, got {:?}", i64_err);
+
+    // 3. bareThrowVoid: void return with bare throw → Result<(), String>
+    let void_ok = bareThrowVoid_app(false);
+    println!("  bareThrowVoid(false) = {:?} (expected Ok(()))", void_ok);
+    assert_eq!(void_ok, Ok(()), "bareThrowVoid(false) should be Ok(())");
+
+    let void_err = bareThrowVoid_app(true);
+    println!("  bareThrowVoid(true) = {:?} (expected Err)", void_err);
+    assert!(void_err.is_err(), "bareThrowVoid(true) should be Err, got {:?}", void_err);
+
+    // 4. caughtThrow: try-catch catches → normal return (no error)
+    let caught_ok = caughtThrow_app(false);
+    println!("  caughtThrow(false) = {:?} (expected Ok(100))", caught_ok);
+    assert_eq!(caught_ok, Ok(100), "caughtThrow(false) should be Ok(100)");
+
+    let caught_err = caughtThrow_app(true);
+    println!("  caughtThrow(true) = {:?} (expected Ok(-1), error caught)", caught_err);
+    assert_eq!(caught_err, Ok(-1), "caughtThrow(true) should be Ok(-1) (error caught internally)");
+
+    // 5. tryFinally: try-catch-finally → finally always runs
+    let tf_ok = tryFinally_app(false);
+    println!("  tryFinally(false) = {:?} (expected Ok(11))", tf_ok);
+    assert_eq!(tf_ok, Ok(11), "tryFinally(false): 10 + 1 from finally = 11");
+
+    let tf_err = tryFinally_app(true);
+    println!("  tryFinally(true) = {:?} (expected Ok(-9))", tf_err);
+    assert_eq!(tf_err, Ok(-9), "tryFinally(true): -10 + 1 from finally = -9");
+
+    println!("  All throw→error tests passed!");
 
     // Cleanup
     js2rust_deinit();
