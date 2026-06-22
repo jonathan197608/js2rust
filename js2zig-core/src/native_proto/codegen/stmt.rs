@@ -1032,8 +1032,155 @@ impl Codegen {
 impl Codegen {
     /// Emit an arrow function as a Zig function.
     /// Generates the function definition and returns the function name.
+    /// Collect captured variables from an arrow function body.
+    /// A variable is "captured" if it's referenced in the body but is not a parameter.
+    fn collect_captured_vars(&self, arrow: &ArrowFunctionExpression) -> Vec<(String, ZigType, bool)> {
+        use oxc_ast::ast::Expression;
+        let mut captured = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Collect parameter names (as String for comparison)
+        let param_names: std::collections::HashSet<String> = arrow
+            .params
+            .items
+            .iter()
+            .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+            .map(|s| s.to_string())
+            .collect();
+
+        // Walk the body statements to find Identifier references
+        for stmt in &arrow.body.statements {
+            Self::collect_idents_from_stmt(stmt, &mut captured, &mut seen, &param_names, &self.type_info);
+        }
+
+        captured
+    }
+
+    /// Helper: collect identifiers from a statement
+    fn collect_idents_from_stmt(
+        stmt: &Statement,
+        captured: &mut Vec<(String, ZigType, bool)>,
+        seen: &mut std::collections::HashSet<String>,
+        param_names: &std::collections::HashSet<String>,
+        type_info: &crate::native_proto::TypeCheckResult,
+    ) {
+        use oxc_ast::ast::Expression;
+        match stmt {
+            Statement::ExpressionStatement(es) => {
+                Self::collect_idents_from_expr(&es.expression, captured, seen, param_names, type_info);
+            }
+            Statement::ReturnStatement(ret) => {
+                if let Some(expr) = &ret.argument {
+                    Self::collect_idents_from_expr(expr, captured, seen, param_names, type_info);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Helper: collect identifiers from an expression
+    fn collect_idents_from_expr(
+        expr: &Expression,
+        captured: &mut Vec<(String, ZigType, bool)>,
+        seen: &mut std::collections::HashSet<String>,
+        param_names: &std::collections::HashSet<String>,
+        type_info: &crate::native_proto::TypeCheckResult,
+    ) {
+        use oxc_ast::ast::Expression;
+        match expr {
+            Expression::Identifier(id) => {
+                let name = id.name.as_str();
+                // If not a parameter and not already seen, it's a captured variable
+                if !param_names.contains(name) && !seen.contains(name) {
+                    seen.insert(name.to_string());
+                    let ztype = type_info.var_types.get(name).cloned().unwrap_or(ZigType::I64);
+                    // TODO: properly detect if captured var is mutated in arrow body
+                    let is_mut = false;
+                    captured.push((name.to_string(), ztype, is_mut));
+                }
+            }
+            Expression::BinaryExpression(be) => {
+                Self::collect_idents_from_expr(&be.left, captured, seen, param_names, type_info);
+                Self::collect_idents_from_expr(&be.right, captured, seen, param_names, type_info);
+            }
+            Expression::CallExpression(ce) => {
+                for arg in &ce.arguments {
+                    if let Some(expr) = arg.as_expression() {
+                        Self::collect_idents_from_expr(expr, captured, seen, param_names, type_info);
+                    }
+                }
+                Self::collect_idents_from_expr(&ce.callee, captured, seen, param_names, type_info);
+            }
+            _ => {}
+        }
+    }
+
+    /// Emit a closure struct for an arrow function with captured variables.
+    fn emit_closure_struct(&mut self, arrow: &ArrowFunctionExpression, captured: Vec<(String, ZigType, bool)>) -> String {
+        let struct_name = format!("Closure_{}", self.arrow_counter);
+        self.arrow_counter += 1;
+
+        // Store closure info for assignment site
+        self.closure_vars.insert(struct_name.clone(), captured.clone());
+
+        self.write_indent();
+        self.writeln(&format!("const {} = struct {{", struct_name));
+        self.indent += 1;
+
+        // Fields for captured variables
+        for (name, ztype, _is_mut) in &captured {
+            let tstr = match ztype {
+                ZigType::I64 => "i64",
+                ZigType::F64 => "f64",
+                ZigType::Bool => "bool",
+                ZigType::Str => "[]const u8",
+                _ => "i64",
+            };
+            self.write_indent();
+            self.writeln(&format!("{}: {},", name, tstr));
+        }
+
+        // call method
+        self.write_indent();
+        self.write(&format!("fn call(self: {}, ", struct_name));
+        for (param_idx, param) in arrow.params.items.iter().enumerate() {
+            if param_idx > 0 { self.write(", "); }
+            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                self.write(&format!("{}: anytype", pname));
+            }
+        }
+        self.writeln(") i64 {");
+
+        self.indent += 1;
+        // method body
+        if arrow.body.statements.len() == 1 {
+            if let Statement::ExpressionStatement(es) = &arrow.body.statements[0] {
+                self.write_indent();
+                self.write("return ");
+                self.emit_expr(&es.expression);
+                self.write(";
+");
+            }
+        }
+        self.indent -= 1;
+        self.write_indent();
+        self.writeln("}");
+
+        self.indent -= 1;
+        self.write_indent();
+        self.writeln("};");
+
+        struct_name
+    }
+
     pub(crate) fn emit_arrow_function(&mut self, arrow: &ArrowFunctionExpression) -> String {
-        // Generate unique function name
+        // Detect captured variables (closure check)
+        let captured = self.collect_captured_vars(arrow);
+        if !captured.is_empty() {
+            // Has captured vars: generate closure struct
+            return self.emit_closure_struct(arrow, captured);
+        }
+        // No captured vars: generate plain nested function (current behavior)
         let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
         self.arrow_counter += 1;
         

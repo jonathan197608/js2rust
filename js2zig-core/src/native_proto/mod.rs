@@ -3,6 +3,8 @@
 // Native-type system codegen module.
 // All Codegen impl methods are in codegen.rs.
 //
+use std::collections::HashMap;
+
 // Strict static type system:
 // - All types must be known at compile time.
 // - No dynamic types (JsAny, Map, etc.).
@@ -341,4 +343,9 @@ pub struct Codegen {
     pub inside_try_block: Option<String>,
     /// Current function name being generated (for function-scoped mutated_vars).
     pub current_fn: Option<String>,
+    /// Captured variables for the current arrow function: (name, type, is_mutable)
+    pub current_captured: Vec<(String, ZigType, bool)>,
+    /// Map: closure variable name → list of (captured_name, type, is_mutable)
+    /// Used to generate struct instance at assignment and .call() at call site.
+    pub closure_vars: HashMap<String, Vec<(String, ZigType, bool)>>,
 }

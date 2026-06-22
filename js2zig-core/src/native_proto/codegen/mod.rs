@@ -37,6 +37,8 @@ impl Codegen {
             pending_arrow_fns: Vec::new(),
             inside_try_block: None,
             current_fn: None,
+            current_captured: Vec::new(),
+            closure_vars: std::collections::HashMap::new(),
         }
     }
 }
