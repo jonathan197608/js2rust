@@ -241,6 +241,15 @@ impl Codegen {
                     }
                 }
             }
+            Expression::ArrowFunctionExpression(_) => {
+                // Arrow functions: (params) => expr or (params) => { ... }
+                // P1-2: single-expression arrow functions should be inlined.
+                // For now, generate @compileError (basic support TODO).
+                self.errors.push(
+                    "ArrowFunctionExpression is not yet supported (TODO: P1-2)".to_string()
+                );
+                self.write("@compileError(\"ArrowFunctionExpression not supported\")");
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(

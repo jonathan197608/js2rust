@@ -331,6 +331,10 @@ pub struct Codegen {
     pub in_return_expr: bool,
     /// Counter for generating unique try-block labels (for nested try-catch).
     pub try_label_counter: u32,
+    /// Counter for generating unique arrow function names.
+    pub arrow_counter: u32,
+    /// Pending arrow function declarations to be emitted at the top level.
+    pub pending_arrow_fns: Vec<String>,
     /// When inside a try block, the label name for `break :label`.
     /// throw statements inside the try block emit `break :label error.JsThrow`
     /// instead of `return error.JsThrow`.
