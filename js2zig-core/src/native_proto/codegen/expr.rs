@@ -1202,7 +1202,27 @@ impl Codegen {
 
     // Assignment
     fn emit_assignment(&mut self, ae: &AssignmentExpression) {
-        match &ae.left {
+        // Zig 0.16+: signed integer division requires @divTrunc/@rem
+        if ae.operator == AssignmentOperator::Division || ae.operator == AssignmentOperator::Remainder {
+            let op_fn = if ae.operator == AssignmentOperator::Division { "@divTrunc" } else { "@rem" };
+            // Emit target, then " = op(target, value)"
+            self.emit_assignment_target(&ae.left);
+            self.write(&format!(" = {}(", op_fn));
+            // Re-emit target as first argument to the operation
+            self.emit_assignment_target(&ae.left);
+            self.write(", ");
+            self.emit_expr(&ae.right);
+            self.write(")");
+            return;
+        }
+
+        self.emit_assignment_target(&ae.left);
+        self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
+        self.emit_expr(&ae.right);
+    }
+
+    fn emit_assignment_target(&mut self, target: &AssignmentTarget) {
+        match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
                 self.write(id.name.as_str());
             }
@@ -1212,21 +1232,17 @@ impl Codegen {
                 self.write(mem.property.name.as_str());
             }
             AssignmentTarget::ComputedMemberExpression(_mem) => {
-                // Dynamic property access is not allowed in strict type system.
                 self.errors.push(
                     "Dynamic property assignment (obj[key] = value) is not allowed. Use static property assignment (obj.prop = value).".to_string()
                 );
                 self.write("/* error: dynamic property assignment */");
             }
             _ => {
-                // Unsupported assignment target
                 self.errors
                     .push("Unsupported assignment target".to_string());
                 self.write("/* unsupported assign target */");
             }
         }
-        self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
-        self.emit_expr(&ae.right);
     }
 
     // Unary expression

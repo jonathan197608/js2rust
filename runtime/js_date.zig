@@ -1,12 +1,38 @@
 //! JS Date method implementations for Zig.
-//! Uses std.time for timestamp operations.
 //! Date methods return simple approximations (full calendar math is complex).
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// Date.now — returns current timestamp in milliseconds (i64).
+/// Cross-platform: uses GetSystemTimeAsFileTime on Windows, clock_gettime elsewhere.
 pub fn now() i64 {
-    return std.time.milliTimestamp();
+    return milliTimestamp();
+}
+
+fn milliTimestamp() i64 {
+    return switch (builtin.os.tag) {
+        .windows => milliTimestampWindows(),
+        else => milliTimestampPosix(),
+    };
+}
+
+fn milliTimestampWindows() i64 {
+    const kernel32 = struct {
+        extern "kernel32" fn GetSystemTimeAsFileTime(
+            lpSystemTimeAsFileTime: *i64,
+        ) callconv(.winapi) void;
+    };
+    var ft: i64 = undefined;
+    kernel32.GetSystemTimeAsFileTime(&ft);
+    const hns: u64 = @bitCast(ft);
+    return @as(i64, @intCast(hns / 10000)) - 11644473600000;
+}
+
+fn milliTimestampPosix() i64 {
+    var ts: std.posix.timespec = undefined;
+    std.posix.system.clock_gettime(.REALTIME, &ts) catch return 0;
+    return @as(i64, ts.tv_sec) * 1000 + @divTrunc(@as(i64, ts.tv_nsec), 1_000_000);
 }
 
 /// Date.getTime — get milliseconds from an epoch-seconds value.
@@ -25,10 +51,10 @@ pub fn getFullYear(millis: i64) i64 {
     var d = days;
     while (d < 0) {
         y -= 1;
-        d += if (@mod(y, 4) == 0 and (@mod(y, 100) != 0 or @mod(y, 400) == 0)) i64(366) else i64(365);
+        d += if (@mod(y, 4) == 0 and (@mod(y, 100) != 0 or @mod(y, 400) == 0)) @as(i64, 366) else @as(i64, 365);
     }
     while (d >= 365) {
-        const days_in_y = if (@mod(y, 4) == 0 and (@mod(y, 100) != 0 or @mod(y, 400) == 0)) i64(366) else i64(365);
+        const days_in_y = if (@mod(y, 4) == 0 and (@mod(y, 100) != 0 or @mod(y, 400) == 0)) @as(i64, 366) else @as(i64, 365);
         if (d < days_in_y) break;
         d -= days_in_y;
         y += 1;
