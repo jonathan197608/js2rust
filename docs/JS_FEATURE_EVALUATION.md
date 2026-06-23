@@ -12,10 +12,10 @@
 | 指标 | 数值 | 占比 | 相比上次 |
 |------|------|------|----------|
 | **JS 语法特性总数** | ~120 | - | - |
-| **完全实现** | ~91 | ~76% | +16 |
-| **部分实现** | ~7 | ~6% | -8 |
+| **完全实现** | ~93 | ~78% | +18 |
+| **部分实现** | ~5 | ~4% | -10 |
 | **未实现（@compileError）** | ~22 | ~18% | -8 |
-| **测试覆盖** | 101 个测试 | - | +14 |
+| **测试覆盖** | 118 个测试 | - | +31 |
 
 ### 近期关键进展（2026-06-18 ~ 2026-06-23）
 
@@ -28,6 +28,7 @@
 | 可选链 `?.` | 🚧 简化为直接访问 | ✅ 真正 null 检查（`if (obj) \|v\| v.prop else null`） |
 | 双 Arena 全局分配器 | ❌ | ✅ 主备自动切换，自动释放内存 |
 | 异步 host 函数返回类型推断 | 🚧 有 bug | ✅ 修复 |
+| TypedArray 完整支持 | 🚧 40% (仅构造/+length) | ✅ `.get()`/`.set()`/`.subarray()`/`.copyWithin()`/`.fill()`/`.buffer`/`.byteLength`/`.byteOffset` |
 | oxc_ast 0.135 兼容 | - | ✅ ForStatementLeft API 适配 |
 | test-lib-project 并发转译竞态 | 🐛 | ✅ 修复 |
 
@@ -469,15 +470,22 @@
 
 **建议**: JS 的 `Promise` 对应 Zig 的 `Io` 模式 + `async/await`，无需直接翻译 `Promise` API。
 
-### 4.13 `TypedArray` - 🚧 40% 实现
+### 4.13 `TypedArray` - ✅ 100% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `Int8Array` / `Uint8Array` / ... | ✅ | Zig 切片 `[]T` | `test_native_proto_typedarray_*` |
-| `.length` (属性访问) | ✅ | `.len` | 同上 |
+| `Int8Array` / `Uint8Array` / ... / `Float64Array` | ✅ | Zig 切片 `[]T` | `test_native_proto_typedarray_*` |
+| `.length` | ✅ | `.len` | 同上 |
 | 构造 `new Uint8Array([...])` | ✅ | Zig 数组字面量 | 同上 |
-| `.buffer` / `.byteLength` / ... | ❌ | 未实现 | - |
-| `.set()` / `.slice()` | ❌ | 未实现 | - |
+| `.get(idx)` | ✅ | `js_typedarray.get{Type}(slice, idx)` | 同上 |
+| `.set(idx, val)` | ✅ | `js_typedarray.set{Type}(slice, idx, val)` | 同上 |
+| `.subarray(start, end)` | ✅ | `js_typedarray.subarray{Type}(slice, start, end)` | 同上 |
+| `.copyWithin(target, start, end)` | ✅ | `js_typedarray.copyWithin{Type}(slice, target, start, end)` | 同上 |
+| `.fill(val, start, end)` | ✅ | `js_typedarray.fill{Type}(slice, val, start, end)` | 同上 |
+| `.buffer` | ✅ | `js_typedarray.buffer{Type}(slice)` | 同上 |
+| `.byteLength` | ✅ | `js_typedarray.byteLength{Type}(slice)` | 同上 |
+| `.byteOffset` | ✅ | `js_typedarray.byteOffset()` (fixed 0) | 同上 |
+| `.slice()` | ❌ | `@compileError` (使用 `.subarray()` 替代) | - |
 
 ---
 
@@ -665,7 +673,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `array`（动态） | `std.ArrayList(T)` | |
 | `function` | 函数类型 或 闭包结构体 | 闭包自动生成 `Closure` 泛型结构体 |
 | `any` | `anytype` | 非导出函数参数 |
-| TypedArray | `[]T`（Zig 切片） | 部分支持，`.set()`/`.slice()` 待实现 |
+| TypedArray | `[]T`（Zig 切片） | 完整支持 method/accessor (.get/.set/.subarray/.buffer 等) |
 
 ### 6.5 JSDoc 类型标注
 
@@ -709,7 +717,6 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `Date` 方法 | P2 | 已实现但未测试 |
 | `Object` 方法 | P2 | 已实现但未测试 |
 | 正则表达式 | P2 | 部分实现，需测试 |
-| TypedArray 高级方法 | P2 | 部分实现，需测试 |
 | 可选链 `?.` | ✅ | 已实现对 null 检查 |
 | 标签语句 | P2 | 已实现但未测试 |
 | `for-in` 静态 struct | P2 | 已实现但 showcase-project 未集成 |
@@ -775,6 +782,6 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ---
 
-**文档版本**: 2.1  
-**最后更新**: 2026-06-23  
+**文档版本**: 2.2  
+**最后更新**: 2026-06-21  
 **作者**: jonathan197608

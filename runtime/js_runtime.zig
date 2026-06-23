@@ -68,3 +68,44 @@ pub fn deinitIo() void {
     g_threaded = null;
     g_io_allocator = null;
 }
+
+// ── Object spread/merge helpers ─────────────────────────────────
+// These provide compile-time merging of anonymous structs,
+// used by the codegen for { ...a, ...b, c: 1 } syntax.
+
+/// Compute the merged struct type for two anonymous structs.
+/// Fields from B are concatenated after fields from A.
+/// Duplicate field names will cause a compile error.
+pub fn SpreadMerge(comptime A: type, comptime B: type) type {
+    const a_info = @typeInfo(A).@"struct";
+    const b_info = @typeInfo(B).@"struct";
+    return @Type(.{ .@"struct" = .{
+        .layout = .auto,
+        .fields = a_info.fields ++ b_info.fields,
+        .decls = &.{},
+        .is_tuple = false,
+    } });
+}
+
+/// Merge two anonymous structs at compile time.
+/// Returns a new struct with all fields from `a` followed by all fields from `b`.
+/// Duplicate field names across `a` and `b` will cause a compile error.
+pub fn spreadMerge(a: anytype, b: anytype) SpreadMerge(@TypeOf(a), @TypeOf(b)) {
+    const A = @TypeOf(a);
+    const B = @TypeOf(b);
+    if (@typeInfo(A) != .@"struct") {
+        @compileError("spreadMerge: first argument must be an anonymous struct, got " ++ @typeName(A));
+    }
+    if (@typeInfo(B) != .@"struct") {
+        @compileError("spreadMerge: second argument must be an anonymous struct, got " ++ @typeName(B));
+    }
+
+    var result: SpreadMerge(A, B) = undefined;
+    inline for (@typeInfo(A).@"struct".fields) |f| {
+        @field(result, f.name) = @field(a, f.name);
+    }
+    inline for (@typeInfo(B).@"struct".fields) |f| {
+        @field(result, f.name) = @field(b, f.name);
+    }
+    return result;
+}

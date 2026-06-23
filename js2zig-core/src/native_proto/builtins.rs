@@ -38,6 +38,12 @@ pub enum BuiltinCall {
     ArraySome,    // arr.some(fn)
     ArrayEvery,   // arr.every(fn)
 
+    // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
+    // .slice routed through ArraySlice + typedarray_vars check)
+    TypedArraySubarray,   // arr.subarray(start, end)
+    TypedArrayCopyWithin, // arr.copyWithin(target, start, end)
+    TypedArrayFill,       // arr.fill(val, start, end)
+
     // String methods
     StringIndexOf,    // str.indexOf(search)
     StringIncludes,   // str.includes(search)
@@ -54,6 +60,28 @@ pub enum BuiltinCall {
 
     // Set methods (called on local Set variables)
     SetAdd, // set.add(value)
+
+    // Date methods (static)
+    DateNow,  // Date.now() → i64
+    DateParse, // Date.parse(str) → i64
+    DateUTC,  // Date.UTC(y, m, d) → i64
+
+    // Date methods (instance — called on an i64 millis value)
+    DateGetTime,     // date.getTime()
+    DateGetFullYear, // date.getFullYear()
+    DateGetMonth,    // date.getMonth()
+    DateGetDate,     // date.getDate()
+    DateGetDay,      // date.getDay()
+    DateGetHours,    // date.getHours()
+    DateGetMinutes,  // date.getMinutes()
+    DateGetSeconds,  // date.getSeconds()
+
+    // Object methods (static)
+    ObjectKeys,   // Object.keys(obj)
+    ObjectValues, // Object.values(obj)
+    ObjectEntries, // Object.entries(obj)
+    ObjectAssign, // Object.assign(target, source)
+    ObjectFreeze, // Object.freeze(obj)
 
     // Global functions
     ParseInt, // parseInt(s)
@@ -99,6 +127,32 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             }
         }
 
+        // Check if object is "Date" (for Date static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Date"
+        {
+            match method_name {
+                "now" => return Some(BuiltinCall::DateNow),
+                "parse" => return Some(BuiltinCall::DateParse),
+                "UTC" => return Some(BuiltinCall::DateUTC),
+                _ => return None,
+            }
+        }
+
+        // Check if object is "Object" (for Object static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Object"
+        {
+            match method_name {
+                "keys" => return Some(BuiltinCall::ObjectKeys),
+                "values" => return Some(BuiltinCall::ObjectValues),
+                "entries" => return Some(BuiltinCall::ObjectEntries),
+                "assign" => return Some(BuiltinCall::ObjectAssign),
+                "freeze" => return Some(BuiltinCall::ObjectFreeze),
+                _ => return None,
+            }
+        }
+
         // Check if object is a string literal (for String methods)
         let is_string = matches!(obj_expr, Expression::StringLiteral(_));
 
@@ -126,14 +180,13 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 }
             }
 
-            // Array-specific methods
             "pop" => Some(BuiltinCall::ArrayPop),
             "shift" => Some(BuiltinCall::ArrayShift),
             "unshift" => Some(BuiltinCall::ArrayUnshift),
             "reverse" => Some(BuiltinCall::ArrayReverse),
             "sort" => Some(BuiltinCall::ArraySort),
             "join" => Some(BuiltinCall::ArrayJoin),
-            "slice" => Some(BuiltinCall::ArraySlice),
+            "slice" => Some(BuiltinCall::ArraySlice), // also handled as TypedArray in emit_builtin_call
             "splice" => Some(BuiltinCall::ArraySplice),
             "forEach" => Some(BuiltinCall::ArrayForEach),
             "map" => Some(BuiltinCall::ArrayMap),
@@ -141,6 +194,21 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "reduce" => Some(BuiltinCall::ArrayReduce),
             "some" => Some(BuiltinCall::ArraySome),
             "every" => Some(BuiltinCall::ArrayEvery),
+
+            // TypedArray-specific methods (non-overlapping with Array)
+            "subarray" => Some(BuiltinCall::TypedArraySubarray),
+            "copyWithin" => Some(BuiltinCall::TypedArrayCopyWithin),
+            "fill" => Some(BuiltinCall::TypedArrayFill),
+
+            // Date instance methods (called on an i64 millis value)
+            "getTime" => Some(BuiltinCall::DateGetTime),
+            "getFullYear" => Some(BuiltinCall::DateGetFullYear),
+            "getMonth" => Some(BuiltinCall::DateGetMonth),
+            "getDate" => Some(BuiltinCall::DateGetDate),
+            "getDay" => Some(BuiltinCall::DateGetDay),
+            "getHours" => Some(BuiltinCall::DateGetHours),
+            "getMinutes" => Some(BuiltinCall::DateGetMinutes),
+            "getSeconds" => Some(BuiltinCall::DateGetSeconds),
 
             // Map methods (called on local Map variables)
             "set" => Some(BuiltinCall::MapSet),

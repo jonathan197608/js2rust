@@ -175,6 +175,10 @@ impl Codegen {
                             }
                             self.emit_expr(init);
                             self.write(";\n");
+                            if let Some(ta_type) = typedarray_init_type(init) {
+                                self.typedarray_vars
+                                    .insert(name.to_string(), ta_type.to_string());
+                            }
                             // Zig 0.16.0: 'var' for ArrayList/Map/Set needs &var suppression
                             // (method calls like reverse/sort go through .items, not &arr)
                             if !is_const {
@@ -195,6 +199,10 @@ impl Codegen {
                             self.write(&format!("{} {} = ", kw, name));
                             self.emit_expr(init);
                             self.write(";\n");
+                            if let Some(ta_type) = typedarray_init_type(init) {
+                                self.typedarray_vars
+                                    .insert(name.to_string(), ta_type.to_string());
+                            }
                         }
                     }
                     None => {
@@ -219,6 +227,7 @@ impl Codegen {
         fn stmt_has_throw(stmt: &Statement) -> bool {
             match stmt {
                 Statement::ThrowStatement(_) | Statement::TryStatement(_) => true,
+                Statement::LabeledStatement(s) => stmt_or_expr_has_throw(&s.body),
                 Statement::IfStatement(s) => {
                     stmt_or_expr_has_throw(&s.consequent)
                         || s.alternate.as_ref().is_some_and(|a| stmt_or_expr_has_throw(a))
@@ -251,6 +260,9 @@ impl Codegen {
     pub(crate) fn stmt_has_throw_any(stmt: &Statement) -> bool {
         match stmt {
             Statement::ThrowStatement(_) => true,
+            Statement::LabeledStatement(s) => {
+                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+            }
             Statement::IfStatement(s) => {
                 crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.consequent)
                     || s.alternate.as_ref().is_some_and(|a| {
@@ -364,6 +376,24 @@ impl Codegen {
                 }
                 param_idx += 1;
             }
+            // Handle rest parameter (...args) from type_info or AST
+            if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
+                crate::native_proto::infer::binding_name(&r.rest.argument)
+            }) {
+                if let Some(rname) = rest_name {
+                    if param_idx > 0 || is_async {
+                        self.write(", ");
+                    }
+                    let zig_pname = if fn_used_names.contains(rname) {
+                        rname
+                    } else {
+                        self.write("_");
+                        rname
+                    };
+                    // Rest parameter: accepts []const JsAny
+                    self.write(&format!("{}: []const JsAny", zig_pname));
+                }
+            }
         } else {
             // Fallback: generate params from AST with anytype
             let mut param_idx = 0;
@@ -384,6 +414,23 @@ impl Codegen {
                     };
                     self.write(&format!("{}: anytype", zig_pname));
                     param_idx += 1;
+                }
+            }
+            // Handle rest parameter (...args) in fallback mode
+            if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
+                crate::native_proto::infer::binding_name(&r.rest.argument)
+            }) {
+                if let Some(rname) = rest_name {
+                    if param_idx > 0 || is_async {
+                        self.write(", ");
+                    }
+                    let zig_pname = if fn_used_names.contains(rname) {
+                        rname
+                    } else {
+                        self.write("_");
+                        rname
+                    };
+                    self.write(&format!("{}: []const JsAny", zig_pname));
                 }
             }
         }
@@ -546,13 +593,78 @@ impl Codegen {
             Statement::SwitchStatement(ss) => {
                 self.emit_switch(ss);
             }
-            Statement::BreakStatement(_) => {
+            Statement::BreakStatement(bs) => {
                 self.write_indent();
-                self.write("break;\n");
+                if let Some(ref label) = bs.label {
+                    self.write(&format!("break :{};\n", label.name));
+                } else {
+                    self.write("break;\n");
+                }
             }
-            Statement::ContinueStatement(_) => {
+            Statement::ContinueStatement(cs) => {
                 self.write_indent();
-                self.write("continue;\n");
+                if let Some(ref label) = cs.label {
+                    self.write(&format!("continue :{};\n", label.name));
+                } else {
+                    self.write("continue;\n");
+                }
+            }
+            Statement::LabeledStatement(ls) => {
+                // labeled statement → Zig labeled block or loop
+                let label_name = ls.label.name.as_str();
+                match &ls.body {
+                    // For loops: label attaches directly to the loop syntax
+                    Statement::WhileStatement(_) => {
+                        self.write_indent();
+                        self.write(&format!("{}: ", label_name));
+                        self.emit_while_labeled(match &ls.body {
+                            Statement::WhileStatement(ws) => ws,
+                            _ => unreachable!(),
+                        });
+                    }
+                    Statement::ForStatement(_) => {
+                        self.write_indent();
+                        self.write(&format!("{}: ", label_name));
+                        self.emit_for_labeled(match &ls.body {
+                            Statement::ForStatement(fs) => fs,
+                            _ => unreachable!(),
+                        });
+                    }
+                    Statement::ForOfStatement(_) => {
+                        self.write_indent();
+                        self.write(&format!("{}: ", label_name));
+                        self.emit_for_of_labeled(match &ls.body {
+                            Statement::ForOfStatement(fos) => fos,
+                            _ => unreachable!(),
+                        });
+                    }
+                    Statement::ForInStatement(_) => {
+                        self.write_indent();
+                        self.write(&format!("{}: ", label_name));
+                        self.emit_for_in_labeled(match &ls.body {
+                            Statement::ForInStatement(fis) => fis,
+                            _ => unreachable!(),
+                        });
+                    }
+                    Statement::DoWhileStatement(_) => {
+                        self.write_indent();
+                        self.write(&format!("{}: ", label_name));
+                        self.emit_do_while_labeled(match &ls.body {
+                            Statement::DoWhileStatement(dws) => dws,
+                            _ => unreachable!(),
+                        });
+                    }
+                    _ => {
+                        // Generic labeled block (for if/switch/block etc)
+                        self.write_indent();
+                        self.writeln(&format!("{}: {{", label_name));
+                        self.indent += 1;
+                        self.emit_fn_stmt(&ls.body);
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.writeln("}");
+                    }
+                }
             }
             Statement::BlockStatement(bs) => {
                 self.emit_block(bs);
@@ -775,11 +887,20 @@ impl Codegen {
         self.write("while (");
         self.emit_expr(&ws.test);
         self.write(") {\n");
-
         self.indent += 1;
         self.emit_stmt_or_block(&ws.body);
         self.indent -= 1;
+        self.writeln("}");
+    }
 
+    fn emit_while_labeled(&mut self, ws: &WhileStatement) {
+        // Label already written by LabeledStatement handler, no indent needed
+        self.write("while (");
+        self.emit_expr(&ws.test);
+        self.write(") {\n");
+        self.indent += 1;
+        self.emit_stmt_or_block(&ws.body);
+        self.indent -= 1;
         self.writeln("}");
     }
 
@@ -801,10 +922,30 @@ impl Codegen {
         self.writeln("}");
     }
 
+    fn emit_do_while_labeled(&mut self, dws: &DoWhileStatement) {
+        self.writeln("while (true) {");
+        self.indent += 1;
+        self.emit_stmt_or_block(&dws.body);
+        self.write_indent();
+        self.write("if (");
+        self.emit_expr(&dws.test);
+        self.write(") {} else { break; }\n");
+        self.indent -= 1;
+        self.writeln("}");
+    }
+
     // JS:  for (init; test; update) { ... }
     // Zig: { init; while (test) : (update) { ... } }
     fn emit_for(&mut self, fs: &ForStatement) {
         self.write_indent();
+        self.emit_for_body(fs);
+    }
+
+    fn emit_for_labeled(&mut self, fs: &ForStatement) {
+        self.emit_for_body(fs);
+    }
+
+    fn emit_for_body(&mut self, fs: &ForStatement) {
         self.write("{\n");
         self.indent += 1;
 
@@ -897,6 +1038,35 @@ impl Codegen {
         self.writeln("}");
     }
 
+    fn emit_for_of_labeled(&mut self, fos: &ForOfStatement) {
+        let var_name = match &fos.left {
+            ForStatementLeft::VariableDeclaration(vd) => vd
+                .declarations
+                .first()
+                .and_then(|decl| self.binding_name(&decl.id))
+                .unwrap_or("item")
+                .to_string(),
+            _ => "item".to_string(),
+        };
+        let iterable_is_arraylist = match &fos.right {
+            Expression::Identifier(id) => self
+                .type_info
+                .var_types
+                .get(id.name.as_str())
+                .map(|t| matches!(t, ZigType::ArrayList(_)))
+                .unwrap_or(false),
+            _ => false,
+        };
+        self.write("for (");
+        self.emit_expr(&fos.right);
+        if iterable_is_arraylist { self.write(".items"); }
+        self.write(&format!(") |{}| {{\n", var_name));
+        self.indent += 1;
+        self.emit_stmt_or_block(&fos.body);
+        self.indent -= 1;
+        self.writeln("}");
+    }
+
     /// JS: for (var key in obj) { ... }
     /// Zig:
     ///   - HashMap: var it = obj.iterator(); while (it.next()) |kv| { const key = kv.key_ptr.*; ... }
@@ -972,6 +1142,62 @@ impl Codegen {
 
         // Case 3: Unknown type → compile error
         self.write_indent();
+        self.write(&format!(
+            "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
+            obj_name
+        ));
+    }
+
+    fn emit_for_in_labeled(&mut self, fis: &ForInStatement) {
+        let var_name = match &fis.left {
+            ForStatementLeft::VariableDeclaration(vd) => vd
+                .declarations
+                .first()
+                .and_then(|decl| self.binding_name(&decl.id))
+                .unwrap_or("key")
+                .to_string(),
+            ForStatementLeft::AssignmentTargetIdentifier(id) => id.name.to_string(),
+            _ => "key".to_string(),
+        };
+        let obj_name = match &fis.right {
+            Expression::Identifier(id) => id.name.to_string(),
+            _ => {
+                self.write("@compileError(\"for-in only supported with identifier objects\");\n");
+                return;
+            }
+        };
+        let obj_type = self.type_info.var_types.get(&obj_name);
+        let is_dynamic = obj_type
+            .map(|t| matches!(t, ZigType::Anytype))
+            .unwrap_or(false);
+        if is_dynamic {
+            self.write(&format!(
+                "{{ var __it = {obj}.iterator(); while (__it.next()) |__kv| {{ const {var} = __kv.key_ptr.*;\n",
+                obj = obj_name, var = var_name
+            ));
+            self.indent += 1;
+            self.emit_stmt_or_block(&fis.body);
+            self.indent -= 1;
+            self.write_indent();
+            self.writeln(&format!("}}}} // for-in {}", obj_name));
+            return;
+        }
+        if let Some(ZigType::Struct(fields)) = obj_type
+            && !fields.is_empty() {
+                let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
+                for (field_name, _) in &fields {
+                    self.write_indent();
+                    self.writeln("{");
+                    self.indent += 1;
+                    self.write_indent();
+                    self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
+                    self.emit_stmt_or_block(&fis.body);
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.writeln("}");
+                }
+                return;
+            }
         self.write(&format!(
             "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
             obj_name
@@ -1669,5 +1895,26 @@ impl Codegen {
         self.writeln("}");
         
         fn_name
+    }
+}
+
+/// Check if an expression is a TypedArray constructor call
+/// (new Int32Array(...), new Uint8Array(...), new Float64Array(...)).
+/// Returns the Zig type suffix (e.g., "I32", "U8", "F64") if it is.
+pub(crate) fn typedarray_init_type(expr: &Expression) -> Option<&'static str> {
+    match expr {
+        Expression::NewExpression(ne) => {
+            if let Expression::Identifier(id) = &ne.callee {
+                match id.name.as_str() {
+                    "Int32Array" => Some("I32"),
+                    "Uint8Array" => Some("U8"),
+                    "Float64Array" => Some("F64"),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }

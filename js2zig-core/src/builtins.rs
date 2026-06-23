@@ -412,6 +412,24 @@ impl BuiltinRegistry {
             "js_runtime.js_typedarray.fillI32({}, {}, {}, {})",
             "js_typedarray",
         );
+        registry.add_method_runtime(
+            "int32array",
+            "buffer",
+            "js_runtime.js_typedarray.bufferI32({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "int32array",
+            "byteLength",
+            "js_runtime.js_typedarray.byteLengthI32({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "int32array",
+            "byteOffset",
+            "js_runtime.js_typedarray.byteOffset()",
+            "js_typedarray",
+        );
 
         // Uint8Array
         registry.add_method_runtime("Uint8Array", "from", "(js_runtime.js_typedarray.fromI64AsU8(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyU8())", "js_typedarray");
@@ -440,9 +458,39 @@ impl BuiltinRegistry {
             "js_runtime.js_typedarray.subarrayU8({}, {}, {})",
             "js_typedarray",
         );
+        registry.add_method_runtime(
+            "uint8array",
+            "copyWithin",
+            "js_runtime.js_typedarray.copyWithinU8({}, {}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "uint8array",
+            "fill",
+            "js_runtime.js_typedarray.fillU8({}, {}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "uint8array",
+            "buffer",
+            "js_runtime.js_typedarray.bufferU8({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "uint8array",
+            "byteLength",
+            "js_runtime.js_typedarray.byteLengthU8({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "uint8array",
+            "byteOffset",
+            "js_runtime.js_typedarray.byteOffset()",
+            "js_typedarray",
+        );
 
         // Float64Array
-        registry.add_method_runtime("Float64Array", "from", "(js_runtime.js_typedarray.fromF64(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyF64())", "js_typedarray");
+        registry.add_method_runtime("Float64Array", "from", "(js_runtime.js_typedarray.fromI64AsF64(js_allocator.g_alloc(), {}) catch js_runtime.js_typedarray.emptyF64())", "js_typedarray");
         registry.add_method_runtime("float64array", "length", "{}.len", "js_typedarray");
         registry.add_method_runtime(
             "float64array",
@@ -460,6 +508,42 @@ impl BuiltinRegistry {
             "float64array",
             "slice",
             "js_runtime.js_typedarray.sliceF64({}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "subarray",
+            "js_runtime.js_typedarray.subarrayF64({}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "copyWithin",
+            "js_runtime.js_typedarray.copyWithinF64({}, {}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "fill",
+            "js_runtime.js_typedarray.fillF64({}, {}, {}, {})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "buffer",
+            "js_runtime.js_typedarray.bufferF64({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "byteLength",
+            "js_runtime.js_typedarray.byteLengthF64({})",
+            "js_typedarray",
+        );
+        registry.add_method_runtime(
+            "float64array",
+            "byteOffset",
+            "js_runtime.js_typedarray.byteOffset()",
             "js_typedarray",
         );
 

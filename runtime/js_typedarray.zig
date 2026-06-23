@@ -112,6 +112,10 @@ pub fn fromF64AsF32(alloc: Allocator, arr: anytype) ![]f32 {
     return result;
 }
 
+pub fn fromI64AsF64(alloc: Allocator, arr: anytype) ![]f64 {
+    return convertArray(f64, alloc, arr);
+}
+
 pub fn fromU32(alloc: Allocator, arr: []const u32) ![]u32 {
     return try alloc.dupe(u32, arr);
 }
@@ -343,6 +347,21 @@ pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) void {
     std.mem.copyForwards(i32, arr[t..t + count], arr[s..s + count]);
 }
 
+pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) void {
+    const len: i64 = @intCast(arr.len);
+    const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
+    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
+    const e = if (end == std.math.maxInt(i64))
+        arr.len
+    else
+        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+
+    if (s >= e or t >= arr.len) return;
+
+    const count = @min(e - s, arr.len - t);
+    std.mem.copyForwards(f64, arr[t..t + count], arr[s..s + count]);
+}
+
 // ── fill() — fill array with value ──
 
 pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) void {
@@ -381,6 +400,101 @@ pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) void {
     for (arr[s..e]) |*item| {
         item.* = value;
     }
+}
+
+pub fn fillF64(arr: []f64, value: f64, start: i64, end: i64) void {
+    const len: i64 = @intCast(arr.len);
+    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
+    const e = if (end == std.math.maxInt(i64))
+        arr.len
+    else
+        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+
+    if (s >= e) return;
+    for (arr[s..e]) |*item| {
+        item.* = value;
+    }
+}
+
+// ── buffer() — reinterpret slice as underlying byte buffer ──
+
+pub fn bufferU8(arr: []const u8) []const u8 {
+    return arr;
+}
+
+pub fn bufferI8(arr: []const i8) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(i8)];
+}
+
+pub fn bufferI16(arr: []const i16) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(i16)];
+}
+
+pub fn bufferU16(arr: []const u16) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(u16)];
+}
+
+pub fn bufferI32(arr: []const i32) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(i32)];
+}
+
+pub fn bufferU32(arr: []const u32) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(u32)];
+}
+
+pub fn bufferF32(arr: []const f32) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(f32)];
+}
+
+pub fn bufferF64(arr: []const f64) []const u8 {
+    const ptr: [*]const u8 = @ptrCast(arr.ptr);
+    return ptr[0 .. arr.len * @sizeOf(f64)];
+}
+
+// ── byteLength() — size in bytes of the typed array ──
+
+pub fn byteLengthI8(arr: []const i8) i64 {
+    return @intCast(arr.len * @sizeOf(i8));
+}
+
+pub fn byteLengthU8(arr: []const u8) i64 {
+    return @intCast(arr.len * @sizeOf(u8));
+}
+
+pub fn byteLengthI16(arr: []const i16) i64 {
+    return @intCast(arr.len * @sizeOf(i16));
+}
+
+pub fn byteLengthU16(arr: []const u16) i64 {
+    return @intCast(arr.len * @sizeOf(u16));
+}
+
+pub fn byteLengthI32(arr: []const i32) i64 {
+    return @intCast(arr.len * @sizeOf(i32));
+}
+
+pub fn byteLengthU32(arr: []const u32) i64 {
+    return @intCast(arr.len * @sizeOf(u32));
+}
+
+pub fn byteLengthF32(arr: []const f32) i64 {
+    return @intCast(arr.len * @sizeOf(f32));
+}
+
+pub fn byteLengthF64(arr: []const f64) i64 {
+    return @intCast(arr.len * @sizeOf(f64));
+}
+
+// ── byteOffset() — always 0 (no ArrayBuffer abstraction yet) ──
+
+pub fn byteOffset() i64 {
+    return 0;
 }
 
 // ── Tests ──

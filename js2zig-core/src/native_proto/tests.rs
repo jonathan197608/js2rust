@@ -24,19 +24,47 @@ mod tests {
     /// Automatically adds `const std = @import("std");` and `const allocator = ...`
     /// if the generated code references `std.` or `allocator` (self-contained for ast-check).
     fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
-        // Wrap with necessary imports when the generated code uses std/allocator.
+        // Check which runtime imports are needed.
         let needs_std = zig_code.contains("std.") || zig_code.contains("allocator");
-        let wrapped = if needs_std {
+        let needs_js_date = zig_code.contains("js_date");
+        let needs_js_object = zig_code.contains("js_object");
+        let needs_js_runtime = zig_code.contains("js_runtime.");
+        let needs_js_any = zig_code.contains("JsAny");
+        let needs_string_hashmap = zig_code.contains("StringHashMap");
+        let needs_js_allocator = zig_code.contains("js_allocator");
+        let needs_js_array = zig_code.contains("js_array");
+        let any_runtime = needs_js_date
+            || needs_js_object
+            || needs_js_runtime
+            || needs_js_any
+            || needs_string_hashmap
+            || needs_js_allocator
+            || needs_js_array;
+
+        let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
             w.push_str("const std = @import(\"std\");\n");
             w.push_str("const allocator = std.heap.page_allocator;\n");
-            // Declare js_allocator so generated code referencing it passes ast-check.
-            // (ast-check does not load the imported file, so the path need not exist.)
-            if zig_code.contains("js_allocator") {
+            if needs_js_allocator {
                 w.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
             }
-            if zig_code.contains("js_array") {
+            if needs_js_array {
                 w.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
+            }
+            if needs_js_date {
+                w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
+            }
+            if needs_js_object {
+                w.push_str("const js_object = @import(\"js_runtime/js_object.zig\");\n");
+            }
+            if needs_js_runtime {
+                w.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
+            }
+            if needs_js_any {
+                w.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
+            }
+            if needs_string_hashmap {
+                w.push_str("const StringHashMap = std.StringHashMap;\n");
             }
             w.push('\n');
             w.push_str(zig_code);
@@ -1878,10 +1906,10 @@ export function sumInt32() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_basic");
         println!("=== TypedArray basic ===\n{}", zig);
-        // Verify fromI32 is generated
+        // Verify fromI64AsI32 is generated
         assert!(
-            zig.contains("fromI32"),
-            "Expected 'fromI32' in generated code:\n{}",
+            zig.contains("fromI64AsI32"),
+            "Expected 'fromI64AsI32' in generated code:\n{}",
             zig
         );
         // Verify .length is generated as .len
@@ -2006,6 +2034,159 @@ export function getLength() {
             "Expected identity call in:\n{}",
             zig
         );
+    }
+
+    // ── TypedArray: set/get/slice/subarray/copyWithin/fill ──
+
+    #[test]
+    fn test_native_proto_typedarray_set() {
+        let js = r#"
+/**
+ * @param {number} idx
+ * @param {number} val
+ * @returns {number}
+ */
+export function setAndGet(idx, val) {
+    const arr = new Int32Array([10, 20, 30]);
+    arr.set(idx, val);
+    return arr.get(idx);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_set");
+        println!("=== TypedArray set ===\n{}", zig);
+        assert!(zig.contains("setI32"), "Expected setI32 in:\n{}", zig);
+        assert!(zig.contains("getI32"), "Expected getI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_slice() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function sliceArray() {
+    const arr = new Int32Array([10, 20, 30, 40, 50]);
+    const sub = arr.slice(1, 4);
+    return sub.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_slice");
+        println!("=== TypedArray slice ===\n{}", zig);
+        assert!(zig.contains("sliceI32"), "Expected sliceI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_subarray() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function subArray() {
+    const arr = new Int32Array([1, 2, 3, 4, 5]);
+    const sub = arr.subarray(1, 3);
+    return sub.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_subarray");
+        println!("=== TypedArray subarray ===\n{}", zig);
+        assert!(zig.contains("subarrayI32"), "Expected subarrayI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_copywithin() {
+        let js = r#"
+export function copyIn() {
+    const arr = new Int32Array([1, 2, 3, 4, 5]);
+    arr.copyWithin(0, 3, 5);
+    return arr.get(1);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_copywithin");
+        println!("=== TypedArray copyWithin ===\n{}", zig);
+        assert!(zig.contains("copyWithinI32"), "Expected copyWithinI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_fill() {
+        let js = r#"
+export function fillArr() {
+    const arr = new Int32Array([1, 2, 3, 4, 5]);
+    arr.fill(0, 1, 4);
+    return arr.get(0);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_fill");
+        println!("=== TypedArray fill ===\n{}", zig);
+        assert!(zig.contains("fillI32"), "Expected fillI32 in:\n{}", zig);
+    }
+
+    // ── TypedArray: buffer / byteLength / byteOffset ──
+
+    #[test]
+    fn test_native_proto_typedarray_buffer() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function getBufferLength() {
+    const arr = new Int32Array([1, 2, 3]);
+    const buf = arr.buffer;
+    return buf.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_buffer");
+        println!("=== TypedArray buffer ===\n{}", zig);
+        assert!(zig.contains("bufferI32"), "Expected bufferI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_bytelength() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function getByteLength() {
+    const arr = new Int32Array([1, 2, 3]);
+    return arr.byteLength;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_bytelength");
+        println!("=== TypedArray byteLength ===\n{}", zig);
+        assert!(zig.contains("byteLengthI32"), "Expected byteLengthI32 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_byteoffset() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function getByteOffset() {
+    const arr = new Int32Array([1, 2, 3]);
+    return arr.byteOffset;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_byteoffset");
+        println!("=== TypedArray byteOffset ===\n{}", zig);
+        assert!(zig.contains("byteOffset"), "Expected byteOffset in:\n{}", zig);
+    }
+
+    // ── TypedArray: Float64Array ──
+
+    #[test]
+    fn test_native_proto_float64array() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function floatTest() {
+    const arr = new Float64Array([1.5, 2.5, 3.5]);
+    return arr.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_float64array");
+        println!("=== Float64Array ===\n{}", zig);
+        assert!(zig.contains("fromF64"), "Expected fromF64 in:\n{}", zig);
     }
 
     // ── String escaping edge cases ────────────────────────
@@ -2710,5 +2891,459 @@ function nullChain() {
             "Should handle null literal in chain: {}",
             zig
         );
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // P1 Feature Tests
+    // ══════════════════════════════════════════════════════════════
+
+    // ── P1-1: in / instanceof operators ──────────────────────────
+
+    #[test]
+    fn test_p1_in_operator() {
+        // "key" in obj → obj.contains("key")
+        let js = r##"
+function hasProp(obj) {
+    return "name" in obj;
+}
+"##;
+        let zig = transpile_and_check!(js, "test_p1_in_operator");
+        assert!(zig.contains(".contains("), "Expected .contains() in:\n{}", zig);
+        assert!(zig.contains("\"name\""), "Expected key literal in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_instanceof_operator() {
+        // obj instanceof Foo → @compileError(...)
+        // Note: @compileError causes unreachable code, so ast-check won't pass.
+        let js = r#"
+function checkType(obj) {
+    return obj instanceof Array;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_instanceof_operator");
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("instanceof"),
+            "Expected 'instanceof' mention in:\n{}",
+            zig
+        );
+    }
+
+    // ── P1-2: Date methods ───────────────────────────────────────
+
+    #[test]
+    fn test_p1_date_now() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function getNow() {
+    return Date.now();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_date_now");
+        assert!(zig.contains("js_date.now()"), "Expected js_date.now() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_date_parse() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function parseDate(s) {
+    return Date.parse(s);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_date_parse");
+        assert!(zig.contains("js_date.parse("), "Expected js_date.parse() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_date_utc() {
+        // Date.UTC is not yet implemented → generates @compileError
+        // Note: @compileError causes unreachable code, so ast-check won't pass.
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function utcDate(y, m, d) {
+    return Date.UTC(y, m, d);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_utc");
+        assert!(zig.contains("@compileError"), "Expected @compileError in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_date_instance_methods() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function dateParts(d) {
+    const t = d.getTime();
+    const y = d.getFullYear();
+    const mo = d.getMonth();
+    const da = d.getDate();
+    const dy = d.getDay();
+    const h = d.getHours();
+    const mi = d.getMinutes();
+    const s = d.getSeconds();
+    return t + y + mo + da + dy + h + mi + s;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_date_instance_methods");
+        assert!(zig.contains("js_date.getTime("), "Expected js_date.getTime() in:\n{}", zig);
+        assert!(zig.contains("js_date.getFullYear("), "Expected js_date.getFullYear() in:\n{}", zig);
+        assert!(zig.contains("js_date.getMonth("), "Expected js_date.getMonth() in:\n{}", zig);
+        assert!(zig.contains("js_date.getDate("), "Expected js_date.getDate() in:\n{}", zig);
+        assert!(zig.contains("js_date.getDay("), "Expected js_date.getDay() in:\n{}", zig);
+        assert!(zig.contains("js_date.getHours("), "Expected js_date.getHours() in:\n{}", zig);
+        assert!(zig.contains("js_date.getMinutes("), "Expected js_date.getMinutes() in:\n{}", zig);
+        assert!(zig.contains("js_date.getSeconds("), "Expected js_date.getSeconds() in:\n{}", zig);
+    }
+
+    // ── P1-3: Object static methods ──────────────────────────────
+
+    #[test]
+    fn test_p1_object_keys() {
+        let js = r#"
+function getKeys(obj) {
+    return Object.keys(obj);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_object_keys");
+        assert!(zig.contains("js_object.keys("), "Expected js_object.keys() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_object_values() {
+        let js = r#"
+function getValues(obj) {
+    return Object.values(obj);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_object_values");
+        assert!(zig.contains("js_object.values("), "Expected js_object.values() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_object_entries() {
+        let js = r#"
+function getEntries(obj) {
+    return Object.entries(obj);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_object_entries");
+        assert!(zig.contains("js_object.entries("), "Expected js_object.entries() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_object_assign() {
+        let js = r#"
+function copyObj(target, source) {
+    return Object.assign(target, source);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_object_assign");
+        assert!(zig.contains("js_object.assign("), "Expected js_object.assign() in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_object_freeze() {
+        // Object.freeze is a no-op in Zig (identity)
+        let js = r#"
+function freezeObj(obj) {
+    return Object.freeze(obj);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_object_freeze");
+        // freeze is a pass-through; should NOT generate any js_object call
+        assert!(!zig.contains("js_object"), "freeze should be a no-op (no js_object call):\n{}", zig);
+    }
+
+    // ── P1-4: Labeled statements ─────────────────────────────────
+
+    #[test]
+    fn test_p1_labeled_while() {
+        let js = r#"
+/**
+ * @param {number} n
+ */
+export function labWhile(n) {
+    let i = 0;
+    outer: while (i < n) {
+        i = i + 1;
+        if (i > 5) {
+            break outer;
+        }
+    }
+    return i;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_labeled_while");
+        assert!(zig.contains("outer: while"), "Expected 'outer: while' in:\n{}", zig);
+        assert!(zig.contains("break :outer"), "Expected 'break :outer' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_labeled_for() {
+        let js = r#"
+/**
+ * @param {number} n
+ */
+export function labFor(n) {
+    let sum = 0;
+    loop1: for (let i = 0; i < n; i = i + 1) {
+        if (i === 3) {
+            continue loop1;
+        }
+        sum = sum + i;
+    }
+    return sum;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_labeled_for");
+        // for loop is transformed to while, but the label should be preserved
+        assert!(zig.contains("loop1:"), "Expected 'loop1:' label in:\n{}", zig);
+        assert!(zig.contains("continue :loop1"), "Expected 'continue :loop1' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_labeled_do_while() {
+        let js = r#"
+export function labDoWhile() {
+    let i = 0;
+    retry: do {
+        i = i + 1;
+        if (i < 3) {
+            continue retry;
+        }
+    } while (i < 5);
+    return i;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_labeled_do_while");
+        // Labeled do-while generates "retry: " prefix followed by loop body
+        assert!(zig.contains("retry:"), "Expected 'retry:' label in:\n{}", zig);
+        assert!(zig.contains("while"), "Expected while loop in:\n{}", zig);
+        assert!(zig.contains("continue :retry"), "Expected 'continue :retry' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_labeled_for_of() {
+        let js = r#"
+/**
+ * @param {Object} arr
+ */
+export function labForOf(arr) {
+    let sum = 0;
+    items: for (const x of arr) {
+        if (x < 0) {
+            break items;
+        }
+        sum = sum + x;
+    }
+    return sum;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_labeled_for_of");
+        assert!(zig.contains("items:"), "Expected labeled for-of in:\n{}", zig);
+        assert!(zig.contains("break :items"), "Expected 'break :items' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_labeled_block() {
+        // Labeled block (not a loop) — generic label: { ... }
+        let js = r#"
+/**
+ * @param {number} x
+ */
+export function labBlock(x) {
+    let result = 0;
+    check: {
+        if (x > 0) {
+            result = 1;
+            break check;
+        }
+        result = -1;
+    }
+    return result;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_labeled_block");
+        assert!(zig.contains("check: {"), "Expected 'check: {{' in:\n{}", zig);
+        assert!(zig.contains("break :check"), "Expected 'break :check' in:\n{}", zig);
+    }
+
+    // ── P1-5: Multi-spread object merge ──────────────────────────
+
+    #[test]
+    fn test_p1_spread_single() {
+        // { ...a } → identity (just a)
+        let js = r#"
+function spreadOne(a) {
+    return { ...a };
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_spread_single");
+        // Single spread with no inline should just emit the expression
+        assert!(!zig.contains("spreadMerge"), "Single spread should be identity:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_spread_with_inline() {
+        // { ...a, extra: 1 } → js_runtime.spreadMerge(a, .{ .extra = 1 })
+        let js = r#"
+function spreadInline(a) {
+    return { ...a, extra: 1 };
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_spread_with_inline");
+        assert!(
+            zig.contains("js_runtime.spreadMerge("),
+            "Expected js_runtime.spreadMerge() in:\n{}",
+            zig
+        );
+        assert!(zig.contains(".extra = 1"), "Expected .extra field in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_spread_multi() {
+        // { ...a, ...b } → js_runtime.spreadMerge(a, b)
+        let js = r#"
+function spreadTwo(a, b) {
+    return { ...a, ...b };
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_spread_multi");
+        let merge_count = zig.matches("spreadMerge").count();
+        assert_eq!(merge_count, 1, "Expected exactly 1 spreadMerge call, got {}:\n{}", merge_count, zig);
+    }
+
+    #[test]
+    fn test_p1_spread_multi_with_inline() {
+        // { ...a, ...b, c: 1 } → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
+        let js = r#"
+function spreadThree(a, b) {
+    return { ...a, ...b, c: 1, d: "hello" };
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_spread_multi_with_inline");
+        let merge_count = zig.matches("spreadMerge").count();
+        assert_eq!(merge_count, 2, "Expected 2 spreadMerge calls, got {}:\n{}", merge_count, zig);
+        assert!(zig.contains(".c = 1"), "Expected .c field in:\n{}", zig);
+        assert!(zig.contains(".d = \"hello\""), "Expected .d field in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_spread_empty() {
+        // { } → StringHashMap
+        let js = r#"
+function emptyObj() {
+    return { };
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p1_spread_empty");
+        assert!(
+            zig.contains("StringHashMap(JsAny)"),
+            "Expected StringHashMap for empty object:\n{}",
+            zig
+        );
+    }
+
+    // ── Array spread [...a, ...b] ─────────────────────
+
+    #[test]
+    fn test_p1_array_spread_simple() {
+        // [...a, ...b] → appendSlice(a.items, b.items)
+        let js = r#"
+function arraySpread(a, b) {
+    return [...a, ...b];
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_array_spread_simple");
+        assert!(zig.contains("appendSlice"), "Expected appendSlice in:\n{}", zig);
+        assert!(zig.contains(".items)"), "Expected .items in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_array_spread_mixed() {
+        // [...a, 1, ...b] → appendSlice + append
+        let js = r#"
+function arraySpreadMixed(a, b) {
+    return [...a, 1, ...b];
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_array_spread_mixed");
+        assert!(zig.contains("appendSlice"), "Expected appendSlice in:\n{}", zig);
+        assert!(zig.contains("append(js_allocator.getAllocator()"), "Expected append in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_array_spread_single() {
+        // [...a] → appendSlice (shallow copy, NOT identity)
+        let js = r#"
+function arraySpreadSingle(a) {
+    return [...a];
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_array_spread_single");
+        // Single array spread must create a new array via appendSlice
+        assert!(zig.contains("appendSlice"), "[...a] should use appendSlice, got:\n{}", zig);
+        assert!(zig.contains("arraySpreadSingle"), "Expected function def in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_array_spread_elision() {
+        // [1, , 3] → append undefined for elision
+        let js = r#"
+function arrayElision() {
+    return [1, , 3];
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_array_spread_elision");
+        assert!(zig.contains("JsAny"), "Expected JsAny for elision in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_rest_param_and_call_spread() {
+        // function foo(...args) { return args.length; }
+        // foo(...arr) → foo(arr.items)
+        let js = r#"
+function foo(...args) {
+    return args.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_rest_param_and_call_spread");
+        // Check that foo accepts []const JsAny
+        assert!(zig.contains("foo(args: []const JsAny)"), "Expected rest param in:\n{}", zig);
+        // Check that args.length is translated to args.len
+        assert!(zig.contains("args.len"), "Expected args.len in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_call_spread() {
+        // Call with spread inside a function: foo(...arr) → foo(arr.items)
+        let js = r#"
+function foo(...args) {
+    return args.length;
+}
+function test() {
+    let arr = [1, 2, 3];
+    return foo(...arr);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_call_spread");
+        // Check that foo accepts []const JsAny
+        assert!(zig.contains("foo(args: []const JsAny)"), "Expected rest param in:\n{}", zig);
+        // Check that foo(...arr) becomes foo(arr.items)
+        assert!(zig.contains("foo(arr.items)"), "Expected call spread in:\n{}", zig);
     }
 }

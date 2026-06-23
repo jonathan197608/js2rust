@@ -87,8 +87,35 @@ impl Codegen {
                     self.write("std.math.pi");
                     return;
                 }
-                self.emit_expr(&mem.object);
+                // TypedArray .buffer / .byteLength / .byteOffset
                 let prop_name = mem.property.name.as_str();
+                if let Expression::Identifier(id) = &mem.object {
+                    let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
+                    if let Some(ta_type) = ta_type {
+                        match prop_name {
+                            "buffer" => {
+                                self.write(&format!(
+                                    "js_runtime.js_typedarray.buffer{}({})",
+                                    ta_type, id.name
+                                ));
+                                return;
+                            }
+                            "byteLength" => {
+                                self.write(&format!(
+                                    "js_runtime.js_typedarray.byteLength{}({})",
+                                    ta_type, id.name
+                                ));
+                                return;
+                            }
+                            "byteOffset" => {
+                                self.write("js_runtime.js_typedarray.byteOffset()");
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                self.emit_expr(&mem.object);
                 // Map/Set .size is a method call, not a field access
                 let is_map_set_size_method = prop_name == "size"
                     && if let Expression::Identifier(id) = &mem.object {
@@ -189,8 +216,8 @@ impl Codegen {
                 if let Expression::Identifier(id) = &ne.callee {
                     let obj_name = id.name.as_str();
                     if obj_name == "Int32Array" {
-                        // new Int32Array([...]) → js_typedarray.fromI32(...)
-                        self.write("js_typedarray.fromI32(");
+                        // new Int32Array([...]) → js_typedarray.fromI64AsI32(...)
+                        self.write("js_typedarray.fromI64AsI32(");
                         if let Some(first_arg) = ne.arguments.first()
                             && let Expression::ArrayExpression(ae) =
                                 first_arg.as_expression().unwrap()
@@ -214,6 +241,19 @@ impl Codegen {
                         }
                         self.write(")");
                         return;
+                    } else if obj_name == "Float64Array" {
+                        // new Float64Array([...]) → js_typedarray.fromF64(...)
+                        self.write("js_typedarray.fromF64(");
+                        if let Some(first_arg) = ne.arguments.first()
+                            && let Expression::ArrayExpression(ae) =
+                                first_arg.as_expression().unwrap()
+                        {
+                            self.write("&[_]f64{");
+                            self.emit_comma_separated_array_elements(&ae.elements);
+                            self.write("}");
+                        }
+                        self.write(")");
+                        return;
                     } else if obj_name == "Map" {
                         // new Map() → js_map.JsMap.init(js_allocator.getAllocator())
                         self.write("js_map.JsMap.init(js_allocator.getAllocator())");
@@ -226,7 +266,7 @@ impl Codegen {
                 }
                 // Unsupported NewExpression
                 self.errors.push(
-                    "Unsupported NewExpression (only Int32Array and Uint8Array are supported)"
+                    "Unsupported NewExpression (supported: Int32Array, Uint8Array, Float64Array)"
                         .to_string(),
                 );
                 self.write("@compileError(\"Unsupported NewExpression\")");
@@ -448,6 +488,17 @@ impl Codegen {
             self.write("); const _exp_f64: f64 = @as(f64, ");
             self.emit_expr(&be.right);
             self.write("); break :blk std.math.pow(f64, _base_f64, _exp_f64); })");
+        } else if be.operator == BinaryOperator::In {
+            // `key in obj` → obj.contains(key)
+            // Right side is the object, left side is the key
+            self.emit_expr(&be.right);
+            self.write(".contains(");
+            self.emit_expr(&be.left);
+            self.write(")");
+        } else if be.operator == BinaryOperator::Instanceof {
+            // `x instanceof Constructor` — not directly supported in Zig.
+            // Emit a compile error with source location info.
+            self.write("@compileError(\"instanceof operator is not supported in Zig\")");
         } else {
             self.emit_expr(&be.left);
             self.write(" ");
@@ -909,6 +960,26 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArraySlice => {
+                // Check if this is a TypedArray slice
+                let obj_name = self.callee_object_name(&ce.callee);
+                if let (Some(obj_name), Some(ta_type)) = (obj_name, obj_name.and_then(|n| self.typedarray_vars.get(n).cloned())) {
+                    // TypedArray slice: js_typedarray.sliceXXX(arr, start, end)
+                    let start_expr = if ce.arguments.len() >= 1 {
+                        self.first_arg_string_or(&ce.arguments, "0")
+                    } else {
+                        "0".to_string()
+                    };
+                    let end_expr = if ce.arguments.len() >= 2 {
+                        if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression() {
+                            self.emit_expr_to_string(expr)
+                        } else { "std.math.maxInt(i64)".to_string() }
+                    } else {
+                        "std.math.maxInt(i64)".to_string()
+                    };
+                    self.write(&format!("js_runtime.js_typedarray.slice{}({}, {}, {})", ta_type, obj_name, start_expr, end_expr));
+                    return true;
+                }
                 // arr.slice(start, end) → new ArrayList with appended slice
                 // arr.slice(start) → new ArrayList with appended slice
                 // arr.slice() → new ArrayList clone
@@ -950,6 +1021,98 @@ impl Codegen {
                         elem_type, slice_expr
                     ));
                     return true;
+                }
+                false
+            }
+
+            // ── TypedArray methods (non-overlapping) ────
+            builtins::BuiltinCall::TypedArraySubarray => {
+                // arr.subarray(start, end) → js_typedarray.subarrayXXX(arr, start, end)
+                // subarray is an alias for slice in the runtime
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let ta_type = self.typedarray_vars.get(obj_name).cloned();
+                    if let Some(ta_type) = ta_type {
+                        let start_expr = self.first_arg_string_or(&ce.arguments, "0");
+                        let end_expr = if ce.arguments.len() >= 2 {
+                            if let Some(arg) = ce.arguments.get(1)
+                                && let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else { "std.math.maxInt(i64)".to_string() }
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        };
+                        self.write(&format!("js_runtime.js_typedarray.subarray{}({}, {}, {})", ta_type, obj_name, start_expr, end_expr));
+                        return true;
+                    }
+                }
+                false
+            }
+
+            builtins::BuiltinCall::TypedArrayCopyWithin => {
+                // arr.copyWithin(target, start, end) → js_typedarray.copyWithinXXX(arr, target, start, end)
+                // end is optional, defaults to maxInt
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let ta_type = self.typedarray_vars.get(obj_name).cloned();
+                    if let Some(ta_type) = ta_type {
+                        if ce.arguments.len() < 2 {
+                            self.errors.push(
+                                "TypedArray.copyWithin() requires at least 2 arguments (target, start)"
+                                    .to_string(),
+                            );
+                            return false;
+                        }
+                        let target_expr = self.first_arg_string(&ce.arguments);
+                        let start_expr = if ce.arguments.len() >= 2 {
+                            if let Some(arg) = ce.arguments.get(1)
+                                && let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else { "0".to_string() }
+                        } else { "0".to_string() };
+                        let end_expr = if ce.arguments.len() >= 3 {
+                            if let Some(arg) = ce.arguments.get(2)
+                                && let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else { "std.math.maxInt(i64)".to_string() }
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        };
+                        self.write(&format!("js_runtime.js_typedarray.copyWithin{}({}, {}, {}, {})", ta_type, obj_name, target_expr, start_expr, end_expr));
+                        return true;
+                    }
+                }
+                false
+            }
+
+            builtins::BuiltinCall::TypedArrayFill => {
+                // arr.fill(val, start, end) → js_typedarray.fillXXX(arr, val, start, end)
+                // start and end are optional
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let ta_type = self.typedarray_vars.get(obj_name).cloned();
+                    if let Some(ta_type) = ta_type {
+                        if ce.arguments.is_empty() {
+                            self.errors
+                                .push("TypedArray.fill() requires at least 1 argument (value)"
+                                    .to_string());
+                            return false;
+                        }
+                        let val_expr = self.first_arg_string(&ce.arguments);
+                        let start_expr = if ce.arguments.len() >= 2 {
+                            if let Some(arg) = ce.arguments.get(1)
+                                && let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else { "0".to_string() }
+                        } else { "0".to_string() };
+                        let end_expr = if ce.arguments.len() >= 3 {
+                            if let Some(arg) = ce.arguments.get(2)
+                                && let Some(expr) = arg.as_expression() {
+                                self.emit_expr_to_string(expr)
+                            } else { "std.math.maxInt(i64)".to_string() }
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        };
+                        self.write(&format!("js_runtime.js_typedarray.fill{}({}, {}, {}, {})", ta_type, obj_name, val_expr, start_expr, end_expr));
+                        return true;
+                    }
                 }
                 false
             }
@@ -1003,8 +1166,37 @@ impl Codegen {
                 false
             }
 
-            // ── Map methods ─────────────────────────────
+            // ── Map methods (also TypedArray .get/.set) ──
             builtins::BuiltinCall::MapSet => {
+                // TypedArray.set(idx, val) → js_typedarray.setXXX(arr, idx, val)
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(id) = &mem.object {
+                        let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
+                        if let Some(ta_type) = ta_type {
+                            if ce.arguments.len() != 2 {
+                                self.errors.push(
+                                    "TypedArray.set() requires exactly 2 arguments".to_string(),
+                                );
+                                return false;
+                            }
+                            if self.in_expr_stmt {
+                                self.write("_ = ");
+                            }
+                            self.write(&format!("js_runtime.js_typedarray.set{}(", ta_type));
+                            self.emit_expr(&mem.object);
+                            self.write(", ");
+                            self.emit_first_arg(&ce.arguments);
+                            self.write(", ");
+                            if let Some(arg) = ce.arguments.get(1)
+                                && let Some(expr) = arg.as_expression()
+                            {
+                                self.emit_expr(expr);
+                            }
+                            self.write(")");
+                            return true;
+                        }
+                    }
+                }
                 // map.set(key, value) → map.set(key, value) catch @panic("OOM: Map.set")
                 if ce.arguments.len() != 2 {
                     self.errors
@@ -1029,6 +1221,26 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MapGet => {
+                // TypedArray.get(idx) → js_typedarray.getXXX(arr, idx)
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(id) = &mem.object {
+                        let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
+                        if let Some(ta_type) = ta_type {
+                            if ce.arguments.len() != 1 {
+                                self.errors.push(
+                                    "TypedArray.get() requires exactly 1 argument".to_string(),
+                                );
+                                return false;
+                            }
+                            self.write(&format!("js_runtime.js_typedarray.get{}(", ta_type));
+                            self.emit_expr(&mem.object);
+                            self.write(", ");
+                            self.emit_first_arg(&ce.arguments);
+                            self.write(")");
+                            return true;
+                        }
+                    }
+                }
                 // map.get(key) → map.get(key)  (returns ?i64, not error union)
                 if ce.arguments.len() != 1 {
                     self.errors
@@ -1377,6 +1589,92 @@ impl Codegen {
             }
 
             // ── Global functions ─────────────────────────
+            // ── Date methods (static) ──────────────────────
+            builtins::BuiltinCall::DateNow => {
+                // Date.now() → js_date.now()
+                self.write("js_date.now()");
+                true
+            }
+            builtins::BuiltinCall::DateParse => {
+                // Date.parse(str) → js_date.parse(str)
+                self.write("js_date.parse(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateUTC => {
+                // Date.UTC(y, m, d) — not implemented in runtime, emit compile error
+                self.write("@compileError(\"Date.UTC is not yet implemented\")");
+                true
+            }
+
+            // ── Date methods (instance) ────────────────────
+            builtins::BuiltinCall::DateGetTime => {
+                self.emit_date_instance_method("getTime", ce)
+            }
+            builtins::BuiltinCall::DateGetFullYear => {
+                self.emit_date_instance_method("getFullYear", ce)
+            }
+            builtins::BuiltinCall::DateGetMonth => {
+                self.emit_date_instance_method("getMonth", ce)
+            }
+            builtins::BuiltinCall::DateGetDate => {
+                self.emit_date_instance_method("getDate", ce)
+            }
+            builtins::BuiltinCall::DateGetDay => {
+                self.emit_date_instance_method("getDay", ce)
+            }
+            builtins::BuiltinCall::DateGetHours => {
+                self.emit_date_instance_method("getHours", ce)
+            }
+            builtins::BuiltinCall::DateGetMinutes => {
+                self.emit_date_instance_method("getMinutes", ce)
+            }
+            builtins::BuiltinCall::DateGetSeconds => {
+                self.emit_date_instance_method("getSeconds", ce)
+            }
+
+            // ── Object methods (static) ────────────────────
+            builtins::BuiltinCall::ObjectKeys => {
+                // Object.keys(obj) → js_object.keys(alloc, obj)
+                self.write("js_object.keys(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectValues => {
+                // Object.values(obj) → js_object.values(alloc, obj)
+                self.write("js_object.values(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectEntries => {
+                // Object.entries(obj) → js_object.entries(alloc, obj)
+                self.write("js_object.entries(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectAssign => {
+                // Object.assign(target, source) → js_object.assign(target, source)
+                if ce.arguments.len() >= 2 {
+                    self.write("js_object.assign(&");
+                    self.emit_expr_arg(&ce.arguments[0]);
+                    self.write(", &");
+                    self.emit_expr_arg(&ce.arguments[1]);
+                    self.write(")");
+                } else {
+                    self.write("@compileError(\"Object.assign requires at least 2 arguments\")");
+                }
+                true
+            }
+            builtins::BuiltinCall::ObjectFreeze => {
+                // Object.freeze(obj) — no-op in Zig (immutable by default)
+                self.emit_first_arg(&ce.arguments);
+                true
+            }
+
             builtins::BuiltinCall::ParseInt => {
                 // parseInt(s) → std.fmt.parseInt(i64, s, 10) catch 0
                 if let Some(arg) = ce.arguments.first()
@@ -1394,13 +1692,43 @@ impl Codegen {
 
     /// Emit argument expression (handles spread etc.).
     pub(crate) fn emit_expr_arg(&mut self, arg: &Argument) {
-        if let Some(e) = arg.as_expression() {
-            self.emit_expr(e);
+        // Argument inherits Expression variants via inherit_variants! macro.
+        // SpreadElement is a variant: Argument::SpreadElement(Box<SpreadElement>).
+        match arg {
+            Argument::SpreadElement(se) => {
+                // foo(...args) → pass args.items (the underlying slice)
+                // The callee must accept []const JsAny (rest parameter).
+                // se is Box<SpreadElement>, so se.argument is the expression being spread.
+                self.emit_expr(&se.argument);
+                self.write(".items");
+            },
+            _ => {
+                // Expression argument: use as_expression() to get the Expression.
+                if let Some(e) = arg.as_expression() {
+                    self.emit_expr(e);
+                } else {
+                    self.errors
+                        .push("Unknown argument type".to_string());
+                    self.write("@compileError(\"Unknown argument type\")");
+                }
+            },
+        }
+    }
+
+    /// Emit a Date instance method call.
+    /// JS: `date.getTime()` → Zig: `js_date.getTime(date)`
+    fn emit_date_instance_method(&mut self, method: &str, ce: &CallExpression) -> bool {
+        // Extract the receiver object from the callee
+        if let Expression::StaticMemberExpression(mem) = &ce.callee {
+            self.write(&format!("js_date.{method}("));
+            self.emit_expr(&mem.object);
+            self.write(")");
+            true
         } else {
-            // Spread argument not supported: generate @compileError
-            self.errors
-                .push("Spread argument not supported".to_string());
-            self.write("@compileError(\"Spread argument not supported\")");
+            self.errors.push(format!(
+                "Date.{method}() called on non-static-member expression"
+            ));
+            false
         }
     }
 
@@ -1498,33 +1826,49 @@ impl Codegen {
         if ae.elements.is_empty() {
             self.write("std.ArrayList(JsAny).empty");
         } else {
-            // Determine element type from first element
-            let elem_type = ae
+            // Determine element type.
+            // If there is ANY spread element, element types can no longer be
+            // uniform, so we must use JsAny.
+            let has_spread = ae
                 .elements
-                .first()
-                .and_then(|e| e.as_expression())
-                .map(|expr| match expr {
-                    Expression::NumericLiteral(n) => {
-                        let s = n.value.to_string();
-                        if s.contains('.') || s.contains('e') || s.contains('E') {
-                            "f64"
-                        } else {
-                            "i64"
+                .iter()
+                .any(|e| matches!(e, ArrayExpressionElement::SpreadElement(_)));
+            let elem_type = if has_spread {
+                "JsAny".to_string()
+            } else {
+                ae.elements
+                    .iter()
+                    .find_map(|e| e.as_expression())
+                    .map(|expr| match expr {
+                        Expression::NumericLiteral(n) => {
+                            let s = n.value.to_string();
+                            if s.contains('.') || s.contains('e') || s.contains('E') {
+                                "f64"
+                            } else {
+                                "i64"
+                            }
                         }
-                    }
-                    Expression::StringLiteral(_) => "[]const u8",
-                    Expression::BooleanLiteral(_) => "bool",
-                    _ => "i64",
-                })
-                .unwrap_or("i64");
+                        Expression::StringLiteral(_) => "[]const u8",
+                        Expression::BooleanLiteral(_) => "bool",
+                        _ => "i64",
+                    })
+                    .unwrap_or("i64")
+                    .to_string()
+            };
             self.write(&format!(
                 "(blk: {{ var __arr: std.ArrayList({}) = .empty; ",
                 elem_type
             ));
             for elem in ae.elements.iter() {
                 match elem {
-                    ArrayExpressionElement::SpreadElement(_) => self.write("/* spread */"),
-                    ArrayExpressionElement::Elision(_) => self.write("/* elision */"),
+                    ArrayExpressionElement::SpreadElement(se) => {
+                        self.write("__arr.appendSlice(js_allocator.getAllocator(), ");
+                        self.emit_expr(&se.argument);
+                        self.write(".items) catch @panic(\"OOM: Array.spread\"); ");
+                    }
+                    ArrayExpressionElement::Elision(_) => {
+                        self.write("__arr.append(js_allocator.getAllocator(), JsAny{ .undefined = {} }) catch @panic(\"OOM: Array.elision\"); ");
+                    }
                     _ => {
                         if let Some(e) = elem.as_expression() {
                             self.write("__arr.append(js_allocator.getAllocator(), ");
@@ -1539,47 +1883,137 @@ impl Codegen {
     }
 
     /// Emit an object literal as a Zig anonymous struct.
+    /// Supports multi-spread: { ...a, ...b, c: 1 } → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
     fn emit_object(&mut self, oe: &ObjectExpression) {
         if oe.properties.is_empty() {
             // Empty object → StringHashMap(JsAny).init(js_allocator.getAllocator())
             self.write("std.StringHashMap(JsAny).init(js_allocator.getAllocator())");
             return;
         }
+
+        let has_spread = oe
+            .properties
+            .iter()
+            .any(|p| matches!(p, ObjectPropertyKind::SpreadProperty(_)));
+
+        if !has_spread {
+            // Pure inline properties — emit directly as .{ ... }
+            self.write(".{ ");
+            let mut first = true;
+            for prop in &oe.properties {
+                if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                    self.emit_inline_prop(p, &mut first);
+                }
+            }
+            self.write(" }");
+            return;
+        }
+
+        // Has spread elements: build a left-fold spreadMerge(...) chain.
+        // Strategy:
+        //   { ...a }                       → a
+        //   { ...a, ...b }                 → js_runtime.spreadMerge(a, b)
+        //   { ...a, b: 1 }                 → js_runtime.spreadMerge(a, .{ .b = 1 })
+        //   { ...a, ...b, c: 1 }           → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
+
+        let mut spread_texts: Vec<String> = Vec::new();
+        for prop in &oe.properties {
+            if let ObjectPropertyKind::SpreadProperty(s) = prop {
+                spread_texts.push(self.capture_expr(&s.argument));
+            }
+        }
+
+        let inline_text = self.capture_inline_struct(oe);
+
+        match (spread_texts.len(), &inline_text) {
+            (0, _) => unreachable!(), // has_spread is true, so spread_texts is non-empty
+            (1, None) => {
+                // Single spread, no inline → identity (the whole object IS the spread value)
+                self.write(&spread_texts[0]);
+            }
+            _ => {
+                // Multi-spread or spread + inline → build spreadMerge chain
+                let mut result = spread_texts[0].clone();
+                for text in &spread_texts[1..] {
+                    result = format!("js_runtime.spreadMerge({}, {})", result, text);
+                }
+                if let Some(ref inline) = inline_text {
+                    result = format!("js_runtime.spreadMerge({}, {})", result, inline);
+                }
+                self.write(&result);
+            }
+        }
+    }
+
+    /// Capture the output of an expression to a string, leaving self.output unchanged.
+    fn capture_expr(&mut self, expr: &Expression) -> String {
+        let saved = self.output.len();
+        self.emit_expr(expr);
+        let result = self.output[saved..].to_string();
+        self.output.truncate(saved);
+        result
+    }
+
+    /// Capture inline (non-spread) properties as a Zig anonymous struct literal string.
+    /// Returns None if there are no inline ObjectProperty items.
+    fn capture_inline_struct(&mut self, oe: &ObjectExpression) -> Option<String> {
+        let has_inline = oe
+            .properties
+            .iter()
+            .any(|p| matches!(p, ObjectPropertyKind::ObjectProperty(_)));
+        if !has_inline {
+            return None;
+        }
+
+        let saved = self.output.len();
         self.write(".{ ");
         let mut first = true;
         for prop in &oe.properties {
             if let ObjectPropertyKind::ObjectProperty(p) = prop {
-                let field_name = match &p.key {
-                    PropertyKey::StaticIdentifier(id) => id.name.to_string(),
-                    PropertyKey::StringLiteral(s) => s.value.to_string(),
-                    _ => continue,
-                };
-                match p.kind {
-                    PropertyKind::Init => {
-                        if !first { self.write(", "); }
-                        first = false;
-                        self.write(&format!(".{} = ", field_name));
-                        self.emit_expr(&p.value);
-                    }
-                    PropertyKind::Get => {
-                        // Getter: extract return expression from function body
-                        // { get x() { return expr; } } → .x = expr
-                        if let Expression::FunctionExpression(func) = &p.value
-                            && let Some(body) = &func.body
-                                && let Some(return_expr) = Self::extract_return_expr_from_body(body) {
-                                if !first { self.write(", "); }
-                                first = false;
-                                self.write(&format!(".{} = ", field_name));
-                                self.emit_expr(return_expr);
-                            }
-                    }
-                    PropertyKind::Set => {
-                        // Setter: skip, doesn't contribute a field to struct initialization
-                    }
-                }
+                self.emit_inline_prop(p, &mut first);
             }
         }
         self.write(" }");
+        let result = self.output[saved..].to_string();
+        self.output.truncate(saved);
+        Some(result)
+    }
+
+    /// Emit a single inline object property (shared by emit_object and capture_inline_struct).
+    fn emit_inline_prop(&mut self, p: &oxc_ast::ast::ObjectProperty, first: &mut bool) {
+        let field_name = match &p.key {
+            PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+            PropertyKey::StringLiteral(s) => s.value.to_string(),
+            _ => return,
+        };
+        match p.kind {
+            PropertyKind::Init => {
+                if !*first {
+                    self.write(", ");
+                }
+                *first = false;
+                self.write(&format!(".{} = ", field_name));
+                self.emit_expr(&p.value);
+            }
+            PropertyKind::Get => {
+                // Getter: extract return expression from function body
+                // { get x() { return expr; } } → .x = expr
+                if let Expression::FunctionExpression(func) = &p.value
+                    && let Some(body) = &func.body
+                        && let Some(return_expr) = Self::extract_return_expr_from_body(body)
+                {
+                    if !*first {
+                        self.write(", ");
+                    }
+                    *first = false;
+                    self.write(&format!(".{} = ", field_name));
+                    self.emit_expr(return_expr);
+                }
+            }
+            PropertyKind::Set => {
+                // Setter: skip, doesn't contribute a field to struct initialization
+            }
+        }
     }
 
     /// Extract the return expression from a function body (single return statement)

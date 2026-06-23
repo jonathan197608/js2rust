@@ -358,4 +358,8 @@ pub struct Codegen {
     pub closure_defs: Vec<String>,
     /// Counter for generating unique temp variable names in optional chaining (?.)
     pub oc_counter: u32,
+    /// Variables initialized with TypedArray constructors (Int32Array, Uint8Array, Float64Array).
+    /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
+    /// Used to route method calls and property accesses correctly.
+    pub typedarray_vars: std::collections::HashMap<String, String>,
 }
