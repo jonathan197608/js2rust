@@ -1395,7 +1395,115 @@ impl Codegen {
         }
     }
 
-    /// Emit a closure struct for an arrow function with captured variables.
+    /// Get the return type string for an arrow function.
+    fn arrow_return_type_str(&self, arrow: &ArrowFunctionExpression) -> &'static str {
+        let inferred = self.infer_arrow_return_type(arrow);
+        match inferred {
+            Some(ZigType::I64) => "i64",
+            Some(ZigType::F64) => "f64",
+            Some(ZigType::Bool) => "bool",
+            Some(ZigType::Str) => "[]const u8",
+            Some(ZigType::Void) => "void",
+            Some(_) => "i64", // NamedStruct, ArrayList, etc. — use i64 fallback
+            None => {
+                // When type is indeterminate:
+                // - Single-expression arrow: always returns a value → i64
+                // - Block-body without return → void
+                if arrow.body.statements.len() == 1
+                    && matches!(
+                        arrow.body.statements[0],
+                        Statement::ExpressionStatement(_)
+                    )
+                {
+                    "i64"
+                } else {
+                    // Check if any statement in the block is a return
+                    let has_return = arrow
+                        .body
+                        .statements
+                        .iter()
+                        .any(|s| matches!(s, Statement::ReturnStatement(_)));
+                    if has_return {
+                        "i64"
+                    } else {
+                        "void"
+                    }
+                }
+            }
+        }
+    }
+
+    /// Infer the return type of an arrow function by examining its body.
+    fn infer_arrow_return_type(&self, arrow: &ArrowFunctionExpression) -> Option<ZigType> {
+        // Single-expression arrow: type is the expression's type
+        if arrow.body.statements.len() == 1 {
+            if let Statement::ExpressionStatement(es) = &arrow.body.statements[0] {
+                return self.infer_arrow_expr_type(&es.expression);
+            }
+        }
+        // Block body: scan return statements
+        for stmt in &arrow.body.statements {
+            if let Statement::ReturnStatement(rs) = stmt {
+                if let Some(ref arg) = rs.argument {
+                    return self.infer_arrow_expr_type(arg);
+                }
+                return None; // bare `return;` means void
+            }
+        }
+        None // no return → void
+    }
+
+    /// Best-effort type inference for arrow body expressions.
+    fn infer_arrow_expr_type(&self, expr: &Expression) -> Option<ZigType> {
+        match expr {
+            Expression::NumericLiteral(nl) => {
+                if let Some(raw) = &nl.raw {
+                    let s = raw.as_str();
+                    if s.contains('.') || s.contains('e') || s.contains('E') {
+                        Some(ZigType::F64)
+                    } else {
+                        Some(ZigType::I64)
+                    }
+                } else {
+                    Some(ZigType::I64)
+                }
+            }
+            Expression::StringLiteral(_) => Some(ZigType::Str),
+            Expression::BooleanLiteral(_) => Some(ZigType::Bool),
+            Expression::Identifier(id) => {
+                self.type_info.var_types.get(id.name.as_str()).cloned()
+            }
+            Expression::BinaryExpression(be) => {
+                // Heuristic: try left operand first (covers patterns like `x * 2`, `x > 0`)
+                self.infer_arrow_expr_type(&be.left).or_else(|| self.infer_arrow_expr_type(&be.right))
+            }
+            Expression::UnaryExpression(ue) => {
+                self.infer_arrow_expr_type(&ue.argument)
+            }
+            Expression::CallExpression(ce) => {
+                // Look up callee in fn_return_types
+                if let Expression::Identifier(id) = &ce.callee {
+                    self.type_info.fn_return_types.get(id.name.as_str()).cloned()
+                } else {
+                    None
+                }
+            }
+            Expression::StaticMemberExpression(sme) => {
+                // Handle patterns like obj.prop, arr.length etc.
+                let field = sme.property.name.as_str();
+                match field {
+                    "length" | "len" => Some(ZigType::I64),
+                    _ => None,
+                }
+            }
+            Expression::ConditionalExpression(ce) => {
+                // For ternary, prefer consequent type (they should match)
+                self.infer_arrow_expr_type(&ce.consequent)
+                    .or_else(|| self.infer_arrow_expr_type(&ce.alternate))
+            }
+            _ => None,
+        }
+    }
     /// Generates the struct definition (with fields and call method) and stores it in self.closure_defs.
     /// Returns the struct name.
     fn emit_closure_struct(&mut self, arrow: &ArrowFunctionExpression, captured: Vec<(String, ZigType, bool)>) -> String {
@@ -1446,7 +1554,8 @@ impl Codegen {
                 sig.push_str(&format!("{}: anytype", pname));
             }
         }
-        sig.push_str(") i64 {");
+        // Infer return type
+        sig.push_str(&format!(") {} {{", self.arrow_return_type_str(arrow)));
         self.writeln(&sig);
         self.indent += 1;
 
@@ -1522,9 +1631,8 @@ impl Codegen {
             }
         }
         
-        // TODO: get return type from type_info
-        // For now, assume i64
-        sig.push_str(") i64 {");
+        // Infer return type from arrow body.
+        sig.push_str(&format!(") {} {{", self.arrow_return_type_str(arrow)));
         self.write_indent();
         self.writeln(&sig);
         
