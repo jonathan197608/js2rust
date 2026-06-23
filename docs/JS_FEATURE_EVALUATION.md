@@ -510,36 +510,82 @@
 
 ## 6. 类型系统 (Type System)
 
-### 6.1 类型推断 - ✅ 100% 实现
+### 6.1 设计概览
 
-| 特性 | 状态 | 说明 |
+类型系统采用**两遍分离架构**：第一遍 `TypeInferrer` 遍历完整 AST 生成 `TypeCheckResult`，第二遍 `Codegen` 只读 `TypeCheckResult` 生成 Zig 代码。推断与代码生成完全解耦。
+
+**核心数据结构：**
+
+```
+TypeInferrer  →  (推断阶段)  收集所有类型信息
+TypeCheckResult  →  (只读快照)  传递给 Codegen
+ZigType  →  (类型枚举)  表示推断出的 Zig 类型
+InferResult  →  Definite(ZigType) | Indeterminate
+```
+
+### 6.2 类型推断规则（8 条简化规则）
+
+| 规则 | 说明 | 示例 |
 |------|------|------|
-| 字面量类型推断 | ✅ | Layer 1: 精确推断 |
-| 变量类型推断 | ✅ | Layer 2: `const`/`var`/`let` 规则 |
-| 函数参数类型推断 | ✅ | Layer 3: 约束收集 + 求解 |
-| 函数返回类型推断 | ✅ | 扫描所有 `return` + widen |
-| 类型拓宽 (widen) | ✅ | `JsAny > JsValue > Union > F64 > ...` |
-| 动态特性检测 | ✅ | `dynamic_access_vars` / `dynamic_arrays` |
-| 箭头函数闭包类型推断 | ✅ | 自动生成 Closure struct 类型 |
-| host 函数返回类型推断 | ✅ | `host_return_types` + `host_struct_fields` |
+| 1. 字面量精确推断 | 字面量表达式 → 确定类型（有 JSDoc 则用 JSDoc） | `42` → `i64`, `"hi"` → `[]const u8` |
+| 2. 二元表达式 | 仅当**两个**操作数都是字面量时才确定类型 | `2 + 3` → `i64`, `x + y` → Indeterminate |
+| 3. 其他表达式 | 一律 Indeterminate | 函数调用、成员访问等 |
+| 4. `const` 声明 | 不生成类型注解，让 Zig 自行推断 | `const x = expr;` |
+| 5. 局部变量 | 检查**所有**赋值，至少一个确定 → 使用该类型 | `let x = 1; x = 2;` → `i64` |
+| 6. 返回类型 | 检查**所有** return 表达式，至少一个确定 → 使用该类型 | `if (c) return 1; return 2;` → `i64` |
+| 7. 非导出函数参数 | Indeterminate → `anytype` | `function f(x)` → `f(x: anytype)` |
+| 8. Indeterminate 报错 | 导出函数参数 / CABI 返回类型若为 Indeterminate → 编译错误 | 要求 JSDoc 标注 |
 
-### 6.2 类型映射 - ✅ 100% 实现
+**特殊推断：**
+- 箭头函数闭包：自动生成 `Closure` 结构体类型（value capture / reference capture）
+- Host 函数返回类型：`host_return_types` + `host_struct_fields` 查表
+- 可选链 `?.`：返回 `InferResult::Indeterminate`（Zig 从 `else null` 自动推导 `?T`）
+- `JSON.parse(@type)`：通过 `has_json_parse_types` 标记，生成类型转换代码
 
-| JS 类型 | Zig 类型 |
-|---------|----------|
-| `number` (整数) | `i64` |
-| `number` (浮点) | `f64` |
-| `string` | `[]const u8` |
-| `boolean` | `bool` |
-| `null` / `undefined` | `null` |
-| `object` (静态) | 匿名结构体 |
-| `object` (动态) | `std.StringHashMap(JsAny)` |
-| `array` (静态) | `[_]T` |
-| `array` (动态) | `std.ArrayList(JsAny)` |
-| `function` | 函数指针 或 闭包结构体 |
-| `any` | `JsAny` |
-| `unknown` | `JsValue` |
-| TypedArray | `[]T` (Zig 切片) |
+### 6.3 `ZigType` 类型枚举
+
+| 变体 | Zig 类型 | 说明 |
+|------|----------|------|
+| `Void` | `void` | 无返回值 |
+| `I64` | `i64` | 整数 |
+| `F64` | `f64` | 浮点数 |
+| `Bool` | `bool` | 布尔值 |
+| `Str` | `[]const u8` | 字符串 |
+| `ArrayList(inner)` | `std.ArrayList(T)` | 动态数组，T 为元素类型 |
+| `Struct(fields)` | 匿名结构体 | `.{ .field1 = T1, .field2 = T2 }` |
+| `NamedStruct(name)` | 命名结构体 | 由 `HostStructDef` 定义（如 `"UserInfo"`） |
+| `Anytype` | `anytype` | 非导出函数参数，留待 Zig 推断 |
+
+**类型兼容性：** `I64` 可宽化到 `F64`（`is_compatible_with`），其他组合同类型才兼容。
+
+**C ABI 类型映射：** `Str` → `StrRet`（extern struct `{ ptr, len }`），`Struct`/`NamedStruct` → 对应 C ABI struct。
+
+### 6.4 类型映射（JS → Zig）
+
+| JS 类型 | Zig 类型 | 备注 |
+|---------|----------|------|
+| `number`（整数运算） | `i64` | `/` 运算符触发 `F64` 宽化 |
+| `number`（浮点/除法） | `f64` | |
+| `string` | `[]const u8` | C ABI 返回时用 `StrRet` |
+| `boolean` | `bool` | |
+| `null` / `undefined` | `void` | 用作返回类型时 |
+| `object`（已知字段） | 匿名 `struct` | `.{ .name = []const u8, .age = i64 }` |
+| `object`（Host 定义） | `NamedStruct` | `HostStructDef` 中定义 |
+| `object`（动态） | `std.StringHashMap(ZigType)` | 通过 `Map` 模拟 |
+| `array`（字面量） | `[_]T{ ... }` | 元素类型统一推断 |
+| `array`（动态） | `std.ArrayList(T)` | |
+| `function` | 函数类型 或 闭包结构体 | 闭包自动生成 `Closure` 泛型结构体 |
+| `any` | `anytype` | 非导出函数参数 |
+| TypedArray | `[]T`（Zig 切片） | 部分支持，`.set()`/`.slice()` 待实现 |
+
+### 6.5 JSDoc 类型标注
+
+| 注解 | 作用 |
+|------|------|
+| `@type {type}` | 变量类型强制标注 |
+| `@param {type} name` | 函数参数类型（解决 Rule 8 错误） |
+| `@returns {type}` | 函数返回类型 |
+| `@typedef {field: type}` | 定义命名结构体类型 |
 
 ---
 
@@ -613,7 +659,7 @@
 | Class 字段类型 | 所有字段类型硬编码为 `i64` | P2 |
 | TypeScript 泛型 | 不支持 | P3 |
 | `interface` / `type` alias | 不支持 | P3 |
-| 复杂联合类型 | fallback 到 `JsValue` | P3 |
+| 复杂联合类型 | 导出函数参数不支持联合类型（Rule 8 报错） | P3 |
 
 ### 8.3 运行时限制
 
