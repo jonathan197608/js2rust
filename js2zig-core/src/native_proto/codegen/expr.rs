@@ -168,17 +168,27 @@ impl Codegen {
             Expression::AwaitExpression(ae) => {
                 let task_var = format!("_t{}", self.task_counter);
                 self.task_counter += 1;
-
+                
                 // emit: (blk: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
                 self.write("(blk: {\n");
                 self.indent += 1;
-
+                
                 self.write_indent();
                 self.write(&format!("var {} = io.async(", task_var));
-
+                
                 match &ae.argument {
                     Expression::CallExpression(call) => {
-                        self.emit_expr(&call.callee);
+                        // Check if this is an async host function → use {name}_async wrapper
+                        if let Expression::Identifier(id) = &call.callee {
+                            let name = id.name.as_str();
+                            if self.async_host_fns.contains(name) {
+                                self.write(&format!("{}_async", name));
+                            } else {
+                                self.emit_expr(&call.callee);
+                            }
+                        } else {
+                            self.emit_expr(&call.callee);
+                        }
                         self.write(", .{ io");
                         for arg in &call.arguments {
                             self.write(", ");

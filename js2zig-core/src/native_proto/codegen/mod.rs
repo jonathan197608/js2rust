@@ -15,6 +15,7 @@ impl Codegen {
         type_info: crate::native_proto::TypeCheckResult,
         jsdoc_data: crate::native_proto::JSDocData,
         exported_functions: Option<std::collections::HashSet<String>>,
+        async_host_fns: std::collections::HashSet<String>,
     ) -> Self {
         Self {
             output: String::new(),
@@ -44,6 +45,7 @@ impl Codegen {
             closure_defs: Vec::new(),
             oc_counter: 0,
             typedarray_vars: std::collections::HashMap::new(),
+            async_host_fns,
         }
     }
 }

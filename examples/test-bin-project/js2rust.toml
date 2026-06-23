@@ -20,3 +20,9 @@ returns = "str"
 name = "host_strlen"
 params = ["str"]
 returns = "i64"
+
+[[host_functions]]
+name = "fetch_user"
+params = ["str"]
+is_async = true
+async_returns = { id = "i64", name = "str" }

@@ -34,12 +34,12 @@ fn main() {
     println!("useHostStrlen_main('Hello, World!') = {}", host_strlen);
 
     // ── Async host function (tokio-backed) ────────────────────
-    // TODO: fix async crash (STATUS_ACCESS_VIOLATION)
-    // println!("\n--- Async host function (tokio) ---");
-    // let user_name = host::timed("getUserInfo_main('alice')", || {
-    //     getUserInfo_main("alice").unwrap()
-    // });
-    // println!("  getUserInfo_main('alice') = {}", user_name);
+    // Test async host function fetch_user
+    // TODO: fix return type inference for async JS functions returning structs
+    // getUserInfo_main returns i64 currently (should be FetchUser)
+    // let user = getUserInfo_main("Alice").unwrap();
+    // println!("getUserInfo_main('Alice') = id={}, name={}", user.id, user.name);
+    println!("Async test temporarily disabled - debugging return type inference");
 
     // Cleanup
     js2rust_deinit();

@@ -54,3 +54,13 @@ export function useHostConcat(s1, s2) {
 export function useHostStrlen(s) {
     return host_strlen(s);
 }
+
+// ── Async host function example ──
+
+/**
+ * @param {string} name
+ * @returns {Object}
+ */
+export async function getUserInfo(name) {
+    return await fetch_user(name);
+}

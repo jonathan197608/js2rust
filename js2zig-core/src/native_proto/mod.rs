@@ -257,7 +257,13 @@ fn transpile_js_inner(
     let infer_errors = type_info.errors.clone();
 
     // ── Pass 2: Code generation ──
-    let mut cg = Codegen::new(type_info, jsdoc_data, exported_functions);
+    // Extract async host function names for io.async() codegen.
+    let async_host_fns: std::collections::HashSet<String> = if let Some(hf) = host_fns {
+        hf.async_fn_names().into_iter().collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+    let mut cg = Codegen::new(type_info, jsdoc_data, exported_functions, async_host_fns);
     cg.generate(program);
 
     // Merge TypeInferrer errors with Codegen errors.
@@ -362,4 +368,7 @@ pub struct Codegen {
     /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
     /// Used to route method calls and property accesses correctly.
     pub typedarray_vars: std::collections::HashMap<String, String>,
+    /// Async host function names (for io.async() codegen).
+    /// When await calls an async host function, use `{name}_async` wrapper.
+    pub async_host_fns: std::collections::HashSet<String>,
 }

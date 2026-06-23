@@ -110,6 +110,8 @@ impl TypeInferrer {
         let mut ty: Option<ZigType> = None;
         for expr in &return_exprs {
             let expr_ty = self.infer_expr_type(expr);
+            // DEBUG: print return expression type
+            // eprintln!("DEBUG infer_fn_return_type: fn={} expr={:?} ty={:?}", fn_name, expr, expr_ty);
             match (&ty, &expr_ty) {
                 (None, InferResult::Definite(et)) => ty = Some(et.clone()),
                 (Some(t), InferResult::Definite(et)) if *t != *et => {
