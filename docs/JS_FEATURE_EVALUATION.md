@@ -497,14 +497,103 @@
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 
-**设计**：双 Arena 全局分配器（hot/cold 主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，Rust 侧在每次 FFI 调用前后自动重置 arena，调用方无需手动释放内存。不存在 `free_string` 机制——内存由 arena 统一回收。
+**设计**：双 Arena 全局分配器（主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，调用方无需手动释放内存。
+
+#### 核心机制：`js_allocator.zig`
+
+**双 Arena 状态机**：
+
+```
+Arena A:  ready  --(成为 active)-->  active  --(容量超限)-->  cooling  --(冷却期结束)-->  ready
+Arena B:  ready  --(成为 active)-->  active  --(容量超限)-->  cooling  --(冷却期结束)-->  ready
+```
+
+- 任意时刻只有一个 arena 是 `active`（用于所有分配），另一个是非激活状态（`cooling` 或 `ready`）
+- 当 `active` arena 容量超过 `JS2RUST_MAX_ARENA_MB`（默认 100MB）且备用 arena 是 `ready` 时，两者交换
+- 退出的 arena 进入 `cooling` 状态，保持存活 `JS2RUST_ARENA_GRACE_MS`（默认 5000ms = 5 秒），确保已返回的指针在 FFI 消费窗口内保持有效
+- `cooling` 到期后，arena 被 `reset`（内存回收），状态回到 `ready`
+
+**关键设计**：
+
+1. **惰性回收**：冷却定时器检查在 `getAllocator()` 内部惰性执行，无需后台线程
+2. **线程安全**：使用原子自旋锁（`g_lock`）保护状态转换
+3. **环境配置**：
+   - `JS2RUST_MAX_ARENA_MB`（默认 100）：触发主备交换的容量阈值
+   - `JS2RUST_ARENA_GRACE_MS`（默认 5000）：冷却期毫秒数
+
+**C ABI 导出函数**：
+
+| 函数 | 说明 |
+|------|------|
+| `js2rust_init()` | 初始化全局分配器 + Io（在 Rust 侧调用） |
+| `js2rust_deinit()` | 释放全局分配器 + Io（在 Rust 侧调用） |
+| `js2rust_reset()` | 强制主备交换（将当前 active 送入冷却，备用变为 active） |
+
+#### 字符串返回：`string.zig`
+
+**`StrRet` 结构体**（C ABI 兼容）：
+
+```zig
+pub const StrRet = extern struct {
+    ptr: [*c]const u8,
+    len: isize,  // >= 0: 字符串长度; < 0: 错误标志，|len| = 错误名长度
+};
+```
+
+**符号位约定**：
+
+- `len >= 0`：正常字符串（arena 分配，Zig 侧拥有所有权）
+- `len < 0`：异步错误传播（ `@errorName(err)` 静态字符串，无需释放）
+
+**Rust 侧对应**：`#[repr(C)] struct __JsStr { ptr: *const u8, len: isize }`
+
+#### Host 函数字符串处理：`host.rs`
+
+**字符串参数（Zig → Rust）**：
+
+1. Zig 侧调用 `js_allocator.g_alloc().dupeZ(u8, str)` 创建以 `\0` 结尾的 C 字符串
+2. 调用 `defer js_allocator.g_alloc().free(c_str)` 确保在函数返回后释放 C 字符串
+3. 将 `c_str` 传递给 Rust（`[*:0]const u8`）
+
+**字符串返回（Rust → Zig）**：
+
+1. Rust 侧用 `CString::into_raw()` 分配内存并返回指针
+2. Zig 侧用 `std.mem.span(raw)` 获取切片长度
+3. Zig 侧用 `js_allocator.g_alloc().dupe(u8, span)` 复制到 arena
+4. Zig 侧调用 `host_free(@ptrCast(raw))` 释放 Rust 分配的内存
+5. 返回 arena 分配的副本（由双 Arena 自动管理生命周期）
+
+**内存所有权**：
+
+- Rust 分配 → Zig 复制 → Rust 释放 → Zig arena 拥有副本
+- 调用方（Rust）无需手动释放，arena 在冷却期后自动回收
+
+#### 示例：完整调用流程
+
+```
+Rust: js2rust_init()  // 初始化 Arena A (active), Arena B (ready)
+
+Rust: call greet("Alice")  // C ABI 调用
+  └─ Zig: 使用 getAllocator() (Arena A)
+  └─ Zig: 生成字符串 "Hello, Alice" (Arena A 分配)
+  └─ Zig: 返回 StrRet { .ptr = arena_ptr, .len = 13 }
+  └─ Rust: 使用字符串 (指针有效，因为 Arena A 仍 active)
+  └─ Rust: 下一次 FFI 调用前 / js2rust_reset() 后:
+       - 如果 Arena A 超过 100MB → 交换 → Arena A 进入 cooling (5 秒)
+       - Arena B 变为 active
+       - 5 秒后 Arena A 被 reset (指针失效，但 Rust 已消费完毕)
+
+Rust: js2rust_deinit()  // 释放两个 arena
+```
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 双 Arena 分配器 | ✅ | `js_allocator.zig`：hot arena（常用） + cold arena（备用），到达内存上限或超时后自动切换到 cold 并重置 hot |
-| 自动内存释放 | ✅ | Rust 侧 `js2rust_deinit()` 或每次 FFI 调用入口自动重置 arena，调用方无需任何手动释放 |
-| 同步 host 函数字符串参数 | ✅ | Rust 侧分配 → Zig `dupe` 复制 → Rust `host_free` 释放（分配器管理，无手动 free） |
-| 异步 host 函数 | ✅ | 回调模式 + `io.async()`，内存由 Io 的生命周期管理 |
+| 双 Arena 分配器 | ✅ | 主备热切换 + 冷却期保证指针有效性 |
+| 自动内存释放 | ✅ | Arena 统一回收，调用方无需手动释放 |
+| 字符串返回 | ✅ | `StrRet` 结构体 + 符号位约定 |
+| Host 函数字符串参数 | ✅ | `dupeZ` + `defer free`（Zig → Rust） |
+| Host 函数字符串返回 | ✅ | `span` + `dupe` + `host_free`（Rust → Zig） |
+| 异步 Host 函数 | ✅ | `Io.Threaded` + `io.async()` 模式 |
 
 ---
 
