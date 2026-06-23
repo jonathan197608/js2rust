@@ -1,9 +1,9 @@
 # JS 语言特性实现评估
 
-> **项目**: js2rust (JS → Zig 转译器)  
-> **评估日期**: 2026-06-23  
-> **代码版本**: main branch (5576777)  
-> **测试覆盖**: 96 个 Rust 测试 (73 native_proto + 23 辅助) + 3 个示例项目
+> **项目**: js2rust (JS → Zig 转译器)
+> **评估日期**: 2026-06-23
+> **代码版本**: main branch (ddde803)
+> **测试覆盖**: 101 个 Rust 测试 (78 native_proto + 23 辅助) + 3 个示例项目
 
 ---
 
@@ -12,10 +12,10 @@
 | 指标 | 数值 | 占比 | 相比上次 |
 |------|------|------|----------|
 | **JS 语法特性总数** | ~120 | - | - |
-| **完全实现** | ~90 | ~75% | +15 |
-| **部分实现** | ~8 | ~7% | -7 |
+| **完全实现** | ~91 | ~76% | +16 |
+| **部分实现** | ~7 | ~6% | -8 |
 | **未实现（@compileError）** | ~22 | ~18% | -8 |
-| **测试覆盖** | 96 个测试 | - | +9 |
+| **测试覆盖** | 101 个测试 | - | +14 |
 
 ### 近期关键进展（2026-06-18 ~ 2026-06-23）
 
@@ -25,7 +25,8 @@
 | `for-in` 静态对象 | ❌ 仅 HashMap | ✅ 支持 struct 字段展开 |
 | Getter/Setter | 🚧 已实现未测试 | ✅ 测试覆盖 |
 | `splice` 多参数插入 | 🚧 仅删除 | ✅ 支持删除+插入 |
-| `free_string()` 内存管理 | ❌ | ✅ allocator.dupeZ + host_free |
+| 可选链 `?.` | 🚧 简化为直接访问 | ✅ 真正 null 检查（`if (obj) \|v\| v.prop else null`） |
+| 双 Arena 全局分配器 | ❌ | ✅ 主备自动切换，自动释放内存 |
 | 异步 host 函数返回类型推断 | 🚧 有 bug | ✅ 修复 |
 | oxc_ast 0.135 兼容 | - | ✅ ForStatementLeft API 适配 |
 | test-lib-project 并发转译竞态 | 🐛 | ✅ 修复 |
@@ -34,16 +35,15 @@
 
 ✅ **已支持**:
 - ES5 完整语法（除 `with` 语句）
-- ES6+ 核心特性（箭头函数、闭包捕获、类、模板字符串、解构、rest/spread）
+- ES6+ 核心特性（箭头函数、闭包捕获、类、模板字符串、解构、rest/spread、可选链 `?.`）
 - 异步编程（async/await + Io 模式）
 - 错误处理（throw → error.JsThrow + try-catch）
 - 类型推断（3 层规则 + 约束求解）
 - 闭包捕获（自动生成 Closure 结构体，value/reference capture）
-- C ABI 桥接（Rust ↔ Zig，含 free_string 内存管理）
+- C ABI 桥接（Rust ↔ Zig，双 Arena 全局分配器自动管理内存）
 - `for-in` 静态/动态对象
 
 🚧 **部分支持**:
-- 可选链（`?.` 简化为直接访问，无 null 检查）
 - 解构默认值（跳过默认值）
 - 对象展开（多 spread 合并不支持）
 - 正则表达式引擎（仅提取 pattern 字符串）
@@ -216,7 +216,7 @@
 | `instanceof` | ✅ | `@TypeOf(x) == Y` | 未测试 |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
-| 可选链 `obj?.prop` | 🚧 | 简化为 `obj.prop` (无 null 检查) | 未测试 |
+| 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
 | 非空断言 `x!` (TS) | ✅ | `x.?` | 未测试 |
 | 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 未测试 |
 | 序列表达式 `a, b` | ✅ | `a, b` | 未测试 |
@@ -253,7 +253,7 @@
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `function fn(params) {}` | ✅ | `pub fn fn(params) ret {}` | 所有测试 |
-| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper + free_string | 同上 |
+| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 同上 |
 | `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
 | Rest 参数 `function fn(...args) {}` | ✅ | `args: []const i64` | showcase-project |
@@ -490,19 +490,22 @@
 | `import { name } from './file.js'` | ✅ | AST 驱动提取 | showcase-project |
 | `import defaultExport from './file.js'` | ✅ | 同上 | 同上 |
 | `import * as ns from './file.js'` | ✅ | 同上 | 未测试 |
-| `export function fn() {}` | ✅ | 生成 C ABI wrapper + free_string | 所有测试 |
+| `export function fn() {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 所有测试 |
 | `export const x = val` | ✅ | 导出为 C ABI 函数 | 同上 |
 | `export default expr` | ✅ | 标记为 default 导出 | 未测试 |
 | 多文件分组 | ✅ | DFS 依赖排序 | showcase-project |
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 
+**设计**：双 Arena 全局分配器（hot/cold 主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，Rust 侧在每次 FFI 调用前后自动重置 arena，调用方无需手动释放内存。
+
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 字符串返回 | ✅ | `allocator.dupeZ` + `result_len: *usize` |
-| `free_string()` | ✅ | 全局导出函数，释放 C ABI 返回的字符串 |
-| 同步 host 函数字符串参数 | ✅ | `dupeZ` 转入参，`host_free` 释放 |
-| 异步 host 函数 | ✅ | 回调模式 + `io.async()` |
+| 双 Arena 分配器 | ✅ | `js_allocator.zig`：hot arena（常用） + cold arena（备用），到达内存上限或超时后自动切换到 cold 并重置 hot |
+| 自动内存释放 | ✅ | Rust 侧 `js2rust_deinit()` 或每次 FFI 调用入口自动重置 arena，调用方无需调用 `free_string()` |
+| `free_string()` | ✅ | 已改为 no-op（保留符号以兼容旧代码），实际释放由 arena 重置统一完成 |
+| 同步 host 函数字符串参数 | ✅ | Rust 侧分配 → Zig `dupe` 复制 → Rust `host_free` 释放（分配器管理，无手动 free） |
+| 异步 host 函数 | ✅ | 回调模式 + `io.async()`，内存由 Io 的生命周期管理 |
 
 ---
 
@@ -543,7 +546,7 @@
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 96 个测试
+### 7.1 Rust 单元测试 - 101 个测试
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
@@ -573,7 +576,7 @@
 | `Object` 方法 | P2 | 已实现但未测试 |
 | 正则表达式 | P2 | 部分实现，需测试 |
 | TypedArray 高级方法 | P2 | 部分实现，需测试 |
-| 可选链 `?.` | P2 | 简化为直接访问 |
+| 可选链 `?.` | ✅ | 已实现对 null 检查 |
 | 标签语句 | P2 | 已实现但未测试 |
 | `for-in` 静态 struct | P2 | 已实现但 showcase-project 未集成 |
 
@@ -590,7 +593,7 @@
 | ~~Getter/Setter 测试~~ | ✅ 已测试 (2026-06-23) | - |
 | ~~`splice` 多参数插入~~ | ✅ 已实现 (2026-06-23) | - |
 | ~~test-lib-project 并发竞态~~ | ✅ 已修复 (2026-06-23) | - |
-| 可选链 `?.` 完整 null 检查 | 当前简化为直接访问 | P2 |
+| ~~可选链 `?.` 完整 null 检查~~ | ✅ 已实现 (2026-06-23) | - |
 | 解构默认值 | 跳过默认值，始终使用 `undefined` | P2 |
 | 多 spread 合并 `{ ...a, ...b }` | 不支持 | P2 |
 | 嵌套函数声明 | 报错，需重构为顶层 | P2 |
@@ -639,9 +642,8 @@
 | 任务 | 说明 | 理由 |
 |------|------|------|
 | showcase-project 闭包集成测试 | 在 Phase 5 测试中验证 `map`/`reduce`/`forEach` 闭包 | 回归验证 |
-| `free_string()` 集成到 showcase | 验证字符串导出函数的内存管理端到端 | 内存安全 |
+| 双 Arena 分配器集成到 showcase | 验证 arena 自动内存管理的端到端行为 | 内存安全 |
 | TypedArray 完整支持 | 实现 `.set()` / `.slice()` / `.buffer` 等方法 | WASM 目标需求 |
-| 可选链 `?.` null 检查 | 实现真正的 null-safety 检查而非直接访问 | 常见 JS 模式 |
 
 ### 9.3 P2 (未来版本)
 
@@ -676,15 +678,16 @@
 ✅ **类型推断**: 3 层规则 + 约束求解，类型准确率 > 90%  
 ✅ **错误处理**: throw → error.JsThrow + try-catch 完整实现  
 ✅ **异步编程**: async/await + Io 模式，支持主机函数  
-✅ **C ABI 桥接**: Rust ↔ Zig 无缝互操作，含 free_string 内存管理  
-✅ **闭包捕获**: 箭头函数自动生成 Closure 结构体 (value/reference capture)  
-✅ **`for-in`**: 支持 HashMap 动态对象 + struct 静态对象展开  
-✅ **测试覆盖**: 96 个 Rust 测试 + 3 个示例项目  
+✅ **C ABI 桥接**: Rust ↔ Zig 无缝互操作，双 Arena 全局分配器自动管理内存
+✅ **闭包捕获**: 箭头函数自动生成 Closure 结构体 (value/reference capture)
+✅ **`for-in`**: 支持 HashMap 动态对象 + struct 静态对象展开
+✅ **可选链 `?.`**: 真正 null 检查，`if (obj) |v| v.prop else null`
+✅ **测试覆盖**: 101 个 Rust 测试 + 3 个示例项目  
 
 ### 10.2 差距
 
-❌ **高级特性**: Generator、Promise API、标签模板、类表达式  
-🚧 **部分实现**: 可选链 null 检查、解构默认值、多 spread 合并、正则引擎  
+❌ **高级特性**: Generator、Promise API、标签模板、类表达式
+🚧 **部分实现**: 解构默认值、多 spread 合并、正则引擎
 ⚠️ **测试覆盖**: 部分特性已实现但未测试（`instanceof`、`Date` 方法等）
 
 ### 10.3 下一步
