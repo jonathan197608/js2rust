@@ -51,12 +51,35 @@ impl Codegen {
 
                 match &decl.init {
                     Some(Expression::ArrowFunctionExpression(arrow)) => {
-                        // Generate arrow function
+                        // Generate arrow function or closure
                         let fn_name = self.emit_arrow_function(arrow);
-                        // Assign function to variable
-                        self.write_indent();
-                        self.write(&format!("const {} = {};
+                        // Check if this is a closure (struct name in closure_vars)
+                        if self.closure_vars.contains_key(&fn_name) {
+                            // Closure: generate instantiation code
+                            // Clone the captured vars to avoid borrow conflict
+                            let captured = self.closure_vars.get(&fn_name).cloned();
+                            if let Some(captured) = captured {
+                                self.write_indent();
+                                self.write(&format!("const {} = {} {{ ", name, fn_name));
+                                // Generate field initializers
+                        for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
+                            if i > 0 { self.write(", "); }
+                            if *is_mut {
+                                self.write(&format!(".{} = &{}", cap_name, cap_name));
+                            } else {
+                                self.write(&format!(".{} = {}", cap_name, cap_name));
+                            }
+                        }
+                                self.write(" };\n");
+                            }
+                            // Mark this variable as a closure instance
+                            self.closure_instances.insert(name.to_string());
+                        } else {
+                            // Plain arrow function: assign function to variable
+                            self.write_indent();
+                            self.write(&format!("const {} = {};
 ", name, fn_name));
+                        }
                     }
                     Some(init) => {
                         self.write_indent();
@@ -1032,10 +1055,133 @@ impl Codegen {
 impl Codegen {
     /// Emit an arrow function as a Zig function.
     /// Generates the function definition and returns the function name.
+    /// Detect which variables are mutated (assigned to or updated) in a list of statements.
+    /// Returns a set of variable names that are mutated.
+    fn detect_mutated_vars_in_stmts(stmts: &[Statement]) -> std::collections::HashSet<String> {
+        let mut mutated = std::collections::HashSet::new();
+        for stmt in stmts {
+            Self::detect_mutated_in_stmt(stmt, &mut mutated);
+        }
+        mutated
+    }
+
+    fn detect_mutated_in_stmt(stmt: &Statement, mutated: &mut std::collections::HashSet<String>) {
+        match stmt {
+            Statement::ExpressionStatement(es) => {
+                Self::detect_mutated_in_expr(&es.expression, mutated);
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(expr) = &rs.argument {
+                    Self::detect_mutated_in_expr(expr, mutated);
+                }
+            }
+            Statement::BlockStatement(bs) => {
+                for s in &bs.body {
+                    Self::detect_mutated_in_stmt(s, mutated);
+                }
+            }
+            Statement::IfStatement(is) => {
+                Self::detect_mutated_in_expr(&is.test, mutated);
+                Self::detect_mutated_in_stmt(&is.consequent, mutated);
+                if let Some(alt) = &is.alternate {
+                    Self::detect_mutated_in_stmt(alt, mutated);
+                }
+            }
+            Statement::WhileStatement(ws) => {
+                Self::detect_mutated_in_expr(&ws.test, mutated);
+                Self::detect_mutated_in_stmt(&ws.body, mutated);
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(test) = &fs.test {
+                    Self::detect_mutated_in_expr(test, mutated);
+                }
+                if let Some(update) = &fs.update {
+                    Self::detect_mutated_in_expr(update, mutated);
+                }
+                Self::detect_mutated_in_stmt(&fs.body, mutated);
+            }
+            Statement::ForOfStatement(fos) => {
+                Self::detect_mutated_in_expr(&fos.right, mutated);
+                Self::detect_mutated_in_stmt(&fos.body, mutated);
+            }
+            Statement::SwitchStatement(ss) => {
+                Self::detect_mutated_in_expr(&ss.discriminant, mutated);
+                for case in &ss.cases {
+                    for s in &case.consequent {
+                        Self::detect_mutated_in_stmt(s, mutated);
+                    }
+                }
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    Self::detect_mutated_in_stmt(s, mutated);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        Self::detect_mutated_in_stmt(s, mutated);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        Self::detect_mutated_in_stmt(s, mutated);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn detect_mutated_in_expr(expr: &Expression, mutated: &mut std::collections::HashSet<String>) {
+        match expr {
+            Expression::AssignmentExpression(ae) => {
+                // The assignment target is mutated
+                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
+                    mutated.insert(id.name.to_string());
+                }
+                // Also check the right side (might contain mutations)
+                Self::detect_mutated_in_expr(&ae.right, mutated);
+            }
+            Expression::UpdateExpression(ue) => {
+                // x++ or ++x
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
+                    mutated.insert(id.name.to_string());
+                }
+            }
+            Expression::BinaryExpression(be) => {
+                Self::detect_mutated_in_expr(&be.left, mutated);
+                Self::detect_mutated_in_expr(&be.right, mutated);
+            }
+            Expression::CallExpression(ce) => {
+                Self::detect_mutated_in_expr(&ce.callee, mutated);
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::detect_mutated_in_expr(e, mutated);
+                    }
+                }
+            }
+            Expression::LogicalExpression(le) => {
+                Self::detect_mutated_in_expr(&le.left, mutated);
+                Self::detect_mutated_in_expr(&le.right, mutated);
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::detect_mutated_in_expr(&ce.test, mutated);
+                Self::detect_mutated_in_expr(&ce.consequent, mutated);
+                Self::detect_mutated_in_expr(&ce.alternate, mutated);
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::detect_mutated_in_expr(&ue.argument, mutated);
+            }
+            Expression::AwaitExpression(ae) => {
+                Self::detect_mutated_in_expr(&ae.argument, mutated);
+            }
+            _ => {}
+        }
+    }
+
     /// Collect captured variables from an arrow function body.
     /// A variable is "captured" if it's referenced in the body but is not a parameter.
+    /// Correctly sets `is_mut` by detecting mutations in the arrow body.
     fn collect_captured_vars(&self, arrow: &ArrowFunctionExpression) -> Vec<(String, ZigType, bool)> {
-        use oxc_ast::ast::Expression;
         let mut captured = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
@@ -1053,6 +1199,13 @@ impl Codegen {
             Self::collect_idents_from_stmt(stmt, &mut captured, &mut seen, &param_names, &self.type_info);
         }
 
+        // Detect which captured variables are mutated in the arrow body
+        let mutated = Self::detect_mutated_vars_in_stmts(&arrow.body.statements);
+        // Update is_mut for each captured variable
+        for (name, _ztype, is_mut) in &mut captured {
+            *is_mut = mutated.contains(name);
+        }
+
         captured
     }
 
@@ -1064,7 +1217,6 @@ impl Codegen {
         param_names: &std::collections::HashSet<String>,
         type_info: &crate::native_proto::TypeCheckResult,
     ) {
-        use oxc_ast::ast::Expression;
         match stmt {
             Statement::ExpressionStatement(es) => {
                 Self::collect_idents_from_expr(&es.expression, captured, seen, param_names, type_info);
@@ -1116,59 +1268,103 @@ impl Codegen {
     }
 
     /// Emit a closure struct for an arrow function with captured variables.
+    /// Generates the struct definition (with fields and call method) and stores it in self.closure_defs.
+    /// Returns the struct name.
     fn emit_closure_struct(&mut self, arrow: &ArrowFunctionExpression, captured: Vec<(String, ZigType, bool)>) -> String {
         let struct_name = format!("Closure_{}", self.arrow_counter);
         self.arrow_counter += 1;
 
-        // Store closure info for assignment site
+        // Store closure info for assignment site (so emit_var_decl can generate instantiation)
         self.closure_vars.insert(struct_name.clone(), captured.clone());
 
-        self.write_indent();
+        // ── Temporarily redirect output to build the struct definition ──
+        let old_output = std::mem::take(&mut self.output);
+        let old_indent = self.indent;
+        self.output = String::new();
+        self.indent = 0;
+
+        // ── Struct definition ──
         self.writeln(&format!("const {} = struct {{", struct_name));
-        self.indent += 1;
+        self.indent = 1;
 
         // Fields for captured variables
-        for (name, ztype, _is_mut) in &captured {
+        // Value capture (is_mut=false):  T
+        // Reference capture (is_mut=true): *T  (the closure holds a pointer)
+        for (name, ztype, is_mut) in &captured {
             let tstr = match ztype {
-                ZigType::I64 => "i64",
-                ZigType::F64 => "f64",
-                ZigType::Bool => "bool",
-                ZigType::Str => "[]const u8",
-                _ => "i64",
+                ZigType::I64 => "i64".to_string(),
+                ZigType::F64 => "f64".to_string(),
+                ZigType::Bool => "bool".to_string(),
+                ZigType::Str => "[]const u8".to_string(),
+                ZigType::Void => "void".to_string(),
+                ZigType::NamedStruct(s) => s.clone(),
+                ZigType::ArrayList(_) => "std.ArrayList(JsAny)".to_string(),
+                _ => "i64".to_string(),
             };
-            self.write_indent();
-            self.writeln(&format!("{}: {},", name, tstr));
-        }
-
-        // call method
-        self.write_indent();
-        self.write(&format!("fn call(self: {}, ", struct_name));
-        for (param_idx, param) in arrow.params.items.iter().enumerate() {
-            if param_idx > 0 { self.write(", "); }
-            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
-                self.write(&format!("{}: anytype", pname));
+            if *is_mut {
+                // Reference capture: store a pointer so the closure can mutate the outer variable
+                self.writeln(&format!("{}: *{},", name, tstr));
+            } else {
+                // Value capture: store a copy
+                self.writeln(&format!("{}: {},", name, tstr));
             }
         }
-        self.writeln(") i64 {");
 
+        // ── call method (single-line signature) ──
+        let mut sig = String::from("fn call(self: *@This()");
+        for param in &arrow.params.items {
+            sig.push_str(", ");
+            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                sig.push_str(&format!("{}: anytype", pname));
+            }
+        }
+        sig.push_str(") i64 {");
+        self.writeln(&sig);
         self.indent += 1;
-        // method body
+
+        // ── Generate method body ──
+        // Set current_captured so emit_expr rewrites identifiers to self.xxx
+        let saved_captured = std::mem::take(&mut self.current_captured);
+        self.current_captured = captured.clone();
+
+        // Check if arrow function has expression body (single ExpressionStatement without return)
+        // In JS: `(y) => x + y` → oxc parses as ExpressionStatement(x + y)
+        // In Zig: need to add `return` prefix
         if arrow.body.statements.len() == 1 {
             if let Statement::ExpressionStatement(es) = &arrow.body.statements[0] {
                 self.write_indent();
                 self.write("return ");
                 self.emit_expr(&es.expression);
-                self.write(";
-");
+                self.write(";\n");
+            } else {
+                // Block body with statements
+                for stmt in &arrow.body.statements {
+                    self.emit_fn_stmt(stmt);
+                }
+            }
+        } else {
+            // Multiple statements or empty: generate as-is
+            for stmt in &arrow.body.statements {
+                self.emit_fn_stmt(stmt);
             }
         }
-        self.indent -= 1;
-        self.write_indent();
+
+        // Restore
+        self.current_captured = saved_captured;
+
+        self.indent = 1;
         self.writeln("}");
 
-        self.indent -= 1;
-        self.write_indent();
+        self.indent = 0;
         self.writeln("};");
+
+        // ── Get the generated struct definition and restore output ──
+        let struct_def = std::mem::take(&mut self.output);
+        self.output = old_output;
+        self.indent = old_indent;
+
+        // Store in closure_defs (will be prepended to output later)
+        self.closure_defs.push(struct_def);
 
         struct_name
     }
@@ -1177,14 +1373,9 @@ impl Codegen {
         // Detect captured variables (closure check)
         let captured = self.collect_captured_vars(arrow);
         if !captured.is_empty() {
-            // Closures (capturing outer variables) are not yet supported.
-            let names: Vec<&str> = captured.iter().map(|(n, _, _)| n.as_str()).collect();
-            self.errors.push(format!(
-                "error: arrow function captures variables: {:?} (closure support is not yet implemented)",
-                names
-            ));
-            // Generate a placeholder to avoid panic
-            return "_unsupported_closure".to_string();
+            // Generate closure struct (captures outer variables)
+            let struct_name = self.emit_closure_struct(arrow, captured);
+            return struct_name;
         }
         // No captured vars: generate plain nested function (current behavior)
         let fn_name = format!("_arrow_fn_{}", self.arrow_counter);

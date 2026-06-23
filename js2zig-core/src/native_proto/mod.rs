@@ -3,7 +3,7 @@
 // Native-type system codegen module.
 // All Codegen impl methods are in codegen.rs.
 //
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Strict static type system:
 // - All types must be known at compile time.
@@ -348,4 +348,9 @@ pub struct Codegen {
     /// Map: closure variable name → list of (captured_name, type, is_mutable)
     /// Used to generate struct instance at assignment and .call() at call site.
     pub closure_vars: HashMap<String, Vec<(String, ZigType, bool)>>,
+    /// Set of variable names that are closure instances (assigned from arrow functions with captures).
+    /// Used to rewrite `fn(args)` to `fn.call(args)` in emit_call.
+    pub closure_instances: HashSet<String>,
+    /// Closure struct definitions to be prepended to output (module-level).
+    pub closure_defs: Vec<String>,
 }

@@ -31,6 +31,18 @@ impl Codegen {
             }
             Expression::Identifier(id) => {
                 let var_name = id.name.as_str();
+                // Check if this identifier is a captured variable in the current closure.
+                // If so, rewrite to self.var_name (value capture) or self.var_name.* (ref capture).
+                if !self.current_captured.is_empty()
+                    && let Some((_, _, is_mut)) = self.current_captured.iter().find(|(n, _, _)| n.as_str() == var_name)
+                {
+                    if *is_mut {
+                        self.write(&format!("self.{}.*", var_name));
+                    } else {
+                        self.write(&format!("self.{}", var_name));
+                    }
+                    return;
+                }
                 self.write(var_name);
             }
             Expression::BinaryExpression(be) => {
@@ -523,6 +535,18 @@ impl Codegen {
             Expression::Identifier(id) => Some(id.name.to_string()),
             _ => None,
         };
+
+        // Check if this is a closure variable call (e.g., `fn(args)` where fn is a closure struct instance)
+        if let Some(ref name) = callee_name
+            && self.closure_instances.contains(name.as_str())
+        {
+            // This is a closure call: rewrite to `variable.call(args)`
+            self.write(name);
+            self.write(".call(");
+            self.emit_comma_separated_args(&ce.arguments);
+            self.write(")");
+            return;
+        }
 
         // Emit function call (no `try` by default, only for error-returning functions).
         if let Some(ref name) = callee_name {
@@ -1351,7 +1375,21 @@ impl Codegen {
     fn emit_assignment_target(&mut self, target: &AssignmentTarget) {
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                self.write(id.name.as_str());
+                let var_name = id.name.as_str();
+                // Check if this is a captured variable in the current closure.
+                if !self.current_captured.is_empty()
+                    && let Some((_, _, is_mut)) = self.current_captured.iter().find(|(n, _, _)| n.as_str() == var_name)
+                {
+                    // Captured variable: rewrite to self.var_name (value capture)
+                    // or self.var_name.* (reference capture, dereference for assignment)
+                    if *is_mut {
+                        self.write(&format!("self.{}.*", var_name));
+                    } else {
+                        self.write(&format!("self.{}", var_name));
+                    }
+                    return;
+                }
+                self.write(var_name);
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
                 self.emit_expr(&mem.object);

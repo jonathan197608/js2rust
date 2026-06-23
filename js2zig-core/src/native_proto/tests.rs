@@ -2192,4 +2192,45 @@ export function powMixed() {
         assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
         assert!(zig.contains("return x + 1;"), "Expected return in block body");
     }
+
+    // ── Test: Closure (arrow function capturing outer variable) ────────────
+
+    #[test]
+    fn test_native_proto_closure_basic() {
+        // Arrow function capturing outer variable (closure)
+        let js = r#"export function testClosure() {
+    const x = 10;
+    const adder = (y) => x + y;
+    return adder(5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_closure_basic");
+        println!("=== Closure (basic) ===
+{}", zig);
+        // Should generate a closure struct with captured variable x
+        assert!(zig.contains("const Closure_"), "Expected closure struct");
+        assert!(zig.contains("fn call(self:"), "Expected call method");
+        assert!(zig.contains("self.x"), "Expected captured variable access via self.x");
+    }
+
+    // ── Test: Closure with mutable captured variable ────────────
+
+    #[test]
+    fn test_native_proto_closure_mutable() {
+        // Arrow function capturing and modifying outer variable
+        let js = r#"export function testClosureMutable() {
+    let count = 0;
+    const increment = () => { count = count + 1; return count; };
+    increment();
+    return count;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_closure_mutable");
+        println!("=== Closure (mutable) ===
+{}", zig);
+        // Should generate a closure struct with mutable captured variable (pointer)
+        assert!(zig.contains("const Closure_"), "Expected closure struct");
+        assert!(zig.contains("*i64"), "Expected pointer for mutable capture");
+        assert!(zig.contains("self.count.*"), "Expected dereference for mutable capture");
+    }
 }

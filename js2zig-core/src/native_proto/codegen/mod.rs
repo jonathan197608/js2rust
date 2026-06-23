@@ -39,6 +39,8 @@ impl Codegen {
             current_fn: None,
             current_captured: Vec::new(),
             closure_vars: std::collections::HashMap::new(),
+            closure_instances: std::collections::HashSet::new(),
+            closure_defs: Vec::new(),
         }
     }
 }
@@ -99,6 +101,17 @@ impl Codegen {
         // Emit code, skipping unused toplevel constants.
         for stmt in &program.body {
             self.emit_toplevel(stmt);
+        }
+
+        // After generating all statements, prepend closure struct definitions
+        // so they appear at module level (before all functions).
+        if !self.closure_defs.is_empty() {
+            let mut prefix = String::new();
+            for def in self.closure_defs.iter() {
+                prefix.push_str(def);
+                prefix.push('\n');
+            }
+            self.output = prefix + &self.output;
         }
     }
 
