@@ -2,7 +2,7 @@
 
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-23
-> **代码版本**: main branch (ddde803)
+> **代码版本**: main branch (6975fd7)
 > **测试覆盖**: 101 个 Rust 测试 (78 native_proto + 23 辅助) + 3 个示例项目
 
 ---
