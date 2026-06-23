@@ -1,9 +1,10 @@
-# Host 函数零复制模式 — 详细实施方案
+# Host 函数零复制模式 — 详细实施方案 (v3.0)
 
 > **目标**: 消除 Host 函数调用中参数和返回值的不必要复制
 > **日期**: 2026-06-23
 > **状态**: 待确认实施
 > **冷却期**: 600 秒（10 分钟），支持慢速异步调用
+> **设计简化**: 所有内存由 Zig Arena 管理，不需要 `owned_by_zig` 标记
 
 ---
 
@@ -11,7 +12,7 @@
 
 ### 1.1 核心思想
 
-**Arena 借用 + 所有权转移**
+**强制 Arena 分配 — 所有内存由 Zig 管理**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -26,13 +27,28 @@
 │  Rust → Zig (返回值零复制)                                       │
 │  ──────────────────────────────────────────────────────────────────│
 │  当前: Rust CString → Zig dupe → Zig Arena → Rust free          │
-│  方案 A: Rust 分配到 Zig Arena → 直接返回 ptr (零复制)          │
-│  方案 B: Rust 分配 → Zig 接管所有权 → Zig 负责 free (零复制)   │
+│  修改: Rust 调用 js_allocator_alloc → Zig Arena → 直接返回 ptr   │
 │  复制: 1 次 → 0 次 ✅                                          │
+│  内存管理: Rust 分配 + Rust free → Zig Arena 管理 (自动释放)     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 冷却期调整
+### 1.2 为什么不需要 `owned_by_zig` 标记
+
+**用户反馈**: "目前内存都是 zig 拥有"
+
+**分析**:
+- 当前实现：Rust 分配 CString → Zig `dupe` 复制到 Arena → Zig 调用 `host_free` 释放 Rust 分配
+- 最终内存都是 Zig Arena 管理（复制后的副本）
+- 零复制目标：Rust 直接分配到 Zig Arena，连复制都不需要
+
+**结论**:
+- 强制所有 Rust Host 函数都使用 `js_allocator_alloc` 分配到 Zig Arena
+- 所有返回的字符串指针都在 Zig Arena 中
+- Zig 侧直接使用，不需要 `free`（Arena 自动管理）
+- **不需要 `owned_by_zig` 标记**，因为永远是 `true`
+
+### 1.3 冷却期调整
 
 **修改**: `DEFAULT_GRACE_MS` 从 `5000` (5 秒) 调整为 `600000` (600 秒 = 10 分钟)
 
@@ -49,15 +65,15 @@
 
 | 文件 | 修改内容 | Breaking Change |
 |------|----------|-----------------|
-| `runtime/js_allocator.zig` | 调整 `DEFAULT_GRACE_MS` | ❌ |
-| `runtime/js_allocator.zig` | 导出 `js_allocator_alloc` 到 C ABI | ❌ |
-| `runtime/string.zig` | 修改 `StrRet`，添加 `owned: bool` 字段 | ✅ |
+| `runtime/js_allocator.zig` | 调整 `DEFAULT_GRACE_MS` 到 600000 (10 分钟) | ❌ |
+| `runtime/js_allocator.zig` | 导出 `js_allocator_alloc(size) -> [*]u8` 到 C ABI | ❌ |
+| ~~`runtime/string.zig`~~ | ~~修改 `StrRet`，添加 `owned` 字段~~ → **不需要** | ❌ |
 | `js2zig-core/src/host.rs` | 修改 `to_c_abi_type()`：字符串参数用 `ptr + len` | ✅ |
-| `js2zig-core/src/host.rs` | 修改 `generate_zig_header()`：生成新签名 | ✅ |
+| `js2zig-core/src/host.rs` | 修改 `generate_zig_header()`：生成新签名 + 零复制返回值处理 | ✅ |
 | `js2zig-core/src/native_proto/codegen/` | 修改字符串参数 codegen | ✅ |
-| `js2rust-bridge/src/lib.rs` | 修改宏：生成新 C ABI 签名 | ✅ |
-| `examples/test-bin-project/` | 更新 Host 函数示例 | ✅ |
-| `docs/ZERO_COPY_DESIGN.md` | 更新设计文档 | ❌ |
+| `js2rust-bridge/src/lib.rs` | 修改宏：生成新 C ABI 签名 + 零复制 wrapper | ✅ |
+| `examples/test-bin-project/` | 更新 Host 函数示例（使用 `js_allocator_alloc`） | ✅ |
+| 移除 `host_free` | Rust 不再自己分配内存，不需要释放 | ✅ |
 
 ---
 
@@ -90,47 +106,20 @@ cd runtime && zig build test
 
 **文件**: `js2zig-core/src/host.rs`
 
-**修改 `to_c_abi_type()` 函数**:
-
-```rust
-// 修改前
-fn to_c_abi_type(ty: &HostType) -> String {
-    match ty {
-        HostType::Str => "[*:0]const u8".to_string(),
-        // ...
-    }
-}
-
-// 修改后
-fn to_c_abi_type(ty: &HostType, is_param: bool) -> String {
-    match ty {
-        HostType::Str => {
-            if is_param {
-                // 参数：传递 ptr + len，零复制
-                // 注意：这个函数现在返回 (ptr_type, len_type)，需要重构
-                todo!("refactor to return (ptr, len)")
-            } else {
-                // 返回值：仍然使用 StrRet
-                "StrRet".to_string()
-            }
-        }
-        // ...
-    }
-}
-```
-
 **问题**: `to_c_abi_type()` 当前返回单个类型，但 `ptr + len` 需要两个参数。
 
 **重构方案**:
 
 ```rust
-// 新设计：HostType 添加 to_c_abi_param() 方法
+// HostType 添加方法
 impl HostType {
     /// C ABI 参数类型（可能多个）
     fn to_c_abi_params(&self) -> Vec<String> {
         match self {
             HostType::Str => vec!["[*]const u8".to_string(), "usize".to_string()],
             HostType::I64 => vec!["i64".to_string()],
+            HostType::F64 => vec!["f64".to_string()],
+            HostType::Bool => vec!["bool".to_string()],
             // ...
         }
     }
@@ -153,14 +142,14 @@ impl HostType {
 **修改同步函数 wrapper 生成**:
 
 ```rust
-// 修改前：生成 [_:0]const u8 参数
+// 修改前：生成 dupeZ + defer free
 // pub fn host_func_wrap(param: []const u8) void {
 //     const c_param = js_allocator.g_alloc().dupeZ(u8, param) catch return;
 //     defer js_allocator.g_alloc().free(c_param);
 //     host_func(c_param);
 // }
 
-// 修改后：生成 ptr + len 参数
+// 修改后：直接传递 ptr + len
 // pub fn host_func_wrap(param: []const u8) void {
 //     host_func(param.ptr, param.len);
 // }
@@ -171,14 +160,14 @@ impl HostType {
 ```rust
 fn generate_zig_header(host: &HostFunction, is_async: bool) -> String {
     // ...
-    for (param in host.params) {
+    let mut params = vec![];
+    for param in &host.params {
         if param.ty == HostType::Str {
-            // 修改：不生成 _wrap 函数，直接传递 ptr + len
             // 参数列表添加 ptr 和 len
             params.push(format!("{}_ptr: [*]const u8", param.name));
             params.push(format!("{}_len: usize", param.name));
         } else {
-            params.push(format!("{}: {}", param.name, to_c_abi_type(&param.ty)));
+            params.push(format!("{}: {}", param.name, param.ty.to_c_abi_return()));
         }
     }
     // ...
@@ -217,57 +206,9 @@ pub extern "C" fn host_print(ptr: *const u8, len: usize) {
 
 ---
 
-### Phase 2: Rust → Zig 返回值零复制（所有权转移）
+### Phase 2: Rust → Zig 返回值零复制
 
-#### Step 2.1: 修改 `StrRet` 结构体
-
-**文件**: `runtime/string.zig`
-
-**修改**:
-
-```zig
-pub const StrRet = extern struct {
-    ptr: [*c]const u8,
-    len: isize,
-    
-    /// 新增：内存归属标记
-    /// false = Rust 分配，Zig 需要调用 host_free
-    /// true  = Zig Arena 分配，Zig 不需要 free (Arena 管理)
-    owned_by_zig: bool,
-    
-    /// Build from Zig Arena-allocated slice (zero-copy return)
-    pub fn from_arena(s: []const u8) StrRet {
-        return StrRet{
-            .ptr = s.ptr,
-            .len = @intCast(s.len),
-            .owned_by_zig = true,  // Arena 管理，不需要 free
-        };
-    }
-    
-    /// Build from Rust-allocated CString (needs host_free)
-    pub fn from_owned(ptr: [*c]const u8, len: usize) StrRet {
-        return StrRet{
-            .ptr = ptr,
-            .len = @intCast(len),
-            .owned_by_zig = false,  // Rust 分配，需要 free
-        };
-    }
-    
-    /// Build from Rust-allocated CString (needs host_free)
-    pub fn from_cstring(cstr: [*:0]const u8) StrRet {
-        const len = std.mem.len(cstr);
-        return StrRet{
-            .ptr = cstr,
-            .len = @intCast(len),
-            .owned_by_zig = false,
-        };
-    }
-};
-```
-
-**Breaking Change**: `StrRet` 添加 `owned_by_zig` 字段，Rust 侧需要更新。
-
-#### Step 2.2: 导出 Zig Arena 分配器到 C ABI
+#### Step 2.1: 导出 Zig Arena 分配器到 C ABI
 
 **文件**: `runtime/js_allocator.zig`
 
@@ -275,92 +216,74 @@ pub const StrRet = extern struct {
 
 ```zig
 /// Export Zig Arena allocator to C ABI.
-/// Rust Host functions can use this to allocate memory in Zig's Arena,
+/// Rust Host functions call this to allocate memory in Zig's Arena,
 /// enabling zero-copy returns.
 ///
 /// Usage in Rust:
 /// ```rust
 /// extern "C" {
 ///     fn js_allocator_alloc(size: usize) -> *mut u8;
-///     fn js_allocator_free(ptr: *mut u8);
 /// }
 ///
 /// #[no_mangle]
 /// pub extern "C" fn host_func() -> StrRet {
 ///     let data = "hello".as_bytes();
-///     let ptr = js_allocator_alloc(data.len);
+///     let ptr = js_allocator_alloc(data.len());
 ///     std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-///     StrRet { ptr, len: data.len(), owned_by_zig: true }
+///     StrRet { ptr, len: data.len() as isize }
 /// }
 /// ```
-pub export fn js_allocator_alloc(size: usize) [*]mut u8 {
-    const alloc = getAllocator();
-    const slice = alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
-    return slice.ptr;
-}
-
-/// Free memory (only needed for non-Arena allocations).
-/// For Arena-allocated memory, this is a no-op (Arena reset handles it).
-pub export fn js_allocator_free(ptr: [*]mut u8) void {
-    // Arena 分配的内存不需要手动 free，这里留空
-    // 如果未来使用通用分配器，这里需要实际实现
-    _ = ptr;
-}
-```
-
-**问题**: `alloc.alloc()` 返回 `[]u8`，但 C ABI 需要 `[*]mut u8`。需要类型转换。
-
-**修改**:
-
-```zig
-pub export fn js_allocator_alloc(size: usize) [*]mut u8 {
+pub export fn js_allocator_alloc(size: usize) [*]u8 {
     const alloc = getAllocator();
     const slice = alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
     return slice.ptr;
 }
 ```
 
-#### Step 2.3: 修改 Rust 侧 Host 函数宏
+**注意**: 
+- 这个函数分配的内存由 Arena 管理，不需要手动释放
+- Arena 在 `js2rust_deinit()` 或轮换时自动释放
+
+#### Step 2.2: 修改 Rust 侧 Host 函数宏
 
 **文件**: `js2rust-bridge/src/lib.rs`
 
-**修改宏生成**:
+**修改宏生成**: 生成使用 `js_allocator_alloc` 的代码。
+
+**示例**:
 
 ```rust
-// 修改前：生成返回 CString 的代码
+// 修改前：Rust 分配 CString
 // #[no_mangle]
 // pub extern "C" fn host_func() -> *const c_char {
 //     let s = func();
 //     CString::new(s).unwrap().into_raw()
 // }
 
-// 修改后：生成返回 StrRet 的代码（支持零复制）
-// #[no_mangle]
-// pub extern "C" fn host_func() -> StrRet {
-//     // 方案 A：分配到 Zig Arena (零复制)
-//     let data = func();
-//     let ptr = js_allocator_alloc(data.len());
-//     std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-//     StrRet { ptr, len: data.len() as isize, owned_by_zig: true }
-//
-//     // 方案 B：Rust 分配，Zig 接管 (零复制)
-//     let s = CString::new(func()).unwrap();
-//     let ptr = s.into_raw();
-//     StrRet { ptr, len: ..., owned_by_zig: false }
-// }
-```
-
-**问题**: Rust 侧需要声明 `js_allocator_alloc` 外部函数。
-
-**修改**: 在 `js2rust-bridge` 宏生成的代码中添加：
-
-```rust
-extern "C" {
-    fn js_allocator_alloc(size: usize) -> *mut u8;
+// 修改后：Rust 分配到 Zig Arena
+#[no_mangle]
+pub extern "C" fn host_func() -> StrRet {
+    // 声明外部函数
+    extern "C" {
+        fn js_allocator_alloc(size: usize) -> *mut u8;
+    }
+    
+    let data = func().into_bytes();
+    let ptr = unsafe { js_allocator_alloc(data.len()) };
+    unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len()) };
+    
+    StrRet {
+        ptr: ptr as *const u8,
+        len: data.len() as isize,
+    }
 }
 ```
 
-#### Step 2.4: 修改 Zig 侧返回值处理
+**问题**: `StrRet` 在 Rust 侧的定义需要更新（添加 `owned_by_zig` 字段？不，用户说不需要）。
+
+**简化**: `StrRet` 不需要修改，因为所有返回值都是 Arena 分配的，Zig 侧直接使用。
+
+#### Step 2.3: 修改 Zig 侧返回值处理
 
 **文件**: `js2zig-core/src/host.rs`
 
@@ -376,24 +299,33 @@ extern "C" {
 //     return owned;
 // }
 
-// 修改后：根据 owned_by_zig 决定是否复制
+// 修改后：零复制，直接使用
 // pub fn host_func_wrap() []const u8 {
 //     const result = host_func(...);
-//     if (result.owned_by_zig) {
-//         // Arena 分配，直接使用，不需要 free
-//         return result.toSlice();
-//     } else {
-//         // Rust 分配，需要复制 + free
-//         const owned = js_allocator.g_alloc().dupe(u8, result.toSlice()) catch return "";
-//         host_free(result.ptr);
-//         return owned;
-//     }
+//     // result.ptr 在 Zig Arena 中，直接使用
+//     return result.toSlice();
 // }
 ```
 
-**问题**: 这样仍然有复制（当 `owned_by_zig = false` 时）。
+**注意**: 
+- 不再调用 `host_free`（因为内存是 Arena 分配的）
+- 如果 Rust Host 函数没有使用 `js_allocator_alloc`，会导致内存泄漏（Rust 分配的内存没有被释放）
 
-**优化**: 如果 Rust Host 函数都改为使用 `js_allocator_alloc`，就可以完全零复制。
+**强制措施**: 
+- 文档明确说明：所有 Rust Host 函数必须使用 `js_allocator_alloc`
+- 提供 lint 或静态分析检查（未来）
+
+#### Step 2.4: 移除 `host_free`
+
+**文件**: `js2rust-bridge/src/lib.rs` 和 Rust Host 函数
+
+**修改**:
+- 移除 `host_free` 的声明和定义
+- 所有 Rust Host 函数不再调用 `host_free`
+
+**理由**: 
+- 零复制模式下，Rust 不再自己分配内存
+- 所有内存都是 Zig Arena 分配的，由 Arena 管理
 
 ---
 
@@ -405,6 +337,7 @@ extern "C" {
 
 ```rust
 use std::os::raw::c_void;
+use std::slice;
 
 // 声明 Zig Arena 分配器
 extern "C" {
@@ -413,10 +346,10 @@ extern "C" {
 
 /// 零复制参数 + 零复制返回值
 #[no_mangle]
-pub extern "C" fn host_concat(ptr: *const u8, len: usize, suffix: *const u8, suffix_len: usize) -> StrRet {
+pub extern "C" fn host_concat(ptr: *const u8, len: usize, suffix_ptr: *const u8, suffix_len: usize) -> StrRet {
     // 参数：零复制（借用 Zig Arena 内存）
     let s1 = unsafe { slice::from_raw_parts(ptr, len) };
-    let s2 = unsafe { slice::from_raw_parts(suffix, suffix_len) };
+    let s2 = unsafe { slice::from_raw_parts(suffix_ptr, suffix_len) };
     
     // 拼接
     let result = format!("{}{}", String::from_utf8_lossy(s1), String::from_utf8_lossy(s2));
@@ -427,9 +360,8 @@ pub extern "C" fn host_concat(ptr: *const u8, len: usize, suffix: *const u8, suf
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_ptr, bytes.len());
     
     StrRet {
-        ptr: out_ptr,
+        ptr: out_ptr as *const u8,
         len: bytes.len() as isize,
-        owned_by_zig: true,  // Arena 管理，不需要 free
     }
 }
 ```
@@ -440,7 +372,7 @@ pub extern "C" fn host_concat(ptr: *const u8, len: usize, suffix: *const u8, suf
 // 自动生成的 Zig wrapper
 pub fn host_concat(a: []const u8, b: []const u8) []const u8 {
     const result = c.host_concat(a.ptr, a.len, b.ptr, b.len);
-    // result.owned_by_zig = true，直接使用
+    // result.ptr 在 Arena 中，直接使用
     return result.toSlice();
 }
 ```
@@ -470,41 +402,30 @@ pub extern "C" fn async_fetch_user(name_ptr: *const u8, name_len: usize, callbac
 
 ## 4. 兼容性迁移计划
 
-### 4.1 提供兼容层（可选）
+### 4.1 强制迁移（推荐）
 
-如果用户不想立即修改 Host 函数，可以提供兼容层：
+**理由**: 零复制模式更简单、更高效，不需要兼容层。
 
-**文件**: `js2rust-bridge/src/lib.rs`
+**迁移步骤**:
+1. 更新 `js2rust-bridge` 宏，生成使用 `js_allocator_alloc` 的代码
+2. 更新所有示例 Host 函数
+3. 文档说明：所有 Rust Host 函数必须使用 `js_allocator_alloc`
 
-**生成兼容 wrapper**:
-
-```rust
-// 兼容旧签名（[*:0]const u8）的 wrapper
-#[no_mangle]
-pub extern "C" fn host_print_compat(s: *const c_char) {
-    // 将 [*:0]const u8 转换为 ptr + len
-    let len = unsafe { libc::strlen(s) };
-    host_print(s as *const u8, len)
-}
-```
-
-**问题**: 这需要用户显式选择兼容模式，或者宏自动生成两个版本。
-
-### 4.2 迁移工具（推荐）
-
-提供脚本，自动修改 Rust Host 函数签名：
+### 4.2 提供迁移工具
 
 **脚本**: `tools/migrate_host_functions.sh`
 
 ```bash
 #!/bin/bash
 # 自动迁移 Host 函数签名
-# 将 *const c_char 改为 ptr: *const u8, len: usize
+# 1. 将 *const c_char 改为 ptr: *const u8, len: usize
+# 2. 添加 js_allocator_alloc 声明
+# 3. 修改函数体
 
-find . -name "*.rs" -exec sed -i 's/\(fn \w\+\)(\([^)]*\)\*const c_char\([^)]*\))/...\1...(ptr: *const u8, len: usize).../g' {} \;
+find . -name "*.rs" -exec sed -i 's/.../.../g' {} \;
 ```
 
-**问题**: 自动迁移脚本容易出错，建议手动迁移 + 提供详细指南。
+**注意**: 自动迁移脚本容易出错，建议手动迁移 + 提供详细指南。
 
 ---
 
@@ -522,15 +443,15 @@ fn test_zero_copy_string_param() {
     // 测试字符串参数零复制
     // 1. 注册 Host 函数（新签名：ptr + len）
     // 2. 调用 Host 函数
-    // 3. 验证正确性
+    // 3. 验证正确性（无复制）
 }
 
 #[test]
 fn test_zero_copy_string_return() {
     // 测试字符串返回值零复制
-    // 1. 注册 Host 函数（返回 StrRet with owned_by_zig = true）
+    // 1. 注册 Host 函数（使用 js_allocator_alloc）
     // 2. 调用 Host 函数
-    // 3. 验证零复制（指针相同）
+    // 3. 验证零复制（指针相同，无复制）
 }
 ```
 
@@ -539,7 +460,7 @@ fn test_zero_copy_string_return() {
 **文件**: `examples/test-bin-project/`
 
 **修改示例**:
-1. 更新 `host_functions.rs`：使用新签名
+1. 更新 `host_functions.rs`：使用新签名 + `js_allocator_alloc`
 2. 添加零复制示例 Host 函数
 3. 运行 `zig build test` 验证
 
@@ -554,7 +475,7 @@ fn test_zero_copy_string_return() {
 | Arena 在 Host 函数执行期间轮换 | Use-after-free | 单线程保证 + cooling 10 分钟宽限期 |
 | Rust 侧错误使用 ptr + len | Segfault | 文档 + 宏生成安全 wrapper |
 | `js_allocator_alloc` 线程安全 | 数据竞争 | 当前单线程，未来加锁 |
-| Breaking Change 导致用户代码失效 | 迁移成本 | 提供迁移指南 + 兼容层（可选） |
+| Breaking Change 导致用户代码失效 | 迁移成本 | 提供迁移指南 + 工具 |
 
 ### 6.2 性能风险
 
@@ -571,9 +492,9 @@ fn test_zero_copy_string_return() {
 |------|------|----------|------|
 | Phase 0 | 调整冷却期到 10 分钟 | 0.5 小时 | 待实施 |
 | Phase 1 | Zig → Rust 参数零复制 | 4 小时 | 待实施 |
-| Phase 2 | Rust → Zig 返回值零复制 | 6 小时 | 待实施 |
+| Phase 2 | Rust → Zig 返回值零复制 | 4 小时 | 待实施 |
 | Phase 3 | 示例更新 + 测试 | 2 小时 | 待实施 |
-| 总计 | | **12.5 小时** | |
+| **总计** | | **10.5 小时** | |
 
 ---
 
@@ -583,12 +504,33 @@ fn test_zero_copy_string_return() {
 
 - [ ] 接受 Breaking Change（修改 Host 函数签名）
 - [ ] 冷却期 10 分钟可接受
-- [ ] 所有权转移方案（Phase 2）设计合理
+- [ ] 强制零复制模式（所有 Host 函数必须使用 `js_allocator_alloc`）
+- [ ] 移除 `host_free`（不再需要）
 - [ ] 不需要兼容层（或者接受手动迁移）
 - [ ] Benchmark 计划已制定
 
 ---
 
+## 9. 附录：StrRet 结构体（不需要修改）
+
+**文件**: `runtime/string.zig`
+
+**当前定义**:
+
+```zig
+pub const StrRet = extern struct {
+    ptr: [*c]const u8,
+    len: isize,
+};
+```
+
+**说明**:
+- 不需要添加 `owned_by_zig` 字段
+- 所有返回值都是 Zig Arena 分配的
+- Zig 侧直接使用 `ptr`，不需要 `free`
+
+---
+
 **作者**: Jonathan Huang  
 **日期**: 2026-06-23  
-**版本**: 2.0 (Detailed Implementation Plan)
+**版本**: 3.0 (Simplified — No `owned_by_zig` flag)
