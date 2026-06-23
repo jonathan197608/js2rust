@@ -94,18 +94,12 @@ pub extern "C" fn host_strlen(s_ptr: *const u8, s_len: usize) -> i64 {
 // ── Async host function (tokio-backed) ───────────────────────────
 
 /// C ABI return struct for `fetch_user` (must match Zig's HostFetchUserResult).
+/// String fields use ptr+len pair — memory allocated in Zig Arena via js_allocator_alloc.
 #[repr(C)]
 pub struct HostFetchUserResult {
     pub id: i64,
-    pub name: [u8; 256],
-}
-
-/// Copy a Rust string into a fixed-size C buffer (null-terminated).
-fn copy_to_buffer(buf: &mut [u8; 256], s: &str) {
-    let bytes = s.as_bytes();
-    let len = bytes.len().min(255);
-    buf[..len].copy_from_slice(&bytes[..len]);
-    buf[len] = 0; // null terminator
+    pub name_ptr: *const u8,
+    pub name_len: usize,
 }
 
 /// Global tokio runtime — created once, reused for all async host calls.
@@ -151,6 +145,7 @@ async fn fetch_user_from_db(name: &str) -> User {
 }
 
 /// C ABI wrapper for async fetch_user — zero-copy param from Zig Arena.
+/// String return fields allocated in Zig Arena via js_allocator_alloc (zero-copy).
 #[unsafe(no_mangle)]
 pub extern "C" fn fetch_user(name_ptr: *const u8, name_len: usize) -> HostFetchUserResult {
     let name_str = unsafe {
@@ -160,11 +155,15 @@ pub extern "C" fn fetch_user(name_ptr: *const u8, name_len: usize) -> HostFetchU
 
     let user = runtime().block_on(fetch_user_from_db(name_str));
 
-    let mut buf = [0u8; 256];
-    copy_to_buffer(&mut buf, &user.name);
+    // Allocate name in Zig Arena (zero-copy return)
+    let name_bytes = user.name.as_bytes();
+    let name_ptr_out = unsafe { js_allocator_alloc(name_bytes.len()) };
+    unsafe { std::ptr::copy_nonoverlapping(name_bytes.as_ptr(), name_ptr_out, name_bytes.len()) };
+
     HostFetchUserResult {
         id: user.id,
-        name: buf,
+        name_ptr: name_ptr_out,
+        name_len: name_bytes.len(),
     }
 }
 

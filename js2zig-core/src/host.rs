@@ -197,10 +197,18 @@ impl HostFnRegistry {
         out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n\n");
 
         // Emit C ABI struct definitions (extern structs)
+        // String fields use ptr+len pair (memory allocated in Zig Arena by Rust via js_allocator_alloc).
         for s in &self.structs {
             out.push_str(&format!("pub const {} = extern struct {{\n", s.c_name));
             for f in &s.fields {
-                out.push_str(&format!("    {}: {},\n", f.name, f.c_type));
+                if f.zig_type == "[]const u8" {
+                    out.push_str(&format!(
+                        "    {}_ptr: [*]const u8,\n    {}_len: usize,\n",
+                        f.name, f.name
+                    ));
+                } else {
+                    out.push_str(&format!("    {}: {},\n", f.name, f.c_type));
+                }
             }
             out.push_str("};\n\n");
         }
@@ -280,18 +288,10 @@ impl HostFnRegistry {
                             def.c_name,
                             call_args.join(", ")
                         ));
-                        // Convert string fields from fixed buffer to []const u8
-                        for f in &s.fields {
-                            if f.zig_type == "[]const u8" {
-                                out.push_str(&format!(
-                                    "    const {}_len = std.mem.indexOfScalar(u8, &raw.{}, 0) orelse raw.{}.len;\n",
-                                    f.name, f.name, f.name
-                                ));
-                            }
-                        }
+                        // Convert string fields: zero-copy ptr+len from Zig Arena
                         let field_inits: Vec<String> = s.fields.iter().map(|f| {
                             if f.zig_type == "[]const u8" {
-                                format!("    .{} = js_allocator.g_alloc().dupe(u8, raw.{}[0..{}_len]) catch return error.OutOfMemory", f.name, f.name, f.name)
+                                format!("    .{} = raw.{}_ptr[0..raw.{}_len]", f.name, f.name, f.name)
                             } else {
                                 format!("    .{} = raw.{}", f.name, f.name)
                             }
