@@ -247,30 +247,29 @@ pub fn getAllocator() std.mem.Allocator {
     return g_alloc();
 }
 
-/// Allocate memory in Zig's Arena, exposed to C ABI for Rust Host functions.
+/// Allocate memory in Zig's Arena, also exposed via C ABI in lib.zig.
 ///
-/// Rust Host functions call this to allocate memory for string returns,
-/// enabling zero-copy: the returned pointer is in Zig's Arena, so Zig
-/// can use it directly without copying.
+/// Rust Host functions call the C ABI export `js_allocator_alloc` (forwarded
+/// from lib.zig) to allocate memory for string returns, enabling zero-copy:
+/// the returned pointer is in Zig's Arena, so Zig can use it directly.
 ///
-/// Usage in Rust:
+/// Usage in Rust (via C ABI):
 /// ```rust
 /// extern "C" {
 ///     fn js_allocator_alloc(size: usize) -> *mut u8;
 /// }
 ///
 /// #[no_mangle]
-/// pub extern "C" fn host_func() -> StrRet {
+/// pub extern "C" fn host_func() -> __JsStr {
 ///     let data = "hello".as_bytes();
 ///     let ptr = js_allocator_alloc(data.len());
 ///     std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-///     StrRet { ptr, len: data.len() as isize }
+///     __JsStr { ptr, len: data.len() as isize }
 /// }
 /// ```
-pub export fn js_allocator_alloc(size: usize) [*]u8 {
+pub fn js_allocator_alloc(size: usize) []u8 {
     const alloc = getAllocator();
-    const slice = alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
-    return slice.ptr;
+    return alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
 }
 
 // ── Tests ───────────────────────────────────────────────────────

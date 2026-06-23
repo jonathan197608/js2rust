@@ -420,6 +420,16 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push_str("pub export fn js2rust_reset() void {\n");
         out.push_str("    js_allocator.resetGlobalAllocator();\n");
         out.push_str("}\n\n");
+        out.push_str(
+            "/// Allocate memory in Zig's Arena for zero-copy string returns from Rust host functions.\n",
+        );
+        out.push_str(
+            "/// Called from Rust via extern \"C\" { fn js_allocator_alloc(size: usize) -> *mut u8; }\n",
+        );
+        out.push_str("/// Memory is managed by the dual-arena allocator — no free needed.\n");
+        out.push_str("pub export fn js_allocator_alloc(size: usize) [*]u8 {\n");
+        out.push_str("    return js_allocator.js_allocator_alloc(size).ptr;\n");
+        out.push_str("}\n\n");
     }
     out.push_str("/// Release global resources allocated via init_js2rust.\n");
     out.push_str("pub fn deinit_js2rust() void {\n");

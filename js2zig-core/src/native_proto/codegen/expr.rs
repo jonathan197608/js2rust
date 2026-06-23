@@ -1561,16 +1561,14 @@ impl Codegen {
                     PropertyKind::Get => {
                         // Getter: extract return expression from function body
                         // { get x() { return expr; } } → .x = expr
-                        if let Expression::FunctionExpression(func) = &p.value {
-                            if let Some(body) = &func.body {
-                                if let Some(return_expr) = Self::extract_return_expr_from_body(body) {
+                        if let Expression::FunctionExpression(func) = &p.value
+                            && let Some(body) = &func.body
+                                && let Some(return_expr) = Self::extract_return_expr_from_body(body) {
                                 if !first { self.write(", "); }
                                 first = false;
                                 self.write(&format!(".{} = ", field_name));
                                 self.emit_expr(return_expr);
                             }
-                            }
-                        }
                     }
                     PropertyKind::Set => {
                         // Setter: skip, doesn't contribute a field to struct initialization
@@ -1583,11 +1581,10 @@ impl Codegen {
 
     /// Extract the return expression from a function body (single return statement)
     fn extract_return_expr_from_body<'a>(body: &'a oxc_ast::ast::FunctionBody<'a>) -> Option<&'a Expression<'a>> {
-        if body.statements.len() == 1 {
-            if let Statement::ReturnStatement(ret) = &body.statements[0] {
+        if body.statements.len() == 1
+            && let Statement::ReturnStatement(ret) = &body.statements[0] {
                 return ret.argument.as_ref();
             }
-        }
         None
     }
 

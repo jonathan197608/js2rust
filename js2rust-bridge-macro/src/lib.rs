@@ -340,9 +340,27 @@ fn generate(input: &MacroInput) -> TokenStream {
         }
     };
 
-    // Optionally run zig build (side effect — generates static library for linking)
+    // Optionally run zig build (side effect — generates static library for linking).
+    // Only run if the .lib doesn't already exist (build.rs may have built it first).
     let zig_project_dir = cache_dir.join(&input.group);
-    if zig_project_dir.join("build.zig").exists() {
+    let lib_path = zig_project_dir
+        .join("zig-out")
+        .join("lib")
+        .join(format!(
+            "{}.lib",
+            if cfg!(target_os = "windows") {
+                &input.group
+            } else {
+                "lib"
+            }
+        ));
+    let lib_exists = lib_path.exists()
+        || zig_project_dir
+            .join("zig-out")
+            .join("lib")
+            .join(format!("lib{}.a", &input.group))
+            .exists();
+    if zig_project_dir.join("build.zig").exists() && !lib_exists {
         let _ = std::process::Command::new("zig")
             .arg("build")
             .current_dir(&zig_project_dir)
@@ -350,7 +368,15 @@ fn generate(input: &MacroInput) -> TokenStream {
     }
 
     // Generate Rust FFI bindings from cabi exports
-    let generated = generate_bindings(&exports, &input.group);
+    let mut generated = generate_bindings(&exports, &input.group);
+
+    // Generate host function stub documentation (zero-copy C ABI signatures)
+    if !input.host_fns.is_empty() {
+        if let Some(host_stubs) = generate_host_stubs(&input.host_fns, &input.group) {
+            generated.push('\n');
+            generated.push_str(&host_stubs);
+        }
+    }
 
     match generated.parse::<TokenStream>() {
         Ok(ts) => ts,
@@ -493,6 +519,149 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     };
 
     output.to_string()
+}
+
+/// Generate host function stub documentation for the Rust side.
+///
+/// For each host function declared in the macro, this generates:
+/// 1. `__JsStr` struct definition (if any str-returning host fn)
+/// 2. `js_allocator_alloc` extern declaration (for zero-copy string returns)
+/// 3. Doc comments showing the exact zero-copy C ABI signature
+///
+/// Users should copy these signatures into their `host.rs` and replace
+/// `unimplemented!()` with actual logic.
+fn generate_host_stubs(host_fns: &[HostFnDecl], group_suffix: &str) -> Option<String> {
+    if host_fns.is_empty() {
+        return None;
+    }
+
+    let stub_mod = format_ident!("__js2rust_host_stubs_{group_suffix}");
+
+    let mut has_str_ret = false;
+
+    // Build the extern function declarations
+    let mut extern_fns = Vec::new();
+
+    for hf in host_fns {
+        let fn_sym = format_ident!("{}", hf.name);
+
+        // Build C ABI param types: string → ptr+len pair
+        let mut cabi_params = Vec::new();
+        for (i, param_ty) in hf.params.iter().enumerate() {
+            if param_ty == "str" {
+                let ptr_name = format_ident!("arg{}_ptr", i);
+                let len_name = format_ident!("arg{}_len", i);
+                cabi_params.push(quote! { #ptr_name: *const u8, #len_name: usize });
+            } else {
+                let name = format_ident!("arg{}", i);
+                let rust_ty = host_type_to_rust_cabi_ffi(param_ty);
+                cabi_params.push(quote! { #name: #rust_ty });
+            }
+        }
+
+        // Return type
+        let ret_ty = if !hf.async_return_fields.is_empty() {
+            // Async struct return — user defines struct in host.rs, stub uses () 
+            quote! { () }
+        } else if hf.return_type == "str" {
+            has_str_ret = true;
+            quote! { __JsStr }
+        } else if hf.return_type == "void" {
+            quote! { () }
+        } else {
+            host_type_to_rust_cabi_ffi(&hf.return_type)
+        };
+
+        // Doc comment with JS-level signature and C ABI signature
+        let js_params = hf.params.join(", ");
+        let js_ret = if hf.return_type == "void" {
+            "void".to_string()
+        } else {
+            hf.return_type.clone()
+        };
+        let doc = format!(
+            "Host fn: {name}({js_params}) -> {js_ret}\
+             \nZero-copy C ABI: fn({cabi_sig}) -> {ret_sig}\
+             \nString params: pass .ptr and .len (in Zig Arena, no copy)\
+             \nString returns: allocate via js_allocator_alloc(), return __JsStr",
+            name = hf.name,
+            js_params = js_params,
+            js_ret = js_ret,
+            cabi_sig = hf.params.iter().enumerate().map(|(i, t)| {
+                if t == "str" { format!("arg{}_ptr: *const u8, arg{}_len: usize", i, i) }
+                else { format!("arg{}: {}", i, t) }
+            }).collect::<Vec<_>>().join(", "),
+            ret_sig = if hf.return_type == "str" { "__JsStr" }
+                else if hf.return_type == "void" { "void" }
+                else { &hf.return_type },
+        );
+
+        extern_fns.push(quote! {
+            #[doc = #doc]
+            #[allow(dead_code)]
+            pub unsafe extern "C" fn #fn_sym( #(#cabi_params),* ) -> #ret_ty {
+                unimplemented!("TODO: implement {}", stringify!(#fn_sym))
+            }
+        });
+    }
+
+    // __JsStr definition (only if needed by host fns or exports)
+    let jsstr_def = if has_str_ret {
+        quote! {
+            /// C ABI return type for zero-copy strings (memory in Zig Arena).
+            /// ptr+len pair with sign-bit convention:
+            ///   len >= 0 → normal string of that length
+            ///   len < 0  → panic/error, |len| bytes contain error name
+            #[repr(C)]
+            pub struct __JsStr {
+                pub ptr: *const u8,
+                pub len: isize,
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    // js_allocator_alloc declaration (only if any host fn returns string)
+    let alloc_decl = if has_str_ret {
+        quote! {
+            extern "C" {
+                /// Allocate memory in Zig's Arena for zero-copy string returns.
+                /// Memory is managed by Zig's dual-arena allocator — no free needed.
+                pub fn js_allocator_alloc(size: usize) -> *mut u8;
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let output = quote! {
+        /// Host function stubs generated by js2rust_bridge.
+        /// Copy the signatures below into your `host.rs` with `#[unsafe(no_mangle)]`
+        /// and replace the `unimplemented!()` bodies with your actual logic.
+        #[allow(dead_code, non_snake_case, clippy::not_unsafe_ptr_arg_deref)]
+        mod #stub_mod {
+            #jsstr_def
+
+            #alloc_decl
+
+            #(#extern_fns)*
+        }
+    };
+
+    Some(output.to_string())
+}
+
+/// Convert macro-level host type name to Rust C ABI FFI type.
+fn host_type_to_rust_cabi_ffi(type_name: &str) -> proc_macro2::TokenStream {
+    match type_name {
+        "i64" => quote! { i64 },
+        "i32" => quote! { i32 },
+        "f64" => quote! { f64 },
+        "bool" => quote! { bool },
+        "void" => quote! { () },
+        _ => quote! { *mut std::ffi::c_void },
+    }
 }
 
 fn generate_safe_wrapper(

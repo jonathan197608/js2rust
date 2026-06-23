@@ -93,6 +93,7 @@ name = "js2rust-bridge"
 version = "0.3.1"
 dependencies = [
  "js2rust-bridge-macro",
+ "js2zig-core",
 ]
 
 [[package]]

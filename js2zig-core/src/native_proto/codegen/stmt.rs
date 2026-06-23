@@ -907,8 +907,8 @@ impl Codegen {
         }
 
         // Case 2: Static struct with known fields → unroll loop
-        if let Some(ZigType::Struct(fields)) = obj_type {
-            if !fields.is_empty() {
+        if let Some(ZigType::Struct(fields)) = obj_type
+            && !fields.is_empty() {
                 let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
                 for (field_name, _) in &fields {
                     self.write_indent();
@@ -923,7 +923,6 @@ impl Codegen {
                 }
                 return;
             }
-        }
 
         // Case 3: Unknown type → compile error
         self.write_indent();

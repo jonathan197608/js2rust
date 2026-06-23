@@ -193,7 +193,8 @@ impl HostFnRegistry {
         out.push_str("// Allocator: uses the global allocator from the runtime.\n");
         out.push_str("const std = @import(\"std\");\n");
         out.push_str("const Io = std.Io;\n");
-        out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n\n");
+        out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
+        out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n\n");
 
         // Emit C ABI struct definitions (extern structs)
         for s in &self.structs {
@@ -213,23 +214,18 @@ impl HostFnRegistry {
             out.push_str("};\n\n");
         }
 
-        // Emit host_free declaration if any function returns a string
-        // (needed to free Rust-allocated string memory after copying to Zig allocator)
-        let has_string_return_fn = self.fns.iter().any(|f| f.ret_type == ZigType::Str);
-        if has_string_return_fn {
-            out.push_str("// Free string memory allocated by Rust (CString::into_raw)\n");
-            out.push_str("extern \"c\" fn host_free(ptr: ?*anyopaque) callconv(.c) void;\n\n");
-        }
-
         // Emit extern "c" function declarations and wrappers
         for def in &self.fns {
             // ── Async functions: emit extern + async wrapper, skip _wrap ──
             if def.is_async {
-                let params_cabi: Vec<String> = def
-                    .params
-                    .iter()
-                    .map(|(n, t)| format!("{}: {}", n, Self::to_c_abi_type(t)))
-                    .collect();
+                // Build C ABI params: string params expand to ptr+len (zero-copy)
+                let mut cabi_param_parts = Vec::new();
+                for (n, t) in &def.params {
+                    for (cabi_name, cabi_type) in Self::to_c_abi_param_types(n, t) {
+                        cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
+                    }
+                }
+                let params_cabi = cabi_param_parts.join(", ");
 
                 let ret_cabi = match &def.ret_type {
                     ZigType::NamedStruct(name) => self
@@ -238,14 +234,14 @@ impl HostFnRegistry {
                         .find(|s| &s.zig_name == name)
                         .map(|s| s.c_name.clone())
                         .unwrap_or_else(|| name.clone()),
-                    other => Self::to_c_abi_type(other),
+                    other => Self::to_c_abi_ret_type(other),
                 };
 
                 // Extern declaration (C ABI symbol defined in Rust)
                 out.push_str(&format!(
                     "extern \"c\" fn {}({}) callconv(.c) {};\n",
                     def.c_name,
-                    params_cabi.join(", "),
+                    params_cabi,
                     ret_cabi
                 ));
 
@@ -265,39 +261,16 @@ impl HostFnRegistry {
                 ));
                 out.push_str("    _ = io;\n");
 
-                // Convert string params to null-terminated C strings
-                for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::Str {
-                        out.push_str(&format!(
-                            "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return error.OutOfMemory;\n",
-                            pname, pname
-                        ));
+                // Build call args: string params pass .ptr and .len (zero-copy)
+                let mut call_args = Vec::new();
+                for (n, t) in &def.params {
+                    if *t == ZigType::Str {
+                        call_args.push(format!("{}.ptr", n));
+                        call_args.push(format!("{}.len", n));
+                    } else {
+                        call_args.push(n.clone());
                     }
                 }
-                for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::Str {
-                        out.push_str(&format!(
-                            "    defer js_allocator.g_alloc().free(c_{});\n",
-                            pname
-                        ));
-                    }
-                }
-                if def.params.iter().any(|(_, t)| *t == ZigType::Str) {
-                    out.push('\n');
-                }
-
-                // Build call args (string params use c_ prefix)
-                let call_args: Vec<String> = def
-                    .params
-                    .iter()
-                    .map(|(n, t)| {
-                        if *t == ZigType::Str {
-                            format!("c_{}", n)
-                        } else {
-                            n.clone()
-                        }
-                    })
-                    .collect();
 
                 // Call extern and convert return
                 if let ZigType::NamedStruct(ref zig_name) = def.ret_type {
@@ -328,6 +301,14 @@ impl HostFnRegistry {
                             field_inits.join(",\n")
                         ));
                     }
+                } else if def.ret_type == ZigType::Str {
+                    // Zero-copy string return: result is in Zig Arena
+                    out.push_str(&format!(
+                        "    const result = {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
+                    out.push_str("    return result.toSlice();\n");
                 } else {
                     out.push_str(&format!(
                         "    return {}({});\n",
@@ -340,12 +321,15 @@ impl HostFnRegistry {
                 continue;
             }
 
-            // ── Sync functions: existing logic ──
-            let params_cabi: Vec<String> = def
-                .params
-                .iter()
-                .map(|(n, t)| format!("{}: {}", n, Self::to_c_abi_type(t)))
-                .collect();
+            // ── Sync functions ──
+            // Build C ABI params: string params expand to ptr+len (zero-copy)
+            let mut cabi_param_parts = Vec::new();
+            for (n, t) in &def.params {
+                for (cabi_name, cabi_type) in Self::to_c_abi_param_types(n, t) {
+                    cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
+                }
+            }
+            let params_cabi = cabi_param_parts.join(", ");
 
             // Return type in C ABI representation
             let ret_cabi = match &def.ret_type {
@@ -355,19 +339,32 @@ impl HostFnRegistry {
                     .find(|s| &s.zig_name == name)
                     .map(|s| s.c_name.clone())
                     .unwrap_or_else(|| name.clone()),
-                other => Self::to_c_abi_type(other),
+                other => Self::to_c_abi_ret_type(other),
             };
 
             // Check if this function needs string conversion wrappers
             let has_string_params = def.params.iter().any(|(_, t)| *t == ZigType::Str);
             let has_string_return = def.ret_type == ZigType::Str;
+            let is_void = def.ret_type == ZigType::Void;
 
+            // Build call args for C ABI: string params pass .ptr and .len
+            let mut call_args = Vec::new();
+            for (n, t) in &def.params {
+                if *t == ZigType::Str {
+                    call_args.push(format!("{}.ptr", n));
+                    call_args.push(format!("{}.len", n));
+                } else {
+                    call_args.push(n.clone());
+                }
+            }
+
+            // ── String params or return: generate wrapper ──
             if has_string_params || has_string_return {
                 // Extern declaration with original name (matches Rust symbol)
                 out.push_str(&format!(
                     "extern \"c\" fn {}({}) callconv(.c) {};\n",
                     def.c_name,
-                    params_cabi.join(", "),
+                    params_cabi,
                     ret_cabi
                 ));
 
@@ -379,7 +376,6 @@ impl HostFnRegistry {
                     .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
                     .collect();
                 let ret_zig = def.ret_type.to_zig_type();
-                let catch_default = Self::default_return_value(&def.ret_type);
 
                 out.push_str(&format!(
                     "pub fn {}({}) {} {{\n",
@@ -388,54 +384,20 @@ impl HostFnRegistry {
                     ret_zig
                 ));
 
-                // Convert string params to null-terminated C strings
-                let is_void = def.ret_type == ZigType::Void;
-                for (pname, ptype) in &def.params {
-                    if *ptype == ZigType::Str {
-                        if is_void {
-                            out.push_str(&format!(
-                                "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return;\n",
-                                pname, pname
-                            ));
-                        } else {
-                            out.push_str(&format!(
-                                "    const c_{} = js_allocator.g_alloc().dupeZ(u8, {}) catch return {};\n",
-                                pname, pname, catch_default
-                            ));
-                        }
-                        out.push_str(&format!(
-                            "    defer js_allocator.g_alloc().free(c_{});\n",
-                            pname
-                        ));
-                    }
-                }
-
-                // Build call args (string params use c_ prefix)
-                let call_args: Vec<String> = def
-                    .params
-                    .iter()
-                    .map(|(n, t)| {
-                        if *t == ZigType::Str {
-                            format!("c_{}", n)
-                        } else {
-                            n.clone()
-                        }
-                    })
-                    .collect();
-
-                // Call extern and convert return if needed
+                // Call extern (zero-copy: pass .ptr/.len, receive StrRet)
                 if has_string_return {
                     out.push_str(&format!(
-                        "    const raw = {}({});\n",
+                        "    const result = {}({});\n",
                         def.c_name,
                         call_args.join(", ")
                     ));
-                    out.push_str("    const span = std.mem.span(raw);\n");
-                    out.push_str("    const owned = js_allocator.g_alloc().dupe(u8, span) catch return \"\";\n");
-                    out.push_str("    host_free(@ptrCast(@constCast(raw)));\n");
-                    out.push_str("    return owned;\n");
+                    out.push_str("    return result.toSlice();\n");
                 } else if is_void {
-                    out.push_str(&format!("    {}({});\n", def.c_name, call_args.join(", ")));
+                    out.push_str(&format!(
+                        "    {}({});\n",
+                        def.c_name,
+                        call_args.join(", ")
+                    ));
                 } else {
                     out.push_str(&format!(
                         "    return {}({});\n",
@@ -450,7 +412,7 @@ impl HostFnRegistry {
                 out.push_str(&format!(
                     "pub extern \"c\" fn {}({}) callconv(.c) {};\n",
                     def.c_name,
-                    params_cabi.join(", "),
+                    params_cabi,
                     ret_cabi
                 ));
             }
@@ -484,23 +446,28 @@ impl HostFnRegistry {
         out
     }
 
-    /// Return the default value literal for a ZigType (used in `catch return <default>`).
-    fn default_return_value(ret_type: &ZigType) -> &'static str {
-        match ret_type {
-            ZigType::Str => "\"\"",
-            ZigType::I64 => "0",
-            ZigType::F64 => "0.0",
-            ZigType::Bool => "false",
-            ZigType::Void => "",
-            _ => "null",
+    /// Convert a ZigType to the corresponding C ABI type string (for return types).
+    /// String returns use StrRet (zero-copy: memory is in Zig Arena).
+    fn to_c_abi_ret_type(ty: &ZigType) -> String {
+        match ty {
+            ZigType::Str => "StrRet".to_string(),
+            other => other.to_zig_type(),
         }
     }
 
-    /// Convert a ZigType to the corresponding C ABI type string.
-    fn to_c_abi_type(ty: &ZigType) -> String {
+    /// Expand a single Zig-level param into one or more C ABI params.
+    /// String params expand to `ptr: [*]const u8, len_name: usize` (zero-copy).
+    /// Other types pass through as-is.
+    fn to_c_abi_param_types(
+        param_name: &str,
+        ty: &ZigType,
+    ) -> Vec<(String, String)> {
         match ty {
-            ZigType::Str => "[*:0]const u8".to_string(),
-            other => other.to_zig_type(),
+            ZigType::Str => vec![
+                (format!("{}_ptr", param_name), "[*]const u8".to_string()),
+                (format!("{}_len", param_name), "usize".to_string()),
+            ],
+            other => vec![(param_name.to_string(), other.to_zig_type())],
         }
     }
 

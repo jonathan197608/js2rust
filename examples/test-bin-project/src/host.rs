@@ -3,12 +3,52 @@
 //
 // These functions are exposed via the C ABI (`#[unsafe(no_mangle)] pub extern "C"`)
 // and referenced from Zig's `host.zig` as `extern "c"` declarations.
+//
+// Zero-copy design (v3.0):
+// - String params: pass ptr+len directly from Zig Arena (no dupeZ)
+// - String returns: allocate in Zig Arena via js_allocator_alloc() (no host_free)
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
+
+// ── C ABI types ──────────────────────────────────────────────────
+
+/// Zero-copy string return type (matches Zig's `string.StrRet`).
+/// ptr+len pair with sign-bit convention:
+/// - len >= 0 → normal string of that length (memory in Zig Arena)
+/// - len < 0  → panic/error, |len| bytes contain error name
+#[repr(C)]
+pub struct __JsStr {
+    pub ptr: *const u8,
+    pub len: isize,
+}
+
+impl __JsStr {
+    /// Create a __JsStr from a Rust &str by allocating in Zig Arena.
+    pub fn from_str(s: &str) -> Self {
+        let len = s.len();
+        let ptr = unsafe { js_allocator_alloc(len) };
+        unsafe { std::ptr::copy_nonoverlapping(s.as_ptr(), ptr, len) };
+        Self {
+            ptr,
+            len: len as isize,
+        }
+    }
+
+    /// Create an empty __JsStr.
+    pub fn empty() -> Self {
+        Self {
+            ptr: std::ptr::null(),
+            len: 0,
+        }
+    }
+}
+
+extern "C" {
+    /// Allocate memory in Zig's Arena for zero-copy string returns.
+    fn js_allocator_alloc(size: usize) -> *mut u8;
+}
 
 // ── Synchronous host functions ───────────────────────────────────
 
@@ -24,42 +64,31 @@ pub extern "C" fn host_multiply(a: i64, b: i64) -> i64 {
     a * b
 }
 
-/// String concatenation — demo host function with string types.
+/// String concatenation — zero-copy (params from Zig Arena, return in Zig Arena).
 #[unsafe(no_mangle)]
-pub extern "C" fn host_concat(s1: *const c_char, s2: *const c_char) -> *mut c_char {
-    let s1_str = unsafe {
-        assert!(!s1.is_null());
-        CStr::from_ptr(s1).to_string_lossy().into_owned()
+pub extern "C" fn host_concat(
+    s1_ptr: *const u8,
+    s1_len: usize,
+    s2_ptr: *const u8,
+    s2_len: usize,
+) -> __JsStr {
+    let s1 = unsafe { std::str::from_utf8(std::slice::from_raw_parts(s1_ptr, s1_len)) };
+    let s2 = unsafe { std::str::from_utf8(std::slice::from_raw_parts(s2_ptr, s2_len)) };
+
+    let (s1, s2) = match (s1, s2) {
+        (Ok(a), Ok(b)) => (a, b),
+        _ => return __JsStr::empty(),
     };
 
-    let s2_str = unsafe {
-        assert!(!s2.is_null());
-        CStr::from_ptr(s2).to_string_lossy().into_owned()
-    };
-
-    let result = format!("{}{}", s1_str, s2_str);
-    CString::new(result).unwrap().into_raw()
+    let result = format!("{}{}", s1, s2);
+    __JsStr::from_str(&result)
 }
 
-/// String length — demo host function with string type.
+/// String length — zero-copy (param from Zig Arena).
 #[unsafe(no_mangle)]
-pub extern "C" fn host_strlen(s: *const c_char) -> i64 {
-    let s_str = unsafe {
-        assert!(!s.is_null());
-        CStr::from_ptr(s).to_string_lossy()
-    };
-
-    s_str.len() as i64
-}
-
-/// Free string memory allocated by Rust.
-#[unsafe(no_mangle)]
-pub extern "C" fn host_free(ptr: *mut c_char) {
-    if !ptr.is_null() {
-        unsafe {
-            let _ = CString::from_raw(ptr);
-        }
-    }
+pub extern "C" fn host_strlen(s_ptr: *const u8, s_len: usize) -> i64 {
+    let s = unsafe { std::str::from_utf8(std::slice::from_raw_parts(s_ptr, s_len)) };
+    s.map(|s| s.len() as i64).unwrap_or(0)
 }
 
 // ── Async host function (tokio-backed) ───────────────────────────
@@ -80,7 +109,6 @@ fn copy_to_buffer(buf: &mut [u8; 256], s: &str) {
 }
 
 /// Global tokio runtime — created once, reused for all async host calls.
-/// Uses current-thread scheduler with all drivers enabled (time, I/O).
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 fn runtime() -> &'static Runtime {
@@ -99,15 +127,9 @@ struct User {
 }
 
 /// Async database lookup — simulates real async I/O with network latency.
-///
-/// In a real application this would be an HTTP request, database query, or
-/// filesystem read. Here we use `tokio::time::sleep` to emulate a 50ms
-/// round-trip, then return a hardcoded record.
 async fn fetch_user_from_db(name: &str) -> User {
-    // Simulate network latency (50ms per query)
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Simulated database
     match name {
         "alice" => User {
             id: 1,
@@ -128,22 +150,15 @@ async fn fetch_user_from_db(name: &str) -> User {
     }
 }
 
-/// C ABI wrapper: blocks on the async function using the global tokio runtime.
-///
-/// The Zig side calls this synchronously via `extern "c"`. Internally we
-/// delegate to a real `async fn` running on a tokio runtime, then block
-/// until the result is ready.
+/// C ABI wrapper for async fetch_user — zero-copy param from Zig Arena.
 #[unsafe(no_mangle)]
-pub extern "C" fn fetch_user(name: *const c_char) -> HostFetchUserResult {
+pub extern "C" fn fetch_user(name_ptr: *const u8, name_len: usize) -> HostFetchUserResult {
     let name_str = unsafe {
-        assert!(!name.is_null());
-        CStr::from_ptr(name).to_string_lossy()
+        let slice = std::slice::from_raw_parts(name_ptr, name_len);
+        std::str::from_utf8(slice).unwrap_or("unknown")
     };
 
-    // Block on the async function — this is the standard bridge between
-    // sync C ABI and async Rust. The tokio runtime drives the future to
-    // completion (including the simulated sleep).
-    let user = runtime().block_on(fetch_user_from_db(&name_str));
+    let user = runtime().block_on(fetch_user_from_db(name_str));
 
     let mut buf = [0u8; 256];
     copy_to_buffer(&mut buf, &user.name);
