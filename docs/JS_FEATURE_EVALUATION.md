@@ -497,13 +497,12 @@
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 
-**设计**：双 Arena 全局分配器（hot/cold 主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，Rust 侧在每次 FFI 调用前后自动重置 arena，调用方无需手动释放内存。
+**设计**：双 Arena 全局分配器（hot/cold 主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，Rust 侧在每次 FFI 调用前后自动重置 arena，调用方无需手动释放内存。不存在 `free_string` 机制——内存由 arena 统一回收。
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
 | 双 Arena 分配器 | ✅ | `js_allocator.zig`：hot arena（常用） + cold arena（备用），到达内存上限或超时后自动切换到 cold 并重置 hot |
-| 自动内存释放 | ✅ | Rust 侧 `js2rust_deinit()` 或每次 FFI 调用入口自动重置 arena，调用方无需调用 `free_string()` |
-| `free_string()` | ✅ | 已改为 no-op（保留符号以兼容旧代码），实际释放由 arena 重置统一完成 |
+| 自动内存释放 | ✅ | Rust 侧 `js2rust_deinit()` 或每次 FFI 调用入口自动重置 arena，调用方无需任何手动释放 |
 | 同步 host 函数字符串参数 | ✅ | Rust 侧分配 → Zig `dupe` 复制 → Rust `host_free` 释放（分配器管理，无手动 free） |
 | 异步 host 函数 | ✅ | 回调模式 + `io.async()`，内存由 Io 的生命周期管理 |
 

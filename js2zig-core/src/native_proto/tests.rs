@@ -1107,9 +1107,8 @@ export function greet(name) {
 
         // Rule 1: JSDoc @returns should be used correctly
         assert!(zig.contains("pub fn greet(name: []const u8) []const u8 {"));
-        // Note: string return from export function needs free_string scheme
-        // The current implementation doesn't add free_string for []const u8 return type
-        // TODO: fix free_string generation for string return types
+        // String returns are allocated via the global arena allocator.
+        // Memory is automatically freed when the arena is reset (no free_string needed).
         assert!(zig.contains("std.fmt.allocPrint"));
     }
 
