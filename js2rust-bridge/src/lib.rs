@@ -29,8 +29,6 @@ pub fn link() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
 
-    println!("cargo:rerun-if-changed=.js2zig-cache");
-
     if !cache_dir.exists() {
         println!(
             "cargo:warning=js2zig: .js2zig-cache not found. \

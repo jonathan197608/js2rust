@@ -87,15 +87,22 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
             .map_err(|e| format!("write host.zig: {}", e))?;
     }
 
-    // 4. Copy runtime/ if it exists
+    // 4. Copy runtime/ if it exists (idempotent — skip if already copied)
     if let Some(ref rt_dir) = opts.runtime_dir {
         let rt_src = Path::new(rt_dir);
         if rt_src.exists() && rt_src.is_dir() {
             let rt_dst = src_dir.join("js_runtime");
-            if rt_dst.exists() {
-                fs::remove_dir_all(&rt_dst).ok();
+            // Check if runtime is already present (may have been copied by concurrent macro invocation)
+            if !rt_dst.join("js_runtime.zig").exists() {
+                let _ = fs::remove_dir_all(&rt_dst);
+                if let Err(e) = copy_dir_recursive(rt_src, &rt_dst) {
+                    // If copy fails (e.g. concurrent process has the file), check if
+                    // another process already completed the copy.
+                    if !rt_dst.join("js_runtime.zig").exists() {
+                        return Err(format!("copy {}: {}", rt_dst.display(), e));
+                    }
+                }
             }
-            copy_dir_recursive(rt_src, &rt_dst)?;
         }
     }
 
