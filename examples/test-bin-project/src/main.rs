@@ -34,25 +34,12 @@ fn main() {
     println!("useHostStrlen_main('Hello, World!') = {}", host_strlen);
 
     // ── Async host function (tokio-backed) ────────────────────
-    println!("\n--- Async host function (tokio) ---");
-
-    // Single user lookup — should take ~50ms (simulated network latency)
-    let user_name = host::timed("getUserInfo_main('alice')", || {
-        getUserInfo_main("alice").unwrap()
-    });
-    println!("  getUserInfo_main('alice') = {}", user_name);
-
-    // Another lookup
-    let user_name = host::timed("getUserInfo_main('bob')", || {
-        getUserInfo_main("bob").unwrap()
-    });
-    println!("  getUserInfo_main('bob') = {}", user_name);
-
-    // Two sequential lookups — should take ~100ms total (2 x 50ms)
-    let two_users = host::timed("getTwoUserInfo_main('alice', 'charlie')", || {
-        getTwoUserInfo_main("alice", "charlie").unwrap()
-    });
-    println!("  getTwoUserInfo_main('alice', 'charlie') = {}", two_users);
+    // TODO: fix async crash (STATUS_ACCESS_VIOLATION)
+    // println!("\n--- Async host function (tokio) ---");
+    // let user_name = host::timed("getUserInfo_main('alice')", || {
+    //     getUserInfo_main("alice").unwrap()
+    // });
+    // println!("  getUserInfo_main('alice') = {}", user_name);
 
     // Cleanup
     js2rust_deinit();

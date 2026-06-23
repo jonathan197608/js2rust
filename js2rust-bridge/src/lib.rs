@@ -20,7 +20,7 @@
 mod config;
 pub mod sdk;
 
-pub use js2rust_bridge_macro::js2rust_bridge;
+pub use js2rust_bridge_macro::{js2rust_bridge, host_fn};
 
 // Re-export types needed for host function configuration from js2zig-core
 // so users only need `js2rust-bridge` in their `[build-dependencies]`.

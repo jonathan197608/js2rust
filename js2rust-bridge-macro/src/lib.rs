@@ -16,6 +16,28 @@ use quote::{format_ident, quote};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+mod host_fn;
+
+/// `#[host_fn]` attribute macro — eliminates unsafe C ABI plumbing from host functions.
+///
+/// Write a normal Rust function using SDK types (`HostStr`, `JsStr`, `JsStrField`).
+/// The macro generates the `unsafe extern "C"` wrapper with correct C ABI signature.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use js2rust_bridge::sdk::{HostStr, JsStr};
+///
+/// #[host_fn]
+/// fn host_concat(s1: HostStr, s2: HostStr) -> JsStr {
+///     JsStr::new(&format!("{}{}", &s1, &s2))
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn host_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    host_fn::host_fn_impl(attr.into(), item.into()).into()
+}
+
 // ── js2rust.toml deserialization (minimal, shared format contract) ──
 
 #[derive(Debug, Deserialize)]

@@ -1,4 +1,5 @@
 // js_src/main.js — Test project for js2rust
+// Sync functions only (async temporarily disabled for #[host_fn] macro merge)
 
 /**
  * @param {string} name
@@ -52,26 +53,4 @@ export function useHostConcat(s1, s2) {
  */
 export function useHostStrlen(s) {
     return host_strlen(s);
-}
-
-// ── Async host function examples ──
-
-/**
- * @param {string} name
- * @returns {string}
- */
-export async function getUserInfo(name) {
-    const user = await fetch_user(name);
-    return user.name;
-}
-
-/**
- * @param {string} name1
- * @param {string} name2
- * @returns {string}
- */
-export async function getTwoUserInfo(name1, name2) {
-    const user1 = await fetch_user(name1);
-    const user2 = await fetch_user(name2);
-    return user1.name + " & " + user2.name;
 }

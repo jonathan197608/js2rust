@@ -1,6 +1,6 @@
 [package]
 name = "js2rust-bridge"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
 authors = ["jonathan197608"]
 description = "FFI bridge runtime for js2rust-generated Zig code"
@@ -10,7 +10,7 @@ keywords = ["ffi", "zig", "js", "bindings"]
 categories = ["development-tools", "external-ffi-bindings"]
 
 [dependencies]
-js2rust-bridge-macro = { version = "0.3.2", path = "../js2rust-bridge-macro" }
+js2rust-bridge-macro = { version = "0.4.0", path = "../js2rust-bridge-macro" }
 js2zig-core = { version = "0.3.2", path = "../js2zig-core" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

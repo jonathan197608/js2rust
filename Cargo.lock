@@ -106,7 +106,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "js2rust-bridge"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "js2rust-bridge-macro",
  "js2zig-core",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "js2rust-bridge-macro"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "js2zig-core",
  "proc-macro2",
@@ -580,6 +580,7 @@ name = "test-bin-project"
 version = "0.1.0"
 dependencies = [
  "js2rust-bridge",
+ "js2rust-bridge-macro",
  "tokio",
 ]
 
