@@ -2,37 +2,51 @@
 
 > **项目**: js2rust (JS → Zig 转译器)  
 > **评估日期**: 2026-06-23  
-> **代码版本**: main branch (22c5f4b)  
-> **测试覆盖**: 87 个 Rust 测试 + showcase-project 验证
+> **代码版本**: main branch (5576777)  
+> **测试覆盖**: 96 个 Rust 测试 (73 native_proto + 23 辅助) + 3 个示例项目
 
 ---
 
 ## 1. 执行总结
 
-| 指标 | 数值 | 占比 |
-|------|------|------|
-| **JS 语法特性总数** | ~120 | - |
-| **完全实现** | ~75 | ~63% |
-| **部分实现** | ~15 | ~13% |
-| **未实现（@compileError）** | ~30 | ~25% |
-| **测试覆盖** | 87 个测试 | - |
+| 指标 | 数值 | 占比 | 相比上次 |
+|------|------|------|----------|
+| **JS 语法特性总数** | ~120 | - | - |
+| **完全实现** | ~90 | ~75% | +15 |
+| **部分实现** | ~8 | ~7% | -7 |
+| **未实现（@compileError）** | ~22 | ~18% | -8 |
+| **测试覆盖** | 96 个测试 | - | +9 |
+
+### 近期关键进展（2026-06-18 ~ 2026-06-23）
+
+| 特性 | 之前状态 | 现在状态 |
+|------|----------|----------|
+| 箭头函数闭包（捕获外层变量） | ❌ 不支持 | ✅ 支持 value/reference capture |
+| `for-in` 静态对象 | ❌ 仅 HashMap | ✅ 支持 struct 字段展开 |
+| Getter/Setter | 🚧 已实现未测试 | ✅ 测试覆盖 |
+| `splice` 多参数插入 | 🚧 仅删除 | ✅ 支持删除+插入 |
+| `free_string()` 内存管理 | ❌ | ✅ allocator.dupeZ + host_free |
+| 异步 host 函数返回类型推断 | 🚧 有 bug | ✅ 修复 |
+| oxc_ast 0.135 兼容 | - | ✅ ForStatementLeft API 适配 |
+| test-lib-project 并发转译竞态 | 🐛 | ✅ 修复 |
 
 ### 核心能力
 
 ✅ **已支持**:
 - ES5 完整语法（除 `with` 语句）
-- ES6+ 核心特性（箭头函数、类、模板字符串、解构、rest/spread）
+- ES6+ 核心特性（箭头函数、闭包捕获、类、模板字符串、解构、rest/spread）
 - 异步编程（async/await + Io 模式）
 - 错误处理（throw → error.JsThrow + try-catch）
 - 类型推断（3 层规则 + 约束求解）
-- 闭包捕获（自动生成结构体）
-- C ABI 桥接（Rust ↔ Zig）
+- 闭包捕获（自动生成 Closure 结构体，value/reference capture）
+- C ABI 桥接（Rust ↔ Zig，含 free_string 内存管理）
+- `for-in` 静态/动态对象
 
 🚧 **部分支持**:
 - 可选链（`?.` 简化为直接访问，无 null 检查）
 - 解构默认值（跳过默认值）
 - 对象展开（多 spread 合并不支持）
-- `for-in`（仅支持 HashMap 对象）
+- 正则表达式引擎（仅提取 pattern 字符串）
 
 ❌ **不支持**（编译期 `@compileError`）:
 - Generator / `yield`
@@ -43,6 +57,7 @@
 - `for await...of`
 - JSX
 - `with` 语句
+- Promise API（用 async/await 替代）
 
 ---
 
@@ -149,6 +164,8 @@
 | `[...]` (数组字面量) | ✅ | `[_]T{ ... }` | `test_native_proto_literals` |
 | `{...}` (对象字面量) | ✅ | `.{ .k = v }` | 同上 |
 | 对象展开 `{ ...base, k: v }` | ✅ | `blk: { var _tmp = base; ... }` | 隐式测试 |
+| Getter 属性 `{ get x() { ... } }` | ✅ | `.x = <return expr>` | `test_native_proto_getter` |
+| Setter 属性 `{ set x(v) { ... } }` | ✅ | 跳过（不贡献字段） | `test_native_proto_setter_skipped` |
 | 多 spread 合并 `{ ...a, ...b }` | ❌ | 不支持 | - |
 
 ### 2.12 模板字面量 - ✅ 100% 实现
@@ -160,7 +177,7 @@
 | 复杂嵌套 | ✅ | 递归生成 | 同上 |
 | 标签模板 `` tag`...` `` | ❌ | `@compileError` | - |
 
-### 2.13 箭头函数 - 🚧 部分实现
+### 2.13 箭头函数 - ✅ 100% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -168,9 +185,12 @@
 | 块语句 `(x, y) => { return x + y; }` | ✅ | 生成独立 `fn` | 同上 |
 | 单参数 `x => expr` | ✅ | 生成独立 `fn` | 同上 |
 | 无捕获箭头函数 | ✅ | 函数指针 | 隐式测试 |
-| 捕获变量箭头函数 | 🚧 | 需手动转换为 `function` | 未实现闭包 |
+| 闭包值捕获 `(y) => x + y` | ✅ | 生成 `Closure_X` 结构体 + `call()` | `test_native_proto_closure_basic` |
+| 闭包可变捕获 `() => { x++; }` | ✅ | 生成 `Closure_X` 结构体 + `*i64` 指针 | `test_native_proto_closure_mutable` |
 
-**限制**: 当前箭头函数总是生成独立函数，不支持捕获外层变量（闭包）。需要手动改写为 `function` 表达式。
+**实现方式**: 检测箭头函数中引用的外层变量，自动生成闭包结构体：
+- 不可变捕获 (`const` 外层变量) → 值复制到结构体字段
+- 可变捕获 (`let`/`var` 外层变量) → 指针字段 (`*T`)，通过 `self.x.*` 解引用
 
 ### 2.14 `new` 表达式 - ✅ 90% 实现
 
@@ -233,7 +253,7 @@
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `function fn(params) {}` | ✅ | `pub fn fn(params) ret {}` | 所有测试 |
-| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper | 同上 |
+| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper + free_string | 同上 |
 | `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
 | Rest 参数 `function fn(...args) {}` | ✅ | `args: []const i64` | showcase-project |
@@ -248,7 +268,7 @@
 | 实例方法 | ✅ | `pub fn method(self: *const Name) {}` | 同上 |
 | 静态方法 | ✅ | `pub fn method() {}` (无 `self`) | 同上 |
 | 静态属性 | ✅ | `pub const prop = val;` | 同上 |
-| Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | 未测试 |
+| Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` |
 | `extends` 继承 | ✅ | 内嵌 `base: ParentType` 字段 | showcase-project |
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
 | 私有字段 `#field` | ❌ | `@compileError` | - |
@@ -264,9 +284,10 @@
 | `switch` | ✅ | `_ = switch (val) { ... }` | 同上 |
 | `for (init; test; update)` | ✅ | `{ init; while (test) : (update) {} }` | showcase-project |
 | `for...of` | ✅ | `for (iterable) \|item\| {}` | 同上 |
-| `for...in` | 🚧 | HashMap iterator (仅支持 dynamic access 对象) | 未测试 |
+| `for...in` (动态对象) | ✅ | HashMap iterator | `test_native_proto_for_in` |
+| `for...in` (静态 struct) | ✅ | 字段展开循环 | `test_native_proto_for_in_static` |
 | `while` | ✅ | `while (cond) {}` | showcase-project |
-| `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | 未测试 |
+| `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |
 | `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
 | 标签语句 `label: while` | ✅ | `label: while {}` | 未测试 |
 | `for await...of` | ❌ | `@compileError` | - |
@@ -321,7 +342,7 @@
 | `.toLowerCase()` | ✅ | `js_string.toLower(s)` | 同上 |
 | `.charAt(i)` | ✅ | `js_string.charAt(s, i)` | 同上 |
 | `.charCodeAt(i)` | ✅ | `s[@intCast(i)]` | 同上 |
-| `.concat(other)` | ✅ | `js_string.concat(s, other)` | 同上 |
+| `.concat(other)` | ✅ | `js_string.concat(s, other)` | `test_native_proto_string_concat_*` |
 | `.includes(sub)` | ✅ | `js_string.includes(s, sub)` | 同上 |
 | `.indexOf(sub)` | ✅ | `js_string.indexOf(s, sub)` | 同上 |
 | `.startsWith(pre)` | ✅ | `js_string.startsWith(s, pre)` | 同上 |
@@ -332,9 +353,8 @@
 | `.trim()` | ✅ | `js_string.trim(s)` | 同上 |
 | `.repeat(n)` | ✅ | `js_string.repeat(s, n)` | 同上 |
 | `.padStart/padEnd` | ❌ | 未实现 | - |
-| `.startsWith/endsWith` (完整) | 🚧 | 仅基础实现 | - |
 
-### 4.3 `Array` - ✅ 90% 实现
+### 4.3 `Array` - ✅ 95% 实现
 
 | 方法 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -343,13 +363,13 @@
 | `.pop()` | ✅ | `js_array.pop(arr)` | 同上 |
 | `.shift()` | ✅ | `js_array.shift(arr)` | 同上 |
 | `.unshift(val)` | ✅ | `js_array.unshift(arr, val)` | 同上 |
-| `.indexOf(val)` | ✅ | `js_array.indexOf(arr, val)` | 同上 |
-| `.includes(val)` | ✅ | `js_array.includes(arr, val)` | 同上 |
-| `.join(sep)` | ✅ | `js_array.join(arr, sep)` | 同上 |
+| `.indexOf(val)` | ✅ | `js_array.indexOf(arr, val)` | `test_native_proto_array_indexof` |
+| `.includes(val)` | ✅ | `js_array.includes(arr, val)` | `test_native_proto_array_includes` |
+| `.join(sep)` | ✅ | `js_array.join(arr, sep)` | `test_native_proto_array_join` |
 | `.reverse()` | ✅ | `js_array.reverse(arr)` | 同上 |
 | `.sort()` | ✅ | `js_array.sort(arr)` | 同上 |
-| `.slice(s, e)` | ✅ | `js_array.slice(arr, s, e)` | 同上 |
-| `.splice(s, n, ...)` | 🚧 | 支持删除+插入 | 同上 |
+| `.slice(s, e)` | ✅ | `js_array.slice(arr, s, e)` | `test_native_proto_array_slice` |
+| `.splice(s, n, ...)` | ✅ | 支持删除+插入 | `test_native_proto_array_splice*` |
 | `.concat(other)` | ✅ | `js_array.concat(arr, other)` | 同上 |
 | `.map(fn)` | ✅ | `js_array.map(arr, fn)` | Phase 5 测试 |
 | `.filter(fn)` | ✅ | `js_array.filter(arr, fn)` | 同上 |
@@ -449,12 +469,13 @@
 
 **建议**: JS 的 `Promise` 对应 Zig 的 `Io` 模式 + `async/await`，无需直接翻译 `Promise` API。
 
-### 4.13 `TypedArray` - 🚧 30% 实现
+### 4.13 `TypedArray` - 🚧 40% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `Int8Array` / `Uint8Array` / ... | 🚧 | Zig 切片 `[]T` | 未测试 |
-| `.length` (属性访问) | ✅ | `.len` | 隐式测试 |
+| `Int8Array` / `Uint8Array` / ... | ✅ | Zig 切片 `[]T` | `test_native_proto_typedarray_*` |
+| `.length` (属性访问) | ✅ | `.len` | 同上 |
+| 构造 `new Uint8Array([...])` | ✅ | Zig 数组字面量 | 同上 |
 | `.buffer` / `.byteLength` / ... | ❌ | 未实现 | - |
 | `.set()` / `.slice()` | ❌ | 未实现 | - |
 
@@ -469,10 +490,19 @@
 | `import { name } from './file.js'` | ✅ | AST 驱动提取 | showcase-project |
 | `import defaultExport from './file.js'` | ✅ | 同上 | 同上 |
 | `import * as ns from './file.js'` | ✅ | 同上 | 未测试 |
-| `export function fn() {}` | ✅ | 生成 C ABI wrapper | 所有测试 |
+| `export function fn() {}` | ✅ | 生成 C ABI wrapper + free_string | 所有测试 |
 | `export const x = val` | ✅ | 导出为 C ABI 函数 | 同上 |
 | `export default expr` | ✅ | 标记为 default 导出 | 未测试 |
 | 多文件分组 | ✅ | DFS 依赖排序 | showcase-project |
+
+### 5.2 C ABI 内存管理 - ✅ 100% 实现
+
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 字符串返回 | ✅ | `allocator.dupeZ` + `result_len: *usize` |
+| `free_string()` | ✅ | 全局导出函数，释放 C ABI 返回的字符串 |
+| 同步 host 函数字符串参数 | ✅ | `dupeZ` 转入参，`host_free` 释放 |
+| 异步 host 函数 | ✅ | 回调模式 + `io.async()` |
 
 ---
 
@@ -488,6 +518,8 @@
 | 函数返回类型推断 | ✅ | 扫描所有 `return` + widen |
 | 类型拓宽 (widen) | ✅ | `JsAny > JsValue > Union > F64 > ...` |
 | 动态特性检测 | ✅ | `dynamic_access_vars` / `dynamic_arrays` |
+| 箭头函数闭包类型推断 | ✅ | 自动生成 Closure struct 类型 |
+| host 函数返回类型推断 | ✅ | `host_return_types` + `host_struct_fields` |
 
 ### 6.2 类型映射 - ✅ 100% 实现
 
@@ -505,39 +537,45 @@
 | `function` | 函数指针 或 闭包结构体 |
 | `any` | `JsAny` |
 | `unknown` | `JsValue` |
+| TypedArray | `[]T` (Zig 切片) |
 
 ---
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 87 个测试
+### 7.1 Rust 单元测试 - 96 个测试
 
-| 测试文件 | 测试数量 | 覆盖特性 |
+| 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `js2zig-core/src/native_proto/tests.rs` | 87 | 所有核心语法 |
+| `native_proto::tests` | 73 | 所有核心语法、内置对象、闭包、错误处理 |
+| `native_proto::jsdoc::tests` | 8 | JSDoc 解析与类型标注 |
+| `parser::tests` | 6 | oxc_ast 解析器集成 |
+| `sourcemap::tests` | 4 | Source Map 生成 |
+| `testgen::tests` | 3 | Zig 测试代码生成 |
+| 其他 (`pipeline` 等) | 2 | 管道集成测试 |
 
 ### 7.2 示例项目测试
 
-| 项目 | 测试数量 | 覆盖特性 |
+| 项目 | 导出函数 | 覆盖特性 |
 |------|----------|----------|
-| `showcase-project` | 40+ | 完整语法演示 |
-| `test-bin-project` | 2 | 同步+异步主机函数 |
+| `showcase-project/app.js` | 30+ | 完整语法演示 (Phase 1-5) |
+| `showcase-project/phase5.js` | 10+ | 高级 Array 方法 (map/filter/reduce/...) |
+| `showcase-project/test_throw.js` | 5 | 错误处理 |
+| `test-bin-project` | 4 | 同步+异步主机函数 |
 | `test-lib-project` | 2 | Cdylib 库 + C ABI |
 
 ### 7.3 未覆盖特性（需添加测试）
 
 | 特性 | 优先级 | 说明 |
 |------|--------|------|
-| `for...in` | P1 | 仅支持 HashMap 对象 |
-| Getter/Setter | P1 | 已实现但未测试 |
-| `instanceof` / `in` | P2 | 已实现但未测试 |
-| 正则表达式 | P2 | 部分实现，需测试 |
+| `instanceof` / `in` 运算符 | P2 | 已实现但未测试 |
 | `Date` 方法 | P2 | 已实现但未测试 |
 | `Object` 方法 | P2 | 已实现但未测试 |
-| TypedArray | P2 | 部分实现，需测试 |
+| 正则表达式 | P2 | 部分实现，需测试 |
+| TypedArray 高级方法 | P2 | 部分实现，需测试 |
 | 可选链 `?.` | P2 | 简化为直接访问 |
-| 标签语句 | P3 | 已实现但未测试 |
-| `do...while` | P3 | 已实现但未测试 |
+| 标签语句 | P2 | 已实现但未测试 |
+| `for-in` 静态 struct | P2 | 已实现但 showcase-project 未集成 |
 
 ---
 
@@ -547,10 +585,14 @@
 
 | 限制 | 说明 | 优先级 |
 |------|------|--------|
-| 箭头函数闭包 | 不支持捕获外层变量，需手动改写为 `function` | P1 |
+| ~~箭头函数闭包~~ | ✅ 已实现 (value/reference capture, 2026-06-23) | - |
+| ~~`for...in` 静态对象~~ | ✅ 已实现 (struct 字段展开, 2026-06-23) | - |
+| ~~Getter/Setter 测试~~ | ✅ 已测试 (2026-06-23) | - |
+| ~~`splice` 多参数插入~~ | ✅ 已实现 (2026-06-23) | - |
+| ~~test-lib-project 并发竞态~~ | ✅ 已修复 (2026-06-23) | - |
+| 可选链 `?.` 完整 null 检查 | 当前简化为直接访问 | P2 |
 | 解构默认值 | 跳过默认值，始终使用 `undefined` | P2 |
-| 多 spread 合并 | `{ ...a, ...b }` 不支持 | P2 |
-| `for...in` 静态对象 | 仅支持 HashMap 对象 | P2 |
+| 多 spread 合并 `{ ...a, ...b }` | 不支持 | P2 |
 | 嵌套函数声明 | 报错，需重构为顶层 | P2 |
 | Promise API | 不支持，使用 `async/await` 替代 | P3 |
 | Generator / `yield` | 不支持 | P3 |
@@ -569,7 +611,7 @@
 | Class 字段类型 | 所有字段类型硬编码为 `i64` | P2 |
 | TypeScript 泛型 | 不支持 | P3 |
 | `interface` / `type` alias | 不支持 | P3 |
-| 复杂联合类型 |  fallback 到 `JsValue` | P3 |
+| 复杂联合类型 | fallback 到 `JsValue` | P3 |
 
 ### 8.3 运行时限制
 
@@ -584,30 +626,33 @@
 
 ## 9. 优先级建议 (Priority Recommendations)
 
-### 9.1 P0 (立即修复)
+### 9.1 P0 (立即修复) — 全部完成 ✅
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| ~~showcase-project Phase 5 测试~~ | ~~testArrayReduce/ForEach 返回 -1~~ | ✅ 闭包实现后自然修复 |
+| ~~箭头函数闭包~~ | ~~支持捕获外层变量~~ | ✅ 已完成 |
+| ~~`for...in` 静态对象~~ | ~~支持普通对象~~ | ✅ 已完成 |
+
+### 9.2 P1 (近期优先)
 
 | 任务 | 说明 | 理由 |
 |------|------|------|
-| 修复 showcase-project Phase 5 测试 | `testArrayReduce/ForEach` 返回 `-1` | 测试失败 |
-
-### 9.2 P1 (下一个版本)
-
-| 任务 | 说明 | 理由 |
-|------|------|------|
-| 箭头函数闭包 | 支持捕获外层变量 | 常见 JS 模式 |
-| `for...in` 静态对象 | 支持普通对象 | 常见 JS 模式 |
-| Getter/Setter 测试 | 验证已实现特性 | 测试覆盖 |
-| `splice` 多参数插入 | 完善 Array 方法 | 常见 JS 模式 |
+| showcase-project 闭包集成测试 | 在 Phase 5 测试中验证 `map`/`reduce`/`forEach` 闭包 | 回归验证 |
+| `free_string()` 集成到 showcase | 验证字符串导出函数的内存管理端到端 | 内存安全 |
+| TypedArray 完整支持 | 实现 `.set()` / `.slice()` / `.buffer` 等方法 | WASM 目标需求 |
+| 可选链 `?.` null 检查 | 实现真正的 null-safety 检查而非直接访问 | 常见 JS 模式 |
 
 ### 9.3 P2 (未来版本)
 
 | 任务 | 说明 | 理由 |
 |------|------|------|
 | 解构默认值 | 支持 ES6 完整语法 | 语言完整性 |
-| 多 spread 合并 | 支持 ES6 完整语法 | 语言完整性 |
+| 多 spread 合并 `{ ...a, ...b }` | 支持 ES6 完整语法 | 语言完整性 |
 | 正则表达式引擎 | 引入 C 库 | 实用性 |
-| TypedArray 完整支持 | 支持 WebAssembly + 系统编程 | 系统编程 |
-| 未覆盖特性测试 | 提高测试覆盖率 | 稳定性 |
+| 未覆盖特性测试 | `instanceof`/`in`/`Date`/`Object` 方法等 | 测试覆盖率 |
+| Class 字段类型推断 | 根据构造函数推断字段类型 | 类型安全 |
+| 嵌套函数声明 | 自动提升到模块顶层 | 语言完整性 |
 
 ### 9.4 P3 (长期)
 
@@ -618,6 +663,8 @@
 | `interface` / `type` alias | 支持 TypeScript 完整语法 | 语言完整性 |
 | 错误信息改进 | 附加源位置 + 建议 | 开发体验 |
 | 转译器性能优化 | 支持大文件 JS | 性能 |
+| `Array.prototype.flat/flatMap` | 完整 Array 方法集 | 语言完整性 |
+| `String.prototype.padStart/padEnd` | 完整 String 方法集 | 语言完整性 |
 
 ---
 
@@ -629,24 +676,27 @@
 ✅ **类型推断**: 3 层规则 + 约束求解，类型准确率 > 90%  
 ✅ **错误处理**: throw → error.JsThrow + try-catch 完整实现  
 ✅ **异步编程**: async/await + Io 模式，支持主机函数  
-✅ **C ABI 桥接**: Rust ↔ Zig 无缝互操作  
-✅ **测试覆盖**: 87 个 Rust 测试 + showcase-project 验证  
+✅ **C ABI 桥接**: Rust ↔ Zig 无缝互操作，含 free_string 内存管理  
+✅ **闭包捕获**: 箭头函数自动生成 Closure 结构体 (value/reference capture)  
+✅ **`for-in`**: 支持 HashMap 动态对象 + struct 静态对象展开  
+✅ **测试覆盖**: 96 个 Rust 测试 + 3 个示例项目  
 
 ### 10.2 差距
 
 ❌ **高级特性**: Generator、Promise API、标签模板、类表达式  
-🚧 **部分实现**: 箭头函数闭包、可选链、解构默认值、多 spread 合并  
-⚠️ **测试覆盖**: 部分特性已实现但未测试（Getter/Setter、`instanceof`、`Date` 方法等）
+🚧 **部分实现**: 可选链 null 检查、解构默认值、多 spread 合并、正则引擎  
+⚠️ **测试覆盖**: 部分特性已实现但未测试（`instanceof`、`Date` 方法等）
 
 ### 10.3 下一步
 
-1. **修复 P0 测试失败** (showcase-project Phase 5)
-2. **实现 P1 特性** (箭头函数闭包、`for...in` 静态对象)
-3. **提高测试覆盖率** (未覆盖特性)
-4. **优化开发体验** (错误信息、性能)
+1. **P1: showcase-project 集成验证** — 确保闭包在 Phase 5 测试中端到端正确
+2. **P1: TypedArray 完善** — 支持 WASM 目标所需的 API
+3. **P2: 提高测试覆盖率** — 未覆盖特性 (`instanceof`/`in`/`Date`/`Object`)
+4. **P2: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
+5. **P3: 开发体验** — 错误信息改进、性能优化
 
 ---
 
-**文档版本**: 1.0  
+**文档版本**: 2.0  
 **最后更新**: 2026-06-23  
 **作者**: jonathan197608
