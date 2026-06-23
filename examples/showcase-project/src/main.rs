@@ -1,14 +1,9 @@
-// src/main.rs — minimal showcase for testing mut_vars fix
+// src/main.rs — minimal showcase for testing js2rust features
 use js2rust_bridge::js2rust_bridge;
 
 // Transpile JS -> Zig and generate FFI bindings.
-// app.js + phase5.js + test_throw.js + phase_memory.js
-js2rust_bridge! {
-    "js_src/app.js",
-    "js_src/phase5.js",
-    "js_src/test_throw.js",
-    "js_src/phase_memory.js",
-}
+// All configuration is read from js2rust.toml.
+js2rust_bridge!();
 
 fn main() {
     // Initialize Zig runtime

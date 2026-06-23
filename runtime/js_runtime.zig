@@ -77,14 +77,39 @@ pub fn deinitIo() void {
 /// Fields from B are concatenated after fields from A.
 /// Duplicate field names will cause a compile error.
 pub fn SpreadMerge(comptime A: type, comptime B: type) type {
-    const a_info = @typeInfo(A).@"struct";
-    const b_info = @typeInfo(B).@"struct";
-    return @Type(.{ .@"struct" = .{
-        .layout = .auto,
-        .fields = a_info.fields ++ b_info.fields,
-        .decls = &.{},
-        .is_tuple = false,
-    } });
+    const a_fields = @typeInfo(A).@"struct".fields;
+    const b_fields = @typeInfo(B).@"struct".fields;
+    const total = a_fields.len + b_fields.len;
+
+    // Build separate arrays for @Struct (Zig 0.16.0): field_names, field_types, field_attrs.
+    const names: [total][]const u8 = blk: {
+        var arr: [total][]const u8 = undefined;
+        for (a_fields, 0..) |f, i| { arr[i] = f.name; }
+        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = f.name; }
+        break :blk arr;
+    };
+    const types: [total]type = blk: {
+        var arr: [total]type = undefined;
+        for (a_fields, 0..) |f, i| { arr[i] = f.type; }
+        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = f.type; }
+        break :blk arr;
+    };
+    const attrs: [total]std.builtin.Type.StructField = blk: {
+        var arr: [total]std.builtin.Type.StructField = undefined;
+        for (a_fields, 0..) |f, i| { arr[i] = .{
+            .alignment = f.alignment,
+            .default_value_ptr = f.default_value_ptr,
+            .is_comptime = f.is_comptime,
+        }; }
+        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = .{
+            .alignment = f.alignment,
+            .default_value_ptr = f.default_value_ptr,
+            .is_comptime = f.is_comptime,
+        }; }
+        break :blk arr;
+    };
+
+    return @Struct(.auto, null, &names, &types, &attrs);
 }
 
 /// Merge two anonymous structs at compile time.

@@ -5,15 +5,8 @@ use js2rust_bridge::js2rust_bridge;
 mod host; // Declare host module
 
 // Generate FFI bindings: transpiles JS → Zig, generates Rust wrappers.
-// Host functions are declared inline — no build.rs needed for code generation.
-js2rust_bridge! {
-    "js_src/main.js",
-    host_add(i64, i64) -> i64,
-    host_multiply(i64, i64) -> i64,
-    host_concat(str, str) -> str,
-    host_strlen(str) -> i64,
-    async fetch_user(str) -> { id: i64, name: str },
-}
+// All configuration is read from js2rust.toml.
+js2rust_bridge!();
 
 fn main() {
     // Initialize Zig runtime (required for async export functions)

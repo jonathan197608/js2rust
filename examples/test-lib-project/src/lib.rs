@@ -4,8 +4,8 @@
 use js2rust_bridge::js2rust_bridge;
 
 // Generate FFI bindings: transpiles JS → Zig, generates Rust wrappers.
-// No build.rs config needed — the macro handles everything.
-js2rust_bridge!("js_src/main.js");
+// All configuration is read from js2rust.toml.
+js2rust_bridge!();
 
 #[cfg(test)]
 mod tests {

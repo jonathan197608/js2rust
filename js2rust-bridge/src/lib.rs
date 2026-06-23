@@ -10,84 +10,74 @@
 // ```
 //
 // The macro transpiles JS to Zig and generates Rust FFI bindings in one step.
-// Call `js2rust_bridge::build(...)` from your `build.rs` to transpile, compile,
+// Call `js2rust_bridge::build()` from your `build.rs` to transpile, compile,
 // and link the Zig static libraries.  The proc-macro detects an up-to-date cache
 // and skips re-transpilation automatically.
+//
+// Both `js2rust_bridge!()` and `build()` read from a single `js2rust.toml`
+// in the crate root — no duplicated configuration.
+
+mod config;
 
 pub use js2rust_bridge_macro::js2rust_bridge;
 
-// Re-export types needed for BuildConfig from js2zig-core so users only
-// need `js2rust-bridge` in their `[build-dependencies]`.
+// Re-export types needed for host function configuration from js2zig-core
+// so users only need `js2rust-bridge` in their `[build-dependencies]`.
 pub use js2zig_core::{HostConfig, HostFunction, HostType};
+
+// Re-export config types for programmatic use.
+pub use config::{HostFnToml, Js2rustConfig, ProjectSection};
 
 use std::path::PathBuf;
 
-/// Simplified build configuration for `build.rs`.
-/// Mirrors `js2zig_core::ProjectConfig` without exposing the full API.
-pub struct BuildConfig {
-    /// Project name (also used as Zig library name).
-    pub name: String,
-    /// Core JS source file path (the entry point; its imports are pulled in transitively).
-    /// Relative to CARGO_MANIFEST_DIR.
-    pub js_file: String,
-    /// Additional core JS files (multi-root: all roots + their transitive deps → one group).
-    pub additional_js_files: Vec<String>,
-    /// Host function declarations (for projects that use `host_*` calls from JS).
-    /// `None` if this project doesn't use host functions.
-    pub host_functions: Option<HostConfig>,
-    /// Force rebuild (ignore incremental cache).
-    pub force_rebuild: bool,
-}
-
-/// Transpile JS → Zig, build the Zig static library, and emit `cargo:rustc-link-*`
-/// directives for the linker.
+/// Build: transpile JS → Zig, compile Zig static library, and emit linker directives.
 ///
-/// Call this from your `build.rs`.  On the first build after a clean checkout
-/// this does the heavy lifting (transpile + `zig build`).  On subsequent builds
-/// it detects the up-to-date cache and is a near-no-op.
+/// Reads configuration from `js2rust.toml` in the crate root.  Call this from
+/// your `build.rs` with zero arguments:
 ///
 /// ```rust,ignore
 /// fn main() {
-///     js2rust_bridge::build(js2rust_bridge::BuildConfig {
-///         name: "main".into(),
-///         js_file: "js_src/main.js".into(),
-///         additional_js_files: vec![],
-///         host_functions: Default::default(),
-///         force_rebuild: false,
-///     });
+///     js2rust_bridge::build();
 /// }
 /// ```
-pub fn build(config: BuildConfig) {
+///
+/// The group name is derived automatically from the file stem of `project.js_file`.
+pub fn build(force_rebuild: bool) {
+    let config = Js2rustConfig::from_manifest_dir();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
-    // Convert BuildConfig → ProjectConfig
-    let js_file_path = PathBuf::from(&manifest_dir).join(&config.js_file);
+    let js_file_path = PathBuf::from(&manifest_dir).join(&config.project.js_file);
     let additional_js_paths: Vec<PathBuf> = config
+        .project
         .additional_js_files
         .iter()
         .map(|p| PathBuf::from(&manifest_dir).join(p))
         .collect();
 
+    let group_name = config.group_name();
+
+    let host_config = if config.host_functions.is_empty() {
+        None
+    } else {
+        Some(build_host_config(&config))
+    };
+
     let project_config = js2zig_core::ProjectConfig {
-        name: config.name,
+        name: group_name,
         js_file: js_file_path,
         additional_js_files: additional_js_paths,
         out_dir: cache_dir.clone(),
-        host_config: config.host_functions,
-        force_rebuild: config.force_rebuild,
-        run_zig_build: true, // build.rs runs zig build
+        host_config,
+        force_rebuild,
+        run_zig_build: true,
     };
 
-    // Transpile JS → Zig (generates .js2zig-cache/{name}/)
     match js2zig_core::transpile_project(&project_config) {
         Ok(_result) => {
-            // Emit link directives for each group's compiled static library.
             link_from_cache(&cache_dir);
         }
         Err(e) => {
-            // If transpilation fails, still try to link existing cache (e.g. from
-            // a previous successful build).
             eprintln!("js2rust_bridge::build: transpilation error: {}", e);
             link_from_cache(&cache_dir);
         }
@@ -136,5 +126,62 @@ fn link_from_cache(cache_dir: &std::path::Path) {
              Run `cargo build` twice on a clean checkout.",
             cache_dir.display()
         );
+    }
+}
+
+/// Convert `Js2rustConfig.host_functions` to `HostConfig`.
+fn build_host_config(config: &Js2rustConfig) -> HostConfig {
+    let functions: Vec<HostFunction> = config
+        .host_functions
+        .iter()
+        .map(|hf| {
+            let params: Vec<HostType> = hf
+                .params
+                .iter()
+                .map(|t| type_name_to_host_type(t))
+                .collect();
+
+            let return_type = hf
+                .returns
+                .as_deref()
+                .and_then(|t| {
+                    if t == "void" {
+                        None
+                    } else {
+                        Some(type_name_to_host_type(t))
+                    }
+                });
+
+            let async_return_fields: Vec<(String, HostType)> = hf
+                .async_returns
+                .iter()
+                .map(|(name, ty)| (name.clone(), type_name_to_host_type(ty)))
+                .collect();
+
+            HostFunction {
+                name: hf.name.clone(),
+                params,
+                return_type,
+                is_async: hf.is_async,
+                async_return_fields,
+            }
+        })
+        .collect();
+
+    HostConfig { functions }
+}
+
+fn type_name_to_host_type(name: &str) -> HostType {
+    match name {
+        "i64" => HostType::I64,
+        "i32" => HostType::I32,
+        "f64" => HostType::F64,
+        "bool" => HostType::Bool,
+        "str" => HostType::Str,
+        "void" => HostType::Void,
+        other => panic!(
+            "js2rust.toml: unknown host type '{}'. Valid types: i64, i32, f64, bool, str, void",
+            other
+        ),
     }
 }
