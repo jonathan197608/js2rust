@@ -29,8 +29,9 @@ const ENV_MAX_ARENA_MB: [:0]const u8 = "JS2RUST_MAX_ARENA_MB";
 
 /// Grace period in milliseconds a cooling instance must survive before it may
 /// be reset. Uses the cross-platform milliTimestamp() from js_date.zig.
-/// Configurable via JS2RUST_ARENA_GRACE_MS (default 5000 = 5 seconds).
-const DEFAULT_GRACE_MS: u64 = 5000;
+/// Configurable via JS2RUST_ARENA_GRACE_MS (default 600000 = 10 minutes).
+/// Extended to 10 minutes to support slow async host function calls.
+const DEFAULT_GRACE_MS: u64 = 600000;
 const ENV_GRACE_MS: [:0]const u8 = "JS2RUST_ARENA_GRACE_MS";
 
 const State = enum { ready, active, cooling };
@@ -244,6 +245,32 @@ pub fn g_alloc() std.mem.Allocator {
 /// Alias for g_alloc() (preferred name).
 pub fn getAllocator() std.mem.Allocator {
     return g_alloc();
+}
+
+/// Allocate memory in Zig's Arena, exposed to C ABI for Rust Host functions.
+///
+/// Rust Host functions call this to allocate memory for string returns,
+/// enabling zero-copy: the returned pointer is in Zig's Arena, so Zig
+/// can use it directly without copying.
+///
+/// Usage in Rust:
+/// ```rust
+/// extern "C" {
+///     fn js_allocator_alloc(size: usize) -> *mut u8;
+/// }
+///
+/// #[no_mangle]
+/// pub extern "C" fn host_func() -> StrRet {
+///     let data = "hello".as_bytes();
+///     let ptr = js_allocator_alloc(data.len());
+///     std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
+///     StrRet { ptr, len: data.len() as isize }
+/// }
+/// ```
+pub export fn js_allocator_alloc(size: usize) [*]u8 {
+    const alloc = getAllocator();
+    const slice = alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
+    return slice.ptr;
 }
 
 // ── Tests ───────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ pub enum BuiltinCall {
     ArrayIncludes, // arr.includes(x)
     ArrayJoin,     // arr.join(sep)
     ArraySlice,    // arr.slice(start, end)
+    ArraySplice,   // arr.splice(start, deleteCount, ...items)
 
     // Array methods (with closure)
     ArrayForEach, // arr.forEach(fn)
@@ -133,6 +134,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "sort" => Some(BuiltinCall::ArraySort),
             "join" => Some(BuiltinCall::ArrayJoin),
             "slice" => Some(BuiltinCall::ArraySlice),
+            "splice" => Some(BuiltinCall::ArraySplice),
             "forEach" => Some(BuiltinCall::ArrayForEach),
             "map" => Some(BuiltinCall::ArrayMap),
             "filter" => Some(BuiltinCall::ArrayFilter),

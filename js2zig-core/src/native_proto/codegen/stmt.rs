@@ -502,6 +502,9 @@ impl Codegen {
             Statement::ForOfStatement(fos) => {
                 self.emit_for_of(fos);
             }
+            Statement::ForInStatement(fis) => {
+                self.emit_for_in(fis);
+            }
             Statement::SwitchStatement(ss) => {
                 self.emit_switch(ss);
             }
@@ -846,6 +849,88 @@ impl Codegen {
         self.indent -= 1;
 
         self.writeln("}");
+    }
+
+    /// JS: for (var key in obj) { ... }
+    /// Zig:
+    ///   - HashMap: var it = obj.iterator(); while (it.next()) |kv| { const key = kv.key_ptr.*; ... }
+    ///   - Static struct: unroll loop — one block per field with const key = "fieldName"
+    fn emit_for_in(&mut self, fis: &ForInStatement) {
+        let var_name = match &fis.left {
+            ForStatementLeft::VariableDeclaration(vd) => vd
+                .declarations
+                .first()
+                .and_then(|decl| self.binding_name(&decl.id))
+                .unwrap_or("key")
+                .to_string(),
+            ForStatementLeft::AssignmentTargetIdentifier(id) => {
+                // for (key in obj) — key is an existing variable
+                id.name.to_string()
+            }
+            _ => "key".to_string(),
+        };
+
+        // Get the object name from the right side (must be a simple identifier)
+        let obj_name = match &fis.right {
+            Expression::Identifier(id) => id.name.to_string(),
+            _ => {
+                // Non-identifier expressions not supported for for-in
+                self.write_indent();
+                self.writeln(
+                    "@compileError(\"for-in only supported with identifier objects\");",
+                );
+                return;
+            }
+        };
+
+        // Check if the object is a dynamic object (HashMap-like).
+        let obj_type = self.type_info.var_types.get(&obj_name);
+
+        // Case 1: HashMap → iterator-based for-in
+        let is_dynamic = obj_type
+            .map(|t| matches!(t, ZigType::Anytype))
+            .unwrap_or(false);
+
+        if is_dynamic {
+            self.write_indent();
+            self.write(&format!(
+                "{{ var __it = {obj}.iterator(); while (__it.next()) |__kv| {{ const {var} = __kv.key_ptr.*;\n",
+                obj = obj_name,
+                var = var_name
+            ));
+            self.indent += 1;
+            self.emit_stmt_or_block(&fis.body);
+            self.indent -= 1;
+            self.write_indent();
+            self.writeln(&format!("}}}} // for-in {}", obj_name));
+            return;
+        }
+
+        // Case 2: Static struct with known fields → unroll loop
+        if let Some(ZigType::Struct(fields)) = obj_type {
+            if !fields.is_empty() {
+                let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
+                for (field_name, _) in &fields {
+                    self.write_indent();
+                    self.writeln("{");
+                    self.indent += 1;
+                    self.write_indent();
+                    self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
+                    self.emit_stmt_or_block(&fis.body);
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.writeln("}");
+                }
+                return;
+            }
+        }
+
+        // Case 3: Unknown type → compile error
+        self.write_indent();
+        self.write(&format!(
+            "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
+            obj_name
+        ));
     }
 
     // JS:  switch (expr) { case v: ...; break; default: ... }
