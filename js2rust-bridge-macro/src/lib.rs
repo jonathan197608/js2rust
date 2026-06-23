@@ -418,7 +418,14 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     output.to_string()
 }
 
-/// Generate host function stub documentation for the Rust side.
+/// Generate host function stubs using SDK types (HostStr, JsStr, JsStrField).
+///
+/// Generated stubs call `HostStr::from_raw(ptr, len)` at the top and
+/// `JsStr::new(&result)` for string returns — no raw pointer manipulation
+/// needed in the user's business logic.
+///
+/// Async functions that return a struct get the struct definition with
+/// `JsStrField` fields, already `#[repr(C)]`-compatible.
 fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<String> {
     if host_fns.is_empty() {
         return None;
@@ -426,105 +433,219 @@ fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<St
 
     let stub_mod = format_ident!("__js2rust_host_stubs_{group_suffix}");
 
-    let mut has_str_ret = false;
-
+    let mut async_struct_defs = Vec::new();
     let mut extern_fns = Vec::new();
 
     for hf in host_fns {
         let fn_sym = format_ident!("{}", hf.name);
 
-        // Build C ABI param types: string → ptr+len pair
+        // Build C ABI param types: string → ptr+len, others → native
         let mut cabi_params = Vec::new();
+        let mut param_conversions = Vec::new();
+
         for (i, param_ty) in hf.params.iter().enumerate() {
             if param_ty == "str" {
                 let ptr_name = format_ident!("arg{}_ptr", i);
                 let len_name = format_ident!("arg{}_len", i);
+                let var_name = format_ident!("arg{}", i);
                 cabi_params.push(quote! { #ptr_name: *const u8, #len_name: usize });
+                param_conversions.push(quote! {
+                    let #var_name = js2rust_bridge::sdk::HostStr::from_raw(#ptr_name, #len_name);
+                });
             } else {
                 let name = format_ident!("arg{}", i);
                 let rust_ty = host_type_to_rust_cabi_ffi(param_ty);
                 cabi_params.push(quote! { #name: #rust_ty });
+                // No conversion needed for primitives
             }
         }
 
         // Return type
         let ret_ty = if !hf.async_returns.is_empty() {
-            quote! { () }
+            let struct_name = format_ident!("Host{}Result", pascal_case(&hf.name));
+            async_struct_defs.push(generate_async_struct(
+                &struct_name, &hf.async_returns,
+            ));
+            quote! { #struct_name }
         } else if hf.returns.as_deref() == Some("str") {
-            has_str_ret = true;
-            quote! { __JsStr }
+            quote! { js2rust_bridge::sdk::JsStr }
         } else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() {
             quote! { () }
         } else {
             host_type_to_rust_cabi_ffi(hf.returns.as_deref().unwrap())
         };
 
-        // Doc comment with JS-level signature and C ABI signature
-        let js_params = hf.params.join(", ");
-        let js_ret = hf.returns.as_deref().unwrap_or("void");
-        let doc = format!(
-            "Host fn: {name}({js_params}) -> {js_ret}\
-             \nZero-copy C ABI: fn({cabi_sig}) -> {ret_sig}\
-             \nString params: pass .ptr and .len (in Zig Arena, no copy)\
-             \nString returns: allocate via js_allocator_alloc(), return __JsStr",
-            name = hf.name,
-            js_params = js_params,
-            js_ret = js_ret,
-            cabi_sig = hf.params.iter().enumerate().map(|(i, t)| {
-                if t == "str" { format!("arg{}_ptr: *const u8, arg{}_len: usize", i, i) }
-                else { format!("arg{}: {}", i, t) }
-            }).collect::<Vec<_>>().join(", "),
-            ret_sig = if hf.returns.as_deref() == Some("str") { "__JsStr" }
-                else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() { "void" }
-                else { js_ret },
-        );
+        // Doc comment
+        let doc = build_host_stub_doc(hf);
+
+        // Build the body — param conversions + unimplemented placeholder
+        let body = if hf.returns.as_deref() == Some("str") {
+            // String return: show example of JsStr::new()
+            let arg_refs: Vec<_> = (0..hf.params.len())
+                .map(|i| {
+                    let name = format_ident!("arg{}", i);
+                    if hf.params[i] == "str" {
+                        quote! { &#name }
+                    } else {
+                        quote! { #name }
+                    }
+                })
+                .collect();
+            let todo_msg = format!(
+                "TODO: implement {} — replace with your logic, return sdk::JsStr::new(&result)",
+                hf.name
+            );
+            quote! {
+                #(#param_conversions)*
+                let _ = (#(#arg_refs),*); // suppress unused variable warnings
+                unimplemented!(#todo_msg);
+            }
+        } else if !hf.async_returns.is_empty() {
+            // Async struct return: show example of struct construction with JsStrField::new()
+            let todo_msg = format!(
+                "TODO: implement {} — replace with your async logic, use JsStrField::new(&name)",
+                hf.name
+            );
+            quote! {
+                #(#param_conversions)*
+                unimplemented!(#todo_msg);
+            }
+        } else {
+            // Plain return (i64, f64, etc.)
+            quote! {
+                #(#param_conversions)*
+                unimplemented!("TODO: implement {}", stringify!(#fn_sym));
+            }
+        };
 
         extern_fns.push(quote! {
             #[doc = #doc]
             #[allow(dead_code)]
             pub unsafe extern "C" fn #fn_sym( #(#cabi_params),* ) -> #ret_ty {
-                unimplemented!("TODO: implement {}", stringify!(#fn_sym))
+                #body
             }
         });
     }
 
-    let jsstr_def = if has_str_ret {
-        quote! {
-            #[repr(C)]
-            pub struct __JsStr {
-                pub ptr: *const u8,
-                pub len: isize,
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let alloc_decl = if has_str_ret {
-        quote! {
-            extern "C" {
-                pub fn js_allocator_alloc(size: usize) -> *mut u8;
-            }
-        }
-    } else {
-        quote! {}
-    };
-
     let output = quote! {
-        /// Host function stubs generated by js2rust_bridge.
-        /// Copy the signatures below into your `host.rs` with `#[unsafe(no_mangle)]`
-        /// and replace the `unimplemented!()` bodies with your actual logic.
+        /// Host function stubs generated by js2rust_bridge — uses `js2rust_bridge::sdk` types.
+        ///
+        /// Copy the function signatures below into your `host.rs` with `#[unsafe(no_mangle)]`
+        /// and replace the `unimplemented!()` bodies with your actual business logic.
+        ///
+        /// The SDK handles all C ABI conversion automatically:
+        /// - `HostStr::from_raw(ptr, len)` converts string params to `&str`
+        /// - `JsStr::new(&s)` allocates return strings in Zig Arena
+        /// - `JsStrField::new(&s)` for async struct string fields
         #[allow(dead_code, non_snake_case, clippy::not_unsafe_ptr_arg_deref)]
         mod #stub_mod {
-            #jsstr_def
+            // SDK types are accessed via crate path, no import needed
 
-            #alloc_decl
+            #(#async_struct_defs)*
 
             #(#extern_fns)*
         }
     };
 
     Some(output.to_string())
+}
+
+/// Generate an async return struct definition with SDK types.
+fn generate_async_struct(
+    struct_name: &syn::Ident,
+    fields: &HashMap<String, String>,
+) -> proc_macro2::TokenStream {
+    let mut struct_fields = Vec::new();
+    for (name, ty) in fields {
+        let field_name = format_ident!("{}", name);
+        let field_type = if ty == "str" {
+            quote! { js2rust_bridge::sdk::JsStrField }
+        } else {
+            host_type_to_rust_cabi_ffi(ty)
+        };
+        struct_fields.push(quote! {
+            pub #field_name: #field_type,
+        });
+    }
+
+    let struct_doc = format!(
+        "C ABI return struct for `{}` (generated by js2rust_bridge).\n\
+         Uses `JsStrField` for string fields — allocated in Zig Arena.",
+        struct_name
+    );
+
+    quote! {
+        #[doc = #struct_doc]
+        #[repr(C)]
+        pub struct #struct_name {
+            #(#struct_fields)*
+        }
+    }
+}
+
+/// Build a doc string for the host function stub.
+fn build_host_stub_doc(hf: &TomlHostFn) -> String {
+    let js_params = hf.params.join(", ");
+    let js_ret = if !hf.async_returns.is_empty() {
+        format!("{{ {} }}",
+            hf.async_returns.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        hf.returns.as_deref().unwrap_or("void").to_string()
+    };
+
+    let cabi_sig = hf.params.iter().enumerate().map(|(i, t)| {
+        if t == "str" { format!("arg{}_ptr: *const u8, arg{}_len: usize", i, i) }
+        else { format!("arg{}: {}", i, t) }
+    }).collect::<Vec<_>>().join(", ");
+
+    let ret_sig = if hf.returns.as_deref() == Some("str") {
+        "JsStr".to_string()
+    } else if !hf.async_returns.is_empty() {
+        format!("Host{}Result", pascal_case(&hf.name))
+    } else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() {
+        "void".to_string()
+    } else {
+        hf.returns.as_deref().unwrap().to_string()
+    };
+
+    let sdk_note = if hf.params.contains(&"str".to_string()) || hf.returns.as_deref() == Some("str") || !hf.async_returns.is_empty() {
+        "\nSDK types used: HostStr::from_raw(ptr,len) for params, JsStr::new(&result) / JsStrField::new(&field) for returns"
+    } else {
+        ""
+    };
+
+    format!(
+        "Host fn: {name}({js_params}) -> {js_ret}\
+         \nC ABI: fn({cabi_sig}) -> {ret_sig}\
+         {sdk_note}",
+        name = hf.name,
+        js_params = js_params,
+        js_ret = js_ret,
+        cabi_sig = cabi_sig,
+        ret_sig = ret_sig,
+        sdk_note = sdk_note,
+    )
+}
+
+/// Convert snake_case to PascalCase.
+fn pascal_case(name: &str) -> String {
+    let mut result = String::with_capacity(name.len());
+    let mut capitalize = true;
+    for ch in name.chars() {
+        if ch == '_' {
+            capitalize = true;
+        } else if capitalize {
+            result.push(ch.to_ascii_uppercase());
+            capitalize = false;
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 /// Convert type name to Rust C ABI FFI type.

@@ -18,6 +18,7 @@
 // in the crate root — no duplicated configuration.
 
 mod config;
+pub mod sdk;
 
 pub use js2rust_bridge_macro::js2rust_bridge;
 
