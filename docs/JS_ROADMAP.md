@@ -209,6 +209,7 @@
 | 2026-06-23 | P1 双 Arena 分配器集成到 showcase 完成：Map/Set/Array 压力测试 + js2rust_reset 验证 | jonathan197608 |
 | 2026-06-23 | P1 TypedArray 完整支持完成：`.get()`/`.set()`/`.subarray()`/`.copyWithin()`/`.fill()`/`.buffer`/`.byteLength`/`.byteOffset` (12 个专用测试) | jonathan197608 |
 | 2026-06-23 | P0/P1 全部完成，P1 新增字符串返回值内存管理任务；测试计数 111→145，clippy 7→0 警告 | jonathan197608 |
+| 2026-06-23 | 文档架构重构：README 拆分中英文、FEATURE 与 ROADMAP 去重解耦、v0.3.2 版本 bump | jonathan197608 |
 
 ---
 
