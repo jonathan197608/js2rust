@@ -36,7 +36,18 @@ fn main() {
     // ── Async host function (tokio-backed) ────────────────────
     // Test async host function fetch_user
     let user = getUserInfo_main("Alice");
-    println!("getUserInfo_main('Alice') = id={}, name={:?}", user.id, user.name);
+    println!("getUserInfo_main('Alice') = id={}", user.id);
+    
+    // Debug: print name field (JsStrField)
+    println!("  name.ptr = {:?}, name.len = {}", user.name.ptr, user.name.len);
+    // Convert JsStrField to &str for printing
+    let name_str = if user.name.len > 0 && !user.name.ptr.is_null() {
+        let slice = unsafe { std::slice::from_raw_parts(user.name.ptr, user.name.len) };
+        std::str::from_utf8(slice).unwrap_or("(invalid utf-8)")
+    } else {
+        "(empty)"
+    };
+    println!("  name = {}", name_str);
 
     // Cleanup
     js2rust_deinit();

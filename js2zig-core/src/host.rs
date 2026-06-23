@@ -196,12 +196,16 @@ impl HostFnRegistry {
         out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
         out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n\n");
 
-        // Emit C ABI struct definitions (extern structs)
-        // String fields use ptr+len pair (memory allocated in Zig Arena by Rust via js_allocator_alloc).
+        // Emit C ABI struct definitions (extern structs).
+        // String fields are represented as ptr+len in C ABI (matches JsStrField layout).
+        // Field order and types must exactly match Rust #[repr(C)] layout.
+        // Rust JsStrField = { ptr: *const u8, len: usize } (16 bytes, two fields).
         for s in &self.structs {
             out.push_str(&format!("pub const {} = extern struct {{\n", s.c_name));
             for f in &s.fields {
                 if f.zig_type == "[]const u8" {
+                    // Emit ptr+len pair matching JsStrField memory layout.
+                    // Field names: {name}_ptr, {name}_len (so async wrapper can access them).
                     out.push_str(&format!(
                         "    {}_ptr: [*]const u8,\n    {}_len: usize,\n",
                         f.name, f.name

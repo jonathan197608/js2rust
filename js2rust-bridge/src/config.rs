@@ -29,7 +29,7 @@
 //! ```
 
 use serde::Deserialize;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::path::PathBuf;
 
 /// Root structure of `js2rust.toml`.
@@ -65,7 +65,7 @@ pub struct HostFnToml {
     pub is_async: bool,
     /// For async functions that return a struct: field_name → field_type.
     #[serde(default)]
-    pub async_returns: HashMap<String, String>,
+    pub async_returns: IndexMap<String, String>,
 }
 
 impl Js2rustConfig {

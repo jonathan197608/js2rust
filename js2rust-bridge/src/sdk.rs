@@ -194,6 +194,7 @@ impl JsStr {
 /// }
 /// ```
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
 pub struct JsStrField {
     /// Pointer to the string data in Zig Arena.
     pub ptr: *const u8,

@@ -36,19 +36,23 @@ fn host_strlen(s: HostStr) -> i64 {
 
 /// Return struct for fetch_user async host function.
 #[repr(C)]
-pub struct FetchUser {
+pub struct FetchUserResult {
     pub id: i64,
     pub name: JsStrField,
 }
 
 /// Async host function: fetch user by name.
-/// Uses tokio runtime to block on async operation.
+/// Uses tokio runtime to block on async operation (simulates DB query).
 #[host_fn]
-fn fetch_user(name: HostStr) -> FetchUser {
-    // TODO: use tokio to block_on async operation
-    // For now, just return a dummy user
-    FetchUser {
-        id: 42,
-        name: JsStrField::new(&format!("User: {}", &name)),
-    }
+fn fetch_user(name: HostStr) -> FetchUserResult {
+    // Create a tokio runtime and block on async operation
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    rt.block_on(async {
+        // Simulate async database query with 50ms delay
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        FetchUserResult {
+            id: 42,
+            name: JsStrField::new(&format!("User: {}", &name)),
+        }
+    })
 }

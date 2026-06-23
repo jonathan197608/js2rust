@@ -14,7 +14,7 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 mod host_fn;
 
@@ -63,7 +63,7 @@ struct TomlHostFn {
     #[serde(default)]
     is_async: bool,
     #[serde(default)]
-    async_returns: HashMap<String, String>,
+    async_returns: IndexMap<String, String>,
 }
 
 /// Load js2rust.toml from CARGO_MANIFEST_DIR.
@@ -618,7 +618,7 @@ fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<St
 /// Generate an async return struct definition with SDK types.
 fn generate_async_struct(
     struct_name: &syn::Ident,
-    fields: &HashMap<String, String>,
+    fields: &IndexMap<String, String>,
 ) -> proc_macro2::TokenStream {
     let mut struct_fields = Vec::new();
     for (name, ty) in fields {
@@ -901,8 +901,17 @@ fn cabi_type_to_rust_ffi(cabi_type: &str) -> proc_macro2::TokenStream {
         "i64" => quote! { i64 },
         "f64" => quote! { f64 },
         "bool" => quote! { bool },
+        "str" => quote! { js2rust_bridge::sdk::JsStrField },
         "StrRet" => quote! { __JsStr },
         "struct" => quote! { *mut std::ffi::c_void }, // Should not happen for struct fields
-        _ => quote! { *mut std::ffi::c_void },
+        // Handle [N]u8 as string type (JsStrField)
+        other if other.starts_with('[') && other.ends_with("]u8") => {
+            quote! { js2rust_bridge::sdk::JsStrField }
+        }
+        _ => {
+            // Debug: print unknown cabi_type
+            eprintln!("Unknown cabi_type: '{}'", cabi_type);
+            quote! { *mut std::ffi::c_void }
+        }
     }
 }
