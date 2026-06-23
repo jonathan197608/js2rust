@@ -2127,13 +2127,66 @@ function safeDivide(a, b) {
         assert!(zig.contains("_js_try_blk_"), "Expected labeled block:\n{}", zig);
         // Should generate catch |err| for the handler
         assert!(zig.contains("catch |err|"), "Expected catch |err|:\n{}", zig);
-        // Should NOT have "handler is ignored" warning
+        // Should bind catch(e) → _ = @errorName(err) (e is unused in body)
         assert!(
-            !zig.contains("handler is ignored"),
-            "Should not ignore handler:\n{}",
+            zig.contains("_ = @errorName(err);"),
+            "Expected '_ = @errorName(err);':\n{}",
             zig
         );
         assert_zig_ast_check(&zig, "test_native_proto_try_catch_basic");
+    }
+
+    #[test]
+    fn test_native_proto_try_catch_e_binding_used() {
+        // Verify that catch(e) with e used in body generates `const e = ...`.
+        let js = r##"
+function catchAndLog(val) {
+    try {
+        if (val < 0) throw "bad";
+        return val;
+    } catch (e) {
+        return e;
+    }
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_e_binding_used");
+        println!("=== Try-catch e binding (used) ===\n{}", zig);
+        // Should generate `const e = @errorName(err);` in catch handler
+        assert!(
+            zig.contains("const e = @errorName(err);"),
+            "Expected 'const e = @errorName(err);' when e is used in catch body:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_e_binding_used");
+    }
+
+    #[test]
+    fn test_native_proto_try_catch_e_binding_unused() {
+        // Verify that catch(e) with e NOT used generates `_ = @errorName(err)`.
+        let js = r##"
+function catchAndIgnore(val) {
+    try {
+        if (val < 0) throw "bad";
+        return val;
+    } catch (e) {
+        return -1;
+    }
+}
+"##;
+        let zig = transpile_and_assert!(js, "test_native_proto_try_catch_e_binding_unused");
+        println!("=== Try-catch e binding (unused) ===\n{}", zig);
+        // Should generate `_ = @errorName(err);` (not const e)
+        assert!(
+            zig.contains("_ = @errorName(err);"),
+            "Expected '_ = @errorName(err);' when e is unused:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains("const e = @errorName(err);"),
+            "Should NOT have 'const e' when e is unused:\n{}",
+            zig
+        );
+        assert_zig_ast_check(&zig, "test_native_proto_try_catch_e_binding_unused");
     }
 
     #[test]

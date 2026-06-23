@@ -9,6 +9,42 @@ use std::collections::HashSet;
 
 // ── Variable declarations ────────────────────────────
 
+/// Check if an identifier name is referenced in a list of statements.
+/// Uses a simplified AST walk — covers common patterns in catch bodies
+/// (console.log(e), return e.message, etc.).
+fn stmt_list_references_name(stmts: &[Statement], name: &str) -> bool {
+    stmts.iter().any(|s| stmt_references_name(s, name))
+}
+
+fn stmt_references_name(stmt: &Statement, name: &str) -> bool {
+    match stmt {
+        Statement::ExpressionStatement(es) => expr_references_name(&es.expression, name),
+        Statement::ReturnStatement(rs) => {
+            rs.argument.as_ref().is_some_and(|a| expr_references_name(a, name))
+        }
+        Statement::VariableDeclaration(vd) => vd.declarations.iter().any(|d| {
+            d.init.as_ref().is_some_and(|init| expr_references_name(init, name))
+        }),
+        Statement::BlockStatement(bs) => stmt_list_references_name(&bs.body, name),
+        _ => false,
+    }
+}
+
+fn expr_references_name(expr: &Expression, name: &str) -> bool {
+    match expr {
+        Expression::Identifier(id) => id.name.as_str() == name,
+        Expression::BinaryExpression(be) => {
+            expr_references_name(&be.left, name) || expr_references_name(&be.right, name)
+        }
+        Expression::CallExpression(ce) => {
+            // Callee is Expression, so check it directly
+            expr_references_name(&ce.callee, name)
+        }
+        Expression::StaticMemberExpression(sme) => expr_references_name(&sme.object, name),
+        _ => false,
+    }
+}
+
 impl Codegen {
     /// Emit a variable declaration. Toplevel: only `const` allowed.
     /// Inside functions: `var` with type inference + undefined init.
@@ -625,13 +661,21 @@ impl Codegen {
                     ));
                     self.indent += 1;
 
-                    // Bind catch parameter: JS `catch(e)` → suppress caught err.
-                    // TODO: when catch body references `e`, map it to `err`.
+                    // Bind catch parameter: JS `catch(e)` → map `e` to `err` in Zig.
+                    // If `e` is referenced in the catch body, emit a named const.
+                    // Otherwise, emit a discard to suppress Zig's unused warning.
                     if let Some(ref param) = handler.param
-                        && let BindingPattern::BindingIdentifier(ref _id) = param.pattern
+                        && let BindingPattern::BindingIdentifier(ref id) = param.pattern
                     {
+                        let name = id.name.as_str();
+                        let is_referenced = stmt_list_references_name(&handler.body.body, name);
                         self.write_indent();
-                        self.writeln("_ = @intFromError(err);");
+                        if is_referenced {
+                            // `@errorName(err)` gives the error tag name (e.g. "JsThrow")
+                            self.writeln(&format!("const {} = @errorName(err);", name));
+                        } else {
+                            self.writeln("_ = @errorName(err);");
+                        }
                     }
 
                     for stmt in &handler.body.body {
