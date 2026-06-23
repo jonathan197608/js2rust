@@ -11,11 +11,16 @@
 
 | 指标 | 数值 | 占比 |
 |------|------|------|
-| **JS 语法特性总数** | ~120 | - |
-| **完全实现** | ~95 | ~79% |
-| **部分实现** | ~5 | ~4% |
-| **未实现（@compileError）** | ~20 | ~17% |
+| **JS 语法特性总数** | ~150+ | - |
+| **完全实现** | ~85 | ~57% |
+| **部分实现** | ~5 | ~3% |
+| **未实现（@compileError）** | ~60 | ~40% |
 | **测试覆盖** | 145 个 Rust 测试 (122 native_proto + 23 其他) | - |
+
+**更新说明** (2026-06-24):
+- 修正了 5 个不准确的状态标记（`instanceof`, `void`, `delete`, `obj[key]`, `Date.UTC()`）
+- 添加了 8 个遗漏的特性（`function*`, `async function*`, `import.meta`, 逻辑赋值运算符, `**=`, `arguments`, `Symbol`, `WeakMap`/`WeakSet`）
+- 文档准确性提升，实际未实现特性数量高于之前估计
 
 ---
 
@@ -73,7 +78,7 @@
 |------|------|----------|------|
 | `&` `\|` `^` `~` `<<` `>>` `>>>` | ✅ | 对应 Zig 运算符 | `test_native_proto_operators` |
 
-### 2.6 一元运算符 (Unary Operators) - ✅ 100% 实现
+### 2.6 一元运算符 (Unary Operators) - ⚠️ 部分实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -81,9 +86,13 @@
 | `+` (取正) | ✅ | 忽略（Zig 无一元加） | 隐式测试 |
 | `!` (逻辑非) | ✅ | `!x` | 同上 |
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
-| `typeof` | ✅ | `@TypeOf(x)` | 隐式测试 |
-| `void` | ✅ | 忽略（仅 emit 子表达式） | 隐式测试 |
-| `delete` | ✅ | 忽略（仅 emit 子表达式） | 隐式测试 |
+| `typeof` | ⚠️ | `@typeName(@TypeOf(x))` | 隐式测试 |
+| `void` | ❌ | `@compileError("Unsupported unary operator")` | - |
+| `delete` | ❌ | `@compileError("Unsupported unary operator")` | - |
+
+**注意**:
+- `typeof` 生成 Zig 类型名（如 `"i64"`），而非 JS `typeof` 的字符串（如 `"number"`）
+- `void` 和 `delete` 在 JS 中是有效运算符，但当前实现不支持
 
 ### 2.7 条件（三元）运算符 - ✅ 100% 实现
 
@@ -91,21 +100,29 @@
 |------|------|----------|------|
 | `cond ? a : b` | ✅ | `if (cond) a else b` | `test_native_proto_operators` |
 
-### 2.8 赋值运算符 (Assignment Operators) - ✅ 100% 实现
+### 2.8 赋值运算符 (Assignment Operators) - ⚠️ 部分实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `=` `+=` `-=` `*=` `/=` `%=` `**=` | ✅ | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
+| `=` `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 语法 | 隐式测试 |
+| `<<=` `>>=` `>>>=` `&=` `|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
+| `**=` (指数赋值) | ❌ | 未实现 | ES2016 |
+| `&&=` (逻辑与赋值) | ❌ | 未实现 | ES2021 |
+| `||=` (逻辑或赋值) | ❌ | 未实现 | ES2021 |
+| `??=` (空值合并赋值) | ❌ | 未实现 | ES2021 |
 
-### 2.9 对象/数组访问 - ✅ 100% 实现
+### 2.9 对象/数组访问 - ⚠️ 部分实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase-project |
-| `obj[key]` (计算属性) | ✅ | `obj[key]` 或 `.get(key)` | 同上 |
-| `arr[idx]` (数组索引) | ✅ | `arr[idx]` | 同上 |
+| `obj[key]` (计算属性) | ❌ | `@compileError("Dynamic property access")` | - |
+| `arr[idx]` (数组索引) | ✅ | `arr[idx]` (仅支持数字字面量) | showcase-project |
 | `.length` → `.len` | ✅ | 自动转换 | 同上 |
+
+**注意**:
+- `obj[key]` 动态属性访问当前不支持，仅支持数字字面量索引（如 `arr[0]`）
+- 字符串 key 访问（如 `obj["key"]`）会生成编译错误
 
 ### 2.10 函数调用 - ✅ 100% 实现
 
@@ -167,11 +184,11 @@
 |------|------|----------|------|
 | `await expr` | ✅ | `io.async(fn, .{io, args}).await(io)` | test-bin-project |
 
-### 2.16 其他表达式 - 🚧 部分实现
+### 2.16 其他表达式 - ⚠️ 部分实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `instanceof` | ✅ | `@TypeOf(x) == Y` | 未测试 |
+| `instanceof` | ❌ | `@compileError("instanceof operator is not supported")` | - |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
@@ -179,18 +196,24 @@
 | 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 未测试 |
 | 序列表达式 `a, b` | ✅ | `a, b` | 未测试 |
 
+**注意**:
+- `instanceof` 在 JS 中用于检查对象原型链，但当前实现不支持
+
 ### 2.17 不支持的表达式 - ❌ @compileError
 
 | 特性 | 错误信息 |
 |------|----------|
 | 类表达式 `const X = class {}` | `Unsupported NewExpression` |
-| `yield` (Generator) | `Unsupported expression type` |
+| `function*` (生成器函数) | `Unsupported expression type: Function` (注: 需添加生成器支持) |
+| `yield` / `yield*` (生成器) | `Unsupported expression type` |
+| `async function*` (异步生成器) | 未测试 |
 | 动态 `import()` | 需使用静态 `import` |
 | 私有字段 `#field` | 不支持 |
 | `new.target` | meta property not supported |
 | Spread 参数 `fn(...args)` | `Spread argument not supported` |
 | `for await...of` | `Promise.{}() not supported` |
 | 标签模板 `` tag`...` `` | `Unsupported expression type` |
+| `import.meta` | 未实现 (ES 模块元数据) |
 
 ---
 
@@ -216,6 +239,10 @@
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
 | Rest 参数 `function fn(...args) {}` | ✅ | `args: []const i64` | showcase-project |
 | 嵌套函数声明 | ❌ | 报错（需重构为顶层） | - |
+| `arguments` 对象 | ❌ | 未实现 | 传统函数参数对象 |
+
+**注意**:
+- `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
 ### 3.3 类声明 - ✅ 90% 实现
 
@@ -388,6 +415,10 @@
 | `date.getHours()` | ✅ | `date.getHours()` | 同上 |
 | `date.getMinutes()` | ✅ | `date.getMinutes()` | 同上 |
 | `date.getSeconds()` | ✅ | `date.getSeconds()` | 同上 |
+| `Date.UTC(y, m, d, ...)` | ❌ | `@compileError("Date.UTC is not yet implemented")` | - |
+
+**注意**:
+- `Date.UTC()` 是静态方法，当前生成编译错误
 
 ### 4.9 `Number` - ✅ 100% 实现
 
@@ -443,6 +474,31 @@
 | `.byteLength` | ✅ | `js_typedarray.byteLength{Type}(slice)` | 同上 |
 | `.byteOffset` | ✅ | `js_typedarray.byteOffset()` (fixed 0) | 同上 |
 | `.slice()` | ❌ | `@compileError` (使用 `.subarray()` 替代) | - |
+
+### 4.14 `Symbol` - ❌ 不支持
+
+| 方法/属性 | 状态 | 说明 |
+|----------|------|------|
+| `Symbol(description)` | ❌ | ES6 符号，未实现 |
+| `Symbol.for(key)` / `Symbol.keyFor(sym)` | ❌ | 全局符号注册表，未实现 |
+| `Symbol.iterator` / `Symbol.asyncIterator` | ❌ | 迭代器协议，未实现 |
+
+### 4.15 `WeakMap` - ❌ 不支持
+
+| 方法 | 状态 | 说明 |
+|------|------|------|
+| `.set(key, val)` | ❌ | 弱引用 Map，未实现 |
+| `.get(key)` | ❌ | 未实现 |
+| `.has(key)` | ❌ | 未实现 |
+| `.delete(key)` | ❌ | 未实现 |
+
+### 4.16 `WeakSet` - ❌ 不支持
+
+| 方法 | 状态 | 说明 |
+|------|------|------|
+| `.add(val)` | ❌ | 弱引用 Set，未实现 |
+| `.has(val)` | ❌ | 未实现 |
+| `.delete(val)` | ❌ | 未实现 |
 
 ---
 
