@@ -1941,6 +1941,171 @@ function makeBytes() {
         );
     }
 
+    #[test]
+    fn test_native_proto_typedarray_length_in_expr() {
+        // .length used in arithmetic expression (not just return)
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function totalLength() {
+    const arr1 = new Int32Array([1, 2]);
+    const arr2 = new Int32Array([3, 4, 5]);
+    return arr1.length + arr2.length;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_length_in_expr");
+        println!("=== TypedArray length in expr ===\n{}", zig);
+        // Verify .len is generated for both arrays
+        assert!(
+            zig.matches("arr1.len").count() >= 1,
+            "Expected arr1.len in:\n{}",
+            zig
+        );
+        assert!(
+            zig.matches("arr2.len").count() >= 1,
+            "Expected arr2.len in:\n{}",
+            zig
+        );
+        // Verify the addition is present
+        assert!(
+            zig.contains(" + "),
+            "Expected addition for length sum:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_typedarray_length_as_param() {
+        // .length passed as function argument
+        let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function identity(x) { return x; }
+
+/**
+ * @returns {number}
+ */
+export function getLength() {
+    const arr = new Int32Array([10, 20, 30, 40]);
+    return identity(arr.length);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_typedarray_length_as_param");
+        println!("=== TypedArray length as param ===\n{}", zig);
+        // Verify arr.len is generated
+        assert!(
+            zig.contains("arr.len"),
+            "Expected arr.len in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("identity"),
+            "Expected identity call in:\n{}",
+            zig
+        );
+    }
+
+    // ── String escaping edge cases ────────────────────────
+
+    #[test]
+    fn test_native_proto_string_escape_newline() {
+        // Verify that newline characters in JS string literals are escaped as \\n in Zig output.
+        // JS "line1\nline2" → actual newline (0x0A) in JS → must emit Zig "line1\\nline2"
+        // where \\n is the two-byte escape sequence (backslash + n), NOT a raw newline.
+        let js = "function hasNewline() { return \"line1\\nline2\"; }";
+        let zig = transpile_and_assert!(js, "test_native_proto_string_escape_newline");
+        println!("=== String escape newline ===\n{}", zig);
+        // The Zig output has literal '\' followed by 'n' (NOT the newline character).
+        // In Rust, "\\n" matches the two-byte sequence 0x5C 0x6E.
+        assert!(
+            zig.contains("line1\\nline2"),
+            "Expected \\n escape sequence (NOT raw newline) in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_string_escape_tab() {
+        // Verify that tab characters in JS string literals are escaped as \\t in Zig output.
+        let js = "function hasTab() { return \"col1\\tcol2\"; }";
+        let zig = transpile_and_assert!(js, "test_native_proto_string_escape_tab");
+        println!("=== String escape tab ===\n{}", zig);
+        assert!(
+            zig.contains("col1\\tcol2"),
+            "Expected \\t escape sequence (NOT raw tab) in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_json_parse_escaped_quotes() {
+        // JSON.parse with a string that contains escaped double quotes.
+        let js = r#"
+/**
+ * @typedef {Object} Msg
+ * @property {string} text
+ */
+
+/**
+ * @returns {string}
+ */
+export function parseEscapedJson() {
+    /**
+     * @type {Msg}
+     */
+    const msg = JSON.parse('{"text":"he said \\"hello\\""}');
+    return msg.text;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_json_parse_escaped_quotes");
+        println!("=== JSON parse escaped quotes ===\n{}", zig);
+        // Verify the JSON string is properly escaped in Zig
+        assert!(
+            zig.contains("std.json.parse(Msg,"),
+            "Expected std.json.parse(Msg, ...), got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_json_parse_unicode() {
+        // JSON.parse with unicode escape sequences.
+        let js = r#"
+/**
+ * @typedef {Object} Item
+ * @property {string} name
+ */
+
+/**
+ * @returns {string}
+ */
+export function parseUnicodeJson() {
+    /**
+     * @type {Item}
+     */
+    const item = JSON.parse('{"name":"\\u0048\\u0065\\u006c\\u006c\\u006f"}');
+    return item.name;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_json_parse_unicode");
+        println!("=== JSON parse unicode ===\n{}", zig);
+        // Verify std.json.parse is generated
+        assert!(
+            zig.contains("std.json.parse(Item,"),
+            "Expected std.json.parse(Item, ...), got:\n{}",
+            zig
+        );
+        // Unicode escapes should pass through (Zig's std.json.parse handles them)
+        assert!(
+            zig.contains("\\\\u0048"),
+            "Expected unicode escape in:\n{}",
+            zig
+        );
+    }
+
     // ── Try-catch tests ──────────────────────────────────
 
     #[test]
