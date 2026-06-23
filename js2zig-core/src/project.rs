@@ -430,6 +430,16 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push_str("pub export fn js_allocator_alloc(size: usize) [*]u8 {\n");
         out.push_str("    return js_allocator.js_allocator_alloc(size).ptr;\n");
         out.push_str("}\n\n");
+        out.push_str(
+            "/// Allocate + copy in Zig Arena — single call for zero-copy string returns.\n",
+        );
+        out.push_str(
+            "/// Called from Rust via extern \"C\" { fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8; }\n",
+        );
+        out.push_str("/// Prefer this over js_allocator_alloc + manual copy — avoids a separate memcpy in Rust.\n");
+        out.push_str("pub export fn js_allocator_dupe(src: [*]const u8, len: usize) [*]u8 {\n");
+        out.push_str("    return js_allocator.js_allocator_dupe(src[0..len]).ptr;\n");
+        out.push_str("}\n\n");
     }
     out.push_str("/// Release global resources allocated via init_js2rust.\n");
     out.push_str("pub fn deinit_js2rust() void {\n");

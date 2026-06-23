@@ -272,6 +272,14 @@ pub fn js_allocator_alloc(size: usize) []u8 {
     return alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
 }
 
+/// Allocate + copy — single call for zero-copy string returns from Rust.
+/// Instead of: js_allocator_alloc(len) + copy_nonoverlapping (Rust)
+/// Use:        js_allocator_dupe(src)  (copy done inside Zig Arena)
+pub fn js_allocator_dupe(src: []const u8) []u8 {
+    const alloc = getAllocator();
+    return alloc.dupe(u8, src) catch @panic("js_allocator_dupe failed");
+}
+
 // ── Tests ───────────────────────────────────────────────────────
 
 test "dual arena init/deinit" {

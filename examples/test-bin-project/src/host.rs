@@ -25,14 +25,13 @@ pub struct __JsStr {
 }
 
 impl __JsStr {
-    /// Create a __JsStr from a Rust &str by allocating in Zig Arena.
+    /// Create a __JsStr from a Rust &str by duping into Zig Arena.
+    /// Uses js_allocator_dupe (single call: allocate + copy in Zig).
     pub fn from_str(s: &str) -> Self {
-        let len = s.len();
-        let ptr = unsafe { js_allocator_alloc(len) };
-        unsafe { std::ptr::copy_nonoverlapping(s.as_ptr(), ptr, len) };
+        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
         Self {
             ptr,
-            len: len as isize,
+            len: s.len() as isize,
         }
     }
 
@@ -46,8 +45,8 @@ impl __JsStr {
 }
 
 extern "C" {
-    /// Allocate memory in Zig's Arena for zero-copy string returns.
-    fn js_allocator_alloc(size: usize) -> *mut u8;
+    /// Allocate + copy in Zig Arena (single call, avoids separate memcpy in Rust).
+    fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
 }
 
 // ── Synchronous host functions ───────────────────────────────────
@@ -145,7 +144,7 @@ async fn fetch_user_from_db(name: &str) -> User {
 }
 
 /// C ABI wrapper for async fetch_user — zero-copy param from Zig Arena.
-/// String return fields allocated in Zig Arena via js_allocator_alloc (zero-copy).
+/// String return fields allocated in Zig Arena via js_allocator_dupe (single call).
 #[unsafe(no_mangle)]
 pub extern "C" fn fetch_user(name_ptr: *const u8, name_len: usize) -> HostFetchUserResult {
     let name_str = unsafe {
@@ -155,10 +154,9 @@ pub extern "C" fn fetch_user(name_ptr: *const u8, name_len: usize) -> HostFetchU
 
     let user = runtime().block_on(fetch_user_from_db(name_str));
 
-    // Allocate name in Zig Arena (zero-copy return)
+    // Allocate + copy name in Zig Arena (single call)
     let name_bytes = user.name.as_bytes();
-    let name_ptr_out = unsafe { js_allocator_alloc(name_bytes.len()) };
-    unsafe { std::ptr::copy_nonoverlapping(name_bytes.as_ptr(), name_ptr_out, name_bytes.len()) };
+    let name_ptr_out = unsafe { js_allocator_dupe(name_bytes.as_ptr(), name_bytes.len()) };
 
     HostFetchUserResult {
         id: user.id,
