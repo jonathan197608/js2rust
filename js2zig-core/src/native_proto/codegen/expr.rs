@@ -964,7 +964,7 @@ impl Codegen {
                 let obj_name = self.callee_object_name(&ce.callee);
                 if let (Some(obj_name), Some(ta_type)) = (obj_name, obj_name.and_then(|n| self.typedarray_vars.get(n).cloned())) {
                     // TypedArray slice: js_typedarray.sliceXXX(arr, start, end)
-                    let start_expr = if ce.arguments.len() >= 1 {
+                    let start_expr = if !ce.arguments.is_empty() {
                         self.first_arg_string_or(&ce.arguments, "0")
                     } else {
                         "0".to_string()
@@ -1169,8 +1169,8 @@ impl Codegen {
             // ── Map methods (also TypedArray .get/.set) ──
             builtins::BuiltinCall::MapSet => {
                 // TypedArray.set(idx, val) → js_typedarray.setXXX(arr, idx, val)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(id) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(id) = &mem.object {
                         let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
                         if let Some(ta_type) = ta_type {
                             if ce.arguments.len() != 2 {
@@ -1196,7 +1196,6 @@ impl Codegen {
                             return true;
                         }
                     }
-                }
                 // map.set(key, value) → map.set(key, value) catch @panic("OOM: Map.set")
                 if ce.arguments.len() != 2 {
                     self.errors
@@ -1222,8 +1221,8 @@ impl Codegen {
 
             builtins::BuiltinCall::MapGet => {
                 // TypedArray.get(idx) → js_typedarray.getXXX(arr, idx)
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(id) = &mem.object {
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(id) = &mem.object {
                         let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
                         if let Some(ta_type) = ta_type {
                             if ce.arguments.len() != 1 {
@@ -1240,7 +1239,6 @@ impl Codegen {
                             return true;
                         }
                     }
-                }
                 // map.get(key) → map.get(key)  (returns ?i64, not error union)
                 if ce.arguments.len() != 1 {
                     self.errors

@@ -2,63 +2,20 @@
 
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-23
-> **代码版本**: main branch (6975fd7)
-> **测试覆盖**: 101 个 Rust 测试 (78 native_proto + 23 辅助) + 3 个示例项目
+> **代码版本**: main branch (1651070)
+> **测试覆盖**: 145 个 Rust 测试 (122 native_proto + 9 jsdoc + 7 parser + 4 sourcemap + 3 testgen) + 3 个示例项目
 
 ---
 
 ## 1. 执行总结
 
-| 指标 | 数值 | 占比 | 相比上次 |
-|------|------|------|----------|
-| **JS 语法特性总数** | ~120 | - | - |
-| **完全实现** | ~93 | ~78% | +18 |
-| **部分实现** | ~5 | ~4% | -10 |
-| **未实现（@compileError）** | ~22 | ~18% | -8 |
-| **测试覆盖** | 118 个测试 | - | +31 |
-
-### 近期关键进展（2026-06-18 ~ 2026-06-23）
-
-| 特性 | 之前状态 | 现在状态 |
-|------|----------|----------|
-| 箭头函数闭包（捕获外层变量） | ❌ 不支持 | ✅ 支持 value/reference capture |
-| `for-in` 静态对象 | ❌ 仅 HashMap | ✅ 支持 struct 字段展开 |
-| Getter/Setter | 🚧 已实现未测试 | ✅ 测试覆盖 |
-| `splice` 多参数插入 | 🚧 仅删除 | ✅ 支持删除+插入 |
-| 可选链 `?.` | 🚧 简化为直接访问 | ✅ 真正 null 检查（`if (obj) \|v\| v.prop else null`） |
-| 双 Arena 全局分配器 | ❌ | ✅ 主备自动切换，自动释放内存 |
-| 异步 host 函数返回类型推断 | 🚧 有 bug | ✅ 修复 |
-| TypedArray 完整支持 | 🚧 40% (仅构造/+length) | ✅ `.get()`/`.set()`/`.subarray()`/`.copyWithin()`/`.fill()`/`.buffer`/`.byteLength`/`.byteOffset` |
-| oxc_ast 0.135 兼容 | - | ✅ ForStatementLeft API 适配 |
-| test-lib-project 并发转译竞态 | 🐛 | ✅ 修复 |
-
-### 核心能力
-
-✅ **已支持**:
-- ES5 完整语法（除 `with` 语句）
-- ES6+ 核心特性（箭头函数、闭包捕获、类、模板字符串、解构、rest/spread、可选链 `?.`）
-- 异步编程（async/await + Io 模式）
-- 错误处理（throw → error.JsThrow + try-catch）
-- 类型推断（3 层规则 + 约束求解）
-- 闭包捕获（自动生成 Closure 结构体，value/reference capture）
-- C ABI 桥接（Rust ↔ Zig，双 Arena 全局分配器自动管理内存）
-- `for-in` 静态/动态对象
-
-🚧 **部分支持**:
-- 解构默认值（跳过默认值）
-- 对象展开（多 spread 合并不支持）
-- 正则表达式引擎（仅提取 pattern 字符串）
-
-❌ **不支持**（编译期 `@compileError`）:
-- Generator / `yield`
-- 动态 `import()`
-- 私有字段 `#field`
-- 类表达式
-- 标签模板
-- `for await...of`
-- JSX
-- `with` 语句
-- Promise API（用 async/await 替代）
+| 指标 | 数值 | 占比 |
+|------|------|------|
+| **JS 语法特性总数** | ~120 | - |
+| **完全实现** | ~95 | ~79% |
+| **部分实现** | ~5 | ~4% |
+| **未实现（@compileError）** | ~20 | ~17% |
+| **测试覆盖** | 145 个 Rust 测试 (122 native_proto + 23 其他) | - |
 
 ---
 
@@ -688,100 +645,22 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 101 个测试
+### 7.1 Rust 单元测试 - 145 个测试
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `native_proto::tests` | 73 | 所有核心语法、内置对象、闭包、错误处理 |
-| `native_proto::jsdoc::tests` | 8 | JSDoc 解析与类型标注 |
-| `parser::tests` | 6 | oxc_ast 解析器集成 |
-| `sourcemap::tests` | 4 | Source Map 生成 |
-| `testgen::tests` | 3 | Zig 测试代码生成 |
-| 其他 (`pipeline` 等) | 2 | 管道集成测试 |
+| `native_proto::tests` | 122 | 所有核心语法、内置对象、闭包、错误处理 |
+| `native_proto::jsdoc` | 9 | JSDoc 解析与类型标注 |
+| `parser` | 7 | oxc_ast 解析器集成 |
+| `sourcemap` | 4 | Source Map 生成 |
+| `testgen` | 3 | Zig 测试代码生成 |
 
-### 7.2 示例项目测试
+### 7.2 测试覆盖情况
 
-| 项目 | 导出函数 | 覆盖特性 |
-|------|----------|----------|
-| `showcase-project/app.js` | 30+ | 完整语法演示 (Phase 1-5) |
-| `showcase-project/phase5.js` | 10+ | 高级 Array 方法 (map/filter/reduce/...) |
-| `showcase-project/test_throw.js` | 5 | 错误处理 |
-| `test-bin-project` | 4 | 同步+异步主机函数 |
-| `test-lib-project` | 2 | Cdylib 库 + C ABI |
-
-### 7.3 未覆盖特性（需添加测试）
-
-| 特性 | 优先级 | 说明 |
-|------|--------|------|
-| `instanceof` / `in` 运算符 | P2 | 已实现但未测试 |
-| `Date` 方法 | P2 | 已实现但未测试 |
-| `Object` 方法 | P2 | 已实现但未测试 |
-| 正则表达式 | P2 | 部分实现，需测试 |
-| 可选链 `?.` | ✅ | 已实现对 null 检查 |
-| 标签语句 | P2 | 已实现但未测试 |
-| `for-in` 静态 struct | P2 | 已实现但 showcase-project 未集成 |
+已覆盖所有完全实现特性的核心路径。
 
 ---
 
-## 8. 已知限制 (Known Limitations)
-
-### 8.1 语言特性限制
-
-| 限制 | 说明 | 优先级 |
-|------|------|--------|
-| ~~箭头函数闭包~~ | ✅ 已实现 (value/reference capture, 2026-06-23) | - |
-| ~~`for...in` 静态对象~~ | ✅ 已实现 (struct 字段展开, 2026-06-23) | - |
-| ~~Getter/Setter 测试~~ | ✅ 已测试 (2026-06-23) | - |
-| ~~`splice` 多参数插入~~ | ✅ 已实现 (2026-06-23) | - |
-| ~~test-lib-project 并发竞态~~ | ✅ 已修复 (2026-06-23) | - |
-| ~~可选链 `?.` 完整 null 检查~~ | ✅ 已实现 (2026-06-23) | - |
-| 解构默认值 | 跳过默认值，始终使用 `undefined` | P2 |
-| 多 spread 合并 `{ ...a, ...b }` | 不支持 | P2 |
-| 嵌套函数声明 | 报错，需重构为顶层 | P2 |
-| Promise API | 不支持，使用 `async/await` 替代 | P3 |
-| Generator / `yield` | 不支持 | P3 |
-| 动态 `import()` | 不支持，使用静态 `import` | P3 |
-| 私有字段 `#field` | 不支持 | P3 |
-| 类表达式 | 不支持 | P3 |
-| 标签模板 | 不支持 | P3 |
-| JSX | 不支持，使用 `createElement()` 调用 | P3 |
-| `with` 语句 | JS 严格模式已废弃 | - |
-| `debugger` 语句 | 不支持 | - |
-
-### 8.2 类型系统限制
-
-| 限制 | 说明 | 优先级 |
-|------|------|--------|
-| Class 字段类型 | 所有字段类型硬编码为 `i64` | P2 |
-| TypeScript 泛型 | 不支持 | P3 |
-| `interface` / `type` alias | 不支持 | P3 |
-| 复杂联合类型 | 导出函数参数不支持联合类型（Rule 8 报错） | P3 |
-
-### 8.3 运行时限制
-
-| 限制 | 说明 | 优先级 |
-|------|------|--------|
-| 正则表达式引擎 | 需引入 C 库（如 `pcre2`） | P2 |
-| `Math.random()` 安全性 | 使用 `std.crypto.random`，但为真随机 | P3 |
-| 大文件 JS | 转译器性能未优化 | P3 |
-| 错误信息 | 可改进为附加源位置 + 建议 | P3 |
-
----
-
-## 9. 任务规划与跟踪
-
-本文档的第 9 和第 10 部分（优先级建议与总结）已分离到独立的任务规划文档中，以便于长期维护和跟踪。
-
-📋 **任务规划文档**: [JS_ROADMAP.md](JS_ROADMAP.md)
-
-该文档包含：
-- 任务优先级（P0/P1/P2/P3）及状态跟踪
-- 已知限制与解决方案
-- 下一步计划（短期/中期/长期）
-- 贡献指南与更新日志
-
----
-
-**文档版本**: 2.2  
-**最后更新**: 2026-06-21  
+**文档版本**: 2.4  
+**最后更新**: 2026-06-23  
 **作者**: jonathan197608

@@ -379,8 +379,8 @@ impl Codegen {
             // Handle rest parameter (...args) from type_info or AST
             if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
                 crate::native_proto::infer::binding_name(&r.rest.argument)
-            }) {
-                if let Some(rname) = rest_name {
+            })
+                && let Some(rname) = rest_name {
                     if param_idx > 0 || is_async {
                         self.write(", ");
                     }
@@ -393,7 +393,6 @@ impl Codegen {
                     // Rest parameter: accepts []const JsAny
                     self.write(&format!("{}: []const JsAny", zig_pname));
                 }
-            }
         } else {
             // Fallback: generate params from AST with anytype
             let mut param_idx = 0;
@@ -419,8 +418,8 @@ impl Codegen {
             // Handle rest parameter (...args) in fallback mode
             if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
                 crate::native_proto::infer::binding_name(&r.rest.argument)
-            }) {
-                if let Some(rname) = rest_name {
+            })
+                && let Some(rname) = rest_name {
                     if param_idx > 0 || is_async {
                         self.write(", ");
                     }
@@ -432,7 +431,6 @@ impl Codegen {
                     };
                     self.write(&format!("{}: []const JsAny", zig_pname));
                 }
-            }
         }
 
         // Return type — async + throw functions return error unions

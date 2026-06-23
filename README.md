@@ -1,26 +1,28 @@
-# js2rust — JS-to-Zig Transpiler for Rust FFI
+# js2rust — JS 转 Zig 转译器（Rust FFI 集成）
 
-`js2rust` is a JS-to-Zig transpiler that enables seamless integration of JavaScript code into Rust projects via automatic FFI bridge generation.
+`js2rust` 是一个 JS 到 Zig 的转译器，可将 JavaScript 代码无缝集成到 Rust 项目中，通过自动生成 FFI 桥接代码实现 JS ↔ Rust 互调用。
 
-## Features
+> [English Version](README_EN.md)
 
-- **JS-to-Zig transpilation**: Automatically converts JS source files to Zig code
-- **Proc-macro FFI bridge**: `js2rust_bridge!()` transpiles and generates Rust FFI bindings in one step
-- **Host functions**: Call Rust functions from JS via C ABI
-  - Synchronous: `i64`, `f64`, `bool`, `str` parameters and return values
-  - **Async** (new in 0.2): `async fn` with struct return types, bridged via tokio
-- **Async export functions** (new in 0.2): `export async function` generates a C ABI blocking wrapper using a global Zig `Io` instance
-- **String host functions** (new in 0.2): Automatic `[*:0]const u8` ↔ `[]const u8` conversion with heap-allocated returns
-- **Source Map** (new in 0.2): `// @src(file:line)` inline comments + `source_map.json`
-- **Incremental compilation** (new in 0.2): Hash-based cache — unchanged files are skipped on rebuild (`--force` to override)
-- **WASM target** (new in 0.2): `zig build wasm` (wasm32-wasi) support
-- **Multi-file project support**: Transpile entire JS project directories
-- **Type inference**: Automatic JS type inference (number -> i64/f64, string -> []u8, etc.)
-- **No build.rs code generation**: Everything happens in the proc-macro — IDE-friendly
+## 核心特性
 
-## Quick Start
+- **JS → Zig 转译**：自动将 JS 源文件转换为 Zig 代码
+- **Proc-macro FFI 桥接**：`js2rust_bridge!()` 一步完成转译和 Rust FFI 绑定生成
+- **Host 函数**：从 JS 中直接调用 Rust 函数（通过 C ABI）
+  - 同步：`i64`、`f64`、`bool`、`str` 参数及返回值
+  - **异步**：`async fn` 带 struct 返回类型，通过 tokio bridge
+- **异步导出函数**：`export async function` 生成 C ABI 阻塞包装器（利用全局 Zig `Io` 实例）
+- **字符串宿主函数**：自动 `[*:0]const u8` ↔ `[]const u8` 转换，堆分配返回值
+- **Source Map**：`// @src(file:line)` 行内注释 + `source_map.json`
+- **增量编译**：基于哈希的缓存，未修改文件跳过重建（`--force` 强制重建）
+- **WASM 目标**：`zig build wasm`（wasm32-wasi）支持
+- **多文件项目支持**：可转译整个 JS 项目目录
+- **类型推断**：自动 JS 类型推断（number → i64/f64，string → `[]u8` 等）
+- **零代码生成**：所有逻辑在 proc-macro 中完成，IDE 友好
 
-### 1. Add dependencies to your `Cargo.toml`
+## 快速开始
+
+### 1. 添加依赖
 
 ```toml
 [dependencies]
@@ -30,7 +32,7 @@ js2rust-bridge = "0.2"
 js2rust-bridge = "0.2"
 ```
 
-### 2. Write JS code in `js_src/main.js`
+### 2. 编写 JS 代码 `js_src/main.js`
 
 ```javascript
 export function greet(name) {
@@ -42,7 +44,7 @@ export function add(a, b) {
 }
 ```
 
-### 3. Use the macro in `src/main.rs`
+### 3. 在 `src/main.rs` 中使用宏
 
 ```rust
 js2rust_bridge!("js_src/main.js");
@@ -56,7 +58,7 @@ fn main() {
 }
 ```
 
-### 4. Add a minimal `build.rs` for linking
+### 4. 添加 `build.rs` 用于静态库链接
 
 ```rust
 fn main() {
@@ -64,11 +66,11 @@ fn main() {
 }
 ```
 
-## Host Functions
+## Host 函数（Rust → JS）
 
-Call Rust functions from JS by declaring them in the macro:
+在宏中声明 Host 函数，即可从 JS 中调用 Rust 函数：
 
-### Synchronous host functions
+### 同步 Host 函数
 
 ```rust
 js2rust_bridge! {
@@ -78,7 +80,7 @@ js2rust_bridge! {
 }
 ```
 
-Implement in Rust:
+Rust 实现：
 
 ```rust
 #[no_mangle]
@@ -92,9 +94,7 @@ pub extern "C" fn host_concat(a: *const std::ffi::c_char, b: *const std::ffi::c_
 }
 ```
 
-### Async host functions (0.2)
-
-Declare an async host function with a struct return type:
+### 异步 Host 函数
 
 ```rust
 js2rust_bridge! {
@@ -103,53 +103,27 @@ js2rust_bridge! {
 }
 ```
 
-Implement with tokio and bridge via `block_on`:
-
 ```rust
 use tokio::runtime::Runtime;
 use std::sync::OnceLock;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 fn runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("failed to create tokio runtime")
-    })
+    RUNTIME.get_or_init(|| tokio::runtime::Builder::new_current_thread()
+        .enable_all().build().expect("tokio runtime"))
 }
 
 #[repr(C)]
-pub struct HostFetchUserResult {
-    pub id: i64,
-    pub name: [u8; 256],
-}
-
-async fn fetch_user_from_db(name: &str) -> User {
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    // ... database lookup ...
-}
+pub struct HostFetchUserResult { pub id: i64, pub name: [u8; 256] }
 
 #[no_mangle]
 pub extern "C" fn fetch_user(name: *const std::ffi::c_char) -> HostFetchUserResult {
     let name = unsafe { std::ffi::CStr::from_ptr(name).to_string_lossy() };
-    let user = runtime().block_on(fetch_user_from_db(&name));
-    // ... pack into HostFetchUserResult ...
+    runtime().block_on(fetch_user_from_db(&name))
 }
 ```
 
-Call from JS with `await`:
-
-```js
-async function getUserInfo(name) {
-    const user = await fetch_user(name);
-    return user.name;  // Access struct fields
-}
-```
-
-### Async export functions (0.2)
-
-`export async function` is exported via C ABI as a blocking wrapper. The transpiler generates a `getUserInfo_impl` async function and a `getUserInfo_cabi` wrapper that obtains a global `Io` instance and blocks on the async result:
+JS 中使用 `await`：
 
 ```js
 export async function getUserInfo(name) {
@@ -158,41 +132,52 @@ export async function getUserInfo(name) {
 }
 ```
 
-Call from Rust as a regular synchronous function:
+### 异步导出函数
+
+`export async function` 通过 C ABI 导出为阻塞包装器：
+
+```js
+export async function getUserInfo(name) {
+    const user = await fetch_user(name);
+    return user.name;
+}
+```
+
+Rust 侧同步调用：
 
 ```rust
 fn main() {
-    js2rust_init();  // Initialize global Io (required for async exports)
+    js2rust_init();  // 初始化全局 Io（异步导出函数需要）
     let name = getUserInfo_main("alice");
-    println!("User: {}", name);  // "Alice Smith"
+    println!("User: {}", name);
     js2rust_deinit();
 }
 ```
 
-## Architecture
+## 项目架构
 
 ```
 js2rust/
-├── js2zig-core/            # Core transpiler library (parser, type inference, codegen)
-├── js2rust-bridge/         # Facade crate (re-exports the proc-macro + link helper)
-├── js2rust-bridge-macro/   # Proc-macro: transpile + generate FFI bindings
-├── runtime/                # Zig runtime (js_runtime.zig, allocator, builtins)
+├── js2zig-core/            # 核心转译库（解析、类型推断、代码生成）
+├── js2rust-bridge/         # 外观 crate（重导出 proc-macro + link 辅助函数）
+├── js2rust-bridge-macro/   # Proc-macro：转译 + 生成 FFI 绑定
+├── runtime/                # Zig 运行时（js_runtime.zig、分配器、内置对象）
 └── examples/
-    ├── test-bin-project/   # Binary project with sync + async host functions
-    └── test-lib-project/   # Library project
+    ├── test-bin-project/   # 二进制项目（同步+异步 host 函数）
+    └── test-lib-project/   # 库项目
 ```
 
-### How it works
+### 工作原理
 
-1. `js2rust_bridge!("js_src/main.js")` macro calls `js2zig_core::transpile_project()`
-2. The core JS file and its transitive imports are transpiled to Zig, output written to `.js2zig-cache/main/`
-3. Macro reads `cabi_exports.json` and generates `unsafe extern "C"` + safe Rust wrappers
-4. Async exports generate `_impl` async functions + C ABI blocking wrappers (using global `Io`)
-5. Macro runs `zig build` to compile the static library
-6. `build.rs` links the static library (scans `.js2zig-cache/`)
-7. You call the generated safe wrapper functions (e.g., `greet_main()`, `getUserInfo_main()`)
+1. `js2rust_bridge!("js_src/main.js")` 宏调用 `js2zig_core::transpile_project()`
+2. 核心 JS 文件及其传递导入被转译为 Zig，输出到 `.js2zig-cache/main/`
+3. 宏读取 `cabi_exports.json` 并生成 `unsafe extern "C"` + 安全 Rust 包装器
+4. 异步导出生成 `_impl` 异步函数 + C ABI 阻塞包装器（使用全局 `Io`）
+5. 宏运行 `zig build` 编译静态库
+6. `build.rs` 链接静态库（扫描 `.js2zig-cache/`）
+7. 调用生成的安全包装函数（如 `greet_main()`、`getUserInfo_main()`）
 
-### Async call chain
+### 异步调用链
 
 ```
 Rust: getUserInfo_main("alice")
@@ -203,33 +188,38 @@ Rust: getUserInfo_main("alice")
           → Rust: fetch_user(name) → tokio runtime block_on(async_fn)
 ```
 
-## Requirements
+## 环境要求
 
-- Rust 1.85+ (edition 2024)
-- Zig 0.16.0+ (for compiling transpiled Zig code)
+- Rust 1.85+（edition 2024）
+- Zig 0.16.0+（用于编译转译后的 Zig 代码）
 
-## Changelog
+## 文档
+
+- [JS 语言特性实现评估](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态评估
+- [项目路线图与任务规划](docs/JS_ROADMAP.md) — 优先级排序与进度跟踪
+
+## 版本日志
 
 ### 0.2.0
 
-- **Async host functions**: `async fn` with struct return types, tokio `block_on` bridge
-- **Async export functions**: `export async function` generates C ABI blocking wrapper via global `Io`
-- **String host functions**: Automatic C string ↔ Zig string conversion with heap-allocated returns
-- **Source Map**: `// @src(file:line)` inline comments + `source_map.json`
-- **Incremental compilation**: Hash-based build cache, `--force` flag for full rebuild
-- **WASM target**: `zig build wasm` (wasm32-wasi) support
-- Global `js_runtime.initIo()` / `js2rust_init()` for async export support
-- Use-after-free fix: async host string returns now heap-allocated via `dupe(u8, ...)`
+- **异步 Host 函数**：`async fn` 带 struct 返回类型，tokio `block_on` 桥接
+- **异步导出函数**：`export async function` 通过全局 `Io` 生成 C ABI 阻塞包装器
+- **字符串 Host 函数**：自动 C 字符串 ↔ Zig 字符串转换，堆分配返回值
+- **Source Map**：`// @src(file:line)` 行内注释 + `source_map.json`
+- **增量编译**：基于哈希的构建缓存，`--force` 强制重建
+- **WASM 目标**：`zig build wasm`（wasm32-wasi）支持
+- 全局 `js2rust_init()` / `js2rust_deinit()` 异步导出支持
+- Use-after-free 修复：异步 host 字符串返回值改为 `dupe(u8, ...)` 堆分配
 
 ### 0.1.0
 
-- Initial release
-- JS-to-Zig transpilation with proc-macro FFI bridge
-- Synchronous host functions (i64, f64, bool, string)
-- Multi-file project support
-- Type inference
-- 12 Zig test groups, 90+ Rust tests
+- 初始版本
+- JS → Zig 转译 + proc-macro FFI 桥接
+- 同步 Host 函数（i64、f64、bool、string）
+- 多文件项目支持
+- 类型推断
+- 12 组 Zig 测试，90+ Rust 测试
 
-## License
+## 许可证
 
-Dual-licensed under MIT or Apache-2.0.
+MIT 或 Apache-2.0 双许可。
