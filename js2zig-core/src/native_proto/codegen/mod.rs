@@ -32,6 +32,7 @@ impl Codegen {
             seen_return: false,
             fn_has_throw: false,
             in_return_expr: false,
+            in_expr_stmt: false,
             try_label_counter: 0,
             arrow_counter: 0,
             pending_arrow_fns: Vec::new(),

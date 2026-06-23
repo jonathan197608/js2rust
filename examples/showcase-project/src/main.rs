@@ -2,11 +2,12 @@
 use js2rust_bridge::js2rust_bridge;
 
 // Transpile JS -> Zig and generate FFI bindings.
-// app.js + phase5.js + test_throw.js
+// app.js + phase5.js + test_throw.js + phase_memory.js
 js2rust_bridge! {
     "js_src/app.js",
     "js_src/phase5.js",
     "js_src/test_throw.js",
+    "js_src/phase_memory.js",
 }
 
 fn main() {
@@ -47,6 +48,35 @@ fn main() {
 
     let tf = tryFinally_app(false);
     println!("  tryFinally(false) = {:?}", tf);
+
+    // ── Memory: dual-arena stress tests ───────────────────
+    println!("\n--- Memory Stress Tests ---");
+
+    let map_ok = testMapStress_app();
+    println!("  testMapStress() = {} (expected 1)", map_ok);
+
+    let set_ok = testSetStress_app();
+    println!("  testSetStress() = {} (expected 1)", set_ok);
+
+    let arr_mut = testArrayMutStress_app();
+    println!("  testArrayMutStress() = {} (expected 0)", arr_mut);
+
+    let add_ok = testMemoryAdd_app(2, 3);
+    println!("  testMemoryAdd(2,3) = {} (expected 5)", add_ok);
+
+    // Force arena rotation (swap active/backup)
+    js2rust_reset();
+    println!("  js2rust_reset() called — arena rotated");
+
+    // Verify correctness after reset
+    let post_reduce = testArrayReduce_app();
+    println!("  testArrayReduce (after reset) = {} (expected 0)", post_reduce);
+
+    let post_add = testMemoryAdd_app(7, 8);
+    println!("  testMemoryAdd(7,8) after reset = {} (expected 15)", post_add);
+
+    let post_greeting = testLongGreeting_app("World");
+    println!("  testLongGreeting('World') = {:?}", post_greeting);
 
     js2rust_deinit();
     println!("=== All tests done ===");

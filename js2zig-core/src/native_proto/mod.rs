@@ -331,6 +331,9 @@ pub struct Codegen {
     /// Whether we are currently emitting the return value expression.
     /// When true, array methods that normally discard with `_ = ` should skip the prefix.
     pub in_return_expr: bool,
+    /// Whether we are currently emitting the top-level expression of an ExpressionStatement.
+    /// When true, builtins that return non-void values should discard with `_ = `.
+    pub in_expr_stmt: bool,
     /// Counter for generating unique try-block labels (for nested try-catch).
     pub try_label_counter: u32,
     /// Counter for generating unique arrow function names.

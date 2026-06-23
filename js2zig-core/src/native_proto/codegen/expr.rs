@@ -1061,13 +1061,16 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MapDelete => {
-                // map.delete(key) → map.delete(key)
+                // map.delete(key) → _ = map.delete(key) (if in statement context)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.delete() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if self.in_expr_stmt {
+                        self.write("_ = ");
+                    }
                     self.write(&format!("{}.delete(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(")");

@@ -15,7 +15,7 @@
 | **完全实现** | ~91 | ~76% |
 | **部分实现** | ~7 | ~6% |
 | **未实现（@compileError）** | ~22 | ~18% |
-| **测试覆盖** | 101 个测试 | 78 native_proto + 23 辅助 |
+| **测试覆盖** | 111 个测试 | 109 native_proto + 2 辅助 |
 | **示例项目** | 3 个 | showcase-project, test-bin-project, test-lib-project |
 
 ---
@@ -38,8 +38,8 @@
 
 | 任务 | 说明 | 理由 | 状态 | 优先级 |
 |------|------|------|------|--------|
-| showcase-project 闭包集成测试 | 在 Phase 5 测试中验证 `map`/`reduce`/`forEach` 闭包 | 回归验证 | 🚧 进行中 | 高 |
-| 双 Arena 分配器集成到 showcase | 验证 arena 自动内存管理的端到端行为 | 内存安全 | 📋 待开始 | 高 |
+| showcase-project 闭包集成测试 | 在 Phase 5 测试中验证 `map`/`reduce`/`forEach` 闭包 | 回归验证 | ✅ 已完成 | 高 |
+| 双 Arena 分配器集成到 showcase | 验证 arena 自动内存管理的端到端行为 | 内存安全 | ✅ 已完成 | 高 |
 | TypedArray 完整支持 | 实现 `.set()` / `.slice()` / `.buffer` 等方法 | WASM 目标需求 | 📋 待开始 | 高 |
 
 ### 1.3 P2 (未来版本)
@@ -107,6 +107,8 @@
 | 异步 host 函数返回类型推断 | 🚧 有 bug | ✅ 修复 | 2026-06-23 |
 | oxc_ast 0.135 兼容 | - | ✅ ForStatementLeft API 适配 | 2026-06-23 |
 | test-lib-project 并发转译竞态 | 🐛 | ✅ 修复 | 2026-06-23 |
+| showcase-project 闭包集成测试 | 🚧 进行中 | ✅ map/reduce/forEach/every/some/forEach 闭包全通过 | 2026-06-23 |
+| 双 Arena 分配器集成到 showcase | 📋 待开始 | ✅ Map/Set/Array 压力测试 + js2rust_reset 验证 | 2026-06-23 |
 
 ### 3.2 核心能力
 
@@ -206,6 +208,8 @@
 |------|----------|--------|
 | 2026-06-23 | 初始版本，从 `JS_FEATURE_EVALUATION.md` 分离任务规划部分 | jonathan197608 |
 | 2026-06-23 | P0 任务全部标记为已完成 | jonathan197608 |
+| 2026-06-23 | P1 闭包集成测试标记为已完成，测试计数更新 101→111 | jonathan197608 |
+| 2026-06-23 | P1 双 Arena 分配器集成到 showcase 完成：Map/Set/Array 压力测试 + js2rust_reset 验证 | jonathan197608 |
 
 ---
 

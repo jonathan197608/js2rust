@@ -5,8 +5,9 @@ fn main() {
         additional_js_files: vec![
             "js_src/phase5.js".into(),
             "js_src/test_throw.js".into(),
+            "js_src/phase_memory.js".into(),
         ],
         host_functions: None,
-        force_rebuild: false,
+        force_rebuild: true,
     });
 }

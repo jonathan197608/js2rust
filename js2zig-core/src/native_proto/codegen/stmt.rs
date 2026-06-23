@@ -516,7 +516,9 @@ impl Codegen {
                 }
 
                 self.write_indent();
+                self.in_expr_stmt = true;
                 self.emit_expr(&es.expression);
+                self.in_expr_stmt = false;
                 if need_semi {
                     self.write(";\n");
                 } else {
