@@ -2,9 +2,9 @@
 
 > JS → Zig 源码转译器，Rust 实现。
 > ~13,200 行 Rust + 19 个 Zig 运行时文件。
-> `cargo test --workspace` 107 通过，0 clippy 警告，Zig 0.16 目标。
+> `cargo test --workspace` 111 通过，0 clippy 警告，Zig 0.16 目标。
 >
-> **更新时间**: 2026-06-23 | 基于 1cf3348
+> **更新时间**: 2026-06-23 | 基于 HEAD
 
 ---
 
@@ -16,7 +16,7 @@
 | P1 — 工程质量 | 5 | 5 | 0 |
 | P2 — 远期 | 3 | 3 | 0 |
 | **P3 — 新增功能** | **18** | **18** | **0** |
-| **代码 TODO** | **4** | **0** | **4** |
+| **代码 TODO** | **4** | **4** | **0** |
 
 ---
 
@@ -221,31 +221,23 @@
 
 ---
 
-## 🔶 剩余任务 — 代码 TODO（4 项）
+## 🔶 剩余任务 — 代码 TODO ✅ 全部完成
 
-### TODO-1: catch 参数映射 `e` → `err` 
+### TODO-1: catch 参数映射 `e` → `err` ✅
 - 位置：`js2zig-core/src/native_proto/codegen/stmt.rs:629`
-- 问题：catch body 中引用 `e` 时未映射到 Zig 的 `err`
-- 影响：`try { ... } catch(e) { console.log(e) }` — `e` 未定义
-- 难度：低
+- 状态：已修复 — catch body 中引用 `e` 映射到 Zig 的 `err`（`f855c5b`）
 
-### TODO-2: 箭头闭包变异检测
+### TODO-2: 箭头闭包变异检测 ✅
 - 位置：`js2zig-core/src/native_proto/codegen/stmt.rs:1333`
-- 问题：箭头函数中 `is_mut` 硬编码为 `false`
-- 影响：闭包中修改捕获变量时生成错误代码
-- 难度：中（需要分析箭头函数体内的赋值）
+- 状态：已修复 — `is_mut` 通过 `detect_mutated_vars_in_stmts` 检测赋值（`b911400` 前驱，已内联实现）
 
-### TODO-3: 箭头函数返回类型推断
+### TODO-3: 箭头函数返回类型推断 ✅
 - 位置：`js2zig-core/src/native_proto/codegen/stmt.rs:1481`
-- 问题：返回值类型硬编码为 `i64`
-- 影响：箭头函数返回字符串/f64/bool 时类型错误
-- 难度：中（需要 `fn_return_types` 查找 ArrowFunctionExpression）
+- 状态：已修复 — `infer_arrow_return_type()` 分析表达/return 语句推断类型（`b911400`）
 
-### TODO-4: for-of 循环类型推断
+### TODO-4: for-of 循环类型推断 ✅
 - 位置：`js2zig-core/src/native_proto/tests.rs:447`
-- 问题：for-of 循环变量类型推断不完整
-- 影响：复杂 for-of 场景下类型可能错误
-- 难度：中
+- 状态：已修复 — for-of 循环变量类型推断完整（`8964fdb`）
 
 ---
 
@@ -262,14 +254,13 @@
 
 ## 📋 下一步建议（按优先级排序）
 
-### Phase A: 代码 TODO 修复（P0 等价）
+### Phase A: 代码 TODO 修复 ✅ 全部完成
 ```
-1. TODO-1: catch e→err 映射 ────── 低难度，直接修改
-2. TODO-3: 箭头函数返回类型推断 ── 需要类型信息集成
-3. TODO-4: for-of 类型推断 ─────── 需要类型信息集成
-4. TODO-2: 箭头闭包 is_mut 检测 ── 需要赋值分析
+1. TODO-1: catch e→err 映射 ────── ✅ f855c5b
+2. TODO-3: 箭头函数返回类型推断 ── ✅ b911400
+3. TODO-4: for-of 类型推断 ─────── ✅ 8964fdb
+4. TODO-2: 箭头闭包 is_mut 检测 ── ✅ (内联到 collect_captured_vars)
 ```
-预计工作量：中等。优先 1→3→4→2 顺序。
 
 ### Phase B: 降低 @compileError 覆盖率（P1）
 ```

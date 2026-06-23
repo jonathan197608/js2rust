@@ -1436,10 +1436,10 @@ impl Codegen {
     /// Infer the return type of an arrow function by examining its body.
     fn infer_arrow_return_type(&self, arrow: &ArrowFunctionExpression) -> Option<ZigType> {
         // Single-expression arrow: type is the expression's type
-        if arrow.body.statements.len() == 1 {
-            if let Statement::ExpressionStatement(es) = &arrow.body.statements[0] {
-                return self.infer_arrow_expr_type(&es.expression);
-            }
+        if arrow.body.statements.len() == 1
+            && let Statement::ExpressionStatement(es) = &arrow.body.statements[0]
+        {
+            return self.infer_arrow_expr_type(&es.expression);
         }
         // Block body: scan return statements
         for stmt in &arrow.body.statements {
