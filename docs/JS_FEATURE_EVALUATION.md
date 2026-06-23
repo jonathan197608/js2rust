@@ -772,7 +772,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 本文档的第 9 和第 10 部分（优先级建议与总结）已分离到独立的任务规划文档中，以便于长期维护和跟踪。
 
-📋 **任务规划文档**: [JS_ROADMAP.md](./JS_ROADMAP.md)
+📋 **任务规划文档**: [JS_ROADMAP.md](JS_ROADMAP.md)
 
 该文档包含：
 - 任务优先级（P0/P1/P2/P3）及状态跟踪
