@@ -761,79 +761,20 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ---
 
-## 9. 优先级建议 (Priority Recommendations)
+## 9. 任务规划与跟踪
 
-### 9.1 P0 (立即修复) — 全部完成 ✅
+本文档的第 9 和第 10 部分（优先级建议与总结）已分离到独立的任务规划文档中，以便于长期维护和跟踪。
 
-| 任务 | 说明 | 状态 |
-|------|------|------|
-| ~~showcase-project Phase 5 测试~~ | ~~testArrayReduce/ForEach 返回 -1~~ | ✅ 闭包实现后自然修复 |
-| ~~箭头函数闭包~~ | ~~支持捕获外层变量~~ | ✅ 已完成 |
-| ~~`for...in` 静态对象~~ | ~~支持普通对象~~ | ✅ 已完成 |
+📋 **任务规划文档**: [JS_ROADMAP.md](./JS_ROADMAP.md)
 
-### 9.2 P1 (近期优先)
-
-| 任务 | 说明 | 理由 |
-|------|------|------|
-| showcase-project 闭包集成测试 | 在 Phase 5 测试中验证 `map`/`reduce`/`forEach` 闭包 | 回归验证 |
-| 双 Arena 分配器集成到 showcase | 验证 arena 自动内存管理的端到端行为 | 内存安全 |
-| TypedArray 完整支持 | 实现 `.set()` / `.slice()` / `.buffer` 等方法 | WASM 目标需求 |
-
-### 9.3 P2 (未来版本)
-
-| 任务 | 说明 | 理由 |
-|------|------|------|
-| 解构默认值 | 支持 ES6 完整语法 | 语言完整性 |
-| 多 spread 合并 `{ ...a, ...b }` | 支持 ES6 完整语法 | 语言完整性 |
-| 正则表达式引擎 | 引入 C 库 | 实用性 |
-| 未覆盖特性测试 | `instanceof`/`in`/`Date`/`Object` 方法等 | 测试覆盖率 |
-| Class 字段类型推断 | 根据构造函数推断字段类型 | 类型安全 |
-| 嵌套函数声明 | 自动提升到模块顶层 | 语言完整性 |
-
-### 9.4 P3 (长期)
-
-| 任务 | 说明 | 理由 |
-|------|------|------|
-| Generator / `yield` | 支持高级异步模式 | 语言完整性 |
-| TypeScript 泛型 | 支持复杂类型推断 | 类型安全 |
-| `interface` / `type` alias | 支持 TypeScript 完整语法 | 语言完整性 |
-| 错误信息改进 | 附加源位置 + 建议 | 开发体验 |
-| 转译器性能优化 | 支持大文件 JS | 性能 |
-| `Array.prototype.flat/flatMap` | 完整 Array 方法集 | 语言完整性 |
-| `String.prototype.padStart/padEnd` | 完整 String 方法集 | 语言完整性 |
+该文档包含：
+- 任务优先级（P0/P1/P2/P3）及状态跟踪
+- 已知限制与解决方案
+- 下一步计划（短期/中期/长期）
+- 贡献指南与更新日志
 
 ---
 
-## 10. 总结 (Conclusion)
-
-### 10.1 成就
-
-✅ **核心 JS 语法**: ES5 + ES6 核心特性已完全支持  
-✅ **类型推断**: 3 层规则 + 约束求解，类型准确率 > 90%  
-✅ **错误处理**: throw → error.JsThrow + try-catch 完整实现  
-✅ **异步编程**: async/await + Io 模式，支持主机函数  
-✅ **C ABI 桥接**: Rust ↔ Zig 无缝互操作，双 Arena 全局分配器自动管理内存
-✅ **闭包捕获**: 箭头函数自动生成 Closure 结构体 (value/reference capture)
-✅ **`for-in`**: 支持 HashMap 动态对象 + struct 静态对象展开
-✅ **可选链 `?.`**: 真正 null 检查，`if (obj) |v| v.prop else null`
-✅ **测试覆盖**: 101 个 Rust 测试 + 3 个示例项目  
-
-### 10.2 差距
-
-❌ **高级特性**: Generator、Promise API、标签模板、类表达式
-🚧 **部分实现**: 解构默认值、多 spread 合并、正则引擎
-⚠️ **测试覆盖**: 部分特性已实现但未测试（`instanceof`、`Date` 方法等）
-
-### 10.3 下一步
-
-1. **P1: showcase-project 集成验证** — 确保闭包在 Phase 5 测试中端到端正确
-2. **P1: TypedArray 完善** — 支持 WASM 目标所需的 API
-3. **P2: 提高测试覆盖率** — 未覆盖特性 (`instanceof`/`in`/`Date`/`Object`)
-4. **P2: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
-5. **P3: 开发体验** — 错误信息改进、性能优化
-
----
-
-**文档版本**: 2.0  
+**文档版本**: 2.1  
 **最后更新**: 2026-06-23  
 **作者**: jonathan197608
