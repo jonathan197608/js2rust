@@ -353,4 +353,6 @@ pub struct Codegen {
     pub closure_instances: HashSet<String>,
     /// Closure struct definitions to be prepended to output (module-level).
     pub closure_defs: Vec<String>,
+    /// Counter for generating unique temp variable names in optional chaining (?.)
+    pub oc_counter: u32,
 }

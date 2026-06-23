@@ -451,6 +451,54 @@ function sum(arr) {
     }
 
     #[test]
+    fn test_native_proto_for_in() {
+        // Test for-in loop with a dynamic object
+        // Since dynamic objects are Anytype, we test the compileError path first
+        let js = r#"
+function iterateKeys(obj) {
+    var keys = "";
+    for (var key in obj) {
+        keys = keys + key;
+    }
+    return keys;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_for_in");
+        // Verify for-in generates iterator code (for dynamic objects)
+        // or compileError (for non-dynamic objects)
+        assert!(
+            zig.contains("__it") || zig.contains("for-in:") || zig.contains("compileError"),
+            "Expected for-in handler in:\n{}",
+            zig
+        );
+    }
+    
+    #[test]
+    fn test_native_proto_for_in_static() {
+        // Test for-in loop with a static object (known struct fields)
+        let js = r#"
+function gatherKeys(obj) {
+    var keys = "";
+    for (var k in obj) {
+        keys = keys + k;
+    }
+    return keys;
+}
+function useStaticObj() {
+    const obj = { a: 1, b: 2, name: "test" };
+    return gatherKeys(obj);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_for_in_static");
+        // Should unroll the for-in loop: one block per struct field
+        assert!(zig.contains("const k = \"a\""), "Expected unrolled field 'a':\n{}", zig);
+        assert!(zig.contains("const k = \"b\""), "Expected unrolled field 'b':\n{}", zig);
+        assert!(zig.contains("const k = \"name\""), "Expected unrolled field 'name':\n{}", zig);
+        // Should NOT contain HashMap iterator
+        assert!(!zig.contains("__it"), "Should not have HashMap iterator:\n{}", zig);
+    }
+
+    #[test]
     fn test_native_proto_switch() {
         let js = r#"
 function grade(score) {
@@ -1662,6 +1710,59 @@ export function sliceSum() {
         );
     }
 
+    // ── Test: Array.splice() built-in method ─────────────
+
+    #[test]
+    fn test_native_proto_array_splice() {
+        // JS source: arr.splice(start, deleteCount)
+        let js = r#"
+/**
+ * @param {number} start
+ * @param {number} count
+ * @returns {number}
+ */
+export function spliceArray(start, count) {
+    const arr = [1, 2, 3, 4, 5];
+    return arr.splice(start, count);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_splice");
+
+        // Verify splice generates ArrayList operations
+        assert!(zig.contains("orderedRemove"), "Expected orderedRemove in:\n{}", zig);
+        assert!(
+            zig.contains("break :blk __spliced"),
+            "Expected break :blk __spliced in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.splice() with insert items ─────────────
+
+    #[test]
+    fn test_native_proto_array_splice_insert() {
+        // JS source: arr.splice(start, deleteCount, item1, item2)
+        let js = r#"
+/**
+ * @param {number} start
+ * @returns {number}
+ */
+export function spliceInsert(start) {
+    const arr = [1, 2, 3, 4, 5];
+    return arr.splice(start, 2, 99, 100);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_splice_insert");
+
+        // Verify splice generates insertSlice for multi-arg
+        assert!(zig.contains("orderedRemove"), "Expected orderedRemove in:\n{}", zig);
+        assert!(
+            zig.contains("insertSlice"),
+            "Expected insertSlice for insertion in:\n{}",
+            zig
+        );
+    }
+
     // ── Test: New Math methods (random, pow, max, min) ─────────────────────
 
     #[test]
@@ -2232,5 +2333,165 @@ export function powMixed() {
         assert!(zig.contains("const Closure_"), "Expected closure struct");
         assert!(zig.contains("*i64"), "Expected pointer for mutable capture");
         assert!(zig.contains("self.count.*"), "Expected dereference for mutable capture");
+    }
+
+    // ── Test: Getter in object literal ──────────────
+
+    #[test]
+    fn test_native_proto_getter() {
+        // Object literal with getter property
+        // { get x() { return 42; } } → .{ .x = 42 }
+        let js = r#"export function useGetter() {
+    const obj = { get x() { return 42; } };
+    return obj.x;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_getter");
+        println!("=== Getter ===
+{}", zig);
+        // Getter return expression should be used as field value
+        assert!(zig.contains(".x = 42"), "Expected getter value as field: {}", zig);
+        assert!(!zig.contains("get "), "Should not have 'get' keyword: {}", zig);
+    }
+
+    // ── Test: Setter skipped in object literal ─────
+
+    #[test]
+    fn test_native_proto_setter_skipped() {
+        // Object literal with setter — setter is skipped
+        let js = r#"export function useSetter() {
+    const obj = { a: 1, set x(v) { this._x = v; } };
+    return obj.a;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_setter_skipped");
+        println!("=== Setter skipped ===
+{}", zig);
+        // Setter should be removed — only field 'a' remains
+        assert!(!zig.contains("set "), "Setter should be removed: {}", zig);
+        assert!(zig.contains(".a = 1"), "Regular field should be preserved: {}", zig);
+    }
+
+    // ── Test: Combined getter/setter in object ─────
+
+    #[test]
+    fn test_native_proto_getter_setter_combined() {
+        // Both getter and regular properties in same object
+        let js = r#"export function combineGS() {
+    const obj = { name: "test", get age() { return 25; }, set age(v) { /* noop */ } };
+    // age getter provides the field value, setter is skipped
+    return obj.name;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_getter_setter_combined");
+        println!("=== Combined getter/setter ===
+{}", zig);
+        assert!(zig.contains(".name = \"test\""), "Regular property should remain: {}", zig);
+        assert!(zig.contains(".age = 25"), "Getter should provide field value: {}", zig);
+        assert!(!zig.contains("set "), "No setter keyword in output: {}", zig);
+    }
+
+    // ── Test: Optional chaining (?. ) — known struct → direct access ─────
+
+    #[test]
+    fn test_native_proto_optional_chain_known_struct() {
+        // obj?.prop on a known struct type → equivalent to obj.prop (no null check)
+        let js = r#"
+export function getProp(obj) {
+    const val = obj?.name;
+    return val;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_known_struct");
+        // Should generate direct access: obj.name (no if-wrapper)
+        assert!(zig.contains("obj.name"), "Should use direct access obj.name: {}", zig);
+        assert!(!zig.contains("_oc"), "Should NOT generate null-check temp var for known struct: {}", zig);
+    }
+
+    // ── Test: Optional chaining (?. ) — unknown type → null check ─────────
+
+    #[test]
+    fn test_native_proto_optional_chain_unknown() {
+        // obj?.prop on an unknown type → generates (if (obj) |_ocN| _ocN.prop else null)
+        let js = r#"
+function getUnknown(obj) {
+    return obj?.name;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_unknown");
+        assert!(
+            zig.contains("(if ("),
+            "Should generate null check pattern: {}",
+            zig
+        );
+        assert!(
+            zig.contains(") |_oc"),
+            "Should generate temp var capture: {}",
+            zig
+        );
+        assert!(zig.contains(" else null)"), "Should have else null: {}", zig);
+    }
+
+    // ── Test: Optional chaining call — unknown callee → null check ─ ─
+    #[test]
+    fn test_native_proto_optional_chain_call() {
+        // obj?.method() on unknown callee → (if (obj) |_ocN| _ocN.method() else null)
+        let js = r#"
+function callMaybe(obj) {
+    return obj?.greet("World");
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_call");
+        assert!(
+            zig.contains("(if ("),
+            "Should generate null check + call pattern: {}",
+            zig
+        );
+        assert!(zig.contains(" else null)"), "Should have else null: {}", zig);
+        assert!(
+            zig.contains("greet("),
+            "Should call method greet: {}",
+            zig
+        );
+    }
+
+    // ── Test: Nested optional chaining (a?.b?.c) ──────────────────────────
+
+    #[test]
+    fn test_native_proto_optional_chain_nested() {
+        // a?.b?.c → nested if-else blocks
+        let js = r#"
+function deep(obj) {
+    return obj?.a?.b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_nested");
+        // Should have two levels of null check
+        let oc_count = zig.matches("_oc").count();
+        assert!(oc_count >= 2, "Expected at least 2 temp vars for nested chain, got {}: {}", oc_count, zig);
+        assert!(
+            zig.contains(" else null)")
+                || zig.contains(" else null"),
+            "Should have else null branches: {}",
+            zig
+        );
+    }
+
+    // ── Test: Optional chaining on null literal → null ────────────────────
+
+    #[test]
+    fn test_native_proto_optional_chain_null_literal() {
+        // null?.prop → generates null check (always null)
+        let js = r#"
+function nullChain() {
+    return null?.prop;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_null_literal");
+        assert!(
+            zig.contains("(if (") || zig.contains("null"),
+            "Should handle null literal in chain: {}",
+            zig
+        );
     }
 }

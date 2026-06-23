@@ -253,6 +253,9 @@ impl Codegen {
                     }
                 }
             }
+            Expression::ChainExpression(chain) => {
+                self.emit_optional_chain(chain);
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
@@ -951,7 +954,54 @@ impl Codegen {
                 false
             }
 
-            //             }
+            builtins::BuiltinCall::ArraySplice => {
+                // arr.splice(start, deleteCount, ...items)
+                // Returns removed elements as a new ArrayList.
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if ce.arguments.len() < 2 {
+                        self.errors
+                            .push("Array.splice() requires at least 2 arguments (start, deleteCount)".to_string());
+                        return false;
+                    }
+                    let elem_type = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| t.to_zig_type())
+                        .unwrap_or_else(|| "i64".to_string());
+
+                    let start_expr = self.first_arg_string_or(&ce.arguments, "0");
+                    let count_expr = if let Some(arg) = ce.arguments.get(1) {
+                        if let Some(e) = arg.as_expression() {
+                            self.emit_expr_to_string(e)
+                        } else { "0".to_string() }
+                    } else { "0".to_string() };
+
+                    self.write(&format!(
+                        "(blk: {{ var __spliced: std.ArrayList({0}) = .empty; const __start = @as(usize, @intCast(@max(0, {1}))); const __cnt = @as(usize, @intCast(@min(@max(0, {2}), {3}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.getAllocator(), {3}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
+                        elem_type, start_expr, count_expr, obj_name
+                    ));
+                    // Insert new items if any (args beyond index 1)
+                    if ce.arguments.len() > 2 {
+                        // Use insertSlice for better performance
+                        self.write(&format!(
+                            " {0}.insertSlice(js_allocator.getAllocator(), __start, &[_]{1}{{", 
+                            obj_name, elem_type
+                        ));
+                        for (i, arg) in ce.arguments.iter().enumerate() {
+                            if i < 2 { continue; }
+                            if i > 2 { self.write(", "); }
+                            if let Some(expr) = arg.as_expression() {
+                                self.emit_expr(expr);
+                            }
+                        }
+                        self.write("}) catch @panic(\"OOM: Array.splice insertSlice\");");
+                    }
+                    self.write(" break :blk __spliced; })");
+                    return true;
+                }
+                false
+            }
 
             // ── Map methods ─────────────────────────────
             builtins::BuiltinCall::MapSet => {
@@ -1177,8 +1227,8 @@ impl Codegen {
                 // arr.forEach(fn) → for (arr.items) |item| { /* fn body */ }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     // Check if first argument is an arrow function
-                    if ce.arguments.len() >= 1
-                        && let Some(arg) = ce.arguments.get(0)
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
                         && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
                     {
                         // Generate for loop
@@ -1242,8 +1292,8 @@ impl Codegen {
                         "0".to_string()
                     };
                     // Check if first argument is an arrow function
-                    if ce.arguments.len() >= 1
-                        && let Some(arg) = ce.arguments.get(0)
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
                         && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
                     {
                         // Generate labeled block with accumulator
@@ -1493,21 +1543,235 @@ impl Codegen {
             return;
         }
         self.write(".{ ");
-        for (i, prop) in oe.properties.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
-            }
+        let mut first = true;
+        for prop in &oe.properties {
             if let ObjectPropertyKind::ObjectProperty(p) = prop {
                 let field_name = match &p.key {
                     PropertyKey::StaticIdentifier(id) => id.name.to_string(),
                     PropertyKey::StringLiteral(s) => s.value.to_string(),
                     _ => continue,
                 };
-                self.write(&format!(".{} = ", field_name));
-                self.emit_expr(&p.value);
+                match p.kind {
+                    PropertyKind::Init => {
+                        if !first { self.write(", "); }
+                        first = false;
+                        self.write(&format!(".{} = ", field_name));
+                        self.emit_expr(&p.value);
+                    }
+                    PropertyKind::Get => {
+                        // Getter: extract return expression from function body
+                        // { get x() { return expr; } } → .x = expr
+                        if let Expression::FunctionExpression(func) = &p.value {
+                            if let Some(body) = &func.body {
+                                if let Some(return_expr) = Self::extract_return_expr_from_body(body) {
+                                if !first { self.write(", "); }
+                                first = false;
+                                self.write(&format!(".{} = ", field_name));
+                                self.emit_expr(return_expr);
+                            }
+                            }
+                        }
+                    }
+                    PropertyKind::Set => {
+                        // Setter: skip, doesn't contribute a field to struct initialization
+                    }
+                }
             }
         }
         self.write(" }");
+    }
+
+    /// Extract the return expression from a function body (single return statement)
+    fn extract_return_expr_from_body<'a>(body: &'a oxc_ast::ast::FunctionBody<'a>) -> Option<&'a Expression<'a>> {
+        if body.statements.len() == 1 {
+            if let Statement::ReturnStatement(ret) = &body.statements[0] {
+                return ret.argument.as_ref();
+            }
+        }
+        None
+    }
+
+    // ── Optional chaining (?. ) ───────────────────────
+
+    /// Emit an optional chain expression (?. ).
+    /// Generates null-check if the object might be null; otherwise emits direct access.
+    fn emit_optional_chain(&mut self, chain: &ChainExpression) {
+        // Pre-check: handle TSNonNullExpression and PrivateFieldExpression early.
+        match &chain.expression {
+            ChainElement::TSNonNullExpression(non_null) => {
+                // TSNonNullExpression.expression is the inner Expression — no null check
+                self.emit_expr(&non_null.expression);
+                return;
+            }
+            ChainElement::PrivateFieldExpression(_) => {
+                self.errors
+                    .push("Optional chaining on private fields (?. #field) is not supported"
+                        .to_string());
+                self.write("@compileError(\"optional chaining on private fields\")");
+                return;
+            }
+            _ => {}
+        }
+
+        let oc_var = format!("_oc{}", self.oc_counter);
+        self.oc_counter += 1;
+
+        match &chain.expression {
+            ChainElement::StaticMemberExpression(mem) => {
+                let needs_check = self.expr_might_be_null(&mem.object);
+                if needs_check {
+                    self.write("(if (");
+                    self.emit_expr(&mem.object);
+                    self.write(") |");
+                    self.write(&oc_var);
+                    self.write("| ");
+                    self.write(&oc_var);
+                    self.write(".");
+                    self.write(mem.property.name.as_str());
+                    self.write(" else null)");
+                } else {
+                    self.emit_expr(&mem.object);
+                    self.write(".");
+                    self.write(mem.property.name.as_str());
+                }
+            }
+            ChainElement::ComputedMemberExpression(mem) => {
+                let needs_check = self.expr_might_be_null(&mem.object);
+                if needs_check {
+                    self.write("(if (");
+                    self.emit_expr(&mem.object);
+                    self.write(") |");
+                    self.write(&oc_var);
+                    self.write("| ");
+                    self.write(&oc_var);
+                    self.write("[");
+                    self.emit_expr(&mem.expression);
+                    self.write("]");
+                    self.write(" else null)");
+                } else {
+                    self.emit_expr(&mem.object);
+                    self.write("[");
+                    self.emit_expr(&mem.expression);
+                    self.write("]");
+                }
+            }
+            ChainElement::CallExpression(call) => {
+                // For obj?.method(), the null check should be on obj, not the callee.
+                // Extract the receiver from the callee expression.
+                let (check_expr, emit_full_call) = match &call.callee {
+                    Expression::StaticMemberExpression(mem) => {
+                        // obj?.greet() → check obj, then obj.greet()
+                        (&mem.object, false)
+                    }
+                    Expression::ComputedMemberExpression(mem) => {
+                        // obj?.[key]() → check obj, then obj[key]()
+                        (&mem.object, false)
+                    }
+                    _ => {
+                        // obj?.() or other → check the callee itself
+                        (&call.callee, true)
+                    }
+                };
+                let needs_check = self.expr_might_be_null(check_expr);
+                if emit_full_call && !needs_check {
+                    // callee is non-nullable, just call it
+                    self.emit_expr(&call.callee);
+                    self.write("(");
+                    self.emit_comma_separated_args(&call.arguments);
+                    self.write(")");
+                } else if needs_check {
+                    self.write("(if (");
+                    self.emit_expr(check_expr);
+                    self.write(") |");
+                    self.write(&oc_var);
+                    self.write("| ");
+                    if emit_full_call {
+                        // obj?.() style: call the captured value
+                        self.write(&oc_var);
+                        self.write("(");
+                        self.emit_comma_separated_args(&call.arguments);
+                        self.write(")");
+                    } else {
+                        // obj?.greet() style: access .greet(args) on captured value
+                        // Re-emit the property access path
+                        match &call.callee {
+                            Expression::StaticMemberExpression(mem) => {
+                                self.write(&oc_var);
+                                self.write(".");
+                                self.write(mem.property.name.as_str());
+                                self.write("(");
+                                self.emit_comma_separated_args(&call.arguments);
+                                self.write(")");
+                            }
+                            Expression::ComputedMemberExpression(mem) => {
+                                self.write(&oc_var);
+                                self.write("[");
+                                self.emit_expr(&mem.expression);
+                                self.write("](");
+                                self.emit_comma_separated_args(&call.arguments);
+                                self.write(")");
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    self.write(" else null)");
+                } else {
+                    // Non-nullable → emit full call directly
+                    self.emit_expr(&call.callee);
+                    self.write("(");
+                    self.emit_comma_separated_args(&call.arguments);
+                    self.write(")");
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Returns true if the expression might evaluate to null at runtime.
+    fn expr_might_be_null(&self, expr: &Expression) -> bool {
+        match expr {
+            // Literals: known non-null
+            Expression::NumericLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::ArrayExpression(_)
+            | Expression::ObjectExpression(_)
+            | Expression::TemplateLiteral(_) => false,
+
+            // null literal → it IS null
+            Expression::NullLiteral(_) => true,
+
+            // Identifier: check type
+            Expression::Identifier(id) => {
+                match self.type_info.var_types.get(id.name.as_str()) {
+                    Some(ZigType::Struct(_))
+                    | Some(ZigType::NamedStruct(_))
+                    | Some(ZigType::ArrayList(_))
+                    | Some(ZigType::I64)
+                    | Some(ZigType::F64)
+                    | Some(ZigType::Bool)
+                    | Some(ZigType::Str) => false,
+                    Some(ZigType::Void) | Some(ZigType::Anytype) => true,
+                    None => true,
+                }
+            }
+
+            // Chain expression result is always optional (from else null)
+            Expression::ChainExpression(_) => true,
+
+            // Member access on unknown objects might return null
+            Expression::StaticMemberExpression(mem) => self.expr_might_be_null(&mem.object),
+
+            // Call results might return null
+            Expression::CallExpression(_) => true,
+
+            // Parenthesized: check inner
+            Expression::ParenthesizedExpression(pe) => {
+                self.expr_might_be_null(&pe.expression)
+            }
+
+            _ => true,
+        }
     }
 }
 

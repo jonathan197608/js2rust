@@ -175,6 +175,10 @@ impl TypeInferrer {
             // AwaitExpression: strip the await, infer inner expression type
             Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
 
+            // ChainExpression (?. ): result is nullable → Indeterminate.
+            // The Zig compiler will infer optional type from 'if (obj) |v| v.prop else null'.
+            Expression::ChainExpression(_chain) => InferResult::Indeterminate,
+
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
         }
@@ -223,12 +227,42 @@ impl TypeInferrer {
                 PropertyKey::StringLiteral(s) => s.value.to_string(),
                 _ => return InferResult::Indeterminate,
             };
-            match self.infer_expr_type(&p.value) {
-                InferResult::Definite(ft) => fields.push((field_name, ft)),
-                InferResult::Indeterminate => return InferResult::Indeterminate,
+            match p.kind {
+                PropertyKind::Init => {
+                    match self.infer_expr_type(&p.value) {
+                        InferResult::Definite(ft) => fields.push((field_name, ft)),
+                        InferResult::Indeterminate => return InferResult::Indeterminate,
+                    }
+                }
+                PropertyKind::Get => {
+                    // Getter: infer from return expression in function body
+                    if let Expression::FunctionExpression(func) = &p.value {
+                        if let Some(body) = &func.body {
+                            if let Some(return_expr) = Self::extract_return_expr(body) {
+                                match self.infer_expr_type(return_expr) {
+                                    InferResult::Definite(ft) => fields.push((field_name, ft)),
+                                    InferResult::Indeterminate => return InferResult::Indeterminate,
+                                }
+                            }
+                            }
+                        }
+                }
+                PropertyKind::Set => {
+                    // Setter: skip, doesn't contribute a field
+                }
             }
         }
         InferResult::Definite(ZigType::Struct(fields))
+    }
+
+    /// Extract the return expression from a function body with a single return statement.
+    fn extract_return_expr<'a>(body: &'a oxc_ast::ast::FunctionBody<'a>) -> Option<&'a Expression<'a>> {
+        if body.statements.len() == 1 {
+            if let Statement::ReturnStatement(ret) = &body.statements[0] {
+                return ret.argument.as_ref();
+            }
+        }
+        None
     }
 
     pub(crate) fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
