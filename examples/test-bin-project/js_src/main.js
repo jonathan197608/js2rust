@@ -1,5 +1,5 @@
 // js_src/main.js — Test project for js2rust
-// Sync functions only (async temporarily disabled for #[host_fn] macro merge)
+// Tests sync and async host functions
 
 /**
  * @param {string} name

@@ -3,8 +3,18 @@
 //! Uses `#[host_fn]` attribute macro to eliminate all unsafe C ABI plumbing.
 //! SDK types (`HostStr`, `JsStr`, `JsStrField`) handle pointer conversion.
 
-use js2rust_bridge::sdk::{HostStr, JsStr, JsStrField};
+use once_cell::sync::Lazy;
+use tokio::runtime::Handle;
+
 use js2rust_bridge::host_fn;
+use js2rust_bridge::sdk::{HostStr, JsStr, JsStrField};
+
+// ── Global tokio runtime singleton ─────────────────
+
+static RUNTIME: Lazy<tokio::runtime::Runtime> =
+    Lazy::new(|| tokio::runtime::Runtime::new().expect("Failed to create tokio runtime"));
+
+static HANDLE: Lazy<Handle> = Lazy::new(|| RUNTIME.handle().clone());
 
 // ── Sync host functions ─────────────────────────────
 
@@ -42,12 +52,11 @@ pub struct FetchUserResult {
 }
 
 /// Async host function: fetch user by name.
-/// Uses tokio runtime to block on async operation (simulates DB query).
+/// Uses global tokio runtime singleton to block on async operation (simulates DB query).
 #[host_fn]
 fn fetch_user(name: HostStr) -> FetchUserResult {
-    // Create a tokio runtime and block on async operation
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-    rt.block_on(async {
+    // Use global tokio runtime singleton
+    HANDLE.block_on(async {
         // Simulate async database query with 50ms delay
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         FetchUserResult {
