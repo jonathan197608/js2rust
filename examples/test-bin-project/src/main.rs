@@ -35,11 +35,8 @@ fn main() {
 
     // ── Async host function (tokio-backed) ────────────────────
     // Test async host function fetch_user
-    // TODO: fix return type inference for async JS functions returning structs
-    // getUserInfo_main returns i64 currently (should be FetchUser)
-    // let user = getUserInfo_main("Alice").unwrap();
-    // println!("getUserInfo_main('Alice') = id={}, name={}", user.id, user.name);
-    println!("Async test temporarily disabled - debugging return type inference");
+    let user = getUserInfo_main("Alice");
+    println!("getUserInfo_main('Alice') = id={}, name={:?}", user.id, user.name);
 
     // Cleanup
     js2rust_deinit();

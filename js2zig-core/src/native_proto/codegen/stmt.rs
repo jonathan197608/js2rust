@@ -170,7 +170,7 @@ impl Codegen {
                                     "{} {}: {} = ",
                                     kw,
                                     name,
-                                    inferred_ty.to_zig_type()
+                                    inferred_ty.to_zig_type(false)
                                 ));
                             }
                             self.emit_expr(init);
@@ -369,10 +369,10 @@ impl Codegen {
                 };
                 // Export function params: always typed; non-export: use anytype
                 if self.current_fn_is_export {
-                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type(false)));
                 } else {
                     // Non-export params are inferred as anytype in the type info
-                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type(false)));
                 }
                 param_idx += 1;
             }
@@ -441,7 +441,7 @@ impl Codegen {
             Some(ZigType::Str) => "[]const u8".to_string(),
             Some(ZigType::Void) => "void".to_string(),
             None => "void".to_string(),
-            Some(other) => other.to_zig_type(),
+            Some(other) => other.to_zig_type(false),
         };
         let ret_zig_type = if (is_async || self.fn_has_throw) && ret_zig_type != "void" {
             format!("!{}", ret_zig_type)

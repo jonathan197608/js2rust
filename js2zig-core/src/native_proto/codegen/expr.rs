@@ -178,11 +178,11 @@ impl Codegen {
                 
                 match &ae.argument {
                     Expression::CallExpression(call) => {
-                        // Check if this is an async host function → use {name}_async wrapper
+                        // Check if this is an async host function → use host.{name}_async wrapper
                         if let Expression::Identifier(id) = &call.callee {
                             let name = id.name.as_str();
                             if self.async_host_fns.contains(name) {
-                                self.write(&format!("{}_async", name));
+                                self.write(&format!("host.{}_async", name));
                             } else {
                                 self.emit_expr(&call.callee);
                             }
@@ -999,7 +999,7 @@ impl Codegen {
                         .type_info
                         .array_element_types
                         .get(obj_name)
-                        .map(|t| t.to_zig_type())
+                        .map(|t| t.to_zig_type(false))
                         .unwrap_or_else(|| "i64".to_string());
                     let slice_expr = match ce.arguments.len() {
                         0 => format!("{}.items", obj_name),
@@ -1140,7 +1140,7 @@ impl Codegen {
                         .type_info
                         .array_element_types
                         .get(obj_name)
-                        .map(|t| t.to_zig_type())
+                        .map(|t| t.to_zig_type(false))
                         .unwrap_or_else(|| "i64".to_string());
 
                     let start_expr = self.first_arg_string_or(&ce.arguments, "0");

@@ -54,8 +54,8 @@ pub struct HostFnDef {
 
 /// Registry of Rust host functions exposed to JS via C ABI.
 pub struct HostFnRegistry {
-    fns: Vec<HostFnDef>,
-    structs: Vec<HostStructDef>,
+    pub fns: Vec<HostFnDef>,
+    pub structs: Vec<HostStructDef>,
 }
 
 impl HostFnRegistry {
@@ -254,11 +254,11 @@ impl HostFnRegistry {
                 ));
 
                 // Async wrapper function (callable from Zig via host.{name}_async)
-                let ret_type_str = def.ret_type.to_zig_type();
+                let ret_type_str = def.ret_type.to_zig_type(true);
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type(true)))
                     .collect();
 
                 out.push_str(&format!(
@@ -373,9 +373,9 @@ impl HostFnRegistry {
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type(true)))
                     .collect();
-                let ret_zig = def.ret_type.to_zig_type();
+                let ret_zig = def.ret_type.to_zig_type(true);
 
                 out.push_str(&format!(
                     "pub fn {}({}) {} {{\n",
@@ -451,7 +451,7 @@ impl HostFnRegistry {
     fn to_c_abi_ret_type(ty: &ZigType) -> String {
         match ty {
             ZigType::Str => "StrRet".to_string(),
-            other => other.to_zig_type(),
+            other => other.to_zig_type(true),
         }
     }
 
@@ -467,7 +467,7 @@ impl HostFnRegistry {
                 (format!("{}_ptr", param_name), "[*]const u8".to_string()),
                 (format!("{}_len", param_name), "usize".to_string()),
             ],
-            other => vec![(param_name.to_string(), other.to_zig_type())],
+            other => vec![(param_name.to_string(), other.to_zig_type(true))],
         }
     }
 
@@ -599,14 +599,14 @@ impl HostFnRegistry {
                 .map(|(n, t)| {
                     serde_json::json!({
                         "name": n,
-                        "zig_type": t.to_zig_type()
+                        "zig_type": t.to_zig_type(false) // JSON metadata is consumed by pipeline.rs (lib.zig)
                     })
                 })
                 .collect();
             imports.push(serde_json::json!({
                 "name": def.c_name,
                 "params": params,
-                "ret_type": def.ret_type.to_zig_type(),
+                "ret_type": def.ret_type.to_zig_type(false), // JSON metadata is consumed by pipeline.rs (lib.zig)
             }));
         }
         imports

@@ -520,7 +520,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         closure_fns.iter().map(|s| s.as_str()).collect();
                     let ret_type_map: HashMap<String, String> = fn_return_types
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.to_zig_type()))
+                        .map(|(k, v)| (k.clone(), v.to_zig_type(false)))
                         .collect();
                     let file_test_code = crate::testgen::generate_test_code(
                         &test_cases,
@@ -781,7 +781,7 @@ pub fn gen_cabi_wrappers(
                     p = pname
                 ));
             } else {
-                let zig_ty = ptype.to_zig_type();
+                let zig_ty = ptype.to_zig_type(false);
                 cabi_params.push(format!("{}: {}", pname, zig_ty));
                 zig_params.push(format!("{}: {}", pname, zig_ty));
             }
@@ -842,74 +842,92 @@ pub fn gen_cabi_wrappers(
                     "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
                     name = name,
                 ));
-            } else {
-                let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
-                    "void".to_string()
-                } else {
-                    exp.ret_type.to_zig_type()
-                };
-                let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
+            } else if let crate::native_proto::ZigType::NamedStruct(ref sn) = exp.ret_type {
+                // Async struct return: use out-pointer C ABI wrapper
+                let struct_name = format!("host.{}", sn);
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
                     format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
 
-                // Async non-string: add _err out-param for can_throw exports
-                let mut cabi_params_with_err = cabi_params.clone();
-                if exp.can_throw {
-                    cabi_params_with_err.push("err_out: *?[*:0]const u8".to_string());
-                }
-                let cabi_params_str = cabi_params_with_err.join(", ");
+                // Zig-friendly adapter (for tests)
+                out.push_str(&format!(
+                    "pub fn {name}({params}) {struct_name} {{\n    return {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
+                    name = name,
+                    params = zig_params.join(", "),
+                    struct_name = struct_name,
+                    mod = module,
+                    args = async_zig_args,
+                ));
 
-                let catch_clause = if exp.can_throw {
-                    format!(
-                        " catch |err| {{\n        err_out.* = @errorName(err);\n        return {default};\n    }}",
-                        default = if ret_zig == "void" { "".to_string() } else { "0".to_string() },
-                    )
+                // C ABI wrapper: add *<struct_name> out-pointer parameter
+                let mut cabi_params_with_out = cabi_params.clone();
+                cabi_params_with_out.push(format!("result: *{}", struct_name));
+                let cabi_params_str = cabi_params_with_out.join(", ");
+
+                let cabi_call = format!(
+                    "{mod}.{name}({args})",
+                    mod = module,
+                    name = name,
+                    args = async_cabi_args,
+                );
+                out.push_str(&format!(
+                    "pub export fn {name}_cabi({params}) void {{\n{conv}    const _result = {cabi_call} catch @panic(\"async error in {name}\");\n    result.* = _result;\n}}\n",
+                    name = name,
+                    params = cabi_params_str,
+                    conv = conversions,
+                    cabi_call = cabi_call,
+                ));
+                out.push_str(&format!(
+                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
+                    name = name,
+                ));
+            } else {
+                // Async non-string, non-struct return (e.g., i64, bool)
+                let ret_zig = exp.ret_type.to_zig_type(false);
+                let conversions = if cabi_to_zig_conversions.is_empty() {
+                    String::new()
                 } else {
-                    format!(" catch @panic(\"async error in {name}\")", name = name)
+                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
                 };
 
-                let err_setup = if exp.can_throw && ret_zig == "void" {
-                    "    err_out.* = null;\n"
-                } else {
-                    ""
-                };
+                // Zig-friendly adapter (for tests)
+                out.push_str(&format!(
+                    "pub fn {name}({params}) {ret} {{\n    return {mod}.{name}({args}) catch @panic(\"async error in {name}\");\n}}\n",
+                    name = name,
+                    params = zig_params.join(", "),
+                    ret = ret_zig,
+                    mod = module,
+                    args = async_zig_args,
+                ));
 
-                if ret_zig == "void" {
-                    out.push_str(&format!(
-                        "pub export fn {name}({params}) void {{\n{conv}{err_setup}    {mod}.{name}({args}){catch_clause};\n}}\n",
-                        name = name,
-                        params = cabi_params_str,
-                        conv = conversions,
-                        err_setup = err_setup,
-                        mod = module,
-                        args = async_cabi_args,
-                        catch_clause = catch_clause,
-                    ));
-                } else if exp_ret_is_js_value {
-                    out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{name}({args}){catch_clause};\n    return _result.int;\n}}\n",
-                        name = name,
-                        params = cabi_params_str,
-                        conv = conversions,
-                        mod = module,
-                        args = async_cabi_args,
-                        catch_clause = catch_clause,
-                    ));
-                } else {
-                    out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args}){catch_clause};\n}}\n",
-                        name = name,
-                        params = cabi_params_str,
-                        conv = conversions,
-                        ret = ret_zig,
-                        mod = module,
-                        args = async_cabi_args,
-                        catch_clause = catch_clause,
-                    ));
-                }
+                // C ABI wrapper
+                let cabi_params_with_runtime = {
+                    let mut p = cabi_params.clone();
+                    p.push("js_runtime: *JSRuntime".to_string());
+                    p
+                };
+                let cabi_params_str = cabi_params_with_runtime.join(", ");
+
+                let cabi_call = format!(
+                    "{mod}.{name}({args})",
+                    mod = module,
+                    name = name,
+                    args = async_cabi_args,
+                );
+                out.push_str(&format!(
+                    "pub export fn {name}_cabi({params}) {ret} {{\n{conv}    return {cabi_call} catch @panic(\"async error in {name}\");\n}}\n",
+                    name = name,
+                    params = cabi_params_str,
+                    ret = ret_zig,
+                    conv = conversions,
+                    cabi_call = cabi_call,
+                ));
+                out.push_str(&format!(
+                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
+                    name = name,
+                ));
             }
 
             out.push('\n');
@@ -971,7 +989,7 @@ pub fn gen_cabi_wrappers(
             let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
                 "void".to_string()
             } else {
-                exp.ret_type.to_zig_type()
+                exp.ret_type.to_zig_type(false)
             };
             let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
 
@@ -1114,22 +1132,53 @@ pub fn write_cabi_metadata(
                 .map(|(name, ty)| {
                     serde_json::json!({
                         "name": name,
-                        "zig_type": ty.to_zig_type()
+                        "zig_type": ty.to_zig_type(false) // JSON metadata is consumed by macro (lib.zig)
                     })
                 })
                 .collect();
 
-            // StrRet-returning functions: no result_len parameter needed
-
             // Determine ret_type string for C ABI
             let ret_type_str = exp.ret_type.to_cabi_str();
 
-            serde_json::json!({
+            // For NamedStruct returns, look up struct fields from host_fns
+            let (ret_struct_name, ret_struct_fields) = if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = exp.ret_type {
+                // Look up the struct definition from host_fns
+                let struct_fields: Option<Vec<serde_json::Value>> = host_fns.structs
+                    .iter()
+                    .find(|s| &s.zig_name == struct_name)
+                    .map(|s| {
+                        s.fields
+                            .iter()
+                            .map(|f| {
+                                serde_json::json!({
+                                    "name": f.name,
+                                    "zig_type": f.zig_type,
+                                    "cabi_type": f.c_type,
+                                })
+                            })
+                            .collect()
+                    });
+                (Some(struct_name.clone()), struct_fields)
+            } else {
+                (None, None)
+            };
+
+            let mut json_obj = serde_json::json!({
                 "name": exp.name,
                 "params": params,
                 "ret_type": ret_type_str,
                 "can_throw": exp.can_throw,
-            })
+            });
+
+            // Add struct info if returning a NamedStruct
+            if let Some(sn) = ret_struct_name {
+                json_obj["ret_struct_name"] = serde_json::json!(sn);
+            }
+            if let Some(sf) = ret_struct_fields {
+                json_obj["ret_struct_fields"] = serde_json::json!(sf);
+            }
+
+            json_obj
         })
         .collect();
 

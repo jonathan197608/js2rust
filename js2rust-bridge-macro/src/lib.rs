@@ -102,6 +102,19 @@ struct CabiExport {
     ret_type: String,
     #[serde(default)]
     can_throw: bool,
+    /// Struct return: name of the returned struct (e.g. "FetchUserResult")
+    #[serde(default)]
+    ret_struct_name: Option<String>,
+    /// Struct return: fields of the returned struct (for generating #[repr(C)] struct)
+    #[serde(default)]
+    ret_struct_fields: Option<Vec<CabiStructField>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CabiStructField {
+    name: String,
+    /// C ABI type string (for FFI)
+    cabi_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,14 +331,37 @@ fn type_name_to_host_type(name: &str) -> js2zig_core::HostType {
 fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
+    let mut struct_defs = Vec::new();
     let mut needs_jsstr = false;
 
     let raw_mod = format_ident!("__js2rust_ffi_raw_{group_suffix}");
     let safe_mod = format_ident!("__js2rust_ffi_safe_{group_suffix}");
 
+    // Collect struct definitions from ret_struct_name/ret_struct_fields
+    for exp in exports {
+        if let (Some(struct_name), Some(fields)) = (&exp.ret_struct_name, &exp.ret_struct_fields) {
+            if fields.is_empty() {
+                continue;
+            }
+            let struct_ident = format_ident!("{}", struct_name);
+            let mut field_defs = Vec::new();
+            for f in fields {
+                let field_name = format_ident!("{}", f.name);
+                let field_ty = cabi_type_to_rust_ffi(&f.cabi_type);
+                field_defs.push(quote! { pub #field_name: #field_ty });
+            }
+            struct_defs.push(quote! {
+                #[repr(C)]
+                #[derive(Debug, Copy, Clone)]
+                pub struct #struct_ident {
+                    #(#field_defs),*
+                }
+            });
+        }
+    }
+
     for exp in exports {
         let fn_name = format_ident!("{}", exp.name);
-        let free_fn_name = format_ident!("free_{}", exp.name);
 
         let mut extern_params = Vec::new();
         for param in &exp.params {
@@ -334,24 +370,29 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             extern_params.push(quote! { #param_ident: #param_ty });
         }
 
-        // For non-StrRet can_throw functions: add err_out parameter
-        let has_err_out = exp.can_throw && exp.ret_type != "StrRet";
-        if has_err_out {
-            extern_params.push(quote! { err_out: *mut *const std::ffi::c_char });
+        // Struct return: use out-pointer parameter
+        if let Some(ret_struct_name) = &exp.ret_struct_name {
+            let struct_name = format_ident!("{}", ret_struct_name);
+            extern_params.push(quote! { out: *mut #struct_name });
+            extern_fns.push(quote! {
+                pub fn #fn_name( #(#extern_params),* );
+            });
+        } else {
+            // Non-struct return: normal C ABI
+            let has_err_out = exp.can_throw && exp.ret_type != "StrRet";
+            if has_err_out {
+                extern_params.push(quote! { err_out: *mut *const std::ffi::c_char });
+            }
+            let ret_ty = zig_ret_type_to_rust_ffi(&exp.ret_type);
+            extern_fns.push(quote! {
+                pub fn #fn_name( #(#extern_params),* ) -> #ret_ty;
+            });
+            if exp.ret_type == "StrRet" {
+                needs_jsstr = true;
+            }
         }
 
-        let ret_ty = zig_ret_type_to_rust_ffi(&exp.ret_type);
-
-        extern_fns.push(quote! {
-            pub fn #fn_name( #(#extern_params),* ) -> #ret_ty;
-        });
-
-        if exp.ret_type == "StrRet" {
-            needs_jsstr = true;
-        }
-
-        let safe_wrapper =
-            generate_safe_wrapper(exp, &fn_name, &free_fn_name, &raw_mod, group_suffix, has_err_out);
+        let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &raw_mod, group_suffix);
         safe_wrappers.push(safe_wrapper);
     }
 
@@ -408,6 +449,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     let jsstr_def = if needs_jsstr {
         quote! {
             #[repr(C)]
+            #[derive(Debug, Copy, Clone)]
             pub struct __JsStr { pub ptr: *const u8, pub len: isize }
         }
     } else {
@@ -420,6 +462,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         mod #raw_mod {
             #jsstr_def
+            #(#struct_defs)*
             unsafe extern "C" {
                 #(#extern_fns)*
             }
@@ -685,15 +728,12 @@ fn host_type_to_rust_cabi_ffi(type_name: &str) -> proc_macro2::TokenStream {
 fn generate_safe_wrapper(
     exp: &CabiExport,
     fn_name: &syn::Ident,
-    free_fn_name: &syn::Ident,
     raw_mod: &syn::Ident,
     group_suffix: &str,
-    has_err_out: bool,
 ) -> proc_macro2::TokenStream {
     let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
-    let needs_jsstr = exp.ret_type == "StrRet";
 
     for param in &exp.params {
         let param_ident = format_ident!("{}", param.name);
@@ -701,6 +741,30 @@ fn generate_safe_wrapper(
         safe_params.push(quote! { #param_ident: #safe_ty });
         ffi_args.push(convert_safe_to_ffi(&param.zig_type, &param_ident));
     }
+
+    // Struct return: use out-pointer
+    if let Some(ref struct_name) = exp.ret_struct_name {
+        let struct_ident = format_ident!("{}", struct_name);
+        let ret_ty = quote! { #raw_mod::#struct_ident };
+        let call_expr = quote! {
+            {
+                let mut result: #raw_mod::#struct_ident = unsafe { std::mem::zeroed() };
+                unsafe { super::#raw_mod::#fn_name(#(#ffi_args),* , &mut result) };
+                result
+            }
+        };
+        return quote! {
+            #[allow(non_snake_case)]
+            pub fn #wrapper_name( #(#safe_params),* ) -> #ret_ty {
+                ensure_initialized();
+                #call_expr
+            }
+        };
+    }
+
+    // Non-struct returns
+    let needs_jsstr = exp.ret_type == "StrRet";
+    let has_err_out = exp.can_throw && exp.ret_type != "StrRet" && exp.ret_struct_name.is_none();
 
     let (ret_ty, call_expr) = if needs_jsstr {
         (
@@ -728,55 +792,6 @@ fn generate_safe_wrapper(
                 }
             },
         )
-    } else if exp.ret_type == "[]const u8" {
-        if has_err_out {
-            let mut all_ffi_args: Vec<proc_macro2::TokenStream> = ffi_args.clone();
-            all_ffi_args.push(quote! { &mut err_ptr });
-            (
-                quote! { Result<String, String> },
-                quote! {
-                    {
-                        let mut err_ptr: *const std::ffi::c_char = std::ptr::null();
-                        let ptr = unsafe { super::#raw_mod::#fn_name(#(#all_ffi_args),*) };
-                        if !err_ptr.is_null() {
-                            let err_msg = unsafe { std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().into_owned() };
-                            return Err(err_msg);
-                        }
-                        if ptr.is_null() {
-                            Ok(String::new())
-                        } else {
-                            let s = unsafe {
-                                std::ffi::CStr::from_ptr(ptr)
-                                    .to_string_lossy()
-                                    .into_owned()
-                            };
-                            unsafe { super::#raw_mod::#free_fn_name(ptr as *mut std::ffi::c_void) };
-                            Ok(s)
-                        }
-                    }
-                },
-            )
-        } else {
-            (
-                quote! { String },
-                quote! {
-                    {
-                        let ptr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
-                        if ptr.is_null() {
-                            String::new()
-                        } else {
-                            let s = unsafe {
-                                std::ffi::CStr::from_ptr(ptr)
-                                    .to_string_lossy()
-                                    .into_owned()
-                            };
-                            unsafe { super::#raw_mod::#free_fn_name(ptr as *mut std::ffi::c_void) };
-                            s
-                        }
-                    }
-                },
-            )
-        }
     } else if has_err_out {
         let rust_ret = zig_ret_type_to_rust_safe(&exp.ret_type);
         let rust_ret_wrapped = match exp.ret_type.as_str() {
@@ -876,6 +891,18 @@ fn zig_ret_type_to_rust_safe(ret_type: &str) -> proc_macro2::TokenStream {
         "f64" => quote! { f64 },
         "bool" => quote! { bool },
         "void" => quote! { () },
+        _ => quote! { *mut std::ffi::c_void },
+    }
+}
+
+/// Convert C ABI type string to Rust FFI type (for struct fields).
+fn cabi_type_to_rust_ffi(cabi_type: &str) -> proc_macro2::TokenStream {
+    match cabi_type {
+        "i64" => quote! { i64 },
+        "f64" => quote! { f64 },
+        "bool" => quote! { bool },
+        "StrRet" => quote! { __JsStr },
+        "struct" => quote! { *mut std::ffi::c_void }, // Should not happen for struct fields
         _ => quote! { *mut std::ffi::c_void },
     }
 }

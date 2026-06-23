@@ -25,6 +25,12 @@ pub struct NativeCabiExport {
     /// Whether this function can throw (contains throw/try-catch).
     /// When true, C ABI wrappers generate error propagation (StrRet sign-bit or _err out-param).
     pub can_throw: bool,
+    /// For async functions returning a struct: the struct name (e.g., "FetchUserResult").
+    /// Set when `ret_type` is `ZigType::NamedStruct(name)`.
+    pub ret_struct_name: Option<String>,
+    /// For async functions returning a struct: the struct fields as (name, zig_type) pairs.
+    /// Used by js2rust-bridge-macro to generate the #[repr(C)] struct.
+    pub ret_struct_fields: Option<Vec<(String, String)>>,
 }
 
 /// Diagnostic severity level.
@@ -116,14 +122,15 @@ impl ZigType {
     }
 
     /// Get the Zig type string for code generation.
-    pub fn to_zig_type(&self) -> String {
+    /// `in_host_module`: if true, do NOT add "host." prefix (used when generating host.zig).
+    pub fn to_zig_type(&self, in_host_module: bool) -> String {
         match self {
             ZigType::Void => "void".to_string(),
             ZigType::I64 => "i64".to_string(),
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
             ZigType::Str => "[]const u8".to_string(),
-            ZigType::ArrayList(inner) => format!("std.ArrayList({})", inner.to_zig_type()),
+            ZigType::ArrayList(inner) => format!("std.ArrayList({})", inner.to_zig_type(in_host_module)),
             ZigType::Struct(fields) => {
                 // Generate anonymous struct type.
                 let mut s = ".{ ".to_string();
@@ -131,12 +138,18 @@ impl ZigType {
                     if i > 0 {
                         s.push_str(", ");
                     }
-                    s.push_str(&format!(".{} = {}", name, ty.to_zig_type()));
+                    s.push_str(&format!(".{} = {}", name, ty.to_zig_type(in_host_module)));
                 }
                 s.push_str(" }");
                 s
             }
-            ZigType::NamedStruct(name) => name.clone(),
+            ZigType::NamedStruct(name) => {
+                if in_host_module {
+                    name.clone()
+                } else {
+                    format!("host.{}", name)
+                }
+            }
             ZigType::Anytype => "anytype".to_string(),
         }
     }
@@ -288,12 +301,20 @@ fn transpile_js_inner(
                     .map(|(i, p)| (format!("arg{}", i), p.clone()))
                     .collect();
                 let is_async = cg.type_info.is_async.get(&ef.name).copied().unwrap_or(false);
+                // Extract struct name if return type is NamedStruct
+                let ret_struct_name = if let crate::native_proto::ZigType::NamedStruct(ref s) = ef.return_type {
+                    Some(s.clone())
+                } else {
+                    None
+                };
                 NativeCabiExport {
                     name: ef.name,
                     params,
                     ret_type: ef.return_type,
                     is_async,
                     can_throw: ef.can_throw,
+                    ret_struct_name,
+                    ret_struct_fields: None, // populated from host_fns in pipeline.rs
                 }
             })
             .collect(),

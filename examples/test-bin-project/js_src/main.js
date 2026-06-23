@@ -57,6 +57,9 @@ export function useHostStrlen(s) {
 
 // ── Async host function example ──
 
+/**
+ * @param {string} name
+ */
 export async function getUserInfo(name) {
     return await fetch_user(name);
 }
