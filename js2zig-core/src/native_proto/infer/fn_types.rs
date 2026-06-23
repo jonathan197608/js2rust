@@ -89,13 +89,36 @@ impl TypeInferrer {
         fn_name: &str,
         is_export: bool,
     ) -> InferResult {
-        // Export function: require @returns annotation
+        // Export function: try @returns annotation FIRST
         if is_export {
             if let Some(ty) = self.lookup_jsdoc_return_type(fn_name) {
                 return InferResult::Definite(ty);
             }
+            // No @returns — try infer from return expressions (handles async host functions)
+            let return_exprs = Self::collect_return_exprs(fd);
+            if !return_exprs.is_empty() {
+                let mut ty: Option<ZigType> = None;
+                for expr in &return_exprs {
+                    let expr_ty = self.infer_expr_type(expr);
+                    match (&ty, &expr_ty) {
+                        (None, InferResult::Definite(et)) => ty = Some(et.clone()),
+                        (Some(t), InferResult::Definite(et)) if *t != *et => {
+                            self.errors.push(format!(
+                                "Return type mismatch in '{}': expected {:?}, found {:?}",
+                                fn_name, t, et
+                            ));
+                            return InferResult::Indeterminate;
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(definite_ty) = ty {
+                    return InferResult::Definite(definite_ty);
+                }
+            }
+            // Still can't infer — report error and default
             self.errors.push(format!(
-                "Export function '{}' must have @returns annotation",
+                "Export function '{}' must have @returns annotation (or return a value that can be inferred)",
                 fn_name
             ));
             return InferResult::Definite(ZigType::Str); // default for export
@@ -110,8 +133,6 @@ impl TypeInferrer {
         let mut ty: Option<ZigType> = None;
         for expr in &return_exprs {
             let expr_ty = self.infer_expr_type(expr);
-            // DEBUG: print return expression type
-            // eprintln!("DEBUG infer_fn_return_type: fn={} expr={:?} ty={:?}", fn_name, expr, expr_ty);
             match (&ty, &expr_ty) {
                 (None, InferResult::Definite(et)) => ty = Some(et.clone()),
                 (Some(t), InferResult::Definite(et)) if *t != *et => {
