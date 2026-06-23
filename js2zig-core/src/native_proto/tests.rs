@@ -442,12 +442,12 @@ function sum(arr) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_for_of");
-        // NOTE: Currently native_proto has type inference bug for for-of loops.
-        // The generated code has type errors (total: []const u8, using ++ for i64).
-        // TODO: Fix type inference for for-of loops (create issue).
-        // For now, just check that for-loop is generated.
+        println!("=== Generated Zig (test_native_proto_for_of) ===\n{}", zig);
         assert!(zig.contains("for ("), "missing for: {}", zig);
         assert!(zig.contains("return total;"));
+        // Verify type inference: total should be i64, not []const u8
+        assert!(zig.contains("var total: i64 = 0;"), "Expected 'var total: i64 = 0;':\n{}", zig);
+        assert_zig_ast_check(&zig, "test_native_proto_for_of");
     }
 
     #[test]
