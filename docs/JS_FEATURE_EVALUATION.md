@@ -3,7 +3,7 @@
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-23
 > **代码版本**: main branch (1651070)
-> **测试覆盖**: 145 个 Rust 测试 (122 native_proto + 9 jsdoc + 7 parser + 4 sourcemap + 3 testgen) + 3 个示例项目
+> **测试覆盖**: 153 个 Rust 测试 (135 native_proto + 9 jsdoc + 7 parser + 4 sourcemap + 3 testgen 等) + 3 个示例项目
 
 ---
 
@@ -15,7 +15,7 @@
 | **完全实现** | ~85 | ~57% |
 | **部分实现** | ~5 | ~3% |
 | **未实现（@compileError）** | ~60 | ~40% |
-| **测试覆盖** | 145 个 Rust 测试 (122 native_proto + 23 其他) | - |
+| **测试覆盖** | 153 个 Rust 测试 (135 native_proto + 23 其他) | - |
 
 **更新说明** (2026-06-24):
 - 修正了 5 个不准确的状态标记（`instanceof`, `void`, `delete`, `obj[key]`, `Date.UTC()`）
@@ -410,24 +410,26 @@
 | `JSON.stringify(obj)` | ✅ | `js_json.stringify(alloc, obj)` | 隐式测试 |
 | `JSON.parse(str)` | ✅ | `js_json.parse(alloc, str)` | `parseUserJson` 测试 |
 
-### 4.8 `Date` - 🚧 90% 实现
+### 4.8 `Date` - ✅ 已实现（UTC 语义，非本地时区）
 
 | 方法 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `Date.now()` | ✅ | `std.time.milliTimestamp()` (Zig 0.16.0 兼容) | showcase-project |
-| `date.getTime()` | ✅ | `date.getTime()` | 未测试 |
-| `date.getFullYear()` | ✅ | `date.getFullYear()` | 同上 |
-| `date.getMonth()` | ✅ | `date.getMonth()` | 同上 |
-| `date.getDate()` | ✅ | `date.getDate()` | 同上 |
-| `date.getDay()` | ✅ | `date.getDay()` | 同上 |
-| `date.getHours()` | ✅ | `date.getHours()` | 同上 |
-| `date.getMinutes()` | ✅ | `date.getMinutes()` | 同上 |
-| `date.getSeconds()` | ✅ | `date.getSeconds()` | 同上 |
+| `Date.now()` | ✅ | 跨平台 `milliTimestamp()` (Windows/POSIX) | showcase-project |
+| `date.getTime()` | ✅ | `date.getTime()` | showcase-project |
+| `date.getFullYear()` | ✅ | `calcFullYear()` (公历推算) | showcase-project |
+| `date.getMonth()` | ✅ | `calcMonth()` (近似：day_of_year*12/365) | showcase-project |
+| `date.getDate()` | ✅ | `calcDate()` (近似：day_of_year+1) | showcase-project |
+| `date.getDay()` | ✅ | `calcDay()` (epoch=周四，精确) | showcase-project |
+| `date.getHours()` | ✅ | `calcHours()` (UTC，非本地时区) | showcase-project |
+| `date.getMinutes()` | ✅ | `calcMinutes()` (UTC) | showcase-project |
+| `date.getSeconds()` | ✅ | `calcSeconds()` (UTC) | showcase-project |
 | `Date.UTC(y, m, d, ...)` | ❌ | `@compileError("Date.UTC is not yet implemented")` | - |
 
-**注意**:
+**已知限制**:
+- **时区：所有 getHours/getMinutes/getSeconds 返回 UTC 时间**，非 JS 标准的本地时区。等效于 JS `getUTCHours()` 等。2026-06-21 通过 6 个新增测试（含非 epoch 时间戳和组合测试）验证
+- `calcMonth()`/`calcDate()` 使用简化近似（每年 365 天），对非一月日期可能不准
 - `Date.UTC()` 是静态方法，当前生成编译错误
-- **时区处理未验证**：JS `Date` 使用本地时区或 UTC，Zig `std.time` 可能使用不同的时区表示，需要创建测试用例验证
+- `Date.parse()` 为桩实现（返回 0）
 
 ### 4.9 `Number` - ✅ 100% 实现
 

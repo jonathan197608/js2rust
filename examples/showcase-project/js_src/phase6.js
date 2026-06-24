@@ -240,6 +240,70 @@ export function testDateNowStatic() {
     return -1;
 }
 
+// ── Date.getMinutes / getSeconds (UTC) ───────────────
+/**
+ * @returns {i64}
+ */
+export function testDateGetMinutes() {
+    // epoch + 1min + 1sec → 61 seconds → 1 minute
+    if (new Date(61000).getMinutes() === 1) { return 0; }
+    return -1;
+}
+
+// ── Date.getSeconds ───────────────────────────────────
+/**
+ * @returns {i64}
+ */
+export function testDateGetSeconds() {
+    // epoch + 1min + 1sec → 61 seconds → 1 second
+    if (new Date(61000).getSeconds() === 1) { return 0; }
+    return -1;
+}
+
+// ── Date.getMinutes / getSeconds at epoch ─────────────
+/**
+ * @returns {i64}
+ */
+export function testDateMinutesEpoch() {
+    if (new Date(0).getMinutes() === 0) { return 0; }
+    return -1;
+}
+
+/**
+ * @returns {i64}
+ */
+export function testDateSecondsEpoch() {
+    if (new Date(0).getSeconds() === 0) { return 0; }
+    return -1;
+}
+
+// ── Date composite: 1970-01-01T12:34:56Z ─────────────
+/**
+ * @returns {i64}
+ */
+export function testDateComposite() {
+    // 45296000 ms = 12h 34m 56s since epoch
+    const d = new Date(45296000);
+    if (d.getHours() === 12 && d.getMinutes() === 34 && d.getSeconds() === 56) {
+        return 0;
+    }
+    return -1;
+}
+
+// ── Date getDay stress test ───────────────────────────
+/**
+ * @returns {i64}
+ */
+export function testDateGetDayVerify() {
+    // 1970-01-01 = Thursday (4)
+    if (new Date(0).getDay() !== 4) { return -1; }
+    // 1970-01-05 = Monday (1), 4 days * 86400000
+    if (new Date(345600000).getDay() !== 1) { return -1; }
+    // 1970-01-06 = Tuesday (2), 5 days * 86400000
+    if (new Date(432000000).getDay() !== 2) { return -1; }
+    return 0;
+}
+
 // ════════════════════════════════════════════════════════════════
 // ── Category 4: Number (parseInt) ──────────────────────────────
 // ════════════════════════════════════════════════════════════════

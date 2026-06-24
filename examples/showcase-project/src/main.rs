@@ -156,6 +156,24 @@ fn main() {
     let d_now_s = testDateNowStatic_app();
     println!("  testDateNowStatic() = {} (expected 0)", d_now_s);
 
+    let d_min = testDateGetMinutes_app();
+    println!("  testDateGetMinutes() = {} (expected 0)", d_min);
+
+    let d_sec = testDateGetSeconds_app();
+    println!("  testDateGetSeconds() = {} (expected 0)", d_sec);
+
+    let d_min_e = testDateMinutesEpoch_app();
+    println!("  testDateMinutesEpoch() = {} (expected 0)", d_min_e);
+
+    let d_sec_e = testDateSecondsEpoch_app();
+    println!("  testDateSecondsEpoch() = {} (expected 0)", d_sec_e);
+
+    let d_comp = testDateComposite_app();
+    println!("  testDateComposite() = {} (expected 0)", d_comp);
+
+    let d_day_v = testDateGetDayVerify_app();
+    println!("  testDateGetDayVerify() = {} (expected 0)", d_day_v);
+
     // ── Number methods ──
     let pi = testParseInt_app();
     println!("  testParseInt() = {} (expected 0)", pi);
