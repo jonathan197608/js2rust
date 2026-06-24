@@ -251,6 +251,22 @@ fn main() {
     let dae = testDestructureArrDefaultEmpty_app();
     println!("  testDestructureArrDefaultEmpty() = {} (expected 1)", dae);
 
+    // ════════════════════════════════════════════════════════════
+    // Class support tests
+    println!("\n=== Class Support Tests ===");
+
+    let ra = testRectArea_app();
+    println!("  testRectArea() = {} (expected 12)", ra);
+
+    let rp = testRectPerim_app();
+    println!("  testRectPerim() = {} (expected 60)", rp);
+
+    let uid = testUserId_app();
+    println!("  testUserId() = {} (expected 42)", uid);
+
+    let unl = testUserNameLength_app();
+    println!("  testUserNameLength() = {} (expected 1)", unl);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }
