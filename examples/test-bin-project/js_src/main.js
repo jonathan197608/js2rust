@@ -63,3 +63,76 @@ export function useHostStrlen(s) {
 export async function getUserInfo(name) {
     return await fetch_user(name);
 }
+
+// ── Try-catch nesting tests ──
+
+/**
+ * @returns {number}
+ */
+export function testNestedTryCatch() {
+    let result = 0;
+    try {
+        try {
+            result = 1;
+            throw "inner error";
+        } catch (e) {
+            // Inner catch: should receive "inner error"
+            result = 2;
+        } finally {
+            // Inner finally: should always run
+            result = result + 10;
+        }
+    } catch (e) {
+        // Outer catch: should not be reached (inner catch handled the error)
+        result = 100;
+    } finally {
+        // Outer finally: should always run
+        result = result + 1000;
+    }
+    return result; // Expected: 2 + 10 + 1000 = 1012
+}
+
+/**
+ * @returns {number}
+ */
+export function testNestedTryCatchWithThrow() {
+    let result = 0;
+    try {
+        try {
+            result = 1;
+            throw "inner error";
+        } catch (e) {
+            // Inner catch: handle error, don't re-throw
+            result = 2;
+        } finally {
+            // Inner finally: should always run
+            result = result + 10;
+        }
+    } catch (e) {
+        // Outer catch: should not be reached (inner catch handled the error)
+        result = 100;
+    } finally {
+        // Outer finally: should always run
+        result = result + 1000;
+    }
+    return result; // Expected: 2 + 10 + 1000 = 1012
+}
+
+/**
+ * @returns {number}
+ */
+export function testTryCatchWithResource() {
+    let result = 0;
+    try {
+        const x = 42;
+        try {
+            const y = x + 1;
+            result = y;
+        } catch (e) {
+            result = 0;
+        }
+    } catch (e) {
+        result = -1;
+    }
+    return result; // Expected: 43
+}

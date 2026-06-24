@@ -54,4 +54,21 @@ fn main() {
 
     // Cleanup
     js2rust_deinit();
+
+    // ── Try-catch nesting tests ─────────────────────────────
+    println!("\n── Try-catch nesting tests ──");
+    let r1 = testNestedTryCatch_main().unwrap();
+    println!("testNestedTryCatch_main() = {} (expected: 1012)", r1);
+    assert_eq!(r1, 1012);
+
+    let r2 = testNestedTryCatchWithThrow_main().unwrap();
+    println!(
+        "testNestedTryCatchWithThrow_main() = {} (expected: 1012)",
+        r2
+    );
+    assert_eq!(r2, 1012);
+
+    let r3 = testTryCatchWithResource_main().unwrap();
+    println!("testTryCatchWithResource_main() = {} (expected: 43)", r3);
+    assert_eq!(r3, 43);
 }

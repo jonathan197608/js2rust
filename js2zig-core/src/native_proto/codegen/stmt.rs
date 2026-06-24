@@ -713,10 +713,18 @@ impl Codegen {
                 //   A) Try body has throw → labeled block + catch handler (real semantics)
                 //   B) Try body has no throw → emit body inline, skip catch (unreachable)
 
-                // Pre-scan: does the try body contain throw statements?
+                // Pre-scan: does the try body contain throw statements,
+                // or is there a catch handler (need to generate catch code path)?
+                // Also check for nested try-catch (which might re-throw).
                 let has_throw = ts.block.body.iter().any(|s| Self::stmt_has_throw_any(s));
+                let needs_catch = ts.handler.is_some();
+                let has_nested_try = ts
+                    .block
+                    .body
+                    .iter()
+                    .any(|s| matches!(s, Statement::TryStatement(_)));
 
-                if !has_throw && ts.handler.is_none() {
+                if !has_throw && !needs_catch && !has_nested_try {
                     // Case B1 (finally only, no throw, no catch):
                     // emit body, then emit finally inline after (not defer).
                     for stmt in &ts.block.body {
@@ -730,21 +738,8 @@ impl Codegen {
                     return; // caller continues
                 }
 
-                if !has_throw {
-                    // Case B2 (with catch handler, no throw):
-                    // emit body, emit finally inline after, handler unreachable.
-                    for stmt in &ts.block.body {
-                        self.emit_fn_stmt(stmt);
-                    }
-                    if let Some(ref finalizer) = ts.finalizer {
-                        for stmt in &finalizer.body {
-                            self.emit_fn_stmt(stmt);
-                        }
-                    }
-                    return; // caller continues
-                }
-
-                // Case A: try body has throw → full labeled block + catch handler
+                // Case A: try body has throw, or has catch handler, or has nested try-catch
+                // → always generate labeled block + catch handler for correctness
 
                 let label_id = self.try_label_counter;
                 self.try_label_counter += 1;
@@ -804,9 +799,13 @@ impl Codegen {
                         }
                     }
 
+                    // Clear inside_try_block so that `throw` in catch body
+                    // generates `return error.JsThrow` (not `break :label` which is invalid).
+                    let saved_inside_try = self.inside_try_block.take();
                     for stmt in &handler.body.body {
                         self.emit_fn_stmt(stmt);
                     }
+                    self.inside_try_block = saved_inside_try;
 
                     self.indent -= 1;
                     self.write_indent();
