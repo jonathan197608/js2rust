@@ -356,9 +356,8 @@ impl TypeInferrer {
     pub(crate) fn infer_array_method_return(&self, method: &str, elem_ty: &ZigType) -> InferResult {
         match method {
             // Methods that return a new array (same element type)
-            "slice" | "map" | "filter" | "concat" | "reverse" | "sort" | "splice" | "flat" => {
-                InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone())))
-            }
+            "slice" | "map" | "filter" | "concat" | "reverse" | "sort" | "splice" | "flat"
+            | "flatMap" => InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone()))),
             // Methods that return a boolean
             "some" | "every" | "includes" => InferResult::Definite(ZigType::Bool),
             // Methods returning index or length
@@ -413,7 +412,7 @@ impl TypeInferrer {
             ZigType::Str => match method {
                 "indexOf" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
-                "trim" | "split" => InferResult::Definite(ZigType::Str),
+                "trim" | "split" | "padStart" | "padEnd" => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
             _ => InferResult::Indeterminate,

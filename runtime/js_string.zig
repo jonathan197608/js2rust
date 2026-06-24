@@ -177,6 +177,39 @@ pub fn repeat(alloc: Allocator, s: []const u8, n: i64) ![]const u8 {
     return result;
 }
 
+/// Pad the start of a string to reach target_len using pad_str repeated.
+pub fn padStart(alloc: Allocator, s: []const u8, target_len: i64, pad_str: []const u8) ![]const u8 {
+    const target: usize = @intCast(@max(0, target_len));
+    if (s.len >= target or pad_str.len == 0) return try alloc.dupe(u8, s);
+    const pad_needed = target - s.len;
+    const result = try alloc.alloc(u8, target);
+    var written: usize = 0;
+    while (written < pad_needed) {
+        const rem = pad_needed - written;
+        const chunk = @min(rem, pad_str.len);
+        @memcpy(result[written..][0..chunk], pad_str[0..chunk]);
+        written += chunk;
+    }
+    @memcpy(result[pad_needed..], s);
+    return result;
+}
+
+/// Pad the end of a string to reach target_len using pad_str repeated.
+pub fn padEnd(alloc: Allocator, s: []const u8, target_len: i64, pad_str: []const u8) ![]const u8 {
+    const target: usize = @intCast(@max(0, target_len));
+    if (s.len >= target or pad_str.len == 0) return try alloc.dupe(u8, s);
+    const result = try alloc.alloc(u8, target);
+    @memcpy(result[0..s.len], s);
+    var written: usize = s.len;
+    while (written < target) {
+        const rem = target - written;
+        const chunk = @min(rem, pad_str.len);
+        @memcpy(result[written..][0..chunk], pad_str[0..chunk]);
+        written += chunk;
+    }
+    return result;
+}
+
 test "toUpper" {
     const result = try toUpper(std.testing.allocator, "hello");
     defer std.testing.allocator.free(result);
@@ -277,4 +310,28 @@ test "charCodeAt surrogate pair" {
     const low = charCodeAt(emoji, 1);
     try std.testing.expectEqual(@as(u16, 0xD83D), high); // High surrogate
     try std.testing.expectEqual(@as(u16, 0xDE00), low); // Low surrogate
+}
+
+test "padStart" {
+    const result = try padStart(std.testing.allocator, "42", 5, "0");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("00042", result);
+}
+
+test "padStart no-op" {
+    const result = try padStart(std.testing.allocator, "hello", 3, ".");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("hello", result);
+}
+
+test "padEnd" {
+    const result = try padEnd(std.testing.allocator, "hello", 10, ".");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("hello.....", result);
+}
+
+test "padEnd no-op" {
+    const result = try padEnd(std.testing.allocator, "abc", 3, ".");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("abc", result);
 }

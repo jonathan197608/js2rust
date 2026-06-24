@@ -40,6 +40,8 @@ pub enum BuiltinCall {
     ArrayReduce,  // arr.reduce(fn, init)
     ArraySome,    // arr.some(fn)
     ArrayEvery,   // arr.every(fn)
+    ArrayFlat,    // arr.flat()
+    ArrayFlatMap, // arr.flatMap(fn)
 
     // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
     // .slice routed through ArraySlice + typedarray_vars check)
@@ -54,6 +56,8 @@ pub enum BuiltinCall {
     StringEndsWith,   // str.endsWith(suffix)
     StringTrim,       // str.trim()
     StringSplit,      // str.split(sep)
+    StringPadStart,   // str.padStart(len, pad)
+    StringPadEnd,     // str.padEnd(len, pad)
 
     // Map methods (called on local Map variables)
     MapSet,    // map.set(key, value)
@@ -167,6 +171,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "endsWith" => Some(BuiltinCall::StringEndsWith),
             "trim" => Some(BuiltinCall::StringTrim),
             "split" => Some(BuiltinCall::StringSplit),
+            "padStart" => Some(BuiltinCall::StringPadStart),
+            "padEnd" => Some(BuiltinCall::StringPadEnd),
 
             // Methods that exist on both String and Array
             "indexOf" => {
@@ -198,6 +204,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "reduce" => Some(BuiltinCall::ArrayReduce),
             "some" => Some(BuiltinCall::ArraySome),
             "every" => Some(BuiltinCall::ArrayEvery),
+            "flat" => Some(BuiltinCall::ArrayFlat),
+            "flatMap" => Some(BuiltinCall::ArrayFlatMap),
 
             // TypedArray-specific methods (non-overlapping with Array)
             "subarray" => Some(BuiltinCall::TypedArraySubarray),

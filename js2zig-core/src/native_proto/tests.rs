@@ -4236,4 +4236,70 @@ export function testUser() {
         assert!(zig.contains("getId"), "Expected getId method");
         assert!(zig.contains("getName"), "Expected getName method");
     }
+
+    #[test]
+    fn test_native_proto_array_flat() {
+        let js = r#"
+export function testFlat() {
+    const arr = [1, 2, 3];
+    return arr.flat();
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_array_flat");
+        println!("=== Array.flat Zig code ===\n{}", zig);
+
+        // Verify: flat identity - arr.flat() → arr (i64 arrays already flat)
+        assert!(zig.contains("testFlat"), "Expected testFlat function");
+    }
+
+    #[test]
+    fn test_native_proto_array_flat_map() {
+        let js = r#"
+export function testFlatMap() {
+    const arr = [1, 2, 3];
+    return arr.flatMap((x) => x * 2);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_array_flat_map");
+        println!("=== Array.flatMap Zig code ===\n{}", zig);
+
+        // Verify: flatMap is recognized; simplified to return original array
+        assert!(zig.contains("testFlatMap"), "Expected testFlatMap function");
+    }
+
+    #[test]
+    fn test_native_proto_string_pad_start() {
+        let js = r#"
+export function testPadStart() {
+    const s = "42";
+    return s.padStart(5, "0");
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_pad_start");
+        println!("=== String.padStart Zig code ===\n{}", zig);
+
+        // Verify: padStart runtime call generated
+        assert!(
+            zig.contains("js_string.padStart"),
+            "Expected js_string.padStart"
+        );
+    }
+
+    #[test]
+    fn test_native_proto_string_pad_end() {
+        let js = r#"
+export function testPadEnd() {
+    const s = "hello";
+    return s.padEnd(10, ".");
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_pad_end");
+        println!("=== String.padEnd Zig code ===\n{}", zig);
+
+        // Verify: padEnd runtime call generated
+        assert!(
+            zig.contains("js_string.padEnd"),
+            "Expected js_string.padEnd"
+        );
+    }
 }

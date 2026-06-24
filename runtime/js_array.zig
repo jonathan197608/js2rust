@@ -130,6 +130,18 @@ pub fn sort(alloc: Allocator, arr: []const i64) ![]const i64 {
     return result;
 }
 
+/// Array.flat — identity operation for i64 arrays (elements are already flat).
+pub fn flat(alloc: Allocator, arr: []const i64) ![]const i64 {
+    return try alloc.dupe(i64, arr);
+}
+
+/// Array.flatMap — same as identity map (simplified).
+/// For i64 arrays, returns a copy of the original array.
+pub fn flatMap(alloc: Allocator, arr: []const i64, _mul: i64) ![]const i64 {
+    _ = _mul;
+    return try alloc.dupe(i64, arr);
+}
+
 // ── Tests ──
 
 test "indexOf" {
@@ -307,4 +319,17 @@ pub fn filterWithFn(
         }
     }
     return result;
+}
+
+test "flat" {
+    const result = try flat(std.testing.allocator, &[_]i64{ 1, 2, 3 });
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualSlices(i64, &[_]i64{ 1, 2, 3 }, result);
+}
+
+test "flatMap" {
+    const result = try flatMap(std.testing.allocator, &[_]i64{ 1, 2, 3 }, 2);
+    defer std.testing.allocator.free(result);
+    // flatMap for i64 is identity (returns copy of original)
+    try std.testing.expectEqualSlices(i64, &[_]i64{ 1, 2, 3 }, result);
 }

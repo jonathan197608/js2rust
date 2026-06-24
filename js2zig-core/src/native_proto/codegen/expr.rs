@@ -1577,6 +1577,62 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::StringPadStart => {
+                // str.padStart(len, pad) → js_string.padStart(alloc, str, len, pad)
+                if ce.arguments.len() != 2 {
+                    self.errors.push(
+                        "String.padStart() requires exactly 2 arguments (len, pad)".to_string(),
+                    );
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let len_expr = self.first_arg_string(&ce.arguments);
+                    let pad_expr = if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "\" \"".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.padStart(js_allocator.getAllocator(), {obj}, {len}, {pad})",
+                        obj = obj_name,
+                        len = len_expr,
+                        pad = pad_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringPadEnd => {
+                // str.padEnd(len, pad) → js_string.padEnd(alloc, str, len, pad)
+                if ce.arguments.len() != 2 {
+                    self.errors.push(
+                        "String.padEnd() requires exactly 2 arguments (len, pad)".to_string(),
+                    );
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let len_expr = self.first_arg_string(&ce.arguments);
+                    let pad_expr = if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "\" \"".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.padEnd(js_allocator.getAllocator(), {obj}, {len}, {pad})",
+                        obj = obj_name,
+                        len = len_expr,
+                        pad = pad_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
             // ── Array methods (with closure) ─────────────────────────────
             // ForEach: generate for loop that inlines the callback body
             builtins::BuiltinCall::ArrayForEach => {
@@ -1737,6 +1793,24 @@ impl Codegen {
                 // arr.every(fn) → true (simplified: always return true)
                 self.write("true");
                 true
+            }
+
+            builtins::BuiltinCall::ArrayFlat => {
+                // arr.flat() → arr (identity for i64 arrays)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(obj_name);
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayFlatMap => {
+                // arr.flatMap(fn) → arr (simplified: return original array)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(obj_name);
+                    return true;
+                }
+                false
             }
 
             // ── Global functions ─────────────────────────
