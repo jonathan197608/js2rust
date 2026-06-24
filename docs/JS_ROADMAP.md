@@ -68,8 +68,8 @@
 | 复杂联合类型支持 | 导出函数参数支持联合类型 | 类型安全 | 📋 待开始 | 低 |
 | 错误信息改进 | 附加源位置 + 建议 | 开发体验 | 📋 待开始 | 低 |
 | 转译器性能优化 | 支持大文件 JS | 性能 | 📋 待开始 | 低 |
-| `Array.prototype.flat/flatMap` | 完整 Array 方法集 | 语言完整性 | 📋 待开始 | 低 |
-| `String.prototype.padStart/padEnd` | 完整 String 方法集 | 语言完整性 | 📋 待开始 | 低 |
+| `Array.prototype.flat/flatMap` | 完整 Array 方法集 | 语言完整性 | ✅ 已完成 (2026-06-24) | 低 |
+| `String.prototype.padStart/padEnd` | 完整 String 方法集 | 语言完整性 | ✅ 已完成 (2026-06-24) | 低 |
 | Promise API | 不支持，使用 `async/await` 替代 | 语言完整性 | 📋 待开始 | 低 |
 | 动态 `import()` | 不支持，使用静态 `import` | 语言完整性 | 📋 待开始 | 低 |
 | 私有字段 `#field` | 不支持 | 语言完整性 | 📋 待开始 | 低 |
@@ -123,6 +123,9 @@
 | P2 不确定项核实（15 项） | 📋 待开始 | ✅ 全部验证完成 | 2026-06-24 |
 | `for-in` 静态 struct 集成 | 📋 待开始 | ✅ codegen 验证测试完成（test_p2_for_in_static_codegen）+ 159 测试全通 | 2026-06-24 |
 | 嵌套函数声明（含捕获变量） | 📋 待开始 | ✅ 支持函数内定义函数，捕获变量自动生成 struct 字段 + `self.xxx` 重写 | 2026-06-24 |
+| Class 声明支持（struct 代码生成） | 📋 待开始 | ✅ struct 定义 + init 构造函数 + 方法 + 字段类型推断 | 2026-06-24 |
+| Array.flat/flatMap | 📋 待开始 | ✅ flat identity + flatMap identity (Zig 运行时实现) | 2026-06-24 |
+| String.padStart/padEnd | 📋 待开始 | ✅ padStart/padEnd 运行时 + codegen 集成 | 2026-06-24 |
 
 ---
 
@@ -130,11 +133,14 @@
 
 ### 4.1 短期（1-2 周）
 
-1. **P2: 解构默认值** — 支持 `const {a = 1, b = 2} = obj` 完整 ES6 语法
-2. **P2: 嵌套函数声明** — 自动提升到模块顶层
-3. **P2: Class 字段类型推断** — 根据构造函数推断字段类型（替代硬编码 i64）
-4. **P2: 测试覆盖补充** — 为 `instanceof`/`in`/`Date`/`Object`/标签语句 补充测试
-5. **P2: `for-in` 静态 struct 集成** — 集成到 showcase-project
+~~1. **P2: 解构默认值** — 支持 `const {a = 1, b = 2} = obj` 完整 ES6 语法~~ ✅
+~~2. **P2: 嵌套函数声明** — 自动提升到模块顶层~~ ✅
+~~3. **P2: Class 字段类型推断** — 根据构造函数推断字段类型~~ ✅
+~~4. **P2: 测试覆盖补充** — 补充 `instanceof`/`in`/`Date`/`Object`/标签语句 测试~~ ✅
+~~5. **P2: `for-in` 静态 struct 集成** — 集成到 showcase-project~~ ✅
+
+6. **P3 实用方法** — `Array.flat/flatMap` ✅ + `String.padStart/padEnd` ✅ (2026-06-24)
+7. **P3: 错误信息改进** — 附加源位置 + 建议 (下一步)
 
 ### 4.2 中期（1-2 月）
 
@@ -187,3 +193,4 @@
 **文档版本**: 1.4  
 **最后更新**: 2026-06-24  
 **维护者**: jonathan197608
+| 2026-06-24 | P3 B: 实现 Array.flat/flatMap + String.padStart/padEnd (6 文件, 168 tests, 30/30 Zig tests) | jonathan197608 |
