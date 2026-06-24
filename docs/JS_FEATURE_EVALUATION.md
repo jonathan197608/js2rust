@@ -93,6 +93,8 @@
 **注意**:
 - `typeof` 生成 Zig 类型名（如 `"i64"`），而非 JS `typeof` 的字符串（如 `"number"`）
 - `void` 和 `delete` 在 JS 中是有效运算符，但当前实现不支持
+- `null` 字面量的类型推断返回 `None`（不确定类型），可能导致类型推断错误
+- `undefined` 生成为 `JsAny{ .undefined = {} }`（tagged union），处理正确
 
 ### 2.7 条件（三元）运算符 - ✅ 100% 实现
 
