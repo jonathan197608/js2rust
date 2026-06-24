@@ -149,7 +149,7 @@
 | 对象展开 `{ ...base, k: v }` | ✅ | `blk: { var _tmp = base; ... }` | 隐式测试 |
 | Getter 属性 `{ get x() { ... } }` | ✅ | `.x = <return expr>` | `test_native_proto_getter` |
 | Setter 属性 `{ set x(v) { ... } }` | ✅ | 跳过（不贡献字段） | `test_native_proto_setter_skipped` |
-| 多 spread 合并 `{ ...a, ...b }` | ❌ | 不支持 | - |
+| 多 spread 合并 `{ ...a, ...b }` | ✅ | `spreadMerge(spreadMerge({}, a), b)` | `testSpreadSingle/Multi/Triple/WithInline/Override` |
 
 ### 2.12 模板字面量 - ✅ 100% 实现
 

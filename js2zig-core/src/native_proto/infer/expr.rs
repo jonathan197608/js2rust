@@ -232,34 +232,56 @@ impl TypeInferrer {
     pub(crate) fn infer_object_type(&mut self, oe: &ObjectExpression) -> InferResult {
         let mut fields: Vec<(String, ZigType)> = Vec::new();
         for prop in &oe.properties {
-            let p = match prop {
-                ObjectPropertyKind::ObjectProperty(p) => p,
-                _ => return InferResult::Indeterminate,
-            };
-            let field_name = match &p.key {
-                PropertyKey::StaticIdentifier(id) => id.name.to_string(),
-                PropertyKey::StringLiteral(s) => s.value.to_string(),
-                _ => return InferResult::Indeterminate,
-            };
-            match p.kind {
-                PropertyKind::Init => match self.infer_expr_type(&p.value) {
-                    InferResult::Definite(ft) => fields.push((field_name, ft)),
-                    InferResult::Indeterminate => return InferResult::Indeterminate,
-                },
-                PropertyKind::Get => {
-                    // Getter: infer from return expression in function body
-                    if let Expression::FunctionExpression(func) = &p.value
-                        && let Some(body) = &func.body
-                        && let Some(return_expr) = Self::extract_return_expr(body)
-                    {
-                        match self.infer_expr_type(return_expr) {
-                            InferResult::Definite(ft) => fields.push((field_name, ft)),
-                            InferResult::Indeterminate => return InferResult::Indeterminate,
+            match prop {
+                ObjectPropertyKind::SpreadProperty(s) => {
+                    // Merge the spread source's struct fields into the result.
+                    // Later spreads and inline props override earlier ones on key conflict.
+                    match self.infer_expr_type(&s.argument) {
+                        InferResult::Definite(ZigType::Struct(spread_fields)) => {
+                            for (name, ty) in spread_fields {
+                                fields.retain(|(n, _)| n != &name);
+                                fields.push((name, ty));
+                            }
                         }
+                        _ => return InferResult::Indeterminate,
                     }
                 }
-                PropertyKind::Set => {
-                    // Setter: skip, doesn't contribute a field
+                ObjectPropertyKind::ObjectProperty(p) => {
+                    let field_name = match &p.key {
+                        PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                        PropertyKey::StringLiteral(s) => s.value.to_string(),
+                        _ => return InferResult::Indeterminate,
+                    };
+                    match p.kind {
+                        PropertyKind::Init => match self.infer_expr_type(&p.value) {
+                            InferResult::Definite(ft) => {
+                                // Inline property overrides any spread field with same name
+                                fields.retain(|(n, _)| n != &field_name);
+                                fields.push((field_name, ft));
+                            }
+                            InferResult::Indeterminate => return InferResult::Indeterminate,
+                        },
+                        PropertyKind::Get => {
+                            // Getter: infer from return expression in function body
+                            if let Expression::FunctionExpression(func) = &p.value
+                                && let Some(body) = &func.body
+                                && let Some(return_expr) = Self::extract_return_expr(body)
+                            {
+                                match self.infer_expr_type(return_expr) {
+                                    InferResult::Definite(ft) => {
+                                        fields.retain(|(n, _)| n != &field_name);
+                                        fields.push((field_name, ft));
+                                    }
+                                    InferResult::Indeterminate => {
+                                        return InferResult::Indeterminate;
+                                    }
+                                }
+                            }
+                        }
+                        PropertyKind::Set => {
+                            // Setter: skip, doesn't contribute a field
+                        }
+                    }
                 }
             }
         }

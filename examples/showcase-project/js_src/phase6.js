@@ -275,3 +275,70 @@ export function testObjectKeys() {
     if (Object.keys(obj).length === 3) { return 0; }
     return -1;
 }
+
+// ════════════════════════════════════════════════════════════════
+// ── Category 6: Object spread merge ────────────────────────────
+// Tests: single/multi/triple spread, spread+inline, spread override
+// All returning i64 for C ABI compatibility
+// ════════════════════════════════════════════════════════════════
+
+// ── { ...a } — single spread (identity) ───────────────
+/**
+ * @returns {i64}
+ */
+export function testSpreadSingle() {
+    const a = { x: 1, y: 2 };
+    const result = { ...a };
+    if (result.x === 1 && result.y === 2) { return 0; }
+    return -1;
+}
+
+// ── { ...a, ...b } — two-object spread merge ──────────
+// b's fields override a's fields with the same key
+/**
+ * @returns {i64}
+ */
+export function testSpreadMulti() {
+    const a = { x: 1, y: 2 };
+    const b = { y: 99, z: 3 };
+    const result = { ...a, ...b };
+    if (result.x === 1 && result.y === 99 && result.z === 3) { return 0; }
+    return -1;
+}
+
+// ── { ...a, ...b, ...c } — triple spread ──────────────
+/**
+ * @returns {i64}
+ */
+export function testSpreadTriple() {
+    const a = { x: 1 };
+    const b = { y: 2 };
+    const c = { z: 3 };
+    const result = { ...a, ...b, ...c };
+    if (result.x === 1 && result.y === 2 && result.z === 3) { return 0; }
+    return -1;
+}
+
+// ── { ...a, y: 99, z: 3 } — spread + inline properties
+// Inline props override spread fields with same key
+/**
+ * @returns {i64}
+ */
+export function testSpreadWithInline() {
+    const a = { x: 1, y: 2 };
+    const result = { ...a, y: 99, z: 3 };
+    if (result.x === 1 && result.y === 99 && result.z === 3) { return 0; }
+    return -1;
+}
+
+// ── { ...base, count: 0 } — spread with override
+// Single spread + single inline property override (integer fields only)
+/**
+ * @returns {i64}
+ */
+export function testSpreadOverride() {
+    const base = { count: 100, version: 1 };
+    const result = { ...base, count: 0 };
+    if (result.count === 0 && result.version === 1) { return 0; }
+    return -1;
+}

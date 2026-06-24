@@ -75,37 +75,86 @@ pub fn deinitIo() void {
 
 /// Compute the merged struct type for two anonymous structs.
 /// Fields from B are concatenated after fields from A.
-/// Duplicate field names will cause a compile error.
+/// Build the merged type for spreadMerge: fields from A (not in B) + all fields from B.
+/// Fields from B override conflicting fields from A.
 pub fn SpreadMerge(comptime A: type, comptime B: type) type {
     const a_fields = @typeInfo(A).@"struct".fields;
     const b_fields = @typeInfo(B).@"struct".fields;
-    const total = a_fields.len + b_fields.len;
+
+    // Count fields from A that are NOT overridden by B
+    const keep_count = comptime blk: {
+        var count: usize = 0;
+        for (a_fields) |af| {
+            const duplicate = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break true;
+            } else false;
+            if (!duplicate) count += 1;
+        }
+        break :blk count;
+    };
+    const total = keep_count + b_fields.len;
 
     // Build separate arrays for @Struct (Zig 0.16.0): field_names, field_types, field_attrs.
     const names: [total][]const u8 = blk: {
         var arr: [total][]const u8 = undefined;
-        for (a_fields, 0..) |f, i| { arr[i] = f.name; }
-        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = f.name; }
+        var idx: usize = 0;
+        for (a_fields) |af| {
+            const duplicate = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break true;
+            } else false;
+            if (!duplicate) {
+                arr[idx] = af.name;
+                idx += 1;
+            }
+        }
+        for (b_fields) |bf| {
+            arr[idx] = bf.name;
+            idx += 1;
+        }
         break :blk arr;
     };
     const types: [total]type = blk: {
         var arr: [total]type = undefined;
-        for (a_fields, 0..) |f, i| { arr[i] = f.type; }
-        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = f.type; }
+        var idx: usize = 0;
+        for (a_fields) |af| {
+            const duplicate = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break true;
+            } else false;
+            if (!duplicate) {
+                arr[idx] = af.type;
+                idx += 1;
+            }
+        }
+        for (b_fields) |bf| {
+            arr[idx] = bf.type;
+            idx += 1;
+        }
         break :blk arr;
     };
-    const attrs: [total]std.builtin.Type.StructField = blk: {
-        var arr: [total]std.builtin.Type.StructField = undefined;
-        for (a_fields, 0..) |f, i| { arr[i] = .{
-            .alignment = f.alignment,
-            .default_value_ptr = f.default_value_ptr,
-            .is_comptime = f.is_comptime,
-        }; }
-        for (b_fields, 0..) |f, i| { arr[a_fields.len + i] = .{
-            .alignment = f.alignment,
-            .default_value_ptr = f.default_value_ptr,
-            .is_comptime = f.is_comptime,
-        }; }
+    const attrs: [total]std.builtin.Type.StructField.Attributes = blk: {
+        var arr: [total]std.builtin.Type.StructField.Attributes = undefined;
+        var idx: usize = 0;
+        for (a_fields) |af| {
+            const duplicate = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break true;
+            } else false;
+            if (!duplicate) {
+                arr[idx] = .{
+                    .@"align" = if (af.alignment) |a| @intCast(a) else null,
+                    .default_value_ptr = af.default_value_ptr,
+                    .@"comptime" = af.is_comptime,
+                };
+                idx += 1;
+            }
+        }
+        for (b_fields) |bf| {
+            arr[idx] = .{
+                .@"align" = if (bf.alignment) |a| @intCast(a) else null,
+                .default_value_ptr = bf.default_value_ptr,
+                .@"comptime" = bf.is_comptime,
+            };
+            idx += 1;
+        }
         break :blk arr;
     };
 
@@ -113,8 +162,7 @@ pub fn SpreadMerge(comptime A: type, comptime B: type) type {
 }
 
 /// Merge two anonymous structs at compile time.
-/// Returns a new struct with all fields from `a` followed by all fields from `b`.
-/// Duplicate field names across `a` and `b` will cause a compile error.
+/// Fields from `b` override fields from `a` with the same name.
 pub fn spreadMerge(a: anytype, b: anytype) SpreadMerge(@TypeOf(a), @TypeOf(b)) {
     const A = @TypeOf(a);
     const B = @TypeOf(b);
@@ -125,12 +173,14 @@ pub fn spreadMerge(a: anytype, b: anytype) SpreadMerge(@TypeOf(a), @TypeOf(b)) {
         @compileError("spreadMerge: second argument must be an anonymous struct, got " ++ @typeName(B));
     }
 
-    var result: SpreadMerge(A, B) = undefined;
-    inline for (@typeInfo(A).@"struct".fields) |f| {
-        @field(result, f.name) = @field(a, f.name);
-    }
-    inline for (@typeInfo(B).@"struct".fields) |f| {
-        @field(result, f.name) = @field(b, f.name);
+    const Result = SpreadMerge(A, B);
+    var result: Result = undefined;
+    inline for (@typeInfo(Result).@"struct".fields) |f| {
+        if (@hasField(B, f.name)) {
+            @field(result, f.name) = @field(b, f.name);
+        } else {
+            @field(result, f.name) = @field(a, f.name);
+        }
     }
     return result;
 }

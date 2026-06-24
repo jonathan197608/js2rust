@@ -167,6 +167,25 @@ fn main() {
     let ok = testObjectKeys_app();
     println!("  testObjectKeys() = {} (expected 0)", ok);
 
+    // ════════════════════════════════════════════════════════════
+    // Phase 6 extra: Object spread merge
+    println!("\n=== Spread Merge Tests ===");
+
+    let ss = testSpreadSingle_app();
+    println!("  testSpreadSingle() = {} (expected 0)", ss);
+
+    let sm = testSpreadMulti_app();
+    println!("  testSpreadMulti() = {} (expected 0)", sm);
+
+    let st = testSpreadTriple_app();
+    println!("  testSpreadTriple() = {} (expected 0)", st);
+
+    let swi = testSpreadWithInline_app();
+    println!("  testSpreadWithInline() = {} (expected 0)", swi);
+
+    let so = testSpreadOverride_app();
+    println!("  testSpreadOverride() = {} (expected 0)", so);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }
