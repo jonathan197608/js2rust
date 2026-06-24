@@ -329,6 +329,22 @@ fn transpile_js_inner(
     })
 }
 
+/// Metadata about a class declaration, used to generate struct definitions
+/// and route `new ClassName()` expressions to `ClassName.init()`.
+#[derive(Debug, Clone)]
+pub struct ClassInfo {
+    /// Class name
+    pub name: String,
+    /// Field names (from property definitions or constructor assignments)
+    pub fields: Vec<String>,
+    /// Field types (defaults to i64 if not JSDoc-annotated)
+    pub field_types: Vec<ZigType>,
+    /// Static field names
+    pub static_fields: Vec<String>,
+    /// Whether the class has a constructor
+    pub has_constructor: bool,
+}
+
 /// Shared state for native-type codegen.
 ///
 /// Phase A: Codegen is now purely generative — all type inference runs in
@@ -410,4 +426,12 @@ pub struct Codegen {
     /// generated function signature to use `pub fn call(...)` instead of
     /// `pub fn <js_name>(...)`.
     pub current_nested_fn_name: Option<String>,
+    /// Class definitions collected during codegen: class_name → ClassInfo.
+    pub class_defs: std::collections::HashMap<String, ClassInfo>,
+    /// When inside a class method body, this holds the class name.
+    /// Used to rewrite `this.x` → `self.x`.
+    pub current_class: Option<String>,
+    /// Set of class names known at the module level.
+    /// Used to route `new ClassName()` → `ClassName.init()` in emit_expr.
+    pub class_names: std::collections::HashSet<String>,
 }

@@ -49,6 +49,9 @@ impl Codegen {
             async_host_fns,
             nested_fn_names: std::collections::HashSet::new(),
             current_nested_fn_name: None,
+            class_defs: std::collections::HashMap::new(),
+            current_class: None,
+            class_names: std::collections::HashSet::new(),
         }
     }
 }
@@ -126,6 +129,9 @@ impl Codegen {
     fn emit_toplevel(&mut self, stmt: &Statement) {
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
+            Statement::ClassDeclaration(cd) => {
+                self.emit_class(cd);
+            }
             Statement::FunctionDeclaration(fd) => {
                 // Determine if this function is an export function.
                 // Priority:

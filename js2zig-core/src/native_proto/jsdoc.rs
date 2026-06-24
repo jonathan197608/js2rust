@@ -425,11 +425,11 @@ mod tests {
         assert_eq!(user.fields.len(), 4);
         assert_eq!(user.fields[0].name, "name");
         assert_eq!(user.fields[0].ty, "string");
-        assert_eq!(user.fields[0].optional, false);
+        assert!(!user.fields[0].optional);
         assert_eq!(user.fields[1].name, "age");
         assert_eq!(user.fields[1].ty, "number");
         assert_eq!(user.fields[3].name, "email");
-        assert_eq!(user.fields[3].optional, true);
+        assert!(user.fields[3].optional);
     }
 
     #[test]

@@ -48,6 +48,16 @@ impl Codegen {
                 }
                 self.write(var_name);
             }
+            Expression::ThisExpression(_te) => {
+                // When inside a class method, `this` maps to `self`.
+                if self.current_class.is_some() {
+                    self.write("self");
+                } else {
+                    self.errors
+                        .push("`this` used outside of a class method".to_string());
+                    self.write("@compileError(\"`this` used outside of a class method\")");
+                }
+            }
             Expression::BinaryExpression(be) => {
                 self.emit_binary(be);
             }
@@ -287,6 +297,17 @@ impl Codegen {
                         } else {
                             self.write("js_date.JsDate.init()");
                         }
+                        return;
+                    } else if self.class_names.contains(obj_name) {
+                        // new ClassName(args) → ClassName.init(args)
+                        self.write(&format!("{}.init(", obj_name));
+                        for (i, arg) in ne.arguments.iter().enumerate() {
+                            if i > 0 {
+                                self.write(", ");
+                            }
+                            self.emit_expr_arg(arg);
+                        }
+                        self.write(")");
                         return;
                     }
                 }
@@ -641,12 +662,46 @@ impl Codegen {
                 return;
             }
             self.write(name);
-        } else {
+        } else if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+            // Member function call: obj.method(args)
+            // Check if obj is a class instance → emit obj.method(args) directly
+            let obj_name = if let Expression::Identifier(ref obj_id) = mem.object {
+                Some(obj_id.name.to_string())
+            } else {
+                None
+            };
+            if let Some(ref obj) = obj_name
+                && self
+                    .type_info
+                    .var_types
+                    .get(obj)
+                    .is_some_and(|t| matches!(t, ZigType::NamedStruct(_)))
+            {
+                // Class method call: rect.area() → rect.area(args)
+                self.write(obj);
+                self.write(".");
+                self.write(mem.property.name.as_str());
+                self.write("(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                return;
+            }
             // Member function call (obj.method(...)) — not fully supported
-            // Add more detail to the error message
             let callee_str = format!("{:?}", ce.callee);
-            self.errors.push(format!("Member function calls (obj.method()) are not fully supported in native_proto mode: callee = {}", callee_str));
+            self.errors.push(format!(
+                "Member function calls (obj.method()) are not fully supported in native_proto mode: callee = {}",
+                callee_str
+            ));
             self.write("@compileError(\"Member function calls not supported\")");
+            return;
+        } else {
+            // Other unsupported callee types
+            let callee_str = format!("{:?}", ce.callee);
+            self.errors.push(format!(
+                "Unsupported callee type in native_proto mode: callee = {}",
+                callee_str
+            ));
+            self.write("@compileError(\"Unsupported callee type\")");
             return;
         }
         self.write("(");

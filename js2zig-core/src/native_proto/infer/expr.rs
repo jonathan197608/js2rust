@@ -91,6 +91,9 @@ impl TypeInferrer {
                         "Map" => InferResult::Definite(ZigType::NamedStruct("Map".to_string())),
                         "Set" => InferResult::Definite(ZigType::NamedStruct("Set".to_string())),
                         "Date" => InferResult::Definite(ZigType::NamedStruct("Date".to_string())),
+                        name if self.class_names.contains(name) => {
+                            InferResult::Definite(ZigType::NamedStruct(name.to_string()))
+                        }
                         _ => InferResult::Indeterminate,
                     }
                 } else {
@@ -147,6 +150,19 @@ impl TypeInferrer {
 
             // Static member access
             Expression::StaticMemberExpression(mem) => {
+                // Special case: this.field inside a class method → look up field type
+                if matches!(&mem.object, Expression::ThisExpression(_))
+                    && let Some(class_name) = &self.current_class
+                {
+                    if let Some(field_types) = self.class_field_types.get(class_name.as_str()) {
+                        let field_name = mem.property.name.as_str();
+                        if let Some(field_ty) = field_types.get(field_name) {
+                            return InferResult::Definite(field_ty.clone());
+                        }
+                    }
+                    return InferResult::Indeterminate;
+                }
+
                 match self.infer_expr_type(&mem.object) {
                     InferResult::Definite(ZigType::Str) => match mem.property.name.as_str() {
                         "length" => InferResult::Definite(ZigType::I64),
@@ -382,7 +398,15 @@ impl TypeInferrer {
                         }
                         _ => InferResult::Indeterminate,
                     },
-                    _ => InferResult::Indeterminate,
+                    // User-defined class: look up "ClassName.methodName" in fn_return_types
+                    _ => {
+                        let key = format!("{}.{}", name, method);
+                        if let Some(ret_ty) = self.fn_return_types.get(&key) {
+                            InferResult::Definite(ret_ty.clone())
+                        } else {
+                            InferResult::Indeterminate
+                        }
+                    }
                 }
             }
             // String methods called on a str-typed variable

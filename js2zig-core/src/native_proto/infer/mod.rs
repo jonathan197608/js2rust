@@ -96,6 +96,15 @@ pub struct TypeInferrer {
     pub(crate) host_struct_fields: HashMap<String, HashMap<String, ZigType>>,
     /// Current function name being analyzed (for function-scoped mutated_vars)
     pub(crate) current_fn: Option<String>,
+    /// Class names known at the module level.
+    /// Used to infer return type of `new ClassName()` → NamedStruct.
+    pub(crate) class_names: HashSet<String>,
+    /// Class field types: class_name → (field_name → ZigType)
+    /// Collected from PropertyDefinition initializers.
+    pub(crate) class_field_types: HashMap<String, HashMap<String, ZigType>>,
+    /// When inside a class method body, this holds the class name.
+    /// Used to resolve `this.field` → field type for return-type inference.
+    pub(crate) current_class: Option<String>,
 }
 
 impl TypeInferrer {
@@ -115,6 +124,9 @@ impl TypeInferrer {
             host_return_types: HashMap::new(),
             host_struct_fields: HashMap::new(),
             current_fn: None,
+            class_names: HashSet::new(),
+            class_field_types: HashMap::new(),
+            current_class: None,
         }
     }
 

@@ -5,7 +5,7 @@
 use super::{InferResult, TypeInferrer};
 use crate::native_proto::ZigType;
 use oxc_ast::ast::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 impl TypeInferrer {
     // ============================================================
@@ -447,6 +447,79 @@ impl TypeInferrer {
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {
                     self.walk_stmt_for_types(s);
+                }
+            }
+            Statement::ClassDeclaration(cd) => {
+                // Register class name for type inference of `new ClassName()`
+                if let Some(id) = &cd.id {
+                    let class_name = id.name.to_string();
+                    self.class_names.insert(class_name.clone());
+
+                    // Collect field types from PropertyDefinitions
+                    let mut field_types: HashMap<String, ZigType> = HashMap::new();
+                    for elem in &cd.body.body {
+                        if let ClassElement::PropertyDefinition(pd) = elem
+                            && let Some(field_name) = pd.key.static_name()
+                        {
+                            let field_ty = if let Some(init) = &pd.value {
+                                match self.infer_expr_type(init) {
+                                    InferResult::Definite(ty) => ty,
+                                    InferResult::Indeterminate => ZigType::I64,
+                                }
+                            } else {
+                                ZigType::I64
+                            };
+                            field_types.insert(field_name.to_string(), field_ty);
+                        }
+                    }
+                    self.class_field_types
+                        .insert(class_name.clone(), field_types);
+
+                    // Process class methods: infer return types
+                    let saved_class = self.current_class.clone();
+                    self.current_class = Some(class_name.clone());
+                    for elem in &cd.body.body {
+                        if let ClassElement::MethodDefinition(md) = elem {
+                            let method_name = md
+                                .key
+                                .static_name()
+                                .map(|s| s.to_string())
+                                .unwrap_or_default();
+                            if method_name.is_empty() || method_name == "constructor" {
+                                // constructor return type is always the class itself
+                                if method_name == "constructor" {
+                                    self.fn_return_types.insert(
+                                        format!("{}.constructor", class_name),
+                                        ZigType::NamedStruct(class_name.clone()),
+                                    );
+                                }
+                                // Still walk body for local type info
+                                if let Some(body) = &md.value.body {
+                                    for s in &body.statements {
+                                        self.walk_stmt_for_types(s);
+                                    }
+                                }
+                                continue;
+                            }
+
+                            // Infer return type for regular class method
+                            let ret_ty = self.infer_class_method_return_type(md);
+                            match ret_ty {
+                                InferResult::Definite(ty) => {
+                                    self.fn_return_types
+                                        .insert(format!("{}.{}", class_name, method_name), ty);
+                                }
+                                InferResult::Indeterminate => {
+                                    // Default to I64 for methods that can't infer
+                                    self.fn_return_types.insert(
+                                        format!("{}.{}", class_name, method_name),
+                                        ZigType::I64,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    self.current_class = saved_class;
                 }
             }
             _ => {}

@@ -202,6 +202,46 @@ impl TypeInferrer {
     }
 
     // ============================================================
+    // Class method return type inference
+    // ============================================================
+
+    /// Infer return type of a class method by walking its body.
+    /// Uses `self.current_class` and `class_field_types` to resolve `this.field`.
+    pub(crate) fn infer_class_method_return_type(&mut self, md: &MethodDefinition) -> InferResult {
+        let body = if let Some(body) = &md.value.body {
+            body
+        } else {
+            return InferResult::Definite(ZigType::Void);
+        };
+
+        // Collect return expressions
+        let mut return_exprs = Vec::new();
+        for stmt in &body.statements {
+            Self::collect_returns(stmt, &mut return_exprs);
+        }
+        if return_exprs.is_empty() {
+            return InferResult::Definite(ZigType::Void);
+        }
+
+        // Infer each return expression type
+        let mut ty: Option<ZigType> = None;
+        for expr in &return_exprs {
+            let expr_ty = self.infer_expr_type(expr);
+            match (&ty, &expr_ty) {
+                (None, InferResult::Definite(et)) => ty = Some(et.clone()),
+                (Some(t), InferResult::Definite(et)) if *t != *et => {
+                    return InferResult::Indeterminate; // mismatched types
+                }
+                _ => {}
+            }
+        }
+        match ty {
+            Some(definite_ty) => InferResult::Definite(definite_ty),
+            None => InferResult::Indeterminate,
+        }
+    }
+
+    // ============================================================
     // Function parameters (Rule 7)
     // ============================================================
 

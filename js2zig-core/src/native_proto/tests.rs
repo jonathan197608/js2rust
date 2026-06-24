@@ -79,7 +79,7 @@ mod tests {
         std::fs::write(&zig_path, wrapped_ref).unwrap();
 
         match Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .args(["ast-check", zig_path.to_str().unwrap()])
             .output()
         {
             Ok(output) => {
@@ -174,17 +174,17 @@ mod tests {
             return;
         }
         // Case 2: Ok with errors in .errors
-        if let Ok(ref res) = result {
-            if !res.errors.is_empty() {
-                let all_errors = res.errors.join("; ");
-                assert!(
-                    all_errors.contains(expected_err),
-                    "Expected error containing '{}', got errors: {}",
-                    expected_err,
-                    all_errors
-                );
-                return;
-            }
+        if let Ok(ref res) = result
+            && !res.errors.is_empty()
+        {
+            let all_errors = res.errors.join("; ");
+            assert!(
+                all_errors.contains(expected_err),
+                "Expected error containing '{}', got errors: {}",
+                expected_err,
+                all_errors
+            );
+            return;
         }
         panic!(
             "Expected error containing '{}', got: {:?}",
@@ -706,7 +706,7 @@ function main() {
         std::fs::write(&zig_path, &zig_gen).unwrap();
 
         let check_output = std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .args(["ast-check", zig_path.to_str().unwrap()])
             .output();
 
         match check_output {
@@ -729,29 +729,28 @@ function main() {
 
         // Step 3: create a complete Zig program that uses the generated functions.
         // We hand-write the wrapper but use the same function signatures as generated.
-        let zig_full = format!(
-            r#"const std = @import("std");
+        let zig_full = r#"const std = @import("std");
 
 const PI: f64 = 3.14159;
 
-fn add(a: anytype, b: anytype) !@TypeOf(a + b) {{
+fn add(a: anytype, b: anytype) !@TypeOf(a + b) {
     return a + b;
-}}
+}
 
-fn abs(x: anytype) !@TypeOf(x) {{
-    if (x >= 0) {{
+fn abs(x: anytype) !@TypeOf(x) {
+    if (x >= 0) {
         return x;
-    }}
+    }
     return -x;
-}}
+}
 
-pub fn main() !void {{
+pub fn main() !void {
     const x = try add(10, 20);
     const y = try abs(-42);
-    std.debug.print("add(10,20)={{}}  abs(-42)={{}}\n", .{{x, y}});
-}}
+    std.debug.print("add(10,20)={}  abs(-42)={}\n", .{x, y});
+}
 "#
-        );
+        .to_string();
 
         // Step 4: write full program and compile
         let zig_path_full = tmp_dir.join("e2e_native_full.zig");
@@ -759,7 +758,7 @@ pub fn main() !void {{
         std::fs::write(&zig_path_full, &zig_full).unwrap();
 
         let build_output = std::process::Command::new("zig.exe")
-            .args(&[
+            .args([
                 "build-exe",
                 zig_path_full.to_str().unwrap(),
                 "-O",
@@ -1095,7 +1094,7 @@ export function multiply(a, b) {
         std::fs::write(&zig_path, &zig).unwrap();
 
         let check_output = std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .args(["ast-check", zig_path.to_str().unwrap()])
             .output();
 
         match check_output {
@@ -1527,7 +1526,7 @@ pub fn main() !void {{
 
         // Run `zig ast-check` first
         let check_output = std::process::Command::new("zig.exe")
-            .args(&["ast-check", zig_path.to_str().unwrap()])
+            .args(["ast-check", zig_path.to_str().unwrap()])
             .output();
 
         match check_output {
@@ -1550,7 +1549,7 @@ pub fn main() !void {{
         // Step 4: compile with `zig build-exe`
         let exe_path = tmp_dir.join("e2e_json_test.exe");
         let compile_output = std::process::Command::new("zig.exe")
-            .args(&["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
+            .args(["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
             .current_dir(&tmp_dir)
             .output();
 
@@ -4132,5 +4131,109 @@ function outer(x) {
             zig.contains("pub fn call(self:"),
             "Expected call method with self parameter"
         );
+    }
+
+    // ── Class transpilation tests ────────────────────────────
+
+    #[test]
+    fn test_native_proto_class_basic() {
+        // Simple class with i64 fields and area() method
+        let js = r#"
+class Rectangle {
+    width = 0;
+    height = 0;
+    constructor(w, h) {
+        this.width = w;
+        this.height = h;
+    }
+    area() {
+        return this.width * this.height;
+    }
+}
+
+export function testRect() {
+    const rect = new Rectangle(3, 4);
+    return rect.area();
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_class_basic");
+        println!("=== Class transpilation Zig code ===\n{}", zig);
+
+        // Verify: Rectangle struct is defined
+        assert!(
+            zig.contains("const Rectangle = struct {"),
+            "Expected Rectangle struct definition"
+        );
+
+        // Verify: init() maps constructor (may have extra whitespace after param list)
+        assert!(
+            zig.contains("pub fn init(w: anytype, h: anytype"),
+            "Expected init(w, h) constructor. Got:\n{}",
+            zig
+        );
+
+        // Verify: new Rectangle routes to Rectangle.init
+        assert!(
+            zig.contains("Rectangle.init("),
+            "Expected new Rect→Rectangle.init routing"
+        );
+
+        // Verify: area() method exists
+        assert!(
+            zig.contains("pub fn area(self:"),
+            "Expected area method. Got:\n{}",
+            zig
+        );
+
+        // Verify: export function compiles
+        assert!(
+            zig.contains("pub fn testRect"),
+            "Expected testRect export. Got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_class_mixed_fields() {
+        // Class with i64 + string fields
+        let js = r#"
+class User {
+    id = 0;
+    name = "";
+    constructor(idVal, nameVal) {
+        this.id = idVal;
+        this.name = nameVal;
+    }
+    getId() {
+        return this.id;
+    }
+    getName() {
+        return this.name;
+    }
+}
+
+export function testUser() {
+    const u = new User(42, "Alice");
+    return u.getId();
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_class_mixed_fields");
+        println!("=== Class mixed fields Zig code ===\n{}", zig);
+
+        // Verify: User struct defined
+        assert!(
+            zig.contains("const User = struct {"),
+            "Expected User struct"
+        );
+
+        // Verify: init with two params
+        assert!(zig.contains("pub fn init("), "Expected init method");
+
+        // Verify: new User routes correctly
+        assert!(zig.contains("User.init("), "Expected User.init routing");
+
+        // Verify: getId and getName methods exist
+        assert!(zig.contains("getId"), "Expected getId method");
+        assert!(zig.contains("getName"), "Expected getName method");
     }
 }
