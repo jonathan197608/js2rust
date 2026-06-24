@@ -37,9 +37,12 @@ fn main() {
     // Test async host function fetch_user
     let user = getUserInfo_main("Alice");
     println!("getUserInfo_main('Alice') = id={}", user.id);
-    
+
     // Debug: print name field (JsStrField)
-    println!("  name.ptr = {:?}, name.len = {}", user.name.ptr, user.name.len);
+    println!(
+        "  name.ptr = {:?}, name.len = {}",
+        user.name.ptr, user.name.len
+    );
     // Convert JsStrField to &str for printing
     let name_str = if user.name.len > 0 && !user.name.ptr.is_null() {
         let slice = unsafe { std::slice::from_raw_parts(user.name.ptr, user.name.len) };

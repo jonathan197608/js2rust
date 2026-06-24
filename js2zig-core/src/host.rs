@@ -252,9 +252,7 @@ impl HostFnRegistry {
                 // Extern declaration (C ABI symbol defined in Rust)
                 out.push_str(&format!(
                     "extern \"c\" fn {}({}) callconv(.c) {};\n",
-                    def.c_name,
-                    params_cabi,
-                    ret_cabi
+                    def.c_name, params_cabi, ret_cabi
                 ));
 
                 // Async wrapper function (callable from Zig via host.{name}_async)
@@ -293,13 +291,20 @@ impl HostFnRegistry {
                             call_args.join(", ")
                         ));
                         // Convert string fields: zero-copy ptr+len from Zig Arena
-                        let field_inits: Vec<String> = s.fields.iter().map(|f| {
-                            if f.zig_type == "[]const u8" {
-                                format!("    .{} = raw.{}_ptr[0..raw.{}_len]", f.name, f.name, f.name)
-                            } else {
-                                format!("    .{} = raw.{}", f.name, f.name)
-                            }
-                        }).collect();
+                        let field_inits: Vec<String> = s
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                if f.zig_type == "[]const u8" {
+                                    format!(
+                                        "    .{} = raw.{}_ptr[0..raw.{}_len]",
+                                        f.name, f.name, f.name
+                                    )
+                                } else {
+                                    format!("    .{} = raw.{}", f.name, f.name)
+                                }
+                            })
+                            .collect();
                         out.push_str(&format!(
                             "    return .{{\n{}\n    }};\n",
                             field_inits.join(",\n")
@@ -367,9 +372,7 @@ impl HostFnRegistry {
                 // Extern declaration with original name (matches Rust symbol)
                 out.push_str(&format!(
                     "extern \"c\" fn {}({}) callconv(.c) {};\n",
-                    def.c_name,
-                    params_cabi,
-                    ret_cabi
+                    def.c_name, params_cabi, ret_cabi
                 ));
 
                 // Wrapper function with _wrap suffix (Zig-level types)
@@ -397,11 +400,7 @@ impl HostFnRegistry {
                     ));
                     out.push_str("    return result.toSlice();\n");
                 } else if is_void {
-                    out.push_str(&format!(
-                        "    {}({});\n",
-                        def.c_name,
-                        call_args.join(", ")
-                    ));
+                    out.push_str(&format!("    {}({});\n", def.c_name, call_args.join(", ")));
                 } else {
                     out.push_str(&format!(
                         "    return {}({});\n",
@@ -415,9 +414,7 @@ impl HostFnRegistry {
                 // No string conversion needed: direct extern with original name
                 out.push_str(&format!(
                     "pub extern \"c\" fn {}({}) callconv(.c) {};\n",
-                    def.c_name,
-                    params_cabi,
-                    ret_cabi
+                    def.c_name, params_cabi, ret_cabi
                 ));
             }
         }
@@ -426,7 +423,10 @@ impl HostFnRegistry {
         // The native_proto codegen strips the `host_` prefix from host function
         // calls (e.g. host_add → host.add). Add short-name aliases so that
         // `host.add(...)` resolves to the correct extern/wrapper function.
-        let has_aliases = self.fns.iter().any(|f| !f.is_async && f.name.starts_with("host_"));
+        let has_aliases = self
+            .fns
+            .iter()
+            .any(|f| !f.is_async && f.name.starts_with("host_"));
         if has_aliases {
             out.push_str("\n// Aliases for native_proto codegen (strips host_ prefix)\n");
             for def in &self.fns {
@@ -462,10 +462,7 @@ impl HostFnRegistry {
     /// Expand a single Zig-level param into one or more C ABI params.
     /// String params expand to `ptr: [*]const u8, len_name: usize` (zero-copy).
     /// Other types pass through as-is.
-    fn to_c_abi_param_types(
-        param_name: &str,
-        ty: &ZigType,
-    ) -> Vec<(String, String)> {
+    fn to_c_abi_param_types(param_name: &str, ty: &ZigType) -> Vec<(String, String)> {
         match ty {
             ZigType::Str => vec![
                 (format!("{}_ptr", param_name), "[*]const u8".to_string()),

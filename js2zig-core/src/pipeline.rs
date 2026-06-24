@@ -387,8 +387,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     }
                 };
 
-                let transpile_result =
-                    crate::native_proto::transpile_js(program, &src, Some(codegen_exports), Some(&host_fns));
+                let transpile_result = crate::native_proto::transpile_js(
+                    program,
+                    &src,
+                    Some(codegen_exports),
+                    Some(&host_fns),
+                );
 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
                     match transpile_result {
@@ -1025,12 +1029,15 @@ pub fn gen_cabi_wrappers(
                 };
                 (err_handle, setup)
             } else {
-                (format!(
-                    "{mod}.{name}({args})",
-                    mod = module,
-                    name = name,
-                    args = cabi_call_args,
-                ), String::new())
+                (
+                    format!(
+                        "{mod}.{name}({args})",
+                        mod = module,
+                        name = name,
+                        args = cabi_call_args,
+                    ),
+                    String::new(),
+                )
             };
 
             let conversions = if cabi_to_zig_conversions.is_empty() {
@@ -1141,27 +1148,29 @@ pub fn write_cabi_metadata(
             let ret_type_str = exp.ret_type.to_cabi_str();
 
             // For NamedStruct returns, look up struct fields from host_fns
-            let (ret_struct_name, ret_struct_fields) = if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = exp.ret_type {
-                // Look up the struct definition from host_fns
-                let struct_fields: Option<Vec<serde_json::Value>> = host_fns.structs
-                    .iter()
-                    .find(|s| &s.zig_name == struct_name)
-                    .map(|s| {
-                        s.fields
-                            .iter()
-                            .map(|f| {
-                                serde_json::json!({
-                                    "name": f.name,
-                                    "zig_type": f.zig_type,
-                                    "cabi_type": f.c_type,
+            let (ret_struct_name, ret_struct_fields) =
+                if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = exp.ret_type {
+                    // Look up the struct definition from host_fns
+                    let struct_fields: Option<Vec<serde_json::Value>> = host_fns
+                        .structs
+                        .iter()
+                        .find(|s| &s.zig_name == struct_name)
+                        .map(|s| {
+                            s.fields
+                                .iter()
+                                .map(|f| {
+                                    serde_json::json!({
+                                        "name": f.name,
+                                        "zig_type": f.zig_type,
+                                        "cabi_type": f.c_type,
+                                    })
                                 })
-                            })
-                            .collect()
-                    });
-                (Some(struct_name.clone()), struct_fields)
-            } else {
-                (None, None)
-            };
+                                .collect()
+                        });
+                    (Some(struct_name.clone()), struct_fields)
+                } else {
+                    (None, None)
+                };
 
             let mut json_obj = serde_json::json!({
                 "name": exp.name,

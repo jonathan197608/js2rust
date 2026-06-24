@@ -77,7 +77,6 @@ impl BuiltinRegistry {
             "sign",
             "if ({0} > 0) @as(i64, 1) else if ({0} < 0) @as(i64, -1) else @as(i64, 0)",
         );
-        registry.add_method("Math", "hypot", "@sqrt({0} * {0} + {1} * {1})");
 
         // ── Tier 2: std lib ──
         registry.add_method("Math", "pow", "std.math.pow(f64, {}, {})");
@@ -130,7 +129,12 @@ impl BuiltinRegistry {
             "(js_string.charAt(js_allocator.g_alloc(), {}, {}) catch \"\")",
             "js_string",
         );
-        registry.add_method_runtime("string", "charCodeAt", "{0}[@intCast({1})]", "js_string");
+        registry.add_method_runtime(
+            "string",
+            "charCodeAt",
+            "js_string.charCodeAt({}, {})",
+            "js_string",
+        );
         registry.add_method_runtime(
             "string",
             "concat",

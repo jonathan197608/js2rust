@@ -20,7 +20,7 @@
 mod config;
 pub mod sdk;
 
-pub use js2rust_bridge_macro::{js2rust_bridge, host_fn};
+pub use js2rust_bridge_macro::{host_fn, js2rust_bridge};
 
 // Re-export types needed for host function configuration from js2zig-core
 // so users only need `js2rust-bridge` in their `[build-dependencies]`.
@@ -110,14 +110,15 @@ fn link_from_cache(cache_dir: &std::path::Path) {
             let lib_dir = group_dir.join("zig-out").join("lib");
 
             if lib_dir.exists()
-                && let Some(group_name) = entry.file_name().to_str() {
-                    if group_name == "host.zig" || group_name == "groups.json" {
-                        continue;
-                    }
-                    println!("cargo:rustc-link-search=native={}", lib_dir.display());
-                    println!("cargo:rustc-link-lib=static={}", group_name);
-                    found = true;
+                && let Some(group_name) = entry.file_name().to_str()
+            {
+                if group_name == "host.zig" || group_name == "groups.json" {
+                    continue;
                 }
+                println!("cargo:rustc-link-search=native={}", lib_dir.display());
+                println!("cargo:rustc-link-lib=static={}", group_name);
+                found = true;
+            }
         }
     }
 
@@ -142,16 +143,13 @@ fn build_host_config(config: &Js2rustConfig) -> HostConfig {
                 .map(|t| type_name_to_host_type(t))
                 .collect();
 
-            let return_type = hf
-                .returns
-                .as_deref()
-                .and_then(|t| {
-                    if t == "void" {
-                        None
-                    } else {
-                        Some(type_name_to_host_type(t))
-                    }
-                });
+            let return_type = hf.returns.as_deref().and_then(|t| {
+                if t == "void" {
+                    None
+                } else {
+                    Some(type_name_to_host_type(t))
+                }
+            });
 
             let async_return_fields: Vec<(String, HostType)> = hf
                 .async_returns

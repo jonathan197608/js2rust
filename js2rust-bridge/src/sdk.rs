@@ -215,10 +215,7 @@ impl JsStrField {
             fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
         }
         let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
-        Self {
-            ptr,
-            len: s.len(),
-        }
+        Self { ptr, len: s.len() }
     }
 
     /// An empty string field (null pointer, zero length).

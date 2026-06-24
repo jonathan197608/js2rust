@@ -31,6 +31,68 @@ pub fn charAt(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
     return result;
 }
 
+/// Get UTF-16 code unit at index (JS charCodeAt behavior).
+/// Returns the i-th UTF-16 code unit (0-65535).
+/// If idx is out of bounds, returns 0 (JS returns NaN, but we return 0 for type simplicity).
+pub fn charCodeAt(s: []const u8, idx: i64) u16 {
+    const target: usize = @intCast(@max(0, idx));
+    var utf16_idx: usize = 0;
+    var i: usize = 0;
+
+    while (i < s.len) {
+        // Decode UTF-8 code point
+        const c = s[i];
+        var code_point: u32 = 0;
+        var seq_len: u8 = 1;
+
+        if (c & 0x80 == 0) {
+            // 1-byte: 0xxxxxxx (ASCII)
+            code_point = c;
+            seq_len = 1;
+        } else if (c & 0xE0 == 0xC0) {
+            // 2-byte: 110xxxxx 10xxxxxx
+            code_point = (@as(u32, c & 0x1F) << 6) | @as(u32, s[i + 1] & 0x3F);
+            seq_len = 2;
+        } else if (c & 0xF0 == 0xE0) {
+            // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
+            code_point = (@as(u32, c & 0x0F) << 12) | (@as(u32, s[i + 1] & 0x3F) << 6) | @as(u32, s[i + 2] & 0x3F);
+            seq_len = 3;
+        } else if (c & 0xF8 == 0xF0) {
+            // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+            code_point = (@as(u32, c & 0x07) << 18) | (@as(u32, s[i + 1] & 0x3F) << 12) | (@as(u32, s[i + 2] & 0x3F) << 6) | @as(u32, s[i + 3] & 0x3F);
+            seq_len = 4;
+        } else {
+            // Invalid UTF-8 byte, skip
+            i += 1;
+            continue;
+        }
+
+        // Check if this is the target UTF-16 index
+        if (code_point <= 0xFFFF) {
+            // BMP character: 1 UTF-16 code unit
+            if (utf16_idx == target) {
+                return @intCast(code_point);
+            }
+            utf16_idx += 1;
+        } else {
+            // Supplementary plane character: 2 UTF-16 code units (surrogate pair)
+            const high: u16 = @intCast(0xD800 + ((code_point - 0x10000) >> 10));
+            const low: u16 = @intCast(0xDC00 + ((code_point - 0x10000) & 0x3FF));
+            if (utf16_idx == target) {
+                return high;
+            }
+            if (utf16_idx + 1 == target) {
+                return low;
+            }
+            utf16_idx += 2;
+        }
+
+        i += seq_len;
+    }
+
+    return 0; // Out of bounds
+}
+
 /// Concatenate two strings. Returns newly allocated string.
 pub fn concat(alloc: Allocator, a: []const u8, b: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, a.len + b.len);
@@ -187,4 +249,32 @@ test "repeat" {
     const result = try repeat(std.testing.allocator, "ab", 3);
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("ababab", result);
+}
+
+test "charCodeAt ASCII" {
+    // ASCII characters
+    try std.testing.expectEqual(@as(u16, 72), charCodeAt("Hello", 0)); // 'H'
+    try std.testing.expectEqual(@as(u16, 101), charCodeAt("Hello", 1)); // 'e'
+    try std.testing.expectEqual(@as(u16, 108), charCodeAt("Hello", 2)); // 'l'
+    try std.testing.expectEqual(@as(u16, 108), charCodeAt("Hello", 3)); // Second 'l'
+    try std.testing.expectEqual(@as(u16, 111), charCodeAt("Hello", 4)); // 'o'
+    try std.testing.expectEqual(@as(u16, 0), charCodeAt("Hello", 10)); // Out of bounds
+}
+
+test "charCodeAt UTF-8" {
+    // Multi-byte UTF-8 characters
+    // 'café' - 'c'=99, 'a'=97, 'f'=102, 'é'=U+00E9=233
+    try std.testing.expectEqual(@as(u16, 99), charCodeAt("café", 0));
+    try std.testing.expectEqual(@as(u16, 97), charCodeAt("café", 1));
+    try std.testing.expectEqual(@as(u16, 233), charCodeAt("café", 3)); // 'é' (U+00E9)
+}
+
+test "charCodeAt surrogate pair" {
+    // Supplementary plane character (U+1F600 = 😀)
+    // UTF-16: surrogate pair 0xD83D 0xDE00
+    const emoji = "😀";
+    const high = charCodeAt(emoji, 0);
+    const low = charCodeAt(emoji, 1);
+    try std.testing.expectEqual(@as(u16, 0xD83D), high); // High surrogate
+    try std.testing.expectEqual(@as(u16, 0xDE00), low); // Low surrogate
 }

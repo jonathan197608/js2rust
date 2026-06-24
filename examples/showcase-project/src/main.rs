@@ -65,10 +65,16 @@ fn main() {
 
     // Verify correctness after reset
     let post_reduce = testArrayReduce_app();
-    println!("  testArrayReduce (after reset) = {} (expected 0)", post_reduce);
+    println!(
+        "  testArrayReduce (after reset) = {} (expected 0)",
+        post_reduce
+    );
 
     let post_add = testMemoryAdd_app(7, 8);
-    println!("  testMemoryAdd(7,8) after reset = {} (expected 15)", post_add);
+    println!(
+        "  testMemoryAdd(7,8) after reset = {} (expected 15)",
+        post_add
+    );
 
     let post_greeting = testLongGreeting_app("World");
     println!("  testLongGreeting('World') = {:?}", post_greeting);

@@ -214,25 +214,19 @@ impl TypeInferrer {
     }
 
     pub(crate) fn check_assignment_target(&mut self, target: &AssignmentTarget) {
-        let prefix = self
-            .current_fn
-            .as_deref()
-            .unwrap_or("__toplevel__");
+        let prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                self.mutated_vars
-                    .insert(format!("{}::{}", prefix, id.name));
+                self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars
-                        .insert(format!("{}::{}", prefix, id.name));
+                    self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
                 }
             }
             AssignmentTarget::ComputedMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {
-                    self.mutated_vars
-                        .insert(format!("{}::{}", prefix, id.name));
+                    self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
                 }
             }
             _ => {}

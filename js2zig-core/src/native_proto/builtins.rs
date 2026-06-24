@@ -17,6 +17,7 @@ pub enum BuiltinCall {
     MathPow,    // Math.pow(base, exp)
     MathMax,    // Math.max(...args)
     MathMin,    // Math.min(...args)
+    MathHypot,  // Math.hypot(...) — 不支持，报编译错误
 
     // Array methods (non-closure)
     ArrayPop,      // arr.pop()
@@ -62,9 +63,9 @@ pub enum BuiltinCall {
     SetAdd, // set.add(value)
 
     // Date methods (static)
-    DateNow,  // Date.now() → i64
+    DateNow,   // Date.now() → i64
     DateParse, // Date.parse(str) → i64
-    DateUTC,  // Date.UTC(y, m, d) → i64
+    DateUTC,   // Date.UTC(y, m, d) → i64
 
     // Date methods (instance — called on an i64 millis value)
     DateGetTime,     // date.getTime()
@@ -77,11 +78,11 @@ pub enum BuiltinCall {
     DateGetSeconds,  // date.getSeconds()
 
     // Object methods (static)
-    ObjectKeys,   // Object.keys(obj)
-    ObjectValues, // Object.values(obj)
+    ObjectKeys,    // Object.keys(obj)
+    ObjectValues,  // Object.values(obj)
     ObjectEntries, // Object.entries(obj)
-    ObjectAssign, // Object.assign(target, source)
-    ObjectFreeze, // Object.freeze(obj)
+    ObjectAssign,  // Object.assign(target, source)
+    ObjectFreeze,  // Object.freeze(obj)
 
     // Global functions
     ParseInt, // parseInt(s)
@@ -123,6 +124,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "pow" => return Some(BuiltinCall::MathPow),
                 "max" => return Some(BuiltinCall::MathMax),
                 "min" => return Some(BuiltinCall::MathMin),
+                "hypot" => return Some(BuiltinCall::MathHypot),
                 _ => return None,
             }
         }

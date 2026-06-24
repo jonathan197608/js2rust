@@ -130,7 +130,9 @@ impl ZigType {
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
             ZigType::Str => "[]const u8".to_string(),
-            ZigType::ArrayList(inner) => format!("std.ArrayList({})", inner.to_zig_type(in_host_module)),
+            ZigType::ArrayList(inner) => {
+                format!("std.ArrayList({})", inner.to_zig_type(in_host_module))
+            }
             ZigType::Struct(fields) => {
                 // Generate anonymous struct type.
                 let mut s = ".{ ".to_string();
@@ -300,13 +302,19 @@ fn transpile_js_inner(
                     .enumerate()
                     .map(|(i, p)| (format!("arg{}", i), p.clone()))
                     .collect();
-                let is_async = cg.type_info.is_async.get(&ef.name).copied().unwrap_or(false);
+                let is_async = cg
+                    .type_info
+                    .is_async
+                    .get(&ef.name)
+                    .copied()
+                    .unwrap_or(false);
                 // Extract struct name if return type is NamedStruct
-                let ret_struct_name = if let crate::native_proto::ZigType::NamedStruct(ref s) = ef.return_type {
-                    Some(s.clone())
-                } else {
-                    None
-                };
+                let ret_struct_name =
+                    if let crate::native_proto::ZigType::NamedStruct(ref s) = ef.return_type {
+                        Some(s.clone())
+                    } else {
+                        None
+                    };
                 NativeCabiExport {
                     name: ef.name,
                     params,

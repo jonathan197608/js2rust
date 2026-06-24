@@ -28,8 +28,8 @@
 //! async_returns = { id = "i64", name = "str" }
 //! ```
 
-use serde::Deserialize;
 use indexmap::IndexMap;
+use serde::Deserialize;
 use std::path::PathBuf;
 
 /// Root structure of `js2rust.toml`.
@@ -73,8 +73,7 @@ impl Js2rustConfig {
     ///
     /// Panics with a descriptive message if the file is missing or malformed.
     pub fn from_manifest_dir() -> Self {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-            .unwrap_or_else(|_| ".".to_string());
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
         let config_path = PathBuf::from(&manifest_dir).join("js2rust.toml");
 
         let content = std::fs::read_to_string(&config_path).unwrap_or_else(|e| {

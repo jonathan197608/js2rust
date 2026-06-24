@@ -474,7 +474,11 @@ function sum(arr) {
         assert!(zig.contains("for ("), "missing for: {}", zig);
         assert!(zig.contains("return total;"));
         // Verify type inference: total should be i64, not []const u8
-        assert!(zig.contains("var total: i64 = 0;"), "Expected 'var total: i64 = 0;':\n{}", zig);
+        assert!(
+            zig.contains("var total: i64 = 0;"),
+            "Expected 'var total: i64 = 0;':\n{}",
+            zig
+        );
         assert_zig_ast_check(&zig, "test_native_proto_for_of");
     }
 
@@ -500,7 +504,7 @@ function iterateKeys(obj) {
             zig
         );
     }
-    
+
     #[test]
     fn test_native_proto_for_in_static() {
         // Test for-in loop with a static object (known struct fields)
@@ -519,11 +523,27 @@ function useStaticObj() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_for_in_static");
         // Should unroll the for-in loop: one block per struct field
-        assert!(zig.contains("const k = \"a\""), "Expected unrolled field 'a':\n{}", zig);
-        assert!(zig.contains("const k = \"b\""), "Expected unrolled field 'b':\n{}", zig);
-        assert!(zig.contains("const k = \"name\""), "Expected unrolled field 'name':\n{}", zig);
+        assert!(
+            zig.contains("const k = \"a\""),
+            "Expected unrolled field 'a':\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("const k = \"b\""),
+            "Expected unrolled field 'b':\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("const k = \"name\""),
+            "Expected unrolled field 'name':\n{}",
+            zig
+        );
         // Should NOT contain HashMap iterator
-        assert!(!zig.contains("__it"), "Should not have HashMap iterator:\n{}", zig);
+        assert!(
+            !zig.contains("__it"),
+            "Should not have HashMap iterator:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -1756,7 +1776,11 @@ export function spliceArray(start, count) {
         let zig = transpile_and_check!(js, "test_native_proto_array_splice");
 
         // Verify splice generates ArrayList operations
-        assert!(zig.contains("orderedRemove"), "Expected orderedRemove in:\n{}", zig);
+        assert!(
+            zig.contains("orderedRemove"),
+            "Expected orderedRemove in:\n{}",
+            zig
+        );
         assert!(
             zig.contains("break :blk __spliced"),
             "Expected break :blk __spliced in:\n{}",
@@ -1782,7 +1806,11 @@ export function spliceInsert(start) {
         let zig = transpile_and_check!(js, "test_native_proto_array_splice_insert");
 
         // Verify splice generates insertSlice for multi-arg
-        assert!(zig.contains("orderedRemove"), "Expected orderedRemove in:\n{}", zig);
+        assert!(
+            zig.contains("orderedRemove"),
+            "Expected orderedRemove in:\n{}",
+            zig
+        );
         assert!(
             zig.contains("insertSlice"),
             "Expected insertSlice for insertion in:\n{}",
@@ -2024,11 +2052,7 @@ export function getLength() {
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_length_as_param");
         println!("=== TypedArray length as param ===\n{}", zig);
         // Verify arr.len is generated
-        assert!(
-            zig.contains("arr.len"),
-            "Expected arr.len in:\n{}",
-            zig
-        );
+        assert!(zig.contains("arr.len"), "Expected arr.len in:\n{}", zig);
         assert!(
             zig.contains("identity"),
             "Expected identity call in:\n{}",
@@ -2089,7 +2113,11 @@ export function subArray() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_subarray");
         println!("=== TypedArray subarray ===\n{}", zig);
-        assert!(zig.contains("subarrayI32"), "Expected subarrayI32 in:\n{}", zig);
+        assert!(
+            zig.contains("subarrayI32"),
+            "Expected subarrayI32 in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2103,7 +2131,11 @@ export function copyIn() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_copywithin");
         println!("=== TypedArray copyWithin ===\n{}", zig);
-        assert!(zig.contains("copyWithinI32"), "Expected copyWithinI32 in:\n{}", zig);
+        assert!(
+            zig.contains("copyWithinI32"),
+            "Expected copyWithinI32 in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2152,7 +2184,11 @@ export function getByteLength() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_bytelength");
         println!("=== TypedArray byteLength ===\n{}", zig);
-        assert!(zig.contains("byteLengthI32"), "Expected byteLengthI32 in:\n{}", zig);
+        assert!(
+            zig.contains("byteLengthI32"),
+            "Expected byteLengthI32 in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2168,7 +2204,11 @@ export function getByteOffset() {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_byteoffset");
         println!("=== TypedArray byteOffset ===\n{}", zig);
-        assert!(zig.contains("byteOffset"), "Expected byteOffset in:\n{}", zig);
+        assert!(
+            zig.contains("byteOffset"),
+            "Expected byteOffset in:\n{}",
+            zig
+        );
     }
 
     // ── TypedArray: Float64Array ──
@@ -2305,9 +2345,17 @@ function safeDivide(a, b) {
         let zig = transpile_and_assert!(js, "test_native_proto_try_catch_basic");
         println!("=== Try-catch basic ===\n{}", zig);
         // Should generate the labeled block pattern
-        assert!(zig.contains("_js_try_blk_"), "Expected labeled block:\n{}", zig);
+        assert!(
+            zig.contains("_js_try_blk_"),
+            "Expected labeled block:\n{}",
+            zig
+        );
         // Should generate catch |err| for the handler
-        assert!(zig.contains("catch |err|"), "Expected catch |err|:\n{}", zig);
+        assert!(
+            zig.contains("catch |err|"),
+            "Expected catch |err|:\n{}",
+            zig
+        );
         // Should bind catch(e) → _ = @errorName(err) (e is unused in body)
         assert!(
             zig.contains("_ = @errorName(err);"),
@@ -2392,7 +2440,11 @@ function check(val) {
             zig
         );
         // Should have catch handler
-        assert!(zig.contains("catch |err|"), "Expected catch handler:\n{}", zig);
+        assert!(
+            zig.contains("catch |err|"),
+            "Expected catch handler:\n{}",
+            zig
+        );
         assert_zig_ast_check(&zig, "test_native_proto_try_catch_throw_break");
     }
 
@@ -2592,8 +2644,11 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_arrow_function");
-        println!("=== Arrow function (basic) ===
-{}", zig);
+        println!(
+            "=== Arrow function (basic) ===
+{}",
+            zig
+        );
         // Should generate a Zig function for the arrow function
         assert!(
             zig.contains("fn _arrow_fn_"),
@@ -2623,8 +2678,11 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_template_literal_complex");
-        println!("=== Template literal (complex) ===
-{}", zig);
+        println!(
+            "=== Template literal (complex) ===
+{}",
+            zig
+        );
         // Should generate std.fmt.allocPrint for template with expressions
         assert!(
             zig.contains("std.fmt.allocPrint"),
@@ -2648,8 +2706,11 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_exponential_edge");
-        println!("=== Exponential (edge) ===
-{}", zig);
+        println!(
+            "=== Exponential (edge) ===
+{}",
+            zig
+        );
         // Should generate std.math.pow for exponentiation
         assert!(
             zig.contains("std.math.pow(f64,"),
@@ -2670,10 +2731,16 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_arrow_single_param");
-        println!("=== Arrow function (single param) ===
-{}", zig);
+        println!(
+            "=== Arrow function (single param) ===
+{}",
+            zig
+        );
         assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
-        assert!(zig.contains("const double = _arrow_fn_"), "Expected assignment");
+        assert!(
+            zig.contains("const double = _arrow_fn_"),
+            "Expected assignment"
+        );
     }
     // ── Test: Arrow function (block body) ────────────
 
@@ -2686,10 +2753,16 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_arrow_block_body");
-        println!("=== Arrow function (block) ===
-{}", zig);
+        println!(
+            "=== Arrow function (block) ===
+{}",
+            zig
+        );
         assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
-        assert!(zig.contains("return x + 1;"), "Expected return in block body");
+        assert!(
+            zig.contains("return x + 1;"),
+            "Expected return in block body"
+        );
     }
 
     // ── Test: Closure (arrow function capturing outer variable) ────────────
@@ -2704,12 +2777,18 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_closure_basic");
-        println!("=== Closure (basic) ===
-{}", zig);
+        println!(
+            "=== Closure (basic) ===
+{}",
+            zig
+        );
         // Should generate a closure struct with captured variable x
         assert!(zig.contains("const Closure_"), "Expected closure struct");
         assert!(zig.contains("fn call(self:"), "Expected call method");
-        assert!(zig.contains("self.x"), "Expected captured variable access via self.x");
+        assert!(
+            zig.contains("self.x"),
+            "Expected captured variable access via self.x"
+        );
     }
 
     // ── Test: Closure with mutable captured variable ────────────
@@ -2725,12 +2804,18 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_closure_mutable");
-        println!("=== Closure (mutable) ===
-{}", zig);
+        println!(
+            "=== Closure (mutable) ===
+{}",
+            zig
+        );
         // Should generate a closure struct with mutable captured variable (pointer)
         assert!(zig.contains("const Closure_"), "Expected closure struct");
         assert!(zig.contains("*i64"), "Expected pointer for mutable capture");
-        assert!(zig.contains("self.count.*"), "Expected dereference for mutable capture");
+        assert!(
+            zig.contains("self.count.*"),
+            "Expected dereference for mutable capture"
+        );
     }
 
     // ── Test: Getter in object literal ──────────────
@@ -2745,11 +2830,22 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_getter");
-        println!("=== Getter ===
-{}", zig);
+        println!(
+            "=== Getter ===
+{}",
+            zig
+        );
         // Getter return expression should be used as field value
-        assert!(zig.contains(".x = 42"), "Expected getter value as field: {}", zig);
-        assert!(!zig.contains("get "), "Should not have 'get' keyword: {}", zig);
+        assert!(
+            zig.contains(".x = 42"),
+            "Expected getter value as field: {}",
+            zig
+        );
+        assert!(
+            !zig.contains("get "),
+            "Should not have 'get' keyword: {}",
+            zig
+        );
     }
 
     // ── Test: Setter skipped in object literal ─────
@@ -2763,11 +2859,18 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_setter_skipped");
-        println!("=== Setter skipped ===
-{}", zig);
+        println!(
+            "=== Setter skipped ===
+{}",
+            zig
+        );
         // Setter should be removed — only field 'a' remains
         assert!(!zig.contains("set "), "Setter should be removed: {}", zig);
-        assert!(zig.contains(".a = 1"), "Regular field should be preserved: {}", zig);
+        assert!(
+            zig.contains(".a = 1"),
+            "Regular field should be preserved: {}",
+            zig
+        );
     }
 
     // ── Test: Combined getter/setter in object ─────
@@ -2782,11 +2885,26 @@ export function powMixed() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_getter_setter_combined");
-        println!("=== Combined getter/setter ===
-{}", zig);
-        assert!(zig.contains(".name = \"test\""), "Regular property should remain: {}", zig);
-        assert!(zig.contains(".age = 25"), "Getter should provide field value: {}", zig);
-        assert!(!zig.contains("set "), "No setter keyword in output: {}", zig);
+        println!(
+            "=== Combined getter/setter ===
+{}",
+            zig
+        );
+        assert!(
+            zig.contains(".name = \"test\""),
+            "Regular property should remain: {}",
+            zig
+        );
+        assert!(
+            zig.contains(".age = 25"),
+            "Getter should provide field value: {}",
+            zig
+        );
+        assert!(
+            !zig.contains("set "),
+            "No setter keyword in output: {}",
+            zig
+        );
     }
 
     // ── Test: Optional chaining (?. ) — known struct → direct access ─────
@@ -2802,8 +2920,16 @@ export function getProp(obj) {
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_known_struct");
         // Should generate direct access: obj.name (no if-wrapper)
-        assert!(zig.contains("obj.name"), "Should use direct access obj.name: {}", zig);
-        assert!(!zig.contains("_oc"), "Should NOT generate null-check temp var for known struct: {}", zig);
+        assert!(
+            zig.contains("obj.name"),
+            "Should use direct access obj.name: {}",
+            zig
+        );
+        assert!(
+            !zig.contains("_oc"),
+            "Should NOT generate null-check temp var for known struct: {}",
+            zig
+        );
     }
 
     // ── Test: Optional chaining (?. ) — unknown type → null check ─────────
@@ -2827,7 +2953,11 @@ function getUnknown(obj) {
             "Should generate temp var capture: {}",
             zig
         );
-        assert!(zig.contains(" else null)"), "Should have else null: {}", zig);
+        assert!(
+            zig.contains(" else null)"),
+            "Should have else null: {}",
+            zig
+        );
     }
 
     // ── Test: Optional chaining call — unknown callee → null check ─ ─
@@ -2845,12 +2975,12 @@ function callMaybe(obj) {
             "Should generate null check + call pattern: {}",
             zig
         );
-        assert!(zig.contains(" else null)"), "Should have else null: {}", zig);
         assert!(
-            zig.contains("greet("),
-            "Should call method greet: {}",
+            zig.contains(" else null)"),
+            "Should have else null: {}",
             zig
         );
+        assert!(zig.contains("greet("), "Should call method greet: {}", zig);
     }
 
     // ── Test: Nested optional chaining (a?.b?.c) ──────────────────────────
@@ -2866,10 +2996,14 @@ function deep(obj) {
         let zig = transpile_and_assert!(js, "test_native_proto_optional_chain_nested");
         // Should have two levels of null check
         let oc_count = zig.matches("_oc").count();
-        assert!(oc_count >= 2, "Expected at least 2 temp vars for nested chain, got {}: {}", oc_count, zig);
         assert!(
-            zig.contains(" else null)")
-                || zig.contains(" else null"),
+            oc_count >= 2,
+            "Expected at least 2 temp vars for nested chain, got {}: {}",
+            oc_count,
+            zig
+        );
+        assert!(
+            zig.contains(" else null)") || zig.contains(" else null"),
             "Should have else null branches: {}",
             zig
         );
@@ -2908,8 +3042,16 @@ function hasProp(obj) {
 }
 "##;
         let zig = transpile_and_check!(js, "test_p1_in_operator");
-        assert!(zig.contains(".contains("), "Expected .contains() in:\n{}", zig);
-        assert!(zig.contains("\"name\""), "Expected key literal in:\n{}", zig);
+        assert!(
+            zig.contains(".contains("),
+            "Expected .contains() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("\"name\""),
+            "Expected key literal in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2947,7 +3089,11 @@ export function getNow() {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_date_now");
-        assert!(zig.contains("js_date.now()"), "Expected js_date.now() in:\n{}", zig);
+        assert!(
+            zig.contains("js_date.now()"),
+            "Expected js_date.now() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2961,7 +3107,11 @@ export function parseDate(s) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_date_parse");
-        assert!(zig.contains("js_date.parse("), "Expected js_date.parse() in:\n{}", zig);
+        assert!(
+            zig.contains("js_date.parse("),
+            "Expected js_date.parse() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2977,7 +3127,11 @@ export function utcDate(y, m, d) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_date_utc");
-        assert!(zig.contains("@compileError"), "Expected @compileError in:\n{}", zig);
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -2999,14 +3153,46 @@ export function dateParts(d) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_date_instance_methods");
-        assert!(zig.contains("js_date.getTime("), "Expected js_date.getTime() in:\n{}", zig);
-        assert!(zig.contains("js_date.getFullYear("), "Expected js_date.getFullYear() in:\n{}", zig);
-        assert!(zig.contains("js_date.getMonth("), "Expected js_date.getMonth() in:\n{}", zig);
-        assert!(zig.contains("js_date.getDate("), "Expected js_date.getDate() in:\n{}", zig);
-        assert!(zig.contains("js_date.getDay("), "Expected js_date.getDay() in:\n{}", zig);
-        assert!(zig.contains("js_date.getHours("), "Expected js_date.getHours() in:\n{}", zig);
-        assert!(zig.contains("js_date.getMinutes("), "Expected js_date.getMinutes() in:\n{}", zig);
-        assert!(zig.contains("js_date.getSeconds("), "Expected js_date.getSeconds() in:\n{}", zig);
+        assert!(
+            zig.contains("js_date.getTime("),
+            "Expected js_date.getTime() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getFullYear("),
+            "Expected js_date.getFullYear() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getMonth("),
+            "Expected js_date.getMonth() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getDate("),
+            "Expected js_date.getDate() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getDay("),
+            "Expected js_date.getDay() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getHours("),
+            "Expected js_date.getHours() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getMinutes("),
+            "Expected js_date.getMinutes() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_date.getSeconds("),
+            "Expected js_date.getSeconds() in:\n{}",
+            zig
+        );
     }
 
     // ── P1-3: Object static methods ──────────────────────────────
@@ -3019,7 +3205,11 @@ function getKeys(obj) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_object_keys");
-        assert!(zig.contains("js_object.keys("), "Expected js_object.keys() in:\n{}", zig);
+        assert!(
+            zig.contains("js_object.keys("),
+            "Expected js_object.keys() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3030,7 +3220,11 @@ function getValues(obj) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_object_values");
-        assert!(zig.contains("js_object.values("), "Expected js_object.values() in:\n{}", zig);
+        assert!(
+            zig.contains("js_object.values("),
+            "Expected js_object.values() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3041,7 +3235,11 @@ function getEntries(obj) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_object_entries");
-        assert!(zig.contains("js_object.entries("), "Expected js_object.entries() in:\n{}", zig);
+        assert!(
+            zig.contains("js_object.entries("),
+            "Expected js_object.entries() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3052,7 +3250,11 @@ function copyObj(target, source) {
 }
 "#;
         let zig = transpile_and_check!(js, "test_p1_object_assign");
-        assert!(zig.contains("js_object.assign("), "Expected js_object.assign() in:\n{}", zig);
+        assert!(
+            zig.contains("js_object.assign("),
+            "Expected js_object.assign() in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3065,7 +3267,11 @@ function freezeObj(obj) {
 "#;
         let zig = transpile_and_check!(js, "test_p1_object_freeze");
         // freeze is a pass-through; should NOT generate any js_object call
-        assert!(!zig.contains("js_object"), "freeze should be a no-op (no js_object call):\n{}", zig);
+        assert!(
+            !zig.contains("js_object"),
+            "freeze should be a no-op (no js_object call):\n{}",
+            zig
+        );
     }
 
     // ── P1-4: Labeled statements ─────────────────────────────────
@@ -3088,8 +3294,16 @@ export function labWhile(n) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_labeled_while");
-        assert!(zig.contains("outer: while"), "Expected 'outer: while' in:\n{}", zig);
-        assert!(zig.contains("break :outer"), "Expected 'break :outer' in:\n{}", zig);
+        assert!(
+            zig.contains("outer: while"),
+            "Expected 'outer: while' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :outer"),
+            "Expected 'break :outer' in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3111,8 +3325,16 @@ export function labFor(n) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_labeled_for");
         // for loop is transformed to while, but the label should be preserved
-        assert!(zig.contains("loop1:"), "Expected 'loop1:' label in:\n{}", zig);
-        assert!(zig.contains("continue :loop1"), "Expected 'continue :loop1' in:\n{}", zig);
+        assert!(
+            zig.contains("loop1:"),
+            "Expected 'loop1:' label in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("continue :loop1"),
+            "Expected 'continue :loop1' in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3131,9 +3353,17 @@ export function labDoWhile() {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_labeled_do_while");
         // Labeled do-while generates "retry: " prefix followed by loop body
-        assert!(zig.contains("retry:"), "Expected 'retry:' label in:\n{}", zig);
+        assert!(
+            zig.contains("retry:"),
+            "Expected 'retry:' label in:\n{}",
+            zig
+        );
         assert!(zig.contains("while"), "Expected while loop in:\n{}", zig);
-        assert!(zig.contains("continue :retry"), "Expected 'continue :retry' in:\n{}", zig);
+        assert!(
+            zig.contains("continue :retry"),
+            "Expected 'continue :retry' in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3154,8 +3384,16 @@ export function labForOf(arr) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_labeled_for_of");
-        assert!(zig.contains("items:"), "Expected labeled for-of in:\n{}", zig);
-        assert!(zig.contains("break :items"), "Expected 'break :items' in:\n{}", zig);
+        assert!(
+            zig.contains("items:"),
+            "Expected labeled for-of in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :items"),
+            "Expected 'break :items' in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3178,8 +3416,16 @@ export function labBlock(x) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_labeled_block");
-        assert!(zig.contains("check: {"), "Expected 'check: {{' in:\n{}", zig);
-        assert!(zig.contains("break :check"), "Expected 'break :check' in:\n{}", zig);
+        assert!(
+            zig.contains("check: {"),
+            "Expected 'check: {{' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :check"),
+            "Expected 'break :check' in:\n{}",
+            zig
+        );
     }
 
     // ── P1-5: Multi-spread object merge ──────────────────────────
@@ -3194,7 +3440,11 @@ function spreadOne(a) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_spread_single");
         // Single spread with no inline should just emit the expression
-        assert!(!zig.contains("spreadMerge"), "Single spread should be identity:\n{}", zig);
+        assert!(
+            !zig.contains("spreadMerge"),
+            "Single spread should be identity:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3211,7 +3461,11 @@ function spreadInline(a) {
             "Expected js_runtime.spreadMerge() in:\n{}",
             zig
         );
-        assert!(zig.contains(".extra = 1"), "Expected .extra field in:\n{}", zig);
+        assert!(
+            zig.contains(".extra = 1"),
+            "Expected .extra field in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3224,7 +3478,11 @@ function spreadTwo(a, b) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_spread_multi");
         let merge_count = zig.matches("spreadMerge").count();
-        assert_eq!(merge_count, 1, "Expected exactly 1 spreadMerge call, got {}:\n{}", merge_count, zig);
+        assert_eq!(
+            merge_count, 1,
+            "Expected exactly 1 spreadMerge call, got {}:\n{}",
+            merge_count, zig
+        );
     }
 
     #[test]
@@ -3237,9 +3495,17 @@ function spreadThree(a, b) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_spread_multi_with_inline");
         let merge_count = zig.matches("spreadMerge").count();
-        assert_eq!(merge_count, 2, "Expected 2 spreadMerge calls, got {}:\n{}", merge_count, zig);
+        assert_eq!(
+            merge_count, 2,
+            "Expected 2 spreadMerge calls, got {}:\n{}",
+            merge_count, zig
+        );
         assert!(zig.contains(".c = 1"), "Expected .c field in:\n{}", zig);
-        assert!(zig.contains(".d = \"hello\""), "Expected .d field in:\n{}", zig);
+        assert!(
+            zig.contains(".d = \"hello\""),
+            "Expected .d field in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3269,7 +3535,11 @@ function arraySpread(a, b) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_array_spread_simple");
-        assert!(zig.contains("appendSlice"), "Expected appendSlice in:\n{}", zig);
+        assert!(
+            zig.contains("appendSlice"),
+            "Expected appendSlice in:\n{}",
+            zig
+        );
         assert!(zig.contains(".items)"), "Expected .items in:\n{}", zig);
     }
 
@@ -3282,8 +3552,16 @@ function arraySpreadMixed(a, b) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_array_spread_mixed");
-        assert!(zig.contains("appendSlice"), "Expected appendSlice in:\n{}", zig);
-        assert!(zig.contains("append(js_allocator.getAllocator()"), "Expected append in:\n{}", zig);
+        assert!(
+            zig.contains("appendSlice"),
+            "Expected appendSlice in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("append(js_allocator.getAllocator()"),
+            "Expected append in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3296,8 +3574,16 @@ function arraySpreadSingle(a) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_array_spread_single");
         // Single array spread must create a new array via appendSlice
-        assert!(zig.contains("appendSlice"), "[...a] should use appendSlice, got:\n{}", zig);
-        assert!(zig.contains("arraySpreadSingle"), "Expected function def in:\n{}", zig);
+        assert!(
+            zig.contains("appendSlice"),
+            "[...a] should use appendSlice, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("arraySpreadSingle"),
+            "Expected function def in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3309,7 +3595,11 @@ function arrayElision() {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_array_spread_elision");
-        assert!(zig.contains("JsAny"), "Expected JsAny for elision in:\n{}", zig);
+        assert!(
+            zig.contains("JsAny"),
+            "Expected JsAny for elision in:\n{}",
+            zig
+        );
     }
 
     #[test]
@@ -3323,7 +3613,11 @@ function foo(...args) {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_rest_param_and_call_spread");
         // Check that foo accepts []const JsAny
-        assert!(zig.contains("foo(args: []const JsAny)"), "Expected rest param in:\n{}", zig);
+        assert!(
+            zig.contains("foo(args: []const JsAny)"),
+            "Expected rest param in:\n{}",
+            zig
+        );
         // Check that args.length is translated to args.len
         assert!(zig.contains("args.len"), "Expected args.len in:\n{}", zig);
     }
@@ -3342,8 +3636,16 @@ function test() {
 "#;
         let zig = transpile_and_assert!(js, "test_p1_call_spread");
         // Check that foo accepts []const JsAny
-        assert!(zig.contains("foo(args: []const JsAny)"), "Expected rest param in:\n{}", zig);
+        assert!(
+            zig.contains("foo(args: []const JsAny)"),
+            "Expected rest param in:\n{}",
+            zig
+        );
         // Check that foo(...arr) becomes foo(arr.items)
-        assert!(zig.contains("foo(arr.items)"), "Expected call spread in:\n{}", zig);
+        assert!(
+            zig.contains("foo(arr.items)"),
+            "Expected call spread in:\n{}",
+            zig
+        );
     }
 }

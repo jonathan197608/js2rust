@@ -98,7 +98,6 @@
 - 闭包可变捕获生成 `self.x.*`（指针解引用），多次调用闭包时可能导致 Zig 借用检查器错误
 - 大型数组/对象字面量（1000+ 元素）可能导致 Zig 编译器栈溢出，建议使用动态分配
 - 深层嵌套函数调用（如 `a(b(c(d(e(f())))))`）可能导致 Zig 编译器递归深度超限
-- `Math.hypot()` 只支持两个参数，且 `@sqrt(a*a + b*b)` 可能溢出，标准 `hypot` 支持多参数且数值稳定
 - Unicode 标识符（如中文变量名）应由 oxc 解析器和 Zig 编译器支持，但未经完整测试
 - `try-catch` 嵌套资源释放未验证：使用 labeled block + catch handler，finally 内联 emit，需验证嵌套场景下资源是否正确释放
 - 模板字符串 `allocPrint` 使用 arena allocator（`js_allocator`），内存由 arena 自动管理，不会泄漏
@@ -325,7 +324,7 @@
 | `Math.pow(b, e)` | ✅ | `std.math.pow(f64, b, e)` | 同上 |
 | `Math.random()` | ✅ | `std.crypto.random.float(f64)` | 同上 |
 | `Math.sign(x)` | ✅ | 三路 if 表达式 | 同上 |
-| `Math.hypot(a, b)` | 🚧 | `@sqrt(a*a + b*b)` (只支持两个参数，可能溢出) | 同上 |
+| `Math.hypot(a, b)` | ❌ | `@compileError("Math.hypot() is not supported")` | - |
 
 ### 4.2 `String` - ✅ 95% 实现
 
@@ -335,7 +334,7 @@
 | `.toUpperCase()` | ✅ | `js_string.toUpper(s)` | 隐式测试 |
 | `.toLowerCase()` | ✅ | `js_string.toLower(s)` | 同上 |
 | `.charAt(i)` | ✅ | `js_string.charAt(s, i)` | 同上 |
-| `.charCodeAt(i)` | ⚠️ | `s[@intCast(i)]` (返回 u8，非 UTF-16) | 同上 |
+| `.charCodeAt(i)` | ✅ | `js_string.charCodeAt(s, i)` (返回 UTF-16 码元) | 同上 |
 | `.concat(other)` | ✅ | `js_string.concat(s, other)` | `test_native_proto_string_concat_*` |
 | `.includes(sub)` | ✅ | `js_string.includes(s, sub)` | 同上 |
 | `.indexOf(sub)` | ✅ | `js_string.indexOf(s, sub)` | 同上 |

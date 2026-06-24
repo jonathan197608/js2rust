@@ -228,22 +228,21 @@ impl TypeInferrer {
                 _ => return InferResult::Indeterminate,
             };
             match p.kind {
-                PropertyKind::Init => {
-                    match self.infer_expr_type(&p.value) {
-                        InferResult::Definite(ft) => fields.push((field_name, ft)),
-                        InferResult::Indeterminate => return InferResult::Indeterminate,
-                    }
-                }
+                PropertyKind::Init => match self.infer_expr_type(&p.value) {
+                    InferResult::Definite(ft) => fields.push((field_name, ft)),
+                    InferResult::Indeterminate => return InferResult::Indeterminate,
+                },
                 PropertyKind::Get => {
                     // Getter: infer from return expression in function body
                     if let Expression::FunctionExpression(func) = &p.value
                         && let Some(body) = &func.body
-                            && let Some(return_expr) = Self::extract_return_expr(body) {
-                                match self.infer_expr_type(return_expr) {
-                                    InferResult::Definite(ft) => fields.push((field_name, ft)),
-                                    InferResult::Indeterminate => return InferResult::Indeterminate,
-                                }
-                            }
+                        && let Some(return_expr) = Self::extract_return_expr(body)
+                    {
+                        match self.infer_expr_type(return_expr) {
+                            InferResult::Definite(ft) => fields.push((field_name, ft)),
+                            InferResult::Indeterminate => return InferResult::Indeterminate,
+                        }
+                    }
                 }
                 PropertyKind::Set => {
                     // Setter: skip, doesn't contribute a field
@@ -254,11 +253,14 @@ impl TypeInferrer {
     }
 
     /// Extract the return expression from a function body with a single return statement.
-    fn extract_return_expr<'a>(body: &'a oxc_ast::ast::FunctionBody<'a>) -> Option<&'a Expression<'a>> {
+    fn extract_return_expr<'a>(
+        body: &'a oxc_ast::ast::FunctionBody<'a>,
+    ) -> Option<&'a Expression<'a>> {
         if body.statements.len() == 1
-            && let Statement::ReturnStatement(ret) = &body.statements[0] {
-                return ret.argument.as_ref();
-            }
+            && let Statement::ReturnStatement(ret) = &body.statements[0]
+        {
+            return ret.argument.as_ref();
+        }
         None
     }
 

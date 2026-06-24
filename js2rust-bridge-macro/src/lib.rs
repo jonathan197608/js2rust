@@ -11,10 +11,10 @@
 //! The group name is derived from the file name (sanitized for Zig identifiers).
 //! A minimal `build.rs` only needs `js2rust_bridge::build(false)`.
 
+use indexmap::IndexMap;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
-use indexmap::IndexMap;
 
 mod host_fn;
 
@@ -68,8 +68,7 @@ struct TomlHostFn {
 
 /// Load js2rust.toml from CARGO_MANIFEST_DIR.
 fn load_toml_config() -> TomlConfig {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let config_path = std::path::Path::new(&manifest_dir).join("js2rust.toml");
 
     let content = std::fs::read_to_string(&config_path).unwrap_or_else(|e| {
@@ -178,16 +177,13 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             .map(|t| type_name_to_host_type(t))
             .collect();
 
-        let return_type = hf
-            .returns
-            .as_deref()
-            .and_then(|t| {
-                if t == "void" {
-                    None
-                } else {
-                    Some(type_name_to_host_type(t))
-                }
-            });
+        let return_type = hf.returns.as_deref().and_then(|t| {
+            if t == "void" {
+                None
+            } else {
+                Some(type_name_to_host_type(t))
+            }
+        });
 
         let async_return_fields: Vec<(String, js2zig_core::HostType)> = hf
             .async_returns
@@ -264,13 +260,14 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
     // Optionally run zig build (side effect)
     let zig_project_dir = cache_dir.join(&group);
-    let lib_path = zig_project_dir
-        .join("zig-out")
-        .join("lib")
-        .join(format!(
-            "{}.lib",
-            if cfg!(target_os = "windows") { &group } else { "lib" }
-        ));
+    let lib_path = zig_project_dir.join("zig-out").join("lib").join(format!(
+        "{}.lib",
+        if cfg!(target_os = "windows") {
+            &group
+        } else {
+            "lib"
+        }
+    ));
     let lib_exists = lib_path.exists()
         || zig_project_dir
             .join("zig-out")
@@ -528,9 +525,7 @@ fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<St
         // Return type
         let ret_ty = if !hf.async_returns.is_empty() {
             let struct_name = format_ident!("Host{}Result", pascal_case(&hf.name));
-            async_struct_defs.push(generate_async_struct(
-                &struct_name, &hf.async_returns,
-            ));
+            async_struct_defs.push(generate_async_struct(&struct_name, &hf.async_returns));
             quote! { #struct_name }
         } else if hf.returns.as_deref() == Some("str") {
             quote! { js2rust_bridge::sdk::JsStr }
@@ -652,8 +647,10 @@ fn generate_async_struct(
 fn build_host_stub_doc(hf: &TomlHostFn) -> String {
     let js_params = hf.params.join(", ");
     let js_ret = if !hf.async_returns.is_empty() {
-        format!("{{ {} }}",
-            hf.async_returns.iter()
+        format!(
+            "{{ {} }}",
+            hf.async_returns
+                .iter()
                 .map(|(k, v)| format!("{}: {}", k, v))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -662,10 +659,19 @@ fn build_host_stub_doc(hf: &TomlHostFn) -> String {
         hf.returns.as_deref().unwrap_or("void").to_string()
     };
 
-    let cabi_sig = hf.params.iter().enumerate().map(|(i, t)| {
-        if t == "str" { format!("arg{}_ptr: *const u8, arg{}_len: usize", i, i) }
-        else { format!("arg{}: {}", i, t) }
-    }).collect::<Vec<_>>().join(", ");
+    let cabi_sig = hf
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            if t == "str" {
+                format!("arg{}_ptr: *const u8, arg{}_len: usize", i, i)
+            } else {
+                format!("arg{}: {}", i, t)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let ret_sig = if hf.returns.as_deref() == Some("str") {
         "JsStr".to_string()
@@ -677,7 +683,10 @@ fn build_host_stub_doc(hf: &TomlHostFn) -> String {
         hf.returns.as_deref().unwrap().to_string()
     };
 
-    let sdk_note = if hf.params.contains(&"str".to_string()) || hf.returns.as_deref() == Some("str") || !hf.async_returns.is_empty() {
+    let sdk_note = if hf.params.contains(&"str".to_string())
+        || hf.returns.as_deref() == Some("str")
+        || !hf.async_returns.is_empty()
+    {
         "\nSDK types used: HostStr::from_raw(ptr,len) for params, JsStr::new(&result) / JsStrField::new(&field) for returns"
     } else {
         ""

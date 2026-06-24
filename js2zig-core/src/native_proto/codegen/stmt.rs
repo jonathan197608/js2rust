@@ -19,11 +19,14 @@ fn stmt_list_references_name(stmts: &[Statement], name: &str) -> bool {
 fn stmt_references_name(stmt: &Statement, name: &str) -> bool {
     match stmt {
         Statement::ExpressionStatement(es) => expr_references_name(&es.expression, name),
-        Statement::ReturnStatement(rs) => {
-            rs.argument.as_ref().is_some_and(|a| expr_references_name(a, name))
-        }
+        Statement::ReturnStatement(rs) => rs
+            .argument
+            .as_ref()
+            .is_some_and(|a| expr_references_name(a, name)),
         Statement::VariableDeclaration(vd) => vd.declarations.iter().any(|d| {
-            d.init.as_ref().is_some_and(|init| expr_references_name(init, name))
+            d.init
+                .as_ref()
+                .is_some_and(|init| expr_references_name(init, name))
         }),
         Statement::BlockStatement(bs) => stmt_list_references_name(&bs.body, name),
         _ => false,
@@ -53,10 +56,7 @@ impl Codegen {
             if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                 // Use Zig 'const' when the variable is never mutated (regardless of JS const/var/let).
                 // Only use Zig 'var' when the variable is actually reassigned.
-                let fn_prefix = self
-                    .current_fn
-                    .as_deref()
-                    .unwrap_or("__toplevel__");
+                let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
                 let is_const = !self
                     .type_info
                     .mutated_vars
@@ -98,14 +98,16 @@ impl Codegen {
                                 self.write_indent();
                                 self.write(&format!("const {} = {} {{ ", name, fn_name));
                                 // Generate field initializers
-                        for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
-                            if i > 0 { self.write(", "); }
-                            if *is_mut {
-                                self.write(&format!(".{} = &{}", cap_name, cap_name));
-                            } else {
-                                self.write(&format!(".{} = {}", cap_name, cap_name));
-                            }
-                        }
+                                for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
+                                    if i > 0 {
+                                        self.write(", ");
+                                    }
+                                    if *is_mut {
+                                        self.write(&format!(".{} = &{}", cap_name, cap_name));
+                                    } else {
+                                        self.write(&format!(".{} = {}", cap_name, cap_name));
+                                    }
+                                }
                                 self.write(" };\n");
                             }
                             // Mark this variable as a closure instance
@@ -113,8 +115,11 @@ impl Codegen {
                         } else {
                             // Plain arrow function: assign function to variable
                             self.write_indent();
-                            self.write(&format!("const {} = {};
-", name, fn_name));
+                            self.write(&format!(
+                                "const {} = {};
+",
+                                name, fn_name
+                            ));
                         }
                     }
                     Some(init) => {
@@ -230,7 +235,9 @@ impl Codegen {
                 Statement::LabeledStatement(s) => stmt_or_expr_has_throw(&s.body),
                 Statement::IfStatement(s) => {
                     stmt_or_expr_has_throw(&s.consequent)
-                        || s.alternate.as_ref().is_some_and(|a| stmt_or_expr_has_throw(a))
+                        || s.alternate
+                            .as_ref()
+                            .is_some_and(|a| stmt_or_expr_has_throw(a))
                 }
                 Statement::WhileStatement(s) => stmt_or_expr_has_throw(&s.body),
                 Statement::DoWhileStatement(s) => stmt_or_expr_has_throw(&s.body),
@@ -238,9 +245,10 @@ impl Codegen {
                 Statement::ForOfStatement(s) => stmt_or_expr_has_throw(&s.body),
                 Statement::ForInStatement(s) => stmt_or_expr_has_throw(&s.body),
                 Statement::BlockStatement(s) => s.body.iter().any(stmt_has_throw),
-                Statement::SwitchStatement(s) => {
-                    s.cases.iter().any(|c| c.consequent.iter().any(stmt_has_throw))
-                }
+                Statement::SwitchStatement(s) => s
+                    .cases
+                    .iter()
+                    .any(|c| c.consequent.iter().any(stmt_has_throw)),
                 _ => false,
             }
         }
@@ -326,7 +334,10 @@ impl Codegen {
 
         // Pre-scan: check if function contains throw or try-catch.
         // This must happen BEFORE generating the return signature (need !T for throw).
-        let has_throw = fd.body.as_ref().is_some_and(|b| Codegen::has_throw_in_body(b));
+        let has_throw = fd
+            .body
+            .as_ref()
+            .is_some_and(|b| Codegen::has_throw_in_body(b));
         self.fn_has_throw = has_throw;
 
         // Read pre-computed return type from TypeInferResult.
@@ -377,22 +388,25 @@ impl Codegen {
                 param_idx += 1;
             }
             // Handle rest parameter (...args) from type_info or AST
-            if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
-                crate::native_proto::infer::binding_name(&r.rest.argument)
-            })
-                && let Some(rname) = rest_name {
-                    if param_idx > 0 || is_async {
-                        self.write(", ");
-                    }
-                    let zig_pname = if fn_used_names.contains(rname) {
-                        rname
-                    } else {
-                        self.write("_");
-                        rname
-                    };
-                    // Rest parameter: accepts []const JsAny
-                    self.write(&format!("{}: []const JsAny", zig_pname));
+            if let Some(rest_name) = fd
+                .params
+                .rest
+                .as_ref()
+                .map(|r| crate::native_proto::infer::binding_name(&r.rest.argument))
+                && let Some(rname) = rest_name
+            {
+                if param_idx > 0 || is_async {
+                    self.write(", ");
                 }
+                let zig_pname = if fn_used_names.contains(rname) {
+                    rname
+                } else {
+                    self.write("_");
+                    rname
+                };
+                // Rest parameter: accepts []const JsAny
+                self.write(&format!("{}: []const JsAny", zig_pname));
+            }
         } else {
             // Fallback: generate params from AST with anytype
             let mut param_idx = 0;
@@ -416,21 +430,24 @@ impl Codegen {
                 }
             }
             // Handle rest parameter (...args) in fallback mode
-            if let Some(rest_name) = fd.params.rest.as_ref().map(|r| {
-                crate::native_proto::infer::binding_name(&r.rest.argument)
-            })
-                && let Some(rname) = rest_name {
-                    if param_idx > 0 || is_async {
-                        self.write(", ");
-                    }
-                    let zig_pname = if fn_used_names.contains(rname) {
-                        rname
-                    } else {
-                        self.write("_");
-                        rname
-                    };
-                    self.write(&format!("{}: []const JsAny", zig_pname));
+            if let Some(rest_name) = fd
+                .params
+                .rest
+                .as_ref()
+                .map(|r| crate::native_proto::infer::binding_name(&r.rest.argument))
+                && let Some(rname) = rest_name
+            {
+                if param_idx > 0 || is_async {
+                    self.write(", ");
                 }
+                let zig_pname = if fn_used_names.contains(rname) {
+                    rname
+                } else {
+                    self.write("_");
+                    rname
+                };
+                self.write(&format!("{}: []const JsAny", zig_pname));
+            }
         }
 
         // Return type — async + throw functions return error unions
@@ -767,10 +784,7 @@ impl Codegen {
                 // ── Catch handler ──
                 if let Some(ref handler) = ts.handler {
                     self.write_indent();
-                    self.write(&format!(
-                        "_ = {} catch |err| {{\n",
-                        result_var
-                    ));
+                    self.write(&format!("_ = {} catch |err| {{\n", result_var));
                     self.indent += 1;
 
                     // Bind catch parameter: JS `catch(e)` → map `e` to `err` in Zig.
@@ -1057,7 +1071,9 @@ impl Codegen {
         };
         self.write("for (");
         self.emit_expr(&fos.right);
-        if iterable_is_arraylist { self.write(".items"); }
+        if iterable_is_arraylist {
+            self.write(".items");
+        }
         self.write(&format!(") |{}| {{\n", var_name));
         self.indent += 1;
         self.emit_stmt_or_block(&fos.body);
@@ -1090,9 +1106,7 @@ impl Codegen {
             _ => {
                 // Non-identifier expressions not supported for for-in
                 self.write_indent();
-                self.writeln(
-                    "@compileError(\"for-in only supported with identifier objects\");",
-                );
+                self.writeln("@compileError(\"for-in only supported with identifier objects\");");
                 return;
             }
         };
@@ -1122,21 +1136,22 @@ impl Codegen {
 
         // Case 2: Static struct with known fields → unroll loop
         if let Some(ZigType::Struct(fields)) = obj_type
-            && !fields.is_empty() {
-                let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
-                for (field_name, _) in &fields {
-                    self.write_indent();
-                    self.writeln("{");
-                    self.indent += 1;
-                    self.write_indent();
-                    self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
-                    self.emit_stmt_or_block(&fis.body);
-                    self.indent -= 1;
-                    self.write_indent();
-                    self.writeln("}");
-                }
-                return;
+            && !fields.is_empty()
+        {
+            let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
+            for (field_name, _) in &fields {
+                self.write_indent();
+                self.writeln("{");
+                self.indent += 1;
+                self.write_indent();
+                self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
+                self.emit_stmt_or_block(&fis.body);
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("}");
             }
+            return;
+        }
 
         // Case 3: Unknown type → compile error
         self.write_indent();
@@ -1181,21 +1196,22 @@ impl Codegen {
             return;
         }
         if let Some(ZigType::Struct(fields)) = obj_type
-            && !fields.is_empty() {
-                let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
-                for (field_name, _) in &fields {
-                    self.write_indent();
-                    self.writeln("{");
-                    self.indent += 1;
-                    self.write_indent();
-                    self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
-                    self.emit_stmt_or_block(&fis.body);
-                    self.indent -= 1;
-                    self.write_indent();
-                    self.writeln("}");
-                }
-                return;
+            && !fields.is_empty()
+        {
+            let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
+            for (field_name, _) in &fields {
+                self.write_indent();
+                self.writeln("{");
+                self.indent += 1;
+                self.write_indent();
+                self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
+                self.emit_stmt_or_block(&fis.body);
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("}");
             }
+            return;
+        }
         self.write(&format!(
             "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
             obj_name
@@ -1535,7 +1551,10 @@ impl Codegen {
     /// Collect captured variables from an arrow function body.
     /// A variable is "captured" if it's referenced in the body but is not a parameter.
     /// Correctly sets `is_mut` by detecting mutations in the arrow body.
-    fn collect_captured_vars(&self, arrow: &ArrowFunctionExpression) -> Vec<(String, ZigType, bool)> {
+    fn collect_captured_vars(
+        &self,
+        arrow: &ArrowFunctionExpression,
+    ) -> Vec<(String, ZigType, bool)> {
         let mut captured = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
@@ -1550,7 +1569,13 @@ impl Codegen {
 
         // Walk the body statements to find Identifier references
         for stmt in &arrow.body.statements {
-            Self::collect_idents_from_stmt(stmt, &mut captured, &mut seen, &param_names, &self.type_info);
+            Self::collect_idents_from_stmt(
+                stmt,
+                &mut captured,
+                &mut seen,
+                &param_names,
+                &self.type_info,
+            );
         }
 
         // Detect which captured variables are mutated in the arrow body
@@ -1573,7 +1598,13 @@ impl Codegen {
     ) {
         match stmt {
             Statement::ExpressionStatement(es) => {
-                Self::collect_idents_from_expr(&es.expression, captured, seen, param_names, type_info);
+                Self::collect_idents_from_expr(
+                    &es.expression,
+                    captured,
+                    seen,
+                    param_names,
+                    type_info,
+                );
             }
             Statement::ReturnStatement(ret) => {
                 if let Some(expr) = &ret.argument {
@@ -1599,7 +1630,11 @@ impl Codegen {
                 // If not a parameter and not already seen, it's a captured variable
                 if !param_names.contains(name) && !seen.contains(name) {
                     seen.insert(name.to_string());
-                    let ztype = type_info.var_types.get(name).cloned().unwrap_or(ZigType::I64);
+                    let ztype = type_info
+                        .var_types
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(ZigType::I64);
                     // TODO: properly detect if captured var is mutated in arrow body
                     let is_mut = false;
                     captured.push((name.to_string(), ztype, is_mut));
@@ -1612,7 +1647,13 @@ impl Codegen {
             Expression::CallExpression(ce) => {
                 for arg in &ce.arguments {
                     if let Some(expr) = arg.as_expression() {
-                        Self::collect_idents_from_expr(expr, captured, seen, param_names, type_info);
+                        Self::collect_idents_from_expr(
+                            expr,
+                            captured,
+                            seen,
+                            param_names,
+                            type_info,
+                        );
                     }
                 }
                 Self::collect_idents_from_expr(&ce.callee, captured, seen, param_names, type_info);
@@ -1636,10 +1677,7 @@ impl Codegen {
                 // - Single-expression arrow: always returns a value → i64
                 // - Block-body without return → void
                 if arrow.body.statements.len() == 1
-                    && matches!(
-                        arrow.body.statements[0],
-                        Statement::ExpressionStatement(_)
-                    )
+                    && matches!(arrow.body.statements[0], Statement::ExpressionStatement(_))
                 {
                     "i64"
                 } else {
@@ -1649,11 +1687,7 @@ impl Codegen {
                         .statements
                         .iter()
                         .any(|s| matches!(s, Statement::ReturnStatement(_)));
-                    if has_return {
-                        "i64"
-                    } else {
-                        "void"
-                    }
+                    if has_return { "i64" } else { "void" }
                 }
             }
         }
@@ -1696,20 +1730,20 @@ impl Codegen {
             }
             Expression::StringLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
-            Expression::Identifier(id) => {
-                self.type_info.var_types.get(id.name.as_str()).cloned()
-            }
+            Expression::Identifier(id) => self.type_info.var_types.get(id.name.as_str()).cloned(),
             Expression::BinaryExpression(be) => {
                 // Heuristic: try left operand first (covers patterns like `x * 2`, `x > 0`)
-                self.infer_arrow_expr_type(&be.left).or_else(|| self.infer_arrow_expr_type(&be.right))
+                self.infer_arrow_expr_type(&be.left)
+                    .or_else(|| self.infer_arrow_expr_type(&be.right))
             }
-            Expression::UnaryExpression(ue) => {
-                self.infer_arrow_expr_type(&ue.argument)
-            }
+            Expression::UnaryExpression(ue) => self.infer_arrow_expr_type(&ue.argument),
             Expression::CallExpression(ce) => {
                 // Look up callee in fn_return_types
                 if let Expression::Identifier(id) = &ce.callee {
-                    self.type_info.fn_return_types.get(id.name.as_str()).cloned()
+                    self.type_info
+                        .fn_return_types
+                        .get(id.name.as_str())
+                        .cloned()
                 } else {
                     None
                 }
@@ -1732,12 +1766,17 @@ impl Codegen {
     }
     /// Generates the struct definition (with fields and call method) and stores it in self.closure_defs.
     /// Returns the struct name.
-    fn emit_closure_struct(&mut self, arrow: &ArrowFunctionExpression, captured: Vec<(String, ZigType, bool)>) -> String {
+    fn emit_closure_struct(
+        &mut self,
+        arrow: &ArrowFunctionExpression,
+        captured: Vec<(String, ZigType, bool)>,
+    ) -> String {
         let struct_name = format!("Closure_{}", self.arrow_counter);
         self.arrow_counter += 1;
 
         // Store closure info for assignment site (so emit_var_decl can generate instantiation)
-        self.closure_vars.insert(struct_name.clone(), captured.clone());
+        self.closure_vars
+            .insert(struct_name.clone(), captured.clone());
 
         // ── Temporarily redirect output to build the struct definition ──
         let old_output = std::mem::take(&mut self.output);
@@ -1843,10 +1882,10 @@ impl Codegen {
         // No captured vars: generate plain nested function (current behavior)
         let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
         self.arrow_counter += 1;
-        
+
         // Generate function signature (in a single string to avoid whitespace issues)
         let mut sig = format!("fn {}(", fn_name);
-        
+
         // Generate params
         for (param_idx, param) in arrow.params.items.iter().enumerate() {
             if param_idx > 0 {
@@ -1856,15 +1895,15 @@ impl Codegen {
                 sig.push_str(&format!("{}: anytype", pname));
             }
         }
-        
+
         // Infer return type from arrow body.
         sig.push_str(&format!(") {} {{", self.arrow_return_type_str(arrow)));
         self.write_indent();
         self.writeln(&sig);
-        
+
         // Generate function body
         self.indent += 1;
-        
+
         // Handle body: for single-expression arrows, the body is a FunctionBody
         // with a single ExpressionStatement.
         // We need to generate "return expr;" for the expression.
@@ -1874,8 +1913,10 @@ impl Codegen {
                 self.write_indent();
                 self.write("return ");
                 self.emit_expr(&es.expression);
-                self.write(";
-");
+                self.write(
+                    ";
+",
+                );
             } else {
                 // Block body with a single statement (not expression)
                 for stmt in &arrow.body.statements {
@@ -1888,10 +1929,10 @@ impl Codegen {
                 self.emit_fn_stmt(stmt);
             }
         }
-        
+
         self.indent -= 1;
         self.writeln("}");
-        
+
         fn_name
     }
 }

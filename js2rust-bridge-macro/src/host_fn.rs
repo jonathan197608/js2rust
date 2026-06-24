@@ -17,9 +17,9 @@
 //! }
 //! ```
 
-use syn::{ItemFn, FnArg, Pat, Type};
-use quote::{quote, format_ident};
 use proc_macro2::TokenStream as TokenStream2;
+use quote::{format_ident, quote};
+use syn::{FnArg, ItemFn, Pat, Type};
 
 // ── Main macro entry point ────────────────────────────────
 
@@ -35,9 +35,9 @@ pub fn host_fn_impl(_attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     let func = syn::parse2::<ItemFn>(item)
         .unwrap_or_else(|e| panic!("#[host_fn] must be applied to a function: {}", e));
 
-    let func_name  = &func.sig.ident;
+    let func_name = &func.sig.ident;
     let inner_name = format_ident!("__{}_inner", func_name);
-    let vis        = &func.vis;
+    let vis = &func.vis;
 
     // ── Analyze params ──────────────────────────────────────
     //
@@ -54,19 +54,19 @@ pub fn host_fn_impl(_attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
 
     let mut wrap_params = Vec::<TokenStream2>::new();
     let mut conv_stmts = Vec::<TokenStream2>::new();
-    let mut inner_args  = Vec::<TokenStream2>::new();
+    let mut inner_args = Vec::<TokenStream2>::new();
 
     for arg in &func.sig.inputs {
         match arg {
             FnArg::Typed(pat_type) => {
-                let pat = &*pat_type.pat;   // Box<Pat>
-                let ty  = &*pat_type.ty;     // Box<Type>
+                let pat = &*pat_type.pat; // Box<Pat>
+                let ty = &*pat_type.ty; // Box<Type>
 
                 if is_host_str_type(ty) {
                     // String param: ptr+len in wrapper, HostStr in inner
                     let base = pat_to_ident(pat);
-                    let ptr  = format_ident!("{}_ptr", base);
-                    let len  = format_ident!("{}_len", base);
+                    let ptr = format_ident!("{}_ptr", base);
+                    let len = format_ident!("{}_len", base);
 
                     // Wrapper param list: two entries
                     wrap_params.push(quote! { #ptr: *const u8 });
@@ -99,15 +99,15 @@ pub fn host_fn_impl(_attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     // valid C ABI return types as-is (they are `#[repr(C)]` or primitives).
 
     let ret_ty = &func.sig.output;
-    let body   = &func.block;
+    let body = &func.block;
 
     // ── Build wrapper + inner function tokens ──────────────────
     //
     // We build the param list carefully to avoid trailing commas inside `()`.
 
     let wrap_params_tts = sep_by(wrap_params, quote! { , });
-    let inner_params_tts = &func.sig.inputs;   // Punctuated — already has commas
-    let inner_args_tts  = sep_by(inner_args, quote! { , });
+    let inner_params_tts = &func.sig.inputs; // Punctuated — already has commas
+    let inner_args_tts = sep_by(inner_args, quote! { , });
 
     let wrapper = quote! {
         #[unsafe(no_mangle)]
@@ -134,7 +134,9 @@ pub fn host_fn_impl(_attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
 /// Check if a type is `HostStr` (by the last path segment).
 fn is_host_str_type(ty: &Type) -> bool {
     if let Type::Path(tp) = ty {
-        tp.path.segments.last()
+        tp.path
+            .segments
+            .last()
             .map(|seg| seg.ident == "HostStr")
             .unwrap_or(false)
     } else {

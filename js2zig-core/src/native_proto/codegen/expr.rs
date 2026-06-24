@@ -34,7 +34,10 @@ impl Codegen {
                 // Check if this identifier is a captured variable in the current closure.
                 // If so, rewrite to self.var_name (value capture) or self.var_name.* (ref capture).
                 if !self.current_captured.is_empty()
-                    && let Some((_, _, is_mut)) = self.current_captured.iter().find(|(n, _, _)| n.as_str() == var_name)
+                    && let Some((_, _, is_mut)) = self
+                        .current_captured
+                        .iter()
+                        .find(|(n, _, _)| n.as_str() == var_name)
                 {
                     if *is_mut {
                         self.write(&format!("self.{}.*", var_name));
@@ -168,14 +171,14 @@ impl Codegen {
             Expression::AwaitExpression(ae) => {
                 let task_var = format!("_t{}", self.task_counter);
                 self.task_counter += 1;
-                
+
                 // emit: (blk: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
                 self.write("(blk: {\n");
                 self.indent += 1;
-                
+
                 self.write_indent();
                 self.write(&format!("var {} = io.async(", task_var));
-                
+
                 match &ae.argument {
                     Expression::CallExpression(call) => {
                         // Check if this is an async host function → use host.{name}_async wrapper
@@ -798,6 +801,12 @@ impl Codegen {
                 true
             }
 
+            builtins::BuiltinCall::MathHypot => {
+                // Math.hypot() is not supported — generate @compileError
+                self.write("@compileError(\"Math.hypot() is not supported in js2zig\")");
+                true
+            }
+
             // ── Array methods ─────────────────────────────
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → _ = arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
@@ -972,7 +981,10 @@ impl Codegen {
             builtins::BuiltinCall::ArraySlice => {
                 // Check if this is a TypedArray slice
                 let obj_name = self.callee_object_name(&ce.callee);
-                if let (Some(obj_name), Some(ta_type)) = (obj_name, obj_name.and_then(|n| self.typedarray_vars.get(n).cloned())) {
+                if let (Some(obj_name), Some(ta_type)) = (
+                    obj_name,
+                    obj_name.and_then(|n| self.typedarray_vars.get(n).cloned()),
+                ) {
                     // TypedArray slice: js_typedarray.sliceXXX(arr, start, end)
                     let start_expr = if !ce.arguments.is_empty() {
                         self.first_arg_string_or(&ce.arguments, "0")
@@ -981,13 +993,19 @@ impl Codegen {
                     };
                     let end_expr = if ce.arguments.len() >= 2 {
                         if let Some(arg) = ce.arguments.get(1)
-                            && let Some(expr) = arg.as_expression() {
+                            && let Some(expr) = arg.as_expression()
+                        {
                             self.emit_expr_to_string(expr)
-                        } else { "std.math.maxInt(i64)".to_string() }
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        }
                     } else {
                         "std.math.maxInt(i64)".to_string()
                     };
-                    self.write(&format!("js_runtime.js_typedarray.slice{}({}, {}, {})", ta_type, obj_name, start_expr, end_expr));
+                    self.write(&format!(
+                        "js_runtime.js_typedarray.slice{}({}, {}, {})",
+                        ta_type, obj_name, start_expr, end_expr
+                    ));
                     return true;
                 }
                 // arr.slice(start, end) → new ArrayList with appended slice
@@ -1045,13 +1063,19 @@ impl Codegen {
                         let start_expr = self.first_arg_string_or(&ce.arguments, "0");
                         let end_expr = if ce.arguments.len() >= 2 {
                             if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression() {
+                                && let Some(expr) = arg.as_expression()
+                            {
                                 self.emit_expr_to_string(expr)
-                            } else { "std.math.maxInt(i64)".to_string() }
+                            } else {
+                                "std.math.maxInt(i64)".to_string()
+                            }
                         } else {
                             "std.math.maxInt(i64)".to_string()
                         };
-                        self.write(&format!("js_runtime.js_typedarray.subarray{}({}, {}, {})", ta_type, obj_name, start_expr, end_expr));
+                        self.write(&format!(
+                            "js_runtime.js_typedarray.subarray{}({}, {}, {})",
+                            ta_type, obj_name, start_expr, end_expr
+                        ));
                         return true;
                     }
                 }
@@ -1074,19 +1098,30 @@ impl Codegen {
                         let target_expr = self.first_arg_string(&ce.arguments);
                         let start_expr = if ce.arguments.len() >= 2 {
                             if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression() {
+                                && let Some(expr) = arg.as_expression()
+                            {
                                 self.emit_expr_to_string(expr)
-                            } else { "0".to_string() }
-                        } else { "0".to_string() };
+                            } else {
+                                "0".to_string()
+                            }
+                        } else {
+                            "0".to_string()
+                        };
                         let end_expr = if ce.arguments.len() >= 3 {
                             if let Some(arg) = ce.arguments.get(2)
-                                && let Some(expr) = arg.as_expression() {
+                                && let Some(expr) = arg.as_expression()
+                            {
                                 self.emit_expr_to_string(expr)
-                            } else { "std.math.maxInt(i64)".to_string() }
+                            } else {
+                                "std.math.maxInt(i64)".to_string()
+                            }
                         } else {
                             "std.math.maxInt(i64)".to_string()
                         };
-                        self.write(&format!("js_runtime.js_typedarray.copyWithin{}({}, {}, {}, {})", ta_type, obj_name, target_expr, start_expr, end_expr));
+                        self.write(&format!(
+                            "js_runtime.js_typedarray.copyWithin{}({}, {}, {}, {})",
+                            ta_type, obj_name, target_expr, start_expr, end_expr
+                        ));
                         return true;
                     }
                 }
@@ -1100,27 +1135,39 @@ impl Codegen {
                     let ta_type = self.typedarray_vars.get(obj_name).cloned();
                     if let Some(ta_type) = ta_type {
                         if ce.arguments.is_empty() {
-                            self.errors
-                                .push("TypedArray.fill() requires at least 1 argument (value)"
-                                    .to_string());
+                            self.errors.push(
+                                "TypedArray.fill() requires at least 1 argument (value)"
+                                    .to_string(),
+                            );
                             return false;
                         }
                         let val_expr = self.first_arg_string(&ce.arguments);
                         let start_expr = if ce.arguments.len() >= 2 {
                             if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression() {
+                                && let Some(expr) = arg.as_expression()
+                            {
                                 self.emit_expr_to_string(expr)
-                            } else { "0".to_string() }
-                        } else { "0".to_string() };
+                            } else {
+                                "0".to_string()
+                            }
+                        } else {
+                            "0".to_string()
+                        };
                         let end_expr = if ce.arguments.len() >= 3 {
                             if let Some(arg) = ce.arguments.get(2)
-                                && let Some(expr) = arg.as_expression() {
+                                && let Some(expr) = arg.as_expression()
+                            {
                                 self.emit_expr_to_string(expr)
-                            } else { "std.math.maxInt(i64)".to_string() }
+                            } else {
+                                "std.math.maxInt(i64)".to_string()
+                            }
                         } else {
                             "std.math.maxInt(i64)".to_string()
                         };
-                        self.write(&format!("js_runtime.js_typedarray.fill{}({}, {}, {}, {})", ta_type, obj_name, val_expr, start_expr, end_expr));
+                        self.write(&format!(
+                            "js_runtime.js_typedarray.fill{}({}, {}, {}, {})",
+                            ta_type, obj_name, val_expr, start_expr, end_expr
+                        ));
                         return true;
                     }
                 }
@@ -1132,8 +1179,10 @@ impl Codegen {
                 // Returns removed elements as a new ArrayList.
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     if ce.arguments.len() < 2 {
-                        self.errors
-                            .push("Array.splice() requires at least 2 arguments (start, deleteCount)".to_string());
+                        self.errors.push(
+                            "Array.splice() requires at least 2 arguments (start, deleteCount)"
+                                .to_string(),
+                        );
                         return false;
                     }
                     let elem_type = self
@@ -1147,8 +1196,12 @@ impl Codegen {
                     let count_expr = if let Some(arg) = ce.arguments.get(1) {
                         if let Some(e) = arg.as_expression() {
                             self.emit_expr_to_string(e)
-                        } else { "0".to_string() }
-                    } else { "0".to_string() };
+                        } else {
+                            "0".to_string()
+                        }
+                    } else {
+                        "0".to_string()
+                    };
 
                     self.write(&format!(
                         "(blk: {{ var __spliced: std.ArrayList({0}) = .empty; const __start = @as(usize, @intCast(@max(0, {1}))); const __cnt = @as(usize, @intCast(@min(@max(0, {2}), {3}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.getAllocator(), {3}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
@@ -1158,12 +1211,16 @@ impl Codegen {
                     if ce.arguments.len() > 2 {
                         // Use insertSlice for better performance
                         self.write(&format!(
-                            " {0}.insertSlice(js_allocator.getAllocator(), __start, &[_]{1}{{", 
+                            " {0}.insertSlice(js_allocator.getAllocator(), __start, &[_]{1}{{",
                             obj_name, elem_type
                         ));
                         for (i, arg) in ce.arguments.iter().enumerate() {
-                            if i < 2 { continue; }
-                            if i > 2 { self.write(", "); }
+                            if i < 2 {
+                                continue;
+                            }
+                            if i > 2 {
+                                self.write(", ");
+                            }
                             if let Some(expr) = arg.as_expression() {
                                 self.emit_expr(expr);
                             }
@@ -1180,32 +1237,32 @@ impl Codegen {
             builtins::BuiltinCall::MapSet => {
                 // TypedArray.set(idx, val) → js_typedarray.setXXX(arr, idx, val)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(id) = &mem.object {
-                        let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
-                        if let Some(ta_type) = ta_type {
-                            if ce.arguments.len() != 2 {
-                                self.errors.push(
-                                    "TypedArray.set() requires exactly 2 arguments".to_string(),
-                                );
-                                return false;
-                            }
-                            if self.in_expr_stmt {
-                                self.write("_ = ");
-                            }
-                            self.write(&format!("js_runtime.js_typedarray.set{}(", ta_type));
-                            self.emit_expr(&mem.object);
-                            self.write(", ");
-                            self.emit_first_arg(&ce.arguments);
-                            self.write(", ");
-                            if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression()
-                            {
-                                self.emit_expr(expr);
-                            }
-                            self.write(")");
-                            return true;
+                    && let Expression::Identifier(id) = &mem.object
+                {
+                    let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
+                    if let Some(ta_type) = ta_type {
+                        if ce.arguments.len() != 2 {
+                            self.errors
+                                .push("TypedArray.set() requires exactly 2 arguments".to_string());
+                            return false;
                         }
+                        if self.in_expr_stmt {
+                            self.write("_ = ");
+                        }
+                        self.write(&format!("js_runtime.js_typedarray.set{}(", ta_type));
+                        self.emit_expr(&mem.object);
+                        self.write(", ");
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(", ");
+                        if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr(expr);
+                        }
+                        self.write(")");
+                        return true;
                     }
+                }
                 // map.set(key, value) → map.set(key, value) catch @panic("OOM: Map.set")
                 if ce.arguments.len() != 2 {
                     self.errors
@@ -1232,23 +1289,23 @@ impl Codegen {
             builtins::BuiltinCall::MapGet => {
                 // TypedArray.get(idx) → js_typedarray.getXXX(arr, idx)
                 if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::Identifier(id) = &mem.object {
-                        let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
-                        if let Some(ta_type) = ta_type {
-                            if ce.arguments.len() != 1 {
-                                self.errors.push(
-                                    "TypedArray.get() requires exactly 1 argument".to_string(),
-                                );
-                                return false;
-                            }
-                            self.write(&format!("js_runtime.js_typedarray.get{}(", ta_type));
-                            self.emit_expr(&mem.object);
-                            self.write(", ");
-                            self.emit_first_arg(&ce.arguments);
-                            self.write(")");
-                            return true;
+                    && let Expression::Identifier(id) = &mem.object
+                {
+                    let ta_type = self.typedarray_vars.get(id.name.as_str()).cloned();
+                    if let Some(ta_type) = ta_type {
+                        if ce.arguments.len() != 1 {
+                            self.errors
+                                .push("TypedArray.get() requires exactly 1 argument".to_string());
+                            return false;
                         }
+                        self.write(&format!("js_runtime.js_typedarray.get{}(", ta_type));
+                        self.emit_expr(&mem.object);
+                        self.write(", ");
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(")");
+                        return true;
                     }
+                }
                 // map.get(key) → map.get(key)  (returns ?i64, not error union)
                 if ce.arguments.len() != 1 {
                     self.errors
@@ -1452,13 +1509,16 @@ impl Codegen {
                     // Check if first argument is an arrow function
                     if !ce.arguments.is_empty()
                         && let Some(arg) = ce.arguments.first()
-                        && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
                     {
                         // Generate for loop
                         self.write(&format!("for ({}.items) |", obj_name));
                         // Print arrow function parameters
                         if arrow.params.items.len() == 1 {
-                            if let Some(param_name) = crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern) {
+                            if let Some(param_name) = crate::native_proto::infer::binding_name(
+                                &arrow.params.items[0].pattern,
+                            ) {
                                 self.write(&format!("{}| {{ ", param_name));
                             } else {
                                 self.write("_| {{ ");
@@ -1517,19 +1577,26 @@ impl Codegen {
                     // Check if first argument is an arrow function
                     if !ce.arguments.is_empty()
                         && let Some(arg) = ce.arguments.first()
-                        && let Some(Expression::ArrowFunctionExpression(arrow)) = arg.as_expression()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
                     {
                         // Generate labeled block with accumulator
                         self.write("(blk: { ");
                         // Determine accumulator type from init expression
-                        let acc_type = if init_expr.contains(".") { "f64" } else { "i64" };
+                        let acc_type = if init_expr.contains(".") {
+                            "f64"
+                        } else {
+                            "i64"
+                        };
                         self.write(&format!("var acc: {} = {}; ", acc_type, init_expr));
                         // Generate for loop
                         self.write(&format!("for ({}.items) |", obj_name));
                         // Print arrow function parameters
                         if arrow.params.items.len() >= 2 {
                             // First param is accumulator, second is current item
-                            if let Some(param_name) = crate::native_proto::infer::binding_name(&arrow.params.items[1].pattern) {
+                            if let Some(param_name) = crate::native_proto::infer::binding_name(
+                                &arrow.params.items[1].pattern,
+                            ) {
                                 self.write(&format!("{}| {{ ", param_name));
                             } else {
                                 self.write("_| { ");
@@ -1617,24 +1684,14 @@ impl Codegen {
             }
 
             // ── Date methods (instance) ────────────────────
-            builtins::BuiltinCall::DateGetTime => {
-                self.emit_date_instance_method("getTime", ce)
-            }
+            builtins::BuiltinCall::DateGetTime => self.emit_date_instance_method("getTime", ce),
             builtins::BuiltinCall::DateGetFullYear => {
                 self.emit_date_instance_method("getFullYear", ce)
             }
-            builtins::BuiltinCall::DateGetMonth => {
-                self.emit_date_instance_method("getMonth", ce)
-            }
-            builtins::BuiltinCall::DateGetDate => {
-                self.emit_date_instance_method("getDate", ce)
-            }
-            builtins::BuiltinCall::DateGetDay => {
-                self.emit_date_instance_method("getDay", ce)
-            }
-            builtins::BuiltinCall::DateGetHours => {
-                self.emit_date_instance_method("getHours", ce)
-            }
+            builtins::BuiltinCall::DateGetMonth => self.emit_date_instance_method("getMonth", ce),
+            builtins::BuiltinCall::DateGetDate => self.emit_date_instance_method("getDate", ce),
+            builtins::BuiltinCall::DateGetDay => self.emit_date_instance_method("getDay", ce),
+            builtins::BuiltinCall::DateGetHours => self.emit_date_instance_method("getHours", ce),
             builtins::BuiltinCall::DateGetMinutes => {
                 self.emit_date_instance_method("getMinutes", ce)
             }
@@ -1709,17 +1766,16 @@ impl Codegen {
                 // se is Box<SpreadElement>, so se.argument is the expression being spread.
                 self.emit_expr(&se.argument);
                 self.write(".items");
-            },
+            }
             _ => {
                 // Expression argument: use as_expression() to get the Expression.
                 if let Some(e) = arg.as_expression() {
                     self.emit_expr(e);
                 } else {
-                    self.errors
-                        .push("Unknown argument type".to_string());
+                    self.errors.push("Unknown argument type".to_string());
                     self.write("@compileError(\"Unknown argument type\")");
                 }
-            },
+            }
         }
     }
 
@@ -1743,8 +1799,14 @@ impl Codegen {
     // Assignment
     fn emit_assignment(&mut self, ae: &AssignmentExpression) {
         // Zig 0.16+: signed integer division requires @divTrunc/@rem
-        if ae.operator == AssignmentOperator::Division || ae.operator == AssignmentOperator::Remainder {
-            let op_fn = if ae.operator == AssignmentOperator::Division { "@divTrunc" } else { "@rem" };
+        if ae.operator == AssignmentOperator::Division
+            || ae.operator == AssignmentOperator::Remainder
+        {
+            let op_fn = if ae.operator == AssignmentOperator::Division {
+                "@divTrunc"
+            } else {
+                "@rem"
+            };
             // Emit target, then " = op(target, value)"
             self.emit_assignment_target(&ae.left);
             self.write(&format!(" = {}(", op_fn));
@@ -1767,7 +1829,10 @@ impl Codegen {
                 let var_name = id.name.as_str();
                 // Check if this is a captured variable in the current closure.
                 if !self.current_captured.is_empty()
-                    && let Some((_, _, is_mut)) = self.current_captured.iter().find(|(n, _, _)| n.as_str() == var_name)
+                    && let Some((_, _, is_mut)) = self
+                        .current_captured
+                        .iter()
+                        .find(|(n, _, _)| n.as_str() == var_name)
                 {
                     // Captured variable: rewrite to self.var_name (value capture)
                     // or self.var_name.* (reference capture, dereference for assignment)
@@ -2008,7 +2073,7 @@ impl Codegen {
                 // { get x() { return expr; } } → .x = expr
                 if let Expression::FunctionExpression(func) = &p.value
                     && let Some(body) = &func.body
-                        && let Some(return_expr) = Self::extract_return_expr_from_body(body)
+                    && let Some(return_expr) = Self::extract_return_expr_from_body(body)
                 {
                     if !*first {
                         self.write(", ");
@@ -2025,11 +2090,14 @@ impl Codegen {
     }
 
     /// Extract the return expression from a function body (single return statement)
-    fn extract_return_expr_from_body<'a>(body: &'a oxc_ast::ast::FunctionBody<'a>) -> Option<&'a Expression<'a>> {
+    fn extract_return_expr_from_body<'a>(
+        body: &'a oxc_ast::ast::FunctionBody<'a>,
+    ) -> Option<&'a Expression<'a>> {
         if body.statements.len() == 1
-            && let Statement::ReturnStatement(ret) = &body.statements[0] {
-                return ret.argument.as_ref();
-            }
+            && let Statement::ReturnStatement(ret) = &body.statements[0]
+        {
+            return ret.argument.as_ref();
+        }
         None
     }
 
@@ -2046,9 +2114,9 @@ impl Codegen {
                 return;
             }
             ChainElement::PrivateFieldExpression(_) => {
-                self.errors
-                    .push("Optional chaining on private fields (?. #field) is not supported"
-                        .to_string());
+                self.errors.push(
+                    "Optional chaining on private fields (?. #field) is not supported".to_string(),
+                );
                 self.write("@compileError(\"optional chaining on private fields\")");
                 return;
             }
@@ -2184,19 +2252,17 @@ impl Codegen {
             Expression::NullLiteral(_) => true,
 
             // Identifier: check type
-            Expression::Identifier(id) => {
-                match self.type_info.var_types.get(id.name.as_str()) {
-                    Some(ZigType::Struct(_))
-                    | Some(ZigType::NamedStruct(_))
-                    | Some(ZigType::ArrayList(_))
-                    | Some(ZigType::I64)
-                    | Some(ZigType::F64)
-                    | Some(ZigType::Bool)
-                    | Some(ZigType::Str) => false,
-                    Some(ZigType::Void) | Some(ZigType::Anytype) => true,
-                    None => true,
-                }
-            }
+            Expression::Identifier(id) => match self.type_info.var_types.get(id.name.as_str()) {
+                Some(ZigType::Struct(_))
+                | Some(ZigType::NamedStruct(_))
+                | Some(ZigType::ArrayList(_))
+                | Some(ZigType::I64)
+                | Some(ZigType::F64)
+                | Some(ZigType::Bool)
+                | Some(ZigType::Str) => false,
+                Some(ZigType::Void) | Some(ZigType::Anytype) => true,
+                None => true,
+            },
 
             // Chain expression result is always optional (from else null)
             Expression::ChainExpression(_) => true,
@@ -2208,9 +2274,7 @@ impl Codegen {
             Expression::CallExpression(_) => true,
 
             // Parenthesized: check inner
-            Expression::ParenthesizedExpression(pe) => {
-                self.expr_might_be_null(&pe.expression)
-            }
+            Expression::ParenthesizedExpression(pe) => self.expr_might_be_null(&pe.expression),
 
             _ => true,
         }
