@@ -547,6 +547,31 @@ function useStaticObj() {
     }
 
     #[test]
+    fn test_p2_for_in_static_codegen() {
+        // Codegen verification: for-in with static struct → unrolled loop
+        // This is the "showcase integration" test for P2 #6.
+        let js = r#"
+function gatherKeys(obj) {
+    var keys = "";
+    for (var k in obj) {
+        keys = keys + k + ";";
+    }
+    return keys;
+}
+function demo() {
+    const obj = { a: 1, b: 2, name: "test" };
+    return gatherKeys(obj);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_for_in_static_codegen");
+        // Verify: unrolled loop (no HashMap iterator)
+        assert!(zig.contains("const k = \"a\""), "Expected unrolled field 'a'");
+        assert!(zig.contains("const k = \"b\""), "Expected unrolled field 'b'");
+        assert!(zig.contains("const k = \"name\""), "Expected unrolled field 'name'");
+        assert!(!zig.contains("__it"), "Should not have HashMap iterator");
+        // Verify: string concatenation inside unrolled blocks
+        assert!(zig.contains("allocPrint"), "Expected allocPrint for string concat");
+    }
     fn test_native_proto_switch() {
         let js = r#"
 function grade(score) {

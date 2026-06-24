@@ -3,7 +3,7 @@ name = "showcase-project"
 version = "0.1.0"
 edition = "2021"
 authors = ["jonathan197608"]
-description = "Showcase project for js2rust — comprehensive JS-to-Zig transpiler feature demo"
+description = "Showcase project for js2rust — for-in static struct integration demo"
 
 [dependencies]
 js2rust-bridge = { version = "0.5", path = "../../js2rust-bridge" }
