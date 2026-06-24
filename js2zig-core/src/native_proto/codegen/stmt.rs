@@ -263,9 +263,18 @@ fn init_may_have_side_effects(init: &Expression) -> bool {
 // ── Destructuring codegen ──────────────────────────────
 
 impl Codegen {
+    /// Get the ZigType of an expression if it's a simple identifier reference.
+    fn expr_var_type(&self, expr: &Expression) -> Option<&crate::native_proto::ZigType> {
+        if let Expression::Identifier(id) = expr {
+            self.type_info.var_types.get(id.name.as_str())
+        } else {
+            None
+        }
+    }
+
     /// Generate code for object destructuring:
     /// `const {a, b: c, d = default} = expr`
-    /// → `const _js_dest_N = expr; const a = _js_dest_N.a; const c = _js_dest_N.b; const d = _js_dest_N.d orelse default;`
+    /// Handles struct (field access), HashMap (.get("key")), and fallback (.field orelse).
     fn emit_object_destructure(&mut self, op: &ObjectPattern, init: &Option<Expression>) {
         let Some(init_expr) = init else {
             self.writeln("// error: destructuring requires an initializer");
@@ -287,6 +296,24 @@ impl Codegen {
             init_str.clone()
         };
         let is_temp = needs_temp || op.properties.len() > 1;
+
+        // Determine the type of the source object for correct field access.
+        // Clone field names to release the immutable borrow on self before the loop.
+        let init_type = self.expr_var_type(init_expr);
+        let struct_field_names: Option<std::collections::HashSet<String>> = match init_type {
+            Some(crate::native_proto::ZigType::Struct(fields)) => {
+                if fields.is_empty() {
+                    None // empty struct → treat as HashMap
+                } else {
+                    Some(fields.iter().map(|(name, _)| name.clone()).collect())
+                }
+            }
+            _ => None,
+        };
+        let is_hashmap = struct_field_names.is_none(); // non-struct or empty struct → HashMap access
+        let _ = init_type;
+
+        let source = if is_temp { &temp_name } else { &init_str };
 
         for prop in &op.properties {
             let key_name = match self.property_key_name(&prop.key) {
@@ -333,15 +360,51 @@ impl Codegen {
             self.write_indent();
             self.write(&format!("{} {} = ", kw, bind_name));
 
-            if is_temp {
-                self.write(&format!("{}.{}", temp_name, key_name));
+            if let Some(ref field_names) = struct_field_names {
+                // ── Struct: use direct field access ──
+                let field_exists = field_names.contains(&key_name);
+                if field_exists {
+                    // Field exists: no orelse needed (struct fields always present)
+                    self.write(&format!("{}.{}", source, key_name));
+                } else if let Some(default) = &default_expr {
+                    // Field doesn't exist in struct → use default directly
+                    self.write(default);
+                } else {
+                    // Field missing and no default → compile error
+                    self.writeln(&format!(
+                        "// error: destructure key '{}' not found in struct and no default value",
+                        key_name
+                    ));
+                    continue;
+                }
+            } else if is_hashmap {
+                // ── HashMap / unknown type: use .get("key") with type-aware conversion ──
+                if let Some(default) = &default_expr {
+                    // Map ?JsAny → concrete type via if/else (orelse doesn't work: JsAny ≠ i64).
+                    let conv = if default == "true" || default == "false" {
+                        ".asBool()"
+                    } else if default.starts_with('"') {
+                        ".value.string"
+                    } else {
+                        ".asI64()"
+                    };
+                    self.write(&format!(
+                        "if ({source}.get(\"{key}\")) |v| v{conv} else {default}",
+                        source = source,
+                        key = key_name,
+                        conv = conv,
+                        default = default
+                    ));
+                } else {
+                    // No default: emit raw .get() (returns ?JsAny, caller must handle)
+                    self.write(&format!("{}.get(\"{}\")", source, key_name));
+                }
             } else {
-                // Single property, pure init — inline
-                self.write(&format!("{}.{}", init_str, key_name));
-            }
-
-            if let Some(default) = &default_expr {
-                self.write(&format!(" orelse {}", default));
+                // Should not reach here (is_hashmap is true for non-struct)
+                self.write(&format!("{}.{}", source, key_name));
+                if let Some(default) = &default_expr {
+                    self.write(&format!(" orelse {}", default));
+                }
             }
 
             self.write(";\n");
@@ -350,7 +413,8 @@ impl Codegen {
 
     /// Generate code for array destructuring:
     /// `const [a, , b = default] = expr`
-    /// → `const _js_dest_N = expr; const a = _js_dest_N[0]; const b = _js_dest_N[2] orelse default;`
+    /// For ArrayList: `const a = if (arr.items.len > 0) arr.items[0] else default;`
+    /// For slices/arrays: `const a = arr[0];` (no orelse — not optional)
     fn emit_array_destructure(&mut self, ap: &ArrayPattern, init: &Option<Expression>) {
         let Some(init_expr) = init else {
             self.writeln("// error: destructuring requires an initializer");
@@ -358,6 +422,9 @@ impl Codegen {
         };
 
         let init_str = self.emit_expr_to_string(init_expr);
+        // Determine the type for correct indexing
+        let init_type = self.expr_var_type(init_expr);
+        let is_arraylist = matches!(init_type, Some(crate::native_proto::ZigType::ArrayList(_)));
         // Count non-None elements to decide if we need a temp
         let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
         let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
@@ -372,6 +439,8 @@ impl Codegen {
             init_str.clone()
         };
         let is_temp = needs_temp;
+
+        let source = if is_temp { &temp_name } else { &init_str };
 
         for (i, elem) in ap.elements.iter().enumerate() {
             let Some(pattern) = elem else {
@@ -410,14 +479,22 @@ impl Codegen {
             self.write_indent();
             self.write(&format!("{} {} = ", kw, bind_name));
 
-            if is_temp {
-                self.write(&format!("{}[{}]", temp_name, i));
+            if is_arraylist {
+                // ── ArrayList: bounds-safe .items[i] access ──
+                if let Some(default) = &default_expr {
+                    self.write(&format!(
+                        "if ({}.items.len > {}) {}.items[{}] else {}",
+                        source, i, source, i, default
+                    ));
+                } else {
+                    self.write(&format!("{}.items[{}]", source, i));
+                }
             } else {
-                self.write(&format!("{}[{}]", init_str, i));
-            }
-
-            if let Some(default) = &default_expr {
-                self.write(&format!(" orelse {}", default));
+                // ── Slice/array or unknown: direct [i] ──
+                self.write(&format!("{}[{}]", source, i));
+                if let Some(default) = &default_expr {
+                    self.write(&format!(" orelse {}", default));
+                }
             }
 
             self.write(";\n");
@@ -526,8 +603,15 @@ impl Codegen {
             .as_ref()
             .map(|id| id.name.as_str())
             .unwrap_or("anonymous");
+        // For nested function declarations, use "call" as the generated
+        // function name (the inline struct pattern requires .call() method).
+        let emit_name = if self.current_nested_fn_name.is_some() {
+            "call"
+        } else {
+            name
+        };
         let saved_current_fn = std::mem::take(&mut self.current_fn);
-        self.current_fn = Some(name.to_string());
+        self.current_fn = Some(emit_name.to_string());
 
         // Check if function contains await (from pre-computed type_info)
         let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
@@ -554,9 +638,9 @@ impl Codegen {
 
         // Generate function signature.
         if is_async {
-            self.write(&format!("pub fn {}(io: anytype", name));
+            self.write(&format!("pub fn {}(io: anytype", emit_name));
         } else {
-            self.write(&format!("pub fn {}(", name));
+            self.write(&format!("pub fn {}(", emit_name));
         }
 
         // Generate parameter list (read param types from type_info).
@@ -1111,6 +1195,65 @@ impl Codegen {
                 self.inside_try_block = saved_inside;
 
                 self.end_try_block();
+            }
+            Statement::FunctionDeclaration(fd) => {
+                // Nested function declaration: hoist as inline struct with .call() method.
+                // Zig doesn't support nested `pub fn`, so we use:
+                //   const name = struct { pub fn call(...) ... };
+                // Calls are rewritten to `name.call(args)` via nested_fn_names.
+                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
+                let Some(fn_name) = fn_name else {
+                    self.write_indent();
+                    self.writeln("// error: nested function must have a name");
+                    return;
+                };
+
+                // Detect captured variables from enclosing scope
+                let captures = self.detect_fn_body_captures(fd);
+                if !captures.is_empty() {
+                    let cap_names: Vec<_> = captures.iter().map(|(n, _, _)| n.as_str()).collect();
+                    self.write_indent();
+                    self.writeln(&format!(
+                        "@compileError(\"nested function '{}' captures outer variable(s): {} — hoisting with captures not yet supported\")",
+                        fn_name,
+                        cap_names.join(", ")
+                    ));
+                    return;
+                }
+
+                // No captures: generate inline struct with call method
+                self.nested_fn_names.insert(fn_name.to_string());
+
+                self.write_indent();
+                self.writeln(&format!("const {} = struct {{", fn_name));
+                self.indent += 1;
+
+                // Generate function signature
+                let old_current_fn = self.current_fn.clone();
+                self.current_fn = Some(fn_name.to_string());
+
+                let old_fn_has_throw = self.fn_has_throw;
+                let old_seen_return = self.seen_return;
+                self.fn_has_throw = false;
+                self.seen_return = false;
+
+                // Signal to emit_fn that this is a nested function so it
+                // generates `pub fn call(...)` instead of `pub fn <js_name>(...)`.
+                let old_nested = self.current_nested_fn_name.take();
+                self.current_nested_fn_name = Some(fn_name.to_string());
+
+                // Emit the function using emit_fn (which generates pub fn ...)
+                self.emit_fn(fd);
+
+                self.current_nested_fn_name = old_nested;
+
+                self.fn_has_throw = old_fn_has_throw;
+                self.seen_return = old_seen_return;
+                self.current_fn = old_current_fn;
+
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("};");
             }
             _ => {
                 // Unsupported statement type: generate @compileError
@@ -1868,6 +2011,44 @@ impl Codegen {
         // Update is_mut for each captured variable
         for (name, _ztype, is_mut) in &mut captured {
             *is_mut = mutated.contains(name);
+        }
+
+        captured
+    }
+
+    /// Detect variables captured by a nested function declaration.
+    /// Returns list of (variable_name, ZigType, is_mutable) for variables from the
+    /// enclosing scope that are referenced in the function body but are not parameters.
+    fn detect_fn_body_captures(&self, fd: &Function) -> Vec<(String, ZigType, bool)> {
+        let mut captured = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Collect parameter names
+        let param_names: std::collections::HashSet<String> = fd
+            .params
+            .items
+            .iter()
+            .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+            .map(|s| s.to_string())
+            .collect();
+
+        // Walk the body statements to find Identifier references
+        if let Some(body) = &fd.body {
+            for stmt in &body.statements {
+                Self::collect_idents_from_stmt(
+                    stmt,
+                    &mut captured,
+                    &mut seen,
+                    &param_names,
+                    &self.type_info,
+                );
+            }
+
+            // Detect which captured variables are mutated in the body
+            let mutated = Self::detect_mutated_vars_in_stmts(&body.statements);
+            for (name, _ztype, is_mut) in &mut captured {
+                *is_mut = mutated.contains(name);
+            }
         }
 
         captured

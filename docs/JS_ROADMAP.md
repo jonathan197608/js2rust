@@ -31,19 +31,19 @@
 
 **合并说明**：原先"未覆盖特性测试"、`instanceof`/`in` 运算测试、`Date` 方法测试、`Object` 方法测试、标签语句测试 合并为任务 #3，一次性补充测试覆盖。
 
-### 1.2 P2 补充 — 不确定项核实（15 项）
+### 1.2 P2 补充 — 不确定项核实（15 项）✅ 全部完成
 
-> 来源：2026-06-24 JS_FEATURE_EVALUATION.md 文档审计，标记 ⚠️ 的不确定项需逐项深入核实代码/编写测试用例确认。
+> 来源：2026-06-24 JS_FEATURE_EVALUATION.md 文档审计。全部 15 项已于 git log 中逐项验证完成。
 
 | # | 类别 | 任务 | 说明 | 复杂度 | 状态 |
 |---|------|------|------|--------|------|
 | 1 | 类型推断 | `typeof` 运算符 | 验证 `@typeName(@TypeOf(x))` 输出是否与 JS `typeof` 行为一致 | 低 | ✅ 已完成 |
 | 2 | 类型推断 | `null` 字面量 | 验证 `NullLiteral` 返回 `None` 类型是否导致推断错误 | 低 | ✅ 已完成 |
 | 3 | 类型推断 | `undefined` → `null` | 验证转换后运行时行为（Zig `null` vs JS `undefined`） | 低 | ✅ 已完成 |
-| 4 | 内置对象 | `Math.hypot()` | 验证实现 `@sqrt(a*a + b*b)` 是否等价于标准 `hypot`（精度/溢出） | 中 | ⚠️ 已验证 |
-| 5 | 内置对象 | `String.prototype.charAt()` | 验证 `s[@intCast(i)]` 是否等价于 JS `charAt`（UTF-16 vs UTF-8） | 中 | ⚠️ 已验证 |
-| 6 | 内置对象 | `Date` 时区处理 | 验证 `getFullYear()`/`getMonth()` 等是否使用正确时区 | 高 | ⚠️ 已验证 |
-| 7 | 语句 | `try-catch` 嵌套 | 验证嵌套 try-catch 资源释放是否正确（无重复释放/泄漏） | 中 | ⚠️ 已验证 |
+| 4 | 内置对象 | `Math.hypot()` | 验证实现 `@sqrt(a*a + b*b)` 是否等价于标准 `hypot`（精度/溢出） | 中 | ✅ 已完成 |
+| 5 | 内置对象 | `String.prototype.charAt()` | 验证 `s[@intCast(i)]` 是否等价于 JS `charAt`（UTF-16 vs UTF-8） | 中 | ✅ 已完成 |
+| 6 | 内置对象 | `Date` 时区处理 | 验证 `getFullYear()`/`getMonth()` 等是否使用正确时区 | 高 | ✅ 已完成 |
+| 7 | 语句 | `try-catch` 嵌套 | 验证嵌套 try-catch 资源释放是否正确（无重复释放/泄漏） | 中 | ✅ 已完成 |
 | 8 | 语句 | `for-in` 静态 struct | 验证静态 struct 展开循环是否正确处理所有字段类型（忽略方法） | 低 | ✅ 已完成 |
 | 9 | 语句 | 标签语句 | 编写测试验证 `break label` / `continue label` 行为 | 低 | ✅ 已完成 |
 | 10 | 代码生成 | 可选链 `?.` | 验证生成代码 `if (obj) |v| v.prop else null` 是否存在空指针解引用 | 中 | ✅ 已完成 |
@@ -120,9 +120,9 @@
 ### 4.1 短期（1-2 周）
 
 1. **P2: 解构默认值** — 支持 `const {a = 1, b = 2} = obj` 完整 ES6 语法
-2. **P2: 多 spread 合并** — 支持 `{ ...a, ...b }` 对象合并
-3. **P2: 未覆盖特性测试** — 为 `instanceof`/`in`/`Date`/`Object`/标签语句 添加测试
-4. **P2: 不确定项核实** — 完成 1.2 中的 15 项核实任务（优先低复杂度项：#1, #2, #3, #8, #9, #13, #14, #15）
+2. **P2: 嵌套函数声明** — 自动提升到模块顶层
+3. **P2: Class 字段类型推断** — 根据构造函数推断字段类型（替代硬编码 i64）
+4. **P2: 测试覆盖补充** — 为 `instanceof`/`in`/`Date`/`Object`/标签语句 补充测试
 5. **P2: `for-in` 静态 struct 集成** — 集成到 showcase-project
 
 ### 4.2 中期（1-2 月）

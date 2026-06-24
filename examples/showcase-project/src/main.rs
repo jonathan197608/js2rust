@@ -204,6 +204,53 @@ fn main() {
     let so = testSpreadOverride_app();
     println!("  testSpreadOverride() = {} (expected 0)", so);
 
+    // ════════════════════════════════════════════════════════════
+    // Type inference verification: known limitations check
+    println!("\n=== Type Inference Verification ===");
+
+    // -- Division / Modulo (integer: @divTrunc / @rem) --
+    let div = intDivTest_app();
+    println!("  intDivTest(17/5 via assign) = {} (expected 3)", div);
+
+    let mod_op = modOpTest_app();
+    println!("  modOpTest(17%5 via assign) = {} (expected 2)", mod_op);
+
+    let div_expr = testDivExpr_app();
+    println!("  testDivExpr(17/5 expr) = {} (expected 3)", div_expr);
+
+    let mod_expr = testModExpr_app();
+    println!("  testModExpr(17%5 expr) = {} (expected 2)", mod_expr);
+
+    // -- Bitwise & | ^ --
+    let bw_and = testBitwiseAnd_app();
+    println!("  testBitwiseAnd(12&10) = {} (expected 1)", bw_and);
+
+    let bw_or = testBitwiseOr_app();
+    println!("  testBitwiseOr(12|10) = {} (expected 1)", bw_or);
+
+    let bw_xor = testBitwiseXor_app();
+    println!("  testBitwiseXor(12^10) = {} (expected 1)", bw_xor);
+
+    // -- Map.delete() / Set.delete() return value --
+    let md = testMapDelete_app();
+    println!("  testMapDelete() = {} (expected 1)", md);
+
+    let sd = testSetDelete_app();
+    println!("  testSetDelete() = {} (expected 1)", sd);
+
+    // ========== P2: Destructuring Defaults ==========
+    let dod = testDestructureObjDefault_app();
+    println!("  testDestructureObjDefault() = {} (expected 1)", dod);
+
+    let doe = testDestructureObjDefaultEmpty_app();
+    println!("  testDestructureObjDefaultEmpty() = {} (expected 1)", doe);
+
+    let dad = testDestructureArrDefault_app();
+    println!("  testDestructureArrDefault() = {} (expected 1)", dad);
+
+    let dae = testDestructureArrDefaultEmpty_app();
+    println!("  testDestructureArrDefaultEmpty() = {} (expected 1)", dae);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }

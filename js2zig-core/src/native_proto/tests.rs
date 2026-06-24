@@ -3770,7 +3770,7 @@ function test() {
 
     #[test]
     fn test_p2_destructure_object_basic() {
-        // const {a, b} = obj → const a = obj.a; const b = obj.b;
+        // const {a, b} = obj → const a = obj.get("a"); const b = obj.get("b");
         let js = r#"
 function basic(obj) {
     const { a, b } = obj;
@@ -3784,20 +3784,21 @@ function basic(obj) {
             zig
         );
         assert!(
-            zig.contains("_js_dest_0.a"),
-            "Expected .a access in:\n{}",
+            zig.contains(".get(\"a\")"),
+            "Expected .get(\"a\") access in:\n{}",
             zig
         );
         assert!(
-            zig.contains("_js_dest_0.b"),
-            "Expected .b access in:\n{}",
+            zig.contains(".get(\"b\")"),
+            "Expected .get(\"b\") access in:\n{}",
             zig
         );
     }
 
     #[test]
     fn test_p2_destructure_object_with_defaults() {
-        // const {a = 1, b = 2} = obj → const a = obj.a orelse 1; const b = obj.b orelse 2;
+        // const {a = 1, b = 2} = obj (HashMap) →
+        //   const a = if (_js_dest_0.get("a")) |v| v.asI64() else 1;
         let js = r#"
 function withDefaults(obj) {
     const { a = 1, b = 2 } = obj;
@@ -3805,13 +3806,31 @@ function withDefaults(obj) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p2_destructure_object_with_defaults");
-        assert!(zig.contains("orelse 1"), "Expected 'orelse 1' in:\n{}", zig);
-        assert!(zig.contains("orelse 2"), "Expected 'orelse 2' in:\n{}", zig);
+        assert!(
+            zig.contains(".asI64() else 1"),
+            "Expected '.asI64() else 1' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".asI64() else 2"),
+            "Expected '.asI64() else 2' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".get(\"a\")"),
+            "Expected .get(\"a\") in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".get(\"b\")"),
+            "Expected .get(\"b\") in:\n{}",
+            zig
+        );
     }
 
     #[test]
     fn test_p2_destructure_object_rename() {
-        // const {a: x} = obj → const x = obj.a;
+        // const {a: x} = obj → const x = obj.get("a");
         let js = r#"
 function rename(obj) {
     const { a: x } = obj;
@@ -3824,12 +3843,17 @@ function rename(obj) {
             "Expected 'const x =' in:\n{}",
             zig
         );
-        assert!(zig.contains(".a"), "Expected .a access in:\n{}", zig);
+        assert!(
+            zig.contains(".get(\"a\")"),
+            "Expected .get(\"a\") access in:\n{}",
+            zig
+        );
     }
 
     #[test]
     fn test_p2_destructure_object_mixed() {
-        // const {a, b: c = 10} = obj
+        // const {a, b: c = 10} = obj (HashMap)
+        // a → .get("a"), c → if (.get("b")) |v| v.asI64() else 10 (renamed + default)
         let js = r#"
 function mixed(obj) {
     const { a, b: c = 10 } = obj;
@@ -3848,8 +3872,8 @@ function mixed(obj) {
             zig
         );
         assert!(
-            zig.contains("orelse 10"),
-            "Expected 'orelse 10' in:\n{}",
+            zig.contains(".asI64() else 10"),
+            "Expected '.asI64() else 10' in:\n{}",
             zig
         );
     }
@@ -3929,6 +3953,62 @@ function callInit() {
         assert!(
             zig.contains("const y = "),
             "Expected 'const y' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_nested_function_basic() {
+        // Nested function declaration without captures:
+        // function outer() { function inner(x) { return x + 1; } return inner(5); }
+        // → inner is hoisted as `const inner = struct { pub fn call(...) ... };`
+        //   and `inner(5)` is rewritten to `inner.call(5)`
+        let js = r#"
+function outer() {
+    function inner(x) {
+        return x + 1;
+    }
+    return inner(5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_nested_function_basic");
+        assert!(
+            zig.contains("const inner = struct {"),
+            "Expected inline struct declaration in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("inner.call(5)"),
+            "Expected 'inner.call(5)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("pub fn call("),
+            "Expected 'pub fn call(' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_nested_function_capture_error() {
+        // Nested function that captures outer variable → @compileError
+        let js = r#"
+function outer(x) {
+    function inner(y) {
+        return x + y;
+    }
+    return inner(10);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_nested_function_capture_error");
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError for captured variable in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("x"),
+            "Expected error to mention captured variable 'x' in:\n{}",
             zig
         );
     }

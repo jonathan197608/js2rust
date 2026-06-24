@@ -463,3 +463,77 @@ export function testSetDelete() {
     }
     return 0;
 }
+
+// -- Bitwise AND: & --
+/** @returns {i64} */
+export function testBitwiseAnd() {
+    const result = 0b1100 & 0b1010;
+    if (result === 8) { return 1; }  // 0b1000 = 8
+    return 0;
+}
+
+// -- Bitwise OR: | --
+/** @returns {i64} */
+export function testBitwiseOr() {
+    const result = 0b1100 | 0b1010;
+    if (result === 14) { return 1; }  // 0b1110 = 14
+    return 0;
+}
+
+// -- Bitwise XOR: ^ --
+/** @returns {i64} */
+export function testBitwiseXor() {
+    const result = 0b1100 ^ 0b1010;
+    if (result === 6) { return 1; }  // 0b0110 = 6
+    return 0;
+}
+
+// -- Division expression (not assignment): @divTrunc --
+/** @returns {i64} */
+export function testDivExpr() {
+    return 17 / 5;
+}
+
+// -- Modulo expression (not assignment): @rem --
+/** @returns {i64} */
+export function testModExpr() {
+    return 17 % 5;
+}
+
+// ========== P2: Destructuring Defaults ==========
+
+// -- Object destructuring with defaults (struct with known fields) --
+/** @returns {i64} */
+export function testDestructureObjDefault() {
+    const sobj = { a: 10, b: 20 };
+    const { a = 1, b = 2, c = 3 } = sobj;
+    if (a === 10 && b === 20 && c === 3) { return 1; }
+    return 0;
+}
+
+// -- Object destructuring with defaults (empty object → HashMap) --
+/** @returns {i64} */
+export function testDestructureObjDefaultEmpty() {
+    const hobj = {};
+    const { x = 42, y = 99 } = hobj;
+    if (x === 42 && y === 99) { return 1; }
+    return 0;
+}
+
+// -- Array destructuring with defaults (ArrayList with known elements) --
+/** @returns {i64} */
+export function testDestructureArrDefault() {
+    const sarr = [10, 20];
+    const [a = 1, b = 2, c = 3] = sarr;
+    if (a === 10 && b === 20 && c === 3) { return 1; }
+    return 0;
+}
+
+// -- Array destructuring with defaults (ArrayList, no out-of-bounds) --
+/** @returns {i64} */
+export function testDestructureArrDefaultEmpty() {
+    const darr = [1, 2, 3];
+    const [x = 5, y = 6] = darr;
+    if (x === 1 && y === 2) { return 1; }
+    return 0;
+}

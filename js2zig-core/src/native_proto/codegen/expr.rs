@@ -617,10 +617,12 @@ impl Codegen {
         };
 
         // Check if this is a closure variable call (e.g., `fn(args)` where fn is a closure struct instance)
+        // or a nested function call (e.g., `inner(args)` where inner is a hoisted struct type).
         if let Some(ref name) = callee_name
-            && self.closure_instances.contains(name.as_str())
+            && (self.closure_instances.contains(name.as_str())
+                || self.nested_fn_names.contains(name.as_str()))
         {
-            // This is a closure call: rewrite to `variable.call(args)`
+            // Rewrite to `variable.call(args)` or `NestedFn.call(args)`
             self.write(name);
             self.write(".call(");
             self.emit_comma_separated_args(&ce.arguments);

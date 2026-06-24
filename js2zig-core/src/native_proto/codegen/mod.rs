@@ -47,6 +47,8 @@ impl Codegen {
             destructure_counter: 0,
             typedarray_vars: std::collections::HashMap::new(),
             async_host_fns,
+            nested_fn_names: std::collections::HashSet::new(),
+            current_nested_fn_name: None,
         }
     }
 }

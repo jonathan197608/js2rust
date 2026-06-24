@@ -402,4 +402,12 @@ pub struct Codegen {
     /// Async host function names (for io.async() codegen).
     /// When await calls an async host function, use `{name}_async` wrapper.
     pub async_host_fns: std::collections::HashSet<String>,
+    /// Names of nested function declarations (inside another function body).
+    /// Used to rewrite `nestedFn(args)` to `nestedFn.call(args)` in emit_call.
+    pub nested_fn_names: std::collections::HashSet<String>,
+    /// When generating a nested function declaration's body via emit_fn(),
+    /// this holds the outer JS function name so emit_fn can override the
+    /// generated function signature to use `pub fn call(...)` instead of
+    /// `pub fn <js_name>(...)`.
+    pub current_nested_fn_name: Option<String>,
 }
