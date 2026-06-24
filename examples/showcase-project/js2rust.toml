@@ -4,4 +4,5 @@ additional_js_files = [
     "js_src/phase5.js",
     "js_src/test_throw.js",
     "js_src/phase_memory.js",
+    "js_src/phase6.js",
 ]

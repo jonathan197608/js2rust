@@ -3154,43 +3154,39 @@ export function dateParts(d) {
 "#;
         let zig = transpile_and_check!(js, "test_p1_date_instance_methods");
         assert!(
-            zig.contains("js_date.getTime("),
-            "Expected js_date.getTime() in:\n{}",
+            zig.contains(".getTime()"),
+            "Expected .getTime() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("js_date.getFullYear("),
-            "Expected js_date.getFullYear() in:\n{}",
+            zig.contains(".getFullYear()"),
+            "Expected .getFullYear() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("js_date.getMonth("),
-            "Expected js_date.getMonth() in:\n{}",
+            zig.contains(".getMonth()"),
+            "Expected .getMonth() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("js_date.getDate("),
-            "Expected js_date.getDate() in:\n{}",
+            zig.contains(".getDate()"),
+            "Expected .getDate() in:\n{}",
+            zig
+        );
+        assert!(zig.contains(".getDay()"), "Expected .getDay() in:\n{}", zig);
+        assert!(
+            zig.contains(".getHours()"),
+            "Expected .getHours() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("js_date.getDay("),
-            "Expected js_date.getDay() in:\n{}",
+            zig.contains(".getMinutes()"),
+            "Expected .getMinutes() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("js_date.getHours("),
-            "Expected js_date.getHours() in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("js_date.getMinutes("),
-            "Expected js_date.getMinutes() in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("js_date.getSeconds("),
-            "Expected js_date.getSeconds() in:\n{}",
+            zig.contains(".getSeconds()"),
+            "Expected .getSeconds() in:\n{}",
             zig
         );
     }

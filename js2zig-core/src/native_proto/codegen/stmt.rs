@@ -62,7 +62,8 @@ impl Codegen {
                     .mutated_vars
                     .contains(&format!("{}::{}", fn_prefix, name));
 
-                // Skip unused toplevel constants to avoid Zig unused warnings.
+                // Skip unused toplevel constants to avoid Zig unused errors.
+                // NOTE: only toplevel — local variables may have side-effectful initializers.
                 let has_type_annotation = self
                     .jsdoc_data
                     .as_ref()

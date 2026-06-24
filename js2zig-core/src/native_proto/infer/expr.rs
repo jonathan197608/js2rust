@@ -5,6 +5,7 @@
 
 use super::{InferResult, TypeInferrer};
 use crate::native_proto::ZigType;
+use crate::native_proto::builtins;
 use oxc_ast::ast::*;
 
 impl TypeInferrer {
@@ -83,12 +84,13 @@ impl TypeInferrer {
             // Object: definite as Struct
             Expression::ObjectExpression(oe) => self.infer_object_type(oe),
 
-            // NewExpression: new Map(), new Set()
+            // NewExpression: new Map(), new Set(), new Date()
             Expression::NewExpression(ne) => {
                 if let Expression::Identifier(id) = &ne.callee {
                     match id.name.as_str() {
                         "Map" => InferResult::Definite(ZigType::NamedStruct("Map".to_string())),
                         "Set" => InferResult::Definite(ZigType::NamedStruct("Set".to_string())),
+                        "Date" => InferResult::Definite(ZigType::NamedStruct("Date".to_string())),
                         _ => InferResult::Indeterminate,
                     }
                 } else {
@@ -105,6 +107,12 @@ impl TypeInferrer {
                         }
                         if let Some(ret_ty) = self.host_return_types.get(id.name.as_str()) {
                             return InferResult::Definite(ret_ty.clone());
+                        }
+                        // Global built-in functions (e.g., parseInt)
+                        if let Some(builtin) = builtins::detect_builtin_call(ce)
+                            && let Some(ret_ty) = builtins::builtin_return_type(&builtin)
+                        {
+                            return InferResult::Definite(ret_ty);
                         }
                     }
                     // Method calls: arr.slice(), arr.map(), arr.filter(), etc.
@@ -124,6 +132,12 @@ impl TypeInferrer {
                                 return self
                                     .infer_named_method_return(var_ty, mem.property.name.as_str());
                             }
+                        }
+                        // Built-in method calls (String, Math, Date, etc.)
+                        if let Some(builtin) = builtins::detect_builtin_call(ce)
+                            && let Some(ret_ty) = builtins::builtin_return_type(&builtin)
+                        {
+                            return InferResult::Definite(ret_ty);
                         }
                     }
                     _ => {}
@@ -323,7 +337,7 @@ impl TypeInferrer {
         }
     }
 
-    /// Infer the return type of method calls on Map/Set/NamedStruct objects.
+    /// Infer the return type of method calls on Map/Set/Date/NamedStruct objects.
     pub(crate) fn infer_named_method_return(&self, var_ty: &ZigType, method: &str) -> InferResult {
         match var_ty {
             ZigType::NamedStruct(name) => {
@@ -339,9 +353,23 @@ impl TypeInferrer {
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
                         _ => InferResult::Indeterminate,
                     },
+                    "Date" => match method {
+                        "getTime" | "getFullYear" | "getMonth" | "getDate" | "getDay"
+                        | "getHours" | "getMinutes" | "getSeconds" | "valueOf" => {
+                            InferResult::Definite(ZigType::I64)
+                        }
+                        _ => InferResult::Indeterminate,
+                    },
                     _ => InferResult::Indeterminate,
                 }
             }
+            // String methods called on a str-typed variable
+            ZigType::Str => match method {
+                "indexOf" => InferResult::Definite(ZigType::I64),
+                "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
+                "trim" | "split" => InferResult::Definite(ZigType::Str),
+                _ => InferResult::Indeterminate,
+            },
             _ => InferResult::Indeterminate,
         }
     }

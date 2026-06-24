@@ -4,6 +4,8 @@
 // This module only defines the BuiltinCall enum and detection function.
 // The emission logic is in codegen.rs (since it needs to call private methods).
 
+use super::ZigType;
+
 /// Built-in call type
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinCall {
@@ -233,5 +235,58 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         }
     } else {
         None
+    }
+}
+
+/// Return the Zig type of a built-in call result, if it can be statically determined.
+/// Returns None for methods whose return type depends on arguments (e.g., Math.max/min).
+pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
+    match builtin {
+        // Math methods — all return f64
+        BuiltinCall::MathAbs
+        | BuiltinCall::MathFloor
+        | BuiltinCall::MathCeil
+        | BuiltinCall::MathRound
+        | BuiltinCall::MathSqrt
+        | BuiltinCall::MathRandom
+        | BuiltinCall::MathPow => Some(ZigType::F64),
+
+        // Math max/min — depends on args, can't statically determine
+        BuiltinCall::MathMax | BuiltinCall::MathMin | BuiltinCall::MathHypot => None,
+
+        // String methods
+        BuiltinCall::StringIndexOf => Some(ZigType::I64),
+        BuiltinCall::StringIncludes
+        | BuiltinCall::StringStartsWith
+        | BuiltinCall::StringEndsWith => Some(ZigType::Bool),
+        BuiltinCall::StringTrim | BuiltinCall::StringSplit => Some(ZigType::Str),
+
+        // Map methods
+        BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
+        BuiltinCall::MapHas => Some(ZigType::Bool),
+
+        // Date static methods
+        BuiltinCall::DateNow | BuiltinCall::DateParse | BuiltinCall::DateUTC => Some(ZigType::I64),
+
+        // Date instance methods
+        BuiltinCall::DateGetTime
+        | BuiltinCall::DateGetFullYear
+        | BuiltinCall::DateGetMonth
+        | BuiltinCall::DateGetDate
+        | BuiltinCall::DateGetDay
+        | BuiltinCall::DateGetHours
+        | BuiltinCall::DateGetMinutes
+        | BuiltinCall::DateGetSeconds => Some(ZigType::I64),
+
+        // Object methods
+        BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
+            Some(ZigType::ArrayList(Box::new(ZigType::Str)))
+        }
+
+        // Global functions
+        BuiltinCall::ParseInt => Some(ZigType::I64),
+
+        // Methods that return void or complex types — can't infer
+        _ => None,
     }
 }

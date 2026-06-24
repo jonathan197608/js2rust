@@ -166,3 +166,85 @@ export function testNestedTryCatchReThrow() {
     }
     return result; // Expected: 2 + 10 + 100 + 1000 = 1112
 }
+
+// ── Date tests ──
+
+/**
+ * new Date() — current timestamp
+ * @returns {number}
+ */
+export function testNewDate() {
+    const d = new Date();
+    return d.getTime();
+}
+
+/**
+ * new Date(millis) — from specific timestamp
+ * @returns {number}
+ */
+export function testNewDateWithMillis() {
+    const d = new Date(1000);
+    return d.getTime();
+}
+
+/**
+ * Date.getFullYear() — year extraction
+ * @returns {number}
+ */
+export function testDateGetFullYear() {
+    const d = new Date(0);
+    return d.getFullYear();
+}
+
+/**
+ * Date.getDay() — day of week (0=Sun, epoch=Thursday=4)
+ * @returns {number}
+ */
+export function testDateGetDay() {
+    const d = new Date(0);
+    return d.getDay();
+}
+
+/**
+ * Date.getHours() — hours from epoch (0 UTC)
+ * @returns {number}
+ */
+export function testDateGetHours() {
+    const d = new Date(0);
+    return d.getHours();
+}
+
+/**
+ * Date.getMonth() — month (0-based, epoch=January=0)
+ * @returns {number}
+ */
+export function testDateGetMonth() {
+    const d = new Date(0);
+    return d.getMonth();
+}
+
+/**
+ * Date.getDate() — day of month (epoch=1)
+ * @returns {number}
+ */
+export function testDateGetDate() {
+    const d = new Date(0);
+    return d.getDate();
+}
+
+/**
+ * Date.getMinutes() and getSeconds() — from epoch=0 UTC
+ * @returns {number}
+ */
+export function testDateGetMinutes() {
+    const d = new Date(0);
+    return d.getMinutes();
+}
+
+/**
+ * @returns {number}
+ */
+export function testDateGetSeconds() {
+    const d = new Date(0);
+    return d.getSeconds();
+}

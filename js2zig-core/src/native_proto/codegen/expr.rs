@@ -275,6 +275,19 @@ impl Codegen {
                         // new Set() → js_set.JsSet.init(js_allocator.getAllocator())
                         self.write("js_set.JsSet.init(js_allocator.getAllocator())");
                         return;
+                    } else if obj_name == "Date" {
+                        // new Date() → js_date.JsDate.init()
+                        // new Date(millis) → js_date.JsDate.fromMillis(millis)
+                        if ne.arguments.is_empty() {
+                            self.write("js_date.JsDate.init()");
+                        } else if let Some(first_arg) = ne.arguments.first() {
+                            self.write("js_date.JsDate.fromMillis(");
+                            self.emit_expr(first_arg.as_expression().unwrap());
+                            self.write(")");
+                        } else {
+                            self.write("js_date.JsDate.init()");
+                        }
+                        return;
                     }
                 }
                 // Unsupported NewExpression
@@ -757,9 +770,9 @@ impl Codegen {
                     return false;
                 }
                 // Generate labeled block with loop
-                self.write("(blk: { var __max = ");
+                self.write("(blk: { var __max = @as(i64, ");
                 self.emit_first_arg(&ce.arguments);
-                self.write("; ");
+                self.write("); ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
                     if i == 0 {
@@ -768,7 +781,10 @@ impl Codegen {
                     if let Some(expr) = arg.as_expression() {
                         self.write("if (");
                         let arg_str = self.emit_expr_to_string(expr);
-                        self.write(&format!("{} > __max) __max = {}; ", arg_str, arg_str));
+                        self.write(&format!(
+                            "@as(i64, {}) > __max) __max = @as(i64, {}); ",
+                            arg_str, arg_str
+                        ));
                     }
                 }
                 self.write(" break :blk __max; })");
@@ -783,9 +799,9 @@ impl Codegen {
                     return false;
                 }
                 // Generate labeled block with loop
-                self.write("(blk: { var __min = ");
+                self.write("(blk: { var __min = @as(i64, ");
                 self.emit_first_arg(&ce.arguments);
-                self.write("; ");
+                self.write("); ");
                 // Iterate over remaining arguments
                 for (i, arg) in ce.arguments.iter().enumerate() {
                     if i == 0 {
@@ -794,7 +810,10 @@ impl Codegen {
                     if let Some(expr) = arg.as_expression() {
                         self.write("if (");
                         let arg_str = self.emit_expr_to_string(expr);
-                        self.write(&format!("{} < __min) __min = {}; ", arg_str, arg_str));
+                        self.write(&format!(
+                            "@as(i64, {}) < __min) __min = @as(i64, {}); ",
+                            arg_str, arg_str
+                        ));
                     }
                 }
                 self.write(" break :blk __min; })");
@@ -903,7 +922,7 @@ impl Codegen {
                         // Treat as string indexOf
                         let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
-                            "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
+                            "(if (std.mem.indexOf(u8, {obj}, {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
                             obj = obj_name,
                             arg = arg_expr
                         ));
@@ -1387,7 +1406,7 @@ impl Codegen {
                     let str_val = obj.value.as_str();
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "(@as(i64, @intCast(std.mem.indexOf(u8, \"{str_val}\", {arg}) orelse -1)))",
+                        "(if (std.mem.indexOf(u8, \"{str_val}\", {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
                         str_val = str_val,
                         arg = arg_expr
                     ));
@@ -1397,7 +1416,7 @@ impl Codegen {
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "(@as(i64, @intCast(std.mem.indexOf(u8, {obj}, {arg}) orelse -1)))",
+                        "(if (std.mem.indexOf(u8, {obj}, {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
                         obj = obj_name,
                         arg = arg_expr
                     ));
@@ -1701,7 +1720,59 @@ impl Codegen {
 
             // ── Object methods (static) ────────────────────
             builtins::BuiltinCall::ObjectKeys => {
-                // Object.keys(obj) → js_object.keys(alloc, obj)
+                // Object.keys(obj) → js_object.keys(alloc, obj) for JsValueHashMap,
+                // or inline keys array for anonymous struct literals
+                if !ce.arguments.is_empty()
+                    && let Some(expr) = ce.arguments[0].as_expression()
+                {
+                    // Check if the argument is a variable with struct type
+                    if let Expression::Identifier(id) = expr
+                        && let Some(ZigType::Struct(fields)) =
+                            self.type_info.var_types.get(id.name.as_str())
+                    {
+                        let obj_name = id.name.as_str();
+                        let keys: Vec<String> = fields
+                            .iter()
+                            .map(|(name, _)| format!("\"{}\"", name))
+                            .collect();
+                        // Use a block that references the original variable (to prevent
+                        // Zig "unused local constant" errors) and returns the keys inline.
+                        if keys.is_empty() {
+                            self.write(&format!(
+                                "(blk: {{ _ = {obj}; break :blk (&[_][]const u8{{}}); }})",
+                                obj = obj_name
+                            ));
+                        } else {
+                            self.write(&format!(
+                                "(blk: {{ _ = {obj}; break :blk (&[_][]const u8{{ {keys} }}); }})",
+                                obj = obj_name,
+                                keys = keys.join(", ")
+                            ));
+                        }
+                        return true;
+                    }
+                    // Check if the argument is an inline object literal
+                    if let Expression::ObjectExpression(oe) = expr {
+                        let mut keys: Vec<String> = Vec::new();
+                        for prop in &oe.properties {
+                            if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                                let field_name = match &p.key {
+                                    PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                                    PropertyKey::StringLiteral(s) => s.value.to_string(),
+                                    _ => continue,
+                                };
+                                keys.push(format!("\"{}\"", field_name));
+                            }
+                        }
+                        if keys.is_empty() {
+                            self.write("(&[_][]const u8{})");
+                        } else {
+                            self.write(&format!("(&[_][]const u8{{ {} }})", keys.join(", ")));
+                        }
+                        return true;
+                    }
+                }
+                // Default: pass to js_object.keys (for JsValueHashMap etc.)
                 self.write("js_object.keys(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
@@ -1742,9 +1813,22 @@ impl Codegen {
 
             builtins::BuiltinCall::ParseInt => {
                 // parseInt(s) → std.fmt.parseInt(i64, s, 10) catch 0
+                // parseInt(s, radix) → switch (radix) { 2,8,10,16 => parse, else => 0 }
                 if let Some(arg) = ce.arguments.first()
                     && let Some(expr) = arg.as_expression()
                 {
+                    // Check for radix argument
+                    if ce.arguments.len() >= 2
+                        && let Some(radix_expr) = ce.arguments[1].as_expression()
+                    {
+                        let s_str = self.emit_expr_to_string(expr);
+                        let r_str = self.emit_expr_to_string(radix_expr);
+                        // std.fmt.parseInt requires comptime radix, so expand each case
+                        self.write(&format!(
+                            "(switch ({r_str}) {{ 2 => std.fmt.parseInt(i64, {s_str}, 2) catch 0, 8 => std.fmt.parseInt(i64, {s_str}, 8) catch 0, 10 => std.fmt.parseInt(i64, {s_str}, 10) catch 0, 16 => std.fmt.parseInt(i64, {s_str}, 16) catch 0, else => 0 }})"
+                        ));
+                        return true;
+                    }
                     self.write("std.fmt.parseInt(i64, ");
                     self.emit_expr(expr);
                     self.write(", 10) catch 0");
@@ -1780,13 +1864,12 @@ impl Codegen {
     }
 
     /// Emit a Date instance method call.
-    /// JS: `date.getTime()` → Zig: `js_date.getTime(date)`
+    /// JS: `date.getTime()` → Zig: `date.getTime()` (direct instance method call)
     fn emit_date_instance_method(&mut self, method: &str, ce: &CallExpression) -> bool {
         // Extract the receiver object from the callee
         if let Expression::StaticMemberExpression(mem) = &ce.callee {
-            self.write(&format!("js_date.{method}("));
             self.emit_expr(&mem.object);
-            self.write(")");
+            self.write(&format!(".{method}()"));
             true
         } else {
             self.errors.push(format!(
