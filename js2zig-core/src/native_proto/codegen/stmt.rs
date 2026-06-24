@@ -2521,9 +2521,16 @@ impl Codegen {
                                 static_field_names.push(name);
                             }
                         } else if !field_names.contains(&name) {
+                            // Look up field type from TypeInferrer first (before name is moved)
+                            let field_ty = self
+                                .type_info
+                                .class_field_types
+                                .get(&class_name_s)
+                                .and_then(|fields| fields.get(&name))
+                                .cloned()
+                                .unwrap_or(ZigType::I64);
                             field_names.push(name);
-                            // Default field type: i64
-                            field_types.push(ZigType::I64);
+                            field_types.push(field_ty);
                         }
                     }
                 }
@@ -2612,7 +2619,7 @@ impl Codegen {
             self.emit_class_constructor(class_name, field_names, &md.value);
         } else {
             // Regular method → pub fn methodName(self: @This(), ...)
-            self.emit_class_regular_method(&method_name, &md.value);
+            self.emit_class_regular_method(class_name, &method_name, &md.value);
         }
 
         self.writeln("");
@@ -2708,15 +2715,19 @@ impl Codegen {
     /// Emit a regular class method as `pub fn methodName(self: @This(), ...) RetTy { ... }`.
     fn emit_class_regular_method(
         &mut self,
+        class_name: &str,
         method_name: &str,
         func: &oxc_allocator::Box<'_, Function>,
     ) {
         let saved_fn = self.current_fn.take();
         self.current_fn = Some(method_name.to_string());
 
+        // Build fully-qualified key for TypeInferrer lookups
+        let fq_method = format!("{}.{}", class_name, method_name);
+
         // Resolve return type:
         // 1. Check JSDoc @returns annotation
-        // 2. Check TypeInferrer return types
+        // 2. Check TypeInferrer return types (fully-qualified key)
         // 3. Quick body scan for return statements
         // 4. Default to void
         let ret_ty = self
@@ -2727,7 +2738,7 @@ impl Codegen {
             .or_else(|| {
                 self.type_info
                     .fn_return_types
-                    .get(method_name)
+                    .get(&fq_method)
                     .map(|t| t.to_zig_type(false))
             })
             .or_else(|| {
@@ -2750,7 +2761,13 @@ impl Codegen {
         self.write(&format!("pub fn {}(self: @This()", method_name));
 
         // Parameters (skip self)
-        let param_list = self.type_info.fn_param_types.get(method_name).cloned();
+        // Look up with fully-qualified key first, fall back to plain method name
+        let param_list = self
+            .type_info
+            .fn_param_types
+            .get(&fq_method)
+            .or_else(|| self.type_info.fn_param_types.get(method_name))
+            .cloned();
         if let Some(params) = param_list {
             for (pname, ptype) in &params {
                 self.write(", ");
