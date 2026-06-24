@@ -29,6 +29,15 @@ fn stmt_references_name(stmt: &Statement, name: &str) -> bool {
                 .is_some_and(|init| expr_references_name(init, name))
         }),
         Statement::BlockStatement(bs) => stmt_list_references_name(&bs.body, name),
+        Statement::ThrowStatement(ts) => expr_references_name(&ts.argument, name),
+        // IfStatement with else branch can have catch param refs
+        Statement::IfStatement(ifs) => {
+            stmt_references_name(&ifs.consequent, name)
+                || ifs
+                    .alternate
+                    .as_ref()
+                    .is_some_and(|a| stmt_references_name(a, name))
+        }
         _ => false,
     }
 }
