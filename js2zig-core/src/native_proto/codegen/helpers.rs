@@ -14,6 +14,32 @@ impl Codegen {
         }
     }
 
+    /// Extract a property key name from a PropertyKey for destructuring.
+    /// Returns None for computed keys (not yet supported).
+    pub(crate) fn property_key_name(&self, key: &PropertyKey) -> Option<String> {
+        match key {
+            PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Resolve a destructuring binding pattern, returning (name, optional_default_expr).
+    /// Handles both plain bindings and `BindingPattern::AssignmentPattern` (with default).
+    pub(crate) fn destructure_binding<'a>(
+        &mut self,
+        pattern: &BindingPattern<'a>,
+    ) -> Option<(&'a str, Option<String>)> {
+        match pattern {
+            BindingPattern::BindingIdentifier(id) => Some((id.name.as_str(), None)),
+            BindingPattern::AssignmentPattern(ap) => {
+                let name = self.binding_name(&ap.left)?;
+                let default_str = self.emit_expr_to_string(&ap.right);
+                Some((name, Some(default_str)))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn binary_op(op: BinaryOperator) -> &'static str {
         match op {
             BinaryOperator::Addition => "+",

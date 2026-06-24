@@ -221,7 +221,197 @@ impl Codegen {
                         self.writeln("");
                     }
                 }
+            } else {
+                // ── Destructuring patterns ────────────────────────────
+                match &decl.id {
+                    BindingPattern::ObjectPattern(op) => {
+                        self.emit_object_destructure(op, &decl.init);
+                    }
+                    BindingPattern::ArrayPattern(ap) => {
+                        self.emit_array_destructure(ap, &decl.init);
+                    }
+                    _ => {
+                        // Unknown pattern — skip silently
+                    }
+                }
             }
+        }
+    }
+}
+
+/// Check if init expression should be emitted to a temp variable (has side effects)
+/// to avoid evaluating it multiple times in destructuring.
+fn init_may_have_side_effects(init: &Expression) -> bool {
+    matches!(
+        init,
+        Expression::CallExpression(_)
+            | Expression::NewExpression(_)
+            | Expression::AssignmentExpression(_)
+            | Expression::UpdateExpression(_)
+    )
+}
+
+// ── Destructuring codegen ──────────────────────────────
+
+impl Codegen {
+    /// Generate code for object destructuring:
+    /// `const {a, b: c, d = default} = expr`
+    /// → `const _js_dest_N = expr; const a = _js_dest_N.a; const c = _js_dest_N.b; const d = _js_dest_N.d orelse default;`
+    fn emit_object_destructure(&mut self, op: &ObjectPattern, init: &Option<Expression>) {
+        let Some(init_expr) = init else {
+            self.writeln("// error: destructuring requires an initializer");
+            return;
+        };
+
+        // Generate init expression as a temp variable (to avoid evaluating twice)
+        let init_str = self.emit_expr_to_string(init_expr);
+        let needs_temp = init_may_have_side_effects(init_expr);
+        let temp_name = if needs_temp || op.properties.len() > 1 {
+            let n = self.destructure_counter;
+            self.destructure_counter += 1;
+            let name = format!("_js_dest_{}", n);
+            self.write_indent();
+            self.write(&format!("const {} = {};\n", name, init_str));
+            name
+        } else {
+            // Single property with pure init — inline (clone to keep init_str alive)
+            init_str.clone()
+        };
+        let is_temp = needs_temp || op.properties.len() > 1;
+
+        for prop in &op.properties {
+            let key_name = match self.property_key_name(&prop.key) {
+                Some(k) => k,
+                None => {
+                    self.writeln(
+                        "// error: computed property key in destructuring not yet supported",
+                    );
+                    continue;
+                }
+            };
+
+            let Some((bind_name, default_expr)) = self.destructure_binding(&prop.value) else {
+                self.writeln(&format!(
+                    "// error: unsupported destructure binding for '{}'",
+                    key_name
+                ));
+                continue;
+            };
+
+            // Check is_const for individual binding
+            let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
+            let is_const = !self
+                .type_info
+                .mutated_vars
+                .contains(&format!("{}::{}", fn_prefix, bind_name));
+            // Skip unused toplevel constants
+            if self.indent == 0 && is_const && !self.type_info.used_names.contains(bind_name) {
+                continue;
+            }
+            // Toplevel only allows const
+            if self.indent == 0 && !is_const {
+                self.write_indent();
+                self.write(&format!(
+                    "// error: toplevel only allows 'const', not '{}'",
+                    bind_name
+                ));
+                self.writeln("");
+                continue;
+            }
+
+            let kw = if is_const { "const" } else { "var" };
+
+            self.write_indent();
+            self.write(&format!("{} {} = ", kw, bind_name));
+
+            if is_temp {
+                self.write(&format!("{}.{}", temp_name, key_name));
+            } else {
+                // Single property, pure init — inline
+                self.write(&format!("{}.{}", init_str, key_name));
+            }
+
+            if let Some(default) = &default_expr {
+                self.write(&format!(" orelse {}", default));
+            }
+
+            self.write(";\n");
+        }
+    }
+
+    /// Generate code for array destructuring:
+    /// `const [a, , b = default] = expr`
+    /// → `const _js_dest_N = expr; const a = _js_dest_N[0]; const b = _js_dest_N[2] orelse default;`
+    fn emit_array_destructure(&mut self, ap: &ArrayPattern, init: &Option<Expression>) {
+        let Some(init_expr) = init else {
+            self.writeln("// error: destructuring requires an initializer");
+            return;
+        };
+
+        let init_str = self.emit_expr_to_string(init_expr);
+        // Count non-None elements to decide if we need a temp
+        let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
+        let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
+        let temp_name = if needs_temp {
+            let n = self.destructure_counter;
+            self.destructure_counter += 1;
+            let name = format!("_js_dest_{}", n);
+            self.write_indent();
+            self.write(&format!("const {} = {};\n", name, init_str));
+            name
+        } else {
+            init_str.clone()
+        };
+        let is_temp = needs_temp;
+
+        for (i, elem) in ap.elements.iter().enumerate() {
+            let Some(pattern) = elem else {
+                continue; // skip holes like `const [a, , b] = arr`
+            };
+
+            let Some((bind_name, default_expr)) = self.destructure_binding(pattern) else {
+                self.writeln(&format!(
+                    "// error: unsupported destructure binding for element {}",
+                    i
+                ));
+                continue;
+            };
+
+            // Check is_const for individual binding
+            let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
+            let is_const = !self
+                .type_info
+                .mutated_vars
+                .contains(&format!("{}::{}", fn_prefix, bind_name));
+            if self.indent == 0 && is_const && !self.type_info.used_names.contains(bind_name) {
+                continue;
+            }
+            if self.indent == 0 && !is_const {
+                self.write_indent();
+                self.write(&format!(
+                    "// error: toplevel only allows 'const', not '{}'",
+                    bind_name
+                ));
+                self.writeln("");
+                continue;
+            }
+
+            let kw = if is_const { "const" } else { "var" };
+
+            self.write_indent();
+            self.write(&format!("{} {} = ", kw, bind_name));
+
+            if is_temp {
+                self.write(&format!("{}[{}]", temp_name, i));
+            } else {
+                self.write(&format!("{}[{}]", init_str, i));
+            }
+
+            if let Some(default) = &default_expr {
+                self.write(&format!(" orelse {}", default));
+            }
+
+            self.write(";\n");
         }
     }
 }

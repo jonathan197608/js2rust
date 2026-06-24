@@ -3644,4 +3644,171 @@ function test() {
             zig
         );
     }
+
+    // ── Destructuring tests ───────────────────────────
+
+    #[test]
+    fn test_p2_destructure_object_basic() {
+        // const {a, b} = obj → const a = obj.a; const b = obj.b;
+        let js = r#"
+function basic(obj) {
+    const { a, b } = obj;
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_object_basic");
+        assert!(
+            zig.contains("const _js_dest_"),
+            "Expected temp variable in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("_js_dest_0.a"),
+            "Expected .a access in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("_js_dest_0.b"),
+            "Expected .b access in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_destructure_object_with_defaults() {
+        // const {a = 1, b = 2} = obj → const a = obj.a orelse 1; const b = obj.b orelse 2;
+        let js = r#"
+function withDefaults(obj) {
+    const { a = 1, b = 2 } = obj;
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_object_with_defaults");
+        assert!(zig.contains("orelse 1"), "Expected 'orelse 1' in:\n{}", zig);
+        assert!(zig.contains("orelse 2"), "Expected 'orelse 2' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p2_destructure_object_rename() {
+        // const {a: x} = obj → const x = obj.a;
+        let js = r#"
+function rename(obj) {
+    const { a: x } = obj;
+    return x;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_object_rename");
+        assert!(
+            zig.contains("const x = "),
+            "Expected 'const x =' in:\n{}",
+            zig
+        );
+        assert!(zig.contains(".a"), "Expected .a access in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p2_destructure_object_mixed() {
+        // const {a, b: c = 10} = obj
+        let js = r#"
+function mixed(obj) {
+    const { a, b: c = 10 } = obj;
+    return a + c;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_object_mixed");
+        assert!(
+            zig.contains("const a = "),
+            "Expected 'const a' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("const c = "),
+            "Expected 'const c' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("orelse 10"),
+            "Expected 'orelse 10' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_destructure_array_basic() {
+        // const [a, b] = arr → const a = arr[0]; const b = arr[1];
+        let js = r#"
+function arrayBasic(arr) {
+    const [a, b] = arr;
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_array_basic");
+        assert!(zig.contains("[0]"), "Expected '[0]' in:\n{}", zig);
+        assert!(zig.contains("[1]"), "Expected '[1]' in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p2_destructure_array_with_defaults() {
+        // const [a = 1, b = 2] = arr → const a = arr[0] orelse 1; const b = arr[1] orelse 2;
+        let js = r#"
+function arrayDefaults(arr) {
+    const [a = 1, b = 2] = arr;
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_array_with_defaults");
+        assert!(
+            zig.contains("[0] orelse 1"),
+            "Expected '[0] orelse 1' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("[1] orelse 2"),
+            "Expected '[1] orelse 2' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_destructure_array_hole() {
+        // const [a, , b] = arr → skip hole
+        let js = r#"
+function arrayHole(arr) {
+    const [a, , b] = arr;
+    return a + b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_array_hole");
+        assert!(zig.contains("[0]"), "Expected '[0]' in:\n{}", zig);
+        assert!(zig.contains("[2]"), "Expected '[2]' in:\n{}", zig);
+        // Should NOT contain [1]
+        assert!(
+            !zig.contains("[1]"),
+            "Should not contain '[1]' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p2_destructure_function_call_init() {
+        // Destructuring from a function call → temp variable
+        let js = r#"
+function callInit() {
+    const obj = { x: 1, y: 2 };
+    const { x, y } = obj;
+    return x + y;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_destructure_function_call_init");
+        assert!(
+            zig.contains("const x = "),
+            "Expected 'const x' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("const y = "),
+            "Expected 'const y' in:\n{}",
+            zig
+        );
+    }
 }
