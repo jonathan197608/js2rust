@@ -40,15 +40,15 @@
 | 1 | 类型推断 | `typeof` 运算符 | 验证 `@typeName(@TypeOf(x))` 输出是否与 JS `typeof` 行为一致 | 低 | ✅ 已完成 |
 | 2 | 类型推断 | `null` 字面量 | 验证 `NullLiteral` 返回 `None` 类型是否导致推断错误 | 低 | ✅ 已完成 |
 | 3 | 类型推断 | `undefined` → `null` | 验证转换后运行时行为（Zig `null` vs JS `undefined`） | 低 | ✅ 已完成 |
-| 4 | 内置对象 | `Math.hypot()` | 验证实现 `@sqrt(a*a + b*b)` 是否等价于标准 `hypot`（精度/溢出） | 中 | 📋 待开始 |
-| 5 | 内置对象 | `String.prototype.charAt()` | 验证 `s[@intCast(i)]` 是否等价于 JS `charAt`（UTF-16 vs UTF-8） | 中 | 📋 待开始 |
-| 6 | 内置对象 | `Date` 时区处理 | 验证 `getFullYear()`/`getMonth()` 等是否使用正确时区 | 高 | 📋 待开始 |
-| 7 | 语句 | `try-catch` 嵌套 | 验证嵌套 try-catch 资源释放是否正确（无重复释放/泄漏） | 中 | 📋 待开始 |
+| 4 | 内置对象 | `Math.hypot()` | 验证实现 `@sqrt(a*a + b*b)` 是否等价于标准 `hypot`（精度/溢出） | 中 | ⚠️ 已验证 |
+| 5 | 内置对象 | `String.prototype.charAt()` | 验证 `s[@intCast(i)]` 是否等价于 JS `charAt`（UTF-16 vs UTF-8） | 中 | ⚠️ 已验证 |
+| 6 | 内置对象 | `Date` 时区处理 | 验证 `getFullYear()`/`getMonth()` 等是否使用正确时区 | 高 | ⚠️ 已验证 |
+| 7 | 语句 | `try-catch` 嵌套 | 验证嵌套 try-catch 资源释放是否正确（无重复释放/泄漏） | 中 | ⚠️ 已验证 |
 | 8 | 语句 | `for-in` 静态 struct | 验证静态 struct 展开循环是否正确处理所有字段类型（忽略方法） | 低 | ✅ 已完成 |
 | 9 | 语句 | 标签语句 | 编写测试验证 `break label` / `continue label` 行为 | 低 | ✅ 已完成 |
-| 10 | 代码生成 | 可选链 `?.` | 验证生成代码 `if (obj) |v| v.prop else null` 是否存在空指针解引用 | 中 | 📋 待开始 |
+| 10 | 代码生成 | 可选链 `?.` | 验证生成代码 `if (obj) |v| v.prop else null` 是否存在空指针解引用 | 中 | ✅ 已完成 |
 | 11 | 代码生成 | 闭包可变捕获 | 验证 `self.x.*` 解引用是否触发 Zig 借用检查器错误 | 高 | ✅ 已完成 |
-| 12 | 代码生成 | 模板字符串 `allocPrint` | 验证内存是否正确释放（arena reset 时机） | 中 | 📋 待开始 |
+| 12 | 代码生成 | 模板字符串 `allocPrint` | 验证内存是否正确释放（arena reset 时机） | 中 | ✅ 已完成 |
 | 13 | 边缘情况 | 大型字面量 | 创建 1000+ 元素数组/对象测试是否触发编译器栈溢出 | 低 | ✅ 已完成 |
 | 14 | 边缘情况 | 深层嵌套调用 | 创建 `a(b(c(d(e(f())))))` 测试编译行为 | 低 | ✅ 已完成 |
 | 15 | 边缘情况 | Unicode 标识符 | 验证中文变量名是否被 oxc 解析器和代码生成正确处理 | 低 | ✅ 已完成 |
