@@ -3391,6 +3391,22 @@ function freezeObj(obj) {
         );
     }
 
+    #[test]
+    fn test_p1_object_from_entries() {
+        // Object.fromEntries is not yet implemented → generates @compileError
+        let js = r#"
+function fromEntriesWrapper(entries) {
+    return Object.fromEntries(entries);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_object_from_entries");
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError for Object.fromEntries() in:\n{}",
+            zig
+        );
+    }
+
     // ── P1-4: Labeled statements ─────────────────────────────────
 
     #[test]
