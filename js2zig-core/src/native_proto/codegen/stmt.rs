@@ -5,6 +5,7 @@ use super::Codegen;
 use crate::native_proto::builtins;
 use crate::native_proto::{ExportedFunction, ZigType};
 use oxc_ast::ast::*;
+use oxc_span::GetSpan;
 use std::collections::HashSet;
 
 // ── Variable declarations ────────────────────────────
@@ -1304,7 +1305,7 @@ impl Codegen {
             _ => {
                 // Unsupported statement type: generate @compileError
                 self.write_indent();
-                self.write("@compileError(\"Unsupported statement type\")");
+                self.compile_error_stmt(GetSpan::span(stmt), "Unsupported statement type");
             }
         }
     }
@@ -1580,7 +1581,7 @@ impl Codegen {
             _ => {
                 // Non-identifier expressions not supported for for-in
                 self.write_indent();
-                self.writeln("@compileError(\"for-in only supported with identifier objects\");");
+                self.compile_error_stmt(fis.span, "for-in only supported with identifier objects");
                 return;
             }
         };
@@ -1629,10 +1630,10 @@ impl Codegen {
 
         // Case 3: Unknown type → compile error
         self.write_indent();
-        self.write(&format!(
-            "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
-            obj_name
-        ));
+        self.compile_error_stmt_fmt(
+            fis.span,
+            format!("for-in: '{}' is not a dynamic object", obj_name),
+        );
     }
 
     fn emit_for_in_labeled(&mut self, fis: &ForInStatement) {
@@ -1649,7 +1650,7 @@ impl Codegen {
         let obj_name = match &fis.right {
             Expression::Identifier(id) => id.name.to_string(),
             _ => {
-                self.write("@compileError(\"for-in only supported with identifier objects\");\n");
+                self.compile_error_stmt(fis.span, "for-in only supported with identifier objects");
                 return;
             }
         };
@@ -1686,10 +1687,10 @@ impl Codegen {
             }
             return;
         }
-        self.write(&format!(
-            "@compileError(\"for-in: '{}' is not a dynamic object\");\n",
-            obj_name
-        ));
+        self.compile_error_stmt_fmt(
+            fis.span,
+            format!("for-in: '{}' is not a dynamic object", obj_name),
+        );
     }
 
     // JS:  switch (expr) { case v: ...; break; default: ... }

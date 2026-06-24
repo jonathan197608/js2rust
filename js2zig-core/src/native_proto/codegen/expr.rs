@@ -5,6 +5,7 @@ use super::Codegen;
 use crate::native_proto::ZigType;
 use crate::native_proto::builtins;
 use oxc_ast::ast::*;
+use oxc_span::GetSpan;
 
 // ── Expressions ─────────────────────────────────────
 
@@ -48,14 +49,14 @@ impl Codegen {
                 }
                 self.write(var_name);
             }
-            Expression::ThisExpression(_te) => {
+            Expression::ThisExpression(te) => {
                 // When inside a class method, `this` maps to `self`.
                 if self.current_class.is_some() {
                     self.write("self");
                 } else {
                     self.errors
                         .push("`this` used outside of a class method".to_string());
-                    self.write("@compileError(\"`this` used outside of a class method\")");
+                    self.compile_error(te.span, "`this` used outside of a class method");
                 }
             }
             Expression::BinaryExpression(be) => {
@@ -316,7 +317,7 @@ impl Codegen {
                     "Unsupported NewExpression (supported: Int32Array, Uint8Array, Float64Array)"
                         .to_string(),
                 );
-                self.write("@compileError(\"Unsupported NewExpression\")");
+                self.compile_error(ne.span, "Unsupported NewExpression");
             }
             Expression::TemplateLiteral(tpl) => self.emit_template_literal(tpl),
             Expression::UpdateExpression(ue) => {
@@ -336,7 +337,7 @@ impl Codegen {
                             "Unsupported UpdateExpression target (only simple identifiers)"
                                 .to_string(),
                         );
-                        self.write("@compileError(\"Unsupported UpdateExpression target\")");
+                        self.compile_error(ue.span, "Unsupported UpdateExpression target");
                     }
                 }
             }
@@ -349,7 +350,7 @@ impl Codegen {
                     "Unsupported expression type: {:?}",
                     std::mem::discriminant(other)
                 ));
-                self.write("@compileError(\"Unsupported expression type\")");
+                self.compile_error(GetSpan::span(other), "Unsupported expression type");
             }
         }
     }
@@ -545,7 +546,7 @@ impl Codegen {
         } else if be.operator == BinaryOperator::Instanceof {
             // `x instanceof Constructor` — not directly supported in Zig.
             // Emit a compile error with source location info.
-            self.write("@compileError(\"instanceof operator is not supported in Zig\")");
+            self.compile_error(be.span, "instanceof operator is not supported in Zig");
         } else {
             self.emit_expr(&be.left);
             self.write(" ");
@@ -581,10 +582,10 @@ impl Codegen {
                     "Promise.{}() is not supported. Use 'await' instead of '.{}()'",
                     prop_name, prop_name
                 ));
-                self.write(&format!(
-                    "@compileError(\"Promise.{}() not supported, use 'await' instead\")",
-                    prop_name
-                ));
+                self.compile_error_fmt(
+                    ce.span,
+                    format!("Promise.{}() not supported, use 'await' instead", prop_name),
+                );
                 return;
             }
         }
@@ -600,10 +601,7 @@ impl Codegen {
                             "Promise.{}() is not supported in native_proto mode. Use 'await' with async functions instead.",
                             method
                         ));
-                self.write(&format!(
-                    "@compileError(\"Promise.{}() not supported\")",
-                    method
-                ));
+                self.compile_error_fmt(ce.span, format!("Promise.{}() not supported", method));
                 return;
             }
         }
@@ -691,8 +689,8 @@ impl Codegen {
             self.errors.push(format!(
                 "Member function calls (obj.method()) are not fully supported in native_proto mode: callee = {}",
                 callee_str
-            ));
-            self.write("@compileError(\"Member function calls not supported\")");
+            )            );
+            self.compile_error(ce.span, "Member function calls not supported");
             return;
         } else {
             // Other unsupported callee types
@@ -701,7 +699,7 @@ impl Codegen {
                 "Unsupported callee type in native_proto mode: callee = {}",
                 callee_str
             ));
-            self.write("@compileError(\"Unsupported callee type\")");
+            self.compile_error(ce.span, "Unsupported callee type");
             return;
         }
         self.write("(");
@@ -879,7 +877,7 @@ impl Codegen {
 
             builtins::BuiltinCall::MathHypot => {
                 // Math.hypot() is not supported — generate @compileError
-                self.write("@compileError(\"Math.hypot() is not supported in js2zig\")");
+                self.compile_error(ce.span, "Math.hypot() is not supported in js2zig");
                 true
             }
 
@@ -1829,7 +1827,7 @@ impl Codegen {
             }
             builtins::BuiltinCall::DateUTC => {
                 // Date.UTC(y, m, d) — not implemented in runtime, emit compile error
-                self.write("@compileError(\"Date.UTC is not yet implemented\")");
+                self.compile_error(ce.span, "Date.UTC is not yet implemented");
                 true
             }
 
@@ -1932,7 +1930,7 @@ impl Codegen {
                     self.emit_expr_arg(&ce.arguments[1]);
                     self.write(")");
                 } else {
-                    self.write("@compileError(\"Object.assign requires at least 2 arguments\")");
+                    self.compile_error(ce.span, "Object.assign requires at least 2 arguments");
                 }
                 true
             }
@@ -1988,7 +1986,7 @@ impl Codegen {
                     self.emit_expr(e);
                 } else {
                     self.errors.push("Unknown argument type".to_string());
-                    self.write("@compileError(\"Unknown argument type\")");
+                    self.compile_error(GetSpan::span(arg), "Unknown argument type");
                 }
             }
         }
@@ -2331,7 +2329,7 @@ impl Codegen {
                 self.errors.push(
                     "Optional chaining on private fields (?. #field) is not supported".to_string(),
                 );
-                self.write("@compileError(\"optional chaining on private fields\")");
+                self.compile_error(chain.span, "optional chaining on private fields");
                 return;
             }
             _ => {}

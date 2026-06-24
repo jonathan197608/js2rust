@@ -278,7 +278,13 @@ fn transpile_js_inner(
     } else {
         std::collections::HashSet::new()
     };
-    let mut cg = Codegen::new(type_info, jsdoc_data, exported_functions, async_host_fns);
+    let mut cg = Codegen::new(
+        type_info,
+        jsdoc_data,
+        exported_functions,
+        async_host_fns,
+        js_source.to_string(),
+    );
     cg.generate(program);
 
     // Merge TypeInferrer errors with Codegen errors.
@@ -434,4 +440,6 @@ pub struct Codegen {
     /// Set of class names known at the module level.
     /// Used to route `new ClassName()` → `ClassName.init()` in emit_expr.
     pub class_names: std::collections::HashSet<String>,
+    /// Original JS source text, used to convert byte offsets → line:col for diagnostics.
+    pub source: String,
 }

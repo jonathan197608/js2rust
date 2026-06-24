@@ -3,6 +3,7 @@
 
 use crate::native_proto::Codegen;
 use oxc_ast::ast::*;
+use oxc_span::Span;
 
 pub mod expr;
 pub mod helpers;
@@ -16,6 +17,7 @@ impl Codegen {
         jsdoc_data: crate::native_proto::JSDocData,
         exported_functions: Option<std::collections::HashSet<String>>,
         async_host_fns: std::collections::HashSet<String>,
+        source: String,
     ) -> Self {
         Self {
             output: String::new(),
@@ -52,7 +54,62 @@ impl Codegen {
             class_defs: std::collections::HashMap::new(),
             current_class: None,
             class_names: std::collections::HashSet::new(),
+            source,
         }
+    }
+}
+
+// ── Diagnostics helpers ──────────────────────────────
+
+impl Codegen {
+    /// Convert a byte offset into the source text to (1-based line, 1-based column).
+    fn offset_to_line_col(&self, offset: u32) -> (usize, usize) {
+        let offset = offset as usize;
+        let mut line: usize = 1;
+        let mut col: usize = 1;
+        for (i, ch) in self.source.char_indices() {
+            if i >= offset {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+        (line, col)
+    }
+
+    /// Format a Span as "line:col".
+    fn span_to_string(&self, span: Span) -> String {
+        let (line, col) = self.offset_to_line_col(span.start);
+        format!("{}:{}", line, col)
+    }
+
+    /// Write a `@compileError("msg (at L:C)")` with source location (no trailing `;\n`).
+    /// For statement-level use, call `compile_error_stmt` instead (adds `;\n`).
+    pub(crate) fn compile_error(&mut self, span: Span, msg: &str) {
+        let loc = self.span_to_string(span);
+        self.write(&format!("@compileError(\"{msg} (at {loc})\")"));
+    }
+
+    /// Write a `@compileError(...)` with source location, taking an already-formatted message.
+    pub(crate) fn compile_error_fmt(&mut self, span: Span, msg: String) {
+        let loc = self.span_to_string(span);
+        self.write(&format!("@compileError(\"{msg} (at {loc})\")"));
+    }
+
+    /// Like `compile_error` but for statement-level: writes `;\n` after the call.
+    pub(crate) fn compile_error_stmt(&mut self, span: Span, msg: &str) {
+        let loc = self.span_to_string(span);
+        self.write(&format!("@compileError(\"{msg} (at {loc})\");\n"));
+    }
+
+    /// Like `compile_error_fmt` but for statement-level: writes `;\n` after the call.
+    pub(crate) fn compile_error_stmt_fmt(&mut self, span: Span, msg: String) {
+        let loc = self.span_to_string(span);
+        self.write(&format!("@compileError(\"{msg} (at {loc})\");\n"));
     }
 }
 
