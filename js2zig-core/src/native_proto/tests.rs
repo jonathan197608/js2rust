@@ -565,13 +565,86 @@ function demo() {
 "#;
         let zig = transpile_and_assert!(js, "test_p2_for_in_static_codegen");
         // Verify: unrolled loop (no HashMap iterator)
-        assert!(zig.contains("const k = \"a\""), "Expected unrolled field 'a'");
-        assert!(zig.contains("const k = \"b\""), "Expected unrolled field 'b'");
-        assert!(zig.contains("const k = \"name\""), "Expected unrolled field 'name'");
+        assert!(
+            zig.contains("const k = \"a\""),
+            "Expected unrolled field 'a'"
+        );
+        assert!(
+            zig.contains("const k = \"b\""),
+            "Expected unrolled field 'b'"
+        );
+        assert!(
+            zig.contains("const k = \"name\""),
+            "Expected unrolled field 'name'"
+        );
         assert!(!zig.contains("__it"), "Should not have HashMap iterator");
         // Verify: string concatenation inside unrolled blocks
-        assert!(zig.contains("allocPrint"), "Expected allocPrint for string concat");
+        assert!(
+            zig.contains("allocPrint"),
+            "Expected allocPrint for string concat"
+        );
     }
+
+    #[test]
+    fn test_p2_nested_function_no_capture() {
+        // Nested function without captures: should generate struct with call() method
+        let js = r#"
+function outer(x) {
+    function inner(y) {
+        return y * 2;
+    }
+    return inner(x);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p2_nested_function_no_capture");
+        println!("=== Nested function (no capture) Zig code ===\n{}", zig);
+
+        // Verify: inner function is hoisted as a struct
+        assert!(
+            zig.contains("const inner = struct {"),
+            "Expected inner to be a struct"
+        );
+        assert!(zig.contains("pub fn call("), "Expected call() method");
+
+        // Verify: call is rewritten to inner.call(x)
+        assert!(
+            zig.contains("inner.call(x)"),
+            "Expected call to be rewritten"
+        );
+    }
+
+    #[test]
+    fn test_p2_nested_function_with_capture() {
+        // Nested function with captures: should generate struct with captured variables
+        let js = r#"
+function outer(x) {
+    function inner(y) {
+        return x + y;  // x is captured from outer scope
+    }
+    return inner(3);
+}
+"#;
+        let zig = parse_and_transpile(js, None).unwrap().zig_code;
+        println!("=== Nested function (with capture) Zig code ===\n{}", zig);
+
+        // Verify: inner is defined as a struct with capture field
+        assert!(
+            zig.contains("const inner = struct {"),
+            "Expected inner to be a struct"
+        );
+        assert!(zig.contains("x:"), "Expected capture field x");
+
+        // Verify: call is rewritten to inner.call(args)
+        assert!(zig.contains("inner.call("), "Expected call to be rewritten");
+
+        // Verify: struct has call method with self parameter
+        assert!(
+            zig.contains("pub fn call(self:"),
+            "Expected call method with self parameter"
+        );
+    }
+
+    #[test]
     fn test_native_proto_switch() {
         let js = r#"
 function grade(score) {
@@ -4032,7 +4105,7 @@ function outer() {
 
     #[test]
     fn test_p2_nested_function_capture_error() {
-        // Nested function that captures outer variable → @compileError
+        // Nested function that captures outer variable → now supported!
         let js = r#"
 function outer(x) {
     function inner(y) {
@@ -4042,15 +4115,22 @@ function outer(x) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p2_nested_function_capture_error");
+        println!("=== Nested function capture Zig code ===\n{}", zig);
+
+        // Verify: inner is defined as a struct with capture field
         assert!(
-            zig.contains("@compileError"),
-            "Expected @compileError for captured variable in:\n{}",
-            zig
+            zig.contains("const inner = struct {"),
+            "Expected inner to be a struct"
         );
+        assert!(zig.contains("x:"), "Expected capture field x");
+
+        // Verify: call is rewritten to inner.call(args)
+        assert!(zig.contains("inner.call("), "Expected call to be rewritten");
+
+        // Verify: struct has call method with self parameter
         assert!(
-            zig.contains("x"),
-            "Expected error to mention captured variable 'x' in:\n{}",
-            zig
+            zig.contains("pub fn call(self:"),
+            "Expected call method with self parameter"
         );
     }
 }

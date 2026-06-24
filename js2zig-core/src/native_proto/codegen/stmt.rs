@@ -637,10 +637,19 @@ impl Codegen {
         }
 
         // Generate function signature.
+        let has_captures = !self.current_captured.is_empty();
         if is_async {
-            self.write(&format!("pub fn {}(io: anytype", emit_name));
+            if has_captures {
+                self.write(&format!("pub fn {}(self: @This(), io: anytype", emit_name));
+            } else {
+                self.write(&format!("pub fn {}(io: anytype", emit_name));
+            }
         } else {
-            self.write(&format!("pub fn {}(", emit_name));
+            if has_captures {
+                self.write(&format!("pub fn {}(self: @This(), ", emit_name));
+            } else {
+                self.write(&format!("pub fn {}(", emit_name));
+            }
         }
 
         // Generate parameter list (read param types from type_info).
@@ -1198,9 +1207,6 @@ impl Codegen {
             }
             Statement::FunctionDeclaration(fd) => {
                 // Nested function declaration: hoist as inline struct with .call() method.
-                // Zig doesn't support nested `pub fn`, so we use:
-                //   const name = struct { pub fn call(...) ... };
-                // Calls are rewritten to `name.call(args)` via nested_fn_names.
                 let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
                 let Some(fn_name) = fn_name else {
                     self.write_indent();
@@ -1210,50 +1216,90 @@ impl Codegen {
 
                 // Detect captured variables from enclosing scope
                 let captures = self.detect_fn_body_captures(fd);
+
                 if !captures.is_empty() {
-                    let cap_names: Vec<_> = captures.iter().map(|(n, _, _)| n.as_str()).collect();
+                    // Has captures: generate struct with capture fields + instance
+                    self.nested_fn_names.insert(fn_name.to_string());
+
                     self.write_indent();
-                    self.writeln(&format!(
-                        "@compileError(\"nested function '{}' captures outer variable(s): {} — hoisting with captures not yet supported\")",
-                        fn_name,
-                        cap_names.join(", ")
-                    ));
-                    return;
+                    self.writeln(&format!("const {} = struct {{", fn_name));
+                    self.indent += 1;
+
+                    // Add capture fields to struct
+                    for (cap_name, cap_type, is_mut) in &captures {
+                        let zig_type = cap_type.to_zig_type(*is_mut);
+                        self.write_indent();
+                        self.writeln(&format!("{}: {},", cap_name, zig_type));
+                    }
+
+                    // Set current_captured so variable references are rewritten to self.xxx
+                    let saved_captured = std::mem::take(&mut self.current_captured);
+                    self.current_captured = captures.clone();
+
+                    // Generate function body
+                    let old_current_fn = self.current_fn.clone();
+                    self.current_fn = Some(fn_name.to_string());
+
+                    let old_fn_has_throw = self.fn_has_throw;
+                    let old_seen_return = self.seen_return;
+                    self.fn_has_throw = false;
+                    self.seen_return = false;
+
+                    let old_nested = self.current_nested_fn_name.take();
+                    self.current_nested_fn_name = Some(fn_name.to_string());
+
+                    self.emit_fn(fd);
+
+                    self.current_nested_fn_name = old_nested;
+                    self.fn_has_throw = old_fn_has_throw;
+                    self.seen_return = old_seen_return;
+                    self.current_fn = old_current_fn;
+
+                    // Restore current_captured
+                    self.current_captured = saved_captured;
+
+                    self.indent -= 1;
+                    self.write_indent();
+                    // Create instance with captured values
+                    let mut init = String::from(".{ ");
+                    for (i, (cap_name, _, _)) in captures.iter().enumerate() {
+                        if i > 0 {
+                            init.push_str(", ");
+                        }
+                        init.push_str(&format!(".{} = {}", cap_name, cap_name));
+                    }
+                    init.push_str(" };");
+                    self.writeln(&format!("}}{}", init));
+                } else {
+                    // No captures: generate inline struct with static call method
+                    self.nested_fn_names.insert(fn_name.to_string());
+
+                    self.write_indent();
+                    self.writeln(&format!("const {} = struct {{", fn_name));
+                    self.indent += 1;
+
+                    let old_current_fn = self.current_fn.clone();
+                    self.current_fn = Some(fn_name.to_string());
+
+                    let old_fn_has_throw = self.fn_has_throw;
+                    let old_seen_return = self.seen_return;
+                    self.fn_has_throw = false;
+                    self.seen_return = false;
+
+                    let old_nested = self.current_nested_fn_name.take();
+                    self.current_nested_fn_name = Some(fn_name.to_string());
+
+                    self.emit_fn(fd);
+
+                    self.current_nested_fn_name = old_nested;
+                    self.fn_has_throw = old_fn_has_throw;
+                    self.seen_return = old_seen_return;
+                    self.current_fn = old_current_fn;
+
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.writeln("};");
                 }
-
-                // No captures: generate inline struct with call method
-                self.nested_fn_names.insert(fn_name.to_string());
-
-                self.write_indent();
-                self.writeln(&format!("const {} = struct {{", fn_name));
-                self.indent += 1;
-
-                // Generate function signature
-                let old_current_fn = self.current_fn.clone();
-                self.current_fn = Some(fn_name.to_string());
-
-                let old_fn_has_throw = self.fn_has_throw;
-                let old_seen_return = self.seen_return;
-                self.fn_has_throw = false;
-                self.seen_return = false;
-
-                // Signal to emit_fn that this is a nested function so it
-                // generates `pub fn call(...)` instead of `pub fn <js_name>(...)`.
-                let old_nested = self.current_nested_fn_name.take();
-                self.current_nested_fn_name = Some(fn_name.to_string());
-
-                // Emit the function using emit_fn (which generates pub fn ...)
-                self.emit_fn(fd);
-
-                self.current_nested_fn_name = old_nested;
-
-                self.fn_has_throw = old_fn_has_throw;
-                self.seen_return = old_seen_return;
-                self.current_fn = old_current_fn;
-
-                self.indent -= 1;
-                self.write_indent();
-                self.writeln("};");
             }
             _ => {
                 // Unsupported statement type: generate @compileError
