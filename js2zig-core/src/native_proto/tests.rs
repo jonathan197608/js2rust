@@ -2350,10 +2350,10 @@ function safeDivide(a, b) {
             "Expected labeled block:\n{}",
             zig
         );
-        // Should generate catch |err| for the handler
+        // Should generate if-else with error capture for the handler
         assert!(
-            zig.contains("catch |err|"),
-            "Expected catch |err|:\n{}",
+            zig.contains("else |err|"),
+            "Expected else |err| for catch handler:\n{}",
             zig
         );
         // Should bind catch(e) → _ = @errorName(err) (e is unused in body)
@@ -2439,10 +2439,10 @@ function check(val) {
             "Expected break :label for throw inside try:\n{}",
             zig
         );
-        // Should have catch handler
+        // Should have catch handler via if-else
         assert!(
-            zig.contains("catch |err|"),
-            "Expected catch handler:\n{}",
+            zig.contains("else |err|"),
+            "Expected catch handler via if-else:\n{}",
             zig
         );
         assert_zig_ast_check(&zig, "test_native_proto_try_catch_throw_break");
@@ -2493,16 +2493,16 @@ function process(val) {
 "##;
         let zig = transpile_and_assert!(js, "test_native_proto_try_catch_finally");
         println!("=== Try-catch-finally ===\n{}", zig);
-        // Finally body should be inlined after catch, before return result.
+        // Finally body should be generated as defer inside labeled block
         assert!(
-            zig.contains("val = 0;"),
-            "Expected finally body inlined after catch:\n{}",
+            zig.contains("defer {") && zig.contains("val = 0;"),
+            "Expected finally as defer:\n{}",
             zig
         );
-        // Should have catch handler
+        // Should have catch handler via if-else
         assert!(
-            zig.contains("catch |err|"),
-            "Expected catch handler:\n{}",
+            zig.contains("else |err|"),
+            "Expected catch handler via if-else:\n{}",
             zig
         );
         assert_zig_ast_check(&zig, "test_native_proto_try_catch_finally");
@@ -2526,8 +2526,8 @@ function safeOp(x) {
         assert!(zig.contains("return x + 1"), "Expected body:\n{}", zig);
         // Catch handler is unreachable — not generated
         assert!(
-            !zig.contains("catch |err|"),
-            "Should not have catch for throw-free try:\n{}",
+            !zig.contains("else |err|"),
+            "Should not have catch handler for throw-free try:\n{}",
             zig
         );
         assert_zig_ast_check(&zig, "test_native_proto_try_catch_no_throw");

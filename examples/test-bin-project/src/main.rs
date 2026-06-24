@@ -71,4 +71,8 @@ fn main() {
     let r3 = testTryCatchWithResource_main().unwrap();
     println!("testTryCatchWithResource_main() = {} (expected: 43)", r3);
     assert_eq!(r3, 43);
+
+    let r4 = testNestedTryCatchReThrow_main().unwrap();
+    println!("testNestedTryCatchReThrow_main() = {} (expected: 1112)", r4);
+    assert_eq!(r4, 1112);
 }

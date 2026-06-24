@@ -136,3 +136,33 @@ export function testTryCatchWithResource() {
     }
     return result; // Expected: 43
 }
+
+/**
+ * Test re-throw from inner catch to outer catch.
+ * Verifies that `throw` in catch body propagates to the enclosing try-catch
+ * rather than returning from the whole function.
+ * @returns {number}
+ */
+export function testNestedTryCatchReThrow() {
+    let result = 0;
+    try {
+        try {
+            result = 1;
+            throw "inner error";
+        } catch (e) {
+            // Inner catch: re-throw
+            result = 2;
+            throw "re-thrown to outer";
+        } finally {
+            // Inner finally: should always run
+            result = result + 10;
+        }
+    } catch (e) {
+        // Outer catch: should receive "re-thrown to outer"
+        result = result + 100;
+    } finally {
+        // Outer finally: should always run
+        result = result + 1000;
+    }
+    return result; // Expected: 2 + 10 + 100 + 1000 = 1112
+}

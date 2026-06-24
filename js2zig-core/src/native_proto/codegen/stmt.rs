@@ -698,7 +698,10 @@ impl Codegen {
                 if let Some(ref label) = self.inside_try_block.clone() {
                     // Inside try-catch: break the try block with error
                     self.write_indent();
-                    self.writeln(&format!("break :{} error.JsThrow;", label));
+                    self.writeln(&format!(
+                        "break :{} @as(anyerror!void, error.JsThrow);",
+                        label
+                    ));
                 } else {
                     // Bare throw: propagate to function return
                     self.write_indent();
@@ -738,15 +741,35 @@ impl Codegen {
                     return; // caller continues
                 }
 
-                // Case A: try body has throw, or has catch handler, or has nested try-catch
-                // → always generate labeled block + catch handler for correctness
+                if !has_throw && !has_nested_try {
+                    // Case B2 (catch handler present but no throw, no nested try):
+                    // Catch is unreachable. Emit body + finally inline, skip handler.
+                    for stmt in &ts.block.body {
+                        self.emit_fn_stmt(stmt);
+                    }
+                    if let Some(ref finalizer) = ts.finalizer {
+                        for stmt in &finalizer.body {
+                            self.emit_fn_stmt(stmt);
+                        }
+                    }
+                    return; // caller continues
+                }
+
+                // Case A: try body has throw, or has nested try-catch
+                // → always generate full labeled block + if-else catch handler
 
                 let label_id = self.try_label_counter;
                 self.try_label_counter += 1;
                 let blk_label = format!("_js_try_blk_{}", label_id);
                 let result_var = format!("_js_try_{}", label_id);
 
-                // ── Try body wrapped in labeled block ──
+                // ── Try body + catch handler inside single labeled block ──
+                // Uses if-else instead of `catch |err| {}` so that `break :label`
+                // from catch body (re-throw) stays in scope.
+                //
+                // Capture parent's inside_try_block BEFORE start_try_block
+                // overwrites it. Used later to propagate re-throw errors upward.
+                let saved_inside = self.inside_try_block.clone();
                 self.start_try_block(&blk_label);
                 self.write_indent();
                 self.writeln(&format!(
@@ -756,8 +779,35 @@ impl Codegen {
                 ));
                 self.indent += 1;
 
-                // Emit try body — throw statements will use break :blk_label
-                // Track whether body exited early (return/throw) to skip normal completion break.
+                // ── Finally as defer (always runs, inside labeled block) ──
+                if let Some(ref finalizer) = ts.finalizer {
+                    self.write_indent();
+                    self.writeln("defer {");
+                    self.indent += 1;
+                    for stmt in &finalizer.body {
+                        self.emit_fn_stmt(stmt);
+                    }
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.writeln("}");
+                }
+
+                // ── Try body as const with explicit anyerror!void type ──
+                // Using a standalone const ensures the labeled block has
+                // the correct error union type regardless of whether the
+                // body throws or not.
+                let body_label = format!("_js_try_body_{}", label_id);
+                let body_blk_label = format!("_js_try_body_blk_{}", label_id);
+                self.write_indent();
+                self.writeln(&format!(
+                    "const {}: anyerror!void = {}: {{",
+                    body_label, body_blk_label,
+                ));
+                self.indent += 1;
+
+                // Set inside_try_block so throw → break :body_blk_label
+                self.inside_try_block = Some(body_blk_label.clone());
+
                 let seen_before = self.seen_return;
                 self.seen_return = false;
                 for stmt in &ts.block.body {
@@ -766,25 +816,27 @@ impl Codegen {
                 let body_exited = self.seen_return;
                 self.seen_return = seen_before;
 
-                // Normal completion: break with void (only if body didn't exit early)
                 if !body_exited {
                     self.write_indent();
-                    self.writeln(&format!("break :{blk} {{}};", blk = blk_label));
+                    self.writeln(&format!("break :{} {{}};", body_blk_label));
                 }
 
                 self.indent -= 1;
                 self.write_indent();
                 self.writeln("};");
 
-                // ── Catch handler ──
-                if let Some(ref handler) = ts.handler {
-                    self.write_indent();
-                    self.write(&format!("_ = {} catch |err| {{\n", result_var));
-                    self.indent += 1;
+                // ── Catch handler as if-else (in scope of blk_label) ──
+                self.write_indent();
+                self.writeln(&format!("if ({}) |_| {{", body_label));
+                self.indent += 1;
+                // Success: no error, fall through
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("} else |err| {");
+                self.indent += 1;
 
-                    // Bind catch parameter: JS `catch(e)` → map `e` to `err` in Zig.
-                    // If `e` is referenced in the catch body, emit a named const.
-                    // Otherwise, emit a discard to suppress Zig's unused warning.
+                if let Some(ref handler) = ts.handler {
+                    // Bind catch parameter
                     if let Some(ref param) = handler.param
                         && let BindingPattern::BindingIdentifier(ref id) = param.pattern
                     {
@@ -792,39 +844,73 @@ impl Codegen {
                         let is_referenced = stmt_list_references_name(&handler.body.body, name);
                         self.write_indent();
                         if is_referenced {
-                            // `@errorName(err)` gives the error tag name (e.g. "JsThrow")
                             self.writeln(&format!("const {} = @errorName(err);", name));
                         } else {
                             self.writeln("_ = @errorName(err);");
                         }
                     }
 
-                    // Clear inside_try_block so that `throw` in catch body
-                    // generates `return error.JsThrow` (not `break :label` which is invalid).
-                    let saved_inside_try = self.inside_try_block.take();
+                    // Set inside_try_block to blk_label so that `throw` in catch
+                    // body generates `break :blk_label error.JsThrow` (re-throw),
+                    // NOT `return error.JsThrow` (which would skip outer catch).
+                    self.inside_try_block = Some(blk_label.clone());
+                    let cb_before = self.seen_return;
+                    self.seen_return = false;
                     for stmt in &handler.body.body {
                         self.emit_fn_stmt(stmt);
                     }
-                    self.inside_try_block = saved_inside_try;
+                    let catch_threw = self.seen_return;
+                    self.seen_return = cb_before;
 
-                    self.indent -= 1;
-                    self.write_indent();
-                    self.writeln("};");
+                    // If catch body didn't re-throw, fall through normally
+                    if !catch_threw {
+                        // Nothing; falls through to break after if-else
+                    }
                 } else {
-                    // No handler: discard the result (error still propagates naturally
-                    // for throw-only cases, and for cleanup-only the void is consumed)
+                    // No handler: discard the error (try-finally with throw)
+                    self.write_indent();
+                    self.writeln("_ = err;");
+                }
+
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("}");
+
+                // ── Normal completion (no re-throw from catch) ──
+                self.write_indent();
+                self.writeln(&format!("break :{blk} {{}};", blk = blk_label));
+
+                self.indent -= 1;
+                self.write_indent();
+                self.writeln("};");
+
+                // ── Propagate unhandled error from re-throw ──
+                // If catch body re-threw (break :blk_label error.JsThrow),
+                // the const becomes error.JsThrow.
+                // When inside a parent try body, break to parent (outer catch
+                // intercepts it). Otherwise, return from the function.
+                if ts.handler.is_some() {
+                    self.write_indent();
+                    if let Some(ref parent_body_label) = saved_inside {
+                        self.writeln(&format!(
+                            "if ({0}) |_| {{}} else |_| break :{1} @as(anyerror!void, error.JsThrow);",
+                            result_var, parent_body_label
+                        ));
+                    } else {
+                        self.writeln(&format!(
+                            "if ({}) |_| {{}} else |_| return error.JsThrow;",
+                            result_var
+                        ));
+                    }
+                } else {
                     self.write_indent();
                     self.writeln(&format!("_ = {};", result_var));
                 }
 
-                self.end_try_block();
+                // Restore inside_try_block
+                self.inside_try_block = saved_inside;
 
-                // ── Emit finally body inline (after try-catch, before subsequent code) ──
-                if let Some(ref finalizer) = ts.finalizer {
-                    for stmt in &finalizer.body {
-                        self.emit_fn_stmt(stmt);
-                    }
-                }
+                self.end_try_block();
             }
             _ => {
                 // Unsupported statement type: generate @compileError
