@@ -37,6 +37,19 @@ pub enum BuiltinCall {
     MathTrunc, // Math.trunc(x)
     MathCbrt,  // Math.cbrt(x)
 
+    // Math methods (extended — Phase 4)
+    MathExpm1,  // Math.expm1(x)
+    MathSinh,   // Math.sinh(x)
+    MathCosh,   // Math.cosh(x)
+    MathTanh,   // Math.tanh(x)
+    MathAsinh,  // Math.asinh(x)
+    MathAcosh,  // Math.acosh(x)
+    MathAtanh,  // Math.atanh(x)
+    MathClz32,  // Math.clz32(x)
+    MathFround, // Math.fround(x)
+    MathImul,   // Math.imul(a, b)
+    MathLog1p,  // Math.log1p(x)
+
     // Array methods (non-closure)
     ArrayPop,         // arr.pop()
     ArrayShift,       // arr.shift()
@@ -233,6 +246,18 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "sign" => return Some(BuiltinCall::MathSign),
                 "trunc" => return Some(BuiltinCall::MathTrunc),
                 "cbrt" => return Some(BuiltinCall::MathCbrt),
+                // Phase 4 Math methods
+                "expm1" => return Some(BuiltinCall::MathExpm1),
+                "sinh" => return Some(BuiltinCall::MathSinh),
+                "cosh" => return Some(BuiltinCall::MathCosh),
+                "tanh" => return Some(BuiltinCall::MathTanh),
+                "asinh" => return Some(BuiltinCall::MathAsinh),
+                "acosh" => return Some(BuiltinCall::MathAcosh),
+                "atanh" => return Some(BuiltinCall::MathAtanh),
+                "clz32" => return Some(BuiltinCall::MathClz32),
+                "fround" => return Some(BuiltinCall::MathFround),
+                "imul" => return Some(BuiltinCall::MathImul),
+                "log1p" => return Some(BuiltinCall::MathLog1p),
                 _ => return None,
             }
         }
@@ -473,7 +498,20 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::MathExp
         | BuiltinCall::MathSign
         | BuiltinCall::MathTrunc
-        | BuiltinCall::MathCbrt => Some(ZigType::F64),
+        | BuiltinCall::MathCbrt
+        // Phase 4 Math methods
+        | BuiltinCall::MathExpm1
+        | BuiltinCall::MathSinh
+        | BuiltinCall::MathCosh
+        | BuiltinCall::MathTanh
+        | BuiltinCall::MathAsinh
+        | BuiltinCall::MathAcosh
+        | BuiltinCall::MathAtanh
+        | BuiltinCall::MathLog1p => Some(ZigType::F64),
+
+        // Math methods with special return types
+        BuiltinCall::MathClz32 | BuiltinCall::MathImul => Some(ZigType::I64),
+        BuiltinCall::MathFround => Some(ZigType::F64),
 
         // Math max/min — depends on args, can't statically determine
         BuiltinCall::MathMax | BuiltinCall::MathMin | BuiltinCall::MathHypot => None,

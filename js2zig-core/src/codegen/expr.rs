@@ -700,15 +700,14 @@ impl Codegen {
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
         if let Some(mut builtin) = builtins::detect_builtin_call(ce) {
             // Override: if detect_builtin_call returns ArrayAt but object is a string, use StringAt
-            if matches!(builtin, builtins::BuiltinCall::ArrayAt) {
-                if let Expression::StaticMemberExpression(ref mem) = ce.callee {
-                    if let Expression::Identifier(ref obj_id) = mem.object {
-                        let obj_name = obj_id.name.as_str();
-                        // Check if obj is a string variable (from type_info)
-                        if let Some(ZigType::Str) = self.type_info.var_types.get(obj_name) {
-                            builtin = builtins::BuiltinCall::StringAt;
-                        }
-                    }
+            if matches!(builtin, builtins::BuiltinCall::ArrayAt)
+                && let Expression::StaticMemberExpression(ref mem) = ce.callee
+                && let Expression::Identifier(ref obj_id) = mem.object
+            {
+                let obj_name = obj_id.name.as_str();
+                // Check if obj is a string variable (from type_info)
+                if let Some(ZigType::Str) = self.type_info.var_types.get(obj_name) {
+                    builtin = builtins::BuiltinCall::StringAt;
                 }
             }
             if self.emit_builtin_call(&builtin, ce) {
@@ -1140,19 +1139,172 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::MathCbrt => {
-                // Math.cbrt(x) → std.math.cbrt(@as(f64, @floatFromInt(x)))
+                // Math.cbrt(x) → std.math.cbrt(x)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Math.cbrt() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("std.math.cbrt(@as(f64, @floatFromInt(");
+                self.write("std.math.cbrt(");
                 self.emit_first_arg(&ce.arguments);
-                self.write(")))");
+                self.write(")");
                 true
             }
 
-            // ── Array methods ─────────────────────────────
+            // ── Phase 4 Math methods ─────────────────────
+            builtins::BuiltinCall::MathExpm1 => {
+                // Math.expm1(x) → std.math.expm1(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.expm1() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.expm1(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathSinh => {
+                // Math.sinh(x) → std.math.sinh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.sinh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.sinh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathCosh => {
+                // Math.cosh(x) → std.math.cosh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.cosh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.cosh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathTanh => {
+                // Math.tanh(x) → std.math.tanh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.tanh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.tanh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathAsinh => {
+                // Math.asinh(x) → std.math.asinh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.asinh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.asinh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathAcosh => {
+                // Math.acosh(x) → std.math.acosh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.acosh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.acosh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathAtanh => {
+                // Math.atanh(x) → std.math.atanh(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.atanh() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.atanh(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathLog1p => {
+                // Math.log1p(x) → std.math.log1p(x)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.log1p() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.log1p(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::MathClz32 => {
+                // Math.clz32(x) → @clz(@as(u32, @bitCast(@as(i32, @intFromFloat(x)))))
+                // JavaScript: convert to 32-bit int, then count leading zeros
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.clz32() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@clz(@as(u32, @bitCast(@as(i32, @intFromFloat(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))))");
+                true
+            }
+
+            builtins::BuiltinCall::MathFround => {
+                // Math.fround(x) → @as(f32, @floatFromInt(x))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.fround() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@as(f32, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write("))");
+                true
+            }
+
+            builtins::BuiltinCall::MathImul => {
+                // Math.imul(a, b) → @as(i32, @intCast((@as(u32, @bitCast(@as(i32, a)))) *% (@as(u32, @bitCast(@as(i32, b))))))
+                if ce.arguments.len() != 2 {
+                    self.errors
+                        .push("Math.imul() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                self.write("@as(i32, @intCast((");
+                // First argument: convert to i32, then to u32 for wrapping multiplication
+                self.write("@as(u32, @bitCast(@as(i32, ");
+                self.emit_first_arg(&ce.arguments);
+                self.write("))) *% (");
+                // Second argument: same conversion
+                self.write("@as(u32, @bitCast(@as(i32, ");
+                if let Some(arg1) = ce.arguments.get(1)
+                    && let Some(expr) = arg1.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
+                self.write("))))");
+                true
+            }
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → _ = arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
                 // In return context, skip the _ = prefix.
@@ -2830,7 +2982,10 @@ impl Codegen {
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!("js_string.codePointAt({}, {})", obj_name, idx_expr));
+                    self.write(&format!(
+                        "js_string.codePointAt({}, {})",
+                        obj_name, idx_expr
+                    ));
                     return true;
                 }
                 false

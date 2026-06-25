@@ -1954,7 +1954,79 @@ export function testMathNew(x, y) {
         assert!(zig.contains("if ("), "Expected 'if (' in max/min:\n{}", zig);
     }
 
-    // ── Test: AwaitExpression support ─────────────
+    // ── Test: Phase 4 Math methods (expm1/sinh/cosh/tanh/asinh/acosh/atanh/clz32/fround/imul/log1p) ──
+    #[test]
+    fn test_native_proto_math_phase4() {
+        let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export function testMathPhase4(x, y) {
+    const a = Math.expm1(x);
+    const b = Math.sinh(x);
+    const c = Math.cosh(x);
+    const d = Math.tanh(x);
+    const e = Math.asinh(x);
+    const f = Math.acosh(x);
+    const g = Math.atanh(x);
+    const h = Math.clz32(x);
+    const i = Math.fround(x);
+    const j = Math.imul(x, y);
+    const k = Math.log1p(x);
+    return a + b + c + d + e + f + g + h + i + j + k;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_math_phase4");
+
+        // Verify Phase 4 Math methods are generated correctly
+        assert!(
+            zig.contains("std.math.expm1("),
+            "Expected 'std.math.expm1(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.sinh("),
+            "Expected 'std.math.sinh(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.cosh("),
+            "Expected 'std.math.cosh(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.tanh("),
+            "Expected 'std.math.tanh(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.asinh("),
+            "Expected 'std.math.asinh(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.acosh("),
+            "Expected 'std.math.acosh(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.atanh("),
+            "Expected 'std.math.atanh(' in:\n{}",
+            zig
+        );
+        assert!(zig.contains("@clz("), "Expected '@clz(' in:\n{}", zig);
+        assert!(zig.contains("@as(f32,"), "Expected '@as(f32,' in:\n{}", zig);
+        assert!(zig.contains("@as(i32,"), "Expected '@as(i32,' in:\n{}", zig);
+        assert!(
+            zig.contains("std.math.log1p("),
+            "Expected 'std.math.log1p(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: AwaitExpression support ────────────
 
     #[test]
     fn test_native_proto_await() {
