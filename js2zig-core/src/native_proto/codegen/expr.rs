@@ -620,13 +620,53 @@ impl Codegen {
             && obj.name == "JSON"
             && mem.property.name == "stringify"
         {
-            // JSON.stringify(obj) → try obj.toJson()
+            // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.g_alloc(), value, replacer, space)
+            self.write("try js_json.stringify(js_allocator.g_alloc(), ");
             if let Some(first_arg) = ce.arguments.first() {
-                self.write("try ");
                 self.emit_expr_arg(first_arg);
-                self.write(".toJson()");
-                return;
+            } else {
+                self.write("JsAny.fromUndefined()");
             }
+            // Pass replacer (default null)
+            if ce.arguments.len() >= 2 {
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+            } else {
+                self.write(", null");
+            }
+            // Pass space (default null)
+            if ce.arguments.len() >= 3 {
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[2]);
+            } else {
+                self.write(", null");
+            }
+            self.write(") catch @panic(\"OOM: JSON.stringify\")");
+            return;
+        }
+
+        // Check if this is JSON.parse() call
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee
+            && let Expression::Identifier(ref obj) = mem.object
+            && obj.name == "JSON"
+            && mem.property.name == "parse"
+        {
+            // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.g_alloc(), text, reviver)
+            self.write("try js_json.parse(js_allocator.g_alloc(), ");
+            if let Some(first_arg) = ce.arguments.first() {
+                self.emit_expr_arg(first_arg);
+            } else {
+                self.write("\"\"");
+            }
+            // Pass reviver (default null)
+            if ce.arguments.len() >= 2 {
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+            } else {
+                self.write(", null");
+            }
+            self.write(") catch @panic(\"JSON.parse error\")");
+            return;
         }
 
         // Get callee name.
@@ -1091,7 +1131,7 @@ impl Codegen {
                         .type_info
                         .array_element_types
                         .get(obj_name)
-                        .map(|t| t.to_zig_type(false))
+                        .map(|t| t.to_zig_type())
                         .unwrap_or_else(|| "i64".to_string());
                     let slice_expr = match ce.arguments.len() {
                         0 => format!("{}.items", obj_name),
@@ -1263,7 +1303,7 @@ impl Codegen {
                         .type_info
                         .array_element_types
                         .get(obj_name)
-                        .map(|t| t.to_zig_type(false))
+                        .map(|t| t.to_zig_type())
                         .unwrap_or_else(|| "i64".to_string());
 
                     let start_expr = self.first_arg_string_or(&ce.arguments, "0");
@@ -1965,6 +2005,52 @@ impl Codegen {
                 }
                 false
             }
+
+            // ── JSON methods ─────────────────────────────
+            builtins::BuiltinCall::JsonStringify => {
+                // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.g_alloc(), value, replacer, space)
+                self.write("try js_json.stringify(js_allocator.g_alloc(), ");
+                if let Some(first_arg) = ce.arguments.first() {
+                    self.emit_expr_arg(first_arg);
+                } else {
+                    self.write("JsAny.fromUndefined()");
+                }
+                // Pass replacer (default null)
+                if ce.arguments.len() >= 2 {
+                    self.write(", ");
+                    self.emit_expr_arg(&ce.arguments[1]);
+                } else {
+                    self.write(", null");
+                }
+                // Pass space (default null)
+                if ce.arguments.len() >= 3 {
+                    self.write(", ");
+                    self.emit_expr_arg(&ce.arguments[2]);
+                } else {
+                    self.write(", null");
+                }
+                self.write(") catch @panic(\"OOM: JSON.stringify\")");
+                true
+            }
+
+            builtins::BuiltinCall::JsonParse => {
+                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.g_alloc(), text, reviver)
+                self.write("try js_json.parse(js_allocator.g_alloc(), ");
+                if let Some(first_arg) = ce.arguments.first() {
+                    self.emit_expr_arg(first_arg);
+                } else {
+                    self.write("\"\"");
+                }
+                // Pass reviver (default null)
+                if ce.arguments.len() >= 2 {
+                    self.write(", ");
+                    self.emit_expr_arg(&ce.arguments[1]);
+                } else {
+                    self.write(", null");
+                }
+                self.write(") catch @panic(\"JSON.parse error\")");
+                true
+            }
         }
     }
 
@@ -2472,7 +2558,7 @@ impl Codegen {
                 | Some(ZigType::F64)
                 | Some(ZigType::Bool)
                 | Some(ZigType::Str) => false,
-                Some(ZigType::Void) | Some(ZigType::Anytype) => true,
+                Some(ZigType::Void) | Some(ZigType::Anytype) | Some(ZigType::JsAny) => true,
                 None => true,
             },
 

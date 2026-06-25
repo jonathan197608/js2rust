@@ -101,6 +101,10 @@ pub enum ZigType {
     NamedStruct(String),
     /// anytype (for non-export function parameters)
     Anytype,
+    /// Dynamic JSON value (JsAny in generated code).
+    /// Used for JSON.parse() return type and dynamic property access.
+    /// Allows runtime type coercion via asI64(), asF64(), asBool(), asString().
+    JsAny,
 }
 
 impl ZigType {
@@ -122,8 +126,10 @@ impl ZigType {
     }
 
     /// Get the Zig type string for code generation.
-    /// `in_host_module`: if true, do NOT add "host." prefix (used when generating host.zig).
-    pub fn to_zig_type(&self, in_host_module: bool) -> String {
+    /// NOTE: This method does NOT add "host." prefix for NamedStruct.
+    /// If the type refers to a host-defined struct, the caller must add "host."
+    /// prefix manually (e.g., in codegen when generating non-host module code).
+    pub fn to_zig_type(&self) -> String {
         match self {
             ZigType::Void => "void".to_string(),
             ZigType::I64 => "i64".to_string(),
@@ -131,7 +137,7 @@ impl ZigType {
             ZigType::Bool => "bool".to_string(),
             ZigType::Str => "[]const u8".to_string(),
             ZigType::ArrayList(inner) => {
-                format!("std.ArrayList({})", inner.to_zig_type(in_host_module))
+                format!("std.ArrayList({})", inner.to_zig_type())
             }
             ZigType::Struct(fields) => {
                 // Generate anonymous struct type.
@@ -140,19 +146,18 @@ impl ZigType {
                     if i > 0 {
                         s.push_str(", ");
                     }
-                    s.push_str(&format!(".{} = {}", name, ty.to_zig_type(in_host_module)));
+                    s.push_str(&format!(".{} = {}", name, ty.to_zig_type()));
                 }
                 s.push_str(" }");
                 s
             }
             ZigType::NamedStruct(name) => {
-                if in_host_module {
-                    name.clone()
-                } else {
-                    format!("host.{}", name)
-                }
+                // Do NOT add "host." prefix here.
+                // The caller is responsible for adding it if needed.
+                name.clone()
             }
             ZigType::Anytype => "anytype".to_string(),
+            ZigType::JsAny => "JsAny".to_string(),
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
@@ -167,6 +172,7 @@ impl ZigType {
             ZigType::Struct(_) => "struct".to_string(), // Anonymous struct - not directly supported in C ABI
             ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
             ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
+            ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
         }
     }
 

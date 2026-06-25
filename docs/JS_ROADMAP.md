@@ -66,7 +66,7 @@
 | TypeScript 泛型 | 支持复杂类型推断 | 类型安全 | 📋 待开始 | 低 |
 | `interface` / `type` alias | 支持 TypeScript 完整语法 | 语言完整性 | 📋 待开始 | 低 |
 | 复杂联合类型支持 | 导出函数参数支持联合类型 | 类型安全 | 📋 待开始 | 低 |
-| 错误信息改进 | 附加源位置 + 建议 | 开发体验 | 📋 待开始 | 低 |
+| 错误信息改进 | 附加源位置 + 建议 | 开发体验 | ✅ 已完成 (2026-06-24) | 低 |
 | 转译器性能优化 | 支持大文件 JS | 性能 | 📋 待开始 | 低 |
 | `Array.prototype.flat/flatMap` | 完整 Array 方法集 | 语言完整性 | ✅ 已完成 (2026-06-24) | 低 |
 | `String.prototype.padStart/padEnd` | 完整 String 方法集 | 语言完整性 | ✅ 已完成 (2026-06-24) | 低 |
@@ -126,6 +126,7 @@
 | Class 声明支持（struct 代码生成） | 📋 待开始 | ✅ struct 定义 + init 构造函数 + 方法 + 字段类型推断 | 2026-06-24 |
 | Array.flat/flatMap | 📋 待开始 | ✅ flat identity + flatMap identity (Zig 运行时实现) | 2026-06-24 |
 | String.padStart/padEnd | 📋 待开始 | ✅ padStart/padEnd 运行时 + codegen 集成 | 2026-06-24 |
+| `@compileError` 源位置 | 📋 待开始 | ✅ 19 个 compileError 调用附加 JS 源位置（file:line:col），codegen 新增 `source` 字段 + 4 个 helper 方法 | 2026-06-24 |
 
 ---
 
@@ -140,7 +141,8 @@
 ~~5. **P2: `for-in` 静态 struct 集成** — 集成到 showcase-project~~ ✅
 
 6. **P3 实用方法** — `Array.flat/flatMap` ✅ + `String.padStart/padEnd` ✅ (2026-06-24)
-7. **P3: 错误信息改进** — 附加源位置 + 建议 (下一步)
+7. **P3: 错误信息改进** — 附加源位置 + 建议 ✅ (2026-06-24)
+8. **下一个 P3 方向 B 项** — 待选择
 
 ### 4.2 中期（1-2 月）
 

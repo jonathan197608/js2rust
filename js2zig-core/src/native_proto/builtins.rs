@@ -92,6 +92,10 @@ pub enum BuiltinCall {
 
     // Global functions
     ParseInt, // parseInt(s)
+
+    // JSON methods
+    JsonStringify, // JSON.stringify(value, replacer?, space?)
+    JsonParse,     // JSON.parse(text, reviver?)
 }
 
 /// Check if a call expression is a built-in object call
@@ -157,6 +161,17 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "entries" => return Some(BuiltinCall::ObjectEntries),
                 "assign" => return Some(BuiltinCall::ObjectAssign),
                 "freeze" => return Some(BuiltinCall::ObjectFreeze),
+                _ => return None,
+            }
+        }
+
+        // Check if object is "JSON" (for JSON methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "JSON"
+        {
+            match method_name {
+                "stringify" => return Some(BuiltinCall::JsonStringify),
+                "parse" => return Some(BuiltinCall::JsonParse),
                 _ => return None,
             }
         }
@@ -293,6 +308,10 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Global functions
         BuiltinCall::ParseInt => Some(ZigType::I64),
+
+        // JSON methods
+        BuiltinCall::JsonStringify => Some(ZigType::Str), // Returns JSON string
+        BuiltinCall::JsonParse => Some(ZigType::JsAny),   // Returns dynamic JSON value
 
         // Methods that return void or complex types — can't infer
         _ => None,

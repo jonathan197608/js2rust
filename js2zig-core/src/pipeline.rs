@@ -524,7 +524,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         closure_fns.iter().map(|s| s.as_str()).collect();
                     let ret_type_map: HashMap<String, String> = fn_return_types
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.to_zig_type(false)))
+                        .map(|(k, v)| (k.clone(), v.to_zig_type()))
                         .collect();
                     let file_test_code = crate::testgen::generate_test_code(
                         &test_cases,
@@ -785,7 +785,7 @@ pub fn gen_cabi_wrappers(
                     p = pname
                 ));
             } else {
-                let zig_ty = ptype.to_zig_type(false);
+                let zig_ty = ptype.to_zig_type();
                 cabi_params.push(format!("{}: {}", pname, zig_ty));
                 zig_params.push(format!("{}: {}", pname, zig_ty));
             }
@@ -889,7 +889,7 @@ pub fn gen_cabi_wrappers(
                 ));
             } else {
                 // Async non-string, non-struct return (e.g., i64, bool)
-                let ret_zig = exp.ret_type.to_zig_type(false);
+                let ret_zig = exp.ret_type.to_zig_type();
                 let conversions = if cabi_to_zig_conversions.is_empty() {
                     String::new()
                 } else {
@@ -993,7 +993,7 @@ pub fn gen_cabi_wrappers(
             let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
                 "void".to_string()
             } else {
-                exp.ret_type.to_zig_type(false)
+                exp.ret_type.to_zig_type()
             };
             let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
 
@@ -1139,7 +1139,7 @@ pub fn write_cabi_metadata(
                 .map(|(name, ty)| {
                     serde_json::json!({
                         "name": name,
-                        "zig_type": ty.to_zig_type(false) // JSON metadata is consumed by macro (lib.zig)
+                        "zig_type": ty.to_zig_type() // JSON metadata is consumed by macro (lib.zig)
                     })
                 })
                 .collect();

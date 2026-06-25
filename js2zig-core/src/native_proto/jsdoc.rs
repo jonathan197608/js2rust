@@ -288,11 +288,36 @@ fn extract_typedef_name(s: &str) -> String {
 }
 
 /// 从 {...} 中提取类型名
+/// For @type {{name: string, age: number}}, returns "{name: string, age: number}"
+/// (preserves the inner braces for anonymous object types)
 fn extract_braced_type(s: &str) -> String {
     let s = s.trim();
     if s.starts_with('{') {
-        let end = s.find('}').unwrap_or(s.len());
-        s[1..end].trim().to_string()
+        // Find matching closing brace (handle nested braces)
+        let mut depth = 0;
+        let mut end = 0;
+        for (i, c) in s.chars().enumerate() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Check if this is an anonymous object type (contains ":")
+        let inner = &s[1..end];
+        if inner.contains(':') {
+            // Anonymous object type: return with braces
+            s[..end + 1].to_string()
+        } else {
+            // Named type: return without braces
+            inner.trim().to_string()
+        }
     } else {
         s.to_string()
     }

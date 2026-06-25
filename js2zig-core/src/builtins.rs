@@ -200,7 +200,7 @@ impl BuiltinRegistry {
         registry.add_method_runtime(
             "JSON",
             "stringify",
-            "js_json.stringifyI64(js_allocator.g_alloc(), {})",
+            "js_json.stringify(js_allocator.g_alloc(), {})",
             "js_json",
         );
         registry.add_method_runtime(

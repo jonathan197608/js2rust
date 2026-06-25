@@ -256,11 +256,11 @@ impl HostFnRegistry {
                 ));
 
                 // Async wrapper function (callable from Zig via host.{name}_async)
-                let ret_type_str = def.ret_type.to_zig_type(true);
+                let ret_type_str = def.ret_type.to_zig_type();
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type(true)))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
                     .collect();
 
                 out.push_str(&format!(
@@ -380,9 +380,9 @@ impl HostFnRegistry {
                 let params_zig: Vec<String> = def
                     .params
                     .iter()
-                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type(true)))
+                    .map(|(n, t)| format!("{}: {}", n, t.to_zig_type()))
                     .collect();
-                let ret_zig = def.ret_type.to_zig_type(true);
+                let ret_zig = def.ret_type.to_zig_type();
 
                 out.push_str(&format!(
                     "pub fn {}({}) {} {{\n",
@@ -455,7 +455,7 @@ impl HostFnRegistry {
     fn to_c_abi_ret_type(ty: &ZigType) -> String {
         match ty {
             ZigType::Str => "StrRet".to_string(),
-            other => other.to_zig_type(true),
+            other => other.to_zig_type(),
         }
     }
 
@@ -468,7 +468,7 @@ impl HostFnRegistry {
                 (format!("{}_ptr", param_name), "[*]const u8".to_string()),
                 (format!("{}_len", param_name), "usize".to_string()),
             ],
-            other => vec![(param_name.to_string(), other.to_zig_type(true))],
+            other => vec![(param_name.to_string(), other.to_zig_type())],
         }
     }
 
@@ -600,14 +600,14 @@ impl HostFnRegistry {
                 .map(|(n, t)| {
                     serde_json::json!({
                         "name": n,
-                        "zig_type": t.to_zig_type(false) // JSON metadata is consumed by pipeline.rs (lib.zig)
+                        "zig_type": t.to_zig_type() // JSON metadata is consumed by pipeline.rs (lib.zig)
                     })
                 })
                 .collect();
             imports.push(serde_json::json!({
                 "name": def.c_name,
                 "params": params,
-                "ret_type": def.ret_type.to_zig_type(false), // JSON metadata is consumed by pipeline.rs (lib.zig)
+                "ret_type": def.ret_type.to_zig_type(), // JSON metadata is consumed by pipeline.rs (lib.zig)
             }));
         }
         imports

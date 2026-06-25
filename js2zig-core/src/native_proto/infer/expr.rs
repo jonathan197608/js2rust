@@ -198,6 +198,12 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
+                    // JsAny property access: dynamic, returns JsAny
+                    InferResult::Definite(ZigType::JsAny) => {
+                        // Property access on JsAny returns JsAny
+                        // (the actual type is only known at runtime)
+                        InferResult::Definite(ZigType::JsAny)
+                    }
                     _ => InferResult::Indeterminate,
                 }
             }

@@ -33,6 +33,7 @@ mod tests {
         let needs_string_hashmap = zig_code.contains("StringHashMap");
         let needs_js_allocator = zig_code.contains("js_allocator");
         let needs_js_array = zig_code.contains("js_array");
+        let needs_js_json = zig_code.contains("js_json");
         let any_runtime = needs_js_date
             || needs_js_object
             || needs_js_runtime
@@ -50,6 +51,9 @@ mod tests {
             }
             if needs_js_array {
                 w.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
+            }
+            if needs_js_json {
+                w.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
             }
             if needs_js_date {
                 w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
@@ -1368,10 +1372,10 @@ export function getUserJson(user) {
             zig
         );
 
-        // Verify JSON.stringify() is converted to user.toJson() (no allocator parameter)
+        // Verify JSON.stringify() is converted to js_json.stringify()
         assert!(
-            zig.contains("try user.toJson()"),
-            "Expected try user.toJson(), got:\n{}",
+            zig.contains("try js_json.stringify(js_allocator.g_alloc(), user"),
+            "Expected try js_json.stringify(), got:\n{}",
             zig
         );
     }
@@ -1492,6 +1496,7 @@ export function parseUserJson() {
         let zig_full = format!(
             r#"const std = @import("std");
 const js_allocator = @import("js_runtime/js_allocator.zig");
+const js_json = @import("js_runtime/js_json.zig");
 
 // ── Generated code from JS ─────────────────────────────
 {}
@@ -4300,6 +4305,47 @@ export function testPadEnd() {
         assert!(
             zig.contains("js_string.padEnd"),
             "Expected js_string.padEnd"
+        );
+    }
+
+    // ── Test: JSON.parse() without JSDoc (Phase 1) ─────────────
+
+    #[test]
+    fn test_native_proto_json_parse_no_jsdoc() {
+        // JSON.parse() without JSDoc should return JsAny type
+        let js = r#"
+const json = JSON.parse('{"name":"Alice","age":30}');
+
+export function getName() {
+    return json.name;
+}
+"#;
+        let result = parse_and_transpile(js, None);
+        match &result {
+            Ok(r) => println!("=== JSON.parse() without JSDoc ===\n{}", r.zig_code),
+            Err(e) => println!("=== JSON.parse() without JSDoc ERROR ===\n{:?}", e),
+        }
+        let zig = result.unwrap().zig_code;
+
+        // Should NOT generate std.json.parse() (that's for JSDoc @type case)
+        assert!(
+            !zig.contains("std.json.parse("),
+            "Should not generate std.json.parse() without JSDoc, got:\n{}",
+            zig
+        );
+
+        // Should generate js_json.parse() which returns JsAny
+        assert!(
+            zig.contains("js_json.parse("),
+            "Expected js_json.parse(), got:\n{}",
+            zig
+        );
+
+        // json variable should be declared (Zig infers type as JsAny)
+        assert!(
+            zig.contains("const json"),
+            "Expected 'const json' declaration, got:\n{}",
+            zig
         );
     }
 }

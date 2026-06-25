@@ -186,7 +186,7 @@ impl Codegen {
                                     "{} {}: {} = ",
                                     kw,
                                     name,
-                                    inferred_ty.to_zig_type(false)
+                                    inferred_ty.to_zig_type()
                                 ));
                             }
                             self.emit_expr(init);
@@ -674,10 +674,10 @@ impl Codegen {
                 };
                 // Export function params: always typed; non-export: use anytype
                 if self.current_fn_is_export {
-                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type(false)));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
                 } else {
                     // Non-export params are inferred as anytype in the type info
-                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type(false)));
+                    self.write(&format!("{}: {}", zig_pname, ptype.to_zig_type()));
                 }
                 param_idx += 1;
             }
@@ -752,7 +752,7 @@ impl Codegen {
             Some(ZigType::Str) => "[]const u8".to_string(),
             Some(ZigType::Void) => "void".to_string(),
             None => "void".to_string(),
-            Some(other) => other.to_zig_type(false),
+            Some(other) => other.to_zig_type(),
         };
         let ret_zig_type = if (is_async || self.fn_has_throw) && ret_zig_type != "void" {
             format!("!{}", ret_zig_type)
@@ -1227,8 +1227,8 @@ impl Codegen {
                     self.indent += 1;
 
                     // Add capture fields to struct
-                    for (cap_name, cap_type, is_mut) in &captures {
-                        let zig_type = cap_type.to_zig_type(*is_mut);
+                    for (cap_name, cap_type, _is_mut) in &captures {
+                        let zig_type = cap_type.to_zig_type();
                         self.write_indent();
                         self.writeln(&format!("{}: {},", cap_name, zig_type));
                     }
@@ -2562,7 +2562,7 @@ impl Codegen {
         self.indent += 1;
         for (i, fname) in field_names.iter().enumerate() {
             let ftype = &field_types[i];
-            self.writeln(&format!("{}: {},", fname, ftype.to_zig_type(false)));
+            self.writeln(&format!("{}: {},", fname, ftype.to_zig_type()));
         }
         self.writeln("");
 
@@ -2672,7 +2672,7 @@ impl Codegen {
                             .map(|(_, t)| t.clone())
                     })
                     .unwrap_or(ZigType::Anytype);
-                self.write(&format!("{}: {}", pname, ptype.to_zig_type(false)));
+                self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
                 param_idx += 1;
             }
         }
@@ -2740,7 +2740,7 @@ impl Codegen {
                 self.type_info
                     .fn_return_types
                     .get(&fq_method)
-                    .map(|t| t.to_zig_type(false))
+                    .map(|t| t.to_zig_type())
             })
             .or_else(|| {
                 // Quick body scan: find return statement and infer type
@@ -2772,7 +2772,7 @@ impl Codegen {
         if let Some(params) = param_list {
             for (pname, ptype) in &params {
                 self.write(", ");
-                self.write(&format!("{}: {}", pname, ptype.to_zig_type(false)));
+                self.write(&format!("{}: {}", pname, ptype.to_zig_type()));
             }
         } else {
             // Fallback: generate from AST

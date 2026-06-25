@@ -375,6 +375,15 @@ impl TypeInferrer {
                 Self::collect_idents_from_expr(&ce.consequent, names);
                 Self::collect_idents_from_expr(&ce.alternate, names);
             }
+            // Static member access: obj.prop — collect obj
+            Expression::StaticMemberExpression(mem) => {
+                Self::collect_idents_from_expr(&mem.object, names);
+            }
+            // Computed member access: obj[key] — collect obj and key
+            Expression::ComputedMemberExpression(mem) => {
+                Self::collect_idents_from_expr(&mem.object, names);
+                Self::collect_idents_from_expr(&mem.expression, names);
+            }
             _ => {}
         }
     }

@@ -378,7 +378,17 @@ pub const JsAny = union(enum) {
         }
     }
 
-    /// Get array element by index, returns null if out of bounds.
+    /// Get array element by index, returns undefined_value if out of bounds.
+    /// Preferred method for codegen (avoids null handling).
+    pub fn at(self: JsAny, index: usize) JsAny {
+        return switch (self) {
+            .array => |a| if (index < a.items.len) a.items[index] else .undefined_value,
+            else => .undefined_value,
+        };
+    }
+
+    /// Get array element by index. Returns null if out of bounds.
+    /// Lower-level method, prefer `at()` for codegen.
     pub fn arrayGet(self: JsAny, index: usize) ?JsAny {
         return switch (self) {
             .array => |a| if (index < a.items.len) a.items[index] else null,
@@ -414,6 +424,44 @@ pub const JsAny = union(enum) {
 
     // === Object operations ===
 
+    /// Get object property by key. Returns JsAny (undefined_value if not found).
+    /// This is the preferred method for codegen (avoids null handling).
+    pub fn get(self: JsAny, key: []const u8) JsAny {
+        return switch (self) {
+            .object => |o| if (o.get(key)) |v| v else .undefined_value,
+            else => .undefined_value,
+        };
+    }
+
+    /// Set object property by key. Allocates a copy of key.
+    /// This is the preferred method for codegen.
+    pub fn set(self: *JsAny, key: []const u8, val: JsAny, alloc: Allocator) !void {
+        switch (self.*) {
+            .object => |o| {
+                const key_dupe = try alloc.dupe(u8, key);
+                try o.put(key_dupe, val);
+            },
+            else => {},
+        }
+    }
+
+    /// Get object property by dynamic key (JsAny). Key is converted to string via asString().
+    /// For codegen of `obj[key]` syntax.
+    pub fn getByKey(self: JsAny, key: JsAny, alloc: Allocator) JsAny {
+        const key_str = key.asString(alloc);
+        const result = self.get(key_str);
+        freeAsStringKey(key, key_str, alloc);
+        return result;
+    }
+
+    /// Set object property by dynamic key (JsAny). Key is converted to string via asString().
+    /// For codegen of `obj[key] = value` syntax.
+    pub fn setByKey(self: *JsAny, key: JsAny, val: JsAny, alloc: Allocator) !void {
+        const key_str = key.asString(alloc);
+        try self.set(key_str, val, alloc);
+        freeAsStringKey(key, key_str, alloc);
+    }
+
     /// Get object property by key. Returns null if not found or not object.
     pub fn objectGet(self: JsAny, key: []const u8) ?JsAny {
         return switch (self) {
@@ -422,10 +470,14 @@ pub const JsAny = union(enum) {
         };
     }
 
-    /// Set object property by key. Does nothing if not object.
-    pub fn objectPut(self: *JsAny, key: []const u8, val: JsAny) !void {
+    /// Set object property by key. Duplicates key internally.
+    /// This is the lower-level method; prefer `set()` for codegen.
+    pub fn objectPut(self: *JsAny, key: []const u8, val: JsAny, alloc: Allocator) !void {
         switch (self.*) {
-            .object => |o| try o.put(key, val),
+            .object => |o| {
+                const key_dupe = try alloc.dupe(u8, key);
+                try o.put(key_dupe, val);
+            },
             else => {},
         }
     }
@@ -448,7 +500,22 @@ pub const JsAny = union(enum) {
 
     // === Cleanup ===
 
+    /// Free the result of asString() if it was heap-allocated.
+    /// asString allocates for .value.int, .value.float, .array, .object.
+    /// It returns a borrowed slice or literal for everything else.
+    fn freeAsStringKey(key: JsAny, key_str: []const u8, alloc: Allocator) void {
+        switch (key) {
+            .value => |v| switch (v) {
+                .int, .float => alloc.free(key_str),
+                else => {},
+            },
+            .array, .object => alloc.free(key_str),
+            .null => {},
+        }
+    }
+
     /// Deinit heap-allocated array or object.
+    /// Does NOT free .value.string — use deinitDeep() for that.
     pub fn deinit(self: *JsAny, alloc: Allocator) void {
         switch (self.*) {
             .array => |a| {
@@ -459,6 +526,7 @@ pub const JsAny = union(enum) {
             .object => |o| {
                 var iter = o.iterator();
                 while (iter.next()) |entry| {
+                    alloc.free(entry.key_ptr.*); // Free duplicated key string
                     var val = entry.value_ptr.*;
                     val.deinit(alloc);
                 }
@@ -466,6 +534,35 @@ pub const JsAny = union(enum) {
                 alloc.destroy(o);
             },
             else => {},
+        }
+        self.* = .{ .null = {} };
+    }
+
+    /// Deinit heap-allocated array, object, AND recursively free .value.string.
+    /// Use this variant when JsAny may contain heap-allocated strings
+    /// (e.g., values from JSON.parse). NOT safe for string literals
+    /// (e.g., JsAny.fromString("hello")).
+    pub fn deinitDeep(self: *JsAny, alloc: Allocator) void {
+        switch (self.*) {
+            .value => |v| {
+                if (v == .string) alloc.free(v.string);
+            },
+            .array => |a| {
+                for (a.items) |*item| item.deinitDeep(alloc);
+                a.deinit(alloc);
+                alloc.destroy(a);
+            },
+            .object => |o| {
+                var iter = o.iterator();
+                while (iter.next()) |entry| {
+                    alloc.free(entry.key_ptr.*);
+                    var val = entry.value_ptr.*;
+                    val.deinitDeep(alloc);
+                }
+                o.deinit();
+                alloc.destroy(o);
+            },
+            .null => {},
         }
         self.* = .{ .null = {} };
     }
@@ -556,8 +653,8 @@ test "JsAny object operations" {
     var obj = try JsAny.newObject(alloc);
     defer obj.deinit(alloc);
 
-    try obj.objectPut("name", JsAny.fromString("Zig"));
-    try obj.objectPut("version", JsAny.fromI64(0));
+    try obj.objectPut("name", JsAny.fromString("Zig"), alloc);
+    try obj.objectPut("version", JsAny.fromI64(0), alloc);
 
     try std.testing.expect(obj.objectHas("name"));
     try std.testing.expectEqual(@as(usize, 2), obj.objectLen());
@@ -574,9 +671,99 @@ test "JsAny nested array in object" {
     var inner = try JsAny.newArray(alloc);
     try inner.arrayPush(alloc, JsAny.fromI64(1));
     try inner.arrayPush(alloc, JsAny.fromI64(2));
-    try obj.objectPut("data", inner);
+    try obj.objectPut("data", inner, alloc);
 
     const got = obj.objectGet("data").?;
     try std.testing.expect(got.isArray());
     try std.testing.expectEqual(@as(usize, 2), got.arrayLen());
+}
+
+test "JsAny get() convenience method" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    try obj.set("name", JsAny.fromString("Alice"), alloc);
+    try obj.set("age", JsAny.fromI64(30), alloc);
+
+    // get() returns JsAny (not ?JsAny)
+    const name = obj.get("name");
+    try std.testing.expect(name.isString());
+    try std.testing.expectEqualStrings("Alice", name.asString(alloc));
+
+    const age = obj.get("age");
+    try std.testing.expectEqual(@as(i64, 30), age.asI64());
+
+    // get() returns undefined_value for missing key (not null)
+    const missing = obj.get("missing");
+    try std.testing.expect(missing.isUndefined());
+}
+
+test "JsAny at() array index access" {
+    const alloc = std.testing.allocator;
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+
+    try arr.arrayPush(alloc, JsAny.fromI64(10));
+    try arr.arrayPush(alloc, JsAny.fromI64(20));
+    try arr.arrayPush(alloc, JsAny.fromI64(30));
+
+    // at() returns JsAny (not ?JsAny)
+    const first = arr.at(0);
+    try std.testing.expectEqual(@as(i64, 10), first.asI64());
+
+    const second = arr.at(1);
+    try std.testing.expectEqual(@as(i64, 20), second.asI64());
+
+    // at() returns undefined_value for out-of-bounds (not null)
+    const out_of_bounds = arr.at(100);
+    try std.testing.expect(out_of_bounds.isUndefined());
+}
+
+test "JsAny getByKey() dynamic key access" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    try obj.set("name", JsAny.fromString("Bob"), alloc);
+    try obj.set("score", JsAny.fromI64(100), alloc);
+
+    // getByKey() uses key.asString() to convert key to property name
+    const key = JsAny.fromString("name");
+    const name = obj.getByKey(key, alloc);
+    try std.testing.expectEqualStrings("Bob", name.asString(alloc));
+
+    const score_key = JsAny.fromString("score");
+    const score = obj.getByKey(score_key, alloc);
+    try std.testing.expectEqual(@as(i64, 100), score.asI64());
+}
+
+test "JsAny setByKey() dynamic key assignment" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    const key = JsAny.fromString("dynamic");
+    try obj.setByKey(key, JsAny.fromI64(42), alloc);
+
+    const val = obj.get("dynamic");
+    try std.testing.expectEqual(@as(i64, 42), val.asI64());
+}
+
+test "JsAny get() on non-object returns undefined" {
+    // Calling get() on a non-object returns undefined_value
+    const num = JsAny.fromI64(42);
+    const result = num.get("any_key");
+    try std.testing.expect(result.isUndefined());
+}
+
+test "JsAny at() on non-array returns undefined" {
+    // Calling at() on a non-array returns undefined_value
+    var obj = try JsAny.newObject(std.testing.allocator);
+    defer obj.deinit(std.testing.allocator);
+
+    try obj.set("x", JsAny.fromI64(1), std.testing.allocator);
+
+    const result = obj.at(0);
+    try std.testing.expect(result.isUndefined());
 }
