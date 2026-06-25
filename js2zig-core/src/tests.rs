@@ -4242,6 +4242,58 @@ export function testUser() {
     }
 
     #[test]
+    fn test_native_proto_class_implicit_fields() {
+        // Class WITHOUT PropertyDefinition — all fields declared via this.x = expr in constructor
+        let js = r#"
+class Point {
+    constructor(xVal, yVal) {
+        this.x = xVal;
+        this.y = yVal;
+    }
+    sum() {
+        return this.x + this.y;
+    }
+}
+
+export function testPoint() {
+    const p = new Point(10, 20);
+    return p.sum();
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_class_implicit_fields");
+        println!("=== Class implicit fields Zig code ===\n{}", zig);
+
+        // Verify: Point struct defined
+        assert!(
+            zig.contains("const Point = struct {"),
+            "Expected Point struct definition. Got:\n{}",
+            zig
+        );
+
+        // Verify: x and y fields are present (inferred from constructor this.x = expr)
+        assert!(zig.contains("x:"), "Expected field 'x' in struct");
+        assert!(zig.contains("y:"), "Expected field 'y' in struct");
+
+        // Verify: init() maps constructor
+        assert!(zig.contains("pub fn init("), "Expected init() constructor");
+
+        // Verify: new Point routes correctly
+        assert!(
+            zig.contains("Point.init("),
+            "Expected new Point→Point.init routing"
+        );
+
+        // Verify: sum() method exists
+        assert!(zig.contains("pub fn sum(self:"), "Expected sum method");
+
+        // Verify: export function compiles
+        assert!(
+            zig.contains("pub fn testPoint"),
+            "Expected testPoint export"
+        );
+    }
+
+    #[test]
     fn test_native_proto_array_flat() {
         let js = r#"
 export function testFlat() {

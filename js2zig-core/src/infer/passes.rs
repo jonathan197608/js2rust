@@ -481,6 +481,18 @@ impl TypeInferrer {
                             field_types.insert(field_name.to_string(), field_ty);
                         }
                     }
+                    // Also scan constructor body for `this.x = expr` assignments
+                    // that implicitly declare fields
+                    for elem in &cd.body.body {
+                        if let ClassElement::MethodDefinition(md) = elem
+                            && md.key.static_name().as_deref() == Some("constructor")
+                            && let Some(body) = &md.value.body
+                        {
+                            self.collect_this_fields_from_body(&body.statements, &mut field_types);
+                            break;
+                        }
+                    }
+
                     self.class_field_types
                         .insert(class_name.clone(), field_types);
 
@@ -532,6 +544,46 @@ impl TypeInferrer {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Recursively walk constructor body statements to find `this.x = expr`
+    /// and collect field names + inferred types.
+    fn collect_this_fields_from_body(
+        &mut self,
+        stmts: &[Statement],
+        field_types: &mut HashMap<String, ZigType>,
+    ) {
+        for stmt in stmts {
+            match stmt {
+                Statement::ExpressionStatement(es) => {
+                    if let Expression::AssignmentExpression(ae) = &es.expression
+                        && let AssignmentTarget::StaticMemberExpression(sme) = &ae.left
+                        && matches!(&sme.object, Expression::ThisExpression(_))
+                    {
+                        let fname = sme.property.name.to_string();
+                        field_types.entry(fname).or_insert_with(|| {
+                            match self.infer_expr_type(&ae.right) {
+                                InferResult::Definite(ty) => ty,
+                                InferResult::Indeterminate => ZigType::I64,
+                            }
+                        });
+                    }
+                }
+                Statement::IfStatement(is) => {
+                    self.collect_this_fields_from_body(
+                        std::slice::from_ref(&is.consequent),
+                        field_types,
+                    );
+                    if let Some(alt) = &is.alternate {
+                        self.collect_this_fields_from_body(std::slice::from_ref(alt), field_types);
+                    }
+                }
+                Statement::BlockStatement(bs) => {
+                    self.collect_this_fields_from_body(&bs.body, field_types);
+                }
+                _ => {}
+            }
         }
     }
 

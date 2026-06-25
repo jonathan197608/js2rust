@@ -2543,6 +2543,28 @@ impl Codegen {
             }
         }
 
+        // Second pass: scan constructor body for `this.x = expr` implicit fields
+        {
+            let mut constructor_stmts: Option<&[Statement]> = None;
+            for elem in &cd.body.body {
+                if let ClassElement::MethodDefinition(md) = elem
+                    && is_constructor_method(md)
+                    && let Some(body) = &md.value.body
+                {
+                    constructor_stmts = Some(&body.statements);
+                    break;
+                }
+            }
+            if let Some(body_stmts) = constructor_stmts {
+                self.collect_implicit_class_fields(
+                    body_stmts,
+                    &class_name_s,
+                    &mut field_names,
+                    &mut field_types,
+                );
+            }
+        }
+
         self.class_names.insert(class_name_s.clone());
 
         // ── Generate struct definition ──
@@ -2590,6 +2612,65 @@ impl Codegen {
         self.indent -= 1;
         self.writeln("};");
         self.writeln("");
+    }
+
+    /// Recursively scan constructor body for `this.x = expr` assignments
+    /// and add discovered fields to field_names/field_types (if not already present).
+    fn collect_implicit_class_fields(
+        &self,
+        stmts: &[Statement],
+        class_name: &str,
+        field_names: &mut Vec<String>,
+        field_types: &mut Vec<ZigType>,
+    ) {
+        for stmt in stmts {
+            match stmt {
+                Statement::ExpressionStatement(es) => {
+                    if let Expression::AssignmentExpression(ae) = &es.expression
+                        && let AssignmentTarget::StaticMemberExpression(sme) = &ae.left
+                        && matches!(&sme.object, Expression::ThisExpression(_))
+                    {
+                        let fname = sme.property.name.to_string();
+                        if !field_names.contains(&fname) {
+                            let ftype = self
+                                .type_info
+                                .class_field_types
+                                .get(class_name)
+                                .and_then(|fields| fields.get(&fname))
+                                .cloned()
+                                .unwrap_or(ZigType::I64);
+                            field_names.push(fname);
+                            field_types.push(ftype);
+                        }
+                    }
+                }
+                Statement::IfStatement(is) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&is.consequent),
+                        class_name,
+                        field_names,
+                        field_types,
+                    );
+                    if let Some(alt) = &is.alternate {
+                        self.collect_implicit_class_fields(
+                            std::slice::from_ref(alt),
+                            class_name,
+                            field_names,
+                            field_types,
+                        );
+                    }
+                }
+                Statement::BlockStatement(bs) => {
+                    self.collect_implicit_class_fields(
+                        &bs.body,
+                        class_name,
+                        field_names,
+                        field_types,
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Emit a class method (or constructor) as part of a struct.
