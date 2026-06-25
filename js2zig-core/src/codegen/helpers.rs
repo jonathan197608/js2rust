@@ -200,6 +200,30 @@ impl Codegen {
         }
     }
 
+    /// Like `callee_object_name` but also handles string literals:
+    /// `"hello".trimStart()` → `Some("\"hello\"")`.
+    /// For identifiers, returns the name. For string literals, returns the escaped literal.
+    /// Returns `None` for other object types.
+    pub(crate) fn callee_object_repr(&self, callee: &Expression) -> Option<String> {
+        if let Expression::StaticMemberExpression(mem) = callee {
+            if let Expression::Identifier(obj) = &mem.object {
+                return Some(obj.name.to_string());
+            }
+            if let Expression::StringLiteral(lit) = &mem.object {
+                let escaped = lit
+                    .value
+                    .as_str()
+                    .replace('\\', "\\\\")
+                    .replace('\"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t");
+                return Some(format!("\"{}\"", escaped));
+            }
+        }
+        None
+    }
+
     /// Emit a format string expression: either a plain string literal (no args)
     /// or an allocPrint call (when interpolating args).
     ///

@@ -93,13 +93,85 @@ impl Codegen {
                 self.emit_object(oe);
             }
             Expression::StaticMemberExpression(mem) => {
-                // Check for Math.PI
+                // Check for Math constants
                 if let Expression::Identifier(id) = &mem.object
                     && id.name.as_str() == "Math"
-                    && mem.property.name.as_str() == "PI"
                 {
-                    self.write("std.math.pi");
-                    return;
+                    match mem.property.name.as_str() {
+                        "PI" => {
+                            self.write("std.math.pi");
+                            return;
+                        }
+                        "E" => {
+                            self.write("std.math.e");
+                            return;
+                        }
+                        "LN2" => {
+                            self.write("std.math.ln2");
+                            return;
+                        }
+                        "LN10" => {
+                            self.write("std.math.ln10");
+                            return;
+                        }
+                        "LOG2E" => {
+                            self.write("std.math.log2e");
+                            return;
+                        }
+                        "LOG10E" => {
+                            self.write("std.math.log10e");
+                            return;
+                        }
+                        "SQRT1_2" => {
+                            self.write("std.math.sqrt1_2");
+                            return;
+                        }
+                        "SQRT2" => {
+                            self.write("std.math.sqrt2");
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                // Check for Number constants
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Number"
+                {
+                    match mem.property.name.as_str() {
+                        "MAX_VALUE" => {
+                            self.write("std.math.floatMax(f64)");
+                            return;
+                        }
+                        "MIN_VALUE" => {
+                            self.write("std.math.floatMin(f64)");
+                            return;
+                        }
+                        "NaN" => {
+                            self.write("std.math.nan(f64)");
+                            return;
+                        }
+                        "NEGATIVE_INFINITY" => {
+                            self.write("-std.math.inf(f64)");
+                            return;
+                        }
+                        "POSITIVE_INFINITY" => {
+                            self.write("std.math.inf(f64)");
+                            return;
+                        }
+                        "EPSILON" => {
+                            self.write("std.math.floatEps(f64)");
+                            return;
+                        }
+                        "MAX_SAFE_INTEGER" => {
+                            self.write("9007199254740991");
+                            return;
+                        }
+                        "MIN_SAFE_INTEGER" => {
+                            self.write("-9007199254740991");
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 // TypedArray .buffer / .byteLength / .byteOffset
                 let prop_name = mem.property.name.as_str();
@@ -289,12 +361,31 @@ impl Codegen {
                     } else if obj_name == "Date" {
                         // new Date() → js_date.JsDate.init()
                         // new Date(millis) → js_date.JsDate.fromMillis(millis)
+                        // new Date(str) → js_date.JsDate.fromMillis(js_date.parse(str))
                         if ne.arguments.is_empty() {
                             self.write("js_date.JsDate.init()");
-                        } else if let Some(first_arg) = ne.arguments.first() {
-                            self.write("js_date.JsDate.fromMillis(");
-                            self.emit_expr(first_arg.as_expression().unwrap());
-                            self.write(")");
+                        } else if let Some(first_arg) = ne.arguments.first()
+                            && let Some(expr) = first_arg.as_expression()
+                        {
+                            // Detect if argument is a string (literal or inferred type)
+                            let is_string = match expr {
+                                Expression::StringLiteral(_) => true,
+                                Expression::Identifier(id) => self
+                                    .type_info
+                                    .var_types
+                                    .get(id.name.as_str())
+                                    .is_some_and(|t| matches!(t, ZigType::Str)),
+                                _ => false,
+                            };
+                            if is_string {
+                                self.write("js_date.JsDate.fromMillis(js_date.parse(");
+                                self.emit_expr(expr);
+                                self.write("))");
+                            } else {
+                                self.write("js_date.JsDate.fromMillis(");
+                                self.emit_expr(expr);
+                                self.write(")");
+                            }
                         } else {
                             self.write("js_date.JsDate.init()");
                         }
@@ -614,61 +705,6 @@ impl Codegen {
         }
         // If emit_builtin_call returns false, fall through to normal call handling
 
-        // Check if this is JSON.stringify() call
-        if let Expression::StaticMemberExpression(ref mem) = ce.callee
-            && let Expression::Identifier(ref obj) = mem.object
-            && obj.name == "JSON"
-            && mem.property.name == "stringify"
-        {
-            // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.g_alloc(), value, replacer, space)
-            self.write("try js_json.stringify(js_allocator.g_alloc(), ");
-            if let Some(first_arg) = ce.arguments.first() {
-                self.emit_expr_arg(first_arg);
-            } else {
-                self.write("JsAny.fromUndefined()");
-            }
-            // Pass replacer (default null)
-            if ce.arguments.len() >= 2 {
-                self.write(", ");
-                self.emit_expr_arg(&ce.arguments[1]);
-            } else {
-                self.write(", null");
-            }
-            // Pass space (default null)
-            if ce.arguments.len() >= 3 {
-                self.write(", ");
-                self.emit_expr_arg(&ce.arguments[2]);
-            } else {
-                self.write(", null");
-            }
-            self.write(") catch @panic(\"OOM: JSON.stringify\")");
-            return;
-        }
-
-        // Check if this is JSON.parse() call
-        if let Expression::StaticMemberExpression(ref mem) = ce.callee
-            && let Expression::Identifier(ref obj) = mem.object
-            && obj.name == "JSON"
-            && mem.property.name == "parse"
-        {
-            // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.g_alloc(), text, reviver)
-            self.write("try js_json.parse(js_allocator.g_alloc(), ");
-            if let Some(first_arg) = ce.arguments.first() {
-                self.emit_expr_arg(first_arg);
-            } else {
-                self.write("\"\"");
-            }
-            // Pass reviver (default null)
-            if ce.arguments.len() >= 2 {
-                self.write(", ");
-                self.emit_expr_arg(&ce.arguments[1]);
-            } else {
-                self.write(", null");
-            }
-            self.write(") catch @panic(\"JSON.parse error\")");
-            return;
-        }
-
         // Get callee name.
         let callee_name = match &ce.callee {
             Expression::Identifier(id) => Some(id.name.to_string()),
@@ -918,6 +954,189 @@ impl Codegen {
             builtins::BuiltinCall::MathHypot => {
                 // Math.hypot() is not supported — generate @compileError
                 self.compile_error(ce.span, "Math.hypot() is not supported in js2zig");
+                true
+            }
+
+            // ── Math trig ─────────────────────────────
+            builtins::BuiltinCall::MathSin => {
+                // Math.sin(x) → @sin(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.sin() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@sin(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathCos => {
+                // Math.cos(x) → @cos(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.cos() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@cos(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathTan => {
+                // Math.tan(x) → @tan(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.tan() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@tan(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathAsin => {
+                // Math.asin(x) → std.math.asin(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.asin() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.asin(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathAcos => {
+                // Math.acos(x) → std.math.acos(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.acos() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.acos(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathAtan => {
+                // Math.atan(x) → @atan(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.atan() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@atan(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathAtan2 => {
+                // Math.atan2(y, x) → std.math.atan2(f64, y, x)
+                if ce.arguments.len() != 2 {
+                    self.errors
+                        .push("Math.atan2() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                self.write("std.math.atan2(f64, ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(", ");
+                if let Some(arg) = ce.arguments.get(1)
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.emit_expr(expr);
+                }
+                self.write(")");
+                true
+            }
+
+            // ── Math log / other ──────────────────────
+            builtins::BuiltinCall::MathLog => {
+                // Math.log(x) → @log(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.log() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@log(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathLog10 => {
+                // Math.log10(x) → @log10(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.log10() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@log10(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathLog2 => {
+                // Math.log2(x) → @log2(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.log2() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@log2(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathExp => {
+                // Math.exp(x) → @exp(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.exp() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@exp(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathSign => {
+                // Math.sign(x) → @select(f64, @as(f64, @floatFromInt(x)) > 0, 1.0, ...)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.sign() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                // Equivalent JS: if x>0 return 1, if x<0 return -1, else return x
+                self.write("(if (@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")) > 0) @as(f64, 1.0) else if (@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")) < 0) @as(f64, -1.0) else @as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathTrunc => {
+                // Math.trunc(x) → @trunc(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.trunc() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@trunc(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+            builtins::BuiltinCall::MathCbrt => {
+                // Math.cbrt(x) → std.math.cbrt(@as(f64, @floatFromInt(x)))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Math.cbrt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.cbrt(@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
                 true
             }
 
@@ -1196,98 +1415,6 @@ impl Codegen {
                 false
             }
 
-            builtins::BuiltinCall::TypedArrayCopyWithin => {
-                // arr.copyWithin(target, start, end) → js_typedarray.copyWithinXXX(arr, target, start, end)
-                // end is optional, defaults to maxInt
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    let ta_type = self.typedarray_vars.get(obj_name).cloned();
-                    if let Some(ta_type) = ta_type {
-                        if ce.arguments.len() < 2 {
-                            self.errors.push(
-                                "TypedArray.copyWithin() requires at least 2 arguments (target, start)"
-                                    .to_string(),
-                            );
-                            return false;
-                        }
-                        let target_expr = self.first_arg_string(&ce.arguments);
-                        let start_expr = if ce.arguments.len() >= 2 {
-                            if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression()
-                            {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                "0".to_string()
-                            }
-                        } else {
-                            "0".to_string()
-                        };
-                        let end_expr = if ce.arguments.len() >= 3 {
-                            if let Some(arg) = ce.arguments.get(2)
-                                && let Some(expr) = arg.as_expression()
-                            {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                "std.math.maxInt(i64)".to_string()
-                            }
-                        } else {
-                            "std.math.maxInt(i64)".to_string()
-                        };
-                        self.write(&format!(
-                            "js_runtime.js_typedarray.copyWithin{}({}, {}, {}, {})",
-                            ta_type, obj_name, target_expr, start_expr, end_expr
-                        ));
-                        return true;
-                    }
-                }
-                false
-            }
-
-            builtins::BuiltinCall::TypedArrayFill => {
-                // arr.fill(val, start, end) → js_typedarray.fillXXX(arr, val, start, end)
-                // start and end are optional
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    let ta_type = self.typedarray_vars.get(obj_name).cloned();
-                    if let Some(ta_type) = ta_type {
-                        if ce.arguments.is_empty() {
-                            self.errors.push(
-                                "TypedArray.fill() requires at least 1 argument (value)"
-                                    .to_string(),
-                            );
-                            return false;
-                        }
-                        let val_expr = self.first_arg_string(&ce.arguments);
-                        let start_expr = if ce.arguments.len() >= 2 {
-                            if let Some(arg) = ce.arguments.get(1)
-                                && let Some(expr) = arg.as_expression()
-                            {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                "0".to_string()
-                            }
-                        } else {
-                            "0".to_string()
-                        };
-                        let end_expr = if ce.arguments.len() >= 3 {
-                            if let Some(arg) = ce.arguments.get(2)
-                                && let Some(expr) = arg.as_expression()
-                            {
-                                self.emit_expr_to_string(expr)
-                            } else {
-                                "std.math.maxInt(i64)".to_string()
-                            }
-                        } else {
-                            "std.math.maxInt(i64)".to_string()
-                        };
-                        self.write(&format!(
-                            "js_runtime.js_typedarray.fill{}({}, {}, {}, {})",
-                            ta_type, obj_name, val_expr, start_expr, end_expr
-                        ));
-                        return true;
-                    }
-                }
-                false
-            }
-
             builtins::BuiltinCall::ArraySplice => {
                 // arr.splice(start, deleteCount, ...items)
                 // Returns removed elements as a new ArrayList.
@@ -1342,6 +1469,47 @@ impl Codegen {
                         self.write("}) catch @panic(\"OOM: Array.splice insertSlice\");");
                     }
                     self.write(" break :blk __spliced; })");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayConcat => {
+                // arr.concat(other) → new ArrayList with items from both
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let elem_type = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| t.to_zig_type())
+                        .unwrap_or_else(|| "i64".to_string());
+                    // Generate: (blk: {
+                    //   var __concat: std.ArrayList(T) = .empty;
+                    //   __concat.appendSlice(alloc, arr.items) catch @panic("OOM");
+                    //   __concat.appendSlice(alloc, other.items) catch @panic("OOM");
+                    //   break :blk __concat;
+                    // })
+                    self.write("(blk: { ");
+                    self.write(&format!(
+                        "var __concat: std.ArrayList({0}) = .empty; ",
+                        elem_type
+                    ));
+                    // Append original array's items
+                    self.write(&format!(
+                        "__concat.appendSlice(js_allocator.getAllocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
+                        obj_name
+                    ));
+                    // Append each additional argument's items
+                    for arg in &ce.arguments {
+                        if let Some(expr) = arg.as_expression() {
+                            let arg_str = self.emit_expr_to_string(expr);
+                            self.write(&format!(
+                                "__concat.appendSlice(js_allocator.getAllocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
+                                arg_str
+                            ));
+                        }
+                    }
+                    self.write("break :blk __concat; })");
                     return true;
                 }
                 false
@@ -1672,11 +1840,74 @@ impl Codegen {
             }
 
             // ── Array methods (with closure) ─────────────────────────────
-            // ForEach: generate for loop that inlines the callback body
+            // ForEach: generate for/while loop that inlines the callback body
             builtins::BuiltinCall::ArrayForEach => {
-                // arr.forEach(fn) → for (arr.items) |item| { /* fn body */ }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    // Check if first argument is an arrow function
+                    // Check if this is a Map.forEach call (detected by variable type)
+                    let is_map = self
+                        .type_info
+                        .var_types
+                        .get(obj_name)
+                        .is_some_and(|t| matches!(t, ZigType::NamedStruct(s) if s == "Map"));
+
+                    if is_map {
+                        // Map.forEach(fn) → while-iterator loop with key/value pairs
+                        if !ce.arguments.is_empty()
+                            && let Some(arg) = ce.arguments.first()
+                            && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                                arg.as_expression()
+                        {
+                            // Map.forEach((value, key) => {...}) — JS callback order
+                            let val_param =
+                                arrow.params.items.first().and_then(|p| {
+                                    crate::native_proto::infer::binding_name(&p.pattern)
+                                });
+                            let key_param =
+                                arrow.params.items.get(1).and_then(|p| {
+                                    crate::native_proto::infer::binding_name(&p.pattern)
+                                });
+
+                            self.write(&format!("var iter = {}.inner.iterator();\n", obj_name));
+                            self.write_indent();
+                            self.write("while (iter.next()) |entry| {\n");
+                            self.indent += 1;
+                            // Bind value and key from entry
+                            if let Some(vp) = &val_param {
+                                self.write_indent();
+                                self.write(&format!("const {} = entry.value_ptr.*;\n", vp));
+                            }
+                            if let Some(kp) = &key_param {
+                                self.write_indent();
+                                self.write(&format!("const {} = entry.key_ptr.*;\n", kp));
+                            }
+                            // Emit callback body
+                            for stmt in &arrow.body.statements {
+                                self.write_indent();
+                                self.emit_fn_stmt(stmt);
+                            }
+                            // Suppress unused variable warnings: _ = &param
+                            // (harmless no-op if param is used; required for zig ast-check)
+                            if let Some(kp) = &key_param {
+                                self.write_indent();
+                                self.write(&format!("_ = &{};\n", kp));
+                            }
+                            if let Some(vp) = &val_param {
+                                self.write_indent();
+                                self.write(&format!("_ = &{};\n", vp));
+                            }
+                            self.indent -= 1;
+                            self.write_indent();
+                            self.write("}");
+                            return true;
+                        }
+                        // Fallback: empty Map.forEach
+                        self.write(&format!("var iter = {}.inner.iterator();\n", obj_name));
+                        self.write_indent();
+                        self.write("while (iter.next()) |_| {}\n");
+                        return true;
+                    }
+
+                    // Array.forEach(fn) → for (arr.items) |item| { /* fn body */ }
                     if !ce.arguments.is_empty()
                         && let Some(arg) = ce.arguments.first()
                         && let Some(Expression::ArrowFunctionExpression(arrow)) =
@@ -1724,8 +1955,69 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayFilter => {
-                // arr.filter(fn) → arr (simplified: return original array)
+                // arr.filter(fn) → generate inline for-loop with predicate check
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let elem_type = self
+                        .type_info
+                        .array_element_types
+                        .get(obj_name)
+                        .map(|t| t.to_zig_type())
+                        .unwrap_or_else(|| "i64".to_string());
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        // Generate: (blk: {
+                        //   var __filter: std.ArrayList(T) = .empty;
+                        //   for (arr.items) |elem| {
+                        //     if (predicate) __filter.append(alloc, elem) catch @panic("OOM");
+                        //   }
+                        //   break :blk __filter;
+                        // })
+                        self.write("(blk: { ");
+                        self.write(&format!(
+                            "var __filter: std.ArrayList({0}) = .empty; ",
+                            elem_type
+                        ));
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        self.write(&format!("{}| {{ ", param_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                // Block body: { return predicate; }
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(") { __filter.append(js_allocator.getAllocator(), ");
+                                    self.write(&param_name);
+                                    self.write(") catch @panic(\"OOM: Array.filter append\"); }");
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                // Concise body: x => predicate
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(") { __filter.append(js_allocator.getAllocator(), ");
+                                self.write(&param_name);
+                                self.write(") catch @panic(\"OOM: Array.filter append\"); }");
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk __filter; })");
+                        return true;
+                    }
+                    // Fallback: no arrow function argument → return original array
                     self.write(obj_name);
                     return true;
                 }
@@ -1822,15 +2114,109 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArraySome => {
-                // arr.some(fn) → true (simplified: always return true)
-                self.write("true");
-                true
+                // arr.some(fn) → generate inline for-loop with short-circuit predicate
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        // Generate: (blk: {
+                        //   for (arr.items) |elem| {
+                        //     if (predicate) break :blk true;
+                        //   }
+                        //   break :blk false;
+                        // })
+                        self.write("(blk: { ");
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        self.write(&format!("{}| {{ ", param_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(") break :blk true;");
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(") break :blk true;");
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk false; })");
+                        return true;
+                    }
+                    // Fallback: no arrow function → return false
+                    self.write("false");
+                    return true;
+                }
+                false
             }
 
             builtins::BuiltinCall::ArrayEvery => {
-                // arr.every(fn) → true (simplified: always return true)
-                self.write("true");
-                true
+                // arr.every(fn) → generate inline for-loop with short-circuit predicate
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        // Generate: (blk: {
+                        //   for (arr.items) |elem| {
+                        //     if (!predicate) break :blk false;
+                        //   }
+                        //   break :blk true;
+                        // })
+                        self.write("(blk: { ");
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        self.write(&format!("{}| {{ ", param_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (!(");
+                                    self.emit_expr(expr);
+                                    self.write(")) break :blk false;");
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (!(");
+                                self.emit_expr(&es.expression);
+                                self.write(")) break :blk false;");
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk true; })");
+                        return true;
+                    }
+                    // Fallback: no arrow function → return true
+                    self.write("true");
+                    return true;
+                }
+                false
             }
 
             builtins::BuiltinCall::ArrayFlat => {
@@ -1846,6 +2232,207 @@ impl Codegen {
                 // arr.flatMap(fn) → arr (simplified: return original array)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(obj_name);
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayFind => {
+                // arr.find(fn) → inline for-loop, break with element
+                // (blk: {
+                //   for (arr.items) |elem| {
+                //     if (predicate) break :blk elem;
+                //   }
+                //   break :blk undefined;
+                // })
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        self.write("(blk: { ");
+                        self.write(&format!("for ({}.items) |", obj_name));
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        self.write(&format!("{}| {{ ", param_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(&format!(") break :blk {};", param_name));
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(&format!(") break :blk {};", param_name));
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk undefined; })");
+                        return true;
+                    }
+                    // Fallback: no arrow function → return undefined
+                    self.write("undefined");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayFindIndex => {
+                // arr.findIndex(fn) → inline for-loop, break with index
+                // (blk: {
+                //   for (arr.items, 0..) |param, __i| {
+                //     const __idx: i64 = @intCast(__i);
+                //     if (predicate) break :blk __idx;
+                //   }
+                //   break :blk -1;
+                // })
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        self.write("(blk: { ");
+                        self.write(&format!("for ({}.items, 0..) |", obj_name));
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        let index_name = format!("__{}_i", param_name);
+                        let idx_name = format!("__{}_idx", param_name);
+                        self.write(&format!("{}, {}| {{ ", param_name, index_name));
+                        self.indent += 1;
+                        self.write_indent();
+                        self.write(&format!(
+                            "const {}: i64 = @intCast({});\n",
+                            idx_name, index_name
+                        ));
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(&format!(") break :blk {};", idx_name));
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(&format!(") break :blk {};", idx_name));
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        self.write_indent();
+                        self.write("break :blk -1; })");
+                        return true;
+                    }
+                    // Fallback: no arrow function → return -1
+                    self.write("-1");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayFill => {
+                // arr.fill(val, start, end)
+                // If object is a TypedArray, delegate to TypedArrayFill logic.
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    // Check if it's a TypedArray first
+                    if self.typedarray_vars.contains_key(obj_name) {
+                        // Delegate to TypedArrayFill logic
+                        let ta_type = self.typedarray_vars.get(obj_name).cloned();
+                        if let Some(ta_type) = ta_type {
+                            if ce.arguments.is_empty() {
+                                self.errors.push(
+                                    "TypedArray.fill() requires at least 1 argument (value)"
+                                        .to_string(),
+                                );
+                                return false;
+                            }
+                            let val_expr = self.first_arg_string(&ce.arguments);
+                            let start_expr = if ce.arguments.len() >= 2 {
+                                if let Some(arg) = ce.arguments.get(1)
+                                    && let Some(expr) = arg.as_expression()
+                                {
+                                    self.emit_expr_to_string(expr)
+                                } else {
+                                    "0".to_string()
+                                }
+                            } else {
+                                "0".to_string()
+                            };
+                            let end_expr = if ce.arguments.len() >= 3 {
+                                if let Some(arg) = ce.arguments.get(2)
+                                    && let Some(expr) = arg.as_expression()
+                                {
+                                    self.emit_expr_to_string(expr)
+                                } else {
+                                    "std.math.maxInt(i64)".to_string()
+                                }
+                            } else {
+                                "std.math.maxInt(i64)".to_string()
+                            };
+                            self.write(&format!(
+                                "js_runtime.js_typedarray.fill{}({}, {}, {}, {})",
+                                ta_type, obj_name, val_expr, start_expr, end_expr
+                            ));
+                            return true;
+                        }
+                    }
+
+                    // Regular Array.fill
+                    // for (arr.items[start..end]) |*elem| { elem.* = val; }
+                    if ce.arguments.is_empty() {
+                        self.errors
+                            .push("Array.fill() requires at least 1 argument (value)".to_string());
+                        return false;
+                    }
+                    let val_str = self.first_arg_string(&ce.arguments);
+                    let start_str = if ce.arguments.len() >= 2 {
+                        if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            "0".to_string()
+                        }
+                    } else {
+                        "0".to_string()
+                    };
+                    let end_str = if ce.arguments.len() >= 3 {
+                        if let Some(arg) = ce.arguments.get(2)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            format!("{}.items.len", obj_name)
+                        }
+                    } else {
+                        format!("{}.items.len", obj_name)
+                    };
+
+                    self.write(&format!(
+                        "for ({}.items[@intCast({})..@intCast({})]) |*elem| {{ elem.* = {}; }}",
+                        obj_name, start_str, end_str, val_str
+                    ));
                     return true;
                 }
                 false
@@ -1885,6 +2472,49 @@ impl Codegen {
             }
             builtins::BuiltinCall::DateGetSeconds => {
                 self.emit_date_instance_method("getSeconds", ce)
+            }
+            builtins::BuiltinCall::DateGetMilliseconds => {
+                self.emit_date_instance_method("getMilliseconds", ce)
+            }
+            builtins::BuiltinCall::DateGetTimezoneOffset => {
+                self.emit_date_instance_method("getTimezoneOffset", ce)
+            }
+            builtins::BuiltinCall::DateToISOString => {
+                // date.toISOString() → date.toISOString(js_allocator.getAllocator())
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.emit_expr(&mem.object);
+                    self.write(".toISOString(js_allocator.getAllocator())");
+                    true
+                } else {
+                    self.errors.push(
+                        "Date.toISOString() called on non-static-member expression".to_string(),
+                    );
+                    false
+                }
+            }
+
+            // ── Date UTC getters ─────────────────────────
+            builtins::BuiltinCall::DateGetUTCFullYear => {
+                self.emit_date_instance_method("getUTCFullYear", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCMonth => {
+                self.emit_date_instance_method("getUTCMonth", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCDate => {
+                self.emit_date_instance_method("getUTCDate", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCDay => self.emit_date_instance_method("getUTCDay", ce),
+            builtins::BuiltinCall::DateGetUTCHours => {
+                self.emit_date_instance_method("getUTCHours", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCMinutes => {
+                self.emit_date_instance_method("getUTCMinutes", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCSeconds => {
+                self.emit_date_instance_method("getUTCSeconds", ce)
+            }
+            builtins::BuiltinCall::DateGetUTCMilliseconds => {
+                self.emit_date_instance_method("getUTCMilliseconds", ce)
             }
 
             // ── Object methods (static) ────────────────────
@@ -1979,6 +2609,39 @@ impl Codegen {
                 self.emit_first_arg(&ce.arguments);
                 true
             }
+            builtins::BuiltinCall::ObjectHasOwn => {
+                // Object.hasOwn(obj, key) → bool
+                // For statically-known struct types + string literal key: @hasField
+                // Otherwise: js_object.hasOwn(obj, key) runtime
+                if ce.arguments.len() != 2 {
+                    self.compile_error(ce.span, "Object.hasOwn requires exactly 2 arguments");
+                    return true;
+                }
+                let obj_arg = ce.arguments[0].as_expression();
+                let key_arg = ce.arguments[1].as_expression();
+
+                // Check if we can use comptime @hasField
+                if let (Some(Expression::Identifier(id)), Some(Expression::StringLiteral(key_lit))) =
+                    (obj_arg, key_arg)
+                    && let Some(ty) = self.type_info.var_types.get(id.name.as_str())
+                    && matches!(ty, ZigType::Struct(_))
+                {
+                    self.write(&format!(
+                        "@hasField(@TypeOf({}), \"{}\")",
+                        id.name.as_str(),
+                        key_lit.value.as_str()
+                    ));
+                    return true;
+                }
+
+                // Fallback: runtime hasOwn
+                self.write("js_object.hasOwn(");
+                self.emit_expr_arg(&ce.arguments[0]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+                self.write(")");
+                true
+            }
 
             builtins::BuiltinCall::ParseInt => {
                 // parseInt(s) → std.fmt.parseInt(i64, s, 10) catch 0
@@ -2049,6 +2712,598 @@ impl Codegen {
                     self.write(", null");
                 }
                 self.write(") catch @panic(\"JSON.parse error\")");
+                true
+            }
+
+            // ── Console methods ─────────────────────────────
+            builtins::BuiltinCall::ConsoleLog => {
+                self.write("js_console.log(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::ConsoleError => {
+                self.write("js_console.err(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::ConsoleWarn => {
+                self.write("js_console.warn(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            // ── String methods (extended) ──────────────────
+            builtins::BuiltinCall::StringToUpperCase => {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_string.toUpper(js_allocator.getAllocator(), {})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringToLowerCase => {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_string.toLower(js_allocator.getAllocator(), {})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringCharAt => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.charAt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let idx_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "js_string.charAt(js_allocator.getAllocator(), {}, {})",
+                        obj_name, idx_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringCharCodeAt => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.charCodeAt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let idx_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!("js_string.charCodeAt({}, {})", obj_name, idx_expr));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringConcat => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.concat() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let arg_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "js_string.concat(js_allocator.getAllocator(), {}, {})",
+                        obj_name, arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringSlice => {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let start_expr = self.first_arg_string_or(&ce.arguments, "0");
+                    let end_expr = if ce.arguments.len() >= 2 {
+                        if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        }
+                    } else {
+                        "std.math.maxInt(i64)".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.slice({}, {}, {})",
+                        obj_name, start_expr, end_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringReplace => {
+                if ce.arguments.len() != 2 {
+                    self.errors
+                        .push("String.replace() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let old_expr = self.first_arg_string(&ce.arguments);
+                    let new_expr = if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "\"\"".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.replace(js_allocator.getAllocator(), {}, {}, {})",
+                        obj_name, old_expr, new_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringRepeat => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.repeat() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let n_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "js_string.repeat(js_allocator.getAllocator(), {}, {})",
+                        obj_name, n_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringSubstring => {
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let start_expr = self.first_arg_string_or(&ce.arguments, "0");
+                    let end_expr = if ce.arguments.len() >= 2 {
+                        if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        }
+                    } else {
+                        "std.math.maxInt(i64)".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.substring({}, {}, {})",
+                        obj_name, start_expr, end_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            // ── Global functions (extended) ────────────────────
+            builtins::BuiltinCall::ParseFloat => {
+                // parseFloat(s) → std.fmt.parseFloat(f64, s) catch 0.0
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression()
+                {
+                    self.write("std.fmt.parseFloat(f64, ");
+                    self.emit_expr(expr);
+                    self.write(") catch 0.0");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::IsNaN => {
+                // isNaN(v) → std.math.isNan(@as(f64, v))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("isNaN() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("std.math.isNan(@as(f64, ");
+                self.emit_first_arg(&ce.arguments);
+                self.write("))");
+                true
+            }
+
+            builtins::BuiltinCall::IsFinite => {
+                // isFinite(v) → !std.math.isInf(@as(f64, v)) && !std.math.isNan(@as(f64, v))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("isFinite() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("(!std.math.isInf(@as(f64, ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")) and !std.math.isNan(@as(f64, ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")))");
+                true
+            }
+
+            builtins::BuiltinCall::EncodeURIComponent => {
+                // encodeURIComponent(s) → js_uri.encodeURIComponent(alloc, s)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("encodeURIComponent() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_uri.encodeURIComponent(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(") catch @panic(\"OOM: encodeURIComponent\")");
+                true
+            }
+
+            builtins::BuiltinCall::DecodeURIComponent => {
+                // decodeURIComponent(s) → js_uri.decodeURIComponent(alloc, s)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("decodeURIComponent() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(") catch @panic(\"Invalid URI encoding\")");
+                true
+            }
+
+            // ── Number static methods ──────────────────────────
+            builtins::BuiltinCall::NumberIsNaN => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.isNaN() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.isNaN(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::NumberIsFinite => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.isFinite() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.isFinite(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::NumberIsInteger => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.isInteger() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.isInteger(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::NumberParseInt => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.parseInt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.parseInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::NumberParseFloat => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.parseFloat() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.parseFloat(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::NumberIsSafeInteger => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number.isSafeInteger() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_number.isSafeInteger(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            // ── Number instance methods ────────────────────────
+            builtins::BuiltinCall::NumberToFixed => {
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("toFixed() requires exactly 1 argument (digits)".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_number.toFixed(js_allocator.getAllocator(), {}, ",
+                        obj_name
+                    ));
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
+            // ── Map/Set clear ────────────────────────────────
+            builtins::BuiltinCall::MapClear => {
+                // map.clear() / set.clear() → obj.clear()
+                if !ce.arguments.is_empty() {
+                    self.errors
+                        .push("Map/Set.clear() requires no arguments".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.clear()", obj_name));
+                    return true;
+                }
+                false
+            }
+
+            // ── Array methods (P2) ─────────────────────────────
+            builtins::BuiltinCall::ArrayAt => {
+                // arr.at(index) → arr.items[@intCast(clamped_index)]
+                // Negative indices count from the end
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Array.at() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let arg_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "(blk: {{ const __idx = {arg}; const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({obj}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); break :blk {obj}.items[__at_idx]; }})",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayLastIndexOf => {
+                // arr.lastIndexOf(x) → backward labeled loop
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Array.lastIndexOf() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let arg_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "(blk: {{ var __i: isize = @as(isize, @intCast({obj}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({obj}.items[@as(usize, @intCast(__i))] == {arg}) break :blk @as(i64, __i); }} break :blk @as(i64, -1); }})",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayCopyWithin => {
+                // arr.copyWithin(target, start, end?) — inline copy elements
+                // Check for TypedArray first (route to runtime)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if let Some(ta_type) = self.typedarray_vars.get(obj_name).cloned() {
+                        if ce.arguments.len() < 2 {
+                            self.errors.push(
+                                "TypedArray.copyWithin() requires at least 2 arguments (target, start)".to_string(),
+                            );
+                            return false;
+                        }
+                        let target_expr = self.first_arg_string(&ce.arguments);
+                        let start_expr = if let Some(arg) = ce.arguments.get(1)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            "0".to_string()
+                        };
+                        let end_expr = if ce.arguments.len() >= 3 {
+                            if let Some(arg) = ce.arguments.get(2)
+                                && let Some(expr) = arg.as_expression()
+                            {
+                                self.emit_expr_to_string(expr)
+                            } else {
+                                "std.math.maxInt(i64)".to_string()
+                            }
+                        } else {
+                            "std.math.maxInt(i64)".to_string()
+                        };
+                        self.write(&format!(
+                            "js_runtime.js_typedarray.copyWithin{}({}, {}, {}, {})",
+                            ta_type, obj_name, target_expr, start_expr, end_expr
+                        ));
+                        return true;
+                    }
+
+                    // Regular ArrayList copyWithin
+                    if ce.arguments.len() < 2 {
+                        self.errors.push(
+                            "Array.copyWithin() requires at least 2 arguments (target, start)"
+                                .to_string(),
+                        );
+                        return false;
+                    }
+                    let target_expr = self.first_arg_string(&ce.arguments);
+                    let start_expr = if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "0".to_string()
+                    };
+                    let end_expr = if ce.arguments.len() >= 3 {
+                        if let Some(arg) = ce.arguments.get(2)
+                            && let Some(expr) = arg.as_expression()
+                        {
+                            self.emit_expr_to_string(expr)
+                        } else {
+                            format!("{}.items.len", obj_name)
+                        }
+                    } else {
+                        format!("{}.items.len", obj_name)
+                    };
+                    self.write(&format!(
+                        "(blk: {{ \
+                            const __cpw_target = @as(isize, @intCast({t})); \
+                            const __cpw_start = @as(isize, @intCast({s})); \
+                            const __cpw_end = @as(isize, @intCast({e})); \
+                            const __cpw_cnt = __cpw_end - __cpw_start; \
+                            if (__cpw_cnt > 0) {{ \
+                                if (__cpw_target > __cpw_start) {{ \
+                                    var __cpw_i: isize = __cpw_cnt - 1; \
+                                    while (__cpw_i >= 0) : (__cpw_i -= 1) {{ \
+                                        {obj}.items[@as(usize, @intCast(__cpw_target + __cpw_i))] = {obj}.items[@as(usize, @intCast(__cpw_start + __cpw_i))]; \
+                                    }} \
+                                }} else if (__cpw_target < __cpw_start) {{ \
+                                    var __cpw_i: isize = 0; \
+                                    while (__cpw_i < __cpw_cnt) : (__cpw_i += 1) {{ \
+                                        {obj}.items[@as(usize, @intCast(__cpw_target + __cpw_i))] = {obj}.items[@as(usize, @intCast(__cpw_start + __cpw_i))]; \
+                                    }} \
+                                }} \
+                            }} \
+                            break :blk &{obj}; \
+                        }})",
+                        obj = obj_name,
+                        t = target_expr,
+                        s = start_expr,
+                        e = end_expr,
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            // ── String methods (P2) ─────────────────────────────
+            builtins::BuiltinCall::StringTrimStart => {
+                // str.trimStart() → std.mem.trimLeft(u8, str, &std.ascii.whitespace)
+                if !ce.arguments.is_empty() {
+                    self.errors
+                        .push("String.trimStart() requires no arguments".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                    self.write(&format!(
+                        "std.mem.trimLeft(u8, {obj}, &std.ascii.whitespace)",
+                        obj = obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringTrimEnd => {
+                // str.trimEnd() → std.mem.trimRight(u8, str, &std.ascii.whitespace)
+                if !ce.arguments.is_empty() {
+                    self.errors
+                        .push("String.trimEnd() requires no arguments".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                    self.write(&format!(
+                        "std.mem.trimRight(u8, {obj}, &std.ascii.whitespace)",
+                        obj = obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringLastIndexOf => {
+                // str.lastIndexOf(search) → std.mem.lastIndexOf(u8, str, search) → i64 | -1
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.lastIndexOf() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                    let arg_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "(if (std.mem.lastIndexOf(u8, {obj}, {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
+                        obj = obj_name,
+                        arg = arg_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringMatch => {
+                // str.match(regex) — not yet supported (regex required)
+                self.compile_error(
+                    ce.span,
+                    "String.match() requires regex support, which is not yet implemented in js2zig",
+                );
+                true
+            }
+
+            builtins::BuiltinCall::StringSearch => {
+                // str.search(regex) — not yet supported (regex required)
+                self.compile_error(ce.span, "String.search() requires regex support, which is not yet implemented in js2zig");
+                true
+            }
+
+            // ── Object methods (P2) ─────────────────────────────
+            builtins::BuiltinCall::ObjectIs => {
+                // Object.is(a, b) → SameValue comparison
+                // JS SameValue: NaN === NaN (true), +0 !== -0 (false)
+                // Zig: NaN != NaN, 0 == -0 — we approximate with NaN check
+                if ce.arguments.len() != 2 {
+                    self.compile_error(ce.span, "Object.is() requires exactly 2 arguments");
+                    return true;
+                }
+                // Generate: (std.math.isNan(a) and std.math.isNan(b)) or (a == b)
+                self.write("(");
+                let a_expr =
+                    self.emit_expr_to_string(ce.arguments[0].as_expression().expect("arg"));
+                let b_expr =
+                    self.emit_expr_to_string(ce.arguments[1].as_expression().expect("arg"));
+                self.write(&format!(
+                    "(std.math.isNan({a}) and std.math.isNan({b})) or ({a} == {b})",
+                    a = a_expr,
+                    b = b_expr,
+                ));
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::ObjectGetOwnPropertyNames => {
+                // Object.getOwnPropertyNames(obj) → not yet implemented
+                self.compile_error(
+                    ce.span,
+                    "Object.getOwnPropertyNames() is not yet implemented in js2zig",
+                );
                 true
             }
         }
@@ -2659,6 +3914,17 @@ impl Codegen {
                     && mem.property.name.as_str() == "PI"
                 {
                     return Some(ZigType::F64);
+                }
+                // Number.* constants → typed
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Number"
+                {
+                    match mem.property.name.as_str() {
+                        "MAX_VALUE" | "MIN_VALUE" | "NaN" | "NEGATIVE_INFINITY"
+                        | "POSITIVE_INFINITY" | "EPSILON" => return Some(ZigType::F64),
+                        "MAX_SAFE_INTEGER" | "MIN_SAFE_INTEGER" => return Some(ZigType::I64),
+                        _ => {}
+                    }
                 }
                 let obj_ty = self.infer_expr_type(&mem.object);
                 if let Some(ZigType::Struct(fields)) = obj_ty {

@@ -313,7 +313,13 @@ fn extract_braced_type(s: &str) -> String {
         let inner = &s[1..end];
         if inner.contains(':') {
             // Anonymous object type: return with braces
-            s[..end + 1].to_string()
+            if inner.trim().starts_with('{') {
+                // Double-brace syntax: {{name: string}} → {name: string}
+                inner.trim().to_string()
+            } else {
+                // Single-brace syntax: {name: string} → {name: string}
+                s[..end + 1].to_string()
+            }
         } else {
             // Named type: return without braces
             inner.trim().to_string()
@@ -590,6 +596,65 @@ function greet(name, age) {
         assert_eq!(
             param_types["greet"][1],
             ("age".to_string(), "number".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_anonymous_object_type() {
+        let jsdoc = r#"
+/**
+ * @type {{name: string, age: number}}
+ */
+"#;
+        let parsed = parse_jsdoc(jsdoc);
+        assert_eq!(
+            parsed.type_name,
+            Some("{name: string, age: number}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_returns_anonymous_object() {
+        let jsdoc = r#"
+/**
+ * @returns {{name: string, age: number}}
+ */
+"#;
+        let parsed = parse_jsdoc(jsdoc);
+        assert_eq!(
+            parsed.return_type_name,
+            Some("{name: string, age: number}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_anonymous_object() {
+        let jsdoc = r#"
+/**
+ * @type {{name: string, address: {city: string, zip: number}}}
+ */
+"#;
+        let parsed = parse_jsdoc(jsdoc);
+        assert_eq!(
+            parsed.type_name,
+            Some("{name: string, address: {city: string, zip: number}}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_anonymous_object_array() {
+        // Array of anonymous objects: @type {{name: string, age: number}[]}
+        // The [] is inside the outer JSDoc braces, so extract_braced_type
+        // includes it with the inner anonymous object.
+        let jsdoc = r#"
+/**
+ * @type {{name: string, age: number}[]}
+ */
+"#;
+        let parsed = parse_jsdoc(jsdoc);
+        assert_eq!(
+            parsed.type_name,
+            Some("{name: string, age: number}[]".to_string())
         );
     }
 }

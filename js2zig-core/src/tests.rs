@@ -28,19 +28,25 @@ mod tests {
         let needs_std = zig_code.contains("std.") || zig_code.contains("allocator");
         let needs_js_date = zig_code.contains("js_date");
         let needs_js_object = zig_code.contains("js_object");
+        let needs_js_number = zig_code.contains("js_number.");
+        let needs_js_string = zig_code.contains("js_string.");
         let needs_js_runtime = zig_code.contains("js_runtime.");
         let needs_js_any = zig_code.contains("JsAny");
         let needs_string_hashmap = zig_code.contains("StringHashMap");
         let needs_js_allocator = zig_code.contains("js_allocator");
         let needs_js_array = zig_code.contains("js_array");
         let needs_js_json = zig_code.contains("js_json");
+        let needs_js_map = zig_code.contains("js_map");
         let any_runtime = needs_js_date
             || needs_js_object
+            || needs_js_number
+            || needs_js_string
             || needs_js_runtime
             || needs_js_any
             || needs_string_hashmap
             || needs_js_allocator
-            || needs_js_array;
+            || needs_js_array
+            || needs_js_map;
 
         let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
@@ -55,11 +61,20 @@ mod tests {
             if needs_js_json {
                 w.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
             }
+            if needs_js_map {
+                w.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
+            }
             if needs_js_date {
                 w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
             }
             if needs_js_object {
                 w.push_str("const js_object = @import(\"js_runtime/js_object.zig\");\n");
+            }
+            if needs_js_number {
+                w.push_str("const js_number = @import(\"js_runtime/js_number.zig\");\n");
+            }
+            if needs_js_string {
+                w.push_str("const js_string = @import(\"js_runtime/js_string.zig\");\n");
             }
             if needs_js_runtime {
                 w.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
@@ -4308,6 +4323,75 @@ export function testPadEnd() {
         );
     }
 
+    // ── Test: String.substring() ─────────────
+
+    #[test]
+    fn test_native_proto_string_substring() {
+        let js = r#"
+export function testSubstring() {
+    const s = "hello world";
+    return s.substring(0, 5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_substring");
+        assert!(
+            zig.contains("js_string.substring"),
+            "Expected js_string.substring call, got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_string_substring_swap() {
+        // substring(5, 0) should swap to (0, 5) — JS semantics
+        let js = r#"
+export function testSubstringSwap() {
+    const s = "hello world";
+    return s.substring(5, 0);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_substring_swap");
+        assert!(
+            zig.contains("js_string.substring"),
+            "Expected js_string.substring call, got:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Object.hasOwn() with struct ─────────────
+
+    #[test]
+    fn test_native_proto_object_has_own_struct() {
+        let js = r#"
+export function testHasOwn() {
+    const obj = { name: "Alice", age: 30 };
+    return Object.hasOwn(obj, "name");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_object_has_own_struct");
+        assert!(
+            zig.contains("@hasField"),
+            "Expected @hasField for struct type, got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_object_has_own_missing() {
+        let js = r#"
+export function testHasOwnMissing() {
+    const obj = { name: "Alice", age: 30 };
+    return Object.hasOwn(obj, "email");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_object_has_own_missing");
+        assert!(
+            zig.contains("@hasField"),
+            "Expected @hasField for struct type, got:\n{}",
+            zig
+        );
+    }
+
     // ── Test: JSON.parse() without JSDoc (Phase 1) ─────────────
 
     #[test]
@@ -4345,6 +4429,921 @@ export function getName() {
         assert!(
             zig.contains("const json"),
             "Expected 'const json' declaration, got:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.filter() with concise arrow predicate ─────────────
+
+    #[test]
+    fn test_native_proto_array_filter() {
+        // JS source: arr.filter(x => x > 3) — returns filtered ArrayList
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function filterCount() {
+    const arr = [1, 2, 3, 4, 5, 6];
+    const filtered = arr.filter(x => x > 3);
+    return filtered.length;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_filter");
+
+        // Verify inline for-loop with ArrayList result
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(
+            zig.contains("__filter: std.ArrayList("),
+            "Expected __filter ArrayList var in:\n{}",
+            zig
+        );
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(
+            zig.contains(".append(js_allocator.getAllocator()"),
+            "Expected append in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk __filter"),
+            "Expected break :blk __filter in:\n{}",
+            zig
+        );
+        // Should contain the predicate condition: x > 3
+        assert!(zig.contains("> 3"), "Expected '> 3' predicate in:\n{}", zig);
+    }
+
+    // ── Test: Array.some() with concise arrow predicate ─────────────
+
+    #[test]
+    fn test_native_proto_array_some() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function hasMatch() {
+    const arr = [1, 2, 3, 4, 5];
+    if (arr.some(x => x > 3)) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_some");
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(
+            zig.contains("break :blk true"),
+            "Expected break :blk true in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk false"),
+            "Expected break :blk false in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.every() with concise arrow predicate ─────────────
+
+    #[test]
+    fn test_native_proto_array_every() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function allPositive() {
+    const arr = [1, 2, 3, 4, 5];
+    if (arr.every(x => x > 0)) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_every");
+        assert!(
+            zig.contains("break :blk true"),
+            "Expected break :blk true in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk false"),
+            "Expected break :blk false in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.some() with block body arrow ─────────────
+
+    #[test]
+    fn test_native_proto_array_some_block_body() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function someBlockBody() {
+    const arr = [1, 2, 3, 4, 5];
+    if (arr.some(x => { return x > 3; })) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_some_block_body");
+        assert!(
+            zig.contains("break :blk true"),
+            "Expected break :blk true, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk false"),
+            "Expected break :blk false, got:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.every() with block body arrow ─────────────
+
+    #[test]
+    fn test_native_proto_array_every_block_body() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function everyBlockBody() {
+    const arr = [1, 2, 3, 4, 5];
+    if (arr.every(x => { return x > 0; })) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_every_block_body");
+        assert!(
+            zig.contains("break :blk true"),
+            "Expected break :blk true, got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk false"),
+            "Expected break :blk false, got:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.concat() ─────────────
+
+    #[test]
+    fn test_native_proto_array_concat() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function concatLength() {
+    const a = [1, 2, 3];
+    const b = [4, 5];
+    const c = a.concat(b);
+    return c.length;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_concat");
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(
+            zig.contains("__concat:"),
+            "Expected __concat var in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("appendSlice"),
+            "Expected appendSlice in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk __concat"),
+            "Expected break :blk __concat in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.find() ─────────────
+
+    #[test]
+    fn test_native_proto_array_find() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findFirstEven() {
+    const arr = [1, 2, 3, 4, 5];
+    const found = arr.find(x => x % 2 === 0);
+    return found;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find");
+        assert!(
+            zig.contains("break :blk "),
+            "Expected break :blk with value in:\n{}",
+            zig
+        );
+        // find returns the element (x), not true/false
+        assert!(
+            zig.contains("break :blk x"),
+            "Expected break :blk x in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk undefined"),
+            "Expected break :blk undefined fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.find() with block body ─────────────
+
+    #[test]
+    fn test_native_proto_array_find_block_body() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findBlockBody() {
+    const arr = [1, 2, 3, 4, 5];
+    const found = arr.find(x => { return x > 3; });
+    return found;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find_block_body");
+        assert!(
+            zig.contains("break :blk x"),
+            "Expected break :blk x in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk undefined"),
+            "Expected break :blk undefined fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.findIndex() ─────────────
+
+    #[test]
+    fn test_native_proto_array_find_index() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findIndexFirstEven() {
+    const arr = [1, 2, 3, 4, 5];
+    const idx = arr.findIndex(x => x % 2 === 0);
+    return idx;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find_index");
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(
+            zig.contains("0..)"),
+            "Expected range (0..) for index iteration in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("@intCast"),
+            "Expected @intCast for index in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk -1"),
+            "Expected break :blk -1 fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.findIndex() with block body ─────────────
+
+    #[test]
+    fn test_native_proto_array_find_index_block_body() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findIndexBlockBody() {
+    const arr = [10, 20, 30, 40];
+    const idx = arr.findIndex(x => { return x > 25; });
+    return idx;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find_index_block_body");
+        assert!(
+            zig.contains("@intCast"),
+            "Expected @intCast for index in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk -1"),
+            "Expected break :blk -1 fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.fill() ─────────────
+
+    #[test]
+    fn test_native_proto_array_fill() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function fillAll() {
+    const arr = [1, 2, 3, 4, 5];
+    arr.fill(0);
+    return arr[0] + arr[1] + arr[2] + arr[3] + arr[4];
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_fill");
+        assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+        assert!(
+            zig.contains("|*elem|"),
+            "Expected pointer iteration |*elem| in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("elem."),
+            "Expected elem.* assignment in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.fill() with start/end ─────────────
+
+    #[test]
+    fn test_native_proto_array_fill_range() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function fillRange() {
+    const arr = [1, 2, 3, 4, 5];
+    arr.fill(9, 1, 4);
+    return arr[1] + arr[2] + arr[3];
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_fill_range");
+        assert!(
+            zig.contains("@intCast"),
+            "Expected @intCast for index conversion in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("|*elem|"),
+            "Expected pointer iteration |*elem| in:\n{}",
+            zig
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase 2 P2 builtin method tests
+    // ═══════════════════════════════════════════════════════════════
+
+    // ── Test: Array.at() ─────────────────────────────
+
+    #[test]
+    fn test_native_proto_array_at() {
+        // JS source: arr.at(index) — positive and negative indices
+        let js = r#"
+/**
+ * @param {number} idx
+ * @returns {number}
+ */
+export function atIndex(idx) {
+    const arr = [10, 20, 30, 40, 50];
+    return arr.at(idx);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_at");
+
+        // Verify labeled block with clamped index
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(
+            zig.contains("__at_idx"),
+            "Expected __at_idx variable in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("@intCast(@as(isize, @intCast("),
+            "Expected negative index casting in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".items[__at_idx]"),
+            "Expected .items[__at_idx] access in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.lastIndexOf() ─────────────────────
+
+    #[test]
+    fn test_native_proto_array_lastindexof() {
+        // JS source: arr.lastIndexOf(x) — returns last index or -1
+        let js = r#"
+/**
+ * @param {number} target
+ * @returns {number}
+ */
+export function findLastIndex(target) {
+    const arr = [10, 20, 30, 20, 40];
+    return arr.lastIndexOf(target);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_lastindexof");
+
+        // Verify backward while loop
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(
+            zig.contains("while (__i >= 0)"),
+            "Expected backward while loop in:\n{}",
+            zig
+        );
+        assert!(zig.contains("__i -= 1"), "Expected decrement in:\n{}", zig);
+        assert!(
+            zig.contains("@as(i64, -1)"),
+            "Expected @as(i64, -1) fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.copyWithin() ──────────────────────
+
+    #[test]
+    fn test_native_proto_array_copywithin() {
+        // JS source: arr.copyWithin(target, start)
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function copyArray() {
+    const arr = [1, 2, 3, 4, 5];
+    arr.copyWithin(0, 2);
+    return arr[0] + arr[1] + arr[2];
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_copywithin");
+
+        // Verify inline copy block
+        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(
+            zig.contains("__cpw_target"),
+            "Expected __cpw_target in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("__cpw_start"),
+            "Expected __cpw_start in:\n{}",
+            zig
+        );
+        assert!(zig.contains("__cpw_cnt"), "Expected __cpw_cnt in:\n{}", zig);
+        assert!(
+            zig.contains("break :blk &"),
+            "Expected break :blk & in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.trimStart() ──────────────────────
+
+    #[test]
+    fn test_native_proto_string_trimstart() {
+        let js = r#"
+export function trimLeft(str) {
+    return str.trimStart();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_string_trimstart");
+
+        assert!(
+            zig.contains("std.mem.trimLeft"),
+            "Expected std.mem.trimLeft in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.ascii.whitespace"),
+            "Expected std.ascii.whitespace in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.trimEnd() ────────────────────────
+
+    #[test]
+    fn test_native_proto_string_trimend() {
+        let js = r#"
+export function trimRight(str) {
+    return str.trimEnd();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_string_trimend");
+
+        assert!(
+            zig.contains("std.mem.trimRight"),
+            "Expected std.mem.trimRight in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.ascii.whitespace"),
+            "Expected std.ascii.whitespace in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.lastIndexOf() ────────────────────
+
+    #[test]
+    fn test_native_proto_string_lastindexof() {
+        // Note: is_string detection requires a string literal, not a variable
+        let js = r#"
+export function findLastChar() {
+    return "hello world".lastIndexOf("o");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_string_lastindexof");
+
+        assert!(
+            zig.contains("std.mem.lastIndexOf"),
+            "Expected std.mem.lastIndexOf in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("@as(i64, -1)"),
+            "Expected @as(i64, -1) fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.match() stub ─────────────────────
+
+    #[test]
+    fn test_native_proto_string_match_stub() {
+        let js = r#"
+export function matchRegex(str) {
+    return str.match(/hello/);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_match_stub");
+
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError for String.match() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("regex"),
+            "Expected 'regex' mention in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.search() stub ────────────────────
+
+    #[test]
+    fn test_native_proto_string_search_stub() {
+        let js = r#"
+export function searchRegex(str) {
+    return str.search(/world/);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_search_stub");
+
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError for String.search() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("regex"),
+            "Expected 'regex' mention in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Object.is() ─────────────────────────────
+
+    #[test]
+    fn test_native_proto_object_is() {
+        let js = r#"
+export function sameValue(a, b) {
+    return Object.is(a, b);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_object_is");
+
+        assert!(
+            zig.contains("std.math.isNan"),
+            "Expected std.math.isNan in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("=="),
+            "Expected equality comparison in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Object.getOwnPropertyNames() stub ───────
+
+    #[test]
+    fn test_native_proto_object_getownpropertynames_stub() {
+        let js = r#"
+export function getPropNames(obj) {
+    return Object.getOwnPropertyNames(obj);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_object_getownpropertynames_stub");
+
+        assert!(
+            zig.contains("@compileError"),
+            "Expected @compileError for Object.getOwnPropertyNames() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("getOwnPropertyNames"),
+            "Expected 'getOwnPropertyNames' mention in:\n{}",
+            zig
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Anonymous object type annotation tests
+    // ═══════════════════════════════════════════════════════════════
+
+    // ── Test: @returns {{name: string, age: number}} on export fn ──
+
+    #[test]
+    fn test_native_proto_anon_obj_type_returns() {
+        // JS source: @returns {{name: string, age: number}} on export fn
+        let js = r#"
+/**
+ * @returns {{name: string, age: number}}
+ */
+export function makeUser() {
+    const user = { name: "Bob", age: 25 };
+    return user;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_anon_obj_type_returns");
+        println!("=== Anonymous object @returns Zig code ===\n{}", zig);
+
+        // Verify struct fields are present in the generated Zig
+        assert!(
+            zig.contains("name") && zig.contains("age"),
+            "Expected name and age fields, got:\n{}",
+            zig
+        );
+        // The return type uses Zig anonymous struct literal syntax
+        assert!(
+            zig.contains("pub fn makeUser"),
+            "Expected pub fn makeUser in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: @type {{name: string, age: number}} on non-JSON.parse var ──
+
+    #[test]
+    fn test_native_proto_anon_obj_type_variable_access() {
+        // Test that @type {{name: string, age: number}} correctly infers
+        // struct fields, and property access returns correct types
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function getName() {
+    /**
+     * @type {{name: string, age: number}}
+     */
+    const user = { name: "Alice", age: 30 };
+    return user.name;
+}
+
+/**
+ * @returns {number}
+ */
+export function getAge() {
+    /**
+     * @type {{name: string, age: number}}
+     */
+    const user = { name: "Alice", age: 30 };
+    return user.age;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_anon_obj_type_variable_access");
+        println!("=== Anonymous object @type variable Zig code ===\n{}", zig);
+
+        // Verify .name and .age property access is generated
+        assert!(
+            zig.contains(".name"),
+            "Expected .name property access in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".age"),
+            "Expected .age property access in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Number.* static constants ──────────────────────
+
+    #[test]
+    fn test_native_proto_number_constants() {
+        // JS source: Number.MAX_VALUE, Number.MIN_VALUE, Number.NaN, etc.
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function getMaxValue() {
+    return Number.MAX_VALUE;
+}
+
+/**
+ * @returns {number}
+ */
+export function getMinValue() {
+    return Number.MIN_VALUE;
+}
+
+/**
+ * @returns {number}
+ */
+export function getNaN() {
+    return Number.NaN;
+}
+
+/**
+ * @returns {number}
+ */
+export function getNegInfinity() {
+    return Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * @returns {number}
+ */
+export function getPosInfinity() {
+    return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * @returns {number}
+ */
+export function getEpsilon() {
+    return Number.EPSILON;
+}
+
+/**
+ * @returns {number}
+ */
+export function getMaxSafeInt() {
+    return Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * @returns {number}
+ */
+export function getMinSafeInt() {
+    return Number.MIN_SAFE_INTEGER;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_number_constants");
+
+        // Verify all 8 constants are generated as Zig equivalents
+        assert!(
+            zig.contains("std.math.floatMax(f64)"),
+            "Expected 'std.math.floatMax(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.floatMin(f64)"),
+            "Expected 'std.math.floatMin(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.nan(f64)"),
+            "Expected 'std.math.nan(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("-std.math.inf(f64)"),
+            "Expected '-std.math.inf(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.inf(f64)"),
+            "Expected 'std.math.inf(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.math.floatEps(f64)"),
+            "Expected 'std.math.floatEps(f64)' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("9007199254740991"),
+            "Expected '9007199254740991' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("-9007199254740991"),
+            "Expected '-9007199254740991' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Number.isSafeInteger() ──────────────────────
+
+    #[test]
+    fn test_native_proto_number_issafeinteger() {
+        let js = r#"
+/**
+ * @param {number} v
+ * @returns {boolean}
+ */
+export function checkSafe(v) {
+    return Number.isSafeInteger(v);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_number_issafeinteger");
+        assert!(
+            zig.contains("js_number.isSafeInteger("),
+            "Expected 'js_number.isSafeInteger(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Number.toFixed() ──────────────────────
+
+    #[test]
+    fn test_native_proto_number_tofixed() {
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function formatPi() {
+    const pi = 3.14159;
+    return pi.toFixed(2);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_number_tofixed");
+        assert!(
+            zig.contains("js_number.toFixed(js_allocator.getAllocator(), pi"),
+            "Expected 'js_number.toFixed(js_allocator.getAllocator(), pi' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Map.forEach — closure callback ─────────
+
+    #[test]
+    fn test_native_proto_map_foreach() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function testMapForEach() {
+    const m = new Map();
+    m.set("a", 1);
+    m.set("b", 2);
+    m.set("c", 3);
+    let sum = 0;
+    m.forEach((val, key) => { sum = sum + val; });
+    return sum;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_map_foreach");
+
+        // Verify Map.forEach generates while-iterator loop (not Array for-loop)
+        assert!(
+            zig.contains("var iter = m.inner.iterator();"),
+            "Expected 'var iter = m.inner.iterator();' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("while (iter.next()) |entry|"),
+            "Expected 'while (iter.next()) |entry|' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("entry.value_ptr.*") || zig.contains("const val = entry.value_ptr.*"),
+            "Expected 'entry.value_ptr.*' binding in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("entry.key_ptr.*") || zig.contains("const key = entry.key_ptr.*"),
+            "Expected 'entry.key_ptr.*' binding in:\n{}",
+            zig
+        );
+        // Ensure it does NOT contain Array-style for-loop
+        assert!(
+            !zig.contains("for (m.items)"),
+            "Should NOT contain Array for-loop for Map.forEach:\n{}",
             zig
         );
     }

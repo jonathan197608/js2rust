@@ -20,44 +20,70 @@ pub enum BuiltinCall {
     MathMax,    // Math.max(...args)
     MathMin,    // Math.min(...args)
     MathHypot,  // Math.hypot(...) — 不支持，报编译错误
+    // Math trig
+    MathSin,   // Math.sin(x)
+    MathCos,   // Math.cos(x)
+    MathTan,   // Math.tan(x)
+    MathAsin,  // Math.asin(x)
+    MathAcos,  // Math.acos(x)
+    MathAtan,  // Math.atan(x)
+    MathAtan2, // Math.atan2(y, x)
+    // Math log / other
+    MathLog,   // Math.log(x)
+    MathLog10, // Math.log10(x)
+    MathLog2,  // Math.log2(x)
+    MathExp,   // Math.exp(x)
+    MathSign,  // Math.sign(x)
+    MathTrunc, // Math.trunc(x)
+    MathCbrt,  // Math.cbrt(x)
 
     // Array methods (non-closure)
-    ArrayPop,      // arr.pop()
-    ArrayShift,    // arr.shift()
-    ArrayUnshift,  // arr.unshift(x)
-    ArrayReverse,  // arr.reverse()
-    ArraySort,     // arr.sort()
-    ArrayIndexOf,  // arr.indexOf(x)
-    ArrayIncludes, // arr.includes(x)
-    ArrayJoin,     // arr.join(sep)
-    ArraySlice,    // arr.slice(start, end)
-    ArraySplice,   // arr.splice(start, deleteCount, ...items)
+    ArrayPop,         // arr.pop()
+    ArrayShift,       // arr.shift()
+    ArrayUnshift,     // arr.unshift(x)
+    ArrayReverse,     // arr.reverse()
+    ArraySort,        // arr.sort()
+    ArrayIndexOf,     // arr.indexOf(x)
+    ArrayIncludes,    // arr.includes(x)
+    ArrayJoin,        // arr.join(sep)
+    ArraySlice,       // arr.slice(start, end)
+    ArraySplice,      // arr.splice(start, deleteCount, ...items)
+    ArrayConcat,      // arr.concat(other)
+    ArrayAt,          // arr.at(index) — negative index support
+    ArrayLastIndexOf, // arr.lastIndexOf(x)
+    ArrayCopyWithin,  // arr.copyWithin(target, start, end)
 
     // Array methods (with closure)
-    ArrayForEach, // arr.forEach(fn)
-    ArrayMap,     // arr.map(fn)
-    ArrayFilter,  // arr.filter(fn)
-    ArrayReduce,  // arr.reduce(fn, init)
-    ArraySome,    // arr.some(fn)
-    ArrayEvery,   // arr.every(fn)
-    ArrayFlat,    // arr.flat()
-    ArrayFlatMap, // arr.flatMap(fn)
+    ArrayForEach,   // arr.forEach(fn)
+    ArrayMap,       // arr.map(fn)
+    ArrayFilter,    // arr.filter(fn)
+    ArrayReduce,    // arr.reduce(fn, init)
+    ArraySome,      // arr.some(fn)
+    ArrayEvery,     // arr.every(fn)
+    ArrayFlat,      // arr.flat()
+    ArrayFlatMap,   // arr.flatMap(fn)
+    ArrayFind,      // arr.find(fn)
+    ArrayFindIndex, // arr.findIndex(fn)
+    ArrayFill,      // arr.fill(val, start, end)
 
     // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
     // .slice routed through ArraySlice + typedarray_vars check)
-    TypedArraySubarray,   // arr.subarray(start, end)
-    TypedArrayCopyWithin, // arr.copyWithin(target, start, end)
-    TypedArrayFill,       // arr.fill(val, start, end)
+    TypedArraySubarray, // arr.subarray(start, end)
 
     // String methods
-    StringIndexOf,    // str.indexOf(search)
-    StringIncludes,   // str.includes(search)
-    StringStartsWith, // str.startsWith(prefix)
-    StringEndsWith,   // str.endsWith(suffix)
-    StringTrim,       // str.trim()
-    StringSplit,      // str.split(sep)
-    StringPadStart,   // str.padStart(len, pad)
-    StringPadEnd,     // str.padEnd(len, pad)
+    StringIndexOf,     // str.indexOf(search)
+    StringIncludes,    // str.includes(search)
+    StringStartsWith,  // str.startsWith(prefix)
+    StringEndsWith,    // str.endsWith(suffix)
+    StringLastIndexOf, // str.lastIndexOf(search)
+    StringTrim,        // str.trim()
+    StringSplit,       // str.split(sep)
+    StringPadStart,    // str.padStart(len, pad)
+    StringPadEnd,      // str.padEnd(len, pad)
+    StringTrimStart,   // str.trimStart()
+    StringTrimEnd,     // str.trimEnd()
+    StringMatch,       // str.match(regex) — stub (regex not yet supported)
+    StringSearch,      // str.search(regex) — stub (regex not yet supported)
 
     // Map methods (called on local Map variables)
     MapSet,    // map.set(key, value)
@@ -73,25 +99,76 @@ pub enum BuiltinCall {
     DateParse, // Date.parse(str) → i64
     DateUTC,   // Date.UTC(y, m, d) → i64
 
-    // Date methods (instance — called on an i64 millis value)
-    DateGetTime,     // date.getTime()
-    DateGetFullYear, // date.getFullYear()
-    DateGetMonth,    // date.getMonth()
-    DateGetDate,     // date.getDate()
-    DateGetDay,      // date.getDay()
-    DateGetHours,    // date.getHours()
-    DateGetMinutes,  // date.getMinutes()
-    DateGetSeconds,  // date.getSeconds()
+    // Date methods (instance — called on a JsDate struct)
+    DateGetTime,           // date.getTime()
+    DateGetFullYear,       // date.getFullYear()
+    DateGetMonth,          // date.getMonth()
+    DateGetDate,           // date.getDate()
+    DateGetDay,            // date.getDay()
+    DateGetHours,          // date.getHours()
+    DateGetMinutes,        // date.getMinutes()
+    DateGetSeconds,        // date.getSeconds()
+    DateGetMilliseconds,   // date.getMilliseconds()
+    DateGetTimezoneOffset, // date.getTimezoneOffset()
+    DateToISOString,       // date.toISOString()
+
+    // Date methods (UTC getters)
+    DateGetUTCFullYear,     // date.getUTCFullYear()
+    DateGetUTCMonth,        // date.getUTCMonth()
+    DateGetUTCDate,         // date.getUTCDate()
+    DateGetUTCDay,          // date.getUTCDay()
+    DateGetUTCHours,        // date.getUTCHours()
+    DateGetUTCMinutes,      // date.getUTCMinutes()
+    DateGetUTCSeconds,      // date.getUTCSeconds()
+    DateGetUTCMilliseconds, // date.getUTCMilliseconds()
 
     // Object methods (static)
-    ObjectKeys,    // Object.keys(obj)
-    ObjectValues,  // Object.values(obj)
-    ObjectEntries, // Object.entries(obj)
-    ObjectAssign,  // Object.assign(target, source)
-    ObjectFreeze,  // Object.freeze(obj)
+    ObjectKeys,                // Object.keys(obj)
+    ObjectValues,              // Object.values(obj)
+    ObjectEntries,             // Object.entries(obj)
+    ObjectAssign,              // Object.assign(target, source)
+    ObjectFreeze,              // Object.freeze(obj)
+    ObjectHasOwn,              // Object.hasOwn(obj, key)
+    ObjectIs,                  // Object.is(a, b) — SameValue comparison
+    ObjectGetOwnPropertyNames, // Object.getOwnPropertyNames(obj)
 
     // Global functions
-    ParseInt, // parseInt(s)
+    ParseInt,           // parseInt(s)
+    ParseFloat,         // parseFloat(s)
+    IsNaN,              // isNaN(v)
+    IsFinite,           // isFinite(v)
+    EncodeURIComponent, // encodeURIComponent(s)
+    DecodeURIComponent, // decodeURIComponent(s)
+
+    // Console methods
+    ConsoleLog,   // console.log(msg)
+    ConsoleError, // console.error(msg)
+    ConsoleWarn,  // console.warn(msg)
+
+    // Number static methods
+    NumberIsNaN,         // Number.isNaN(v)
+    NumberIsFinite,      // Number.isFinite(v)
+    NumberIsInteger,     // Number.isInteger(v)
+    NumberIsSafeInteger, // Number.isSafeInteger(v)
+    NumberParseInt,      // Number.parseInt(s)
+    NumberParseFloat,    // Number.parseFloat(s)
+
+    // Number instance methods
+    NumberToFixed, // num.toFixed(digits) → str
+
+    // String methods (extended)
+    StringToUpperCase, // str.toUpperCase()
+    StringToLowerCase, // str.toLowerCase()
+    StringCharAt,      // str.charAt(idx)
+    StringCharCodeAt,  // str.charCodeAt(idx)
+    StringConcat,      // str.concat(other)
+    StringSlice,       // str.slice(start, end)
+    StringReplace,     // str.replace(old, new)
+    StringRepeat,      // str.repeat(n)
+    StringSubstring,   // str.substring(start, end)
+
+    // Map/Set clear (shared variant like MapHas/MapDelete)
+    MapClear, // map.clear() or set.clear()
 
     // JSON methods
     JsonStringify, // JSON.stringify(value, replacer?, space?)
@@ -107,6 +184,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
     if let Expression::Identifier(id) = &ce.callee {
         match id.name.as_str() {
             "parseInt" => return Some(BuiltinCall::ParseInt),
+            "parseFloat" => return Some(BuiltinCall::ParseFloat),
+            "isNaN" => return Some(BuiltinCall::IsNaN),
+            "isFinite" => return Some(BuiltinCall::IsFinite),
+            "encodeURIComponent" => return Some(BuiltinCall::EncodeURIComponent),
+            "decodeURIComponent" => return Some(BuiltinCall::DecodeURIComponent),
             _ => return None,
         }
     }
@@ -135,6 +217,20 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "max" => return Some(BuiltinCall::MathMax),
                 "min" => return Some(BuiltinCall::MathMin),
                 "hypot" => return Some(BuiltinCall::MathHypot),
+                "sin" => return Some(BuiltinCall::MathSin),
+                "cos" => return Some(BuiltinCall::MathCos),
+                "tan" => return Some(BuiltinCall::MathTan),
+                "asin" => return Some(BuiltinCall::MathAsin),
+                "acos" => return Some(BuiltinCall::MathAcos),
+                "atan" => return Some(BuiltinCall::MathAtan),
+                "atan2" => return Some(BuiltinCall::MathAtan2),
+                "log" => return Some(BuiltinCall::MathLog),
+                "log10" => return Some(BuiltinCall::MathLog10),
+                "log2" => return Some(BuiltinCall::MathLog2),
+                "exp" => return Some(BuiltinCall::MathExp),
+                "sign" => return Some(BuiltinCall::MathSign),
+                "trunc" => return Some(BuiltinCall::MathTrunc),
+                "cbrt" => return Some(BuiltinCall::MathCbrt),
                 _ => return None,
             }
         }
@@ -161,6 +257,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "entries" => return Some(BuiltinCall::ObjectEntries),
                 "assign" => return Some(BuiltinCall::ObjectAssign),
                 "freeze" => return Some(BuiltinCall::ObjectFreeze),
+                "hasOwn" => return Some(BuiltinCall::ObjectHasOwn),
+                "is" => return Some(BuiltinCall::ObjectIs),
+                "getOwnPropertyNames" => return Some(BuiltinCall::ObjectGetOwnPropertyNames),
                 _ => return None,
             }
         }
@@ -176,6 +275,33 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             }
         }
 
+        // Check if object is "console" (for console methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "console"
+        {
+            match method_name {
+                "log" => return Some(BuiltinCall::ConsoleLog),
+                "error" => return Some(BuiltinCall::ConsoleError),
+                "warn" => return Some(BuiltinCall::ConsoleWarn),
+                _ => return None,
+            }
+        }
+
+        // Check if object is "Number" (for Number static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Number"
+        {
+            match method_name {
+                "isNaN" => return Some(BuiltinCall::NumberIsNaN),
+                "isFinite" => return Some(BuiltinCall::NumberIsFinite),
+                "isInteger" => return Some(BuiltinCall::NumberIsInteger),
+                "isSafeInteger" => return Some(BuiltinCall::NumberIsSafeInteger),
+                "parseInt" => return Some(BuiltinCall::NumberParseInt),
+                "parseFloat" => return Some(BuiltinCall::NumberParseFloat),
+                _ => return None,
+            }
+        }
+
         // Check if object is a string literal (for String methods)
         let is_string = matches!(obj_expr, Expression::StringLiteral(_));
 
@@ -185,9 +311,20 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "startsWith" => Some(BuiltinCall::StringStartsWith),
             "endsWith" => Some(BuiltinCall::StringEndsWith),
             "trim" => Some(BuiltinCall::StringTrim),
+            "trimStart" => Some(BuiltinCall::StringTrimStart),
+            "trimEnd" => Some(BuiltinCall::StringTrimEnd),
             "split" => Some(BuiltinCall::StringSplit),
             "padStart" => Some(BuiltinCall::StringPadStart),
             "padEnd" => Some(BuiltinCall::StringPadEnd),
+            "toUpperCase" => Some(BuiltinCall::StringToUpperCase),
+            "toLowerCase" => Some(BuiltinCall::StringToLowerCase),
+            "charAt" => Some(BuiltinCall::StringCharAt),
+            "charCodeAt" => Some(BuiltinCall::StringCharCodeAt),
+            "replace" => Some(BuiltinCall::StringReplace),
+            "repeat" => Some(BuiltinCall::StringRepeat),
+            "substring" => Some(BuiltinCall::StringSubstring),
+            "match" => Some(BuiltinCall::StringMatch),
+            "search" => Some(BuiltinCall::StringSearch),
 
             // Methods that exist on both String and Array
             "indexOf" => {
@@ -197,11 +334,32 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                     Some(BuiltinCall::ArrayIndexOf)
                 }
             }
+            "lastIndexOf" => {
+                if is_string {
+                    Some(BuiltinCall::StringLastIndexOf)
+                } else {
+                    Some(BuiltinCall::ArrayLastIndexOf)
+                }
+            }
             "includes" => {
                 if is_string {
                     Some(BuiltinCall::StringIncludes)
                 } else {
                     Some(BuiltinCall::ArrayIncludes)
+                }
+            }
+            "concat" => {
+                if is_string {
+                    Some(BuiltinCall::StringConcat)
+                } else {
+                    Some(BuiltinCall::ArrayConcat)
+                }
+            }
+            "slice" => {
+                if is_string {
+                    Some(BuiltinCall::StringSlice)
+                } else {
+                    Some(BuiltinCall::ArraySlice)
                 }
             }
 
@@ -211,7 +369,6 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "reverse" => Some(BuiltinCall::ArrayReverse),
             "sort" => Some(BuiltinCall::ArraySort),
             "join" => Some(BuiltinCall::ArrayJoin),
-            "slice" => Some(BuiltinCall::ArraySlice), // also handled as TypedArray in emit_builtin_call
             "splice" => Some(BuiltinCall::ArraySplice),
             "forEach" => Some(BuiltinCall::ArrayForEach),
             "map" => Some(BuiltinCall::ArrayMap),
@@ -221,13 +378,17 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "every" => Some(BuiltinCall::ArrayEvery),
             "flat" => Some(BuiltinCall::ArrayFlat),
             "flatMap" => Some(BuiltinCall::ArrayFlatMap),
+            "find" => Some(BuiltinCall::ArrayFind),
+            "findIndex" => Some(BuiltinCall::ArrayFindIndex),
+            "fill" => Some(BuiltinCall::ArrayFill),
+            "at" => Some(BuiltinCall::ArrayAt),
+            "copyWithin" => Some(BuiltinCall::ArrayCopyWithin),
 
             // TypedArray-specific methods (non-overlapping with Array)
             "subarray" => Some(BuiltinCall::TypedArraySubarray),
-            "copyWithin" => Some(BuiltinCall::TypedArrayCopyWithin),
-            "fill" => Some(BuiltinCall::TypedArrayFill),
+            // copyWithin routes to ArrayCopyWithin (codegen dispatches to TypedArray)
 
-            // Date instance methods (called on an i64 millis value)
+            // Date instance methods (called on a JsDate struct)
             "getTime" => Some(BuiltinCall::DateGetTime),
             "getFullYear" => Some(BuiltinCall::DateGetFullYear),
             "getMonth" => Some(BuiltinCall::DateGetMonth),
@@ -236,6 +397,18 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "getHours" => Some(BuiltinCall::DateGetHours),
             "getMinutes" => Some(BuiltinCall::DateGetMinutes),
             "getSeconds" => Some(BuiltinCall::DateGetSeconds),
+            "getMilliseconds" => Some(BuiltinCall::DateGetMilliseconds),
+            "getTimezoneOffset" => Some(BuiltinCall::DateGetTimezoneOffset),
+            "toISOString" => Some(BuiltinCall::DateToISOString),
+            "toFixed" => Some(BuiltinCall::NumberToFixed),
+            "getUTCFullYear" => Some(BuiltinCall::DateGetUTCFullYear),
+            "getUTCMonth" => Some(BuiltinCall::DateGetUTCMonth),
+            "getUTCDate" => Some(BuiltinCall::DateGetUTCDate),
+            "getUTCDay" => Some(BuiltinCall::DateGetUTCDay),
+            "getUTCHours" => Some(BuiltinCall::DateGetUTCHours),
+            "getUTCMinutes" => Some(BuiltinCall::DateGetUTCMinutes),
+            "getUTCSeconds" => Some(BuiltinCall::DateGetUTCSeconds),
+            "getUTCMilliseconds" => Some(BuiltinCall::DateGetUTCMilliseconds),
 
             // Map methods (called on local Map variables)
             "set" => Some(BuiltinCall::MapSet),
@@ -249,6 +422,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 // Could be Map.delete() or Set.delete()
                 // Default to Map.delete(), will be resolved in codegen
                 Some(BuiltinCall::MapDelete)
+            }
+            "clear" => {
+                // Could be Map.clear() or Set.clear()
+                // Both have identical signatures, shared variant
+                Some(BuiltinCall::MapClear)
             }
 
             // Set methods (called on local Set variables)
@@ -272,17 +450,45 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::MathRound
         | BuiltinCall::MathSqrt
         | BuiltinCall::MathRandom
-        | BuiltinCall::MathPow => Some(ZigType::F64),
+        | BuiltinCall::MathPow
+        | BuiltinCall::MathSin
+        | BuiltinCall::MathCos
+        | BuiltinCall::MathTan
+        | BuiltinCall::MathAsin
+        | BuiltinCall::MathAcos
+        | BuiltinCall::MathAtan
+        | BuiltinCall::MathAtan2
+        | BuiltinCall::MathLog
+        | BuiltinCall::MathLog10
+        | BuiltinCall::MathLog2
+        | BuiltinCall::MathExp
+        | BuiltinCall::MathSign
+        | BuiltinCall::MathTrunc
+        | BuiltinCall::MathCbrt => Some(ZigType::F64),
 
         // Math max/min — depends on args, can't statically determine
         BuiltinCall::MathMax | BuiltinCall::MathMin | BuiltinCall::MathHypot => None,
 
         // String methods
-        BuiltinCall::StringIndexOf => Some(ZigType::I64),
+        BuiltinCall::StringIndexOf | BuiltinCall::StringLastIndexOf | BuiltinCall::StringSearch => {
+            Some(ZigType::I64)
+        }
         BuiltinCall::StringIncludes
         | BuiltinCall::StringStartsWith
         | BuiltinCall::StringEndsWith => Some(ZigType::Bool),
-        BuiltinCall::StringTrim | BuiltinCall::StringSplit => Some(ZigType::Str),
+        BuiltinCall::StringTrim
+        | BuiltinCall::StringTrimStart
+        | BuiltinCall::StringTrimEnd
+        | BuiltinCall::StringSplit
+        | BuiltinCall::StringToUpperCase
+        | BuiltinCall::StringToLowerCase
+        | BuiltinCall::StringCharAt
+        | BuiltinCall::StringConcat
+        | BuiltinCall::StringSlice
+        | BuiltinCall::StringReplace
+        | BuiltinCall::StringRepeat
+        | BuiltinCall::StringSubstring => Some(ZigType::Str),
+        // charCodeAt returns u16 — no ZigType variant, defer to inference
 
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
@@ -299,15 +505,47 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::DateGetDay
         | BuiltinCall::DateGetHours
         | BuiltinCall::DateGetMinutes
-        | BuiltinCall::DateGetSeconds => Some(ZigType::I64),
+        | BuiltinCall::DateGetSeconds
+        | BuiltinCall::DateGetMilliseconds
+        | BuiltinCall::DateGetTimezoneOffset
+        | BuiltinCall::DateGetUTCFullYear
+        | BuiltinCall::DateGetUTCMonth
+        | BuiltinCall::DateGetUTCDate
+        | BuiltinCall::DateGetUTCDay
+        | BuiltinCall::DateGetUTCHours
+        | BuiltinCall::DateGetUTCMinutes
+        | BuiltinCall::DateGetUTCSeconds
+        | BuiltinCall::DateGetUTCMilliseconds => Some(ZigType::I64),
+
+        // Date string methods
+        BuiltinCall::DateToISOString => Some(ZigType::Str),
 
         // Object methods
         BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
             Some(ZigType::ArrayList(Box::new(ZigType::Str)))
         }
+        BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
+        BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+
+        // Array methods — indexOf-type
+        BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf => Some(ZigType::I64),
 
         // Global functions
         BuiltinCall::ParseInt => Some(ZigType::I64),
+        BuiltinCall::ParseFloat => Some(ZigType::F64),
+        BuiltinCall::IsNaN | BuiltinCall::IsFinite => Some(ZigType::Bool),
+        BuiltinCall::EncodeURIComponent | BuiltinCall::DecodeURIComponent => Some(ZigType::Str),
+
+        // Number static methods
+        BuiltinCall::NumberIsNaN
+        | BuiltinCall::NumberIsFinite
+        | BuiltinCall::NumberIsInteger
+        | BuiltinCall::NumberIsSafeInteger => Some(ZigType::Bool),
+        BuiltinCall::NumberParseInt => Some(ZigType::I64),
+        BuiltinCall::NumberParseFloat => Some(ZigType::F64),
+
+        // Number instance methods
+        BuiltinCall::NumberToFixed => Some(ZigType::Str),
 
         // JSON methods
         BuiltinCall::JsonStringify => Some(ZigType::Str), // Returns JSON string

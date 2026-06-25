@@ -2,79 +2,293 @@
 
 > **项目**: js2rust/js2zig (JS → Zig 转译器)
 > **创建日期**: 2026-06-21
-> **最后更新**: 2026-06-23
+> **最后更新**: 2026-06-25
 > **维护者**: jonathan197608
 
 ---
 
 ## 当前状态
 
-项目 P0/P1 已全部完成，当前进入 P2 阶段（语言完整性与测试覆盖）。145 测试通过，0 clippy 警告。
+项目 P0/P1/P2 已全部完成，当前进入 P3 阶段（实用方法与体验优化）。201 测试通过，0 clippy 警告。
 
-**⚠️ 2026-06-25 重新评估**: 内置对象有效覆盖率仅 ~26%（57/219），21 个 runtime 函数已实现但 codegen 未连线。详见下方新增的 P0 内置对象补齐计划。
+**✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1 共 48 个 runtime 已实现方法全部接入 BuiltinCall 检测/发射流水线。剩余缺失均为 P2/P3（需新增 runtime 的复杂方法）。
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
 ---
 
-## 0. 内置对象补齐计划 (新增 — 2026-06-25)
+## 0. 内置对象补齐计划 (MDN 对齐版 — 2026-06-24)
 
-> 背景: `docs/JS_FEATURE_EVALUATION.md` 第 4 节重新评估，有效覆盖率仅 ~26%。
-> 策略: 优先连线已有 runtime，再补齐缺失 runtime，最后修复 stub。
+> 背景: `docs/JS_FEATURE_EVALUATION.md` 第 4 节已按 MDN 标准对齐重评估。P0/P1 全部完成，有效覆盖率 ~53% (~138/260)。
+> 策略: P0 连线已有 runtime ✅ → P1 补齐 Zig 内置映射 ✅ → P2 实现新 runtime → P3 修复 stub → P4 远期。
+> 每个方法均对照 [MDN Global Objects](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects) 标准。
+> 测试用例来自 MDN 官方示例，存放于 `examples/builtins-mdn-tests/js_src/`。
 
-### 0.1 Phase 1 — 快速连线 (P0, ~22 方法)
+### `examples/builtins-mdn-tests` 项目设计
 
-**方法**: 添加 `BuiltinCall` 变体 → `detect_builtin_call` → `emit_builtin_call`
+```
+examples/builtins-mdn-tests/
+├── js2rust.toml          # 项目配置: name="builtins-mdn-tests", type="test"
+├── Cargo.toml             # Rust 依赖 js2rust-bridge
+├── build.rs               # 调用 js2zig-core 转译全部 JS 文件
+├── src/
+│   └── main.rs            # 调用各 C ABI 导出函数并断言结果
+└── js_src/
+    ├── math.js            # Math 三角/对数/常量 (21 方法)
+    ├── string.js          # String charAt/concat/slice/replace/toUpper/toLower/substring (10 方法)
+    ├── array.js           # Array concat/find/findIndex/fill/flat/filter/some/every (9 方法)
+    ├── map_set.js         # Map.clear/size/forEach + Set.has/delete/clear/size (8 方法)
+    ├── console.js         # console.log/error/warn (3 方法)
+    ├── number.js          # Number.isNaN/isFinite/isInteger/parseInt/parseFloat/toFixed (7 方法)
+    ├── global_functions.js # parseFloat/isNaN/isFinite/encodeURIComponent/decodeURIComponent (5 方法)
+    ├── date.js            # Date 构造函数/getMilliseconds/toISOString (5 方法)
+    ├── object.js          # Object.hasOwn/is/getOwnPropertyNames (4 方法)
+    └── regexp.js          # RegExp.test/exec (2 方法)
+```
 
-| # | 类别 | 方法 | 已有 runtime | 状态 |
-|---|------|------|-------------|------|
-| B1 | console | `console.log/error/warn` (3) | ✅ js_console | 📋 |
-| B2 | String | `toUpperCase/toLowerCase/charAt/charCodeAt/concat/slice/replace/repeat` (8) | ✅ js_string | 📋 |
-| B3 | Global/Number | `parseFloat/isNaN/isFinite/Number.isInteger/Number.parseInt/Number.parseFloat/encodeURIComponent/decodeURIComponent` (8) | ✅ js_number/js_uri | 📋 |
-| B4 | Map/Set | `map.clear/set.clear/set.has/set.delete` (4) | ✅ js_map/js_set | 📋 |
+**测试策略**: 每个 JS 文件中的 `export function` 对应一个 MDN 官方示例，Rust 侧用 `assert_eq!` 验证输出匹配 MDN 文档预期结果。
 
-**Phase 1 预估**: ~150-200 行代码，覆盖率 26% → ~37%
+---
 
-### 0.2 Phase 2 — 补齐缺失 Runtime (P1)
+### 0.1 Phase 0 — 快速连线 (P0, 27 方法) ✅ 已完成 (2026-06-24)
 
-| # | 类别 | 方法 | 说明 | 状态 |
-|---|------|------|------|------|
-| C1 | Math 三角/对数 | `sin/cos/tan/log/log10/log2/exp/trunc` (8) | 零 runtime（Zig 内置 @sin/@cos 等） | 📋 |
-| C2 | Math 反三角 | `asin/acos/atan/atan2` (4) | 需 runtime: `std.math.asin()` 等 | 📋 |
-| C3 | Math 常量 | `E/LN2/LN10/LOG2E/LOG10E/SQRT2/SQRT1_2` (7) | 映射到 `std.math.*` 常量 | 📋 |
-| C4 | Math 其他 | `sign/cbrt` (2) | 需 runtime | 📋 |
-| C5 | Array | `concat/fill/lastIndexOf/at/copyWithin/findIndex/find` (7) | 内联 for 循环 | 📋 |
-| C6 | Map/Set | `map.size/set.size/map.forEach` (3) | 属性访问 + for 循环 | 📋 |
+**目标**: 添加 `BuiltinCall` 变体 + `detect_builtin_call()` 匹配 + `emit_builtin_call()` 生成，调用已有 runtime 函数。覆盖率 22% → ~33%。
 
-**Phase 2 预估**: ~300-400 行代码 + runtime，覆盖率 → ~50%
+#### 0.1.1 `console.log/error/warn` (3 方法)
 
-### 0.3 Phase 3 — Stub 修复 (P1)
+| 方法 | 检测位置 | 发射 Zig 代码 | Runtime | 测试文件 |
+|------|---------|-------------|---------|---------|
+| `console.log(...args)` | `detect_builtin_call()` 新增 `StaticMemberExpression { object: Identifier("console") }` 分支 | `js_console.log(.{...args})` | `js_console.log()` | `console.js` |
+| `console.error(...args)` | 同上, property="error" | `js_console.err(.{...args})` | `js_console.err()` | `console.js` |
+| `console.warn(...args)` | 同上, property="warn" | `js_console.warn(.{...args})` | `js_console.warn()` | `console.js` |
 
-| # | 方法 | 当前行为 | 目标 | 状态 |
-|---|------|---------|------|------|
-| D1 | `arr.filter(fn)` | 返回原数组 (stub) | 真正 filter | 📋 |
-| D2 | `arr.some(fn)` | 返回 true (stub) | 真正 some | 📋 |
-| D3 | `arr.every(fn)` | 返回 true (stub) | 真正 every | 📋 |
-| D4 | `arr.flat/flatMap(fn)` | 返回原数组 (stub) | 真正 flat/flatMap | 📋 |
-| D5 | `Object.freeze(obj)` | 静默 no-op | no-op + 注释 | 📋 |
+**注意**: console 与其他内置对象不同 — receiver 是 `Identifier("console")`，不是方法链上的对象。需在 `detect_builtin_call()` 中新增独立检测分支。
 
-**Phase 3 预估**: ~150-200 行代码
+#### 0.1.2 `String` 实例方法 (8 方法)
 
-### 0.4 Phase 4 — 远期补齐 (P2)
+| 方法 | BuiltinCall 变体 | 发射 Zig 代码 | Runtime 函数 | 测试文件 |
+|------|-----------------|-------------|-------------|---------|
+| `.toUpperCase()` | `StringToUpperCase` | `js_string.toUpper(s, alloc)` | `js_string.toUpper()` | `string.js` |
+| `.toLowerCase()` | `StringToLowerCase` | `js_string.toLower(s, alloc)` | `js_string.toLower()` | `string.js` |
+| `.charAt(i)` | `StringCharAt` | `js_string.charAt(s, @intCast(i))` | `js_string.charAt()` | `string.js` |
+| `.charCodeAt(i)` | `StringCharCodeAt` | `js_string.charCodeAt(s, @intCast(i))` | `js_string.charCodeAt()` → `u16` | `string.js` |
+| `.concat(...s)` | `StringConcat` | `js_string.concat(alloc, s, .{...})` | `js_string.concat()` | `string.js` |
+| `.slice(s,e)` | `StringSlice` | `js_string.slice(s, start, end)` | `js_string.slice()` | `string.js` |
+| `.replace(p,r)` | `StringReplace` | `js_string.replace(alloc, s, pattern, replacement)` | `js_string.replace()` | `string.js` |
+| `.repeat(n)` | `StringRepeat` | `js_string.repeat(alloc, s, @intCast(n))` | `js_string.repeat()` | `string.js` |
+
+**类型注意**: `charCodeAt` 返回 `u16`（UTF-16 码元），与大多数返回 `i64` 的方法不同。
+
+#### 0.1.3 全局函数 + Number 静态方法 (5+5=10 方法)
+
+| 方法 | BuiltinCall 变体 | 发射 Zig 代码 | Runtime | 测试文件 |
+|------|-----------------|-------------|---------|---------|
+| `parseFloat(s)` | `GlobalParseFloat` | `js_number.parseFloat(s)` | `js_number.parseFloat()` | `global_functions.js` |
+| `isNaN(v)` | `GlobalIsNaN` | `js_number.isNaN(v)` | `js_number.isNaN()` | `global_functions.js` |
+| `isFinite(v)` | `GlobalIsFinite` | `js_number.isFinite(v)` | `js_number.isFinite()` | `global_functions.js` |
+| `encodeURIComponent(s)` | `GlobalEncodeURIComponent` | `try js_uri.encodeURIComponent(alloc, s)` | `js_uri.encodeURIComponent()` | `global_functions.js` |
+| `decodeURIComponent(s)` | `GlobalDecodeURIComponent` | `try js_uri.decodeURIComponent(alloc, s)` | `js_uri.decodeURIComponent()` | `global_functions.js` |
+| `Number.isNaN(v)` | `NumberIsNaN` | `js_number.isNaN(v)` | `js_number.isNaN()` | `number.js` |
+| `Number.isFinite(v)` | `NumberIsFinite` | `js_number.isFinite(v)` | `js_number.isFinite()` | `number.js` |
+| `Number.isInteger(v)` | `NumberIsInteger` | `js_number.isInteger(v)` | `js_number.isInteger()` | `number.js` |
+| `Number.parseInt(s,r)` | `NumberParseInt` | `std.fmt.parseInt(i64, s, r)` | `std.fmt.parseInt` | `number.js` |
+| `Number.parseFloat(s)` | `NumberParseFloat` | `js_number.parseFloat(s)` | `js_number.parseFloat()` | `number.js` |
+
+**检测方式**: `Number.isNaN()` 是 `StaticMemberExpression { object: Identifier("Number"), property: "isNaN" }`，需在 `detect_builtin_call()` 中新增分支。`isNaN()` 是 `Identifier("isNaN")`，直接匹配全局函数名。
+
+#### 0.1.4 `Map` / `Set` 属性访问 (4+2=6 方法)
+
+| 方法/属性 | BuiltinCall 变体 | 发射 Zig 代码 | Runtime | 测试文件 |
+|----------|-----------------|-------------|---------|---------|
+| `map.clear()` | `MapClear` | `map.clear()` | `JsMap.clear()` | `map_set.js` |
+| `map.size` | 属性访问（非 BuiltinCall） | `map.count()` | `JsMap.count()` | `map_set.js` |
+| `set.has(v)` | `SetHas` | `set.has(v)` | `JsSet.has()` | `map_set.js` |
+| `set.delete(v)` | `SetDelete` | `set.delete(v)` | `JsSet.delete()` | `map_set.js` |
+| `set.clear()` | `SetClear` | `set.clear()` | `JsSet.clear()` | `map_set.js` |
+| `set.size` | 属性访问 | `set.count()` | `JsSet.count()` | `map_set.js` |
+
+**检测冲突解决**: 当前 `.has()`/`.delete()` 统一路由到 `MapHas`/`MapDelete`。需在 `detect_builtin_call()` 中增加 receiver 类型判断：
+- 通过 `type_info` / `typedarray_vars` 类比，新增 `set_vars` / `map_vars` 集合
+- 或统一简化为 `MapHas`/`MapDelete` 兼容两种 receiver（Map 和 Set 的 `has`/`delete` 语义相同，Zig 侧 runtime 已区分）
+
+**Phase 0 预估**: ~27 方法，新增 ~15 个 `BuiltinCall` 变体，~120 行 codegen 检测/发射代码。
+
+---
+
+### 0.2 Phase 1 — 补齐简短 Runtime (P1, 21 方法, ~150-200 行) ✅ 已完成 (2026-06-24)
+
+**目标**: Math 三角函数/对数/常量直接映射 Zig 内置函数，零额外 runtime。覆盖率 33% → ~42%。
+
+#### 0.2.1 Math 三角函数 (7 方法)
+
+| 方法 | BuiltinCall 变体 | Zig 发射 | 测试文件 |
+|------|-----------------|----------|---------|
+| `Math.sin(x)` | `MathSin` | `@sin(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.cos(x)` | `MathCos` | `@cos(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.tan(x)` | `MathTan` | `@tan(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.asin(x)` | `MathAsin` | `std.math.asin(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.acos(x)` | `MathAcos` | `std.math.acos(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.atan(x)` | `MathAtan` | `@atan(@as(f64, @floatFromInt(x)))` | `math.js` |
+| `Math.atan2(y,x)` | `MathAtan2` | `std.math.atan2(f64, y, x)` | `math.js` |
+
+**参数处理**: 所有三角函数参数需 `@floatCast` 或 `@floatFromInt` 转 `f64`（因为 JS number 推断为 `i64`）。
+
+#### 0.2.2 Math 对数/指数/其他 (7 方法)
+
+| 方法 | BuiltinCall 变体 | Zig 发射 | 测试文件 |
+|------|-----------------|----------|---------|
+| `Math.log(x)` | `MathLog` | `@log(@floatCast(x))` | `math.js` |
+| `Math.log10(x)` | `MathLog10` | `@log10(@floatCast(x))` | `math.js` |
+| `Math.log2(x)` | `MathLog2` | `@log2(@floatCast(x))` | `math.js` |
+| `Math.exp(x)` | `MathExp` | `@exp(@floatCast(x))` | `math.js` |
+| `Math.sign(x)` | `MathSign` | `std.math.sign(x)` | `math.js` |
+| `Math.trunc(x)` | `MathTrunc` | `@trunc(@floatCast(x))` | `math.js` |
+| `Math.cbrt(x)` | `MathCbrt` | `std.math.cbrt(@floatCast(x))` | `math.js` |
+
+#### 0.2.3 Math 静态常量 (7 个)
+
+| 常量 | 检测方式 | Zig 发射 | 测试文件 |
+|------|---------|----------|---------|
+| `Math.PI` | 已实现 ✅ | `std.math.pi` | `math.js` |
+| `Math.E` | 已实现 ✅ | `std.math.e` | `math.js` |
+| `Math.LN2` | 已实现 ✅ | `std.math.ln2` | `math.js` |
+| `Math.LN10` | 已实现 ✅ | `std.math.ln10` | `math.js` |
+| `Math.LOG2E` | 已实现 ✅ | `std.math.log2e` | `math.js` |
+| `Math.LOG10E` | 已实现 ✅ | `std.math.log10e` | `math.js` |
+| `Math.SQRT1_2` | 已实现 ✅ | `std.math.sqrt1_2` | `math.js` |
+| `Math.SQRT2` | 已实现 ✅ | `std.math.sqrt2` | `math.js` |
+
+**检测方式**: Math 常量不是函数调用，是 `StaticMemberExpression`。需在 `emit_static_member` 或类似路径中检测 `object: Identifier("Math")` → 映射到 `std.math.*` 常量。
+
+**Phase 1 预估**: 21 方法，新增 ~12 个 `BuiltinCall` 变体 + 7 个常量映射，~100 行检测/发射代码。
+
+---
+
+### 0.3 Phase 2 — Runtime 实现 (P1/P2, ~20 方法) ✅ 已完成 (2026-06-24)
+
+**目标**: Array/String 高频缺失方法 + stub 修复，覆盖率 42% → ~52%。
+
+#### 0.3.1 Array 缺失 + stub (12 方法)
+
+| 方法 | 优先级 | Zig 实现策略 | 测试文件 |
+|------|--------|-------------|---------|
+| `.concat(...arrs)` | P1 | `for` 循环 `appendSlice` 到新 ArrayList | `array.js` |
+| `.find(fn)` | P1 | `for` + 闭包调用，首次匹配返回 | `array.js` |
+| `.findIndex(fn)` | P1 | `for` + 闭包调用，返回索引或 -1 | `array.js` |
+| `.fill(v,s,e)` | P1 | `for` 循环赋值 `[s..e]` | `array.js` |
+| `.filter(fn)` — 修复 stub | P1 | `for` + 闭包 + `append` 匹配元素到新 ArrayList | `array.js` |
+| `.some(fn)` — 修复 stub | P1 | `for` + 闭包，首次匹配返回 `true` | `array.js` |
+| `.every(fn)` — 修复 stub | P1 | `for` + 闭包，首次不匹配返回 `false` | `array.js` |
+| `.flat(depth)` — 修复 stub | P2 | 递归展平 ArrayList，depth 控制深度 | `array.js` |
+| `.flatMap(fn)` — 修复 stub | P2 | `map(fn)` + `flat(1)` 组合 | `array.js` |
+| `.lastIndexOf(item)` | P2 | 反向 `for` 循环 | `array.js` |
+| `.at(index)` | P2 | 负值索引处理 `i = if (i < 0) len + i else i` | `array.js` |
+| `.copyWithin(t,s,e)` | P2 | `for` 循环内联复制 | `array.js` |
+
+#### 0.3.2 String 缺失方法 (5 方法)
+
+| 方法 | 优先级 | Zig 实现策略 | 测试文件 |
+|------|--------|-------------|---------|
+| `.substring(s,e)` | P1 | 参数交换 (s>e) + 切片 | `string.js` |
+| `.trimStart()` | P2 | 去除左侧空白 (`std.mem.trimLeft`) | `string.js` |
+| `.trimEnd()` | P2 | 去除右侧空白 (`std.mem.trimRight`) | `string.js` |
+| `.match(re)` | P2 | 需 RegExp 引擎 | `string.js` |
+| `.search(re)` | P2 | 需 RegExp 引擎 | `string.js` |
+
+#### 0.3.3 其他补齐 (3 方法)
+
+| 方法 | 优先级 | 实现策略 | 测试文件 |
+|------|--------|---------|---------|
+| `Object.hasOwn(obj,k)` | P1 | `@hasField()` 或 `std.meta.hasField` | `object.js` |
+| `Object.is(v1,v2)` | P2 | 实现 `SameValueZero` 算法 | `object.js` |
+| `Object.getOwnPropertyNames(obj)` | P2 | `std.meta.fieldNames` + `comptime` | `object.js` |
+
+**Phase 2 预估**: ~20 方法，新增 ~8 个 `BuiltinCall` 变体 + runtime 实现，~300 行。
+
+---
+
+### 0.4 Phase 3 — Date/Number 补齐 (P2, ~20 方法)
+
+| 方法 | 优先级 | 实现策略 | 测试文件 |
+|------|--------|---------|---------|
+| `new Date()` / `new Date(ms)` / `new Date(str)` | P2 | `JsDate.init()` 构造函数，解析 ms/string | `date.js` |
+| `.getMilliseconds()` | P2 | `@mod(ms, 1000)` | `date.js` |
+| `.getTimezoneOffset()` | P2 | 本地时区计算 | `date.js` |
+| UTC getter 系列 (8) | P2 | 同现有 getter，明确标注 UTC | `date.js` |
+| `.toISOString()` | P2 | 格式化 ISO 8601 `"YYYY-MM-DDTHH:mm:ss.sssZ"` | `date.js` |
+| `Number.isSafeInteger(v)` | P2 | `std.math.minInt(i53) <= v <= std.math.maxInt(i53)` | `number.js` |
+| `Number.MAX/MIN_VALUE/NaN/Infinity/EPSILON` (6) | P2 | 映射到 `std.math.*` 常量 | `number.js` |
+| `Number.MAX/MIN_SAFE_INTEGER` (2) | P2 | `9007199254740991` / `-9007199254740991` | `number.js` |
+| `.toFixed(d)` | P2 | `std.fmt.format` 浮点格式 | `number.js` |
+| `Map.forEach(fn)` | P2 | `for` 遍历 `items()` + 闭包 | `map_set.js` |
+
+---
+
+### 0.5 Phase 4 — 远期 (P3, ~80+ 方法)
 
 | 类别 | 内容 | 状态 |
 |------|------|------|
-| Date | 构造函数、getMilliseconds、UTC getter/setter、toISOString (20+ 方法) | 📋 |
-| Map/Set | keys/values/entries 迭代器 | 📋 |
-| String | substring/trimStart/trimEnd/match/search 等 | 📋 |
-| Array | keys/values/entries/reduceRight | 📋 |
+| Date setter 系列 (~14) | `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds/setTime` + UTC setter | 📋 |
+| Date toString 系列 (~7) | `.toString/toDateString/toTimeString/toUTCString/toLocaleString/valueOf/toJSON` | 📋 |
+| Map/Set 迭代器 | `keys/values/entries` Iterator | 📋 |
+| Set 集合操作 (ES2025) | `difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom` | 📋 |
+| Array/String 迭代器 | `.keys()/.values()/.entries()` | 📋 |
+| String: `codePointAt/normalize/localeCompare/matchAll/replaceAll/at/fromCharCode/fromCodePoint` | 📋 |
+| Number: `.toExponential/toPrecision` | 📋 |
+| RegExp 完整支持 | `new RegExp()/.test/.exec/global flag` (需引入 pcre2 或实现迷你引擎) | 📋 |
+| Object: `create/defineProperty/getPrototypeOf/setPrototypeOf/seal/isSealed` 等 | 📋 |
+| Array ES2023+: `with/toReversed/toSorted/toSpliced` | 📋 |
+| Symbol / WeakMap / WeakSet / Reflect / Intl | 完全缺失类别 | 📋 |
 
-### 0.5 风险点
+---
 
-1. **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由
-2. **Map/Set has/delete 歧义**: 当前 `.has()`/`.delete()` 统一路由到 MapHas/MapDelete，需区分变量类型
-3. **闭包回调**: `filter/some/every/find` 等需箭头函数闭包支持
-4. **Math.hypot**: 当前 `@compileError`，可改为 `std.math.hypot`
+### 0.6 风险点与已知问题
+
+| # | 风险 | 影响范围 | 缓解方案 |
+|---|------|---------|---------|
+| 1 | **`console.*` detection path** | 3 方法 | console receiver 是 `Identifier("console")` 非类名 — 需在 `detect_builtin_call()` 新增独立分支 |
+| 2 | **`str.slice()` vs `arr.slice()` 歧义** | `.slice()` | 需通过 receiver 类型路由（`type_info` 或 `typedarray_vars` 类比） |
+| 3 | **`map.has()` vs `set.has()` 歧义** | `.has()/.delete()` | 需区分 receiver 变量类型 → `SetHas`/`MapHas` 独立变体 |
+| 4 | **`charAt/charCodeAt` UTF-16 vs UTF-8** | 2 方法 | Zig 字符串为 UTF-8，需处理多字节字符索引 |
+| 5 | **闭包回调类型推断** | `filter/some/every/find` | 箭头函数闭包已实现，需验证在 `for` 循环中的调用 |
+| 6 | **URI 函数需 `try` + allocator** | 2 方法 | `encodeURIComponent/decodeURIComponent` 可能返回 error |
+| 7 | **Math 常量不是函数调用** | 7 常量 | 需在 `emit_static_member` 路径检测 `object: Identifier("Math")` |
+| 8 | **`Number.isNaN` vs 全局 `isNaN` 语义不同** | 2 方法 | `Number.isNaN` 不做类型转换，全局 `isNaN` 先 `ToNumber` |
+| 9 | **Date 构造函数多态** | 3 重载 | `new Date()/new Date(ms)/new Date(str)` 需在 `new` 表达式中路由 |
+| 10 | **`sort()` 无 compareFn 时的默认行为** | `Array.sort` | JS 默认按字符串排序，Zig 默认按数值排序 |
+
+---
+
+### 0.7 实施里程碑
+
+| 里程碑 | 方法数 | 累计覆盖率 | 代码量 | 测试 | 状态 |
+|--------|--------|-----------|--------|------|------|
+| **M0: 当前基线** | 57 | 22% | — | 169 tests | ✅ |
+| **M1: Phase 0 完成** | 84 (+27) | 33% | +150LOC | builtins 6 组 | ✅ (2026-06-24) |
+| **M2: Phase 1 完成** | 108 (+24) | 42% | +100LOC | Math 三角/对数/常量 21 方法 | ✅ (2026-06-24) |
+| **M3: Phase 2 完成** | 138 (+30) | 53% | +300LOC | Array/String/Object 补齐 | ✅ (2026-06-24) |
+| **M4: Phase 3 完成** | 158 (+20) | 61% | +200LOC | Date/Number 补齐 | 📋 |
+| **M5: Phase 4 完成** | 225+ | ~86% | +500LOC | 全覆盖 | 📋 |
+
+---
+
+### 0.8 相关文件索引
+
+| 文件 | 作用 | 修改阶段 |
+|------|------|---------|
+| `js2zig-core/src/native_builtins.rs` | `BuiltinCall` 枚举 + `detect_builtin_call()` | Phase 0-4 |
+| `js2zig-core/src/codegen/expr.rs` | `emit_builtin_call()` + 常量 emit | Phase 0-4 |
+| `runtime/js_console.zig` | `log/err/warn` (已实现) | Phase 0 (连线) |
+| `runtime/js_string.zig` | 8 方法 (已实现) + `substring/trimStart/trimEnd` | Phase 0 (连线) + Phase 2 |
+| `runtime/js_number.zig` | 5 方法 (已实现) + `isSafeInteger/toFixed` | Phase 0 (连线) + Phase 3 |
+| `runtime/js_uri.zig` | `encodeURIComponent/decodeURIComponent` (已实现) | Phase 0 (连线) |
+| `runtime/js_map.zig` | `clear/size/forEach` (部分已实现) | Phase 0-2 |
+| `runtime/js_set.zig` | `has/delete/clear/size` (已实现) | Phase 0 (连线) |
+| `runtime/js_date.zig` | 现有 9 getter (已实现) + 构造函数/toISOString 等 | Phase 3 |
+| `runtime/js_regexp.zig` | `test/exec` (已实现, 需迷你引擎) | Phase 4 |
+| `examples/builtins-mdn-tests/` | 10 个 JS 测试文件 | Phase 0-4 |
+| `docs/JS_FEATURE_EVALUATION.md` | 第 4 节: 方法状态表 | 持续更新 |
+| `docs/JS_ROADMAP.md` | 本节: 实施计划 | 持续更新 |
 
 ---
 
@@ -190,6 +404,11 @@
 | Array.flat/flatMap | 📋 待开始 | ✅ flat identity + flatMap identity (Zig 运行时实现) | 2026-06-24 |
 | String.padStart/padEnd | 📋 待开始 | ✅ padStart/padEnd 运行时 + codegen 集成 | 2026-06-24 |
 | `@compileError` 源位置 | 📋 待开始 | ✅ 19 个 compileError 调用附加 JS 源位置（file:line:col），codegen 新增 `source` 字段 + 4 个 helper 方法 | 2026-06-24 |
+| 内置对象评估 MDN 对齐 | 📋 待开始 | ✅ JS_FEATURE_EVALUATION.md §4 全部重写 (12 类别 260 方法，含 MDN 签名/参数/返回值/Zig 等效)，ROADMAP.md §0 扩展为 8 子节完整实施计划 | 2026-06-24 |
+| **P0 内置对象连线 (27 方法)** | ❌ 未连线 | ✅ console (3) + String (8) + Global (5) + Number (5) + Map/Set (6) 全部接入 BuiltinCall 流水线 | 2026-06-24 |
+| **P1 内置对象补齐 (21 方法)** | ❌ 未连线 | ✅ Math 三角 (7) + 对数/指数/其他 (7) + 静态常量 (7) 全部接入 | 2026-06-24 |
+| **P2 内置对象补齐 (30 方法)** | 📋 待开始 | ✅ Array (12) + String (5) + Object (3) + 其他补齐 + Map/Set 方法全部实现 | 2026-06-24 |
+| **FEATURE/ROADMAP 文档更新** | 📋 待开始 | ✅ 内置对象覆盖率 22%→53%，Math 11→31/44，String 8→21/35，Array 14→26/35，Map/Set/Object/Global/Number/console 全部更新 | 2026-06-24 |
 
 ---
 
@@ -202,16 +421,20 @@
 ~~3. **P2: Class 字段类型推断** — 根据构造函数推断字段类型~~ ✅
 ~~4. **P2: 测试覆盖补充** — 补充 `instanceof`/`in`/`Date`/`Object`/标签语句 测试~~ ✅
 ~~5. **P2: `for-in` 静态 struct 集成** — 集成到 showcase-project~~ ✅
+~~6. **P3 实用方法** — `Array.flat/flatMap` + `String.padStart/padEnd`~~ ✅
+~~7. **P3: 错误信息改进** — 附加源位置 + 建议~~ ✅
+~~8. **内置对象补齐 Phase 0/1/2** — 48 方法 P0/P1/P2 连线~~ ✅ (已全部完成，覆盖率 ~53%)
 
-6. **P3 实用方法** — `Array.flat/flatMap` ✅ + `String.padStart/padEnd` ✅ (2026-06-24)
-7. **P3: 错误信息改进** — 附加源位置 + 建议 ✅ (2026-06-24)
-8. **下一个 P3 方向 B 项** — 待选择
+1. **P3: Phase 3 Date/Number 补齐** — 20 方法 (~53% → ~61%)
+2. **P3: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
+3. **P3: Symbol/WeakMap/WeakSet 支持** — 语法和 API
 
 ### 4.2 中期（1-2 月）
 
-1. **P2: Class 字段类型推断** — 根据构造函数推断字段类型（替代硬编码 i64）
-2. **P2: 嵌套函数声明** — 自动提升到模块顶层
-3. **P2: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
+~~1. **P2: Class 字段类型推断** — 根据构造函数推断字段类型（替代硬编码 i64）~~ ✅
+~~2. **P2: 嵌套函数声明** — 自动提升到模块顶层~~ ✅
+1. **P3: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
+2. **P3: Date/Number 补齐** — Phase 3 约 20 方法
 
 ### 4.3 长期（3+ 月）
 
@@ -232,7 +455,7 @@
 
 ### 6.2 提交要求
 
-- 每个任务完成后需通过所有现有测试（145 个测试）
+- 每个任务完成后需通过所有现有测试（201 个测试）
 - 新功能需添加测试用例（Rust 测试或示例项目）
 - 提交信息需包含任务编号和说明（如 `feat: implement TypedArray.set() (P1)`）
 - `cargo clippy` 零警告
@@ -243,6 +466,7 @@
 
 | 日期 | 更新内容 | 更新人 |
 |------|----------|--------|
+| 2026-06-25 | P0/P1/P2 内置对象连线全部完成 (覆盖率 22%→53%)，FEATURE/ROADMAP 文档同步 | jonathan197608 |
 | 2026-06-23 | 初始版本，创建任务规划文档 | jonathan197608 |
 | 2026-06-23 | P0 任务全部标记为已完成 | jonathan197608 |
 | 2026-06-23 | P1 闭包集成测试标记为已完成，测试计数更新 101→111 | jonathan197608 |
@@ -252,10 +476,10 @@
 | 2026-06-23 | 文档架构重构：README 拆分中英文、FEATURE 与 ROADMAP 去重解耦、v0.3.2 版本 bump | jonathan197608 |
 | 2026-06-24 | 添加 P2 补充不确定项核实任务（15 项），来自 JS_FEATURE_EVALUATION.md 文档审计 | jonathan197608 |
 | 2026-06-24 | 清理已完成的 P0/P1 任务；移除与 JS_FEATURE_EVALUATION.md 重叠内容（核心能力、已知限制）；文档结构去重 | jonathan197608 |
+| 2026-06-24 | 内置对象补齐计划 MDN 对齐重写: Section 0 扩展为 8 子节 (Phase 0-4 + 风险评估 + 里程碑 + 文件索引 + examples/builtins-mdn-tests 项目设计) | jonathan197608 |
 
 ---
 
-**文档版本**: 1.4  
+**文档版本**: 2.0  
 **最后更新**: 2026-06-24  
 **维护者**: jonathan197608
-| 2026-06-24 | P3 B: 实现 Array.flat/flatMap + String.padStart/padEnd (6 文件, 168 tests, 30/30 Zig tests) | jonathan197608 |

@@ -141,6 +141,34 @@ pub fn slice(s: []const u8, start: i64, end: i64) []const u8 {
     return s[@intCast(st)..@intCast(en)];
 }
 
+/// Extract substring from startIndex to endIndex (JS substring semantics).
+/// - If either arg is negative or NaN, treat as 0.
+/// - If either arg > length, treat as length.
+/// - If startIndex > endIndex, swap them.
+/// Returns borrowed slice (no allocation).
+pub fn substring(s: []const u8, start: i64, end: i64) []const u8 {
+    const len: i64 = @intCast(s.len);
+    var st: i64 = start;
+    var en: i64 = end;
+
+    // Clamp negative → 0
+    if (st < 0) st = 0;
+    if (en < 0) en = 0;
+
+    // Clamp > length → length
+    st = @min(st, len);
+    en = @min(en, len);
+
+    // Swap if start > end
+    if (st > en) {
+        const tmp = st;
+        st = en;
+        en = tmp;
+    }
+
+    return s[@intCast(st)..@intCast(en)];
+}
+
 /// Split string by separator. Returns newly allocated array of strings.
 pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
     var parts = std.ArrayList([]const u8).empty;

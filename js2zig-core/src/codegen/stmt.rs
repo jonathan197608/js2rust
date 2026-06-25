@@ -863,7 +863,8 @@ impl Codegen {
                     match builtin {
                         builtins::BuiltinCall::ArrayForEach
                         | builtins::BuiltinCall::ArraySome
-                        | builtins::BuiltinCall::ArrayEvery => {
+                        | builtins::BuiltinCall::ArrayEvery
+                        | builtins::BuiltinCall::ArrayFill => {
                             // These generate 'for' loops (statements), no ';' needed
                             need_semi = false;
                         }

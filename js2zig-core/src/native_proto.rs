@@ -224,8 +224,6 @@ pub(crate) use crate::codegen;
 pub(crate) use crate::infer;
 pub(crate) use crate::jsdoc;
 pub(crate) use crate::native_builtins as builtins;
-#[cfg(test)]
-pub(crate) use crate::tests;
 
 pub use infer::TypeCheckResult;
 
