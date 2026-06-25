@@ -394,6 +394,12 @@ impl TypeInferrer {
                     "Set" => match method {
                         "add" => InferResult::Indeterminate, // void/mutating
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
+                        "keys" | "values" => {
+                            InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+                        }
+                        "entries" => InferResult::Definite(ZigType::ArrayList(Box::new(
+                            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+                        ))),
                         _ => InferResult::Indeterminate,
                     },
                     "Date" => match method {

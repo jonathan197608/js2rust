@@ -710,6 +710,27 @@ impl Codegen {
                     builtin = builtins::BuiltinCall::StringAt;
                 }
             }
+            // Override: if detect_builtin_call returns MapKeys/MapValues/MapEntries
+            // but object is a Set variable, use SetKeys/SetValues/SetEntries
+            if let Expression::StaticMemberExpression(ref mem) = ce.callee
+                && let Expression::Identifier(ref obj_id) = mem.object
+            {
+                let obj_name = obj_id.name.as_str();
+                if self.type_info.set_vars.contains(obj_name) {
+                    match builtin {
+                        builtins::BuiltinCall::MapKeys => {
+                            builtin = builtins::BuiltinCall::SetKeys;
+                        }
+                        builtins::BuiltinCall::MapValues => {
+                            builtin = builtins::BuiltinCall::SetValues;
+                        }
+                        builtins::BuiltinCall::MapEntries => {
+                            builtin = builtins::BuiltinCall::SetEntries;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             if self.emit_builtin_call(&builtin, ce) {
                 return;
             }
@@ -1801,6 +1822,31 @@ impl Codegen {
                 }
                 false
             }
+            // ── Map iterator methods ──
+            builtins::BuiltinCall::MapKeys => {
+                // map.keys() → map.keys()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.keys()", obj_name));
+                    return true;
+                }
+                false
+            }
+            builtins::BuiltinCall::MapValues => {
+                // map.values() → map.values()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.values()", obj_name));
+                    return true;
+                }
+                false
+            }
+            builtins::BuiltinCall::MapEntries => {
+                // map.entries() → map.entries()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.entries()", obj_name));
+                    return true;
+                }
+                false
+            }
 
             // ── Set methods ─────────────────────────────
             builtins::BuiltinCall::SetAdd => {
@@ -1814,6 +1860,31 @@ impl Codegen {
                     self.write(&format!("{}.add(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch @panic(\"OOM: allocation\")");
+                    return true;
+                }
+                false
+            }
+            // ── Set iterator methods ──
+            builtins::BuiltinCall::SetKeys => {
+                // set.keys() → set.keys()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.keys()", obj_name));
+                    return true;
+                }
+                false
+            }
+            builtins::BuiltinCall::SetValues => {
+                // set.values() → set.values()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.values()", obj_name));
+                    return true;
+                }
+                false
+            }
+            builtins::BuiltinCall::SetEntries => {
+                // set.entries() → set.entries()
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!("{}.entries()", obj_name));
                     return true;
                 }
                 false

@@ -54,6 +54,8 @@ pub struct TypeCheckResult {
     pub fn_param_types: HashMap<String, Vec<(String, ZigType)>>,
     /// Variable names that must use `var` (member-assignment target)
     pub mutated_vars: HashSet<String>,
+    /// Variable names that hold a Set (for MapKeys→SetKeys override)
+    pub set_vars: HashSet<String>,
     /// Identifier names referenced anywhere (for unused-constant elimination)
     pub used_names: HashSet<String>,
     /// Variable names initialized with JSON.parse(@type)
@@ -81,6 +83,8 @@ pub struct TypeInferrer {
     pub(crate) fn_param_types: HashMap<String, Vec<(String, ZigType)>>,
     /// Set of mutated variables (need `var` instead of `const`)
     pub(crate) mutated_vars: HashSet<String>,
+    /// Set variable names (for MapKeys→SetKeys override)
+    pub(crate) set_vars: HashSet<String>,
     /// Identifier names referenced anywhere
     pub(crate) used_names: HashSet<String>,
     /// Variable names initialized with JSON.parse(@type)
@@ -118,6 +122,7 @@ impl TypeInferrer {
             fn_return_types: HashMap::new(),
             fn_param_types: HashMap::new(),
             mutated_vars: HashSet::new(),
+            set_vars: HashSet::new(),
             used_names: HashSet::new(),
             has_json_parse_types: HashSet::new(),
             is_async: HashMap::new(),
@@ -185,6 +190,7 @@ impl TypeInferrer {
             fn_return_types: std::mem::take(&mut self.fn_return_types),
             fn_param_types: std::mem::take(&mut self.fn_param_types),
             mutated_vars: std::mem::take(&mut self.mutated_vars),
+            set_vars: std::mem::take(&mut self.set_vars),
             used_names: std::mem::take(&mut self.used_names),
             has_json_parse_types: std::mem::take(&mut self.has_json_parse_types),
             errors: std::mem::take(&mut self.errors),

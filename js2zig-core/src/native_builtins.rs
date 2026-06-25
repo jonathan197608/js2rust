@@ -102,13 +102,19 @@ pub enum BuiltinCall {
     StringSearch,      // str.search(regex) — stub (regex not yet supported)
 
     // Map methods (called on local Map variables)
-    MapSet,    // map.set(key, value)
-    MapGet,    // map.get(key)
-    MapHas,    // map.has(key) or set.has(value)
-    MapDelete, // map.delete(key) or set.delete(value)
+    MapSet,     // map.set(key, value)
+    MapGet,     // map.get(key)
+    MapHas,     // map.has(key) or set.has(value)
+    MapDelete,  // map.delete(key) or set.delete(value)
+    MapKeys,    // map.keys() → string[]
+    MapValues,  // map.values() → any[]
+    MapEntries, // map.entries() → [string, any][]
 
     // Set methods (called on local Set variables)
-    SetAdd, // set.add(value)
+    SetAdd,     // set.add(value)
+    SetKeys,    // set.keys() → K[] (same as values)
+    SetValues,  // set.values() → K[]
+    SetEntries, // set.entries() → [K, K][]
 
     // Date methods (static)
     DateNow,   // Date.now() → i64
@@ -468,6 +474,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 // Both have identical signatures, shared variant
                 Some(BuiltinCall::MapClear)
             }
+            "keys" => Some(BuiltinCall::MapKeys),
+            "values" => Some(BuiltinCall::MapValues),
+            "entries" => Some(BuiltinCall::MapEntries),
 
             // Set methods (called on local Set variables)
             "add" => Some(BuiltinCall::SetAdd),
@@ -548,8 +557,15 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
         BuiltinCall::MapHas => Some(ZigType::Bool),
-        // Map/Set iterator methods — return type depends on map content, defer to inference
-        // Map.keys() returns ArrayList(Str), Map.values() returns ArrayList(I64), etc.
+        BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+        BuiltinCall::MapValues | BuiltinCall::MapEntries => None,
+        // Set methods
+        BuiltinCall::SetKeys | BuiltinCall::SetValues => {
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+        }
+        BuiltinCall::SetEntries => {
+            Some(ZigType::ArrayList(Box::new(ZigType::ArrayList(Box::new(ZigType::JsAny)))))
+        }
 
         // Date static methods
         BuiltinCall::DateNow | BuiltinCall::DateParse | BuiltinCall::DateUTC => Some(ZigType::I64),

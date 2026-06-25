@@ -616,6 +616,13 @@ impl TypeInferrer {
                                 self.array_element_types
                                     .insert(name.to_string(), (**elem_ty).clone());
                             }
+                            // Track Set variables so codegen can dispatch
+                            // MapKeys/MapValues/MapEntries → SetKeys/SetValues/SetEntries.
+                            if let ZigType::NamedStruct(ref name_str) = ty {
+                                if name_str == "Set" {
+                                    self.set_vars.insert(name.to_string());
+                                }
+                            }
                         }
                         InferResult::Indeterminate => {
                             self.errors.push(format!(
