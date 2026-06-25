@@ -67,17 +67,20 @@ pub enum BuiltinCall {
     ArrayCopyWithin,  // arr.copyWithin(target, start, end)
 
     // Array methods (with closure)
-    ArrayForEach,   // arr.forEach(fn)
-    ArrayMap,       // arr.map(fn)
-    ArrayFilter,    // arr.filter(fn)
-    ArrayReduce,    // arr.reduce(fn, init)
-    ArraySome,      // arr.some(fn)
-    ArrayEvery,     // arr.every(fn)
-    ArrayFlat,      // arr.flat()
-    ArrayFlatMap,   // arr.flatMap(fn)
-    ArrayFind,      // arr.find(fn)
-    ArrayFindIndex, // arr.findIndex(fn)
-    ArrayFill,      // arr.fill(val, start, end)
+    ArrayForEach,       // arr.forEach(fn)
+    ArrayMap,           // arr.map(fn)
+    ArrayFilter,        // arr.filter(fn)
+    ArrayReduce,        // arr.reduce(fn, init)
+    ArraySome,          // arr.some(fn)
+    ArrayEvery,         // arr.every(fn)
+    ArrayFlat,          // arr.flat()
+    ArrayFlatMap,       // arr.flatMap(fn)
+    ArrayFind,          // arr.find(fn)
+    ArrayFindIndex,     // arr.findIndex(fn)
+    ArrayFindLast,      // arr.findLast(fn)
+    ArrayFindLastIndex, // arr.findLastIndex(fn)
+    ArrayReduceRight,   // arr.reduceRight(fn, init)
+    ArrayFill,          // arr.fill(val, start, end)
 
     // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
     // .slice routed through ArraySlice + typedarray_vars check)
@@ -408,6 +411,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "flatMap" => Some(BuiltinCall::ArrayFlatMap),
             "find" => Some(BuiltinCall::ArrayFind),
             "findIndex" => Some(BuiltinCall::ArrayFindIndex),
+            "findLast" => Some(BuiltinCall::ArrayFindLast),
+            "findLastIndex" => Some(BuiltinCall::ArrayFindLastIndex),
+            "reduceRight" => Some(BuiltinCall::ArrayReduceRight),
             "fill" => Some(BuiltinCall::ArrayFill),
             "at" => {
                 if is_string {
@@ -577,7 +583,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
 
         // Array methods — indexOf-type
-        BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf => Some(ZigType::I64),
+        BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf | BuiltinCall::ArrayFindIndex | BuiltinCall::ArrayFindLastIndex => Some(ZigType::I64),
 
         // Global functions
         BuiltinCall::ParseInt => Some(ZigType::I64),

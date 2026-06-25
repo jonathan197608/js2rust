@@ -2515,6 +2515,104 @@ impl Codegen {
                 false
             }
 
+            // ── ArrayFindLast ────────────────────────────
+            builtins::BuiltinCall::ArrayFindLast => {
+                // arr.findLast(fn) → reverse iterator, break with element
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        // Generate reverse loop
+                        self.write(&format!("(blk: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ", obj_name, param_name, obj_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(&format!(") break :blk {};", param_name));
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(&format!(") break :blk {};", param_name));
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("} break :blk undefined; })");
+                        return true;
+                    }
+                    self.write("undefined");
+                    return true;
+                }
+                false
+            }
+
+            // ── ArrayFindLastIndex ────────────────────────────
+            builtins::BuiltinCall::ArrayFindLastIndex => {
+                // arr.findLastIndex(fn) → reverse iterator, break with index
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        let param_name = if !arrow.params.items.is_empty() {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            "_".to_string()
+                        };
+                        let idx_name = format!("__{}_idx", param_name);
+                        // Generate reverse loop with index
+                        self.write(&format!("(blk: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ", obj_name, param_name, obj_name, idx_name));
+                        self.indent += 1;
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            if let Statement::ReturnStatement(ret) = stmt {
+                                if let Some(expr) = &ret.argument {
+                                    self.write("if (");
+                                    self.emit_expr(expr);
+                                    self.write(&format!(") break :blk {};", idx_name));
+                                }
+                            } else if let Statement::ExpressionStatement(es) = stmt {
+                                self.write("if (");
+                                self.emit_expr(&es.expression);
+                                self.write(&format!(") break :blk {};", idx_name));
+                            }
+                        }
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("} break :blk -1; })");
+                        return true;
+                    }
+                    self.write("-1");
+                    return true;
+                }
+                false
+            }
+
+            // ── ArrayReduceRight ────────────────────────────
+            builtins::BuiltinCall::ArrayReduceRight => {
+                // arr.reduceRight(fn, init) → reverse reduce
+                // TODO: Implement proper reverse reduce
+                // For now, return undefined (placeholder)
+                self.write("undefined");
+                true
+            }
+
             builtins::BuiltinCall::ArrayFill => {
                 // arr.fill(val, start, end)
                 // If object is a TypedArray, delegate to TypedArrayFill logic.
