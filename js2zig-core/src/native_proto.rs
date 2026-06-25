@@ -96,7 +96,11 @@ pub enum ZigType {
     ArrayList(Box<ZigType>),
     /// Anonymous struct: .{ .field1 = T1, .field2 = T2 }
     Struct(Vec<(String, ZigType)>),
-    /// Named struct (defined in HostStructDef, e.g. "UserInfo")
+    /// Named struct referenced by name. Covers four sources:
+    /// - Host-defined structs (via `HostStructDef`, e.g. `"UserInfo"`)
+    /// - Built-in runtime types (`"Map"`, `"Set"`, `"Date"`)
+    /// - User-defined JS classes (e.g. `"MyClass"`)
+    /// - JSDoc `@typedef` types (e.g. `"User"`, `"Point"`)
     NamedStruct(String),
     /// anytype (for non-export function parameters)
     Anytype,
@@ -216,10 +220,10 @@ use oxc_ast::ast::Program;
 
 // Submodules declared in lib.rs (flattened from native_proto/ directory).
 // Re-exported here to preserve `crate::native_proto::<module>::*` paths.
-pub(crate) use crate::native_builtins as builtins;
 pub(crate) use crate::codegen;
 pub(crate) use crate::infer;
 pub(crate) use crate::jsdoc;
+pub(crate) use crate::native_builtins as builtins;
 #[cfg(test)]
 pub(crate) use crate::tests;
 

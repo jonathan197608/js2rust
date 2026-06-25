@@ -237,8 +237,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
     };
 
-    let mut builtins = crate::builtins::BuiltinRegistry::new();
-    builtins.register_host_fns(&host_fns);
     let host_header = host_fns.generate_zig_header();
     let async_host_fn_names: Vec<String> = host_fns.async_fn_names();
     let runtime_dir = ws.join("runtime").to_string_lossy().to_string();

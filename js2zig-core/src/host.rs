@@ -7,7 +7,7 @@
 //! # Usage
 //!
 //! In `main.rs`, create a `HostFnRegistry`, register Rust functions, and pass it
-//! to `project.rs` for metadata generation and to `builtins`/`codegen` for translation.
+//! to `project.rs` for metadata generation and to the native_proto codegen for translation.
 
 use crate::native_proto::ZigType;
 use std::path::Path;
@@ -162,11 +162,6 @@ impl HostFnRegistry {
     /// Iterate over all registered host functions.
     pub fn iter(&self) -> impl Iterator<Item = &HostFnDef> {
         self.fns.iter()
-    }
-
-    /// Iterate over only sync host functions (for builtins registration).
-    pub fn sync_fns(&self) -> impl Iterator<Item = &HostFnDef> {
-        self.fns.iter().filter(|f| !f.is_async)
     }
 
     /// Generate the Zig `host.zig` file content.

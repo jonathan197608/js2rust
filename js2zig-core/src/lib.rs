@@ -1,7 +1,6 @@
 // js2zig-core: public API + module declarations.
 
 pub mod analyzer;
-pub mod builtins;
 pub mod host;
 pub mod parser;
 pub mod project;
@@ -17,10 +16,10 @@ pub mod pipeline;
 
 // ── native_proto submodules (flattened from native_proto/ directory) ──
 // Declared here so native_proto.rs can re-export them.
-pub(crate) mod native_builtins;
 pub(crate) mod codegen;
 pub(crate) mod infer;
 pub(crate) mod jsdoc;
+pub(crate) mod native_builtins;
 #[cfg(test)]
 pub(crate) mod tests;
 
