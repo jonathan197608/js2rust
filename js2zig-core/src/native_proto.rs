@@ -1,8 +1,7 @@
-// js2zig-core/src/native_proto/mod.rs
+// js2zig-core/src/native_proto.rs
 //
 // Native-type system codegen module.
-// All Codegen impl methods are in codegen.rs.
-//
+// Codegen impl methods are in codegen/; type inference in infer/.
 use std::collections::{HashMap, HashSet};
 
 // Strict static type system:
@@ -215,12 +214,14 @@ pub struct JSDocData {
 
 use oxc_ast::ast::Program;
 
-mod builtins;
-mod codegen;
-mod infer;
-mod jsdoc;
+// Submodules declared in lib.rs (flattened from native_proto/ directory).
+// Re-exported here to preserve `crate::native_proto::<module>::*` paths.
+pub(crate) use crate::native_builtins as builtins;
+pub(crate) use crate::codegen;
+pub(crate) use crate::infer;
+pub(crate) use crate::jsdoc;
 #[cfg(test)]
-mod tests;
+pub(crate) use crate::tests;
 
 pub use infer::TypeCheckResult;
 

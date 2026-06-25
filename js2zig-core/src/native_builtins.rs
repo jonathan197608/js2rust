@@ -1,10 +1,10 @@
-// native_proto/builtins.rs
+// native_builtins.rs — moved from native_proto/builtins.rs
 // Built-in object methods (Math, Array, String, etc.)
 //
 // This module only defines the BuiltinCall enum and detection function.
 // The emission logic is in codegen.rs (since it needs to call private methods).
 
-use super::ZigType;
+use crate::native_proto::ZigType;
 
 /// Built-in call type
 #[derive(Debug, Clone, PartialEq)]

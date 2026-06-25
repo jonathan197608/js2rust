@@ -15,6 +15,15 @@ pub mod native_proto;
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
+// ── native_proto submodules (flattened from native_proto/ directory) ──
+// Declared here so native_proto.rs can re-export them.
+pub(crate) mod native_builtins;
+pub(crate) mod codegen;
+pub(crate) mod infer;
+pub(crate) mod jsdoc;
+#[cfg(test)]
+pub(crate) mod tests;
+
 use std::path::PathBuf;
 
 /// Host function type for FFI binding generation.
