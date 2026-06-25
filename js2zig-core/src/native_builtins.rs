@@ -161,6 +161,7 @@ pub enum BuiltinCall {
     StringToLowerCase, // str.toLowerCase()
     StringCharAt,      // str.charAt(idx)
     StringCharCodeAt,  // str.charCodeAt(idx)
+    StringCodePointAt, // str.codePointAt(idx) — Unicode code point
     StringConcat,      // str.concat(other)
     StringSlice,       // str.slice(start, end)
     StringReplace,     // str.replace(old, new)
@@ -321,6 +322,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "toLowerCase" => Some(BuiltinCall::StringToLowerCase),
             "charAt" => Some(BuiltinCall::StringCharAt),
             "charCodeAt" => Some(BuiltinCall::StringCharCodeAt),
+            "codePointAt" => Some(BuiltinCall::StringCodePointAt),
             "replace" => Some(BuiltinCall::StringReplace),
             "repeat" => Some(BuiltinCall::StringRepeat),
             "substring" => Some(BuiltinCall::StringSubstring),
@@ -480,6 +482,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringIndexOf | BuiltinCall::StringLastIndexOf | BuiltinCall::StringSearch => {
             Some(ZigType::I64)
         }
+        BuiltinCall::StringCodePointAt => Some(ZigType::I64),
         BuiltinCall::StringIncludes
         | BuiltinCall::StringStartsWith
         | BuiltinCall::StringEndsWith => Some(ZigType::Bool),

@@ -4430,6 +4430,26 @@ export function testAtNeg() {
         );
     }
 
+    // ── Test: String.codePointAt() (Task #630) ────────────
+    #[test]
+    fn test_native_proto_string_code_point_at() {
+        let js = r#"
+export function testCodePointAt() {
+    const s = "hello";
+    return s.codePointAt(1);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_code_point_at");
+        println!("=== String.codePointAt() Zig code ===\n{}", zig);
+
+        // Verify: codePointAt() runtime call generated
+        assert!(
+            zig.contains("js_string.codePointAt"),
+            "Expected js_string.codePointAt call, got:\n{}",
+            zig
+        );
+    }
+
     // ── Test: Object.hasOwn() with struct ─────────────
 
     #[test]

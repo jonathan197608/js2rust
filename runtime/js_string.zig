@@ -104,6 +104,64 @@ pub fn charCodeAt(s: []const u8, idx: i64) u16 {
     return 0; // Out of bounds
 }
 
+/// Get Unicode code point at index (JS codePointAt behavior).
+/// Returns the Unicode code point (U+0000 to U+10FFFF) as i64.
+/// If idx is out of bounds, returns 0 (JS returns undefined, but we return 0 for type simplicity).
+/// Unlike charCodeAt(), this correctly handles surrogate pairs:
+/// - If the index points to a high surrogate (0xD800-0xDBFF) and the next code unit
+///   is a low surrogate (0xDC00-0xDFFF), decodes the pair and returns the full code point.
+pub fn codePointAt(s: []const u8, idx: i64) i64 {
+    const target: usize = @intCast(@max(0, idx));
+    var utf16_idx: usize = 0;
+    var i: usize = 0;
+
+    while (i < s.len) {
+        // Decode UTF-8 code point
+        const c = s[i];
+        var code_point: u32 = 0;
+        var seq_len: u8 = 1;
+
+        if (c & 0x80 == 0) {
+            code_point = c;
+            seq_len = 1;
+        } else if (c & 0xE0 == 0xC0) {
+            code_point = (@as(u32, c & 0x1F) << 6) | @as(u32, s[i + 1] & 0x3F);
+            seq_len = 2;
+        } else if (c & 0xF0 == 0xE0) {
+            code_point = (@as(u32, c & 0x0F) << 12) | (@as(u32, s[i + 1] & 0x3F) << 6) | @as(u32, s[i + 2] & 0x3F);
+            seq_len = 3;
+        } else if (c & 0xF8 == 0xF0) {
+            code_point = (@as(u32, c & 0x07) << 18) | (@as(u32, s[i + 1] & 0x3F) << 12) | (@as(u32, s[i + 2] & 0x3F) << 6) | @as(u32, s[i + 3] & 0x3F);
+            seq_len = 4;
+        } else {
+            // Invalid UTF-8 byte, skip
+            i += 1;
+            continue;
+        }
+
+        // Check if this is the target UTF-16 index
+        if (code_point <= 0xFFFF) {
+            // BMP character: 1 UTF-16 code unit
+            if (utf16_idx == target) {
+                return @intCast(code_point);
+            }
+            utf16_idx += 1;
+        } else {
+            // Supplementary plane character: 2 UTF-16 code units (surrogate pair)
+            if (utf16_idx == target) {
+                // Return the full code point (not just the high surrogate)
+                return @intCast(code_point);
+            }
+            // Skip the low surrogate (it's part of the same code point)
+            utf16_idx += 2;
+        }
+
+        i += seq_len;
+    }
+
+    return 0; // Out of bounds
+}
+
 /// Concatenate two strings. Returns newly allocated string.
 pub fn concat(alloc: Allocator, a: []const u8, b: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, a.len + b.len);

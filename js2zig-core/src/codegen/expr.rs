@@ -2821,6 +2821,21 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::StringCodePointAt => {
+                // str.codePointAt(idx) → returns Unicode code point (i64)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.codePointAt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let idx_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!("js_string.codePointAt({}, {})", obj_name, idx_expr));
+                    return true;
+                }
+                false
+            }
+
             builtins::BuiltinCall::StringConcat => {
                 if ce.arguments.len() != 1 {
                     self.errors
