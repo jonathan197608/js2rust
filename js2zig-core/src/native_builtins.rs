@@ -175,6 +175,8 @@ pub enum BuiltinCall {
     IsFinite,           // isFinite(v)
     EncodeURIComponent, // encodeURIComponent(s)
     DecodeURIComponent, // decodeURIComponent(s)
+    EncodeURI,          // encodeURI(s)
+    DecodeURI,          // decodeURI(s)
 
     // Console methods
     ConsoleLog,   // console.log(msg)
@@ -213,9 +215,11 @@ pub enum BuiltinCall {
     StringAt,          // str.at(index) — negative index support
 
     // String methods (P2 — not yet implemented)
-    StringMatchAll,      // str.matchAll(regex) — requires regex support
-    StringLocaleCompare, // str.localeCompare(other) — requires ICU
-    StringNormalize,     // str.normalize(form) — requires Unicode normalization
+    StringMatchAll,          // str.matchAll(regex) — requires regex support (skip)
+    StringLocaleCompare,     // str.localeCompare(other) — simplified (byte-wise comparison)
+    StringNormalize,         // str.normalize(form) — stub (pass-through)
+    StringToLocaleUpperCase, // str.toLocaleUpperCase() — simplified (uses toUpper)
+    StringToLocaleLowerCase, // str.toLocaleLowerCase() — simplified (uses toLower)
 
     // Map/Set clear (shared variant like MapHas/MapDelete)
     MapClear, // map.clear() or set.clear()
@@ -239,6 +243,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "isFinite" => return Some(BuiltinCall::IsFinite),
             "encodeURIComponent" => return Some(BuiltinCall::EncodeURIComponent),
             "decodeURIComponent" => return Some(BuiltinCall::DecodeURIComponent),
+            "encodeURI" => return Some(BuiltinCall::EncodeURI),
+            "decodeURI" => return Some(BuiltinCall::DecodeURI),
             _ => return None,
         }
     }
@@ -416,6 +422,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "padEnd" => Some(BuiltinCall::StringPadEnd),
             "toUpperCase" => Some(BuiltinCall::StringToUpperCase),
             "toLowerCase" => Some(BuiltinCall::StringToLowerCase),
+            "toLocaleUpperCase" => Some(BuiltinCall::StringToLocaleUpperCase),
+            "toLocaleLowerCase" => Some(BuiltinCall::StringToLocaleLowerCase),
             "charAt" => Some(BuiltinCall::StringCharAt),
             "charCodeAt" => Some(BuiltinCall::StringCharCodeAt),
             "codePointAt" => Some(BuiltinCall::StringCodePointAt),
@@ -624,7 +632,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::StringReplaceAll
         | BuiltinCall::StringRepeat
         | BuiltinCall::StringSubstring
-        | BuiltinCall::StringAt => Some(ZigType::Str),
+        | BuiltinCall::StringAt
+        | BuiltinCall::StringToLocaleUpperCase
+        | BuiltinCall::StringToLocaleLowerCase => Some(ZigType::Str),
         // charCodeAt returns u16 — no ZigType variant, defer to inference
 
         // Map methods
@@ -696,6 +706,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ParseFloat => Some(ZigType::F64),
         BuiltinCall::IsNaN | BuiltinCall::IsFinite => Some(ZigType::Bool),
         BuiltinCall::EncodeURIComponent | BuiltinCall::DecodeURIComponent => Some(ZigType::Str),
+        BuiltinCall::EncodeURI | BuiltinCall::DecodeURI => Some(ZigType::Str),
 
         // Number static methods
         BuiltinCall::NumberIsNaN

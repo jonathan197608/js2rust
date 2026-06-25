@@ -3191,10 +3191,34 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::StringToLocaleUpperCase => {
+                // str.toLocaleUpperCase() → js_string.toLocaleUpper(alloc, str)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_string.toLocaleUpper(js_allocator.getAllocator(), {})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
             builtins::BuiltinCall::StringToLowerCase => {
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
                         "js_string.toLower(js_allocator.getAllocator(), {})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::StringToLocaleLowerCase => {
+                // str.toLocaleLowerCase() → js_string.toLocaleLower(alloc, str)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_string.toLocaleLower(js_allocator.getAllocator(), {})",
                         obj_name
                     ));
                     return true;
@@ -3453,6 +3477,19 @@ impl Codegen {
                 true
             }
 
+            builtins::BuiltinCall::EncodeURI => {
+                // encodeURI(uri) → js_uri.encodeURI(alloc, uri)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("encodeURI() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_uri.encodeURI(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(") catch @panic(\"OOM: encodeURI\")");
+                true
+            }
+
             builtins::BuiltinCall::DecodeURIComponent => {
                 // decodeURIComponent(s) → js_uri.decodeURIComponent(alloc, s)
                 if ce.arguments.len() != 1 {
@@ -3461,6 +3498,19 @@ impl Codegen {
                     return false;
                 }
                 self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(") catch @panic(\"Invalid URI encoding\")");
+                true
+            }
+
+            builtins::BuiltinCall::DecodeURI => {
+                // decodeURI(encodedURI) → js_uri.decodeURI(alloc, encodedURI)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("decodeURI() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_uri.decodeURI(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(") catch @panic(\"Invalid URI encoding\")");
                 true
@@ -3820,14 +3870,42 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::StringLocaleCompare => {
-                // str.localeCompare(other) — not yet supported (ICU required)
-                self.compile_error(ce.span, "String.localeCompare() requires ICU support, which is not yet implemented in js2zig");
-                true
+                // str.localeCompare(other) → js_string.localeCompare(str, other)
+                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                    self.write(&format!("js_string.localeCompare({}", obj_name));
+                    if ce.arguments.len() >= 1 {
+                        if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
+                            self.write(", ");
+                            self.emit_expr(arg);
+                        }
+                    }
+                    self.write(")");
+                    true
+                } else {
+                    false
+                }
             }
             builtins::BuiltinCall::StringNormalize => {
-                // str.normalize(form) — not yet supported (Unicode normalization required)
-                self.compile_error(ce.span, "String.normalize() requires Unicode normalization support, which is not yet implemented in js2zig");
-                true
+                // str.normalize(form) → js_string.normalize(alloc, str, form)
+                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                    self.write(&format!(
+                        "js_string.normalize(js_allocator.getAllocator(), {}, ",
+                        obj_name
+                    ));
+                    if ce.arguments.len() >= 1 {
+                        if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
+                            self.emit_expr(arg);
+                        } else {
+                            self.write("\"NFC\"");
+                        }
+                    } else {
+                        self.write("\"NFC\"");
+                    }
+                    self.write(")");
+                    true
+                } else {
+                    false
+                }
             }
 
             // ── Object methods (P2) ─────────────────────────────
