@@ -87,6 +87,11 @@ pub enum BuiltinCall {
     ArrayReduceRight,   // arr.reduceRight(fn, init)
     ArrayFill,          // arr.fill(val, start, end)
 
+    // Array static methods
+    ArrayFrom,    // Array.from(arrayLike[, mapFn[, thisArg]])
+    ArrayOf,      // Array.of(...items)
+    ArrayIsArray, // Array.isArray(obj)
+
     // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
     // .slice routed through ArraySlice + typedarray_vars check)
     TypedArraySubarray, // arr.subarray(start, end)
@@ -366,6 +371,18 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             match method_name {
                 "fromCharCode" => return Some(BuiltinCall::StringFromCharCode),
                 "fromCodePoint" => return Some(BuiltinCall::StringFromCodePoint),
+                _ => return None,
+            }
+        }
+
+        // Check if object is "Array" (for Array static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Array"
+        {
+            match method_name {
+                "from" => return Some(BuiltinCall::ArrayFrom),
+                "of" => return Some(BuiltinCall::ArrayOf),
+                "isArray" => return Some(BuiltinCall::ArrayIsArray),
                 _ => return None,
             }
         }
@@ -659,6 +676,12 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         }
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+
+        // Array static methods
+        BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {
+            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+        }
+        BuiltinCall::ArrayIsArray => Some(ZigType::Bool),
 
         // Array methods — indexOf-type
         BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf | BuiltinCall::ArrayFindIndex | BuiltinCall::ArrayFindLastIndex => Some(ZigType::I64),
