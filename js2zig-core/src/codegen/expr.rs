@@ -2879,6 +2879,62 @@ impl Codegen {
                 }
             }
 
+            // ── Date string methods ────────────────────────
+            builtins::BuiltinCall::DateToString => {
+                // date.toString() → date.toString(js_allocator.getAllocator())
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.emit_expr(&mem.object);
+                    self.write(".toString(js_allocator.getAllocator())");
+                    true
+                } else {
+                    self.errors
+                        .push("Date.toString() called on non-static-member expression".to_string());
+                    false
+                }
+            }
+
+            builtins::BuiltinCall::DateToDateString => {
+                // date.toDateString() → date.toDateString(js_allocator.getAllocator())
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.emit_expr(&mem.object);
+                    self.write(".toDateString(js_allocator.getAllocator())");
+                    true
+                } else {
+                    self.errors.push(
+                        "Date.toDateString() called on non-static-member expression".to_string(),
+                    );
+                    false
+                }
+            }
+
+            builtins::BuiltinCall::DateToTimeString => {
+                // date.toTimeString() → date.toTimeString(js_allocator.getAllocator())
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.emit_expr(&mem.object);
+                    self.write(".toTimeString(js_allocator.getAllocator())");
+                    true
+                } else {
+                    self.errors.push(
+                        "Date.toTimeString() called on non-static-member expression".to_string(),
+                    );
+                    false
+                }
+            }
+
+            builtins::BuiltinCall::DateToLocaleString => {
+                // date.toLocaleString() → date.toLocaleString(js_allocator.getAllocator())
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.emit_expr(&mem.object);
+                    self.write(".toLocaleString(js_allocator.getAllocator())");
+                    true
+                } else {
+                    self.errors.push(
+                        "Date.toLocaleString() called on non-static-member expression".to_string(),
+                    );
+                    false
+                }
+            }
+
             // ── Date UTC getters ─────────────────────────
             builtins::BuiltinCall::DateGetUTCFullYear => {
                 self.emit_date_instance_method("getUTCFullYear", ce)

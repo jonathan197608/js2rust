@@ -138,6 +138,10 @@ pub enum BuiltinCall {
     DateGetMilliseconds,   // date.getMilliseconds()
     DateGetTimezoneOffset, // date.getTimezoneOffset()
     DateToISOString,       // date.toISOString()
+    DateToString,          // date.toString()
+    DateToDateString,      // date.toDateString()
+    DateToTimeString,      // date.toTimeString()
+    DateToLocaleString,    // date.toLocaleString()
 
     // Date methods (UTC getters)
     DateGetUTCFullYear,     // date.getUTCFullYear()
@@ -466,6 +470,10 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "getMilliseconds" => Some(BuiltinCall::DateGetMilliseconds),
             "getTimezoneOffset" => Some(BuiltinCall::DateGetTimezoneOffset),
             "toISOString" => Some(BuiltinCall::DateToISOString),
+            "toString" => Some(BuiltinCall::DateToString),
+            "toDateString" => Some(BuiltinCall::DateToDateString),
+            "toTimeString" => Some(BuiltinCall::DateToTimeString),
+            "toLocaleString" => Some(BuiltinCall::DateToLocaleString),
             "toFixed" => Some(BuiltinCall::NumberToFixed),
             "toExponential" => Some(BuiltinCall::NumberToExponential),
             "toPrecision" => Some(BuiltinCall::NumberToPrecision),
@@ -614,6 +622,10 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Date string methods
         BuiltinCall::DateToISOString => Some(ZigType::Str),
+        BuiltinCall::DateToString => Some(ZigType::Str),
+        BuiltinCall::DateToDateString => Some(ZigType::Str),
+        BuiltinCall::DateToTimeString => Some(ZigType::Str),
+        BuiltinCall::DateToLocaleString => Some(ZigType::Str),
 
         // Object methods
         BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {

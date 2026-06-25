@@ -86,6 +86,64 @@ pub const JsDate = struct {
         });
     }
 
+    /// Returns RFC 2822 format: "Wed Apr 12 2023 12:00:00 GMT"
+    pub fn toString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        const cd = civilFromDays(dayCount(self.millis));
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const min = timePart(self.millis, 60 * 1000, 60);
+        const s = timePart(self.millis, 1000, 60);
+
+        const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+        const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
+
+        return std.fmt.allocPrint(alloc, "{s} {s} {d} {d} {d}:{d}:{d} GMT", .{
+            day_names[@intCast(dow)],
+            month_names[@intCast(cd.m - 1)],
+            @as(u64, @intCast(cd.d)),
+            @as(u64, @intCast(cd.y)),
+            @as(u64, @intCast(h)),
+            @as(u64, @intCast(min)),
+            @as(u64, @intCast(s)),
+        });
+    }
+
+    /// Returns date portion only: "Wed Apr 12 2023"
+    pub fn toDateString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        const cd = civilFromDays(dayCount(self.millis));
+
+        const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+        const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
+
+        return std.fmt.allocPrint(alloc, "{s} {s} {d} {d}", .{
+            day_names[@intCast(dow)],
+            month_names[@intCast(cd.m - 1)],
+            @as(u64, @intCast(cd.d)),
+            @as(u64, @intCast(cd.y)),
+        });
+    }
+
+    /// Returns time portion only: "12:00:00 GMT"
+    pub fn toTimeString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const min = timePart(self.millis, 60 * 1000, 60);
+        const s = timePart(self.millis, 1000, 60);
+
+        return std.fmt.allocPrint(alloc, "{d:0>2}:{d:0>2}:{d:0>2} GMT", .{
+            @as(u64, @intCast(h)),
+            @as(u64, @intCast(min)),
+            @as(u64, @intCast(s)),
+        });
+    }
+
+    /// Locale-specific string (simplified: same as toString())
+    pub fn toLocaleString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        return self.toString(alloc);
+    }
+
     // ── UTC getters (same as local-time for UTC-only implementation) ──
 
     pub fn getUTCFullYear(self: JsDate) i64 {
