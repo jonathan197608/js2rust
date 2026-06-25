@@ -3285,20 +3285,24 @@ impl Codegen {
                 }
                 // Generate: (std.math.isNan(a) and std.math.isNan(b)) or (a == b)
                 self.write("(");
-                let a_expr = if let Some(arg0) = ce.arguments.first()
-                    .and_then(|a| a.as_expression())
-                {
-                    self.emit_expr_to_string(arg0)
-                } else {
-                    self.compile_error(ce.span, "Object.is(): first argument must be an expression");
-                    return true;
-                };
-                let b_expr = if let Some(arg1) = ce.arguments.get(1)
-                    .and_then(|a| a.as_expression())
+                let a_expr =
+                    if let Some(arg0) = ce.arguments.first().and_then(|a| a.as_expression()) {
+                        self.emit_expr_to_string(arg0)
+                    } else {
+                        self.compile_error(
+                            ce.span,
+                            "Object.is(): first argument must be an expression",
+                        );
+                        return true;
+                    };
+                let b_expr = if let Some(arg1) = ce.arguments.get(1).and_then(|a| a.as_expression())
                 {
                     self.emit_expr_to_string(arg1)
                 } else {
-                    self.compile_error(ce.span, "Object.is(): second argument must be an expression");
+                    self.compile_error(
+                        ce.span,
+                        "Object.is(): second argument must be an expression",
+                    );
                     return true;
                 };
                 self.write(&format!(
