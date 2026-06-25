@@ -730,6 +730,22 @@ impl Codegen {
                         _ => {}
                     }
                 }
+                // Override: if detect_builtin_call returns MapKeys/MapValues/MapEntries
+                // but object is an array variable, use ArrayKeys/ArrayValues/ArrayEntries
+                if self.type_info.array_element_types.contains_key(obj_name) {
+                    match builtin {
+                        builtins::BuiltinCall::MapKeys => {
+                            builtin = builtins::BuiltinCall::ArrayKeys;
+                        }
+                        builtins::BuiltinCall::MapValues => {
+                            builtin = builtins::BuiltinCall::ArrayValues;
+                        }
+                        builtins::BuiltinCall::MapEntries => {
+                            builtin = builtins::BuiltinCall::ArrayEntries;
+                        }
+                        _ => {}
+                    }
+                }
             }
             if self.emit_builtin_call(&builtin, ce) {
                 return;
@@ -1695,6 +1711,43 @@ impl Codegen {
                         }
                     }
                     self.write("break :blk __concat; })");
+                    return true;
+                }
+                false
+            }
+
+            // ── Array iterator methods ─────────────────────────────
+            builtins::BuiltinCall::ArrayKeys => {
+                // arr.keys() → js_runtime.js_array.keys(&arr)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_runtime.js_array.keys(js_allocator.getAllocator(), &{})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayValues => {
+                // arr.values() → js_runtime.js_array.values(&arr)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_runtime.js_array.values(js_allocator.getAllocator(), &{})",
+                        obj_name
+                    ));
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::ArrayEntries => {
+                // arr.entries() → js_runtime.js_array.entries(&arr)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_runtime.js_array.entries(js_allocator.getAllocator(), &{})",
+                        obj_name
+                    ));
                     return true;
                 }
                 false

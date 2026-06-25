@@ -321,6 +321,53 @@ pub fn filterWithFn(
     return result;
 }
 
+/// Array.keys() — returns new ArrayList(JsAny) containing indices.
+/// JavaScript: arr.keys() returns an iterator of indices.
+/// Our implementation: returns an array of indices.
+pub fn keys(alloc: Allocator, arr: *const std.ArrayList(JsAny)) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (0..arr.items.len) |i| {
+        result.appendAssumeCapacity(JsAny.fromI64(@intCast(i)));
+    }
+    return result;
+}
+
+/// Array.values() — returns new ArrayList(JsAny) containing values.
+/// JavaScript: arr.values() returns an iterator of values.
+/// Our implementation: returns an array of values.
+pub fn values(alloc: Allocator, arr: *const std.ArrayList(JsAny)) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (arr.items) |item| {
+        result.appendAssumeCapacity(item);
+    }
+    return result;
+}
+
+/// Array.entries() — returns new ArrayList(JsAny) containing [index, value] pairs.
+/// JavaScript: arr.entries() returns an iterator of [index, value] pairs.
+/// Our implementation: returns an array of arrays, where each inner array is [index, value].
+pub fn entries(alloc: Allocator, arr: *const std.ArrayList(JsAny)) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, arr.items.len);
+    for (arr.items, 0..) |item, i| {
+        var pair = std.ArrayList(JsAny).empty;
+        errdefer pair.deinit(alloc);
+        try pair.append(alloc, JsAny.fromI64(@intCast(i)));
+        try pair.append(alloc, item);
+
+        // Allocate pair on heap and wrap in JsAny.array
+        const pair_ptr = try alloc.create(std.ArrayList(JsAny));
+        pair_ptr.* = pair;
+        result.appendAssumeCapacity(JsAny{ .array = pair_ptr });
+    }
+    return result;
+}
+
 test "flat" {
     const result = try flat(std.testing.allocator, &[_]i64{ 1, 2, 3 });
     defer std.testing.allocator.free(result);
@@ -332,4 +379,69 @@ test "flatMap" {
     defer std.testing.allocator.free(result);
     // flatMap for i64 is identity (returns copy of original)
     try std.testing.expectEqualSlices(i64, &[_]i64{ 1, 2, 3 }, result);
+}
+
+test "keys" {
+    const alloc = std.testing.allocator;
+    var arr = std.ArrayList(JsAny).empty;
+    defer arr.deinit(alloc);
+    try arr.append(alloc, JsAny.fromI64(10));
+    try arr.append(alloc, JsAny.fromI64(20));
+    try arr.append(alloc, JsAny.fromI64(30));
+
+    var result = try keys(alloc, &arr);
+    defer result.deinit(alloc);
+    defer for (result.items) |*item| item.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqual(@as(i64, 0), result.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 1), result.items[1].asI64());
+    try std.testing.expectEqual(@as(i64, 2), result.items[2].asI64());
+}
+
+test "values" {
+    const alloc = std.testing.allocator;
+    var arr = std.ArrayList(JsAny).empty;
+    defer arr.deinit(alloc);
+    try arr.append(alloc, JsAny.fromI64(10));
+    try arr.append(alloc, JsAny.fromI64(20));
+    try arr.append(alloc, JsAny.fromI64(30));
+
+    var result = try values(alloc, &arr);
+    defer result.deinit(alloc);
+    defer for (result.items) |*item| item.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqual(@as(i64, 10), result.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 20), result.items[1].asI64());
+    try std.testing.expectEqual(@as(i64, 30), result.items[2].asI64());
+}
+
+test "entries" {
+    const alloc = std.testing.allocator;
+    var arr = std.ArrayList(JsAny).empty;
+    defer arr.deinit(alloc);
+    try arr.append(alloc, JsAny.fromI64(10));
+    try arr.append(alloc, JsAny.fromI64(20));
+    try arr.append(alloc, JsAny.fromI64(30));
+
+    var result = try entries(alloc, &arr);
+    defer result.deinit(alloc);
+    defer for (result.items) |*item| item.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+
+    // Check first entry: [0, 10]
+    try std.testing.expect(result.items[0].isArray());
+    const entry0 = result.items[0].array.*;
+    try std.testing.expectEqual(@as(usize, 2), entry0.items.len);
+    try std.testing.expectEqual(@as(i64, 0), entry0.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 10), entry0.items[1].asI64());
+
+    // Check second entry: [1, 20]
+    try std.testing.expect(result.items[1].isArray());
+    const entry1 = result.items[1].array.*;
+    try std.testing.expectEqual(@as(usize, 2), entry1.items.len);
+    try std.testing.expectEqual(@as(i64, 1), entry1.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 20), entry1.items[1].asI64());
 }

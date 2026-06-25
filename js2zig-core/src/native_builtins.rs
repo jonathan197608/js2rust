@@ -66,6 +66,11 @@ pub enum BuiltinCall {
     ArrayLastIndexOf, // arr.lastIndexOf(x)
     ArrayCopyWithin,  // arr.copyWithin(target, start, end)
 
+    // Array iterator methods
+    ArrayKeys,    // arr.keys() → number[] (iterator of indices)
+    ArrayValues,  // arr.values() → any[] (iterator of values)
+    ArrayEntries, // arr.entries() → [number, any][] (iterator of [index, value])
+
     // Array methods (with closure)
     ArrayForEach,       // arr.forEach(fn)
     ArrayMap,           // arr.map(fn)
@@ -341,6 +346,19 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         // Check if object is a string literal (for String methods)
         let is_string = matches!(obj_expr, Expression::StringLiteral(_));
 
+        // Check if object is an array literal (for Array methods)
+        let is_array = matches!(obj_expr, Expression::ArrayExpression(_));
+
+        // Handle array-specific methods (for array literals)
+        if is_array {
+            match method_name {
+                "keys" => return Some(BuiltinCall::ArrayKeys),
+                "values" => return Some(BuiltinCall::ArrayValues),
+                "entries" => return Some(BuiltinCall::ArrayEntries),
+                _ => {}
+            }
+        }
+
         // Detect methods based on object type and method name
         match method_name {
             // String-specific methods (always String methods)
@@ -602,6 +620,11 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Array methods — indexOf-type
         BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf | BuiltinCall::ArrayFindIndex | BuiltinCall::ArrayFindLastIndex => Some(ZigType::I64),
+
+        // Array iterator methods
+        BuiltinCall::ArrayKeys | BuiltinCall::ArrayValues | BuiltinCall::ArrayEntries => {
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+        }
 
         // Global functions
         BuiltinCall::ParseInt => Some(ZigType::I64),
