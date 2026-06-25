@@ -9,12 +9,26 @@
 
 ## 当前状态
 
-项目 P0/P1/P2/P3(Phase 3) 已全部完成，当前进入 Phase 4（~80+ 方法）。206 测试通过，0 clippy 警告。
+项目 Phase 4 (#626-#639) 已全部完成，进入 Phase 5（修复 stub + 剩余高优先级方法）。211 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
 **✅ 2026-06-25 #628 Map/Set 迭代器完成**: `JsSet` 重构为 `std.HashMap(JsAny, void, JsAnyHashMapContext, ...)`（SameValueZero 语义），`set.keys()/values()/entries()` 类型推断和 codegen 全部接通，24 个 Zig 测试通过。
-**📋 2026-06-25 Phase 4 任务创建完成**: #626-#639 共 14 个任务，覆盖 String/Array/Number/Date/Map/Set/Math/Object 8 个类别。
+**✅ 2026-06-26 Phase 4 全部完成**: #626-#639 共 14 个任务全部完成（含 #639 stub），覆盖率提升至 ~65%（~170/260）。
+- #626 Number.toExponential/toPrecision ✅
+- #627 String.at ✅
+- #628 Map/Set 迭代器 ✅
+- #629 Date.toString/toDateString/toTimeString ✅
+- #630 String.codePointAt ✅
+- #631 Array.findLast/findLastIndex/reduceRight ✅
+- #632 String.replaceAll/fromCharCode/fromCodePoint ✅
+- #633 Math 高级方法（已全部实现）✅
+- #634 Number 常量 ✅
+- #635 Array.keys/values/entries ✅
+- #636 Date constructor 重载 ✅
+- #637 Date UTC getter 系列 ✅
+- #638 Object.keys/values/entries ✅
+- #639 String.matchAll/localeCompare/normalize（stub）✅
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
