@@ -3333,6 +3333,31 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::StringReplaceAll => {
+                // str.replaceAll(old, new) → js_string.replaceAll(allocator, str, old, new)
+                if ce.arguments.len() != 2 {
+                    self.errors
+                        .push("String.replaceAll() requires exactly 2 arguments".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let old_expr = self.first_arg_string(&ce.arguments);
+                    let new_expr = if let Some(arg) = ce.arguments.get(1)
+                        && let Some(expr) = arg.as_expression()
+                    {
+                        self.emit_expr_to_string(expr)
+                    } else {
+                        "\"".to_string()
+                    };
+                    self.write(&format!(
+                        "js_string.replaceAll(js_allocator.getAllocator(), {}, {}, {})",
+                        obj_name, old_expr, new_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
             builtins::BuiltinCall::StringRepeat => {
                 if ce.arguments.len() != 1 {
                     self.errors
@@ -3835,6 +3860,51 @@ impl Codegen {
                     "Object.getOwnPropertyNames() is not yet implemented in js2zig",
                 );
                 true
+            }
+
+            // ── String static methods ─────────────────────────────
+            builtins::BuiltinCall::StringFromCharCode => {
+                // String.fromCharCode(...codes) → js_string.fromCharCode(alloc, codes)
+                self.write("js_string.fromCharCode(js_allocator.getAllocator()");
+                if !ce.arguments.is_empty() {
+                    self.write(", &[_]u16{");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write("}");
+                }
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::StringFromCodePoint => {
+                // String.fromCodePoint(...codePoints) → js_string.fromCodePoint(alloc, codePoints)
+                self.write("js_string.fromCodePoint(js_allocator.getAllocator()");
+                if !ce.arguments.is_empty() {
+                    self.write(", &[_]u32{");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write("}");
+                }
+                self.write(")");
+                true
+            }
+
+            // Wildcard: catch-all for any unhandled builtin
+            _ => {
+                self.compile_error(ce.span, &format!("Unhandled builtin call: {:?}", builtin));
+                false
             }
         }
     }

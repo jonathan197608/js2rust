@@ -184,6 +184,10 @@ pub enum BuiltinCall {
     NumberParseInt,      // Number.parseInt(s)
     NumberParseFloat,    // Number.parseFloat(s)
 
+    // String static methods
+    StringFromCharCode,  // String.fromCharCode(...codes)
+    StringFromCodePoint, // String.fromCodePoint(...codePoints)
+
     // Number instance methods
     NumberToFixed,       // num.toFixed(digits) → str
     NumberToExponential, // num.toExponential(fractionDigits) → str
@@ -198,6 +202,7 @@ pub enum BuiltinCall {
     StringConcat,      // str.concat(other)
     StringSlice,       // str.slice(start, end)
     StringReplace,     // str.replace(old, new)
+    StringReplaceAll,  // str.replaceAll(old, new)
     StringRepeat,      // str.repeat(n)
     StringSubstring,   // str.substring(start, end)
     StringAt,          // str.at(index) — negative index support
@@ -349,6 +354,17 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             }
         }
 
+        // Check if object is "String" (for String static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "String"
+        {
+            match method_name {
+                "fromCharCode" => return Some(BuiltinCall::StringFromCharCode),
+                "fromCodePoint" => return Some(BuiltinCall::StringFromCodePoint),
+                _ => return None,
+            }
+        }
+
         // Check if object is a string literal (for String methods)
         let is_string = matches!(obj_expr, Expression::StringLiteral(_));
 
@@ -382,6 +398,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "charCodeAt" => Some(BuiltinCall::StringCharCodeAt),
             "codePointAt" => Some(BuiltinCall::StringCodePointAt),
             "replace" => Some(BuiltinCall::StringReplace),
+            "replaceAll" => Some(BuiltinCall::StringReplaceAll),
             "repeat" => Some(BuiltinCall::StringRepeat),
             "substring" => Some(BuiltinCall::StringSubstring),
             "match" => Some(BuiltinCall::StringMatch),
@@ -579,6 +596,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::StringConcat
         | BuiltinCall::StringSlice
         | BuiltinCall::StringReplace
+        | BuiltinCall::StringReplaceAll
         | BuiltinCall::StringRepeat
         | BuiltinCall::StringSubstring
         | BuiltinCall::StringAt => Some(ZigType::Str),
@@ -655,6 +673,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::NumberIsSafeInteger => Some(ZigType::Bool),
         BuiltinCall::NumberParseInt => Some(ZigType::I64),
         BuiltinCall::NumberParseFloat => Some(ZigType::F64),
+
+        // String static methods
+        BuiltinCall::StringFromCharCode | BuiltinCall::StringFromCodePoint => Some(ZigType::Str),
 
         // Number instance methods
         BuiltinCall::NumberToFixed => Some(ZigType::Str),

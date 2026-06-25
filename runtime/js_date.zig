@@ -19,6 +19,18 @@ pub const JsDate = struct {
         return .{ .millis = millis };
     }
 
+    /// new Date(year, month, day, hour, minute, second, millis) — from components
+    /// JS month is 0-indexed (0=Jan), day is 1-indexed
+    pub fn fromComponents(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64, millis: i64) JsDate {
+        // Convert JS 0-indexed month to 1-indexed civil month
+        const civil_month: i64 = month + 1;
+        // Compute days since civil epoch (1970-01-01)
+        const days = daysFromCivil(year, civil_month, day);
+        // Compute time part in milliseconds
+        const time_part: i64 = ((hour * 3600 + minute * 60 + second) * 1000 + millis);
+        return .{ .millis = days * 86400000 + time_part };
+    }
+
     // ── Local-time getters ──
 
     pub fn getTime(self: JsDate) i64 {
@@ -438,8 +450,21 @@ test "JsDate getDay" {
 }
 
 test "JsDate getTimezoneOffset" {
-    try std.testing.expectEqual(@as(i64, 0), JsDate.init().getTimezoneOffset());
-}
+        try std.testing.expectEqual(@as(i64, 0), JsDate.init().getTimezoneOffset());
+    }
+
+    test "JsDate fromComponents" {
+        // new Date(2024, 5, 15, 12, 30, 45, 500) → June 15, 2024 12:30:45.500
+        // JS month is 0-indexed: 5 = June
+        const d = JsDate.fromComponents(2024, 5, 15, 12, 30, 45, 500);
+        try std.testing.expectEqual(@as(i64, 2024), d.getFullYear());
+        try std.testing.expectEqual(@as(i64, 5), d.getMonth()); // June = 5 (0-indexed)
+        try std.testing.expectEqual(@as(i64, 15), d.getDate());
+        try std.testing.expectEqual(@as(i64, 12), d.getHours());
+        try std.testing.expectEqual(@as(i64, 30), d.getMinutes());
+        try std.testing.expectEqual(@as(i64, 45), d.getSeconds());
+        try std.testing.expectEqual(@as(i64, 500), d.getMilliseconds());
+    }
 
 test "JsDate toISOString" {
     const d = JsDate.fromMillis(0);
