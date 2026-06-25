@@ -2543,17 +2543,6 @@ impl Codegen {
             }
         }
 
-        // Register class in tracking structures
-        self.class_defs.insert(
-            class_name_s.clone(),
-            crate::native_proto::ClassInfo {
-                name: class_name_s.clone(),
-                fields: field_names.clone(),
-                field_types: field_types.clone(),
-                static_fields: static_field_names.clone(),
-                has_constructor,
-            },
-        );
         self.class_names.insert(class_name_s.clone());
 
         // ── Generate struct definition ──

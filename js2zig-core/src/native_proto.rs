@@ -111,23 +111,6 @@ pub enum ZigType {
 }
 
 impl ZigType {
-    /// Check if this type is compatible with another type for assignment.
-    /// Returns true if assignment is allowed.
-    pub fn is_compatible_with(&self, other: &ZigType) -> bool {
-        match (self, other) {
-            // Same type is always compatible.
-            (a, b) if a == b => true,
-            // I64 can be widened to F64.
-            (ZigType::I64, ZigType::F64) => true,
-            // F64 cannot be narrowed to I64 (would lose precision).
-            (ZigType::F64, ZigType::I64) => false,
-            // Void is only compatible with Void.
-            (ZigType::Void, ZigType::Void) => true,
-            // Otherwise, not compatible.
-            _ => false,
-        }
-    }
-
     /// Get the Zig type string for code generation.
     /// NOTE: This method does NOT add "host." prefix for NamedStruct.
     /// If the type refers to a host-defined struct, the caller must add "host."
@@ -177,15 +160,6 @@ impl ZigType {
             ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
             ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
         }
-    }
-
-    /// Check if this type is a string type (returns StrRet in C ABI).
-    pub fn is_string(&self) -> bool {
-        matches!(self, ZigType::Str)
-    }
-    /// Check if this type is void (no return value).
-    pub fn is_void(&self) -> bool {
-        matches!(self, ZigType::Void)
     }
 }
 
@@ -344,22 +318,6 @@ fn transpile_js_inner(
     })
 }
 
-/// Metadata about a class declaration, used to generate struct definitions
-/// and route `new ClassName()` expressions to `ClassName.init()`.
-#[derive(Debug, Clone)]
-pub struct ClassInfo {
-    /// Class name
-    pub name: String,
-    /// Field names (from property definitions or constructor assignments)
-    pub fields: Vec<String>,
-    /// Field types (defaults to i64 if not JSDoc-annotated)
-    pub field_types: Vec<ZigType>,
-    /// Static field names
-    pub static_fields: Vec<String>,
-    /// Whether the class has a constructor
-    pub has_constructor: bool,
-}
-
 /// Shared state for native-type codegen.
 ///
 /// Phase A: Codegen is now purely generative — all type inference runs in
@@ -382,8 +340,6 @@ pub struct Codegen {
     pub current_fn_return_type: Option<ZigType>,
     /// Exported functions metadata (for pipeline C ABI wrapper generation).
     pub exported_fns: Vec<ExportedFunction>,
-    /// C ABI exports metadata (for pipeline C ABI wrapper generation).
-    pub cabi_exports: Vec<NativeCabiExport>,
     /// Task counter for generating unique task variable names in async/await code.
     pub task_counter: u32,
     /// Exported function names (from pipeline).
@@ -404,8 +360,6 @@ pub struct Codegen {
     pub try_label_counter: u32,
     /// Counter for generating unique arrow function names.
     pub arrow_counter: u32,
-    /// Pending arrow function declarations to be emitted at the top level.
-    pub pending_arrow_fns: Vec<String>,
     /// When inside a try block, the label name for `break :label`.
     /// throw statements inside the try block emit `break :label error.JsThrow`
     /// instead of `return error.JsThrow`.
@@ -441,8 +395,6 @@ pub struct Codegen {
     /// generated function signature to use `pub fn call(...)` instead of
     /// `pub fn <js_name>(...)`.
     pub current_nested_fn_name: Option<String>,
-    /// Class definitions collected during codegen: class_name → ClassInfo.
-    pub class_defs: std::collections::HashMap<String, ClassInfo>,
     /// When inside a class method body, this holds the class name.
     /// Used to rewrite `this.x` → `self.x`.
     pub current_class: Option<String>,

@@ -2,7 +2,7 @@
 // Tests for native-type codegen.
 
 #[cfg(test)]
-mod tests {
+mod native_proto_tests {
     use crate::native_proto::TranspileResult;
     use crate::native_proto::transpile_js;
     use std::process::Command;
@@ -118,20 +118,10 @@ mod tests {
     }
 
     /// Macro: transpile JS, print generated Zig, return Zig code.
-    /// Usage:
-    ///   let zig = transpile_and_assert!(js, "test_name");
-    ///   let zig = transpile_and_assert!(js, "test_name", exports);  // with exported_functions
+    /// Usage: let zig = transpile_and_assert!(js, "test_name");
     macro_rules! transpile_and_assert {
         ($js:expr, $test_name:expr) => {{
             let result = parse_and_transpile($js, None).unwrap();
-            println!(
-                "=== Generated Zig ({}) ===\n{}",
-                $test_name, result.zig_code
-            );
-            result.zig_code
-        }};
-        ($js:expr, $test_name:expr, $exports:expr) => {{
-            let result = parse_and_transpile($js, Some($exports)).unwrap();
             println!(
                 "=== Generated Zig ({}) ===\n{}",
                 $test_name, result.zig_code
@@ -167,16 +157,10 @@ mod tests {
 
     /// Macro: transpile JS (expect error), assert error message contains expected string.
     /// Checks both Err case and TranspileResult.errors.
-    /// Usage:
-    ///   assert_transpile_err!(js, "expected error message");
-    ///   assert_transpile_err!(js, "expected error message", exports);
+    /// Usage: assert_transpile_err!(js, "expected error message");
     macro_rules! assert_transpile_err {
         ($js:expr, $expected_err:expr) => {{
             let result = parse_and_transpile($js, None);
-            check_transpile_err(result, $expected_err);
-        }};
-        ($js:expr, $expected_err:expr, $exports:expr) => {{
-            let result = parse_and_transpile($js, Some($exports));
             check_transpile_err(result, $expected_err);
         }};
     }
