@@ -15,7 +15,13 @@
 | **完全实现** | ~85 | ~57% |
 | **部分实现** | ~5 | ~3% |
 | **未实现（@compileError）** | ~60 | ~40% |
+| **内置对象有效覆盖率** | 57/219 | ~26% |
 | **测试覆盖** | 153 个 Rust 测试 (135 native_proto + 23 其他) | - |
+
+**更新说明** (2026-06-25):
+- **内置对象覆盖重新评估**: 第 4 节全部重写，用三层分析（检测/发射/运行时）替代原来过于乐观的单层标记。有效覆盖率从声称的 80-100% 修正为实际 ~26%。
+- 21 个 runtime 函数已实现但 codegen 未连线（最大低挂果实）。
+- console.log/error/warn 完全缺失（0/3），是最高频使用的空缺。
 
 **更新说明** (2026-06-24):
 - 修正了 5 个不准确的状态标记（`instanceof`, `void`, `delete`, `obj[key]`, `Date.UTC()`）
@@ -309,207 +315,182 @@
 
 ## 4. 内置对象 (Built-in Objects)
 
-### 4.1 `Math` - ✅ 100% 实现
+> **评估方法**: 内置对象经过三层流水线才能正常工作：
+> 1. **检测 (Detect)** — `native_builtins.rs` 的 `BuiltinCall` 枚举 + `detect_builtin_call()`
+> 2. **发射 (Emit)** — `codegen/expr.rs` 的 `emit_builtin_call()` 生成 Zig 代码
+> 3. **运行时 (Runtime)** — `runtime/*.zig` 提供 Zig 侧实现
+>
+> 三层全部 ✅ 才算"有效覆盖"。仅 runtime 有但检测/发射缺失 → 实际不可用。
 
-| 方法/属性 | 状态 | Zig 输出 | 测试 |
-|----------|------|----------|------|
-| `Math.PI`, `Math.E` | ✅ | `std.math.pi`, `std.math.e` | 隐式测试 |
-| `Math.abs(x)` | ✅ | `@abs(x)` | `test_native_proto_math_*` |
-| `Math.ceil/floor/trunc/round(x)` | ✅ | `@ceil/@floor/@trunc/@round(x)` | 同上 |
-| `Math.sqrt(x)` | ✅ | `@sqrt(x)` | 同上 |
-| `Math.sin/cos/tan/asin/acos/atan(x)` | ✅ | `@sin/@cos/...` | 同上 |
-| `Math.atan2(y, x)` | ✅ | `@atan2(y, x)` | 同上 |
-| `Math.exp/log/log2/log10(x)` | ✅ | `@exp/@log/...` | 同上 |
-| `Math.min/max(a, b)` | ✅ | `@min/@max(a, b)` | 同上 |
-| `Math.pow(b, e)` | ✅ | `std.math.pow(f64, b, e)` | 同上 |
-| `Math.random()` | ✅ | `std.crypto.random.float(f64)` | 同上 |
-| `Math.sign(x)` | ✅ | 三路 if 表达式 | 同上 |
-| `Math.hypot(a, b)` | ❌ | `@compileError("Math.hypot() is not supported")` | - |
+### 4.1 `Math` — 11/43 (26%)
 
-### 4.2 `String` - ✅ 95% 实现
+| 方法/属性 | 检测 | 发射 | 运行时 | 状态 |
+|----------|------|------|--------|------|
+| `Math.abs/ceil/floor/round/sqrt` | ✅ | ✅ | Zig 内置 | ✅ |
+| `Math.random()` | ✅ | ✅ | `@random` | ✅ |
+| `Math.pow(b,e)` | ✅ | ✅ | `@pow` | ✅ |
+| `Math.max/min(...)` | ✅ | ✅ | `@max/@min(args)` | ✅ |
+| `Math.PI` | ✅ | ✅ | `std.math.pi` | ✅ |
+| `Math.hypot(a,b)` | ✅ | ✅ | `@compileError` | 🔶 故意不支持 |
+| `Math.sin/cos/tan` | ❌ | ❌ | — | ❌ |
+| `Math.asin/acos/atan/atan2` | ❌ | ❌ | — | ❌ |
+| `Math.log/log10/log2/exp` | ❌ | ❌ | — | ❌ |
+| `Math.sign/trunc/cbrt` | ❌ | ❌ | — | ❌ |
+| `Math.sinh/cosh/tanh` 等 | ❌ | ❌ | — | ❌ |
+| `Math.E/LN2/LN10/LOG2E/SQRT2` 等常量 | ❌ | ❌ | — | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `.length` | ✅ | `.len` | showcase-project |
-| `.toUpperCase()` | ✅ | `js_string.toUpper(s)` | 隐式测试 |
-| `.toLowerCase()` | ✅ | `js_string.toLower(s)` | 同上 |
-| `.charAt(i)` | ✅ | `js_string.charAt(s, i)` | 同上 |
-| `.charCodeAt(i)` | ✅ | `js_string.charCodeAt(s, i)` (返回 UTF-16 码元) | 同上 |
-| `.concat(other)` | ✅ | `js_string.concat(s, other)` | `test_native_proto_string_concat_*` |
-| `.includes(sub)` | ✅ | `js_string.includes(s, sub)` | 同上 |
-| `.indexOf(sub)` | ✅ | `js_string.indexOf(s, sub)` | 同上 |
-| `.startsWith(pre)` | ✅ | `js_string.startsWith(s, pre)` | 同上 |
-| `.endsWith(suf)` | ✅ | `js_string.endsWith(s, suf)` | 同上 |
-| `.slice(start, end)` | ✅ | `js_string.slice(s, start, end)` | 同上 |
-| `.split(sep)` | ✅ | `js_string.split(s, sep)` | 同上 |
-| `.replace(old, new)` | ✅ | `js_string.replace(s, old, new)` | 同上 |
-| `.trim()` | ✅ | `js_string.trim(s)` | 同上 |
-| `.repeat(n)` | ✅ | `js_string.repeat(s, n)` | 同上 |
-| `.padStart/padEnd` | ❌ | 未实现 | - |
+### 4.2 `Array` — 14/32 (44%, 含 5 stub)
 
-### 4.3 `Array` - ✅ 95% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `.push/pop/shift/unshift` | ✅ | ✅ | 内联 ArrayList | ✅ |
+| `.reverse/sort` | ✅ | ✅ | 内联 swap/sort | ✅ |
+| `.indexOf/includes/join/slice/splice` | ✅ | ✅ | 内联操作 | ✅ |
+| `.forEach/map/reduce` | ✅ | ✅ | 内联 for + 闭包 | ✅ |
+| `.filter/some/every` | ✅ | ✅ | 返回原数组/true (stub) | 🔶 stub |
+| `.flat/flatMap` | ✅ | ✅ | 返回原数组 (stub) | 🔶 stub |
+| `.concat/find/findIndex/fill/lastIndexOf/at/copyWithin/keys/values/entries/reduceRight` | ❌ | ❌ | — | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `.length` | ✅ | `.len` | showcase-project |
-| `.push(val)` | ✅ | `js_array.push(arr, val)` | Phase 5 测试 |
-| `.pop()` | ✅ | `js_array.pop(arr)` | 同上 |
-| `.shift()` | ✅ | `js_array.shift(arr)` | 同上 |
-| `.unshift(val)` | ✅ | `js_array.unshift(arr, val)` | 同上 |
-| `.indexOf(val)` | ✅ | `js_array.indexOf(arr, val)` | `test_native_proto_array_indexof` |
-| `.includes(val)` | ✅ | `js_array.includes(arr, val)` | `test_native_proto_array_includes` |
-| `.join(sep)` | ✅ | `js_array.join(arr, sep)` | `test_native_proto_array_join` |
-| `.reverse()` | ✅ | `js_array.reverse(arr)` | 同上 |
-| `.sort()` | ✅ | `js_array.sort(arr)` | 同上 |
-| `.slice(s, e)` | ✅ | `js_array.slice(arr, s, e)` | `test_native_proto_array_slice` |
-| `.splice(s, n, ...)` | ✅ | 支持删除+插入 | `test_native_proto_array_splice*` |
-| `.concat(other)` | ✅ | `js_array.concat(arr, other)` | 同上 |
-| `.map(fn)` | ✅ | `js_array.map(arr, fn)` | Phase 5 测试 |
-| `.filter(fn)` | ✅ | `js_array.filter(arr, fn)` | 同上 |
-| `.reduce(fn, init)` | ✅ | `js_array.reduce(arr, fn, init)` | 同上 |
-| `.forEach(fn)` | ✅ | `js_array.forEach(arr, fn)` | 同上 |
-| `.some(fn)` / `.every(fn)` | ✅ | `js_array.some/every(arr, fn)` | 同上 |
-| `.flat()` / `.flatMap()` | ❌ | 未实现 | - |
-| `Array.isArray(x)` | ✅ | `js_array.isArray(x)` | 未测试 |
+### 4.3 `String` — 8/26 (31%)
 
-### 4.4 `Map` - ✅ 100% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `.indexOf/includes/startsWith/endsWith/trim/split/padStart/padEnd` | ✅ | ✅ | ✅ js_string | ✅ |
+| `.charAt/charCodeAt/concat/slice/replace/repeat` | ❌ | ❌ | ✅ runtime 已实现 | ❌ 未连线 |
+| `.toUpperCase/toLowerCase` | ❌ | ❌ | ✅ toUpper/toLower | ❌ 未连线 |
+| `.substring/trimStart/trimEnd/match/search/localeCompare/at/codePointAt` | ❌ | ❌ | ❌ | ❌ |
+| `String.fromCharCode/fromCodePoint/raw` | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `.get(key)` | ✅ | `map.get(key)` | showcase-project |
-| `.set(key, val)` | ✅ | `map.set(key, val)` | 同上 |
-| `.has(key)` | ✅ | `map.has(key)` | 同上 |
-| `.delete(key)` | ✅ | `map.delete(key)` | 同上 |
-| `.clear()` | ✅ | `map.clear()` | 未测试 |
-| `.size` | ✅ | `map.size()` | showcase-project |
+### 4.4 `Map` — 5/11 (45%)
 
-### 4.5 `Set` - ✅ 100% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `.set/get/has/delete` | ✅ | ✅ | ✅ JsMap | ✅ |
+| `new Map()` | ✅ | ✅ | ✅ JsMap.init | ✅ |
+| `.clear/size` | ❌ | ❌ | ✅ runtime 已实现 | ❌ 未连线 |
+| `.keys/values/entries/forEach` | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `.add(val)` | ✅ | `set.add(val)` | showcase-project |
-| `.has(val)` | ✅ | `set.has(val)` | 同上 |
-| `.delete(val)` | ✅ | `set.delete(val)` | 同上 |
-| `.clear()` | ✅ | `set.clear()` | 未测试 |
-| `.size` | ✅ | `set.size()` | showcase-project |
+### 4.5 `Set` — 2/9 (22%)
 
-### 4.6 `Object` - ✅ 80% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `.add` | ✅ | ✅ | ✅ JsSet.add | ✅ |
+| `new Set()` | ✅ | ✅ | ✅ JsSet.init | ✅ |
+| `.has/delete` | ❌ | ❌ | ✅ runtime 已实现 | ❌ (路由到 Map 场景) |
+| `.clear/size` | ❌ | ❌ | ✅ runtime 已实现 | ❌ |
+| `.keys/values/entries/forEach` | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `Object.keys(obj)` | ✅ | `js_object.keys(obj)` | 未测试 |
-| `Object.values(obj)` | ✅ | `js_object.values(obj)` | 同上 |
-| `Object.entries(obj)` | ✅ | `js_object.entries(obj)` | 同上 |
-| `Object.assign(target, source)` | ✅ | `js_object.assign(target, source)` | 同上 |
-| `Object.freeze/seal/preventExtensions` | ❌ | 未实现（Zig 无运行时冻结） | - |
+### 4.6 `Object` — 5/12 (42%)
 
-### 4.7 `JSON` - ✅ 100% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `Object.keys/values/entries/assign` | ✅ | ✅ | ✅ js_object | ✅ |
+| `Object.freeze` | ✅ | ✅ | no-op | 🔶 Zig 默认不可变 |
+| `Object.create/defineProperty/getOwnPropertyNames/hasOwn/is/seal/fromEntries` | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `JSON.stringify(obj)` | ✅ | `js_json.stringify(alloc, obj)` | 隐式测试 |
-| `JSON.parse(str)` | ✅ | `js_json.parse(alloc, str)` | `parseUserJson` 测试 |
+### 4.7 `JSON` — 2/2 (100%) ✅
 
-### 4.8 `Date` - ✅ 已实现（UTC 语义，非本地时区）
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `JSON.stringify` | ✅ | ✅ | ✅ js_json.stringify | ✅ |
+| `JSON.parse` | ✅ | ✅ | ✅ js_json.parse | ✅ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `Date.now()` | ✅ | 跨平台 `milliTimestamp()` (Windows/POSIX) | showcase-project |
-| `date.getTime()` | ✅ | `date.getTime()` | showcase-project |
-| `date.getFullYear()` | ✅ | `calcFullYear()` (公历推算) | showcase-project |
-| `date.getMonth()` | ✅ | `calcMonth()` (近似：day_of_year*12/365) | showcase-project |
-| `date.getDate()` | ✅ | `calcDate()` (近似：day_of_year+1) | showcase-project |
-| `date.getDay()` | ✅ | `calcDay()` (epoch=周四，精确) | showcase-project |
-| `date.getHours()` | ✅ | `calcHours()` (UTC，非本地时区) | showcase-project |
-| `date.getMinutes()` | ✅ | `calcMinutes()` (UTC) | showcase-project |
-| `date.getSeconds()` | ✅ | `calcSeconds()` (UTC) | showcase-project |
-| `Date.UTC(y, m, d, ...)` | ❌ | `@compileError("Date.UTC is not yet implemented")` | - |
+### 4.8 `Date` — 11/55+ (~20%)
 
-**已知限制**:
-- **时区：所有 getHours/getMinutes/getSeconds 返回 UTC 时间**，非 JS 标准的本地时区。等效于 JS `getUTCHours()` 等。2026-06-21 通过 6 个新增测试（含非 epoch 时间戳和组合测试）验证
-- `calcMonth()`/`calcDate()` 使用简化近似（每年 365 天），对非一月日期可能不准
-- `Date.UTC()` 是静态方法，当前生成编译错误
-- `Date.parse()` 为桩实现（返回 0）
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `Date.now()` | ✅ | ✅ | ✅ js_date.now | ✅ |
+| `Date.parse(s)` | ✅ | ✅ | ✅ (stub 返回 0) | 🔶 |
+| `.getTime/getFullYear/getMonth/getDate/getDay/getHours/getMinutes/getSeconds` | ✅ | ✅ | ✅ JsDate | ✅ |
+| `.getMilliseconds` | ❌ | ❌ | ❌ | ❌ |
+| UTC getter 系列 (8) / setter 系列 (~7) / `.toISOString/toString/valueOf` | ❌ | ❌ | ❌ | ❌ |
+| `new Date()` / `new Date(ms)` | ❌ | ❌ | ❌ | ❌ |
+| `Date.UTC(y,m,d)` | ✅ | ✅ | `@compileError` | 🔶 |
 
-### 4.9 `Number` - ✅ 100% 实现
+**已知限制**: 所有 getHours/getMinutes/getSeconds 返回 UTC 时间（等效 JS `getUTCHours()`）；calcMonth/calcDate 使用简化近似。
 
-| 方法/属性 | 状态 | Zig 输出 | 测试 |
-|----------|------|----------|------|
-| `Number.isNaN(x)` | ✅ | `std.math.isNan(@as(f64, x))` | 隐式测试 |
-| `Number.isFinite(x)` | ✅ | `!std.math.isInf(x)` | 同上 |
-| `Number.isInteger(x)` | ✅ | `@as(bool, ...)` | 同上 |
-| `Number.parseInt(s)` / `parseInt(s)` | ✅ | `std.fmt.parseInt(i64, s, 10)` | 隐式测试 |
-| `Number.parseFloat(s)` / `parseFloat(s)` | ✅ | `std.fmt.parseFloat(f64, s)` | 同上 |
+### 4.9 全局函数 — 1/8 (13%)
 
-### 4.10 `console` - ✅ 100% 实现
+| 函数 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `parseInt(s)` | ✅ | ✅ | `std.fmt.parseInt` | ✅ |
+| `parseFloat(s)` | ❌ | ❌ | ✅ runtime 已实现 | ❌ |
+| `isNaN/isFinite` | ❌ | ❌ | ✅ runtime 已实现 | ❌ |
+| `encodeURIComponent/decodeURIComponent` | ❌ | ❌ | ✅ runtime 已实现 | ❌ |
+| `encodeURI/decodeURI/eval` | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `console.log(...)` | ✅ | `std.debug.print(...)` | 所有测试 |
-| `console.error(...)` | ✅ | `std.debug.print(...)` (stderr) | 未测试 |
-| `console.warn(...)` | ✅ | `std.debug.print(...)` (stderr) | 未测试 |
+### 4.10 `Number` — 0/5+ (0%)
 
-### 4.11 `RegExp` - 🚧 20% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `Number.isNaN/isFinite/isInteger/parseInt/parseFloat` | ❌ | ❌ | ✅ runtime 已实现 | ❌ |
+| `Number.MAX_VALUE` 等常量 | ❌ | ❌ | ❌ | ❌ |
 
-| 方法 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| 正则表达式字面量 `/pattern/` | ✅ | `"pattern"` (提取 pattern 字符串) | 未测试 |
-| `.test(s)` | 🚧 | 需手动实现匹配逻辑 | 未测试 |
-| `.exec(s)` | 🚧 | 需手动实现匹配逻辑 | 未测试 |
-| 完整正则引擎 | ❌ | 不支持（需引入 C 库） | - |
+### 4.11 `console` — 0/3 (0%) ❌
 
-### 4.12 `Promise` - ❌ 不支持
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `console.log/error/warn` | ❌ | ❌ | ✅ js_console | ❌ 完全缺失 |
 
-| 特性 | 状态 | 说明 |
-|------|------|------|
-| `new Promise((resolve, reject) => { ... })` | ❌ | `@compileError` (使用 `async/await` 替代) |
-| `.then()` / `.catch()` / `.finally()` | ❌ | 不支持 |
-| `Promise.resolve()` / `Promise.reject()` | ❌ | 不支持 |
-| `Promise.all()` / `Promise.race()` | ❌ | 不支持 |
+**这是最高频使用的缺失项**，runtime 已实现但 codegen 未连线。
 
-**建议**: JS 的 `Promise` 对应 Zig 的 `Io` 模式 + `async/await`，无需直接翻译 `Promise` API。
+### 4.12 `RegExp` — 0/2 (0%)
 
-### 4.13 `TypedArray` - ✅ 100% 实现
+| 方法 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| 正则字面量 `/pat/` | ✅ | ✅ | 字符串提取 | ✅ 语法可用 |
+| `.test/.exec` | ❌ | ❌ | ✅ runtime 已实现 | ❌ 未连线 |
 
-| 特性 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `Int8Array` / `Uint8Array` / ... / `Float64Array` | ✅ | Zig 切片 `[]T` | `test_native_proto_typedarray_*` |
-| `.length` | ✅ | `.len` | 同上 |
-| 构造 `new Uint8Array([...])` | ✅ | Zig 数组字面量 | 同上 |
-| `.get(idx)` | ✅ | `js_typedarray.get{Type}(slice, idx)` | 同上 |
-| `.set(idx, val)` | ✅ | `js_typedarray.set{Type}(slice, idx, val)` | 同上 |
-| `.subarray(start, end)` | ✅ | `js_typedarray.subarray{Type}(slice, start, end)` | 同上 |
-| `.copyWithin(target, start, end)` | ✅ | `js_typedarray.copyWithin{Type}(slice, target, start, end)` | 同上 |
-| `.fill(val, start, end)` | ✅ | `js_typedarray.fill{Type}(slice, val, start, end)` | 同上 |
-| `.buffer` | ✅ | `js_typedarray.buffer{Type}(slice)` | 同上 |
-| `.byteLength` | ✅ | `js_typedarray.byteLength{Type}(slice)` | 同上 |
-| `.byteOffset` | ✅ | `js_typedarray.byteOffset()` (fixed 0) | 同上 |
-| `.slice()` | ❌ | `@compileError` (使用 `.subarray()` 替代) | - |
+### 4.13 `TypedArray` — 10/11 (91%) ✅
 
-### 4.14 `Symbol` - ❌ 不支持
+| 特性 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `Int8Array` ~ `Float64Array` / `.length` / 构造 | ✅ | ✅ | ✅ | ✅ |
+| `.get/.set/.subarray/.copyWithin/.fill/.buffer/.byteLength/.byteOffset` | ✅ | ✅ | ✅ js_typedarray | ✅ |
+| `.slice()` | ❌ | ❌ | ❌ | ❌ (用 `.subarray()` 替代) |
 
-| 方法/属性 | 状态 | 说明 |
-|----------|------|------|
-| `Symbol(description)` | ❌ | ES6 符号，未实现 |
-| `Symbol.for(key)` / `Symbol.keyFor(sym)` | ❌ | 全局符号注册表，未实现 |
-| `Symbol.iterator` / `Symbol.asyncIterator` | ❌ | 迭代器协议，未实现 |
+### 4.14 `Promise` — 0/x (0%)
 
-### 4.15 `WeakMap` - ❌ 不支持
+| 特性 | 检测 | 发射 | 运行时 | 状态 |
+|------|------|------|--------|------|
+| `new Promise()/.then/.catch` | ❌ | ❌ | — | ❌ native_proto 显式拒绝 |
 
-| 方法 | 状态 | 说明 |
-|------|------|------|
-| `.set(key, val)` | ❌ | 弱引用 Map，未实现 |
-| `.get(key)` | ❌ | 未实现 |
-| `.has(key)` | ❌ | 未实现 |
-| `.delete(key)` | ❌ | 未实现 |
+**建议**: 使用 `async/await` + `Io` 模式替代 Promise API。
 
-### 4.16 `WeakSet` - ❌ 不支持
+### 4.15 `Error` — 1/1 (100%) ✅
 
-| 方法 | 状态 | 说明 |
-|------|------|------|
-| `.add(val)` | ❌ | 弱引用 Set，未实现 |
-| `.has(val)` | ❌ | 未实现 |
-| `.delete(val)` | ❌ | 未实现 |
+| 特性 | 状态 |
+|------|------|
+| `throw new Error(msg)` → `error.JsThrow` | ✅ |
+
+### 4.16 未实现类别
+
+| 类别 | 状态 |
+|------|------|
+| `Symbol` | ❌ 完全缺失 |
+| `WeakMap` | ❌ 完全缺失 |
+| `WeakSet` | ❌ 完全缺失 |
+
+### 4.17 汇总
+
+| 类别 | 总方法数 | 有效覆盖 | 比例 | 备注 |
+|------|---------|---------|------|------|
+| Math | 43 | 11 | 26% | |
+| Array | 32 | 14 | 44% | 含 5 stub |
+| String | 26 | 8 | 31% | 8 runtime 已实现但未连线 |
+| Map | 11 | 5 | 45% | |
+| Set | 9 | 2 | 22% | |
+| Date | 55+ | 11 | ~20% | |
+| Object | 12 | 5 | 42% | |
+| JSON | 2 | 2 | 100% | |
+| Global | 8 | 1 | 13% | 5 runtime 已实现但未连线 |
+| console | 3 | 0 | 0% | 最高频缺失 |
+| Number | 5+ | 0 | 0% | |
+| RegExp | 2 | 0 | 0% | 字面量可用 |
+| TypedArray | 11 | 10 | 91% | |
+| **总计** | **~219** | **57** | **~26%** | |
+
+> ⚠️ **最大低挂果实**: 21 个 runtime 函数已实现但 codegen 检测/发射路径未连接（见 `runtime/` 目录下 `js_string.toUpper/toLower/charAt/charCodeAt/concat/slice/replace/repeat`、`js_number.*`、`js_uri.*`、`js_console.*`、`js_map.clear`、`js_set.clear/has/delete`），只需添加 `BuiltinCall` 变体即可工作。
 
 ---
 

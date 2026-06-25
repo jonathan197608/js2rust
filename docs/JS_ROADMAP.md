@@ -11,7 +11,70 @@
 
 项目 P0/P1 已全部完成，当前进入 P2 阶段（语言完整性与测试覆盖）。145 测试通过，0 clippy 警告。
 
+**⚠️ 2026-06-25 重新评估**: 内置对象有效覆盖率仅 ~26%（57/219），21 个 runtime 函数已实现但 codegen 未连线。详见下方新增的 P0 内置对象补齐计划。
+
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
+
+---
+
+## 0. 内置对象补齐计划 (新增 — 2026-06-25)
+
+> 背景: `docs/JS_FEATURE_EVALUATION.md` 第 4 节重新评估，有效覆盖率仅 ~26%。
+> 策略: 优先连线已有 runtime，再补齐缺失 runtime，最后修复 stub。
+
+### 0.1 Phase 1 — 快速连线 (P0, ~22 方法)
+
+**方法**: 添加 `BuiltinCall` 变体 → `detect_builtin_call` → `emit_builtin_call`
+
+| # | 类别 | 方法 | 已有 runtime | 状态 |
+|---|------|------|-------------|------|
+| B1 | console | `console.log/error/warn` (3) | ✅ js_console | 📋 |
+| B2 | String | `toUpperCase/toLowerCase/charAt/charCodeAt/concat/slice/replace/repeat` (8) | ✅ js_string | 📋 |
+| B3 | Global/Number | `parseFloat/isNaN/isFinite/Number.isInteger/Number.parseInt/Number.parseFloat/encodeURIComponent/decodeURIComponent` (8) | ✅ js_number/js_uri | 📋 |
+| B4 | Map/Set | `map.clear/set.clear/set.has/set.delete` (4) | ✅ js_map/js_set | 📋 |
+
+**Phase 1 预估**: ~150-200 行代码，覆盖率 26% → ~37%
+
+### 0.2 Phase 2 — 补齐缺失 Runtime (P1)
+
+| # | 类别 | 方法 | 说明 | 状态 |
+|---|------|------|------|------|
+| C1 | Math 三角/对数 | `sin/cos/tan/log/log10/log2/exp/trunc` (8) | 零 runtime（Zig 内置 @sin/@cos 等） | 📋 |
+| C2 | Math 反三角 | `asin/acos/atan/atan2` (4) | 需 runtime: `std.math.asin()` 等 | 📋 |
+| C3 | Math 常量 | `E/LN2/LN10/LOG2E/LOG10E/SQRT2/SQRT1_2` (7) | 映射到 `std.math.*` 常量 | 📋 |
+| C4 | Math 其他 | `sign/cbrt` (2) | 需 runtime | 📋 |
+| C5 | Array | `concat/fill/lastIndexOf/at/copyWithin/findIndex/find` (7) | 内联 for 循环 | 📋 |
+| C6 | Map/Set | `map.size/set.size/map.forEach` (3) | 属性访问 + for 循环 | 📋 |
+
+**Phase 2 预估**: ~300-400 行代码 + runtime，覆盖率 → ~50%
+
+### 0.3 Phase 3 — Stub 修复 (P1)
+
+| # | 方法 | 当前行为 | 目标 | 状态 |
+|---|------|---------|------|------|
+| D1 | `arr.filter(fn)` | 返回原数组 (stub) | 真正 filter | 📋 |
+| D2 | `arr.some(fn)` | 返回 true (stub) | 真正 some | 📋 |
+| D3 | `arr.every(fn)` | 返回 true (stub) | 真正 every | 📋 |
+| D4 | `arr.flat/flatMap(fn)` | 返回原数组 (stub) | 真正 flat/flatMap | 📋 |
+| D5 | `Object.freeze(obj)` | 静默 no-op | no-op + 注释 | 📋 |
+
+**Phase 3 预估**: ~150-200 行代码
+
+### 0.4 Phase 4 — 远期补齐 (P2)
+
+| 类别 | 内容 | 状态 |
+|------|------|------|
+| Date | 构造函数、getMilliseconds、UTC getter/setter、toISOString (20+ 方法) | 📋 |
+| Map/Set | keys/values/entries 迭代器 | 📋 |
+| String | substring/trimStart/trimEnd/match/search 等 | 📋 |
+| Array | keys/values/entries/reduceRight | 📋 |
+
+### 0.5 风险点
+
+1. **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由
+2. **Map/Set has/delete 歧义**: 当前 `.has()`/`.delete()` 统一路由到 MapHas/MapDelete，需区分变量类型
+3. **闭包回调**: `filter/some/every/find` 等需箭头函数闭包支持
+4. **Math.hypot**: 当前 `@compileError`，可改为 `std.math.hypot`
 
 ---
 
