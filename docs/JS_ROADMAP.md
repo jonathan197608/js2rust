@@ -30,6 +30,8 @@
 - #638 Object.keys/values/entries ✅
 - #639 String.matchAll/localeCompare/normalize（stub）✅
 
+**✅ 2026-06-26 Phase 5 开始 — Array.from/of/isArray 完成**: 实现 `Array.from()`（支持数组/字符串/类数组对象）、`Array.of()`、`Array.isArray()` 的 runtime + codegen，新增 7 个 Zig 测试。
+
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
 ---
