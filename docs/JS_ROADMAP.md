@@ -9,10 +9,11 @@
 
 ## 当前状态
 
-项目 P0/P1/P2/P3(Phase 3) 已全部完成，当前进入 P3 Phase 4（远期特性，~80+ 方法）。201 测试通过，0 clippy 警告。
+项目 P0/P1/P2/P3(Phase 3) 已全部完成，当前进入 Phase 4（~80+ 方法）。206 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
+**📋 2026-06-25 Phase 4 任务创建完成**: #626-#639 共 14 个任务，覆盖 String/Array/Number/Date/Map/Set/Math/Object 8 个类别。
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
@@ -225,21 +226,103 @@ examples/builtins-mdn-tests/
 
 ---
 
-### 0.5 Phase 4 — 远期 (P3, ~80+ 方法)
+### 0.5 Phase 4 — 内置对象补齐 (P3, ~80+ 方法) 📋 待开始
 
-| 类别 | 内容 | 状态 |
-|------|------|------|
-| Date setter 系列 (~14) | `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds/setTime` + UTC setter | 📋 |
-| Date toString 系列 (~7) | `.toString/toDateString/toTimeString/toUTCString/toLocaleString/valueOf/toJSON` | 📋 |
-| Map/Set 迭代器 | `keys/values/entries` Iterator | 📋 |
-| Set 集合操作 (ES2025) | `difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom` | 📋 |
-| Array/String 迭代器 | `.keys()/.values()/.entries()` | 📋 |
-| String: `codePointAt/normalize/localeCompare/matchAll/replaceAll/at/fromCharCode/fromCodePoint` | 📋 |
-| Number: `.toExponential/toPrecision` | 📋 |
-| RegExp 完整支持 | `new RegExp()/.test/.exec/global flag` (需引入 pcre2 或实现迷你引擎) | 📋 |
-| Object: `create/defineProperty/getPrototypeOf/setPrototypeOf/seal/isSealed` 等 | 📋 |
-| Array ES2023+: `with/toReversed/toSorted/toSpliced` | 📋 |
-| Symbol / WeakMap / WeakSet / Reflect / Intl | 完全缺失类别 | 📋 |
+**目标**: 补齐剩余 ~80+ 方法，覆盖率从 ~53% 提升至 ~85%+。按优先级分批实现。
+
+#### 0.5.1 String 高级方法 (#627, #630, #632, #639)
+
+| 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `.at(index)` | #627 | P3 | 负值索引处理，参考 Array.at | `string.js` |
+| `.codePointAt(index)` | #630 | P3 | UTF-16 代理对解析，返回 `u32` | `string.js` |
+| `.replaceAll(p,r)` | #632 | P3 | 全局替换，循环 `std.mem.replaceSequence` | `string.js` |
+| `.fromCharCode(...codes)` | #632 | P3 | `std.unicode.utf16LeFromString` 或手动构建 | `string.js` |
+| `.fromCodePoint(...points)` | #632 | P3 | `std.unicode.utf8Encode` + UTF-8 验证 | `string.js` |
+| `.matchAll(re)` | #639 | P4 | 返回迭代器，需 RegExp 引擎支持 | `string.js` |
+| `.localeCompare(other)` | #639 | P4 | 简化实现（字节比较）或引入 ICU | `string.js` |
+| `.normalize(form)` | #639 | P4 | Unicode 规范化，需 Unicode 数据 | `string.js` |
+
+#### 0.5.2 Array 高级方法 (#631, #635)
+
+| 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `.findLast(fn)` | #631 | P3 | 反向 `for` + 闭包调用 | `array.js` |
+| `.findLastIndex(fn)` | #631 | P3 | 反向 `for` + 闭包，返回索引 | `array.js` |
+| `.reduceRight(fn,init)` | #631 | P3 | 反向 `reduce`，从右到左累积 | `array.js` |
+| `.keys()` | #635 | P3 | 返回索引迭代器 `{ value: i, done }` | `array.js` |
+| `.values()` | #635 | P3 | 返回元素迭代器 `{ value: v, done }` | `array.js` |
+| `.entries()` | #635 | P3 | 返回 `[i, v]` 迭代器 | `array.js` |
+
+#### 0.5.3 Number 高级 (#626, #634)
+
+| 方法/常量 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|----------|--------|--------|----------|---------|
+| `.toExponential(digits)` | #626 | P3 | `std.fmt.format` 科学计数法 | `number.js` |
+| `.toPrecision(precision)` | #626 | P3 | `std.fmt.format` 指定精度 | `number.js` |
+| `Number.EPSILON` | #634 | P3 | `1e-52` (2^-52) | `number.js` |
+| `Number.MAX_SAFE_INTEGER` | #634 | P3 | `9007199254740991` (2^53-1) | `number.js` |
+| `Number.MIN_SAFE_INTEGER` | #634 | P3 | `-9007199254740991` | `number.js` |
+| `Number.MAX_VALUE` | #634 | P3 | `1.7976931348623157e+308` | `number.js` |
+| `Number.MIN_VALUE` | #634 | P3 | `5e-324` | `number.js` |
+| `Number.POSITIVE_INFINITY` | #634 | P3 | `std.math.inf(f64)` | `number.js` |
+| `Number.NEGATIVE_INFINITY` | #634 | P3 | `-std.math.inf(f64)` | `number.js` |
+| `Number.NaN` | #634 | P3 | `std.math.nan(f64)` | `number.js` |
+
+#### 0.5.4 Date 高级 (#629, #636, #637)
+
+| 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `new Date()` | #636 | P3 | `std.time.timestamp()` 当前时间 | `date.js` |
+| `new Date(timestamp)` | #636 | P3 | 毫秒时间戳 → `JsDate` | `date.js` |
+| `new Date(dateStr)` | #636 | P3 | 字符串解析（简化 ISO 8601） | `date.js` |
+| `.toString()` | #629 | P3 | 本地时区格式化 | `date.js` |
+| `.toDateString()` | #629 | P3 | 本地日期部分 | `date.js` |
+| `.toTimeString()` | #629 | P3 | 本地时间部分 | `date.js` |
+| `.toUTCString()` | #629 | P3 | UTC 格式化 | `date.js` |
+| `.toLocaleString()` | #629 | P4 | 简化实现（同 toString） | `date.js` |
+| `.valueOf()` | #629 | P3 | 返回时间戳（ms） | `date.js` |
+| `.toJSON()` | #629 | P3 | 调用 `toISOString()` | `date.js` |
+| UTC getter 系列 (8) | #637 | P3 | `getUTCFullYear/getUTCMonth/...` | `date.js` |
+
+#### 0.5.5 Map/Set 迭代器 (#628)
+
+| 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `map.keys()` | #628 | P3 | 返回 key 迭代器 | `map_set.js` |
+| `map.values()` | #628 | P3 | 返回 value 迭代器 | `map_set.js` |
+| `map.entries()` | #628 | P3 | 返回 `[k,v]` 迭代器 | `map_set.js` |
+| `set.keys()` → `set.values()` | #628 | P3 | Set 迭代器（alias） | `map_set.js` |
+| `set.entries()` | #628 | P3 | 返回 `[v,v]` 迭代器 | `map_set.js` |
+
+#### 0.5.6 Math 高级 (#633)
+
+| 方法 | 任务 # | 优先级 | Zig 映射 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `Math.expm1(x)` | #633 | P3 | `std.math.expm1(@floatCast(x))` | `math.js` |
+| `Math.sinh(x)` | #633 | P3 | `std.math.sinh(@floatCast(x))` | `math.js` |
+| `Math.cosh(x)` | #633 | P3 | `std.math.cosh(@floatCast(x))` | `math.js` |
+| `Math.tanh(x)` | #633 | P3 | `std.math.tanh(@floatCast(x))` | `math.js` |
+| `Math.asinh(x)` | #633 | P3 | `std.math.asinh(@floatCast(x))` | `math.js` |
+| `Math.acosh(x)` | #633 | P3 | `std.math.acosh(@floatCast(x))` | `math.js` |
+| `Math.atanh(x)` | #633 | P3 | `std.math.atanh(@floatCast(x))` | `math.js` |
+| `Math.clz32(x)` | #633 | P3 | `@clz(@as(u32, @intCast(x)))` | `math.js` |
+| `Math.fround(x)` | #633 | P3 | `@as(f32, @floatCast(x))` | `math.js` |
+| `Math.imul(a,b)` | #633 | P3 | `@as(i32, @intCast(a)) * @as(i32, @intCast(b))` | `math.js` |
+| `Math.log1p(x)` | #633 | P3 | `std.math.log1p(@floatCast(x))` | `math.js` |
+
+#### 0.5.7 Object 静态方法 (#638)
+
+| 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `Object.keys(obj)` | #638 | P3 | `std.meta.fieldNames` + 过滤 | `object.js` |
+| `Object.values(obj)` | #638 | P3 | 遍历 keys 提取值 | `object.js` |
+| `Object.entries(obj)` | #638 | P3 | 返回 `[k,v]` 数组 | `object.js` |
+| `Object.create(proto)` | #638 | P4 | 原型链操作，需 JsObject 支持 | `object.js` |
+| `Object.freeze(obj)` | #638 | P4 | 标记只读（简化实现） | `object.js` |
+| `Object.seal(obj)` | #638 | P4 | 标记不可扩展（简化实现） | `object.js` |
+
+**Phase 4 预估**: ~80+ 方法，新增 ~40 个 `BuiltinCall` 变体 + runtime 实现，~1500 行。
 
 ---
 
