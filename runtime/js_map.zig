@@ -66,6 +66,45 @@ pub const JsMap = struct {
     pub fn size(self: *const JsMap) usize {
         return self.inner.count();
     }
+
+    /// Return array of keys.
+    pub fn keys(self: *const JsMap) ![][]const u8 {
+        var result = try self.alloc.alloc([]const u8, self.inner.count());
+        var i: usize = 0;
+        var iter = self.inner.iterator();
+        while (iter.next()) |entry| {
+            result[i] = try self.alloc.dupe(u8, entry.key_ptr.*);
+            i += 1;
+        }
+        return result;
+    }
+
+    /// Return array of values.
+    pub fn values(self: *const JsMap) ![]i64 {
+        var result = try self.alloc.alloc(i64, self.inner.count());
+        var i: usize = 0;
+        var iter = self.inner.iterator();
+        while (iter.next()) |entry| {
+            result[i] = entry.value_ptr.*;
+            i += 1;
+        }
+        return result;
+    }
+
+    /// Return array of entries (key-value pairs).
+    pub fn entries(self: *const JsMap) ![][][]const u8 {
+        var result = try self.alloc.alloc([][]const u8, self.inner.count());
+        var i: usize = 0;
+        var iter = self.inner.iterator();
+        while (iter.next()) |entry| {
+            result[i] = try self.alloc.alloc([]const u8, 2);
+            result[i][0] = try self.alloc.dupe(u8, entry.key_ptr.*);
+            // Value is i64, need to convert to string
+            result[i][1] = try std.fmt.allocPrint(self.alloc, "{}", .{entry.value_ptr.*});
+            i += 1;
+        }
+        return result;
+    }
 };
 
 // ── Tests ──

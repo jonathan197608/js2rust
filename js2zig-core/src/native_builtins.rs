@@ -548,6 +548,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
         BuiltinCall::MapHas => Some(ZigType::Bool),
+        // Map/Set iterator methods — return type depends on map content, defer to inference
+        // Map.keys() returns ArrayList(Str), Map.values() returns ArrayList(I64), etc.
 
         // Date static methods
         BuiltinCall::DateNow | BuiltinCall::DateParse | BuiltinCall::DateUTC => Some(ZigType::I64),
