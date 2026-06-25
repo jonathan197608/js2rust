@@ -3918,10 +3918,51 @@ impl Codegen {
                 true
             }
 
-            // Wildcard: catch-all for any unhandled builtin
-            _ => {
-                self.compile_error(ce.span, &format!("Unhandled builtin call: {:?}", builtin));
-                false
+            // ── Array static methods ─────────────────────────────
+            builtins::BuiltinCall::ArrayFrom => {
+                // Array.from(arrayLike[, mapFn[, thisArg]]) → js_array.from(alloc, arrayLike)
+                self.write("js_array.from(js_allocator.getAllocator()");
+                if !ce.arguments.is_empty() {
+                    self.write(", ");
+                    if let Some(first) = ce.arguments.first() {
+                        if let Some(expr) = first.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                }
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::ArrayOf => {
+                // Array.of(...items) → js_array.of(alloc, items)
+                self.write("js_array.of(js_allocator.getAllocator()");
+                if !ce.arguments.is_empty() {
+                    self.write(", &[_]JsAny{");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write("}");
+                }
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::ArrayIsArray => {
+                // Array.isArray(obj) → js_array.isArray(obj)
+                self.write("js_array.isArray(");
+                if let Some(first) = ce.arguments.first() {
+                    if let Some(expr) = first.as_expression() {
+                        self.emit_expr(expr);
+                    }
+                }
+                self.write(")");
+                true
             }
         }
     }

@@ -6,9 +6,106 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsAny = @import("jsany.zig").JsAny;
 
-/// Array.isArray — always true for Zig arrays (type system guarantees).
-pub fn isArray(_: anytype) bool {
-    return true;
+/// Array.isArray — check if value is a JsAny array.
+pub fn isArray(value: JsAny) bool {
+    return value.isArray();
+}
+
+/// Array.from(arrayLike) — create ArrayList(JsAny) from array-like value.
+/// Handles: JsAny array (copy), string (each char as string), object with length.
+pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+
+    // If already an array, copy elements
+    if (arrayLike.isArray()) {
+        const src = arrayLike.array.*;
+        try result.ensureTotalCapacity(alloc, src.items.len);
+        for (src.items) |item| {
+            result.appendAssumeCapacity(item);
+        }
+        return result;
+    }
+
+    // If string, split into characters
+    if (arrayLike.isString()) {
+        const str = arrayLike.value.string;
+        try result.ensureTotalCapacity(alloc, str.len);
+        for (str) |ch| {
+            const chr = try alloc.dupe(u8, &[1]u8{ch});
+            result.appendAssumeCapacity(JsAny.fromString(chr));
+        }
+        return result;
+    }
+
+    // If object with length property, treat as array-like
+    if (arrayLike.isObject()) {
+        const obj = arrayLike.object.*;
+        if (obj.get("length")) |len_val| {
+            const len = @as(usize, @intCast(len_val.asI64()));
+            try result.ensureTotalCapacity(alloc, len);
+            var i: usize = 0;
+            while (i < len) : (i += 1) {
+                const key = try std.fmt.allocPrint(alloc, "{d}", .{i});
+                defer alloc.free(key);
+                if (obj.get(key)) |item| {
+                    result.appendAssumeCapacity(item);
+                } else {
+                    result.appendAssumeCapacity(JsAny.undefined_value);
+                }
+            }
+            return result;
+        }
+    }
+
+    // Fallback: empty array
+    return result;
+}
+
+/// Array.fromWithMap(arrayLike, mapFn) — create array with mapping function.
+/// mapFn receives (element, index) and returns new element.
+pub fn fromWithMap(
+    alloc: Allocator,
+    arrayLike: JsAny,
+    comptime mapFn: fn(JsAny, usize) JsAny,
+) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+
+    // If already an array, copy and map
+    if (arrayLike.isArray()) {
+        const src = arrayLike.array.*;
+        try result.ensureTotalCapacity(alloc, src.items.len);
+        for (src.items, 0..) |item, i| {
+            result.appendAssumeCapacity(mapFn(item, i));
+        }
+        return result;
+    }
+
+    // If string, split into characters and map
+    if (arrayLike.isString()) {
+        const str = arrayLike.value.string;
+        try result.ensureTotalCapacity(alloc, str.len);
+        for (str, 0..) |ch, i| {
+            const chr = try alloc.dupe(u8, &[1]u8{ch});
+            result.appendAssumeCapacity(mapFn(JsAny.fromString(chr), i));
+        }
+        return result;
+    }
+
+    // Fallback: empty array
+    return result;
+}
+
+/// Array.of(items) — create ArrayList(JsAny) from slice of JsAny.
+pub fn of(alloc: Allocator, items: []const JsAny) !std.ArrayList(JsAny) {
+    var result = std.ArrayList(JsAny).empty;
+    errdefer result.deinit(alloc);
+    try result.ensureTotalCapacity(alloc, items.len);
+    for (items) |item| {
+        result.appendAssumeCapacity(item);
+    }
+    return result;
 }
 
 /// Array.push — append a value, returns new slice.
@@ -444,4 +541,127 @@ test "entries" {
     try std.testing.expectEqual(@as(usize, 2), entry1.items.len);
     try std.testing.expectEqual(@as(i64, 1), entry1.items[0].asI64());
     try std.testing.expectEqual(@as(i64, 20), entry1.items[1].asI64());
+}
+
+test "isArray" {
+    const alloc = std.testing.allocator;
+
+    // Array should return true
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+    try std.testing.expect(isArray(arr));
+
+    // String should return false
+    const str = JsAny.fromString("hello");
+    try std.testing.expect(!isArray(str));
+
+    // Number should return false
+    const num = JsAny.fromI64(42);
+    try std.testing.expect(!isArray(num));
+
+    // Object should return false
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try std.testing.expect(!isArray(obj));
+
+    // Null should return false
+    const null_val = JsAny.fromNull();
+    try std.testing.expect(!isArray(null_val));
+}
+
+test "from array" {
+    const alloc = std.testing.allocator;
+
+    // Create source array
+    var src = try JsAny.newArray(alloc);
+    defer src.deinit(alloc);
+    try src.arrayPush(alloc, JsAny.fromI64(1));
+    try src.arrayPush(alloc, JsAny.fromI64(2));
+    try src.arrayPush(alloc, JsAny.fromI64(3));
+
+    // Convert to ArrayList(JsAny)
+    var result = try from(alloc, src);
+    defer result.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqual(@as(i64, 1), result.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 2), result.items[1].asI64());
+    try std.testing.expectEqual(@as(i64, 3), result.items[2].asI64());
+}
+
+test "from string" {
+    const alloc = std.testing.allocator;
+
+    // String "abc" should become ["a", "b", "c"]
+    const str = JsAny.fromString("abc");
+    var result = try from(alloc, str);
+    defer result.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqualStrings("a", result.items[0].asString(alloc));
+    try std.testing.expectEqualStrings("b", result.items[1].asString(alloc));
+    try std.testing.expectEqualStrings("c", result.items[2].asString(alloc));
+}
+
+test "from object with length" {
+    const alloc = std.testing.allocator;
+
+    // Create array-like object: {0: "a", 1: "b", length: 2}
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.set("0", JsAny.fromString("a"), alloc);
+    try obj.set("1", JsAny.fromString("b"), alloc);
+    try obj.set("length", JsAny.fromI64(2), alloc);
+
+    var result = try from(alloc, obj);
+    defer result.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 2), result.items.len);
+    try std.testing.expectEqualStrings("a", result.items[0].asString(alloc));
+    try std.testing.expectEqualStrings("b", result.items[1].asString(alloc));
+}
+
+test "of" {
+    const alloc = std.testing.allocator;
+
+    // Create array from items
+    const items = &[_]JsAny{
+        JsAny.fromI64(10),
+        JsAny.fromString("hello"),
+        JsAny.fromBool(true),
+    };
+
+    var result = try of(alloc, items);
+    defer result.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqual(@as(i64, 10), result.items[0].asI64());
+    try std.testing.expectEqualStrings("hello", result.items[1].asString(alloc));
+    try std.testing.expect(result.items[2].asBool());
+}
+
+test "fromWithMap" {
+    const alloc = std.testing.allocator;
+
+    // Create source array
+    var src = try JsAny.newArray(alloc);
+    defer src.deinit(alloc);
+    try src.arrayPush(alloc, JsAny.fromI64(1));
+    try src.arrayPush(alloc, JsAny.fromI64(2));
+    try src.arrayPush(alloc, JsAny.fromI64(3));
+
+    // Map function: multiply by 2
+    const Double = struct {
+        fn map(item: JsAny, _: usize) JsAny {
+            return JsAny.fromI64(item.asI64() * 2);
+        }
+    }.map;
+
+    var result = try fromWithMap(alloc, src, Double);
+    defer result.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 3), result.items.len);
+    try std.testing.expectEqual(@as(i64, 2), result.items[0].asI64());
+    try std.testing.expectEqual(@as(i64, 4), result.items[1].asI64());
+    try std.testing.expectEqual(@as(i64, 6), result.items[2].asI64());
 }
