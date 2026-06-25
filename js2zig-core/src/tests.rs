@@ -4908,6 +4908,70 @@ export function findIndexBlockBody() {
         );
     }
 
+    // ── Test: Array.findLast() ─────────────
+
+    #[test]
+    fn test_native_proto_array_find_last() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findLastEven() {
+    const arr = [1, 2, 3, 4, 5];
+    const found = arr.findLast(x => x % 2 === 0);
+    return found;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find_last");
+        assert!(
+            zig.contains("var __i: usize = "),
+            "Expected reverse loop in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk "),
+            "Expected break :blk with value in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk undefined"),
+            "Expected break :blk undefined fallback in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: Array.findLastIndex() ─────────────
+
+    #[test]
+    fn test_native_proto_array_find_last_index() {
+        let js = r#"
+/**
+ * @returns {number}
+ */
+export function findLastIndexEven() {
+    const arr = [10, 20, 30, 40];
+    const idx = arr.findLastIndex(x => x % 20 === 0);
+    return idx;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_array_find_last_index");
+        assert!(
+            zig.contains("var __i: usize = "),
+            "Expected reverse loop in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("@intCast"),
+            "Expected @intCast for index in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("break :blk -1"),
+            "Expected break :blk -1 fallback in:\n{}",
+            zig
+        );
+    }
+
     // ── Test: Array.fill() ─────────────
 
     #[test]
