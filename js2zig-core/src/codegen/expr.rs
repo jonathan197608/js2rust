@@ -2777,6 +2777,24 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::StringAt => {
+                // str.at(index) — supports negative indices
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.at() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    let idx_expr = self.first_arg_string(&ce.arguments);
+                    self.write(&format!(
+                        "js_string.at(js_allocator.getAllocator(), {}, {})",
+                        obj_name, idx_expr
+                    ));
+                    return true;
+                }
+                false
+            }
+
             builtins::BuiltinCall::StringCharCodeAt => {
                 if ce.arguments.len() != 1 {
                     self.errors

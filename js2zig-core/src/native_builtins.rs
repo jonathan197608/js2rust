@@ -166,6 +166,7 @@ pub enum BuiltinCall {
     StringReplace,     // str.replace(old, new)
     StringRepeat,      // str.repeat(n)
     StringSubstring,   // str.substring(start, end)
+    StringAt,          // str.at(index) — negative index support
 
     // Map/Set clear (shared variant like MapHas/MapDelete)
     MapClear, // map.clear() or set.clear()
@@ -381,7 +382,13 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "find" => Some(BuiltinCall::ArrayFind),
             "findIndex" => Some(BuiltinCall::ArrayFindIndex),
             "fill" => Some(BuiltinCall::ArrayFill),
-            "at" => Some(BuiltinCall::ArrayAt),
+            "at" => {
+                if is_string {
+                    Some(BuiltinCall::StringAt)
+                } else {
+                    Some(BuiltinCall::ArrayAt)
+                }
+            }
             "copyWithin" => Some(BuiltinCall::ArrayCopyWithin),
 
             // TypedArray-specific methods (non-overlapping with Array)
@@ -487,7 +494,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::StringSlice
         | BuiltinCall::StringReplace
         | BuiltinCall::StringRepeat
-        | BuiltinCall::StringSubstring => Some(ZigType::Str),
+        | BuiltinCall::StringSubstring
+        | BuiltinCall::StringAt => Some(ZigType::Str),
         // charCodeAt returns u16 — no ZigType variant, defer to inference
 
         // Map methods

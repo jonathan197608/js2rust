@@ -31,6 +31,17 @@ pub fn charAt(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
     return result;
 }
 
+/// Get character at index (supports negative indices), returned as a 1-char string.
+/// Negative indices count from the end: at(-1) returns the last character.
+pub fn at(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
+    const adjusted_idx: isize = if (idx < 0) @as(isize, @intCast(s.len)) + @as(isize, idx) else idx;
+    if (adjusted_idx < 0 or adjusted_idx >= s.len) return &[0]u8{};
+    const uidx: usize = @intCast(adjusted_idx);
+    const result = try alloc.alloc(u8, 1);
+    result[0] = s[uidx];
+    return result;
+}
+
 /// Get UTF-16 code unit at index (JS charCodeAt behavior).
 /// Returns the i-th UTF-16 code unit (0-65535).
 /// If idx is out of bounds, returns 0 (JS returns NaN, but we return 0 for type simplicity).
