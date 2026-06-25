@@ -3477,6 +3477,42 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::NumberToExponential => {
+                // num.toExponential(fractionDigits) → js_number.toExponential(allocator, num, fractionDigits)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_number.toExponential(js_allocator.getAllocator(), {}, ",
+                        obj_name
+                    ));
+                    if ce.arguments.is_empty() {
+                        self.write("null");
+                    } else {
+                        self.emit_first_arg(&ce.arguments);
+                    }
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
+            builtins::BuiltinCall::NumberToPrecision => {
+                // num.toPrecision(precision) → js_number.toPrecision(allocator, num, precision)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "js_number.toPrecision(js_allocator.getAllocator(), {}, ",
+                        obj_name
+                    ));
+                    if ce.arguments.is_empty() {
+                        self.write("null");
+                    } else {
+                        self.emit_first_arg(&ce.arguments);
+                    }
+                    self.write(")");
+                    return true;
+                }
+                false
+            }
+
             // ── Map/Set clear ────────────────────────────────
             builtins::BuiltinCall::MapClear => {
                 // map.clear() / set.clear() → obj.clear()

@@ -181,7 +181,9 @@ pub enum BuiltinCall {
     NumberParseFloat,    // Number.parseFloat(s)
 
     // Number instance methods
-    NumberToFixed, // num.toFixed(digits) → str
+    NumberToFixed,       // num.toFixed(digits) → str
+    NumberToExponential, // num.toExponential(fractionDigits) → str
+    NumberToPrecision,   // num.toPrecision(precision) → str
 
     // String methods (extended)
     StringToUpperCase, // str.toUpperCase()
@@ -465,6 +467,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "getTimezoneOffset" => Some(BuiltinCall::DateGetTimezoneOffset),
             "toISOString" => Some(BuiltinCall::DateToISOString),
             "toFixed" => Some(BuiltinCall::NumberToFixed),
+            "toExponential" => Some(BuiltinCall::NumberToExponential),
+            "toPrecision" => Some(BuiltinCall::NumberToPrecision),
             "getUTCFullYear" => Some(BuiltinCall::DateGetUTCFullYear),
             "getUTCMonth" => Some(BuiltinCall::DateGetUTCMonth),
             "getUTCDate" => Some(BuiltinCall::DateGetUTCDate),
@@ -642,6 +646,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Number instance methods
         BuiltinCall::NumberToFixed => Some(ZigType::Str),
+        BuiltinCall::NumberToExponential => Some(ZigType::Str),
+        BuiltinCall::NumberToPrecision => Some(ZigType::Str),
 
         // JSON methods
         BuiltinCall::JsonStringify => Some(ZigType::Str), // Returns JSON string

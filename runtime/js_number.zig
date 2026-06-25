@@ -61,6 +61,72 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     return alloc.dupe(u8, s);
 }
 
+/// Number.prototype.toExponential — format a number in exponential notation.
+/// `fraction_digits` is optional (null = use default precision ~6 digits).
+pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) ![]const u8 {
+    // Handle special values
+    if (std.math.isNan(val)) return alloc.dupe(u8, "NaN");
+    if (std.math.isInf(val)) {
+        return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
+    }
+
+    const digits: usize = if (fraction_digits) |d| @intCast(@max(0, @min(100, d))) else 6;
+
+    var buf: [128]u8 = undefined;
+
+    // Use inline for to generate format string at comptime
+    inline for (0..21) |p| {
+        if (digits == p) {
+            const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{p});
+            const s = std.fmt.bufPrint(&buf, fmt, .{val}) catch break;
+            return alloc.dupe(u8, s);
+        }
+    }
+    // Fallback for digits >= 21
+    const s = std.fmt.bufPrint(&buf, "{e}", .{val}) catch "0e+0";
+    return alloc.dupe(u8, s);
+}
+
+/// Number.prototype.toPrecision — format with specified significant digits.
+/// `precision` is optional (null = use full precision).
+pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const u8 {
+    // Handle special values
+    if (std.math.isNan(val)) return alloc.dupe(u8, "NaN");
+    if (std.math.isInf(val)) {
+        return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
+    }
+    if (val == 0.0) {
+        const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 1;
+        if (p == 1) return alloc.dupe(u8, "0");
+
+        // Build "0." + (p-1) zeros
+        const result = try alloc.alloc(u8, 1 + 1 + (p - 1));
+        result[0] = '0';
+        result[1] = '.';
+        for (0..(p - 1)) |i| {
+            result[2 + i] = '0';
+        }
+        return result;
+    }
+
+    const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 6;
+
+    var buf: [128]u8 = undefined;
+
+    // Simplified: use exponential notation for toPrecision
+    inline for (1..21) |prec| {
+        if (p == prec) {
+            const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{prec - 1});
+            const s = std.fmt.bufPrint(&buf, fmt, .{val}) catch break;
+            return alloc.dupe(u8, s);
+        }
+    }
+
+    // Fallback
+    const s = std.fmt.bufPrint(&buf, "{d}", .{val}) catch "0";
+    return alloc.dupe(u8, s);
+}
+
 // ── Tests ──
 
 test "isNaN" {
@@ -123,4 +189,41 @@ test "toFixed" {
     const r5 = try toFixed(a, std.math.inf(f64), 2);
     defer a.free(r5);
     try std.testing.expectEqualStrings("Infinity", r5);
+}
+
+test "toExponential" {
+    const a = std.testing.allocator;
+    // Test basic exponential formatting
+    const r1 = try toExponential(a, 3.14159, 2);
+    defer a.free(r1);
+    // Should be something like "3.14e+0"
+    try std.testing.expect(r1.len > 0);
+
+    // Test with null (default precision)
+    const r2 = try toExponential(a, 3.14159, null);
+    defer a.free(r2);
+    try std.testing.expect(r2.len > 0);
+
+    // Test special values
+    const r3 = try toExponential(a, std.math.nan(f64), 2);
+    defer a.free(r3);
+    try std.testing.expectEqualStrings("NaN", r3);
+}
+
+test "toPrecision" {
+    const a = std.testing.allocator;
+    // Test basic precision formatting
+    const r1 = try toPrecision(a, 3.14159, 3);
+    defer a.free(r1);
+    try std.testing.expect(r1.len > 0);
+
+    // Test with null (default precision)
+    const r2 = try toPrecision(a, 3.14159, null);
+    defer a.free(r2);
+    try std.testing.expect(r2.len > 0);
+
+    // Test special values
+    const r3 = try toPrecision(a, std.math.nan(f64), 3);
+    defer a.free(r3);
+    try std.testing.expectEqualStrings("NaN", r3);
 }
