@@ -3813,6 +3813,23 @@ impl Codegen {
                 true
             }
 
+            // ── String methods (P2 — not yet implemented) ─────────────────────
+            builtins::BuiltinCall::StringMatchAll => {
+                // str.matchAll(regex) — not yet supported (regex required)
+                self.compile_error(ce.span, "String.matchAll() requires regex support, which is not yet implemented in js2zig");
+                true
+            }
+            builtins::BuiltinCall::StringLocaleCompare => {
+                // str.localeCompare(other) — not yet supported (ICU required)
+                self.compile_error(ce.span, "String.localeCompare() requires ICU support, which is not yet implemented in js2zig");
+                true
+            }
+            builtins::BuiltinCall::StringNormalize => {
+                // str.normalize(form) — not yet supported (Unicode normalization required)
+                self.compile_error(ce.span, "String.normalize() requires Unicode normalization support, which is not yet implemented in js2zig");
+                true
+            }
+
             // ── Object methods (P2) ─────────────────────────────
             builtins::BuiltinCall::ObjectIs => {
                 // Object.is(a, b) → SameValue comparison

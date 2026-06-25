@@ -207,6 +207,11 @@ pub enum BuiltinCall {
     StringSubstring,   // str.substring(start, end)
     StringAt,          // str.at(index) — negative index support
 
+    // String methods (P2 — not yet implemented)
+    StringMatchAll,      // str.matchAll(regex) — requires regex support
+    StringLocaleCompare, // str.localeCompare(other) — requires ICU
+    StringNormalize,     // str.normalize(form) — requires Unicode normalization
+
     // Map/Set clear (shared variant like MapHas/MapDelete)
     MapClear, // map.clear() or set.clear()
 
@@ -403,6 +408,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "substring" => Some(BuiltinCall::StringSubstring),
             "match" => Some(BuiltinCall::StringMatch),
             "search" => Some(BuiltinCall::StringSearch),
+            "matchAll" => Some(BuiltinCall::StringMatchAll),
+            "localeCompare" => Some(BuiltinCall::StringLocaleCompare),
+            "normalize" => Some(BuiltinCall::StringNormalize),
 
             // Methods that exist on both String and Array
             "indexOf" => {
