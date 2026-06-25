@@ -549,9 +549,9 @@
 | `.clear()` | `map.clear()` | — | `void` | ✅ | ✅ | ✅ P0 done | ✅ |
 | `.size` | 实例属性 `map.size` | — | `usize` | ✅ | ✅ | ✅ P0 done | ✅ |
 | `.forEach(fn)` | `map.forEach(callbackFn[, thisArg])` | `fn: (val,key,map)=>void` | `void` | ❌ | ❌ | ✅ runtime | ❌ P1 |
-| `.keys()` | `map.keys()` | — | Iterator | ❌ | ❌ | ❌ | ❌ P3 |
-| `.values()` | `map.values()` | — | Iterator | ❌ | ❌ | ❌ | ❌ P3 |
-| `.entries()` | `map.entries()` | — | Iterator | ❌ | ❌ | ❌ | ❌ P3 |
+| `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
+| `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
+| `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
 | `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | ❌ | ❌ | ❌ | ❌ P3 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
@@ -564,7 +564,7 @@
 > m.forEach((v, k) => { /* v=10, k='x'; v=20, k='y' */ });
 > ```
 
-### 4.5 `Set` — 6/12 (50%)
+### 4.5 `Set` — 9/12 (75%)
 
 > **Runtime 文件**: `runtime/js_set.zig`（已实现 has/delete/clear/size）
 > **检测冲突**: `.has()`/`.delete()` 当前仅路由到 Map，需通过 receiver 类型区分 Set 变量。
@@ -578,7 +578,7 @@
 | `.clear()` | `set.clear()` | — | `void` | ✅ | ✅ | ✅ P0 done (MapClear 分派) | ✅ |
 | `.size` | 实例属性 `set.size` | — | `usize` | ✅ | ✅ | ✅ P0 done | ✅ |
 | `.forEach(fn)` | `set.forEach(callbackFn[, thisArg])` | `fn: (val,val,set)=>void` | `void` | ❌ | ❌ | ❌ | ❌ P3 |
-| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ❌ | ❌ | ❌ | ❌ P3 |
+| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_set.zig` | ✅ #628 |
 | `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | ❌ | ❌ | ❌ | ❌ P3 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):

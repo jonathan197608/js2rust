@@ -13,6 +13,7 @@
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
+**✅ 2026-06-25 #628 Map/Set 迭代器完成**: `JsSet` 重构为 `std.HashMap(JsAny, void, JsAnyHashMapContext, ...)`（SameValueZero 语义），`set.keys()/values()/entries()` 类型推断和 codegen 全部接通，24 个 Zig 测试通过。
 **📋 2026-06-25 Phase 4 任务创建完成**: #626-#639 共 14 个任务，覆盖 String/Array/Number/Date/Map/Set/Math/Object 8 个类别。
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
@@ -285,7 +286,7 @@ examples/builtins-mdn-tests/
 | `.toJSON()` | #629 | P3 | 调用 `toISOString()` | `date.js` |
 | UTC getter 系列 (8) | #637 | P3 | `getUTCFullYear/getUTCMonth/...` | `date.js` |
 
-#### 0.5.5 Map/Set 迭代器 (#628)
+#### 0.5.5 Map/Set 迭代器 (#628) ✅ 已完成 (2026-06-25)
 
 | 方法 | 任务 # | 优先级 | 实现策略 | 测试文件 |
 |------|--------|--------|----------|---------|
@@ -551,6 +552,10 @@ examples/builtins-mdn-tests/
 | 日期 | 更新内容 | 更新人 |
 |------|----------|--------|
 | 2026-06-25 | P0/P1/P2 内置对象连线全部完成 (覆盖率 22%→53%)，FEATURE/ROADMAP 文档同步 | jonathan197608 |
+| 2026-06-25 | #628 Map/Set 迭代器完成: JsSet 重构为 JsAny HashMap + SameValueZero 语义，Set iterator codegen 接通 | jonathan197608 |
+| 2026-06-24 | 添加 P2 补充不确定项核实任务（15 项），来自 JS_FEATURE_EVALUATION.md 文档审计 | jonathan197608 |
+| 2026-06-24 | 清理已完成的 P0/P1 任务；移除与 JS_FEATURE_EVALUATION.md 重叠内容（核心能力、已知限制）；文档结构去重 | jonathan197608 |
+| 2026-06-24 | 内置对象补齐计划 MDN 对齐重写: Section 0 扩展为 8 子节 (Phase 0-4 + 风险评估 + 里程碑 + 文件索引 + examples/builtins-mdn-tests 项目设计) | jonathan197608 |
 | 2026-06-23 | 初始版本，创建任务规划文档 | jonathan197608 |
 | 2026-06-23 | P0 任务全部标记为已完成 | jonathan197608 |
 | 2026-06-23 | P1 闭包集成测试标记为已完成，测试计数更新 101→111 | jonathan197608 |
@@ -558,12 +563,9 @@ examples/builtins-mdn-tests/
 | 2026-06-23 | P1 TypedArray 完整支持完成：`.get()`/`.set()`/`.subarray()`/`.copyWithin()`/`.fill()`/`.buffer`/`.byteLength`/`.byteOffset` (12 个专用测试) | jonathan197608 |
 | 2026-06-23 | P0/P1 全部完成，P1 新增字符串返回值内存管理任务；测试计数 111→145，clippy 7→0 警告 | jonathan197608 |
 | 2026-06-23 | 文档架构重构：README 拆分中英文、FEATURE 与 ROADMAP 去重解耦、v0.3.2 版本 bump | jonathan197608 |
-| 2026-06-24 | 添加 P2 补充不确定项核实任务（15 项），来自 JS_FEATURE_EVALUATION.md 文档审计 | jonathan197608 |
-| 2026-06-24 | 清理已完成的 P0/P1 任务；移除与 JS_FEATURE_EVALUATION.md 重叠内容（核心能力、已知限制）；文档结构去重 | jonathan197608 |
-| 2026-06-24 | 内置对象补齐计划 MDN 对齐重写: Section 0 扩展为 8 子节 (Phase 0-4 + 风险评估 + 里程碑 + 文件索引 + examples/builtins-mdn-tests 项目设计) | jonathan197608 |
 
 ---
 
 **文档版本**: 2.0  
-**最后更新**: 2026-06-24  
+**最后更新**: 2026-06-25  
 **维护者**: jonathan197608
