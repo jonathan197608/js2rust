@@ -315,8 +315,8 @@ impl Codegen {
                         // new Int32Array([...]) → js_typedarray.fromI64AsI32(...)
                         self.write("js_typedarray.fromI64AsI32(");
                         if let Some(first_arg) = ne.arguments.first()
-                            && let Expression::ArrayExpression(ae) =
-                                first_arg.as_expression().unwrap()
+                            && let Some(expr) = first_arg.as_expression()
+                            && let Expression::ArrayExpression(ae) = expr
                         {
                             self.write("&[_]i64{");
                             self.emit_comma_separated_array_elements(&ae.elements);
@@ -328,8 +328,8 @@ impl Codegen {
                         // new Uint8Array([...]) → js_typedarray.fromU8(...)
                         self.write("js_typedarray.fromU8(");
                         if let Some(first_arg) = ne.arguments.first()
-                            && let Expression::ArrayExpression(ae) =
-                                first_arg.as_expression().unwrap()
+                            && let Some(expr) = first_arg.as_expression()
+                            && let Expression::ArrayExpression(ae) = expr
                         {
                             self.write("&[_]u8{");
                             self.emit_comma_separated_array_elements(&ae.elements);
@@ -341,8 +341,8 @@ impl Codegen {
                         // new Float64Array([...]) → js_typedarray.fromF64(...)
                         self.write("js_typedarray.fromF64(");
                         if let Some(first_arg) = ne.arguments.first()
-                            && let Expression::ArrayExpression(ae) =
-                                first_arg.as_expression().unwrap()
+                            && let Some(expr) = first_arg.as_expression()
+                            && let Expression::ArrayExpression(ae) = expr
                         {
                             self.write("&[_]f64{");
                             self.emit_comma_separated_array_elements(&ae.elements);
@@ -3285,10 +3285,22 @@ impl Codegen {
                 }
                 // Generate: (std.math.isNan(a) and std.math.isNan(b)) or (a == b)
                 self.write("(");
-                let a_expr =
-                    self.emit_expr_to_string(ce.arguments[0].as_expression().expect("arg"));
-                let b_expr =
-                    self.emit_expr_to_string(ce.arguments[1].as_expression().expect("arg"));
+                let a_expr = if let Some(arg0) = ce.arguments.first()
+                    .and_then(|a| a.as_expression())
+                {
+                    self.emit_expr_to_string(arg0)
+                } else {
+                    self.compile_error(ce.span, "Object.is(): first argument must be an expression");
+                    return true;
+                };
+                let b_expr = if let Some(arg1) = ce.arguments.get(1)
+                    .and_then(|a| a.as_expression())
+                {
+                    self.emit_expr_to_string(arg1)
+                } else {
+                    self.compile_error(ce.span, "Object.is(): second argument must be an expression");
+                    return true;
+                };
                 self.write(&format!(
                     "(std.math.isNan({a}) and std.math.isNan({b})) or ({a} == {b})",
                     a = a_expr,
@@ -3893,9 +3905,15 @@ impl Codegen {
             // Rule 2: Binary expression → definite only if BOTH operands are literals
             Expression::BinaryExpression(be) => {
                 if Self::is_literal(&be.left) && Self::is_literal(&be.right) {
-                    // Both are literals: infer types and compute result
-                    let left_ty = self.infer_expr_type(&be.left).unwrap();
-                    let right_ty = self.infer_expr_type(&be.right).unwrap();
+                    // Both are literals: infer types and compute result.
+                    // Safety: is_literal() returning true guarantees
+                    // infer_expr_type() returns Some(...).
+                    let left_ty = self
+                        .infer_expr_type(&be.left)
+                        .expect("is_literal() true → infer_expr_type() returns Some");
+                    let right_ty = self
+                        .infer_expr_type(&be.right)
+                        .expect("is_literal() true → infer_expr_type() returns Some");
                     Some(Self::infer_binary_type(be.operator, left_ty, right_ty))
                 } else {
                     // Rule 3: Cannot infer type
