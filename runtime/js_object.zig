@@ -31,6 +31,22 @@ pub fn values(alloc: Allocator, obj: *const JsValueHashMap) ![]JsValue {
     return list.toOwnedSlice(alloc);
 }
 
+/// Object.entries — return array of [key, value] pairs from a HashMap.
+/// Each pair is a struct { key: []const u8, value: JsValue }.
+pub const Entry = struct { key: []const u8, value: JsValue };
+
+pub fn entries(alloc: Allocator, obj: *const JsValueHashMap) ![]Entry {
+    var kiter = obj.iterator();
+    var list = std.ArrayList(Entry).empty;
+    errdefer list.deinit(alloc);
+    while (kiter.next()) |entry| {
+        const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        errdefer alloc.free(key_copy);
+        try list.append(alloc, .{ .key = key_copy, .value = entry.value_ptr.* });
+    }
+    return list.toOwnedSlice(alloc);
+}
+
 /// Object.assign — copy entries from source to target HashMap.
 pub fn assign(target: *JsValueHashMap, source: *const JsValueHashMap) !void {
     var siter = source.iterator();
@@ -71,6 +87,21 @@ test "values" {
     const v = try values(alloc, &obj);
     defer alloc.free(v);
     try std.testing.expect(v.len >= 2);
+}
+
+test "entries" {
+    const alloc = std.testing.allocator;
+    var obj = JsValueHashMap.init(alloc);
+    defer obj.deinit();
+    try obj.put("name", JsValue{ .string = "zig" });
+    try obj.put("version", JsValue{ .int = 1 });
+
+    const e = try entries(alloc, &obj);
+    defer {
+        for (e) |entry| alloc.free(entry.key);
+        alloc.free(e);
+    }
+    try std.testing.expect(e.len >= 2);
 }
 
 test "assign" {
