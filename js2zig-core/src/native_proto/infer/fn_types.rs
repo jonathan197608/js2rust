@@ -408,20 +408,78 @@ impl TypeInferrer {
     }
 
     /// Convert a JSDoc type string to ZigType.
+    /// Supports:
+    /// - Basic types: "string" → Str, "number" → I64, "boolean" → Bool
+    /// - Named types: "User" → NamedStruct (if in typedefs)
+    /// - Array types: "string[]" → ArrayList(Str), "User[]" → ArrayList(NamedStruct)
+    /// - Anonymous object types: "{name: string, age: number}" → Struct
     pub(crate) fn jsdoc_str_to_zig_type(
         s: &str,
         typedefs: &HashMap<String, jsdoc::TypedefDef>,
     ) -> ZigType {
-        let zig_str = jsdoc::jsdoc_type_to_zig(s, typedefs);
+        let trimmed = s.trim();
+
+        // Check for anonymous object type: {name: string, age: number}
+        if trimmed.starts_with('{') && trimmed.ends_with('}') {
+            return Self::parse_anonymous_object_type(trimmed, typedefs);
+        }
+
+        // Convert JSDoc type to Zig type string
+        let zig_str = jsdoc::jsdoc_type_to_zig(trimmed, typedefs);
+
+        // Check if it's a named type (in typedefs)
+        if typedefs.contains_key(trimmed) {
+            return ZigType::NamedStruct(trimmed.to_string());
+        }
+
+        // Check if the original JSDoc type is an array type (e.g., "string[]", "number[]")
+        if let Some(base_jsdoc_type) = trimmed.strip_suffix("[]") {
+            let base_zig_type = Self::jsdoc_str_to_zig_type(base_jsdoc_type, typedefs);
+            return ZigType::ArrayList(Box::new(base_zig_type));
+        }
+
+        // Basic types
         Self::zig_str_to_type(&zig_str)
+    }
+
+    /// Parse anonymous object type: "{name: string, age: number}" → Struct
+    fn parse_anonymous_object_type(
+        s: &str,
+        typedefs: &HashMap<String, jsdoc::TypedefDef>,
+    ) -> ZigType {
+        let inner = &s[1..s.len() - 1]; // Remove surrounding braces
+        let mut fields = Vec::new();
+
+        // Split by comma, but be careful with nested objects
+        for part in inner.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            // Parse "name: type" or "name?: type" (optional)
+            let colon_pos = part.find(':');
+            if let Some(pos) = colon_pos {
+                let field_name = part[..pos].trim().trim_end_matches('?').to_string();
+                let field_type_str = part[pos + 1..].trim();
+
+                // Recursively parse field type (supports nested objects)
+                let field_type = Self::jsdoc_str_to_zig_type(field_type_str, typedefs);
+                fields.push((field_name, field_type));
+            }
+        }
+
+        ZigType::Struct(fields)
     }
 
     /// Look up JSDoc @returns annotation for a function and convert to ZigType.
     pub(crate) fn lookup_jsdoc_return_type(&self, fn_name: &str) -> Option<ZigType> {
         let jsdoc_data = self.jsdoc_data.as_ref()?;
         let ret_type_name = jsdoc_data.return_types.get(fn_name)?;
-        let zig_ty = jsdoc::jsdoc_type_to_zig(ret_type_name, &jsdoc_data.typedefs);
-        Some(Self::zig_str_to_type(&zig_ty))
+        Some(Self::jsdoc_str_to_zig_type(
+            ret_type_name,
+            &jsdoc_data.typedefs,
+        ))
     }
 
     pub(crate) fn zig_str_to_type(s: &str) -> ZigType {
@@ -431,6 +489,8 @@ impl TypeInferrer {
             "bool" => ZigType::Bool,
             "[]const u8" => ZigType::Str,
             "void" => ZigType::Void,
+            // Named struct (fallback for types not in typedefs)
+            _ if !s.contains(' ') && !s.contains('[') => ZigType::NamedStruct(s.to_string()),
             _ => ZigType::I64, // default
         }
     }
