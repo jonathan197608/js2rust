@@ -351,12 +351,12 @@ impl Codegen {
                         self.write(")");
                         return;
                     } else if obj_name == "Map" {
-                        // new Map() → js_map.JsMap.init(js_allocator.getAllocator())
-                        self.write("js_map.JsMap.init(js_allocator.getAllocator())");
+                        // new Map() → js_collections.JsMap.init(js_allocator.getAllocator())
+                        self.write("js_collections.JsMap.init(js_allocator.getAllocator())");
                         return;
                     } else if obj_name == "Set" {
-                        // new Set() → js_set.JsSet.init(js_allocator.getAllocator())
-                        self.write("js_set.JsSet.init(js_allocator.getAllocator())");
+                        // new Set() → js_collections.JsSet.init(js_allocator.getAllocator())
+                        self.write("js_collections.JsSet.init(js_allocator.getAllocator())");
                         return;
                     } else if obj_name == "Date" {
                         // new Date() → js_date.JsDate.init()

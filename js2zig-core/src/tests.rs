@@ -36,7 +36,7 @@ mod native_proto_tests {
         let needs_js_allocator = zig_code.contains("js_allocator");
         let needs_js_array = zig_code.contains("js_array");
         let needs_js_json = zig_code.contains("js_json");
-        let needs_js_map = zig_code.contains("js_map");
+        let needs_js_collections = zig_code.contains("js_collections");
         let any_runtime = needs_js_date
             || needs_js_object
             || needs_js_number
@@ -46,7 +46,7 @@ mod native_proto_tests {
             || needs_string_hashmap
             || needs_js_allocator
             || needs_js_array
-            || needs_js_map;
+            || needs_js_collections;
 
         let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
@@ -61,8 +61,8 @@ mod native_proto_tests {
             if needs_js_json {
                 w.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
             }
-            if needs_js_map {
-                w.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
+            if needs_js_collections {
+                w.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
             }
             if needs_js_date {
                 w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");

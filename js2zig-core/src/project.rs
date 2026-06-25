@@ -252,8 +252,7 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     out.push_str("const js_number = @import(\"js_runtime/js_number.zig\");\n");
     out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
     out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
-    out.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
-    out.push_str("const js_set = @import(\"js_runtime/js_set.zig\");\n");
+    out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
@@ -329,8 +328,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("const js_number = @import(\"js_runtime/js_number.zig\");\n");
     out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
     out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
-    out.push_str("const js_map = @import(\"js_runtime/js_map.zig\");\n");
-    out.push_str("const js_set = @import(\"js_runtime/js_set.zig\");\n");
+    out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
