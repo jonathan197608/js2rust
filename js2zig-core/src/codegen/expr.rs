@@ -698,10 +698,22 @@ impl Codegen {
         }
 
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
-        if let Some(builtin) = builtins::detect_builtin_call(ce)
-            && self.emit_builtin_call(&builtin, ce)
-        {
-            return;
+        if let Some(mut builtin) = builtins::detect_builtin_call(ce) {
+            // Override: if detect_builtin_call returns ArrayAt but object is a string, use StringAt
+            if matches!(builtin, builtins::BuiltinCall::ArrayAt) {
+                if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+                    if let Expression::Identifier(ref obj_id) = mem.object {
+                        let obj_name = obj_id.name.as_str();
+                        // Check if obj is a string variable (from type_info)
+                        if let Some(ZigType::Str) = self.type_info.var_types.get(obj_name) {
+                            builtin = builtins::BuiltinCall::StringAt;
+                        }
+                    }
+                }
+            }
+            if self.emit_builtin_call(&builtin, ce) {
+                return;
+            }
         }
         // If emit_builtin_call returns false, fall through to normal call handling
 

@@ -4394,6 +4394,42 @@ export function testSubstringSwap() {
         );
     }
 
+    // ── Test: String.at() (Task #627) ────────────
+    #[test]
+    fn test_native_proto_string_at() {
+        let js = r#"
+export function testAt() {
+    const s = "hello";
+    return s.at(1);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_string_at");
+        println!("=== String.at() Zig code ===\n{}", zig);
+
+        // Verify: at() runtime call generated
+        assert!(
+            zig.contains("js_string.at"),
+            "Expected js_string.at call, got:\n{}",
+            zig
+        );
+
+        // Verify: handles negative index
+        let js_neg = r#"
+export function testAtNeg() {
+    const s = "hello";
+    return s.at(-1);
+}
+"#;
+        let zig_neg = transpile_and_assert!(js_neg, "test_native_proto_string_at_neg");
+        println!("=== String.at(-1) Zig code ===\n{}", zig_neg);
+
+        assert!(
+            zig_neg.contains("js_string.at"),
+            "Expected js_string.at call for negative index, got:\n{}",
+            zig_neg
+        );
+    }
+
     // ── Test: Object.hasOwn() with struct ─────────────
 
     #[test]
