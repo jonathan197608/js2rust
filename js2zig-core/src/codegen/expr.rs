@@ -2031,21 +2031,18 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringSplit => {
-                // str.split(sep) → std.mem.split(u8, str, sep) (returns iterator)
-                // Simplified: returns array of strings
+                // str.split(sep) → js_string.split(allocator, str, sep)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.split() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
-                    // Generate code to split string into array
                     self.write(&format!(
-                            "(blk: {{ var __split_result = std.ArrayList([]const u8).init(js_allocator.getAllocator()); var __split_iter = std.mem.split(u8, {obj}, {arg}); while (__split_iter.next()) |__part| {{ __split_result.append(__part) catch break :blk {{}}; }} break :blk __split_result.toOwnedSlice() catch &[_][]const u8{{}}; }})",
-                            obj = obj_name,
-                            arg = arg_expr
-                        ));
+                        "js_string.split(js_allocator.getAllocator(), {}, {})",
+                        obj_repr, arg_expr
+                    ));
                     return true;
                 }
                 false
@@ -2059,7 +2056,7 @@ impl Codegen {
                     );
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let len_expr = self.first_arg_string(&ce.arguments);
                     let pad_expr = if let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression()
@@ -2070,7 +2067,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.padStart(js_allocator.getAllocator(), {obj}, {len}, {pad})",
-                        obj = obj_name,
+                        obj = obj_repr,
                         len = len_expr,
                         pad = pad_expr
                     ));
@@ -2087,7 +2084,7 @@ impl Codegen {
                     );
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let len_expr = self.first_arg_string(&ce.arguments);
                     let pad_expr = if let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression()
@@ -2098,7 +2095,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.padEnd(js_allocator.getAllocator(), {obj}, {len}, {pad})",
-                        obj = obj_name,
+                        obj = obj_repr,
                         len = len_expr,
                         pad = pad_expr
                     ));
@@ -3351,10 +3348,10 @@ impl Codegen {
 
             // ── String methods (extended) ──────────────────
             builtins::BuiltinCall::StringToUpperCase => {
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
                         "js_string.toUpper(js_allocator.getAllocator(), {})",
-                        obj_name
+                        obj_repr
                     ));
                     return true;
                 }
@@ -3363,10 +3360,10 @@ impl Codegen {
 
             builtins::BuiltinCall::StringToLocaleUpperCase => {
                 // str.toLocaleUpperCase() → js_string.toLocaleUpper(alloc, str)
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
                         "js_string.toLocaleUpper(js_allocator.getAllocator(), {})",
-                        obj_name
+                        obj_repr
                     ));
                     return true;
                 }
@@ -3374,10 +3371,10 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringToLowerCase => {
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
                         "js_string.toLower(js_allocator.getAllocator(), {})",
-                        obj_name
+                        obj_repr
                     ));
                     return true;
                 }
@@ -3386,10 +3383,10 @@ impl Codegen {
 
             builtins::BuiltinCall::StringToLocaleLowerCase => {
                 // str.toLocaleLowerCase() → js_string.toLocaleLower(alloc, str)
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
                         "js_string.toLocaleLower(js_allocator.getAllocator(), {})",
-                        obj_name
+                        obj_repr
                     ));
                     return true;
                 }
@@ -3402,11 +3399,11 @@ impl Codegen {
                         .push("String.charAt() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let idx_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "js_string.charAt(js_allocator.getAllocator(), {}, {})",
-                        obj_name, idx_expr
+                        obj_repr, idx_expr
                     ));
                     return true;
                 }
@@ -3420,11 +3417,11 @@ impl Codegen {
                         .push("String.at() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let idx_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "js_string.at(js_allocator.getAllocator(), {}, {})",
-                        obj_name, idx_expr
+                        obj_repr, idx_expr
                     ));
                     return true;
                 }
@@ -3437,9 +3434,9 @@ impl Codegen {
                         .push("String.charCodeAt() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!("js_string.charCodeAt({}, {})", obj_name, idx_expr));
+                    self.write(&format!("js_string.charCodeAt({}, {})", obj_repr, idx_expr));
                     return true;
                 }
                 false
@@ -3452,11 +3449,11 @@ impl Codegen {
                         .push("String.codePointAt() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let idx_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "js_string.codePointAt({}, {})",
-                        obj_name, idx_expr
+                        obj_repr, idx_expr
                     ));
                     return true;
                 }
@@ -3509,7 +3506,7 @@ impl Codegen {
                         .push("String.replace() requires exactly 2 arguments".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let old_expr = self.first_arg_string(&ce.arguments);
                     let new_expr = if let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression()
@@ -3520,7 +3517,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.replace(js_allocator.getAllocator(), {}, {}, {})",
-                        obj_name, old_expr, new_expr
+                        obj_repr, old_expr, new_expr
                     ));
                     return true;
                 }
@@ -3534,7 +3531,7 @@ impl Codegen {
                         .push("String.replaceAll() requires exactly 2 arguments".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let old_expr = self.first_arg_string(&ce.arguments);
                     let new_expr = if let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression()
@@ -3545,7 +3542,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.replaceAll(js_allocator.getAllocator(), {}, {}, {})",
-                        obj_name, old_expr, new_expr
+                        obj_repr, old_expr, new_expr
                     ));
                     return true;
                 }
@@ -3558,11 +3555,11 @@ impl Codegen {
                         .push("String.repeat() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let n_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "js_string.repeat(js_allocator.getAllocator(), {}, {})",
-                        obj_name, n_expr
+                        obj_repr, n_expr
                     ));
                     return true;
                 }
@@ -3570,7 +3567,7 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringSubstring => {
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let start_expr = self.first_arg_string_or(&ce.arguments, "0");
                     let end_expr = if ce.arguments.len() >= 2 {
                         if let Some(arg) = ce.arguments.get(1)
@@ -3585,7 +3582,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.substring({}, {}, {})",
-                        obj_name, start_expr, end_expr
+                        obj_repr, start_expr, end_expr
                     ));
                     return true;
                 }
@@ -3967,15 +3964,16 @@ impl Codegen {
             // ── String methods (P2) ─────────────────────────────
             builtins::BuiltinCall::StringTrimStart => {
                 // str.trimStart() → std.mem.trimLeft(u8, str, &std.ascii.whitespace)
+                // TODO: Switch to js_string.trimStart() once implemented in runtime
                 if !ce.arguments.is_empty() {
                     self.errors
                         .push("String.trimStart() requires no arguments".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
-                        "std.mem.trimLeft(u8, {obj}, &std.ascii.whitespace)",
-                        obj = obj_name
+                        "std.mem.trimLeft(u8, {}, &std.ascii.whitespace)",
+                        obj_repr
                     ));
                     return true;
                 }
@@ -3984,15 +3982,16 @@ impl Codegen {
 
             builtins::BuiltinCall::StringTrimEnd => {
                 // str.trimEnd() → std.mem.trimRight(u8, str, &std.ascii.whitespace)
+                // TODO: Switch to js_string.trimEnd() once implemented in runtime
                 if !ce.arguments.is_empty() {
                     self.errors
                         .push("String.trimEnd() requires no arguments".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!(
-                        "std.mem.trimRight(u8, {obj}, &std.ascii.whitespace)",
-                        obj = obj_name
+                        "std.mem.trimRight(u8, {}, &std.ascii.whitespace)",
+                        obj_repr
                     ));
                     return true;
                 }
@@ -4001,17 +4000,17 @@ impl Codegen {
 
             builtins::BuiltinCall::StringLastIndexOf => {
                 // str.lastIndexOf(search) → std.mem.lastIndexOf(u8, str, search) → i64 | -1
+                // TODO: Switch to js_string.lastIndexOf() once implemented in runtime
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.lastIndexOf() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "(if (std.mem.lastIndexOf(u8, {obj}, {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
-                        obj = obj_name,
-                        arg = arg_expr
+                        "(if (std.mem.lastIndexOf(u8, {}, {})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
+                        obj_repr, arg_expr
                     ));
                     return true;
                 }
