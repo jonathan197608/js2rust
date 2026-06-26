@@ -5777,4 +5777,63 @@ export function toLower(str) {
             zig
         );
     }
+
+    // Test: String.split()
+    #[test]
+    fn test_p6_string_split() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {[]string}
+ */
+export function splitStr(str) {
+    return str.split(",");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_split");
+        assert!(
+            zig.contains("js_string.split(js_allocator.getAllocator()"),
+            "Expected 'js_string.split(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.charAt()
+    #[test]
+    fn test_p6_string_char_at() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function getChar(str) {
+    return str.charAt(0);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_char_at");
+        assert!(
+            zig.contains("js_string.charAt(js_allocator.getAllocator()"),
+            "Expected 'js_string.charAt(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.indexOf()
+    #[test]
+    fn test_p6_string_index_of() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function findIndex() {
+    return "hello".indexOf("lo");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_index_of");
+        assert!(
+            zig.contains("js_string.indexOf("),
+            "Expected 'js_string.indexOf(' in:\n{}",
+            zig
+        );
+    }
 }
