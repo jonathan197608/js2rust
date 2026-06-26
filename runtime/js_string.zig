@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const JsAny = @import("jsany.zig").JsAny;
 
 // ── Host C ABI function declarations ──
 
@@ -591,24 +592,24 @@ pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
 ///
 /// Returns null if no match, or an array of matched substrings.
 /// Index 0 is the full match, indices 1+ are capture groups.
-pub fn matchString(alloc: std.mem.Allocator, s: []const u8, pattern: []const u8) !?[][]const u8 {
+pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny {
     var count: usize = 0;
     const result = host_regex_match(pattern.ptr, pattern.len, s.ptr, s.len, &count);
-    if (count == 0) return null;
+    if (count == 0) return JsAny.fromNull();
 
     const bytes = result.ptr[0..@intCast(result.len)];
-    var matches = std.ArrayList([]const u8).init(alloc);
-    errdefer matches.deinit();
+    var arr = try JsAny.newArray(alloc);
+    errdefer arr.array.deinit(alloc);
 
     var start: usize = 0;
     for (0..count) |_| {
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try matches.append(bytes[start..end]);
+        try arr.array.append(JsAny.from(bytes[start..end]));
         start = end + 1;
     }
 
-    return try matches.toOwnedSlice();
+    return arr;
 }
 
 /// Search string for regex (stub: always returns -1).

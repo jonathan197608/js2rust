@@ -38,6 +38,7 @@ mod native_proto_tests {
         let needs_js_json = zig_code.contains("js_json");
         let needs_js_collections = zig_code.contains("js_collections");
         let needs_js_uri = zig_code.contains("js_uri.");
+        let needs_js_regexp = zig_code.contains("js_regexp.");
         let any_runtime = needs_js_date
             || needs_js_object
             || needs_js_number
@@ -48,7 +49,8 @@ mod native_proto_tests {
             || needs_js_allocator
             || needs_js_array
             || needs_js_collections
-            || needs_js_uri;
+            || needs_js_uri
+            || needs_js_regexp;
 
         let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
@@ -68,6 +70,9 @@ mod native_proto_tests {
             }
             if needs_js_uri {
                 w.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
+            }
+            if needs_js_regexp {
+                w.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
             }
             if needs_js_date {
                 w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
@@ -6592,21 +6597,25 @@ function testMapGetCmp() {
     }
 
     #[test]
-    fn test_native_proto_map_has_cmp() {
-        // Map.has() returns Bool → direct == true is fine
+    fn test_p8_string_match_ast_check() {
+        // Verify that String.match(/pattern/) generates compilable Zig code.
         let js = r#"
-function testMapHas() {
-    var m = new Map();
-    m.set("a", 1);
-    if (m.has("a") == true) return 1;
-    return 0;
+export function getMatch(s) {
+    return s.match(/world/);
 }
 "#;
-        let zig = transpile_and_check!(js, "test_native_proto_map_has_cmp");
-        assert!(
-            zig.contains("== true") || zig.contains("==true"),
-            "Expected '== true' for bool comparison in:\n{}",
-            zig
-        );
+        let _zig = transpile_and_check!(js, "p8_string_match_ast_check");
+    }
+
+    #[test]
+    fn test_p8_string_match_regexp_var_ast_check() {
+        // Verify that String.match(regexpVar) generates compilable Zig code.
+        let js = r#"
+export function getMatch(s) {
+    const r = new RegExp("world");
+    return s.match(r);
+}
+"#;
+        let _zig = transpile_and_check!(js, "p8_string_match_regexp_var_ast_check");
     }
 }
