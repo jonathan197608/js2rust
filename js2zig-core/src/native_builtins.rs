@@ -158,15 +158,41 @@ pub enum BuiltinCall {
     DateGetUTCSeconds,      // date.getUTCSeconds()
     DateGetUTCMilliseconds, // date.getUTCMilliseconds()
 
+    // Date methods (toJSON/valueOf)
+    DateToJSON,  // date.toJSON()
+    DateValueOf, // date.valueOf()
+
+    // Date methods (local setters)
+    DateSetFullYear,     // date.setFullYear(year, month?, date?)
+    DateSetMonth,        // date.setMonth(month, date?)
+    DateSetDate,         // date.setDate(date)
+    DateSetHours,        // date.setHours(hours, min?, sec?, ms?)
+    DateSetMinutes,      // date.setMinutes(min, sec?, ms?)
+    DateSetSeconds,      // date.setSeconds(sec, ms?)
+    DateSetMilliseconds, // date.setMilliseconds(ms)
+
+    // Date methods (UTC setters)
+    DateSetUTCFullYear,     // date.setUTCFullYear(year, month?, date?)
+    DateSetUTCMonth,        // date.setUTCMonth(month, date?)
+    DateSetUTCDate,         // date.setUTCDate(date)
+    DateSetUTCHours,        // date.setUTCHours(hours, min?, sec?, ms?)
+    DateSetUTCMinutes,      // date.setUTCMinutes(min, sec?, ms?)
+    DateSetUTCSeconds,      // date.setUTCSeconds(sec, ms?)
+    DateSetUTCMilliseconds, // date.setUTCMilliseconds(ms)
+
     // Object methods (static)
     ObjectKeys,                // Object.keys(obj)
     ObjectValues,              // Object.values(obj)
     ObjectEntries,             // Object.entries(obj)
     ObjectAssign,              // Object.assign(target, source)
     ObjectFreeze,              // Object.freeze(obj)
+    ObjectSeal,                // Object.seal(obj) — simplified no-op
     ObjectHasOwn,              // Object.hasOwn(obj, key)
     ObjectIs,                  // Object.is(a, b) — SameValue comparison
     ObjectGetOwnPropertyNames, // Object.getOwnPropertyNames(obj)
+    ObjectCreate,              // Object.create(proto)
+    ObjectDefineProperty,      // Object.defineProperty(obj, key, desc)
+    ObjectGetPrototypeOf,      // Object.getPrototypeOf(obj)
 
     // Global functions
     ParseInt,           // parseInt(s)
@@ -325,9 +351,13 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "entries" => return Some(BuiltinCall::ObjectEntries),
                 "assign" => return Some(BuiltinCall::ObjectAssign),
                 "freeze" => return Some(BuiltinCall::ObjectFreeze),
+                "seal" => return Some(BuiltinCall::ObjectSeal),
                 "hasOwn" => return Some(BuiltinCall::ObjectHasOwn),
                 "is" => return Some(BuiltinCall::ObjectIs),
                 "getOwnPropertyNames" => return Some(BuiltinCall::ObjectGetOwnPropertyNames),
+                "create" => return Some(BuiltinCall::ObjectCreate),
+                "defineProperty" => return Some(BuiltinCall::ObjectDefineProperty),
+                "getPrototypeOf" => return Some(BuiltinCall::ObjectGetPrototypeOf),
                 _ => return None,
             }
         }
@@ -536,6 +566,28 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "getUTCSeconds" => Some(BuiltinCall::DateGetUTCSeconds),
             "getUTCMilliseconds" => Some(BuiltinCall::DateGetUTCMilliseconds),
 
+            // Date methods (toJSON/valueOf)
+            "toJSON" => Some(BuiltinCall::DateToJSON),
+            "valueOf" => Some(BuiltinCall::DateValueOf),
+
+            // Date methods (local setters)
+            "setFullYear" => Some(BuiltinCall::DateSetFullYear),
+            "setMonth" => Some(BuiltinCall::DateSetMonth),
+            "setDate" => Some(BuiltinCall::DateSetDate),
+            "setHours" => Some(BuiltinCall::DateSetHours),
+            "setMinutes" => Some(BuiltinCall::DateSetMinutes),
+            "setSeconds" => Some(BuiltinCall::DateSetSeconds),
+            "setMilliseconds" => Some(BuiltinCall::DateSetMilliseconds),
+
+            // Date methods (UTC setters)
+            "setUTCFullYear" => Some(BuiltinCall::DateSetUTCFullYear),
+            "setUTCMonth" => Some(BuiltinCall::DateSetUTCMonth),
+            "setUTCDate" => Some(BuiltinCall::DateSetUTCDate),
+            "setUTCHours" => Some(BuiltinCall::DateSetUTCHours),
+            "setUTCMinutes" => Some(BuiltinCall::DateSetUTCMinutes),
+            "setUTCSeconds" => Some(BuiltinCall::DateSetUTCSeconds),
+            "setUTCMilliseconds" => Some(BuiltinCall::DateSetUTCMilliseconds),
+
             // Map methods (called on local Map variables)
             "set" => Some(BuiltinCall::MapSet),
             "get" => Some(BuiltinCall::MapGet),
@@ -679,6 +731,24 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::DateToDateString => Some(ZigType::Str),
         BuiltinCall::DateToTimeString => Some(ZigType::Str),
         BuiltinCall::DateToLocaleString => Some(ZigType::Str),
+        // Date toJSON/valueOf
+        BuiltinCall::DateToJSON => Some(ZigType::Str),
+        BuiltinCall::DateValueOf => Some(ZigType::I64),
+        // Date setters (return new milliseconds)
+        BuiltinCall::DateSetFullYear
+        | BuiltinCall::DateSetMonth
+        | BuiltinCall::DateSetDate
+        | BuiltinCall::DateSetHours
+        | BuiltinCall::DateSetMinutes
+        | BuiltinCall::DateSetSeconds
+        | BuiltinCall::DateSetMilliseconds
+        | BuiltinCall::DateSetUTCFullYear
+        | BuiltinCall::DateSetUTCMonth
+        | BuiltinCall::DateSetUTCDate
+        | BuiltinCall::DateSetUTCHours
+        | BuiltinCall::DateSetUTCMinutes
+        | BuiltinCall::DateSetUTCSeconds
+        | BuiltinCall::DateSetUTCMilliseconds => Some(ZigType::I64),
 
         // Object methods
         BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
@@ -686,6 +756,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         }
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+        // Object methods that return complex types or the input object
+        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf => None,
 
         // Array static methods
         BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {

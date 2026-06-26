@@ -31,6 +31,8 @@
 - #639 String.matchAll/localeCompare/normalize（stub）✅
 
 **✅ 2026-06-26 Phase 5 开始 — Array.from/of/isArray 完成**: 实现 `Array.from()`（支持数组/字符串/类数组对象）、`Array.of()`、`Array.isArray()` 的 runtime + codegen，新增 7 个 Zig 测试。
+**✅ 2026-06-26 Phase 5 Object 剩余方法完成**: 实现 `Object.create()`（简化：复制原型属性）、`Object.seal()`（no-op）、`Object.defineProperty()`（简化：仅设置值）、`Object.getPrototypeOf()`（简化：返回 null），覆盖率提升至 ~67%（~175/260）。
+**✅ 2026-06-26 Phase 5 Date 剩余方法完成**: 实现 `Date.toJSON()`（调用 toISOString）、`Date.valueOf()`（返回毫秒时间戳）、15 个 setter 方法（setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds + UTC 变体），新增 18 个 Zig 测试，覆盖率提升至 ~73%（~190/260）。
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
@@ -343,7 +345,52 @@ examples/builtins-mdn-tests/
 
 ---
 
-### 0.6 风险点与已知问题
+### 0.6 Phase 5 — 修复 Stub + 剩余高优先级方法 (P2/P3, ~30 方法) 🔧 进行中
+
+**目标**: 实现 Phase 4 遗留的 P2/P3 方法（Object 剩余、Date 剩余、String 高级），覆盖率从 ~65% 提升至 ~80%+。
+
+#### 0.6.1 Object 剩余方法 (#653) ✅ 已完成 (2026-06-26)
+
+| 方法 | 任务 # | 优先级 | Zig 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `Object.create(proto)` | #653 | P3 | 创建新 HashMap，可选复制原型属性（简化） | `object.js` |
+| `Object.seal(obj)` | #653 | P3 | no-op（Zig HashMap 默认不可扩展） | `object.js` |
+| `Object.defineProperty(obj, key, desc)` | #653 | P3 | `put()` 设置值（忽略 descriptor） | `object.js` |
+| `Object.getPrototypeOf(obj)` | #653 | P3 | 返回 null（无原型链支持） | `object.js` |
+
+**实现说明**: 以上均为简化实现，完整原型链支持需后续版本。新增 5 个 Zig 测试。
+
+#### 0.6.2 Date 剩余方法 (#655) ✅ 已完成 (2026-06-26)
+
+| 方法 | 任务 # | 优先级 | Zig 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `.toJSON()` | #655 | P3 | 调用 `toISOString()` | `date.js` |
+| `.valueOf()` | #655 | P3 | 返回 `self.millis` | `date.js` |
+| `.setFullYear(y, m?, d?)` | #655 | P3 | 修改日期部分毫秒 | `date.js` |
+| `.setMonth(m, d?)` | #655 | P3 | 修改月份部分毫秒 | `date.js` |
+| `.setDate(d)` | #655 | P3 | 修改日期部分毫秒 | `date.js` |
+| `.setHours(h, m?, s?, ms?)` | #655 | P3 | 修改时间部分毫秒 | `date.js` |
+| `.setMinutes(m, s?, ms?)` | #655 | P3 | 修改分钟部分毫秒 | `date.js` |
+| `.setSeconds(s, ms?)` | #655 | P3 | 修改秒部分毫秒 | `date.js` |
+| `.setMilliseconds(ms)` | #655 | P3 | 修改毫秒部分 | `date.js` |
+| UTC setter 系列 (8) | #655 | P3 | 同 local setter（UTC-only 实现） | `date.js` |
+
+**实现说明**: 所有 setter 返回新的毫秒时间戳。新增 18 个 Zig 测试。
+
+#### 0.6.3 String 高级方法 (#654, #650) 📋 待实现
+
+| 方法 | 任务 # | 优先级 | Zig 实现策略 | 测试文件 |
+|------|--------|--------|----------|---------|
+| `.normalize(form)` | #654 | P2 | Unicode 规范化（stub 已实现，需完整实现） | `string.js` |
+| `.match(re)` | #650 | P2 | 需 RegExp 引擎 | `string.js` |
+| `.search(re)` | #650 | P2 | 需 RegExp 引擎 | `string.js` |
+| `.matchAll(re)` | #650 | P3 | 返回迭代器，需 RegExp 引擎 | `string.js` |
+
+**注意**: `normalize()` 当前为 stub（返回原字符串），完整实现需 Unicode 数据。`.match/search/matchAll` 依赖正则引擎，暂不实现。
+
+---
+
+### 0.7 风险点与已知问题
 
 | # | 风险 | 影响范围 | 缓解方案 |
 |---|------|---------|---------|
@@ -360,7 +407,7 @@ examples/builtins-mdn-tests/
 
 ---
 
-### 0.7 实施里程碑
+### 0.8 实施里程碑
 
 | 里程碑 | 方法数 | 累计覆盖率 | 代码量 | 测试 | 状态 |
 |--------|--------|-----------|--------|------|------|
@@ -369,11 +416,12 @@ examples/builtins-mdn-tests/
 | **M2: Phase 1 完成** | 108 (+24) | 42% | +100LOC | Math 三角/对数/常量 21 方法 | ✅ (2026-06-24) |
 | **M3: Phase 2 完成** | 138 (+30) | 53% | +300LOC | Array/String/Object 补齐 | ✅ (2026-06-24) |
 | **M4: Phase 3 完成** | 158 (+20) | 61% | +200LOC | Date/Number/MapForEach 补齐 | ✅ (2026-06-25) |
-| **M5: Phase 4 完成** | 225+ | ~86% | +500LOC | 全覆盖 | 📋 |
+| **M5: Phase 4 完成** | 190 (+32) | 73% | +500LOC | Array.from/of/isArray + Object/Date 剩余 | ✅ (2026-06-26) |
+| **M6: Phase 5 完成** | 225+ | ~86% | +300LOC | String 高级 + console | 📋 |
 
 ---
 
-### 0.8 相关文件索引
+### 0.9 相关文件索引
 
 | 文件 | 作用 | 修改阶段 |
 |------|------|---------|

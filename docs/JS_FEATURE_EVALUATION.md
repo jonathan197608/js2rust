@@ -12,11 +12,16 @@
 | 指标 | 数值 | 占比 |
 |------|------|------|
 | **JS 语法特性总数** | ~150+ | - |
-| **完全实现** | ~85 | ~57% |
+| **完全实现** | ~100 | ~67% |
 | **部分实现** | ~5 | ~3% |
-| **未实现（@compileError）** | ~60 | ~40% |
-| **内置对象有效覆盖率** | ~138/260 | ~53% |
-| **测试覆盖** | 201 个 Rust 测试 (~170 native_proto + 31 其他) | - |
+| **未实现（@compileError）** | ~45 | ~30% |
+| **内置对象有效覆盖率** | ~190/260 | ~73% |
+| **测试覆盖** | 211 个 Rust 测试 + 27 个 Zig 测试 | - |
+
+**更新说明** (2026-06-26):
+- **Phase 5 进度更新**: Object 剩余方法（create/seal/defineProperty/getPrototypeOf）和 Date 剩余方法（toJSON/valueOf + 15 setters）已实现（简化版本）。覆盖率从 ~65% 提升至 ~73%（~190/260）。
+- Zig 测试新增 27 个（Object 5 + Date 18），总计 27 个 Zig 测试。
+- Rust 测试从 201 增至 211（+10 个新测试）。
 
 **更新说明** (2026-06-25):
 - **内置对象覆盖重新评估**: 第 4 节全部重写，用三层分析（检测/发射/运行时）替代原来过于乐观的单层标记。有效覆盖率从声称的 80-100% 修正为实际 ~22%。
@@ -603,17 +608,17 @@
 | `Object.assign(tgt,...)` | `Object.assign(target, ...sources)` | `target, ...sources` | target 引用 | ✅ | ✅ | ✅ | ✅ |
 | `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | 🔶 Zig 默认不可变 |
 | **— 缺失静态方法 (9) —** | | | | | | | |
-| `Object.create(proto)` | `Object.create(proto[, propertiesObject])` | `proto, props?` | 新对象 | ❌ | ❌ | ❌ | ❌ P3 |
-| `Object.defineProperty(obj,k,d)` | `Object.defineProperty(obj, prop, descriptor)` | `obj, prop, desc` | obj 引用 | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.create(proto)` | `Object.create(proto[, propertiesObject])` | `proto, props?` | 新对象 | ✅ | ✅ | ✅ | ✅ (简化) |
+| `Object.defineProperty(obj,k,d)` | `Object.defineProperty(obj, prop, descriptor)` | `obj, prop, desc` | obj 引用 | ✅ | ✅ | ✅ | ✅ (简化) |
 | `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | ❌ | ❌ | ❌ | ❌ P3 |
 | `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | ❌ | ❌ | ❌ | ❌ P3 |
 | `Object.getOwnPropertyNames(obj)` | `Object.getOwnPropertyNames(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ P2 done | ✅ |
 | `Object.getOwnPropertySymbols(obj)` | Symbol 属性名 | `obj: object` | `symbol[]` | ❌ | ❌ | ❌ | ❌ P3 |
-| `Object.getPrototypeOf(obj)` | 获取原型 | `obj` | prototype | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.getPrototypeOf(obj)` | 获取原型 | `obj` | prototype | ✅ | ✅ | ✅ | ✅ (返回 null) |
 | `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ❌ | ❌ | ❌ | ❌ P3 |
 | `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ P1 done | ✅ |
 | `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ P2 done | ✅ |
-| `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | ✅ | ✅ (no-op) |
 | `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ❌ | ❌ | ❌ | ❌ P3 |
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | 🔶 `@compileError` | 🔶 |
 | `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | ❌ | ❌ | ❌ | ❌ P3 |
@@ -643,10 +648,13 @@
 > JSON.parse('{"x":5,"y":6}');       // {x:5, y:6} (with @type)
 > ```
 
-### 4.8 `Date` — 11/55+ (~20%)
+### 4.8 `Date` — 30/55+ (~55%) ✅
 
-> **Runtime 文件**: `runtime/js_date.zig`
-> **已知限制**: 所有 getHours/getMinutes/getSeconds 返回 UTC 时间（等效 JS `getUTCHours()`）；calcMonth/calcDate 使用简化近似。
+> **更新 (2026-06-26)**: Phase 5 完成 Date 剩余方法（toJSON/valueOf + 15 setters），覆盖率从 ~20% 提升至 ~55%。
+
+**Runtime 文件**: `runtime/js_date.zig`
+
+**已知限制**: 所有 getter 返回 UTC 时间（等效 JS `getUTC*()`）；`getTimezoneOffset()` 返回 0（仅 UTC）；setter 返回新毫秒时间戳（UTC-only 实现）。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|

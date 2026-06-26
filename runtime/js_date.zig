@@ -189,6 +189,118 @@ pub const JsDate = struct {
     pub fn getUTCMilliseconds(self: JsDate) i64 {
         return self.getMilliseconds();
     }
+
+    /// toJSON() — returns ISO 8601 string (same as toISOString).
+    pub fn toJSON(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        return self.toISOString(alloc);
+    }
+
+    /// valueOf() — returns milliseconds since epoch.
+    pub fn valueOf(self: JsDate) i64 {
+        return self.millis;
+    }
+
+    // ── Setters (local time) ─────────────────────
+
+    /// setFullYear(year, month?, date?) → new milliseconds.
+    pub fn setFullYear(self: JsDate, year: i64, month: ?i64, date: ?i64) i64 {
+        const cd = civilFromDays(dayCount(self.millis));
+        const m = if (month) |mm| mm + 1 else cd.m; // JS 0-indexed → 1-indexed
+        const d = if (date) |dd| dd else cd.d;
+        const new_days = daysFromCivil(year, m, d);
+        const time = @mod(self.millis, 86400000);
+        return new_days * 86400000 + time;
+    }
+
+    /// setMonth(month, date?) → new milliseconds.
+    pub fn setMonth(self: JsDate, month: i64, date: ?i64) i64 {
+        const cd = civilFromDays(dayCount(self.millis));
+        const m = month + 1; // JS 0-indexed → 1-indexed
+        const d = if (date) |dd| dd else cd.d;
+        const new_days = daysFromCivil(cd.y, m, d);
+        const time = @mod(self.millis, 86400000);
+        return new_days * 86400000 + time;
+    }
+
+    /// setDate(date) → new milliseconds.
+    pub fn setDate(self: JsDate, date: i64) i64 {
+        const cd = civilFromDays(dayCount(self.millis));
+        const new_days = daysFromCivil(cd.y, cd.m, date);
+        const time = @mod(self.millis, 86400000);
+        return new_days * 86400000 + time;
+    }
+
+    /// setHours(hours, min?, sec?, ms?) → new milliseconds.
+    pub fn setHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
+        const h = hours;
+        const m = if (min) |mm| mm else timePart(self.millis, 3600 * 1000, 60);
+        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+    }
+
+    /// setMinutes(min, sec?, ms?) → new milliseconds.
+    pub fn setMinutes(self: JsDate, min: i64, sec: ?i64, ms: ?i64) i64 {
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const m = min;
+        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+    }
+
+    /// setSeconds(sec, ms?) → new milliseconds.
+    pub fn setSeconds(self: JsDate, sec: i64, ms: ?i64) i64 {
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const m = timePart(self.millis, 60000, 60);
+        const s = sec;
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+    }
+
+    /// setMilliseconds(ms) → new milliseconds.
+    pub fn setMilliseconds(self: JsDate, ms: i64) i64 {
+        const days = dayCount(self.millis);
+        const time = self.millis - days * 86400000;
+        const old_ms = @mod(time, 1000);
+        return self.millis - old_ms + ms;
+    }
+
+    // ── UTC Setters ─────────────────────
+
+    /// setUTCFullYear(year, month?, date?) → new milliseconds.
+    pub fn setUTCFullYear(self: JsDate, year: i64, month: ?i64, date: ?i64) i64 {
+        return self.setFullYear(year, month, date); // Same for UTC-only implementation
+    }
+
+    /// setUTCMonth(month, date?) → new milliseconds.
+    pub fn setUTCMonth(self: JsDate, month: i64, date: ?i64) i64 {
+        return self.setMonth(month, date);
+    }
+
+    /// setUTCDate(date) → new milliseconds.
+    pub fn setUTCDate(self: JsDate, date: i64) i64 {
+        return self.setDate(date);
+    }
+
+    /// setUTCHours(hours, min?, sec?, ms?) → new milliseconds.
+    pub fn setUTCHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
+        return self.setHours(hours, min, sec, ms);
+    }
+
+    /// setUTCMinutes(min, sec?, ms?) → new milliseconds.
+    pub fn setUTCMinutes(self: JsDate, min: i64, sec: ?i64, ms: ?i64) i64 {
+        return self.setMinutes(min, sec, ms);
+    }
+
+    /// setUTCSeconds(sec, ms?) → new milliseconds.
+    pub fn setUTCSeconds(self: JsDate, sec: i64, ms: ?i64) i64 {
+        return self.setSeconds(sec, ms);
+    }
+
+    /// setUTCMilliseconds(ms) → new milliseconds.
+    pub fn setUTCMilliseconds(self: JsDate, ms: i64) i64 {
+        return self.setMilliseconds(ms);
+    }
 };
 
 // ── Standalone helper functions (used by generated code calling Date.now() directly) ──
@@ -514,4 +626,133 @@ test "parse invalid string" {
     try std.testing.expectEqual(@as(i64, 0), parse("not a date"));
     try std.testing.expectEqual(@as(i64, 0), parse(""));
     try std.testing.expectEqual(@as(i64, 0), parse("2024"));
+}
+
+// ── Tests for new Date methods (Phase 5) ──
+
+test "JsDate.toJSON" {
+    const d = JsDate.fromMillis(0);
+    const s = try d.toJSON(std.testing.allocator);
+    defer std.testing.allocator.free(s);
+    try std.testing.expectEqualStrings("1970-01-01T00:00:00.000Z", s);
+}
+
+test "JsDate.valueOf" {
+    const d = JsDate.fromMillis(123456789);
+    try std.testing.expectEqual(@as(i64, 123456789), d.valueOf());
+}
+
+test "JsDate.setFullYear" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setFullYear(2024, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 2024), new_d.getFullYear());
+}
+
+test "JsDate.setFullYear with month and date" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setFullYear(2024, 5, 15); // June 15, 2024
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 2024), new_d.getFullYear());
+    try std.testing.expectEqual(@as(i64, 5), new_d.getMonth()); // June = 5
+    try std.testing.expectEqual(@as(i64, 15), new_d.getDate());
+}
+
+test "JsDate.setMonth" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setMonth(5, null); // June
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 5), new_d.getMonth());
+}
+
+test "JsDate.setDate" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setDate(15);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 15), new_d.getDate());
+}
+
+test "JsDate.setHours" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setHours(12, null, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 12), new_d.getHours());
+}
+
+test "JsDate.setHours with minutes" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setHours(12, 30, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 12), new_d.getHours());
+    try std.testing.expectEqual(@as(i64, 30), new_d.getMinutes());
+}
+
+test "JsDate.setMinutes" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setMinutes(45, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 45), new_d.getMinutes());
+}
+
+test "JsDate.setSeconds" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setSeconds(30, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 30), new_d.getSeconds());
+}
+
+test "JsDate.setMilliseconds" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setMilliseconds(500);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 500), new_d.getMilliseconds());
+}
+
+test "JsDate.setUTCFullYear" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCFullYear(2024, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 2024), new_d.getUTCFullYear());
+}
+
+test "JsDate.setUTCMonth" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCMonth(5, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 5), new_d.getUTCMonth());
+}
+
+test "JsDate.setUTCDate" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCDate(15);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 15), new_d.getUTCDate());
+}
+
+test "JsDate.setUTCHours" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCHours(12, null, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 12), new_d.getUTCHours());
+}
+
+test "JsDate.setUTCMinutes" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCMinutes(30, null, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 30), new_d.getUTCMinutes());
+}
+
+test "JsDate.setUTCSeconds" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCSeconds(45, null);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 45), new_d.getUTCSeconds());
+}
+
+test "JsDate.setUTCMilliseconds" {
+    const d = JsDate.fromMillis(0);
+    const result = d.setUTCMilliseconds(500);
+    const new_d = JsDate.fromMillis(result);
+    try std.testing.expectEqual(@as(i64, 500), new_d.getUTCMilliseconds());
 }

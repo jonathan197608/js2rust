@@ -2959,6 +2959,147 @@ impl Codegen {
                 self.emit_date_instance_method("getUTCMilliseconds", ce)
             }
 
+            // ── Date toJSON/valueOf ─────────────────────
+            builtins::BuiltinCall::DateToJSON => {
+                // date.toJSON() → obj.toJSON(alloc)
+                if ce.arguments.is_empty() {
+                    self.write("(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(").toJSON(alloc)");
+                } else {
+                    self.compile_error(ce.span, "Date.toJSON() takes no arguments");
+                }
+                true
+            }
+            builtins::BuiltinCall::DateValueOf => {
+                // date.valueOf() → obj.valueOf()
+                if ce.arguments.is_empty() {
+                    self.write("(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(").valueOf()");
+                } else {
+                    self.compile_error(ce.span, "Date.valueOf() takes no arguments");
+                }
+                true
+            }
+
+            // ── Date local setters ─────────────────────
+            builtins::BuiltinCall::DateSetFullYear => {
+                // date.setFullYear(year, month?, date?) → obj.setFullYear(year, month, date)
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setFullYear(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetMonth => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setMonth(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetDate => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setDate(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetHours => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setHours(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetMinutes => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setMinutes(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetSeconds => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setSeconds(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetMilliseconds => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setMilliseconds(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            // ── Date UTC setters ─────────────────────
+            builtins::BuiltinCall::DateSetUTCFullYear => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCFullYear(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCMonth => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCMonth(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCDate => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCDate(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCHours => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCHours(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCMinutes => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCMinutes(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCSeconds => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCSeconds(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::DateSetUTCMilliseconds => {
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(").setUTCMilliseconds(");
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                true
+            }
+
             // ── Object methods (static) ────────────────────
             builtins::BuiltinCall::ObjectKeys => {
                 // Object.keys(obj) → js_object.keys(alloc, obj) for JsValueHashMap,
@@ -3049,6 +3190,55 @@ impl Codegen {
             builtins::BuiltinCall::ObjectFreeze => {
                 // Object.freeze(obj) — no-op in Zig (immutable by default)
                 self.emit_first_arg(&ce.arguments);
+                true
+            }
+            builtins::BuiltinCall::ObjectSeal => {
+                // Object.seal(obj) — no-op in Zig (simplified)
+                self.emit_first_arg(&ce.arguments);
+                true
+            }
+            builtins::BuiltinCall::ObjectCreate => {
+                // Object.create(proto) → js_object.create(alloc, proto)
+                if ce.arguments.is_empty() {
+                    self.compile_error(ce.span, "Object.create() requires at least 1 argument");
+                    return true;
+                }
+                self.write("js_object.create(alloc, ");
+                let first_arg = ce.arguments[0].as_expression();
+                if let Some(Expression::NullLiteral(_)) = first_arg {
+                    self.write("null");
+                } else if let Some(expr) = first_arg {
+                    self.emit_expr(expr);
+                } else {
+                    self.write("null");
+                }
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectDefineProperty => {
+                // Object.defineProperty(obj, key, value) → js_object.defineProperty(obj, key, value)
+                if ce.arguments.len() < 3 {
+                    self.compile_error(ce.span, "Object.defineProperty() requires 3 arguments");
+                    return true;
+                }
+                self.write("js_object.defineProperty(");
+                self.emit_expr_arg(&ce.arguments[0]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[2]);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectGetPrototypeOf => {
+                // Object.getPrototypeOf(obj) → js_object.getPrototypeOf(obj)
+                if ce.arguments.is_empty() {
+                    self.compile_error(ce.span, "Object.getPrototypeOf() requires 1 argument");
+                    return true;
+                }
+                self.write("js_object.getPrototypeOf(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
                 true
             }
             builtins::BuiltinCall::ObjectHasOwn => {
