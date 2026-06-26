@@ -32,11 +32,12 @@
 
 **✅ 2026-06-26 Phase 5 完成 — Array.from/of/isArray、Object 剩余方法、Date 剩余方法**: 实现 `Array.from()/of()/isArray()`、`Object.create()/seal()/defineProperty()/getPrototypeOf()`、`Date.toJSON()/valueOf()` + 15 个 setter 方法，覆盖率提升至 ~73%（~190/260）。
 **🔧 2026-06-26 Phase 6 进行中 — String 高级方法**: 
-- 添加 10 个 Phase 6 测试（startsWith, endsWith, includes, slice, concat, repeat, substring, normalize, toUpperCase, toLowerCase），全部通过
+- 添加 13 个 Phase 6 测试（startsWith, endsWith, includes, slice, concat, repeat, substring, normalize, toUpperCase, toLowerCase, split, charAt, indexOf），全部通过
 - 修复 ~15 个字符串方法的 codegen（使用 `callee_object_repr()` 替代 `callee_object_name()`，支持字符串字面量）
-- 修复 8 个字符串方法的 codegen（使用 `js_string.xxx()` 替代 `std.mem.xxx()`）：startsWith, endsWith, includes, indexOf, trim, split, charAt, at, charCodeAt, codePointAt, concat, slice, replace, replaceAll, repeat, substring
-- TrimStart/TrimEnd/LastIndexOf 暂用 `std.mem`（runtime 函数待实现）
-- 进度：codegen 修复完成，测试全部通过（221 tests ✅）
+- 修复 11 个字符串方法的 codegen（使用 `js_string.xxx()` 替代 `std.mem.xxx()`）：startsWith, endsWith, includes, indexOf, trim, trimStart, trimEnd, lastIndexOf, split, charAt, at, charCodeAt, codePointAt, concat, slice, replace, replaceAll, repeat, substring
+- 实现 `js_string.trimStart/trimEnd/lastIndexOf()` runtime 函数
+- 修复 6 个 clippy 警告（collapsible if, len() >= 1 → !is_empty()）
+- 进度：codegen 修复完成，224 测试全部通过，0 clippy 警告 ✅
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
