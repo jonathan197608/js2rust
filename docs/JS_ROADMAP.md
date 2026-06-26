@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-项目 Phase 4 (#626-#639) 已全部完成，进入 Phase 5（修复 stub + 剩余高优先级方法）。211 测试通过，0 clippy 警告。
+项目 Phase 5 已完成，进入 Phase 6（String 高级方法，排除正则相关）。221 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
@@ -30,9 +30,8 @@
 - #638 Object.keys/values/entries ✅
 - #639 String.matchAll/localeCompare/normalize（stub）✅
 
-**✅ 2026-06-26 Phase 5 开始 — Array.from/of/isArray 完成**: 实现 `Array.from()`（支持数组/字符串/类数组对象）、`Array.of()`、`Array.isArray()` 的 runtime + codegen，新增 7 个 Zig 测试。
-**✅ 2026-06-26 Phase 5 Object 剩余方法完成**: 实现 `Object.create()`（简化：复制原型属性）、`Object.seal()`（no-op）、`Object.defineProperty()`（简化：仅设置值）、`Object.getPrototypeOf()`（简化：返回 null），覆盖率提升至 ~67%（~175/260）。
-**✅ 2026-06-26 Phase 5 Date 剩余方法完成**: 实现 `Date.toJSON()`（调用 toISOString）、`Date.valueOf()`（返回毫秒时间戳）、15 个 setter 方法（setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds + UTC 变体），新增 18 个 Zig 测试，覆盖率提升至 ~73%（~190/260）。
+**✅ 2026-06-26 Phase 5 完成 — Array.from/of/isArray、Object 剩余方法、Date 剩余方法**: 实现 `Array.from()/of()/isArray()`、`Object.create()/seal()/defineProperty()/getPrototypeOf()`、`Date.toJSON()/valueOf()` + 15 个 setter 方法，覆盖率提升至 ~73%（~190/260）。
+**🔧 2026-06-26 Phase 6 开始 — String 高级方法**: 添加 10 个测试（startsWith, endsWith, includes, slice, concat, repeat, substring, normalize, toUpperCase, toLowerCase），全部通过。修复 7 个字符串方法的 codegen（使用 js_string.xxx() 和 callee_object_repr()）：startsWith, endsWith, includes, slice, concat, indexOf, trim。
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
