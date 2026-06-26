@@ -107,15 +107,6 @@ pub unsafe extern "C" fn host_regex_match(
     if result_str.is_empty() {
         JsStr::empty()
     } else {
-        // Use Box::leak to avoid extern "C" dependency on js_allocator_dupe.
-        // This leaks heap memory, but avoids linker errors when js2rust-bridge
-        // is compiled as a build dependency (no Zig runtime available).
-        // TODO: switch to js_allocator_dupe when bridge is refactored to
-        // separate build-time and runtime crates.
-        let leaked: &'static [u8] = Box::leak(result_str.into_bytes().into_boxed_slice());
-        JsStr {
-            ptr: leaked.as_ptr(),
-            len: leaked.len() as isize,
-        }
+        JsStr::new(&result_str)
     }
 }

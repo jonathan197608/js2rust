@@ -234,6 +234,33 @@ impl JsStrField {
     }
 }
 
+// ── Test stubs for C ABI functions ─────────────────────────────
+// When compiled as a static lib (e.g. for `cargo test`), the Zig runtime
+// is not available, so we provide stubs for `js_allocator_dupe` and
+// `js_allocator_alloc`. These stubs leak memory (like the old Box::leak),
+// but tests don't run long enough for this to matter.
+
+#[cfg(test)]
+#[unsafe(no_mangle)]
+pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
+    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    if !ptr.is_null() && len > 0 {
+        unsafe {
+            std::ptr::copy_nonoverlapping(src, ptr, len);
+        }
+    }
+    ptr
+}
+
+#[cfg(test)]
+#[unsafe(no_mangle)]
+pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
+    let layout = std::alloc::Layout::from_size_align(size, 1).unwrap();
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    ptr
+}
+
 // ── StrRet helper (used by macro-generated safe wrappers) ──────────
 
 /// Internal helper to convert a `JsStr` to `Result<String, String>`,
