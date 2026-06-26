@@ -6634,4 +6634,62 @@ export function getMatch(s) {
             zig
         );
     }
+
+    // ── Phase 3: Boundary case tests for String.match() ──
+
+    #[test]
+    fn test_p8_string_match_capture_groups_ast_check() {
+        // Verify that match with capture groups generates correct Zig code.
+        // JS: "2024-01-15".match(/(\d{4})-(\d{2})-(\d{2})/)
+        // returns ["2024-01-15", "2024", "01", "15"]
+        let js = r#"
+export function parseDate(s) {
+    return s.match(/(\d{4})-(\d{2})-(\d{2})/);
+}
+"#;
+        let _zig = transpile_and_check!(js, "p8_string_match_capture_groups_ast_check");
+        // Should generate code that calls matchString (not matchStringGlobal)
+        // and returns JsAny (which can be an array with capture groups)
+    }
+
+    #[test]
+    fn test_p8_string_match_empty_pattern_ast_check() {
+        // Test: matching against empty pattern should match empty string.
+        // JS: "abc".match(/(?:)/) returns [""] (empty pattern matches empty string)
+        let js = r#"
+export function matchEmpty(s) {
+    return s.match(/(?:)/);
+}
+"#;
+        let _zig = transpile_and_check!(js, "p8_string_match_empty_pattern_ast_check");
+    }
+
+    #[test]
+    fn test_p8_string_match_empty_string_ast_check() {
+        // Test: matching empty string against pattern.
+        // JS: "".match(/abc/) returns null (no match)
+        let js = r#"
+export function matchEmptyStr() {
+    return "".match(/abc/);
+}
+"#;
+        let _zig = transpile_and_check!(js, "p8_string_match_empty_string_ast_check");
+    }
+
+    #[test]
+    fn test_p8_string_match_global_empty_match_ast_check() {
+        // Test: global matching with pattern that can match empty string.
+        // JS: "bc".match(/a*/g) returns ["", "", ""] (empty matches at positions 0, 1, 2)
+        let js = r#"
+export function matchEmptyGlobal(s) {
+    return s.match(/a*/g);
+}
+"#;
+        let zig = transpile_and_check!(js, "p8_string_match_global_empty_match_ast_check");
+        assert!(
+            zig.contains("matchStringGlobal"),
+            "Expected 'matchStringGlobal' for /g flag in:\n{}",
+            zig
+        );
+    }
 }

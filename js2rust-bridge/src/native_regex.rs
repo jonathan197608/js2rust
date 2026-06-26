@@ -103,29 +103,24 @@ fn host_regex_match_global_inner(pattern: HostStr, text: HostStr) -> (String, us
     let mut count: usize = 0;
     // fancy-regex Regex doesn't have find_iter(), so we manually find all matches
     let mut search_start: usize = 0;
-    loop {
-        match re.find(&text[search_start..]) {
-            Ok(Some(m)) => {
-                if count > 0 {
-                    result.push('\0');
-                }
-                // m.start() is relative to the searched slice, so add search_start
-                let absolute_start: usize = search_start + m.start();
-                let absolute_end: usize = search_start + m.end();
-                result.push_str(&text[absolute_start..absolute_end]);
-                count += 1;
-                // Move search start past this match
-                search_start = absolute_end;
-                // If the match is empty, move forward to avoid infinite loop
-                if m.start() == m.end() {
-                    search_start += 1;
-                }
-                // Check if we've reached the end
-                if search_start >= text.len() {
-                    break;
-                }
-            }
-            _ => break,
+    while let Ok(Some(m)) = re.find(&text[search_start..]) {
+        if count > 0 {
+            result.push('\0');
+        }
+        // m.start() is relative to the searched slice, so add search_start
+        let absolute_start: usize = search_start + m.start();
+        let absolute_end: usize = search_start + m.end();
+        result.push_str(&text[absolute_start..absolute_end]);
+        count += 1;
+        // Move search start past this match
+        search_start = absolute_end;
+        // If the match is empty, move forward to avoid infinite loop
+        if m.start() == m.end() {
+            search_start += 1;
+        }
+        // Check if we've reached the end
+        if search_start >= text.len() {
+            break;
         }
     }
     (result, count)
@@ -155,6 +150,9 @@ pub unsafe extern "C" fn host_regex_match_global(
     }
 }
 
+/// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.
+/// # Safety
+///
 /// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn host_regex_match(
