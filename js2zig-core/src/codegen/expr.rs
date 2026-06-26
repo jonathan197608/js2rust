@@ -1977,17 +1977,17 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringIncludes => {
-                // str.includes(search) → std.mem.indexOf(u8, str, search) != null
+                // str.includes(search) → js_string.includes(str, search)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "(std.mem.indexOf(u8, {obj}, {arg}) != null)",
-                        obj = obj_name,
+                        "js_string.includes({obj}, {arg})",
+                        obj = obj_repr,
                         arg = arg_expr
                     ));
                     return true;
@@ -1996,17 +1996,17 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringStartsWith => {
-                // str.startsWith(prefix) → std.mem.startsWith(u8, str, prefix)
+                // str.startsWith(prefix) → js_string.startsWith(str, prefix)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.startsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "std.mem.startsWith(u8, {obj}, {arg})",
-                        obj = obj_name,
+                        "js_string.startsWith({obj}, {arg})",
+                        obj = obj_repr,
                         arg = arg_expr
                     ));
                     return true;
@@ -2015,17 +2015,17 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringEndsWith => {
-                // str.endsWith(suffix) → std.mem.endsWith(u8, str, suffix)
+                // str.endsWith(suffix) → js_string.endsWith(str, suffix)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.endsWith() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "std.mem.endsWith(u8, {obj}, {arg})",
-                        obj = obj_name,
+                        "js_string.endsWith({obj}, {arg})",
+                        obj = obj_repr,
                         arg = arg_expr
                     ));
                     return true;
@@ -3489,11 +3489,11 @@ impl Codegen {
                         .push("String.concat() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
                         "js_string.concat(js_allocator.getAllocator(), {}, {})",
-                        obj_name, arg_expr
+                        obj_repr, arg_expr
                     ));
                     return true;
                 }
@@ -3501,7 +3501,7 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringSlice => {
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let start_expr = self.first_arg_string_or(&ce.arguments, "0");
                     let end_expr = if ce.arguments.len() >= 2 {
                         if let Some(arg) = ce.arguments.get(1)
@@ -3516,7 +3516,7 @@ impl Codegen {
                     };
                     self.write(&format!(
                         "js_string.slice({}, {}, {})",
-                        obj_name, start_expr, end_expr
+                        obj_repr, start_expr, end_expr
                     ));
                     return true;
                 }

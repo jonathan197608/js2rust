@@ -5575,4 +5575,206 @@ export function testMapForEach() {
             zig
         );
     }
+
+    // ── Phase 6: String 高级方法测试 ──────────────────────
+
+    // Test: String.startsWith()
+    #[test]
+    fn test_p6_string_starts_with() {
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function checkStart() {
+    return "hello".startsWith("he");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_starts_with");
+        assert!(
+            zig.contains("js_string.startsWith("),
+            "Expected 'js_string.startsWith(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.endsWith()
+    #[test]
+    fn test_p6_string_ends_with() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @param {string} suffix
+ * @returns {boolean}
+ */
+export function checkEnd(str, suffix) {
+    return str.endsWith(suffix);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_ends_with");
+        assert!(
+            zig.contains("js_string.endsWith("),
+            "Expected 'js_string.endsWith(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.includes()
+    #[test]
+    fn test_p6_string_includes() {
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function checkIncludes() {
+    return "hello world".includes("world");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_includes");
+        assert!(
+            zig.contains("js_string.includes("),
+            "Expected 'js_string.includes(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.repeat()
+    #[test]
+    fn test_p6_string_repeat() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @param {i64} n
+ * @returns {string}
+ */
+export function repeatStr(str, n) {
+    return str.repeat(n);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_repeat");
+        assert!(
+            zig.contains("js_string.repeat(js_allocator.getAllocator()"),
+            "Expected 'js_string.repeat(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.substring()
+    #[test]
+    fn test_p6_string_substring() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @param {i64} start
+ * @param {i64} end
+ * @returns {string}
+ */
+export function getSub(str, start, end) {
+    return str.substring(start, end);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_substring");
+        assert!(
+            zig.contains("js_string.substring("),
+            "Expected 'js_string.substring(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.slice()
+    #[test]
+    fn test_p6_string_slice() {
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function getSlice() {
+    return "hello world".slice(2, 9);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_slice");
+        assert!(
+            zig.contains("js_string.slice("),
+            "Expected 'js_string.slice(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.concat()
+    #[test]
+    fn test_p6_string_concat() {
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function joinStr() {
+    return "hello".concat("world");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_concat");
+        assert!(
+            zig.contains("js_string.concat("),
+            "Expected 'js_string.concat(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.normalize() (stub)
+    #[test]
+    fn test_p6_string_normalize() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function normalizeStr(str) {
+    return str.normalize("NFC");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_normalize");
+        assert!(
+            zig.contains("js_string.normalize(js_allocator.getAllocator()"),
+            "Expected 'js_string.normalize(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.toUpperCase()
+    #[test]
+    fn test_p6_string_to_upper_case() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function toUpper(str) {
+    return str.toUpperCase();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_to_upper_case");
+        assert!(
+            zig.contains("js_string.toUpper(js_allocator.getAllocator()"),
+            "Expected 'js_string.toUpper(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: String.toLowerCase()
+    #[test]
+    fn test_p6_string_to_lower_case() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function toLower(str) {
+    return str.toLowerCase();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_to_lower_case");
+        assert!(
+            zig.contains("js_string.toLower(js_allocator.getAllocator()"),
+            "Expected 'js_string.toLower(js_allocator.getAllocator()' in:\n{}",
+            zig
+        );
+    }
 }
