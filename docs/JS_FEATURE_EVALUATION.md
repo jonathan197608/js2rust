@@ -3,7 +3,7 @@
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-26 (MDN 标准对齐重评估, 2026-06-26 更新)
 > **代码版本**: main branch (Post-Phase7-builtins)
-> **测试覆盖**: 246 个 Rust 测试 + 27 个 Zig 测试
+> **测试覆盖**: 250 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -16,7 +16,7 @@
 | **部分实现** | ~8 | ~5% |
 | **未实现（@compileError）** | ~32 | ~22% |
 | **内置对象有效覆盖率** | ~195/260 | ~75% |
-| **测试覆盖** | 246 个 Rust 测试 + 27 个 Zig 测试 | - |
+| **测试覆盖** | 250 个 Rust 测试 + 27 个 Zig 测试 | - |
 
 **更新说明** (2026-06-26):
 - **Phase 8 完成**: `encodeURI(s)` / `decodeURI(s)` 实现 — 新增 BuiltinCall 变体 `EncodeURI`/`DecodeURI`，接入 `js_uri.encodeURI/decodeURI` runtime，添加 Rust 测试，Global 8/8 (100%)
@@ -517,7 +517,7 @@
 | `.substring(s,e)` | `str.substring(indexStart[, indexEnd])` | `start, end?: i64` | 子字符串 | ✅ | ✅ | ✅ P1 done | ✅ |
 | `.trimStart()` | `str.trimStart()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
 | `.trimEnd()` | `str.trimEnd()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
-| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `string[] \| null` | ✅ | ❌ | 🔶 compileError | 🔶 P2 |
+| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `JsAny` (array\|null) | ✅ | ✅ | ✅ Phase 1+2+3 (literal+var, /g) | ✅ |
 | `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | ✅ P8 done | ✅ |
 | **— Phase 6 完成 (9) —** | | | | | | | |
 | `.replaceAll(p,r)` | `str.replaceAll(pattern, replacement)` | `pattern, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
