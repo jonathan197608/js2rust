@@ -149,12 +149,6 @@ impl Codegen {
                         let kw = if is_const { "const" } else { "var" };
 
                         let is_json_parse = self.type_info.has_json_parse_types.contains(name);
-                        eprintln!(
-                            "[stmt] name={}, is_json_parse={}, var_types[name]={:?}",
-                            name,
-                            is_json_parse,
-                            self.type_info.var_types.get(name)
-                        );
 
                         if is_json_parse {
                             // JSDoc-annotated JSON.parse: type is NamedStruct
@@ -220,36 +214,34 @@ impl Codegen {
                                 }
                             }
                         } else {
-                            eprintln!("[stmt] entering else branch for {} (unknown type)", name);
                             // Indeterminate type (Rule 8 error already in type_info.errors)
                             self.write(&format!("{} {} = ", kw, name));
                             self.emit_expr(init);
                             self.write(";\n");
                             // HACK 1: track JsMap.init() return type as NamedStruct("Map")
-                            if let Expression::CallExpression(ce) = init {
-                                if let Expression::StaticMemberExpression(sme) = &ce.callee {
-                                    if sme.property.name.as_str() == "init" {
-                                        // obj.init(...) — check if obj type is JsMap/JsSet
-                                        if let Expression::Identifier(obj_id) = &sme.object {
-                                            let obj_name = obj_id.name.as_str();
-                                            if obj_name == "js_collections" {
-                                                // js_collections.JsMap.init() → Map
-                                                // Heuristic: check property chain
-                                                // sme.object is "js_collections", sme.property is "JsMap"
-                                                // This is a hack — JsMap → Map
-                                                let prop = sme.property.name.as_str();
-                                                if prop == "JsMap" {
-                                                    self.type_info.var_types.insert(
-                                                        name.to_string(),
-                                                        ZigType::NamedStruct("Map".to_string()),
-                                                    );
-                                                } else if prop == "JsSet" {
-                                                    self.type_info.var_types.insert(
-                                                        name.to_string(),
-                                                        ZigType::NamedStruct("Set".to_string()),
-                                                    );
-                                                }
-                                            }
+                            if let Expression::CallExpression(ce) = init
+                                && let Expression::StaticMemberExpression(sme) = &ce.callee
+                                && sme.property.name.as_str() == "init"
+                            {
+                                // obj.init(...) — check if obj type is JsMap/JsSet
+                                if let Expression::Identifier(obj_id) = &sme.object {
+                                    let obj_name = obj_id.name.as_str();
+                                    if obj_name == "js_collections" {
+                                        // js_collections.JsMap.init() → Map
+                                        // Heuristic: check property chain
+                                        // sme.object is "js_collections", sme.property is "JsMap"
+                                        // This is a hack — JsMap → Map
+                                        let prop = sme.property.name.as_str();
+                                        if prop == "JsMap" {
+                                            self.type_info.var_types.insert(
+                                                name.to_string(),
+                                                ZigType::NamedStruct("Map".to_string()),
+                                            );
+                                        } else if prop == "JsSet" {
+                                            self.type_info.var_types.insert(
+                                                name.to_string(),
+                                                ZigType::NamedStruct("Set".to_string()),
+                                            );
                                         }
                                     }
                                 }
@@ -262,16 +254,14 @@ impl Codegen {
                             if let Expression::CallExpression(ce) = init {
                                 // Helper: check if callee is obj.get/set/has and obj is a Map/Set
                                 let mut check_callee = |mem_obj: &Expression| {
-                                    if let Expression::Identifier(obj_id) = mem_obj {
-                                        if let Some(ZigType::NamedStruct(n)) =
+                                    if let Expression::Identifier(obj_id) = mem_obj
+                                        && let Some(ZigType::NamedStruct(n)) =
                                             self.type_info.var_types.get(obj_id.name.as_str())
-                                        {
-                                            if n == "Map" {
-                                                self.type_info
-                                                    .var_types
-                                                    .insert(name.to_string(), ZigType::JsAny);
-                                            }
-                                        }
+                                        && n == "Map"
+                                    {
+                                        self.type_info
+                                            .var_types
+                                            .insert(name.to_string(), ZigType::JsAny);
                                     }
                                 };
                                 // ComputedMemberExpression: obj["get"](key) — rare, kept for completeness

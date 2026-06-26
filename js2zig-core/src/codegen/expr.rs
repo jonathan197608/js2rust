@@ -5577,37 +5577,33 @@ impl Codegen {
             // CallExpression: look up function return type from cache (Rule 5-6)
             Expression::CallExpression(ce) => {
                 // Map.get(key) / Set.has(key) etc. — StaticMemberExpression callee (obj.method(...))
-                if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        if let Some(ty) = self.type_info.var_types.get(obj_name) {
-                            match (ty, mem.property.name.as_str()) {
-                                (ZigType::NamedStruct(name), "get") if name == "Map" => {
-                                    eprintln!("[infer_expr_type] Map.get() → JsAny");
-                                    return Some(ZigType::JsAny);
-                                }
-                                (ZigType::NamedStruct(name), "has")
-                                    if name == "Map" || name == "Set" =>
-                                {
-                                    eprintln!("[infer_expr_type] {}.has() → Bool", name);
-                                    return Some(ZigType::Bool);
-                                }
-                                _ => {}
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    if let Some(ty) = self.type_info.var_types.get(obj_name) {
+                        match (ty, mem.property.name.as_str()) {
+                            (ZigType::NamedStruct(name), "get") if name == "Map" => {
+                                return Some(ZigType::JsAny);
                             }
+                            (ZigType::NamedStruct(name), "has")
+                                if name == "Map" || name == "Set" =>
+                            {
+                                return Some(ZigType::Bool);
+                            }
+                            _ => {}
                         }
                     }
                 }
                 // Fallback: ComputedMemberExpression callee (obj[key]()) — kept for completeness
-                if let Expression::ComputedMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(obj) = &mem.object {
-                        let obj_name = obj.name.as_str();
-                        if let Some(ZigType::NamedStruct(name)) =
-                            self.type_info.var_types.get(obj_name)
-                        {
-                            if name == "Map" {
-                                return Some(ZigType::JsAny);
-                            }
-                        }
+                if let Expression::ComputedMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(obj) = &mem.object
+                {
+                    let obj_name = obj.name.as_str();
+                    if let Some(ZigType::NamedStruct(name)) = self.type_info.var_types.get(obj_name)
+                        && name == "Map"
+                    {
+                        return Some(ZigType::JsAny);
                     }
                 }
                 // Get callee name for non-builtin calls
@@ -5806,7 +5802,7 @@ fn stmt_uses_ident(ident: &str, stmt: &Statement) -> bool {
         Statement::ReturnStatement(r) => r
             .argument
             .as_ref()
-            .map_or(false, |e| expr_uses_ident(ident, e)),
+            .is_some_and(|e| expr_uses_ident(ident, e)),
         Statement::ExpressionStatement(e) => expr_uses_ident(ident, &e.expression),
         Statement::BlockStatement(b) => b.body.iter().any(|s| stmt_uses_ident(ident, s)),
         _ => false,
