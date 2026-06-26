@@ -2,14 +2,14 @@
 
 > **项目**: js2rust/js2zig (JS → Zig 转译器)
 > **创建日期**: 2026-06-21
-> **最后更新**: 2026-06-25
+> **最后更新**: 2026-06-26
 > **维护者**: jonathan197608
 
 ---
 
 ## 当前状态
 
-项目 Phase 5 已完成，Phase 6（String 高级方法，排除正则相关）已完成。235 测试通过，0 clippy 警告。
+项目 Phase 7 已完成（Set.forEach + encodeURI/decodeURI）。246 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
@@ -39,6 +39,12 @@
 - 修复 6 个 clippy 警告
 - 235 个测试全部通过，0 clippy 警告 ✅
 - 剩余（正则相关，out of scope）：String.match(), String.search(), String.matchAll()
+
+**✅ 2026-06-26 Phase 7 完成 — Set.forEach + encodeURI/decodeURI**:
+- 实现 `Set.forEach()` — inline for 循环遍历 `set.items.items`，回调签名 `fn(key, value, set)`
+- 实现 `encodeURI(s)` / `decodeURI(s)` — 新增 `EncodeURI`/`DecodeURI` BuiltinCall 变体，接入 `js_uri.encodeURI/decodeURI` runtime
+- Global 函数覆盖: 8/8 (100%) ✅
+- 246 个测试全部通过，0 clippy 警告 ✅
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
@@ -405,7 +411,7 @@ examples/builtins-mdn-tests/
 | 3 | **`map.has()` vs `set.has()` 歧义** | `.has()/.delete()` | 需区分 receiver 变量类型 → `SetHas`/`MapHas` 独立变体 |
 | 4 | **`charAt/charCodeAt` UTF-16 vs UTF-8** | 2 方法 | Zig 字符串为 UTF-8，需处理多字节字符索引 |
 | 5 | **闭包回调类型推断** | `filter/some/every/find` | 箭头函数闭包已实现，需验证在 `for` 循环中的调用 |
-| 6 | **URI 函数需 `try` + allocator** | 2 方法 | `encodeURIComponent/decodeURIComponent` 可能返回 error |
+| 6 | **URI 函数需 `try` + allocator** | 4 方法 | ✅ 已解决 — `encodeURI/decodeURI/encodeURIComponent/decodeURIComponent` 全部连通 |
 | 7 | **Math 常量不是函数调用** | 7 常量 | 需在 `emit_static_member` 路径检测 `object: Identifier("Math")` |
 | 8 | **`Number.isNaN` vs 全局 `isNaN` 语义不同** | 2 方法 | `Number.isNaN` 不做类型转换，全局 `isNaN` 先 `ToNumber` |
 | 9 | **Date 构造函数多态** | 3 重载 | `new Date()/new Date(ms)/new Date(str)` 需在 `new` 表达式中路由 |

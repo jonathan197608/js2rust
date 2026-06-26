@@ -122,6 +122,7 @@ pub enum BuiltinCall {
 
     // Set methods (called on local Set variables)
     SetAdd,     // set.add(value)
+    SetForEach, // set.forEach(fn)
     SetKeys,    // set.keys() → K[] (same as values)
     SetValues,  // set.values() → K[]
     SetEntries, // set.entries() → [K, K][]
@@ -181,18 +182,21 @@ pub enum BuiltinCall {
     DateSetUTCMilliseconds, // date.setUTCMilliseconds(ms)
 
     // Object methods (static)
-    ObjectKeys,                // Object.keys(obj)
-    ObjectValues,              // Object.values(obj)
-    ObjectEntries,             // Object.entries(obj)
-    ObjectAssign,              // Object.assign(target, source)
-    ObjectFreeze,              // Object.freeze(obj)
-    ObjectSeal,                // Object.seal(obj) — simplified no-op
-    ObjectHasOwn,              // Object.hasOwn(obj, key)
-    ObjectIs,                  // Object.is(a, b) — SameValue comparison
-    ObjectGetOwnPropertyNames, // Object.getOwnPropertyNames(obj)
-    ObjectCreate,              // Object.create(proto)
-    ObjectDefineProperty,      // Object.defineProperty(obj, key, desc)
-    ObjectGetPrototypeOf,      // Object.getPrototypeOf(obj)
+    ObjectKeys,                     // Object.keys(obj)
+    ObjectValues,                   // Object.values(obj)
+    ObjectEntries,                  // Object.entries(obj)
+    ObjectAssign,                   // Object.assign(target, source)
+    ObjectFreeze,                   // Object.freeze(obj)
+    ObjectSeal,                     // Object.seal(obj) — simplified no-op
+    ObjectHasOwn,                   // Object.hasOwn(obj, key)
+    ObjectIs,                       // Object.is(a, b) — SameValue comparison
+    ObjectGetOwnPropertyNames,      // Object.getOwnPropertyNames(obj)
+    ObjectCreate,                   // Object.create(proto)
+    ObjectDefineProperty,           // Object.defineProperty(obj, key, desc)
+    ObjectGetPrototypeOf,           // Object.getPrototypeOf(obj)
+    ObjectDefineProperties,         // Object.defineProperties(obj, props)
+    ObjectGetOwnPropertyDescriptor, // Object.getOwnPropertyDescriptor(obj, key)
+    ObjectSetPrototypeOf,           // Object.setPrototypeOf(obj, proto) — simplified no-op
 
     // Global functions
     ParseInt,           // parseInt(s)
@@ -358,6 +362,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "create" => return Some(BuiltinCall::ObjectCreate),
                 "defineProperty" => return Some(BuiltinCall::ObjectDefineProperty),
                 "getPrototypeOf" => return Some(BuiltinCall::ObjectGetPrototypeOf),
+                "defineProperties" => return Some(BuiltinCall::ObjectDefineProperties),
+                "getOwnPropertyDescriptor" => {
+                    return Some(BuiltinCall::ObjectGetOwnPropertyDescriptor);
+                }
+                "setPrototypeOf" => return Some(BuiltinCall::ObjectSetPrototypeOf),
                 _ => return None,
             }
         }
@@ -757,7 +766,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         // Object methods that return complex types or the input object
-        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf => None,
+        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
 
         // Array static methods
         BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {

@@ -37,6 +37,7 @@ mod native_proto_tests {
         let needs_js_array = zig_code.contains("js_array");
         let needs_js_json = zig_code.contains("js_json");
         let needs_js_collections = zig_code.contains("js_collections");
+        let needs_js_uri = zig_code.contains("js_uri.");
         let any_runtime = needs_js_date
             || needs_js_object
             || needs_js_number
@@ -46,7 +47,8 @@ mod native_proto_tests {
             || needs_string_hashmap
             || needs_js_allocator
             || needs_js_array
-            || needs_js_collections;
+            || needs_js_collections
+            || needs_js_uri;
 
         let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
@@ -63,6 +65,9 @@ mod native_proto_tests {
             }
             if needs_js_collections {
                 w.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
+            }
+            if needs_js_uri {
+                w.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
             }
             if needs_js_date {
                 w.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
@@ -6035,6 +6040,217 @@ export function getCharFromPoint() {
         assert!(
             zig.contains("js_string.fromCodePoint("),
             "Expected 'js_string.fromCodePoint(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Phase 7: Set 迭代方法测试 ──────────────────────
+
+    // Test: Set.add / Set.has
+    #[test]
+    fn test_p7_set_add_has() {
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function testSetAddHas() {
+    const s = new Set();
+    s.add("hello");
+    s.add("world");
+    return s.has("hello");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_set_add_has");
+        assert!(zig.contains(".add("), "Expected '.add(' in:\n{}", zig);
+        assert!(zig.contains(".has("), "Expected '.has(' in:\n{}", zig);
+    }
+
+    // Test: Set.forEach
+    #[test]
+    fn test_p7_set_foreach() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function testSetForEach() {
+    const s = new Set();
+    s.add(1);
+    s.add(2);
+    s.add(3);
+    let sum = 0;
+    s.forEach((val) => { sum = sum + val; });
+    return sum;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_set_foreach");
+        // Should generate for-loop over set items
+        assert!(
+            zig.contains("for (s.items.items)"),
+            "Expected 'for (s.items.items)' in:\n{}",
+            zig
+        );
+        assert!(zig.contains("|val|"), "Expected '|val|' in:\n{}", zig);
+        // Must NOT generate Map-style iterator
+        assert!(
+            !zig.contains("iter.next()"),
+            "Should NOT contain iterator for Set.forEach:\n{}",
+            zig
+        );
+    }
+
+    // Test: Set.keys / Set.values / Set.entries
+    #[test]
+    fn test_p7_set_iterators() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function testSetIterators() {
+    const s = new Set();
+    s.add("a");
+    s.add("b");
+    const ks = s.keys();
+    const vs = s.values();
+    const es = s.entries();
+    return ks.length + vs.length + es.length;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_set_iterators");
+        assert!(zig.contains(".keys("), "Expected '.keys(' in:\n{}", zig);
+        assert!(zig.contains(".values("), "Expected '.values(' in:\n{}", zig);
+        assert!(
+            zig.contains(".entries("),
+            "Expected '.entries(' in:\n{}",
+            zig
+        );
+    }
+
+    // Test: Set.delete / Set.clear / Set.size
+    #[test]
+    fn test_p7_set_delete_clear() {
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function testSetDeleteClear() {
+    const s = new Set();
+    s.add("x");
+    s.add("y");
+    s.delete("x");
+    s.clear();
+    return s.has("x");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_set_delete_clear");
+        assert!(zig.contains(".delete("), "Expected '.delete(' in:\n{}", zig);
+        assert!(zig.contains(".clear()"), "Expected '.clear()' in:\n{}", zig);
+    }
+
+    // Phase 7: Object defineProperties / getOwnPropertyDescriptor / setPrototypeOf
+
+    #[test]
+    fn test_p7_object_define_properties() {
+        let js = r#"
+export function defineProps(target, props) {
+    Object.defineProperties(target, props);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_object_define_properties");
+        assert!(
+            zig.contains("js_object.defineProperties("),
+            "Expected 'js_object.defineProperties(' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p7_object_get_own_property_descriptor() {
+        let js = r#"
+function getDesc(obj, key) {
+    return Object.getOwnPropertyDescriptor(obj, key);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_object_get_own_property_descriptor");
+        assert!(
+            zig.contains("js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), "),
+            "Expected 'js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), ' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p7_object_set_prototype_of() {
+        let js = r#"
+export function setProto(obj, proto) {
+    Object.setPrototypeOf(obj, proto);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_object_set_prototype_of");
+        assert!(
+            zig.contains("js_object.setPrototypeOf("),
+            "Expected 'js_object.setPrototypeOf(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Phase 7: encodeURI/decodeURI 全局函数测试 ──────
+
+    #[test]
+    fn test_p7_encode_uri() {
+        let js = r#"
+export function encode(url) {
+    return encodeURI(url);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_encode_uri");
+        assert!(
+            zig.contains("js_uri.encodeURI(js_allocator.getAllocator(),"),
+            "Expected 'js_uri.encodeURI(js_allocator.getAllocator(),' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p7_decode_uri() {
+        let js = r#"
+export function decode(url) {
+    return decodeURI(url);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_decode_uri");
+        assert!(
+            zig.contains("js_uri.decodeURI(js_allocator.getAllocator(),"),
+            "Expected 'js_uri.decodeURI(js_allocator.getAllocator(),' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p7_encode_uri_component() {
+        let js = r#"
+export function encodeComp(s) {
+    return encodeURIComponent(s);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_encode_uri_component");
+        assert!(
+            zig.contains("js_uri.encodeURIComponent(js_allocator.getAllocator(),"),
+            "Expected 'js_uri.encodeURIComponent(js_allocator.getAllocator(),' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p7_decode_uri_component() {
+        let js = r#"
+export function decodeComp(s) {
+    return decodeURIComponent(s);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p7_decode_uri_component");
+        assert!(
+            zig.contains("js_uri.decodeURIComponent(js_allocator.getAllocator(),"),
+            "Expected 'js_uri.decodeURIComponent(js_allocator.getAllocator(),' in:\n{}",
             zig
         );
     }

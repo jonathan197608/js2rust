@@ -727,6 +727,9 @@ impl Codegen {
                         builtins::BuiltinCall::MapEntries => {
                             builtin = builtins::BuiltinCall::SetEntries;
                         }
+                        builtins::BuiltinCall::ArrayForEach => {
+                            builtin = builtins::BuiltinCall::SetForEach;
+                        }
                         _ => {}
                     }
                 }
@@ -1718,10 +1721,10 @@ impl Codegen {
 
             // ── Array iterator methods ─────────────────────────────
             builtins::BuiltinCall::ArrayKeys => {
-                // arr.keys() → js_runtime.js_array.keys(&arr)
+                // arr.keys() → js_runtime.js_array.keys(js_allocator.getAllocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.keys(js_allocator.getAllocator(), &{})",
+                        "js_runtime.js_array.keys(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -1730,10 +1733,10 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayValues => {
-                // arr.values() → js_runtime.js_array.values(&arr)
+                // arr.values() → js_runtime.js_array.values(js_allocator.getAllocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.values(js_allocator.getAllocator(), &{})",
+                        "js_runtime.js_array.values(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -1742,10 +1745,10 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayEntries => {
-                // arr.entries() → js_runtime.js_array.entries(&arr)
+                // arr.entries() → js_runtime.js_array.entries(js_allocator.getAllocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.entries(js_allocator.getAllocator(), &{})",
+                        "js_runtime.js_array.entries(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -1877,25 +1880,34 @@ impl Codegen {
             }
             // ── Map iterator methods ──
             builtins::BuiltinCall::MapKeys => {
-                // map.keys() → map.keys()
+                // map.keys() → map.keys(js_allocator.getAllocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.keys()", obj_name));
+                    self.write(&format!(
+                        "{}.keys(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
             }
             builtins::BuiltinCall::MapValues => {
-                // map.values() → map.values()
+                // map.values() → map.values(js_allocator.getAllocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.values()", obj_name));
+                    self.write(&format!(
+                        "{}.values(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
             }
             builtins::BuiltinCall::MapEntries => {
-                // map.entries() → map.entries()
+                // map.entries() → map.entries(js_allocator.getAllocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.entries()", obj_name));
+                    self.write(&format!(
+                        "{}.entries(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
@@ -1918,26 +1930,80 @@ impl Codegen {
                 false
             }
             // ── Set iterator methods ──
-            builtins::BuiltinCall::SetKeys => {
-                // set.keys() → set.keys()
+            builtins::BuiltinCall::SetForEach => {
+                // set.forEach(fn) → for (set.items.items) |value| { ... }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.keys()", obj_name));
+                    if !ce.arguments.is_empty()
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(Expression::ArrowFunctionExpression(arrow)) =
+                            arg.as_expression()
+                    {
+                        // Set.forEach((value) => { ... }) — JS callback: value, value, set
+                        let val_param = arrow
+                            .params
+                            .items
+                            .first()
+                            .and_then(|p| crate::native_proto::infer::binding_name(&p.pattern));
+
+                        let val_name = val_param.unwrap_or("_item");
+                        self.write(&format!(
+                            "for ({obj}.items.items) |{val}| {{\n",
+                            obj = obj_name,
+                            val = val_name
+                        ));
+                        self.indent += 1;
+
+                        // Emit arrow function body
+                        for stmt in &arrow.body.statements {
+                            self.write_indent();
+                            self.emit_fn_stmt(stmt);
+                        }
+
+                        if let Some(vp) = &val_param {
+                            self.write_indent();
+                            self.write(&format!("_ = &{};\n", vp));
+                        }
+
+                        self.indent -= 1;
+                        self.write_indent();
+                        self.write("}");
+                        return true;
+                    }
+                    // Fallback: empty Set.forEach
+                    self.write(&format!("for ({}.items.items) |_| {{}}", obj_name));
+                    return true;
+                }
+                false
+            }
+            builtins::BuiltinCall::SetKeys => {
+                // set.keys() → set.keys(js_allocator.getAllocator()) catch @panic(...)
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "{}.keys(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
             }
             builtins::BuiltinCall::SetValues => {
-                // set.values() → set.values()
+                // set.values() → set.values(js_allocator.getAllocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.values()", obj_name));
+                    self.write(&format!(
+                        "{}.values(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
             }
             builtins::BuiltinCall::SetEntries => {
-                // set.entries() → set.entries()
+                // set.entries() → set.entries(js_allocator.getAllocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.entries()", obj_name));
+                    self.write(&format!(
+                        "{}.entries(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        obj_name
+                    ));
                     return true;
                 }
                 false
@@ -3180,7 +3246,7 @@ impl Codegen {
                     self.compile_error(ce.span, "Object.create() requires at least 1 argument");
                     return true;
                 }
-                self.write("js_object.create(alloc, ");
+                self.write("js_object.create(js_allocator.getAllocator(), ");
                 let first_arg = ce.arguments[0].as_expression();
                 if let Some(Expression::NullLiteral(_)) = first_arg {
                     self.write("null");
@@ -3215,6 +3281,48 @@ impl Codegen {
                 }
                 self.write("js_object.getPrototypeOf(");
                 self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectDefineProperties => {
+                // Object.defineProperties(obj, props) → js_object.defineProperties(obj, props)
+                if ce.arguments.len() < 2 {
+                    self.compile_error(ce.span, "Object.defineProperties() requires 2 arguments");
+                    return true;
+                }
+                self.write("js_object.defineProperties(");
+                self.emit_expr_arg(&ce.arguments[0]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectGetOwnPropertyDescriptor => {
+                // Object.getOwnPropertyDescriptor(obj, key) → ?JsValueHashMap
+                if ce.arguments.len() < 2 {
+                    self.compile_error(
+                        ce.span,
+                        "Object.getOwnPropertyDescriptor() requires 2 arguments",
+                    );
+                    return true;
+                }
+                self.write("js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), ");
+                self.emit_expr_arg(&ce.arguments[0]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
+                self.write(")");
+                true
+            }
+            builtins::BuiltinCall::ObjectSetPrototypeOf => {
+                // Object.setPrototypeOf(obj, proto) → js_object.setPrototypeOf(obj, proto)
+                if ce.arguments.len() < 2 {
+                    self.compile_error(ce.span, "Object.setPrototypeOf() requires 2 arguments");
+                    return true;
+                }
+                self.write("js_object.setPrototypeOf(");
+                self.emit_expr_arg(&ce.arguments[0]);
+                self.write(", ");
+                self.emit_expr_arg(&ce.arguments[1]);
                 self.write(")");
                 true
             }

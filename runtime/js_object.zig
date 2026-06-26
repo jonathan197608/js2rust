@@ -153,6 +153,43 @@ pub fn getPrototypeOf(obj: *const JsValueHashMap) ?*const JsValueHashMap {
     return null;
 }
 
+/// Object.defineProperties(obj, props) — define multiple properties.
+/// Simplified: copy all entries from props to obj (ignore descriptors).
+pub fn defineProperties(obj: *JsValueHashMap, props: *const JsValueHashMap) !void {
+    var iter = props.iterator();
+    while (iter.next()) |entry| {
+        try obj.put(entry.key_ptr.*, entry.value_ptr.*);
+    }
+}
+
+/// Object.getOwnPropertyDescriptor(obj, key) — get property descriptor.
+/// Returns a simplified descriptor HashMap { value, writable: true, enumerable: true, configurable: true }
+/// or null if the key doesn't exist.
+pub fn getOwnPropertyDescriptor(
+    alloc: Allocator,
+    obj: *const JsValueHashMap,
+    key: []const u8,
+) !?JsValueHashMap {
+    if (obj.get(key)) |val| {
+        var desc = JsValueHashMap.init(alloc);
+        errdefer desc.deinit();
+        try desc.put("value", val);
+        try desc.put("writable", JsValue{ .bool = true });
+        try desc.put("enumerable", JsValue{ .bool = true });
+        try desc.put("configurable", JsValue{ .bool = true });
+        return desc;
+    }
+    return null;
+}
+
+/// Object.setPrototypeOf(obj, proto) — set prototype (simplified: no-op).
+/// In our implementation, objects don't have prototype chains.
+pub fn setPrototypeOf(obj: *JsValueHashMap, proto: ?*const JsValueHashMap) void {
+    _ = obj;
+    _ = proto;
+    // No-op: our object model does not support prototype chains
+}
+
 // ── Tests for new Object methods (Phase 5) ──
 
 test "create with null proto" {
@@ -201,4 +238,62 @@ test "getPrototypeOf returns null" {
 
     const proto = getPrototypeOf(&obj);
     try std.testing.expect(proto == null);
+}
+
+// ── Tests for new Object methods (Phase 7) ──
+
+test "defineProperties" {
+    const alloc = std.testing.allocator;
+    var obj = JsValueHashMap.init(alloc);
+    defer obj.deinit();
+
+    var props = JsValueHashMap.init(alloc);
+    defer props.deinit();
+    try props.put("name", JsValue{ .string = "zig" });
+    try props.put("version", JsValue{ .int = 1 });
+
+    try defineProperties(&obj, &props);
+    try std.testing.expectEqualStrings("zig", obj.get("name").?.string);
+    try std.testing.expectEqual(@as(i64, 1), obj.get("version").?.int);
+}
+
+test "getOwnPropertyDescriptor with existing key" {
+    const alloc = std.testing.allocator;
+    var obj = JsValueHashMap.init(alloc);
+    defer obj.deinit();
+    try obj.put("x", JsValue{ .int = 42 });
+
+    var desc = try getOwnPropertyDescriptor(alloc, &obj, "x");
+    defer if (desc) |*d| d.deinit();
+    try std.testing.expect(desc != null);
+    try std.testing.expectEqual(@as(i64, 42), desc.?.get("value").?.int);
+    try std.testing.expectEqual(true, desc.?.get("writable").?.bool);
+    try std.testing.expectEqual(true, desc.?.get("enumerable").?.bool);
+    try std.testing.expectEqual(true, desc.?.get("configurable").?.bool);
+}
+
+test "getOwnPropertyDescriptor with missing key" {
+    const alloc = std.testing.allocator;
+    var obj = JsValueHashMap.init(alloc);
+    defer obj.deinit();
+
+    const desc = try getOwnPropertyDescriptor(alloc, &obj, "missing");
+    try std.testing.expect(desc == null);
+}
+
+test "setPrototypeOf is no-op" {
+    const alloc = std.testing.allocator;
+    var obj = JsValueHashMap.init(alloc);
+    defer obj.deinit();
+    try obj.put("x", JsValue{ .int = 1 });
+
+    var proto = JsValueHashMap.init(alloc);
+    defer proto.deinit();
+
+    setPrototypeOf(&obj, &proto); // Should not panic or error
+    // After no-op setPrototypeOf, getPrototypeOf still returns null
+    const p = getPrototypeOf(&obj);
+    try std.testing.expect(p == null);
+    // Original property still accessible
+    try std.testing.expectEqual(@as(i64, 1), obj.get("x").?.int);
 }
