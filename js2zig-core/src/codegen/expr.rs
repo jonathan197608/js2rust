@@ -744,42 +744,23 @@ impl Codegen {
         left_is_jsany: bool,
         right_is_jsany: bool,
     ) {
-        // Helper: emit an expression, wrapping with JsAny.from() if needed.
-        // `is_jsany` = whether the expression's type is JsAny.
-        let emit_jsany_arg = |this: &mut Self, expr: &Expression, is_jsany: bool| {
-            if is_jsany {
-                this.emit_expr(expr);
-            } else {
-                this.write("JsAny.from(");
-                this.emit_expr(expr);
-                this.write(")");
-            }
-        };
-
         match be.operator {
-            BinaryOperator::Equality | BinaryOperator::StrictEquality => {
-                // left == right  →  (left).eq(right)  where the JsAny side drives .eq()
-                // Prefer left as receiver if it's JsAny, otherwise wrap left.
-                if left_is_jsany {
-                    self.emit_expr(&be.left);
-                    self.write(".eq(");
-                    emit_jsany_arg(self, &be.right, right_is_jsany);
-                    self.write(")");
-                } else {
-                    // left is not JsAny, right is → JsAny.from(left).eq(right)
-                    self.write("JsAny.from(");
-                    self.emit_expr(&be.left);
-                    self.write(").eq(");
-                    self.emit_expr(&be.right);
-                    self.write(")");
+            BinaryOperator::Equality
+            | BinaryOperator::StrictEquality
+            | BinaryOperator::Inequality
+            | BinaryOperator::StrictInequality => {
+                let negate = matches!(
+                    be.operator,
+                    BinaryOperator::Inequality | BinaryOperator::StrictInequality
+                );
+                if negate {
+                    self.write("!");
                 }
-            }
-            BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
-                self.write("!");
+                // left.eq(right) — prefer left as receiver if it's JsAny, otherwise wrap left.
                 if left_is_jsany {
                     self.emit_expr(&be.left);
                     self.write(".eq(");
-                    emit_jsany_arg(self, &be.right, right_is_jsany);
+                    self.emit_as_jsany(&be.right, right_is_jsany);
                     self.write(")");
                 } else {
                     self.write("JsAny.from(");
@@ -793,8 +774,7 @@ impl Codegen {
             | BinaryOperator::LessEqualThan
             | BinaryOperator::GreaterThan
             | BinaryOperator::GreaterEqualThan => {
-                // Numeric comparison: use .asI64() on the JsAny side.
-                // If both are JsAny, just use left.asI64() < right.asI64().
+                // Numeric comparison: use .asI64() on the JsAny side(s).
                 let op_str = Self::binary_op(be.operator);
                 if left_is_jsany {
                     self.emit_expr(&be.left);
@@ -808,9 +788,7 @@ impl Codegen {
                         self.emit_expr(&be.right);
                     }
                 } else {
-                    // left is primitive, right is JsAny → JsAny.asI64() op left
-                    // But we can't easily swap because <.asI64() is not the same as left < JsAny.asI64().
-                    // Generate: JsAny.from(left).asI64() op right.asI64()
+                    // left is primitive, right is JsAny → wrap left then compare as i64.
                     self.write("JsAny.from(");
                     self.emit_expr(&be.left);
                     self.write(").asI64() ");
@@ -828,6 +806,17 @@ impl Codegen {
                 self.write(" ");
                 self.emit_expr(&be.right);
             }
+        }
+    }
+
+    /// Emit an expression as a JsAny value, wrapping with `JsAny.from()` if it's not already JsAny.
+    fn emit_as_jsany(&mut self, expr: &Expression, is_jsany: bool) {
+        if is_jsany {
+            self.emit_expr(expr);
+        } else {
+            self.write("JsAny.from(");
+            self.emit_expr(expr);
+            self.write(")");
         }
     }
 
