@@ -452,8 +452,8 @@ impl TypeInferrer {
             ZigType::NamedStruct(name) => {
                 match name.as_str() {
                     "Map" => match method {
-                        "set" => InferResult::Indeterminate,          // void/mutating
-                        "get" => InferResult::Definite(ZigType::I64), // default value type
+                        "set" => InferResult::Indeterminate,            // void/mutating
+                        "get" => InferResult::Definite(ZigType::JsAny), // Map.get() returns JsAny
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
                         _ => InferResult::Indeterminate,
                     },

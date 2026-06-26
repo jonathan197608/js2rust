@@ -254,7 +254,7 @@ impl Codegen {
                                 self.write(&format!(", \"{}\")", key));
                             }
                             Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
-                                // Map: obj.get("key") returns ?JsAny
+                                // Map: obj.get("key") returns JsAny (undefined if not found)
                                 self.emit_expr(&mem.object);
                                 self.write(&format!(".get(\"{}\")", key));
                             }
@@ -283,12 +283,11 @@ impl Codegen {
                                 self.write(", js_allocator.getAllocator())");
                             }
                             Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
-                                // Map: (obj.get(key) orelse .undefined_value)
-                                self.write("(");
+                                // Map: obj.get(key) returns JsAny (undefined if not found)
                                 self.emit_expr(&mem.object);
                                 self.write(".get(");
                                 self.emit_expr(&mem.expression);
-                                self.write(") orelse .undefined_value)");
+                                self.write(")");
                             }
                             None => {
                                 // Unknown type → fallback to JsAny.getByKey
@@ -713,11 +712,122 @@ impl Codegen {
             // Emit a compile error with source location info.
             self.compile_error(be.span, "instanceof operator is not supported in Zig");
         } else {
-            self.emit_expr(&be.left);
-            self.write(" ");
-            self.write(Self::binary_op(be.operator));
-            self.write(" ");
-            self.emit_expr(&be.right);
+            // Check if either side is JsAny — need to use method calls for comparison
+            let left_type = self.infer_expr_type(&be.left);
+            let right_type = self.infer_expr_type(&be.right);
+            // Only JsAny (not Anytype) should use .eq()/.asI64() methods.
+            // Anytype means "inferred at call site" — could be i64 or JsAny,
+            // so generate direct comparison (Zig will type-check at call site).
+            let left_is_jsany = left_type == Some(ZigType::JsAny);
+            let right_is_jsany = right_type == Some(ZigType::JsAny);
+
+            // Only use JsAny comparison if type is known to be JsAny.
+            let should_use_jsany = left_is_jsany || right_is_jsany;
+
+            if should_use_jsany {
+                self.emit_jsany_comparison(be, left_is_jsany, right_is_jsany);
+            } else {
+                self.emit_expr(&be.left);
+                self.write(" ");
+                self.write(Self::binary_op(be.operator));
+                self.write(" ");
+                self.emit_expr(&be.right);
+            }
+        }
+    }
+
+    /// Emit comparison code for JsAny values.
+    /// At least one side is JsAny. We generate method calls on the JsAny side.
+    fn emit_jsany_comparison(
+        &mut self,
+        be: &BinaryExpression,
+        left_is_jsany: bool,
+        right_is_jsany: bool,
+    ) {
+        // Helper: emit an expression, wrapping with JsAny.from() if needed.
+        // `is_jsany` = whether the expression's type is JsAny.
+        let emit_jsany_arg = |this: &mut Self, expr: &Expression, is_jsany: bool| {
+            if is_jsany {
+                this.emit_expr(expr);
+            } else {
+                this.write("JsAny.from(");
+                this.emit_expr(expr);
+                this.write(")");
+            }
+        };
+
+        match be.operator {
+            BinaryOperator::Equality | BinaryOperator::StrictEquality => {
+                // left == right  →  (left).eq(right)  where the JsAny side drives .eq()
+                // Prefer left as receiver if it's JsAny, otherwise wrap left.
+                if left_is_jsany {
+                    self.emit_expr(&be.left);
+                    self.write(".eq(");
+                    emit_jsany_arg(self, &be.right, right_is_jsany);
+                    self.write(")");
+                } else {
+                    // left is not JsAny, right is → JsAny.from(left).eq(right)
+                    self.write("JsAny.from(");
+                    self.emit_expr(&be.left);
+                    self.write(").eq(");
+                    self.emit_expr(&be.right);
+                    self.write(")");
+                }
+            }
+            BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
+                self.write("!");
+                if left_is_jsany {
+                    self.emit_expr(&be.left);
+                    self.write(".eq(");
+                    emit_jsany_arg(self, &be.right, right_is_jsany);
+                    self.write(")");
+                } else {
+                    self.write("JsAny.from(");
+                    self.emit_expr(&be.left);
+                    self.write(").eq(");
+                    self.emit_expr(&be.right);
+                    self.write(")");
+                }
+            }
+            BinaryOperator::LessThan
+            | BinaryOperator::LessEqualThan
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::GreaterEqualThan => {
+                // Numeric comparison: use .asI64() on the JsAny side.
+                // If both are JsAny, just use left.asI64() < right.asI64().
+                let op_str = Self::binary_op(be.operator);
+                if left_is_jsany {
+                    self.emit_expr(&be.left);
+                    self.write(".asI64() ");
+                    self.write(op_str);
+                    self.write(" ");
+                    if right_is_jsany {
+                        self.emit_expr(&be.right);
+                        self.write(".asI64()");
+                    } else {
+                        self.emit_expr(&be.right);
+                    }
+                } else {
+                    // left is primitive, right is JsAny → JsAny.asI64() op left
+                    // But we can't easily swap because <.asI64() is not the same as left < JsAny.asI64().
+                    // Generate: JsAny.from(left).asI64() op right.asI64()
+                    self.write("JsAny.from(");
+                    self.emit_expr(&be.left);
+                    self.write(").asI64() ");
+                    self.write(op_str);
+                    self.write(" ");
+                    self.emit_expr(&be.right);
+                    self.write(".asI64()");
+                }
+            }
+            _ => {
+                // Default: emit as-is (may cause compile error)
+                self.emit_expr(&be.left);
+                self.write(" ");
+                self.write(Self::binary_op(be.operator));
+                self.write(" ");
+                self.emit_expr(&be.right);
+            }
         }
     }
 
@@ -1875,24 +1985,24 @@ impl Codegen {
                         return true;
                     }
                 }
-                // map.set(key, value) → map.set(key, value) catch @panic("OOM: Map.set")
+                // map.set(key, value) → map.set(JsAny.from(key), JsAny.from(value)) catch @panic("OOM: Map.set")
                 if ce.arguments.len() != 2 {
                     self.errors
                         .push("Map.set() requires exactly 2 arguments".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.set(", obj_name));
+                    self.write(&format!("{}.set(JsAny.from(", obj_name));
                     // Emit key
                     self.emit_first_arg(&ce.arguments);
-                    self.write(", ");
+                    self.write("), JsAny.from(");
                     // Emit value
                     if let Some(arg) = ce.arguments.get(1)
                         && let Some(expr) = arg.as_expression()
                     {
                         self.emit_expr(expr);
                     }
-                    self.write(") catch @panic(\"OOM: allocation\")");
+                    self.write(")) catch @panic(\"OOM: allocation\")");
                     return true;
                 }
                 false
@@ -1918,39 +2028,40 @@ impl Codegen {
                         return true;
                     }
                 }
-                // map.get(key) → map.get(key)  (returns ?i64, not error union)
+                // map.get(key) → map.get(JsAny.from(key))  (returns ?JsAny)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.get() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.get(", obj_name));
+                    // map.get(key) → map.get(JsAny.from(key))  (returns JsAny, not ?JsAny)
+                    self.write(&format!("{}.get(JsAny.from(", obj_name));
                     self.emit_first_arg(&ce.arguments);
-                    self.write(")");
+                    self.write("))");
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::MapHas => {
-                // map.has(key) → map.has(key)
+                // map.has(key) → map.has(JsAny.from(key))
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.has() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.has(", obj_name));
+                    self.write(&format!("{}.has(JsAny.from(", obj_name));
                     self.emit_first_arg(&ce.arguments);
-                    self.write(")");
+                    self.write("))");
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::MapDelete => {
-                // map.delete(key) → _ = map.delete(key) (if in statement context)
+                // map.delete(key) → _ = map.delete(JsAny.from(key)) (if in statement context)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.delete() requires exactly 1 argument".to_string());
@@ -1960,9 +2071,9 @@ impl Codegen {
                     if self.in_expr_stmt {
                         self.write("_ = ");
                     }
-                    self.write(&format!("{}.delete(", obj_name));
+                    self.write(&format!("{}.delete(JsAny.from(", obj_name));
                     self.emit_first_arg(&ce.arguments);
-                    self.write(")");
+                    self.write("))");
                     return true;
                 }
                 false
@@ -2004,16 +2115,16 @@ impl Codegen {
 
             // ── Set methods ─────────────────────────────
             builtins::BuiltinCall::SetAdd => {
-                // set.add(value) → set.add(value) catch @panic("OOM: Set.add")
+                // set.add(value) → set.add(JsAny.from(value)) catch @panic("OOM: Set.add")
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Set.add() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!("{}.add(", obj_name));
+                    self.write(&format!("{}.add(JsAny.from(", obj_name));
                     self.emit_first_arg(&ce.arguments);
-                    self.write(") catch @panic(\"OOM: allocation\")");
+                    self.write(")) catch @panic(\"OOM: allocation\")");
                     return true;
                 }
                 false
@@ -2542,13 +2653,22 @@ impl Codegen {
                             arg.as_expression()
                     {
                         // Generate: (blk: {
-                        //   for (arr.items) |elem| {
-                        //     if (predicate) break :blk true;
-                        //   }
-                        //   break :blk false;
-                        // })
+                        //   for (arr.items) |elem| { ... }              — 1-param callback
+                        //   for (arr.items, 0..) |elem, i| { ... }      — 2-param callback (elem, index)
+                        let idx_param = if arrow.params.items.len() >= 2 {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[1].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            String::new()
+                        };
+                        let has_idx = !idx_param.is_empty();
                         self.write("(blk: { ");
-                        self.write(&format!("for ({}.items) |", obj_name));
+                        if has_idx {
+                            self.write(&format!("for ({}.items, 0..) |", obj_name));
+                        } else {
+                            self.write(&format!("for ({}.items) |", obj_name));
+                        }
                         let param_name = if !arrow.params.items.is_empty() {
                             crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
                                 .unwrap_or("_")
@@ -2556,7 +2676,17 @@ impl Codegen {
                         } else {
                             "_".to_string()
                         };
-                        self.write(&format!("{}| {{ ", param_name));
+                        // If param_name unused in body, replace with "_"
+                        let param_name = if !arrow_body_uses_ident(&param_name, arrow) {
+                            "_".to_string()
+                        } else {
+                            param_name
+                        };
+                        if has_idx {
+                            self.write(&format!("{}, {}| {{ ", param_name, idx_param));
+                        } else {
+                            self.write(&format!("{}| {{ ", param_name));
+                        }
                         self.indent += 1;
                         for stmt in &arrow.body.statements {
                             self.write_indent();
@@ -2595,13 +2725,29 @@ impl Codegen {
                             arg.as_expression()
                     {
                         // Generate: (blk: {
-                        //   for (arr.items) |elem| {
-                        //     if (!predicate) break :blk false;
-                        //   }
-                        //   break :blk true;
-                        // })
+                        //   for (arr.items) |elem| { ... }              — 1-param callback
+                        //   for (arr.items, 0..) |elem, i| { ... }      — 2-param callback (elem, index)
+                        let idx_param = if arrow.params.items.len() >= 2 {
+                            crate::native_proto::infer::binding_name(&arrow.params.items[1].pattern)
+                                .unwrap_or("_")
+                                .to_string()
+                        } else {
+                            String::new()
+                        };
+                        let has_idx = !idx_param.is_empty();
+                        // If idx_param unused in body, replace with "_"
+                        let idx_param = if has_idx && !arrow_body_uses_ident(&idx_param, arrow) {
+                            "_".to_string()
+                        } else {
+                            idx_param
+                        };
+                        let has_idx = !idx_param.is_empty();
                         self.write("(blk: { ");
-                        self.write(&format!("for ({}.items) |", obj_name));
+                        if has_idx {
+                            self.write(&format!("for ({}.items, 0..) |", obj_name));
+                        } else {
+                            self.write(&format!("for ({}.items) |", obj_name));
+                        }
                         let param_name = if !arrow.params.items.is_empty() {
                             crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
                                 .unwrap_or("_")
@@ -2609,7 +2755,17 @@ impl Codegen {
                         } else {
                             "_".to_string()
                         };
-                        self.write(&format!("{}| {{ ", param_name));
+                        // If param_name unused in body, replace with "_"
+                        let param_name = if !arrow_body_uses_ident(&param_name, arrow) {
+                            "_".to_string()
+                        } else {
+                            param_name
+                        };
+                        if has_idx {
+                            self.write(&format!("{}, {}| {{ ", param_name, idx_param));
+                        } else {
+                            self.write(&format!("{}| {{ ", param_name));
+                        }
                         self.indent += 1;
                         for stmt in &arrow.body.statements {
                             self.write_indent();
@@ -5420,7 +5576,41 @@ impl Codegen {
 
             // CallExpression: look up function return type from cache (Rule 5-6)
             Expression::CallExpression(ce) => {
-                // Get callee name
+                // Map.get(key) / Set.has(key) etc. — StaticMemberExpression callee (obj.method(...))
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        if let Some(ty) = self.type_info.var_types.get(obj_name) {
+                            match (ty, mem.property.name.as_str()) {
+                                (ZigType::NamedStruct(name), "get") if name == "Map" => {
+                                    eprintln!("[infer_expr_type] Map.get() → JsAny");
+                                    return Some(ZigType::JsAny);
+                                }
+                                (ZigType::NamedStruct(name), "has")
+                                    if name == "Map" || name == "Set" =>
+                                {
+                                    eprintln!("[infer_expr_type] {}.has() → Bool", name);
+                                    return Some(ZigType::Bool);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                // Fallback: ComputedMemberExpression callee (obj[key]()) — kept for completeness
+                if let Expression::ComputedMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(obj) = &mem.object {
+                        let obj_name = obj.name.as_str();
+                        if let Some(ZigType::NamedStruct(name)) =
+                            self.type_info.var_types.get(obj_name)
+                        {
+                            if name == "Map" {
+                                return Some(ZigType::JsAny);
+                            }
+                        }
+                    }
+                }
+                // Get callee name for non-builtin calls
                 if let Expression::Identifier(id) = &ce.callee {
                     let fn_name = id.name.as_str();
                     // Global builtin return types
@@ -5569,4 +5759,65 @@ impl Codegen {
             _ => ZigType::I64,
         }
     }
+}
+
+// ── Identifier usage detection ─────────────────────────────────────
+// Used to generate `_` for unused for-loop captures (Zig 0.16 compat).
+// Returns true if `ident` appears as a free identifier in `expr`.
+// Unhandled Expression variants: conservatively return true.
+
+fn expr_uses_ident(ident: &str, expr: &Expression) -> bool {
+    match expr {
+        Expression::Identifier(id) => id.name.as_str() == ident,
+        Expression::BinaryExpression(b) => {
+            expr_uses_ident(ident, &b.left) || expr_uses_ident(ident, &b.right)
+        }
+        Expression::UnaryExpression(u) => expr_uses_ident(ident, &u.argument),
+        Expression::StaticMemberExpression(m) => expr_uses_ident(ident, &m.object),
+        Expression::ComputedMemberExpression(m) => {
+            expr_uses_ident(ident, &m.object) || expr_uses_ident(ident, &m.expression)
+        }
+        Expression::CallExpression(c) => {
+            expr_uses_ident(ident, &c.callee)
+                || c.arguments.iter().any(|a| match a.as_expression() {
+                    Some(e) => expr_uses_ident(ident, e),
+                    None => false,
+                })
+        }
+        Expression::ParenthesizedExpression(p) => expr_uses_ident(ident, &p.expression),
+        Expression::ConditionalExpression(c) => {
+            expr_uses_ident(ident, &c.test)
+                || expr_uses_ident(ident, &c.consequent)
+                || expr_uses_ident(ident, &c.alternate)
+        }
+        // Literals: no identifiers
+        Expression::NumericLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::RegExpLiteral(_) => false,
+        // Conservative: assume identifier MAY appear in unhandled variants
+        _ => true,
+    }
+}
+
+fn stmt_uses_ident(ident: &str, stmt: &Statement) -> bool {
+    match stmt {
+        Statement::ReturnStatement(r) => r
+            .argument
+            .as_ref()
+            .map_or(false, |e| expr_uses_ident(ident, e)),
+        Statement::ExpressionStatement(e) => expr_uses_ident(ident, &e.expression),
+        Statement::BlockStatement(b) => b.body.iter().any(|s| stmt_uses_ident(ident, s)),
+        _ => false,
+    }
+}
+
+/// Check if `ident` appears anywhere in the arrow function body.
+fn arrow_body_uses_ident(ident: &str, arrow: &ArrowFunctionExpression) -> bool {
+    arrow
+        .body
+        .statements
+        .iter()
+        .any(|stmt| stmt_uses_ident(ident, stmt))
 }

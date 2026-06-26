@@ -379,6 +379,12 @@ pub const JsAny = union(enum) {
         return self.asF64() >= other.asF64();
     }
 
+    /// Optional equality comparison for Map.get() results.
+    /// Returns false if the optional is null.
+    pub fn optionalEq(opt: ?JsAny, other: anytype) bool {
+        return if (opt) |v| v.eq(from(other)) else false;
+    }
+
     // === Array operations ===
 
     /// Append an item to the array. Auto-upgrades non-arrays to arrays.

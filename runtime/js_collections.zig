@@ -214,14 +214,15 @@ pub fn JsCollection(comptime Value: type) type {
             try self.inner.put(key, value);
         }
 
-        /// Map.get(key) — return value or null.
+        /// Map.get(key) — return value or undefined_value if not found.
         /// Only valid when Value == JsAny (i.e., JsMap).
         /// Calling on JsSet is a compile error.
-        pub fn get(self: *const @This(), key: JsAny) ?JsAny {
+        /// Mirrors JS semantics: Map.get(missingKey) → undefined (not null).
+        pub fn get(self: *const @This(), key: JsAny) JsAny {
             if (!is_map) {
                 @compileError("get() is only valid for Map (JsMap)");
             }
-            return self.inner.get(key);
+            return if (self.inner.get(key)) |v| v else JsAny.undefined_value;
         }
     };
 }
@@ -377,16 +378,15 @@ test "JsMap set/get/has" {
     try std.testing.expect(m.has(JsAny.fromI64(2)));
 
     const v = m.get(JsAny.fromI64(1));
-    try std.testing.expect(v != null);
-    try std.testing.expect(v.?.eq(JsAny.fromString("one")));
+    try std.testing.expect(v.eq(JsAny.fromString("one")));
 }
 
-test "JsMap get returns null for missing key" {
+test "JsMap get returns undefined for missing key" {
     var m = JsMap.init(std.testing.allocator);
     defer m.deinit();
 
     try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
-    try std.testing.expect(m.get(JsAny.fromString("missing")) == null);
+    try std.testing.expect(m.get(JsAny.fromString("missing")).isUndefined());
 }
 
 test "JsMap delete" {
@@ -482,6 +482,5 @@ test "JsMap key can be any JsAny type" {
     try std.testing.expect(m.has(JsAny.fromBool(true)));
 
     const v = m.get(JsAny.fromString("name"));
-    try std.testing.expect(v != null);
-    try std.testing.expect(v.?.eq(JsAny.fromString("Alice")));
+    try std.testing.expect(v.eq(JsAny.fromString("Alice")));
 }

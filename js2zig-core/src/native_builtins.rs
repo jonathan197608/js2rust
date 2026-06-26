@@ -723,7 +723,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::RegExpExec => None, // Returns ?[][]const u8, inferred from usage
 
         // Map methods
-        BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
+        BuiltinCall::MapGet => Some(ZigType::JsAny), // JsMap.get() returns JsAny (undefined if not found)
         BuiltinCall::MapHas => Some(ZigType::Bool),
         BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         BuiltinCall::MapValues | BuiltinCall::MapEntries => None,

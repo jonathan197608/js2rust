@@ -6563,4 +6563,50 @@ export function decodeComp(s) {
             zig
         );
     }
+
+    #[test]
+    fn test_native_proto_map_get_eq_cmp() {
+        // Map.get() returns JsAny → comparison must use .eq(JsAny.from(...)) not ==
+        let js = r#"
+function testMapGetCmp() {
+    var m = new Map();
+    m.set("a", 100);
+    const v = m.get("a");
+    if (v == 100) return 1;
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_map_get_eq_cmp");
+        // Must generate .eq(JsAny.from(100)) — NOT v == 100
+        assert!(
+            zig.contains(".eq(JsAny.from(100))"),
+            "Expected '.eq(JsAny.from(100))' in generated Zig, got:\n{}",
+            zig
+        );
+        // Should NOT contain direct == comparison with integer
+        assert!(
+            !zig.contains("== 100") && !zig.contains("==100"),
+            "Should NOT contain '== 100' in generated Zig, got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_map_has_cmp() {
+        // Map.has() returns Bool → direct == true is fine
+        let js = r#"
+function testMapHas() {
+    var m = new Map();
+    m.set("a", 1);
+    if (m.has("a") == true) return 1;
+    return 0;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_map_has_cmp");
+        assert!(
+            zig.contains("== true") || zig.contains("==true"),
+            "Expected '== true' for bool comparison in:\n{}",
+            zig
+        );
+    }
 }
