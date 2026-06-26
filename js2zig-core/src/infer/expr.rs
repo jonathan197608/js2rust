@@ -75,6 +75,8 @@ impl TypeInferrer {
                         InferResult::Indeterminate => InferResult::Indeterminate,
                     }
                 }
+                UnaryOperator::Void => InferResult::Definite(ZigType::JsAny),
+                UnaryOperator::Delete => InferResult::Definite(ZigType::Bool),
                 _ => InferResult::Indeterminate,
             },
 
@@ -208,12 +210,76 @@ impl TypeInferrer {
                 }
             }
 
+            // ComputedMemberExpression: obj[key] → infer from obj type and key
+            Expression::ComputedMemberExpression(mem) => {
+                let obj_ty = self.infer_expr_type(&mem.object);
+                match obj_ty {
+                    InferResult::Definite(ZigType::JsAny) => {
+                        // obj[key] on JsAny → getByKey/get returns JsAny
+                        InferResult::Definite(ZigType::JsAny)
+                    }
+                    InferResult::Definite(ZigType::NamedStruct(ref name)) if name == "Map" => {
+                        // Map.get(key) returns ?JsAny → JsAny (orelse .undefined_value)
+                        InferResult::Definite(ZigType::JsAny)
+                    }
+                    InferResult::Definite(ZigType::Str) => {
+                        // str[idx] → u8 character (promoted to i64 in Zig context)
+                        if matches!(&mem.expression, Expression::NumericLiteral(_)) {
+                            InferResult::Definite(ZigType::I64)
+                        } else {
+                            InferResult::Indeterminate
+                        }
+                    }
+                    InferResult::Definite(ZigType::ArrayList(ref elem_ty)) => {
+                        // arr[idx] → element type
+                        if matches!(&mem.expression, Expression::NumericLiteral(_)) {
+                            InferResult::Definite(*elem_ty.clone())
+                        } else {
+                            InferResult::Indeterminate
+                        }
+                    }
+                    InferResult::Definite(ZigType::Struct(ref fields)) => {
+                        // obj["key"] on anonymous struct → field type
+                        if let Expression::StringLiteral(s) = &mem.expression {
+                            let key = s.value.as_str();
+                            for (name, ty) in fields {
+                                if name == key {
+                                    return InferResult::Definite(ty.clone());
+                                }
+                            }
+                        }
+                        InferResult::Indeterminate
+                    }
+                    InferResult::Definite(ZigType::NamedStruct(ref name)) => {
+                        // obj["key"] on named struct → treat like struct for field lookup
+                        // Try host struct fields first
+                        if let Expression::StringLiteral(s) = &mem.expression {
+                            let key = s.value.as_str();
+                            if let Some(host_fields) = self.host_struct_fields.get(name.as_str())
+                                && let Some(field_ty) = host_fields.get(key)
+                            {
+                                return InferResult::Definite(field_ty.clone());
+                            }
+                        }
+                        InferResult::Indeterminate
+                    }
+                    _ => InferResult::Indeterminate,
+                }
+            }
+
             // AwaitExpression: strip the await, infer inner expression type
             Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
 
             // ChainExpression (?. ): result is nullable → Indeterminate.
             // The Zig compiler will infer optional type from 'if (obj) |v| v.prop else null'.
             Expression::ChainExpression(_chain) => InferResult::Indeterminate,
+
+            // AssignmentExpression: result type = RHS type for simple, F64 for **=,
+            // LHS type for &&=/||=/??= (conditional assignment returns LHS type).
+            Expression::AssignmentExpression(ae) => match ae.operator {
+                AssignmentOperator::Exponential => InferResult::Definite(ZigType::F64),
+                _ => self.infer_expr_type(&ae.right),
+            },
 
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,

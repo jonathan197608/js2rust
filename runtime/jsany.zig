@@ -168,6 +168,23 @@ pub const JsAny = union(enum) {
         };
     }
 
+    /// JS truthiness: false, 0, -0, 0n, "", null, undefined, NaN → false; everything else → true.
+    pub fn toBool(self: JsAny) bool {
+        return switch (self) {
+            .null => false,
+            .value => |v| switch (v) {
+                .undefined => false,
+                .bool => |b| b,
+                .int => |i| i != 0,
+                .float => |f| f != 0.0 and !std.math.isNan(f),
+                .string => |s| s.len > 0,
+                .null => false,
+            },
+            .array => true,
+            .object => true,
+        };
+    }
+
     // === std.fmt integration (for template literals) ===
 
     /// Custom formatter so `std.fmt.allocPrint("{}", .{jsany})` outputs the JS string representation.
@@ -495,6 +512,35 @@ pub const JsAny = union(enum) {
         return switch (self) {
             .object => |o| o.count(),
             else => 0,
+        };
+    }
+
+    /// Delete a property by string key. Returns true if the key existed.
+    /// For codegen of `delete obj.prop`.
+    pub fn deleteKey(self: *JsAny, key: []const u8) bool {
+        return switch (self.*) {
+            .object => |*o| o.remove(key),
+            else => false,
+        };
+    }
+
+    /// Delete a property by dynamic JsAny key. Returns true if the key existed.
+    /// For codegen of `delete obj[expr]`.
+    pub fn deleteByKey(self: *JsAny, key: JsAny, alloc: Allocator) bool {
+        const key_str = key.asString(alloc);
+        defer {
+            switch (key) {
+                .value => |v| switch (v) {
+                    .int, .float => alloc.free(key_str),
+                    else => {},
+                },
+                .array, .object => alloc.free(key_str),
+                .null => {},
+            }
+        }
+        return switch (self.*) {
+            .object => |*o| o.remove(key_str),
+            else => false,
         };
     }
 

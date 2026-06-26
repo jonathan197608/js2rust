@@ -238,16 +238,77 @@ impl Codegen {
                 // Check if this is array indexing (numeric literal) or dynamic property access.
                 match &mem.expression {
                     Expression::NumericLiteral(n) => {
-                        // Array indexing with numeric literal: allow (e.g., arr[0])
+                        // Array indexing with numeric literal: arr[0] → arr[0]
                         self.emit_expr(&mem.object);
                         self.write(&format!("[{}]", n.value as i64));
                     }
+                    Expression::StringLiteral(s) => {
+                        // obj["key"] → dispatch based on obj type
+                        let key = s.value.as_str();
+                        let obj_type = self.infer_expr_type(&mem.object);
+                        match obj_type {
+                            Some(ZigType::Struct(_)) => {
+                                // Anonymous struct: @field(obj, "key")
+                                self.write("@field(");
+                                self.emit_expr(&mem.object);
+                                self.write(&format!(", \"{}\")", key));
+                            }
+                            Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
+                                // Map: obj.get("key") returns ?JsAny
+                                self.emit_expr(&mem.object);
+                                self.write(&format!(".get(\"{}\")", key));
+                            }
+                            Some(ZigType::NamedStruct(_)) => {
+                                // Named struct (host/class/JSDoc): @field(obj, "key")
+                                self.write("@field(");
+                                self.emit_expr(&mem.object);
+                                self.write(&format!(", \"{}\")", key));
+                            }
+                            _ => {
+                                // JsAny or unknown: obj.get("key") (static key, no alloc)
+                                self.emit_expr(&mem.object);
+                                self.write(&format!(".get(\"{}\")", key));
+                            }
+                        }
+                    }
                     _ => {
-                        // Dynamic property access is not allowed in strict type system.
-                        self.errors.push(
-                            "Dynamic property access (obj[key]) is not allowed. Use static property access (obj.prop).".to_string()
-                        );
-                        self.write("/* error: dynamic property access */");
+                        // obj[expr] → dynamic key lookup
+                        let obj_type = self.infer_expr_type(&mem.object);
+                        match obj_type {
+                            Some(ZigType::JsAny) => {
+                                // JsAny.getByKey(key, alloc)
+                                self.emit_expr(&mem.object);
+                                self.write(".getByKey(");
+                                self.emit_expr(&mem.expression);
+                                self.write(", js_allocator.getAllocator())");
+                            }
+                            Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
+                                // Map: (obj.get(key) orelse .undefined_value)
+                                self.write("(");
+                                self.emit_expr(&mem.object);
+                                self.write(".get(");
+                                self.emit_expr(&mem.expression);
+                                self.write(") orelse .undefined_value)");
+                            }
+                            None => {
+                                // Unknown type → fallback to JsAny.getByKey
+                                self.emit_expr(&mem.object);
+                                self.write(".getByKey(");
+                                self.emit_expr(&mem.expression);
+                                self.write(", js_allocator.getAllocator())");
+                            }
+                            _ => {
+                                // Struct/ArrayList/other NamedStruct → compile error
+                                self.errors.push(
+                                    "Dynamic property access on non-object type. \
+                                     Use static property access (obj.prop) for structs."
+                                        .to_string(),
+                                );
+                                self.write(
+                                    "@compileError(\"dynamic property access on non-object type\")",
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -390,6 +451,19 @@ impl Codegen {
                             self.write("js_date.JsDate.init()");
                         }
                         return;
+                    } else if obj_name == "RegExp" {
+                        // new RegExp(pattern) → try js_regexp.JsRegExp.init(alloc, pattern)
+                        self.write("try js_regexp.JsRegExp.init(js_allocator.getAllocator(), ");
+                        if let Some(first_arg) = ne.arguments.first()
+                            && let Some(expr) = first_arg.as_expression()
+                        {
+                            self.emit_expr(expr);
+                        } else {
+                            // new RegExp() with no args → default empty pattern
+                            self.write("\"\"");
+                        }
+                        self.write(")");
+                        return;
                     } else if self.class_names.contains(obj_name) {
                         // new ClassName(args) → ClassName.init(args)
                         self.write(&format!("{}.init(", obj_name));
@@ -405,7 +479,7 @@ impl Codegen {
                 }
                 // Unsupported NewExpression
                 self.errors.push(
-                    "Unsupported NewExpression (supported: Int32Array, Uint8Array, Float64Array)"
+                    "Unsupported NewExpression (supported: Int32Array, Uint8Array, Float64Array, Map, Set, Date, RegExp, class names)"
                         .to_string(),
                 );
                 self.compile_error(ne.span, "Unsupported NewExpression");
@@ -698,6 +772,21 @@ impl Codegen {
         }
 
         // Check if this is a built-in object call (Math.xxx(), arr.xxx(), str.xxx())
+        // Route regexpVar.isMatch(str) / regexpVar.exec(str) to RegExp builtins even though
+        // detect_builtin_call doesn't handle Identifier receivers (only RegExpLiteral).
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee
+            && let Expression::Identifier(ref obj_id) = mem.object
+            && self.regexp_vars.contains(obj_id.name.as_str())
+        {
+            let builtin = match mem.property.name.as_str() {
+                "test" => builtins::BuiltinCall::RegExpTest,
+                "exec" => builtins::BuiltinCall::RegExpExec,
+                _ => return,
+            };
+            if self.emit_builtin_call(&builtin, ce) {
+                return;
+            }
+        }
         if let Some(mut builtin) = builtins::detect_builtin_call(ce) {
             // Override: if detect_builtin_call returns ArrayAt but object is a string, use StringAt
             if matches!(builtin, builtins::BuiltinCall::ArrayAt)
@@ -4156,37 +4245,88 @@ impl Codegen {
 
             builtins::BuiltinCall::RegExpTest => {
                 // /pattern/.test(str) → host.regex_test("pattern", str)
+                // regexpVar.isMatch(str) → regexpVar.isMatch(str) (method call on JsRegExp)
                 if ce.arguments.len() != 1 {
                     self.errors
-                        .push("RegExp.test() requires exactly 1 argument".to_string());
+                        .push("RegExp.isMatch() requires exactly 1 argument".to_string());
                     return false;
                 }
-                // Extract pattern from the receiver (RegExp literal)
-                if let Expression::StaticMemberExpression(ref mem) = ce.callee
-                    && let Expression::RegExpLiteral(ref re) = mem.object
-                {
-                    let pattern = re.regex.pattern.text.as_str().to_string();
-                    let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
-                    self.write(&format!("host.regex_test(\"{}\", ", escaped));
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(")");
-                    return true;
+                // Extract pattern from the receiver (RegExp literal or RegExp variable)
+                if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+                    if let Expression::RegExpLiteral(re) = &mem.object {
+                        let pattern = re.regex.pattern.text.as_str().to_string();
+                        let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                        self.write(&format!("host.regex_test(\"{}\", ", escaped));
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(")");
+                        return true;
+                    }
+                    // Dynamic RegExp variable: emit .isMatch() method call
+                    if let Expression::Identifier(id) = &mem.object
+                        && self.regexp_vars.contains(id.name.as_str())
+                    {
+                        self.emit_expr(&mem.object);
+                        self.write(".isMatch(");
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(")");
+                        return true;
+                    }
                 }
-                self.compile_error(ce.span, "RegExp.test() receiver must be a regex literal");
+                self.compile_error(
+                    ce.span,
+                    "RegExp.isMatch() receiver must be a regex literal or RegExp variable",
+                );
                 true
             }
 
             builtins::BuiltinCall::StringMatch => {
-                // str.match(regex) — not yet supported (regex required)
+                // str.match(/pattern/) → js_string.matchString(alloc, str, "pattern")
+                // str.match(regexpVar) → js_string.matchString(alloc, str, regexpVar.pattern)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.match() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(first_arg) = ce.arguments.first()
+                    && let Some(expr) = first_arg.as_expression()
+                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
+                {
+                    match expr {
+                        Expression::RegExpLiteral(re) => {
+                            let pattern = re.regex.pattern.text.as_str().to_string();
+                            let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                            self.write(&format!(
+                                "js_string.matchString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                obj_repr, escaped
+                            ));
+                        }
+                        Expression::Identifier(id)
+                            if self.regexp_vars.contains(id.name.as_str()) =>
+                        {
+                            self.write(&format!(
+                                "js_string.matchString(js_allocator.getAllocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                                obj_repr, id.name.as_str()
+                            ));
+                        }
+                        _ => {
+                            self.compile_error(
+                                ce.span,
+                                "String.match() requires a regex literal or RegExp variable argument",
+                            );
+                        }
+                    }
+                    return true;
+                }
                 self.compile_error(
                     ce.span,
-                    "String.match() requires regex support, which is not yet implemented in js2zig",
+                    "String.match() requires a regex literal or RegExp variable argument",
                 );
                 true
             }
 
             builtins::BuiltinCall::StringSearch => {
                 // str.search(/pattern/) → host.regex_search("pattern", str)
+                // str.search(regexpVar) → host.regex_search(regexpVar.pattern, str)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.search() requires exactly 1 argument".to_string());
@@ -4194,12 +4334,33 @@ impl Codegen {
                 }
                 if let Some(first_arg) = ce.arguments.first()
                     && let Some(expr) = first_arg.as_expression()
-                    && let Expression::RegExpLiteral(re) = expr
                     && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
                 {
-                    let pattern = re.regex.pattern.text.as_str().to_string();
-                    let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
-                    self.write(&format!("host.regex_search(\"{}\", {})", escaped, obj_repr));
+                    match expr {
+                        Expression::RegExpLiteral(re) => {
+                            let pattern = re.regex.pattern.text.as_str().to_string();
+                            let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                            self.write(&format!(
+                                "host.regex_search(\"{}\", {})",
+                                escaped, obj_repr
+                            ));
+                        }
+                        Expression::Identifier(id)
+                            if self.regexp_vars.contains(id.name.as_str()) =>
+                        {
+                            self.write(&format!(
+                                "host.regex_search({}.pattern, {})",
+                                id.name.as_str(),
+                                obj_repr
+                            ));
+                        }
+                        _ => {
+                            self.compile_error(
+                                ce.span,
+                                "String.search() requires a regex literal or RegExp variable argument",
+                            );
+                        }
+                    }
                     return true;
                 }
                 self.compile_error(ce.span, "String.search() requires a regex literal argument");
@@ -4381,10 +4542,39 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::RegExpExec => {
-                // /pattern/.exec(str) — deferred (requires result serialization)
+                // /pattern/.exec(str) → js_regexp.execLiteral(alloc, str, "pattern")
+                // regexpVar.exec(str) → regexpVar.exec(alloc, str)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("RegExp.exec() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Expression::StaticMemberExpression(ref mem) = ce.callee {
+                    if let Expression::RegExpLiteral(re) = &mem.object {
+                        let pattern = re.regex.pattern.text.as_str().to_string();
+                        let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                        self.write("js_regexp.execLiteral(js_allocator.getAllocator(), ");
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(&format!(
+                            ", \"{}\") catch @panic(\"OOM: allocation\")",
+                            escaped
+                        ));
+                        return true;
+                    }
+                    // Dynamic RegExp variable: emit .exec() method call
+                    if let Expression::Identifier(id) = &mem.object
+                        && self.regexp_vars.contains(id.name.as_str())
+                    {
+                        self.emit_expr(&mem.object);
+                        self.write(".exec(js_allocator.getAllocator(), ");
+                        self.emit_first_arg(&ce.arguments);
+                        self.write(")");
+                        return true;
+                    }
+                }
                 self.compile_error(
                     ce.span,
-                    "/pattern/.exec() is not yet supported in js2zig (planned for regex integration)",
+                    "RegExp.exec() receiver must be a regex literal or RegExp variable",
                 );
                 true
             }
@@ -4433,6 +4623,126 @@ impl Codegen {
 
     // Assignment
     fn emit_assignment(&mut self, ae: &AssignmentExpression) {
+        // Handle ComputedMemberExpression assignment: obj[key] = val
+        if let AssignmentTarget::ComputedMemberExpression(ref mem) = ae.left {
+            match &mem.expression {
+                Expression::NumericLiteral(n) => {
+                    // arr[0] = val → dispatch based on obj type
+                    let idx = n.value as i64;
+                    let obj_type = self.infer_expr_type(&mem.object);
+                    match obj_type {
+                        Some(ZigType::ArrayList(_)) => {
+                            // ArrayList: arr.items[0] = val
+                            self.emit_expr(&mem.object);
+                            self.write(&format!(".items[{}] = ", idx));
+                            self.emit_expr(&ae.right);
+                        }
+                        Some(ZigType::JsAny) | None => {
+                            // JsAny: (blk: { obj.setByKey(JsAny.from(idx), val, alloc) catch undefined; break :blk val; })
+                            self.write("(blk: { ");
+                            self.emit_expr(&mem.object);
+                            self.write(&format!(".setByKey(JsAny.from({}), ", idx));
+                            self.emit_expr(&ae.right);
+                            self.write(
+                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
+                            );
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                        }
+                        _ => {
+                            self.errors
+                                .push("Numeric indexing on non-indexable type".to_string());
+                            self.write("@compileError(\"numeric indexing on non-indexable type\")");
+                        }
+                    }
+                    return;
+                }
+                Expression::StringLiteral(s) => {
+                    // obj["key"] = val → dispatch based on obj type
+                    let key = s.value.as_str();
+                    let obj_type = self.infer_expr_type(&mem.object);
+                    match obj_type {
+                        Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
+                            // Struct: @field(obj, "key") = val (Zig returns val)
+                            self.write("@field(");
+                            self.emit_expr(&mem.object);
+                            self.write(&format!(", \"{}\") = ", key));
+                            self.emit_expr(&ae.right);
+                            return;
+                        }
+                        _ => {
+                            // JsAny/Map/unknown: block expr returning val
+                            self.write("(blk: { ");
+                            self.emit_expr(&mem.object);
+                            self.write(&format!(".set(\"{}\", ", key));
+                            self.emit_expr(&ae.right);
+                            self.write(") catch undefined; break :blk ");
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                            return;
+                        }
+                    }
+                }
+                _ => {
+                    // obj[expr] = val → dynamic key assignment
+                    let obj_type = self.infer_expr_type(&mem.object);
+                    match obj_type {
+                        Some(ZigType::JsAny) => {
+                            // JsAny: (blk: { obj.setByKey(key, val, alloc) catch undefined; break :blk val; })
+                            self.write("(blk: { ");
+                            self.emit_expr(&mem.object);
+                            self.write(".setByKey(");
+                            self.emit_expr(&mem.expression);
+                            self.write(", ");
+                            self.emit_expr(&ae.right);
+                            self.write(
+                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
+                            );
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                            return;
+                        }
+                        Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
+                            // Map: (blk: { obj.set(key, val) catch undefined; break :blk val; })
+                            self.write("(blk: { ");
+                            self.emit_expr(&mem.object);
+                            self.write(".set(");
+                            self.emit_expr(&mem.expression);
+                            self.write(", ");
+                            self.emit_expr(&ae.right);
+                            self.write(") catch undefined; break :blk ");
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                            return;
+                        }
+                        None => {
+                            // Unknown type → fallback to JsAny.setByKey
+                            self.write("(blk: { ");
+                            self.emit_expr(&mem.object);
+                            self.write(".setByKey(");
+                            self.emit_expr(&mem.expression);
+                            self.write(", ");
+                            self.emit_expr(&ae.right);
+                            self.write(
+                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
+                            );
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                            return;
+                        }
+                        _ => {
+                            self.errors
+                                .push("Dynamic property assignment on non-object type".to_string());
+                            self.write(
+                                "@compileError(\"dynamic property assignment on non-object type\")",
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         // Zig 0.16+: signed integer division requires @divTrunc/@rem
         if ae.operator == AssignmentOperator::Division
             || ae.operator == AssignmentOperator::Remainder
@@ -4450,6 +4760,53 @@ impl Codegen {
             self.write(", ");
             self.emit_expr(&ae.right);
             self.write(")");
+            return;
+        }
+
+        // **= exponentiation assignment: a **= b → a = a ** b
+        if ae.operator == AssignmentOperator::Exponential {
+            self.emit_assignment_target(&ae.left);
+            self.write(" = (blk: { const _b: f64 = @as(f64, ");
+            self.emit_assignment_target(&ae.left);
+            self.write("); const _e: f64 = @as(f64, ");
+            self.emit_expr(&ae.right);
+            self.write("); break :blk std.math.pow(f64, _b, _e); })");
+            return;
+        }
+
+        // &&= logical AND assignment: a &&= b → a = if (a.toBool()) b else a
+        if ae.operator == AssignmentOperator::LogicalAnd {
+            self.emit_assignment_target(&ae.left);
+            self.write(" = if (");
+            self.emit_assignment_target(&ae.left);
+            self.write(".toBool()) ");
+            self.emit_expr(&ae.right);
+            self.write(" else ");
+            self.emit_assignment_target(&ae.left);
+            return;
+        }
+
+        // ||= logical OR assignment: a ||= b → a = if (!a.toBool()) b else a
+        if ae.operator == AssignmentOperator::LogicalOr {
+            self.emit_assignment_target(&ae.left);
+            self.write(" = if (!");
+            self.emit_assignment_target(&ae.left);
+            self.write(".toBool()) ");
+            self.emit_expr(&ae.right);
+            self.write(" else ");
+            self.emit_assignment_target(&ae.left);
+            return;
+        }
+
+        // ??= nullish coalescing assignment: a ??= b → a = if (a.isNullish()) b else a
+        if ae.operator == AssignmentOperator::LogicalNullish {
+            self.emit_assignment_target(&ae.left);
+            self.write(" = if (");
+            self.emit_assignment_target(&ae.left);
+            self.write(".isNullish()) ");
+            self.emit_expr(&ae.right);
+            self.write(" else ");
+            self.emit_assignment_target(&ae.left);
             return;
         }
 
@@ -4511,8 +4868,39 @@ impl Codegen {
                 self.emit_expr(&ue.argument);
                 self.write("))");
             }
+            UnaryOperator::Void => {
+                // void expr: evaluate expr for side effects, return undefined
+                self.write("{ _ = ");
+                self.emit_expr(&ue.argument);
+                self.write("; JsAny.fromUndefined() }");
+            }
+            UnaryOperator::Delete => {
+                // delete obj.prop / delete obj[expr] — remove property, return bool
+                match &ue.argument {
+                    Expression::StaticMemberExpression(mem) => {
+                        // delete obj.prop → _ = obj.deleteKey("prop"); true
+                        self.write("{ _ = ");
+                        self.emit_expr(&mem.object);
+                        self.write(".deleteKey(\"");
+                        self.write(&mem.property.name);
+                        self.write("\"); true }");
+                    }
+                    Expression::ComputedMemberExpression(mem) => {
+                        // delete obj[expr] → _ = obj.deleteByKey(expr, alloc); true
+                        self.write("{ const _dk = ");
+                        self.emit_expr(&mem.expression);
+                        self.write("; _ = ");
+                        self.emit_expr(&mem.object);
+                        self.write(".deleteByKey(_dk, alloc); true }");
+                    }
+                    _ => {
+                        self.errors
+                            .push("delete operator requires property access".to_string());
+                        self.write("/* unsupported: delete */");
+                    }
+                }
+            }
             _ => {
-                // Unsupported unary operator (e.g., delete, void)
                 self.errors.push("Unsupported unary operator".to_string());
                 self.write("/* unsupported unary */");
             }

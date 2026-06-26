@@ -139,20 +139,10 @@ impl TypeInferrer {
 
     pub(crate) fn walk_expr_for_analysis(&mut self, expr: &Expression) {
         match expr {
-            Expression::ComputedMemberExpression(mem) => match &mem.expression {
-                Expression::NumericLiteral(_) => {
-                    self.walk_expr_for_analysis(&mem.object);
-                }
-                _ => {
-                    self.errors.push(
-                        "Dynamic property access (obj[key]) is not allowed. \
-                             Use static property access (obj.prop)."
-                            .to_string(),
-                    );
-                    self.walk_expr_for_analysis(&mem.object);
-                    self.walk_expr_for_analysis(&mem.expression);
-                }
-            },
+            Expression::ComputedMemberExpression(mem) => {
+                self.walk_expr_for_analysis(&mem.object);
+                self.walk_expr_for_analysis(&mem.expression);
+            }
             Expression::StaticMemberExpression(mem) => {
                 self.walk_expr_for_analysis(&mem.object);
             }

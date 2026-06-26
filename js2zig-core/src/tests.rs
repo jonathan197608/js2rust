@@ -384,6 +384,123 @@ function truthy(x) {
     }
 
     #[test]
+    fn test_native_proto_void_operator() {
+        let js = r#"
+function void_zero() {
+    return void 0;
+}
+
+function void_call() {
+    var x = 0;
+    void (x = 1);
+    return x;
+}
+
+function void_expr(a, b) {
+    void (a + b);
+    return void (a * b);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_void_operator");
+        // void generates JsAny.fromUndefined()
+        assert!(
+            zig.contains("JsAny.fromUndefined()"),
+            "void operator should generate JsAny.fromUndefined(): {}",
+            zig
+        );
+        // void should discard the expression value with _ =
+        assert!(
+            zig.contains("_ = "),
+            "void should use _ = to discard: {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_delete_operator() {
+        let js = r#"
+function delete_prop(obj) {
+    delete obj.name;
+    return obj;
+}
+
+function delete_computed(obj, key) {
+    delete obj[key];
+    return obj;
+}
+
+function delete_returns_bool(obj) {
+    return delete obj.x;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_delete_operator");
+        // delete obj.prop uses deleteKey("prop")
+        assert!(
+            zig.contains(".deleteKey(\"name\")"),
+            "delete obj.prop should use deleteKey: {}",
+            zig
+        );
+        // delete obj[expr] uses deleteByKey
+        assert!(
+            zig.contains("deleteByKey(_dk, alloc)"),
+            "delete obj[expr] should use deleteByKey: {}",
+            zig
+        );
+        // delete should consume result with _ =
+        assert!(
+            zig.contains("_ = ") && zig.contains("deleteKey"),
+            "delete should use _ = to discard: {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_compound_assignment() {
+        let js = r#"
+function exp_assign(a, b) {
+    a **= b;
+    return a;
+}
+
+function and_assign(a, b) {
+    a &&= b;
+    return a;
+}
+
+function or_assign(a, b) {
+    a ||= b;
+    return a;
+}
+
+function nullish_assign(a, b) {
+    a ??= b;
+    return a;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_compound_assignment");
+        // **= → std.math.pow with blk
+        assert!(
+            zig.contains("std.math.pow(f64,"),
+            "**= should use std.math.pow: {}",
+            zig
+        );
+        // &&= → if (a.toBool()) b else a
+        assert!(
+            zig.contains(".toBool()"),
+            "&&= should use toBool(): {}",
+            zig
+        );
+        // ||= → if (!a.toBool()) b else a
+        // (checks for toBool negation)
+        // ??= → if (a.isNullish()) b else a
+        assert!(
+            zig.contains(".isNullish()"),
+            "??= should use isNullish(): {}",
+            zig
+        );
+    }
+
+    #[test]
     fn test_native_proto_f64_inference() {
         let js = r#"
 function pi() {
@@ -5195,7 +5312,7 @@ export function findLastChar() {
         );
     }
 
-    // ── Test: String.match() stub ─────────────────────
+    // ── Test: String.match() ──────────────────────────
 
     #[test]
     fn test_native_proto_string_match_stub() {
@@ -5207,13 +5324,13 @@ export function matchRegex(str) {
         let zig = transpile_and_assert!(js, "test_native_proto_string_match_stub");
 
         assert!(
-            zig.contains("@compileError"),
-            "Expected @compileError for String.match() in:\n{}",
+            zig.contains("js_string.matchString(js_allocator.getAllocator(),"),
+            "Expected js_string.matchString(js_allocator.getAllocator(), for String.match() in:\n{}",
             zig
         );
         assert!(
-            zig.contains("regex"),
-            "Expected 'regex' mention in:\n{}",
+            zig.contains("\"hello\""),
+            "Expected pattern '\"hello\"' for String.match() in:\n{}",
             zig
         );
     }
@@ -6251,7 +6368,7 @@ export function findDigit(s) {
 
     #[test]
     fn test_p8_string_match_compile_error() {
-        // str.match(/pattern/) → CompileError (not yet supported)
+        // str.match(/pattern/) → js_string.matchString(alloc, str, "pattern")
         let js = r#"
 export function getMatch(s) {
     return s.match(/hello/);
@@ -6260,13 +6377,132 @@ export function getMatch(s) {
         let result = parse_and_transpile(js, None).unwrap();
         let zig = result.zig_code;
         assert!(
-            zig.contains("@compileError"),
-            "Expected '@compileError' for String.match() in:\n{}",
+            zig.contains(r#"js_string.matchString(js_allocator.getAllocator(),"#),
+            "Expected 'js_string.matchString(js_allocator.getAllocator(),' for String.match() in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(r#""hello""#),
+            "Expected pattern '\"hello\"' for String.match() in:\n{}",
             zig
         );
     }
 
-    // ── Phase 7: encodeURI/decodeURI 全局函数测试 ──────
+    // ── Phase 8.1: Dynamic RegExp (new RegExp) tests ──
+
+    #[test]
+    fn test_p8_new_regexp() {
+        // new RegExp(pattern) → try js_regexp.JsRegExp.init(alloc, pattern)
+        let js = r#"
+export function makePattern(s) {
+    const r = new RegExp("\\d+");
+    return r.test(s);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains("js_regexp.JsRegExp.init(js_allocator.getAllocator(),"),
+            "Expected 'js_regexp.JsRegExp.init(...)' for new RegExp in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_regexp_var_test() {
+        // regexpVar.test(str) → regexpVar.isMatch(str) (method call on JsRegExp)
+        let js = r#"
+export function hasDigit(s) {
+    const r = new RegExp("\\d");
+    return r.test(s);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains(".isMatch(s)") || zig.contains(".isMatch("),
+            "Expected '.isMatch(...)' for regexpVar.test() in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_string_match_regexp_var() {
+        // str.match(regexpVar) → js_string.matchString(alloc, str, regexpVar.pattern)
+        let js = r#"
+export function getMatch(s, r) {
+    // r must be a RegExp variable initialized via new RegExp
+    const p = new RegExp("hello");
+    const m = s.match(p);
+    return m;
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains("p.pattern"),
+            "Expected '.pattern' for String.match(regexpVar) in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_string_search_regexp_var() {
+        // str.search(regexpVar) → host.regex_search(regexpVar.pattern, str)
+        let js = r#"
+export function findIndex(s) {
+    const r = new RegExp("foo");
+    return s.search(r);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains("r.pattern"),
+            "Expected '.pattern' for str.search(regexpVar) in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_regexp_exec_literal() {
+        // /pattern/.exec(str) → js_regexp.execLiteral(alloc, str, "pattern")
+        let js = r#"
+export function getExecResult(s) {
+    return /world/.exec(s);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains("js_regexp.execLiteral(js_allocator.getAllocator(),"),
+            "Expected 'js_regexp.execLiteral(js_allocator.getAllocator(),' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("\"world\""),
+            "Expected pattern literal '\"world\"' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_regexp_var_exec() {
+        // regexpVar.exec(str) → regexpVar.exec(alloc, str)
+        let js = r#"
+export function getVarExec(s) {
+    const r = new RegExp("hello");
+    return r.exec(s);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains(".exec(js_allocator.getAllocator(),"),
+            "Expected '.exec(js_allocator.getAllocator(),' for regexpVar.exec() in:\n{}",
+            zig
+        );
+    }
 
     #[test]
     fn test_p7_encode_uri() {

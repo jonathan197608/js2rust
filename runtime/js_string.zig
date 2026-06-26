@@ -4,6 +4,16 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+// ── Host C ABI function declarations ──
+
+extern fn host_regex_match(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_count: *usize,
+) callconv(.C) extern struct { ptr: [*]const u8, len: isize };
+
 /// Convert string to uppercase. Returns newly allocated string.
 pub fn toUpper(alloc: Allocator, s: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, s.len);
@@ -577,12 +587,28 @@ pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
     return result;
 }
 
-/// Match string against regex (stub: always returns null).
-/// Requires regex engine support.
-pub fn matchString(s: []const u8, regex: []const u8) !?[][]const u8 {
-    _ = s;
-    _ = regex;
-    return null;
+/// Match string against regex via host.regex_match C ABI.
+///
+/// Returns null if no match, or an array of matched substrings.
+/// Index 0 is the full match, indices 1+ are capture groups.
+pub fn matchString(alloc: std.mem.Allocator, s: []const u8, pattern: []const u8) !?[][]const u8 {
+    var count: usize = 0;
+    const result = host_regex_match(pattern.ptr, pattern.len, s.ptr, s.len, &count);
+    if (count == 0) return null;
+
+    const bytes = result.ptr[0..@intCast(result.len)];
+    var matches = std.ArrayList([]const u8).init(alloc);
+    errdefer matches.deinit();
+
+    var start: usize = 0;
+    for (0..count) |_| {
+        var end: usize = start;
+        while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
+        try matches.append(bytes[start..end]);
+        start = end + 1;
+    }
+
+    return try matches.toOwnedSlice();
 }
 
 /// Search string for regex (stub: always returns -1).

@@ -695,6 +695,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringIndexOf | BuiltinCall::StringLastIndexOf | BuiltinCall::StringSearch => {
             Some(ZigType::I64)
         }
+        BuiltinCall::StringMatch => None, // returns ?[][]const u8 — complex type, defer to inference
         BuiltinCall::StringCodePointAt => Some(ZigType::I64),
         BuiltinCall::StringIncludes
         | BuiltinCall::StringStartsWith
@@ -719,6 +720,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // RegExp instance methods
         BuiltinCall::RegExpTest => Some(ZigType::Bool),
+        BuiltinCall::RegExpExec => None, // Returns ?[][]const u8, inferred from usage
 
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative

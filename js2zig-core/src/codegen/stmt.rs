@@ -195,6 +195,9 @@ impl Codegen {
                                 self.typedarray_vars
                                     .insert(name.to_string(), ta_type.to_string());
                             }
+                            if is_regexp_new(init) {
+                                self.regexp_vars.insert(name.to_string());
+                            }
                             // Zig 0.16.0: 'var' for ArrayList/Map/Set needs &var suppression
                             // (method calls like reverse/sort go through .items, not &arr)
                             if !is_const {
@@ -218,6 +221,9 @@ impl Codegen {
                             if let Some(ta_type) = typedarray_init_type(init) {
                                 self.typedarray_vars
                                     .insert(name.to_string(), ta_type.to_string());
+                            }
+                            if is_regexp_new(init) {
+                                self.regexp_vars.insert(name.to_string());
                             }
                         }
                     }
@@ -2469,6 +2475,21 @@ pub(crate) fn typedarray_init_type(expr: &Expression) -> Option<&'static str> {
             }
         }
         _ => None,
+    }
+}
+
+/// Check if an expression is `new RegExp(...)` — a dynamic RegExp constructor.
+/// Returns true if it matches, so the codegen can track the variable as a RegExp object.
+pub(crate) fn is_regexp_new(expr: &Expression) -> bool {
+    match expr {
+        Expression::NewExpression(ne) => {
+            if let Expression::Identifier(id) = &ne.callee {
+                id.name.as_str() == "RegExp"
+            } else {
+                false
+            }
+        }
+        _ => false,
     }
 }
 

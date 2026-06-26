@@ -72,12 +72,16 @@ impl Codegen {
             AssignmentOperator::Multiplication => "*=",
             AssignmentOperator::Division => "/=",
             AssignmentOperator::Remainder => "%=",
+            AssignmentOperator::Exponential => "**=",
             AssignmentOperator::ShiftLeft => "<<=",
             AssignmentOperator::ShiftRight => ">>=",
+            AssignmentOperator::ShiftRightZeroFill => ">>>=",
             AssignmentOperator::BitwiseAnd => "&=",
             AssignmentOperator::BitwiseOR => "|=",
             AssignmentOperator::BitwiseXOR => "^=",
-            _ => "=",
+            AssignmentOperator::LogicalAnd => "&&=",
+            AssignmentOperator::LogicalOr => "||=",
+            AssignmentOperator::LogicalNullish => "??=",
         }
     }
 

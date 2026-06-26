@@ -46,6 +46,7 @@ impl Codegen {
             oc_counter: 0,
             destructure_counter: 0,
             typedarray_vars: std::collections::HashMap::new(),
+            regexp_vars: std::collections::HashSet::new(),
             async_host_fns,
             nested_fn_names: std::collections::HashSet::new(),
             current_nested_fn_name: None,

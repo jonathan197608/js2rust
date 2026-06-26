@@ -384,6 +384,10 @@ pub struct Codegen {
     /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
     /// Used to route method calls and property accesses correctly.
     pub typedarray_vars: std::collections::HashMap<String, String>,
+    /// Variables initialized with `new RegExp(expr)` — dynamic RegExp objects.
+    /// Used to route .test()/.exec() calls on RegExp variables, and
+    /// str.match(regexpVar) / str.search(regexpVar) calls.
+    pub regexp_vars: std::collections::HashSet<String>,
     /// Async host function names (for io.async() codegen).
     /// When await calls an async host function, use `{name}_async` wrapper.
     pub async_host_fns: std::collections::HashSet<String>,
