@@ -802,7 +802,7 @@
 | `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 | `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ P8 done |
 | `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | 🔶 compileError | 🔶 deferred | 🔶 P3 |
-| `/pat/g` 全局标志 | 多次 `.exec()` 维护 `lastIndex` | — | — | 🔘 | 🔘 | 🔘 | 🔘 不实现（复杂，fancy-regex 可能不支持） |
+| `/pat/g` 全局标志 | `String.match()` 全局匹配（`.matchStringGlobal()`） | — | `string[]` | ✅ | ✅ | ✅ | ✅ P2 done |
 | `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级正则用法，很少用） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/regexp.js`):
@@ -863,7 +863,7 @@
 | Global | 8 | 7 | 88% | — | — | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | — | — | ✅ |
 | Number | 14 | 14 | 100% | — | — | — | ✅ |
-| RegExp | 5 | 1 | 20% | — | 2 | 2 | 正则字面量可用，/g 标志不实现 |
+| RegExp | 5 | 3 | 60% | — | 1 | 1 | test/exec//g 完成，new RegExp P3 |
 | TypedArray | 11 | 10 | 91% | — | — | 1 | .slice() 用 .subarray() 替代 |
 | Error | 1 | 1 | 100% | — | — | — | ✅ |
 | Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
@@ -1137,7 +1137,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - `Object.defineProperties/getOwnPropertyDescriptor/getOwnPropertySymbols/setPrototypeOf/isSealed/Frozen/Extensible` — 复杂反射，很少用
 - `Object.fromEntries()` — 已改为 P3（中价值）
 - `TypedArray.slice()` — 用 `.subarray()` 替代
-- `RegExp` `/g` 标志 + `.source/.flags` 等属性 — 高级正则用法，fancy-regex 可能不支持
+- `RegExp` `.source/.flags` 等属性 — 高级正则用法，很少用
 - `Promise` `new Promise()/.then/.catch` — 建议用 `async/await` + `Io` 模式替代
 - `WeakMap` / `WeakSet` — 弱引用，Zig 内存管理不同
 - `Reflect` — 反射 API，Zig 不需要
