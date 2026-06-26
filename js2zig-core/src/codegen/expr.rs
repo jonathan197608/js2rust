@@ -3963,44 +3963,35 @@ impl Codegen {
 
             // ── String methods (P2) ─────────────────────────────
             builtins::BuiltinCall::StringTrimStart => {
-                // str.trimStart() → std.mem.trimLeft(u8, str, &std.ascii.whitespace)
-                // TODO: Switch to js_string.trimStart() once implemented in runtime
+                // str.trimStart() → js_string.trimStart(str)
                 if !ce.arguments.is_empty() {
                     self.errors
                         .push("String.trimStart() requires no arguments".to_string());
                     return false;
                 }
                 if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "std.mem.trimLeft(u8, {}, &std.ascii.whitespace)",
-                        obj_repr
-                    ));
+                    self.write(&format!("js_string.trimStart({})", obj_repr));
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::StringTrimEnd => {
-                // str.trimEnd() → std.mem.trimRight(u8, str, &std.ascii.whitespace)
-                // TODO: Switch to js_string.trimEnd() once implemented in runtime
+                // str.trimEnd() → js_string.trimEnd(str)
                 if !ce.arguments.is_empty() {
                     self.errors
                         .push("String.trimEnd() requires no arguments".to_string());
                     return false;
                 }
                 if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "std.mem.trimRight(u8, {}, &std.ascii.whitespace)",
-                        obj_repr
-                    ));
+                    self.write(&format!("js_string.trimEnd({})", obj_repr));
                     return true;
                 }
                 false
             }
 
             builtins::BuiltinCall::StringLastIndexOf => {
-                // str.lastIndexOf(search) → std.mem.lastIndexOf(u8, str, search) → i64 | -1
-                // TODO: Switch to js_string.lastIndexOf() once implemented in runtime
+                // str.lastIndexOf(search) → js_string.lastIndexOf(str, search) → i64 | -1
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.lastIndexOf() requires exactly 1 argument".to_string());
@@ -4009,7 +4000,7 @@ impl Codegen {
                 if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
                     self.write(&format!(
-                        "(if (std.mem.lastIndexOf(u8, {}, {})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
+                        "js_string.lastIndexOf({}, {})",
                         obj_repr, arg_expr
                     ));
                     return true;
@@ -4042,11 +4033,9 @@ impl Codegen {
                 // str.localeCompare(other) → js_string.localeCompare(str, other)
                 if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
                     self.write(&format!("js_string.localeCompare({}", obj_name));
-                    if ce.arguments.len() >= 1 {
-                        if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
-                            self.write(", ");
-                            self.emit_expr(arg);
-                        }
+                    if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
+                        self.write(", ");
+                        self.emit_expr(arg);
                     }
                     self.write(")");
                     true
@@ -4061,12 +4050,8 @@ impl Codegen {
                         "js_string.normalize(js_allocator.getAllocator(), {}, ",
                         obj_name
                     ));
-                    if ce.arguments.len() >= 1 {
-                        if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
-                            self.emit_expr(arg);
-                        } else {
-                            self.write("\"NFC\"");
-                        }
+                    if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
+                        self.emit_expr(arg);
                     } else {
                         self.write("\"NFC\"");
                     }
@@ -4171,10 +4156,10 @@ impl Codegen {
                 self.write("js_array.from(js_allocator.getAllocator()");
                 if !ce.arguments.is_empty() {
                     self.write(", ");
-                    if let Some(first) = ce.arguments.first() {
-                        if let Some(expr) = first.as_expression() {
-                            self.emit_expr(expr);
-                        }
+                    if let Some(first) = ce.arguments.first()
+                        && let Some(expr) = first.as_expression()
+                    {
+                        self.emit_expr(expr);
                     }
                 }
                 self.write(")");
@@ -4203,10 +4188,10 @@ impl Codegen {
             builtins::BuiltinCall::ArrayIsArray => {
                 // Array.isArray(obj) → js_array.isArray(obj)
                 self.write("js_array.isArray(");
-                if let Some(first) = ce.arguments.first() {
-                    if let Some(expr) = first.as_expression() {
-                        self.emit_expr(expr);
-                    }
+                if let Some(first) = ce.arguments.first()
+                    && let Some(expr) = first.as_expression()
+                {
+                    self.emit_expr(expr);
                 }
                 self.write(")");
                 true

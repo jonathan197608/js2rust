@@ -618,10 +618,10 @@ impl TypeInferrer {
                             }
                             // Track Set variables so codegen can dispatch
                             // MapKeys/MapValues/MapEntries → SetKeys/SetValues/SetEntries.
-                            if let ZigType::NamedStruct(ref name_str) = ty {
-                                if name_str == "Set" {
-                                    self.set_vars.insert(name.to_string());
-                                }
+                            if let ZigType::NamedStruct(ref name_str) = ty
+                                && name_str == "Set"
+                            {
+                                self.set_vars.insert(name.to_string());
                             }
                         }
                         InferResult::Indeterminate => {

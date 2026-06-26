@@ -5148,13 +5148,8 @@ export function trimLeft(str) {
         let zig = transpile_and_check!(js, "test_native_proto_string_trimstart");
 
         assert!(
-            zig.contains("std.mem.trimLeft"),
-            "Expected std.mem.trimLeft in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("std.ascii.whitespace"),
-            "Expected std.ascii.whitespace in:\n{}",
+            zig.contains("js_string.trimStart("),
+            "Expected js_string.trimStart( in:\n{}",
             zig
         );
     }
@@ -5171,13 +5166,8 @@ export function trimRight(str) {
         let zig = transpile_and_check!(js, "test_native_proto_string_trimend");
 
         assert!(
-            zig.contains("std.mem.trimRight"),
-            "Expected std.mem.trimRight in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("std.ascii.whitespace"),
-            "Expected std.ascii.whitespace in:\n{}",
+            zig.contains("js_string.trimEnd("),
+            "Expected js_string.trimEnd( in:\n{}",
             zig
         );
     }
@@ -5195,13 +5185,8 @@ export function findLastChar() {
         let zig = transpile_and_check!(js, "test_native_proto_string_lastindexof");
 
         assert!(
-            zig.contains("std.mem.lastIndexOf"),
-            "Expected std.mem.lastIndexOf in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("@as(i64, -1)"),
-            "Expected @as(i64, -1) fallback in:\n{}",
+            zig.contains("js_string.lastIndexOf("),
+            "Expected js_string.lastIndexOf( in:\n{}",
             zig
         );
     }

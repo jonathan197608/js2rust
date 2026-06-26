@@ -263,6 +263,31 @@ pub fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, &std.ascii.whitespace);
 }
 
+/// Trim whitespace from the start (left) of a string.
+pub fn trimStart(s: []const u8) []const u8 {
+    return std.mem.trimLeft(u8, s, &std.ascii.whitespace);
+}
+
+/// Trim whitespace from the end (right) of a string.
+pub fn trimEnd(s: []const u8) []const u8 {
+    return std.mem.trimRight(u8, s, &std.ascii.whitespace);
+}
+
+/// Find the last index of needle in haystack.
+/// Returns index as i64, or -1 if not found.
+pub fn lastIndexOf(haystack: []const u8, needle: []const u8) i64 {
+    if (needle.len == 0) return @intCast(haystack.len);
+    if (needle.len > haystack.len) return -1;
+    var i: i64 = @intCast(haystack.len - needle.len);
+    while (i >= 0) : (i -= 1) {
+        const start: usize = @intCast(i);
+        if (std.mem.eql(u8, haystack[start .. start + needle.len], needle)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /// Repeat string n times. Returns newly allocated string.
 pub fn repeat(alloc: Allocator, s: []const u8, n: i64) ![]const u8 {
     const count: usize = @intCast(@max(0, n));
