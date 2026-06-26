@@ -225,8 +225,8 @@ examples/builtins-mdn-tests/
 | `.substring(s,e)` | P1 | 参数交换 (s>e) + 切片 | `string.js` |
 | `.trimStart()` | P2 | 去除左侧空白 (`std.mem.trimLeft`) | `string.js` |
 | `.trimEnd()` | P2 | 去除右侧空白 (`std.mem.trimRight`) | `string.js` |
-| `.match(re)` | P2 | 需 RegExp 引擎 | `string.js` |
-| `.search(re)` | P2 | 需 RegExp 引擎 | `string.js` |
+| `.match(re)` | P8 | @compileError（需 RegExp 结果数组序列化） | `string.js` |
+| `.search(re)` | ✅ done | host 函数 `host.regex_search()` (fancy-regex) | `string.js` |
 
 #### 0.3.3 其他补齐 (3 方法)
 
@@ -394,8 +394,8 @@ examples/builtins-mdn-tests/
 | 方法 | 任务 # | 优先级 | Zig 实现策略 | 测试文件 |
 |------|--------|--------|----------|---------|
 | `.normalize(form)` | #654 | P2 | Unicode 规范化（stub 已实现，需完整实现） | `string.js` |
-| `.match(re)` | #650 | P2 | 需 RegExp 引擎 | `string.js` |
-| `.search(re)` | #650 | P2 | 需 RegExp 引擎 | `string.js` |
+| `.match(re)` | #678 | P8 | @compileError（需 RegExp 结果数组序列化） | `string.js` |
+| `.search(re)` | #678 | ✅ done | host 函数 `host.regex_search()` (fancy-regex) | `string.js` |
 | `.matchAll(re)` | #650 | P3 | 返回迭代器，需 RegExp 引擎 | `string.js` |
 
 **注意**: `normalize()` 当前为 stub（返回原字符串），完整实现需 Unicode 数据。`.match/search/matchAll` 依赖正则引擎，暂不实现。
@@ -446,7 +446,7 @@ examples/builtins-mdn-tests/
 | `runtime/js_map.zig` | `clear/size/forEach` (部分已实现) | Phase 0-2 |
 | `runtime/js_set.zig` | `has/delete/clear/size` (已实现) | Phase 0 (连线) |
 | `runtime/js_date.zig` | 现有 9 getter (已实现) + 构造函数/toISOString 等 | Phase 3 |
-| `runtime/js_regexp.zig` | `test/exec` (已实现, 需迷你引擎) | Phase 4 |
+| `js2rust-bridge/src/native_regex.rs` | `test/search` host 函数 (fancy-regex ~95% JS兼容) | ✅ Phase 8 done |
 | `examples/builtins-mdn-tests/` | 10 个 JS 测试文件 | Phase 0-4 |
 | `docs/JS_FEATURE_EVALUATION.md` | 第 4 节: 方法状态表 | 持续更新 |
 | `docs/JS_ROADMAP.md` | 本节: 实施计划 | 持续更新 |
@@ -462,7 +462,7 @@ examples/builtins-mdn-tests/
 | 1 | **解构默认值** | `const {a = 1} = obj` → `const a = obj.a orelse 1` | 低/中 | ✅ 已完成 | ⭐⭐⭐ |
 | 2 | **多 spread 合并** | `{ ...a, ...b }` 对象合并 | 中 | ✅ 已完成 | ⭐⭐ |
 | 3 | **测试覆盖补充** | 合并项：`instanceof`/`in`/`Date`/`Object`/标签语句 测试 | 低 | ✅ 已完成 | ⭐⭐⭐ |
-| 4 | **Class 字段类型推断** | 根据构造函数推断字段类型（替代硬编码 `i64`） | 高 | 📋 待开始 | ⭐⭐ |
+| 4 | **Class 字段类型推断** | 根据构造函数推断字段类型（替代硬编码 `i64`） | 高 | ✅ 已完成 | ⭐⭐ |
 | 5 | **嵌套函数声明** | 支持函数内定义函数（含捕获变量） | 中 | ✅ 已完成 | ⭐⭐ |
 | 6 | **`for-in` 静态 struct 集成** | 集成到 showcase-project 做端到端验证 | 低 | ✅ 已完成 | ⭐ |
 | 7 | **正则表达式引擎** | 引入 C 库（如 `pcre2`）或实现迷你引擎 | 很高 | 📋 待开始 | ⭐ |
@@ -571,6 +571,19 @@ examples/builtins-mdn-tests/
 | **P2 内置对象补齐 (30 方法)** | 📋 待开始 | ✅ Array (12) + String (5) + Object (3) + 其他补齐 + Map/Set 方法全部实现 | 2026-06-24 |
 | **FEATURE/ROADMAP 文档更新** | 📋 待开始 | ✅ 内置对象覆盖率 22%→53%，Math 11→31/44，String 8→21/35，Array 14→26/35，Map/Set/Object/Global/Number/console 全部更新 | 2026-06-24 |
 
+### 3.3 2026-06-25
+
+| 特性 | 之前状态 | 现在状态 | 完成日期 |
+|------|----------|----------|----------|
+| 内置对象完成度评估 | 📋 待开始 | ✅ 三层验证 (detect/codegen/runtime)，实际覆盖率 ~81% (214/264) | 2026-06-25 |
+| Object.isSealed/isFrozen/isExtensible | ❌ 未实现 | ✅ 内联常量 true/true/false | 2026-06-25 |
+| Date.UTC() | ❌ 未实现 | ✅ 5 行 Zig runtime + codegen 集成 | 2026-06-25 |
+| RegExp.test() via host fn | ❌ 缺乏引擎 | ✅ fancy-regex host 函数 `host_regex_test()` (RegExp 字面量) | 2026-06-25 |
+| String.search() via host fn | ❌ stub | ✅ host 函数 `host_regex_search()` (RegExp 字面量参数) | 2026-06-25 |
+| String.match() | ❌ stub | 🔶 @compileError (需结果数组序列化) | 2026-06-25 |
+| Codegen 审计 (codegen/) | 📋 待开始 | ✅ 修复 5 处 unwrap/expect panic，0 clippy 警告 | 2026-06-25 |
+| Class 隐式字段类型推断 | 📋 待开始 | ✅ `collect_this_fields_from_body()` + `collect_implicit_class_fields()` | 2026-06-25 |
+
 ---
 
 ## 4. 下一步计划
@@ -587,8 +600,8 @@ examples/builtins-mdn-tests/
 ~~8. **内置对象补齐 Phase 0/1/2** — 48 方法 P0/P1/P2 连线~~ ✅ (已全部完成，覆盖率 ~53%)
 
 1. **P3: Phase 3 Date/Number 补齐** — 20 方法 (~53% → ~61%)
-2. **P3: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎
-3. **P3: Symbol/WeakMap/WeakSet 支持** — 语法和 API
+~~2. **P3: 正则表达式引擎** — 引入 pcre2 或实现迷你引擎~~ ✅ (phase 1: fancy-regex host 函数，test/search 已实现)
+3. **P3: String.match() 完整支持** — 结果数组序列化（需迭代器/Array 返回到 Zig）
 
 ### 4.2 中期（1-2 月）
 

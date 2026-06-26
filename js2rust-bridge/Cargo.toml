@@ -15,3 +15,4 @@ js2zig-core = { version = "0.4", path = "../js2zig-core" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 indexmap = { version = "2", features = ["serde"] }
+fancy-regex = "0.15"

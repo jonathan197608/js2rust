@@ -2882,8 +2882,31 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::DateUTC => {
-                // Date.UTC(y, m, d) — not implemented in runtime, emit compile error
-                self.compile_error(ce.span, "Date.UTC is not yet implemented");
+                // Date.UTC(y, m, d?, h?, min?, s?, ms?) → js_date.utc(y, m, d, h, min, s, ms)
+                // Defaults: d=1, h=0, min=0, s=0, ms=0
+                self.write("js_date.utc(");
+                for (i, arg) in ce.arguments.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr_arg(arg);
+                }
+                // Fill in defaults for missing arguments
+                // Default: day = 1, hours/minutes/seconds/ms = 0
+                match ce.arguments.len() {
+                    0 => self.write("1970, 0, 1, 0, 0, 0, 0"),
+                    1 => self.write(", 0, 1, 0, 0, 0, 0"),
+                    2 => self.write(", 1, 0, 0, 0, 0"),
+                    3 => self.write(", 0, 0, 0, 0"),
+                    4 => self.write(", 0, 0, 0"),
+                    5 => self.write(", 0, 0"),
+                    6 => self.write(", 0"),
+                    7 => {} // all args provided
+                    _ => {
+                        // More than 7 args — just emit all of them
+                    }
+                }
+                self.write(")");
                 true
             }
 
@@ -3238,6 +3261,21 @@ impl Codegen {
             builtins::BuiltinCall::ObjectSeal => {
                 // Object.seal(obj) — no-op in Zig (simplified)
                 self.emit_first_arg(&ce.arguments);
+                true
+            }
+            builtins::BuiltinCall::ObjectIsSealed => {
+                // Object.isSealed(obj) — always true in Zig
+                self.write("true");
+                true
+            }
+            builtins::BuiltinCall::ObjectIsFrozen => {
+                // Object.isFrozen(obj) — always true in Zig
+                self.write("true");
+                true
+            }
+            builtins::BuiltinCall::ObjectIsExtensible => {
+                // Object.isExtensible(obj) — always false in Zig
+                self.write("false");
                 true
             }
             builtins::BuiltinCall::ObjectCreate => {
@@ -4116,6 +4154,28 @@ impl Codegen {
                 false
             }
 
+            builtins::BuiltinCall::RegExpTest => {
+                // /pattern/.test(str) → host.regex_test("pattern", str)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("RegExp.test() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                // Extract pattern from the receiver (RegExp literal)
+                if let Expression::StaticMemberExpression(ref mem) = ce.callee
+                    && let Expression::RegExpLiteral(ref re) = mem.object
+                {
+                    let pattern = re.regex.pattern.text.as_str().to_string();
+                    let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                    self.write(&format!("host.regex_test(\"{}\", ", escaped));
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                    return true;
+                }
+                self.compile_error(ce.span, "RegExp.test() receiver must be a regex literal");
+                true
+            }
+
             builtins::BuiltinCall::StringMatch => {
                 // str.match(regex) — not yet supported (regex required)
                 self.compile_error(
@@ -4126,8 +4186,23 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringSearch => {
-                // str.search(regex) — not yet supported (regex required)
-                self.compile_error(ce.span, "String.search() requires regex support, which is not yet implemented in js2zig");
+                // str.search(/pattern/) → host.regex_search("pattern", str)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.search() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(first_arg) = ce.arguments.first()
+                    && let Some(expr) = first_arg.as_expression()
+                    && let Expression::RegExpLiteral(re) = expr
+                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
+                {
+                    let pattern = re.regex.pattern.text.as_str().to_string();
+                    let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                    self.write(&format!("host.regex_search(\"{}\", {})", escaped, obj_repr));
+                    return true;
+                }
+                self.compile_error(ce.span, "String.search() requires a regex literal argument");
                 true
             }
 
@@ -4302,6 +4377,15 @@ impl Codegen {
                     self.emit_expr(expr);
                 }
                 self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::RegExpExec => {
+                // /pattern/.exec(str) — deferred (requires result serialization)
+                self.compile_error(
+                    ce.span,
+                    "/pattern/.exec() is not yet supported in js2zig (planned for regex integration)",
+                );
                 true
             }
         }

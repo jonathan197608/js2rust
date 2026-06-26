@@ -3415,8 +3415,7 @@ export function parseDate(s) {
 
     #[test]
     fn test_p1_date_utc() {
-        // Date.UTC is not yet implemented → generates @compileError
-        // Note: @compileError causes unreachable code, so ast-check won't pass.
+        // Date.UTC(y, m, d) → js_date.utc(y, m, d, 0, 0, 0, 0)
         let js = r#"
 /**
  * @returns {number}
@@ -3425,10 +3424,10 @@ export function utcDate(y, m, d) {
     return Date.UTC(y, m, d);
 }
 "#;
-        let zig = transpile_and_assert!(js, "test_p1_date_utc");
+        let zig = transpile_and_check!(js, "test_p1_date_utc");
         assert!(
-            zig.contains("@compileError"),
-            "Expected @compileError in:\n{}",
+            zig.contains("js_date.utc("),
+            "Expected 'js_date.utc(' in generated output:\n{}",
             zig
         );
     }
@@ -5228,16 +5227,12 @@ export function searchRegex(str) {
     return str.search(/world/);
 }
 "#;
-        let zig = transpile_and_assert!(js, "test_native_proto_string_search_stub");
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
 
         assert!(
-            zig.contains("@compileError"),
-            "Expected @compileError for String.search() in:\n{}",
-            zig
-        );
-        assert!(
-            zig.contains("regex"),
-            "Expected 'regex' mention in:\n{}",
+            zig.contains("host.regex_search"),
+            "Expected 'host.regex_search' for String.search() in:\n{}",
             zig
         );
     }
@@ -6189,6 +6184,84 @@ export function setProto(obj, proto) {
         assert!(
             zig.contains("js_object.setPrototypeOf("),
             "Expected 'js_object.setPrototypeOf(' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_object_is_sealed_frozen_extensible() {
+        // Object.isSealed/isFrozen → always true; Object.isExtensible → always false
+        let js = r#"
+export function checkObj(obj) {
+    if (obj === 0) return false;
+    const a = Object.isSealed(obj);
+    const b = Object.isFrozen(obj);
+    const c = Object.isExtensible(obj);
+    return a && b && !c;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p8_object_is_sealed_frozen_extensible");
+        assert!(
+            zig.contains("true"),
+            "Expected 'true' for isSealed/isFrozen in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("false"),
+            "Expected 'false' for isExtensible in:\n{}",
+            zig
+        );
+    }
+
+    // ── Phase 8: RegExp / String regex host function tests ──
+
+    #[test]
+    fn test_p8_regex_test() {
+        // /pattern/.test(str) → host.regex_test("pattern", str)
+        let js = r#"
+export function hasDigit(s) {
+    return /\d/.test(s);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains(r#"host.regex_test("\\d", s)"#),
+            "Expected 'host.regex_test(\"\\d\", s)' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_string_search() {
+        // str.search(/pattern/) → host.regex_search("pattern", str)
+        let js = r#"
+export function findDigit(s) {
+    return s.search(/\d+/);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains(r#"host.regex_search("\\d+", s)"#),
+            "Expected 'host.regex_search(\"\\d+\", s)' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p8_string_match_compile_error() {
+        // str.match(/pattern/) → CompileError (not yet supported)
+        let js = r#"
+export function getMatch(s) {
+    return s.match(/hello/);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        assert!(
+            zig.contains("@compileError"),
+            "Expected '@compileError' for String.match() in:\n{}",
             zig
         );
     }

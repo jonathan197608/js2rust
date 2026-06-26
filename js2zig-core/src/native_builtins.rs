@@ -108,8 +108,12 @@ pub enum BuiltinCall {
     StringPadEnd,      // str.padEnd(len, pad)
     StringTrimStart,   // str.trimStart()
     StringTrimEnd,     // str.trimEnd()
-    StringMatch,       // str.match(regex) — stub (regex not yet supported)
-    StringSearch,      // str.search(regex) — stub (regex not yet supported)
+    StringMatch,       // str.match(regex) — host function
+    StringSearch,      // str.search(regex) — host function
+
+    // RegExp instance methods (host function, mini implementation)
+    RegExpTest, // /pattern/.test(str) → bool
+    RegExpExec, // /pattern/.exec(str) → result (deferred)
 
     // Map methods (called on local Map variables)
     MapSet,     // map.set(key, value)
@@ -197,6 +201,9 @@ pub enum BuiltinCall {
     ObjectDefineProperties,         // Object.defineProperties(obj, props)
     ObjectGetOwnPropertyDescriptor, // Object.getOwnPropertyDescriptor(obj, key)
     ObjectSetPrototypeOf,           // Object.setPrototypeOf(obj, proto) — simplified no-op
+    ObjectIsSealed,                 // Object.isSealed(obj) — always true in Zig
+    ObjectIsFrozen,                 // Object.isFrozen(obj) — always true in Zig
+    ObjectIsExtensible,             // Object.isExtensible(obj) — always false in Zig
 
     // Global functions
     ParseInt,           // parseInt(s)
@@ -367,6 +374,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                     return Some(BuiltinCall::ObjectGetOwnPropertyDescriptor);
                 }
                 "setPrototypeOf" => return Some(BuiltinCall::ObjectSetPrototypeOf),
+                "isSealed" => return Some(BuiltinCall::ObjectIsSealed),
+                "isFrozen" => return Some(BuiltinCall::ObjectIsFrozen),
+                "isExtensible" => return Some(BuiltinCall::ObjectIsExtensible),
                 _ => return None,
             }
         }
@@ -390,6 +400,15 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "log" => return Some(BuiltinCall::ConsoleLog),
                 "error" => return Some(BuiltinCall::ConsoleError),
                 "warn" => return Some(BuiltinCall::ConsoleWarn),
+                _ => return None,
+            }
+        }
+
+        // Check if object is a RegExp literal (for /pattern/.test(str))
+        if let Expression::RegExpLiteral(_re) = obj_expr {
+            match method_name {
+                "test" => return Some(BuiltinCall::RegExpTest),
+                "exec" => return Some(BuiltinCall::RegExpExec),
                 _ => return None,
             }
         }
@@ -698,6 +717,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::StringToLocaleLowerCase => Some(ZigType::Str),
         // charCodeAt returns u16 — no ZigType variant, defer to inference
 
+        // RegExp instance methods
+        BuiltinCall::RegExpTest => Some(ZigType::Bool),
+
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::Anytype), // Conservative
         BuiltinCall::MapHas => Some(ZigType::Bool),
@@ -767,6 +789,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         // Object methods that return complex types or the input object
         BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
+        BuiltinCall::ObjectIsSealed
+        | BuiltinCall::ObjectIsFrozen
+        | BuiltinCall::ObjectIsExtensible => Some(ZigType::Bool),
 
         // Array static methods
         BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {

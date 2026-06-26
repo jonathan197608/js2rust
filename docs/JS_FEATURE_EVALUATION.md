@@ -517,8 +517,8 @@
 | `.substring(s,e)` | `str.substring(indexStart[, indexEnd])` | `start, end?: i64` | 子字符串 | ✅ | ✅ | ✅ P1 done | ✅ |
 | `.trimStart()` | `str.trimStart()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
 | `.trimEnd()` | `str.trimEnd()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
-| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `string[] \| null` | ✅ | ✅ | 🔶 stub | 🔶 P2 |
-| `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | 🔶 stub | 🔶 P2 |
+| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `string[] \| null` | ✅ | ❌ | 🔶 compileError | 🔶 P2 |
+| `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | ✅ P8 done | ✅ |
 | **— Phase 6 完成 (9) —** | | | | | | | |
 | `.replaceAll(p,r)` | `str.replaceAll(pattern, replacement)` | `pattern, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ✅ | ✅ Phase 6 |
@@ -782,17 +782,18 @@
 > console.log({a:1, b:2});       // stdout: {"a":1,"b":2}
 > ```
 
-### 4.12 `RegExp` — 0/5 (0%)
+### 4.12 `RegExp` — 2/5 (40%)
 
-> **Runtime 文件**: `runtime/js_regexp.zig`（已实现 test/exec）
-> **限制**: 正则引擎需引入 C 库（如 pcre2）或实现迷你引擎，属于 P3 任务。
+> **Runtime 文件**: `js2rust-bridge/src/native_regex.rs`（host 函数，基于 fancy-regex crate）
+> **限制**: 仅支持 RegExp 字面量 `/pat/` 作为静态参数；`new RegExp()` 动态构造不支持。
+> **后端**: fancy-regex ~95% JS 兼容（支持 backreference、lookahead、lookbehind）
 
 | 特性 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
 | 正则字面量 `/pat/flags` | `/pattern/flags` | — | `RegExp` | ✅ | ✅ | 字符串提取 | ✅ 语法可用 |
 | `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | ❌ | ❌ | ❌ | ❌ P3 |
-| `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ❌ | ❌ | ✅ runtime | ❌ P3 |
-| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ❌ | ❌ | ✅ runtime | ❌ P3 |
+| `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ P8 done |
+| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | 🔶 compileError | 🔶 deferred | 🔶 P3 |
 | `/pat/g` 全局标志 | 多次 `.exec()` 维护 `lastIndex` | — | — | ❌ | ❌ | ❌ | ❌ P3 |
 | `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | ❌ | ❌ | ❌ | ❌ P3 |
 

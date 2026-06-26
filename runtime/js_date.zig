@@ -310,6 +310,12 @@ pub fn now() i64 {
     return milliTimestamp();
 }
 
+/// Date.UTC(year, month, day?, hours?, minutes?, seconds?, ms?) → milliseconds since epoch.
+/// JS month is 0-indexed (0=Jan), day defaults to 1, time components default to 0.
+pub fn utc(year: i64, month: i64, day: i64, hours: i64, minutes: i64, seconds: i64, ms: i64) i64 {
+    return JsDate.fromComponents(year, month, day, hours, minutes, seconds, ms).millis;
+}
+
 /// Get milliseconds from an epoch-millis value (identity).
 pub fn getTime(millis: i64) i64 {
     return millis;
