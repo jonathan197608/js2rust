@@ -5821,4 +5821,221 @@ export function findIndex() {
             zig
         );
     }
+
+    // ── Test: String.padStart() ────────────────────────
+    #[test]
+    fn test_p6_string_pad_start() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function pad(str) {
+    return str.padStart(10, " ");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_pad_start");
+        assert!(
+            zig.contains("js_string.padStart("),
+            "Expected 'js_string.padStart(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.padEnd() ────────────────────────
+    #[test]
+    fn test_p6_string_pad_end() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function padEndFn(str) {
+    return str.padEnd(10, " ");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_pad_end");
+        assert!(
+            zig.contains("js_string.padEnd("),
+            "Expected 'js_string.padEnd(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.replace() ────────────────────────
+    #[test]
+    fn test_p6_string_replace() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function replaceStr(str) {
+    return str.replace("old", "new");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_replace");
+        assert!(
+            zig.contains("js_string.replace("),
+            "Expected 'js_string.replace(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.replaceAll() ────────────────────────
+    #[test]
+    fn test_p6_string_replace_all() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function replaceAllStr(str) {
+    return str.replaceAll("a", "b");
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_replace_all");
+        assert!(
+            zig.contains("js_string.replaceAll("),
+            "Expected 'js_string.replaceAll(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.charCodeAt() ────────────────────────
+    #[test]
+    fn test_p6_string_char_code_at() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function getCharCode() {
+    return "hello".charCodeAt(0);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_char_code_at");
+        assert!(
+            zig.contains("js_string.charCodeAt("),
+            "Expected 'js_string.charCodeAt(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.codePointAt() ────────────────────────
+    #[test]
+    fn test_p6_string_code_point_at() {
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function getCodePoint() {
+    return "hello".codePointAt(0);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_code_point_at");
+        assert!(
+            zig.contains("js_string.codePointAt("),
+            "Expected 'js_string.codePointAt(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.toLocaleUpperCase() ────────────────────────
+    #[test]
+    fn test_p6_string_to_locale_upper_case() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function toLocaleUpper(str) {
+    return str.toLocaleUpperCase();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_to_locale_upper_case");
+        assert!(
+            zig.contains("js_string.toLocaleUpper("),
+            "Expected 'js_string.toLocaleUpper(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.toLocaleLowerCase() ────────────────────────
+    #[test]
+    fn test_p6_string_to_locale_lower_case() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @returns {string}
+ */
+export function toLocaleLower(str) {
+    return str.toLocaleLowerCase();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_to_locale_lower_case");
+        assert!(
+            zig.contains("js_string.toLocaleLower("),
+            "Expected 'js_string.toLocaleLower(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.localeCompare() ────────────────────────
+    #[test]
+    fn test_p6_string_locale_compare() {
+        let js = r#"
+/**
+ * @param {string} str
+ * @param {string} other
+ * @returns {i64}
+ */
+export function compareStrs(str, other) {
+    return str.localeCompare(other);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_locale_compare");
+        assert!(
+            zig.contains("js_string.localeCompare("),
+            "Expected 'js_string.localeCompare(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.fromCharCode() (static) ────────────────────────
+    #[test]
+    fn test_p6_string_from_char_code() {
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function getChar() {
+    return String.fromCharCode(65, 66, 67);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_from_char_code");
+        assert!(
+            zig.contains("js_string.fromCharCode("),
+            "Expected 'js_string.fromCharCode(' in:\n{}",
+            zig
+        );
+    }
+
+    // ── Test: String.fromCodePoint() (static) ────────────────────────
+    #[test]
+    fn test_p6_string_from_code_point() {
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function getCharFromPoint() {
+    return String.fromCodePoint(0x1F600);
+}
+"#;
+        let zig = transpile_and_check!(js, "test_p6_string_from_code_point");
+        assert!(
+            zig.contains("js_string.fromCodePoint("),
+            "Expected 'js_string.fromCodePoint(' in:\n{}",
+            zig
+        );
+    }
 }
