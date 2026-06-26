@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-项目 Phase 5 已完成，进入 Phase 6（String 高级方法，排除正则相关）。221 测试通过，0 clippy 警告。
+项目 Phase 5 已完成，Phase 6（String 高级方法，排除正则相关）已完成。235 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
@@ -30,14 +30,15 @@
 - #638 Object.keys/values/entries ✅
 - #639 String.matchAll/localeCompare/normalize（stub）✅
 
-**✅ 2026-06-26 Phase 5 完成 — Array.from/of/isArray、Object 剩余方法、Date 剩余方法**: 实现 `Array.from()/of()/isArray()`、`Object.create()/seal()/defineProperty()/getPrototypeOf()`、`Date.toJSON()/valueOf()` + 15 个 setter 方法，覆盖率提升至 ~73%（~190/260）。
-**🔧 2026-06-26 Phase 6 进行中 — String 高级方法**: 
-- 添加 13 个 Phase 6 测试（startsWith, endsWith, includes, slice, concat, repeat, substring, normalize, toUpperCase, toLowerCase, split, charAt, indexOf），全部通过
+**✅ 2026-06-26 Phase 5 完成**: 实现 `Array.from()/of()/isArray()`、`Object.create()/seal()/defineProperty()/getPrototypeOf()`、`Date.toJSON()/valueOf()` + 15 个 setter 方法，覆盖率提升至 ~73%（~190/260）。
+**✅ 2026-06-26 Phase 6 完成 — String 高级方法（排除正则相关）**: 
+- 添加 24 个 Phase 6 测试（startsWith, endsWith, includes, slice, concat, repeat, substring, normalize, toUpperCase, toLowerCase, split, charAt, indexOf, padStart, padEnd, replace, replaceAll, charCodeAt, codePointAt, toLocaleUpperCase, toLocaleLowerCase, localeCompare, fromCharCode, fromCodePoint），全部通过
 - 修复 ~15 个字符串方法的 codegen（使用 `callee_object_repr()` 替代 `callee_object_name()`，支持字符串字面量）
-- 修复 11 个字符串方法的 codegen（使用 `js_string.xxx()` 替代 `std.mem.xxx()`）：startsWith, endsWith, includes, indexOf, trim, trimStart, trimEnd, lastIndexOf, split, charAt, at, charCodeAt, codePointAt, concat, slice, replace, replaceAll, repeat, substring
+- 修复 11 个字符串方法的 codegen（使用 `js_string.xxx()` 替代 `std.mem.xxx()`）
 - 实现 `js_string.trimStart/trimEnd/lastIndexOf()` runtime 函数
-- 修复 6 个 clippy 警告（collapsible if, len() >= 1 → !is_empty()）
-- 进度：codegen 修复完成，224 测试全部通过，0 clippy 警告 ✅
+- 修复 6 个 clippy 警告
+- 235 个测试全部通过，0 clippy 警告 ✅
+- 剩余（正则相关，out of scope）：String.match(), String.search(), String.matchAll()
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
