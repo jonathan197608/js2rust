@@ -1945,32 +1945,15 @@ impl Codegen {
 
             // ── String methods ─────────────────────────────
             builtins::BuiltinCall::StringIndexOf => {
-                // str.indexOf(search) → std.mem.indexOf(u8, str, search)
+                // str.indexOf(search) → js_string.indexOf(str, search)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("String.indexOf() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Expression::StaticMemberExpression(mem) = &ce.callee
-                    && let Expression::StringLiteral(obj) = &mem.object
-                {
-                    let str_val = obj.value.as_str();
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "(if (std.mem.indexOf(u8, \"{str_val}\", {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
-                        str_val = str_val,
-                        arg = arg_expr
-                    ));
-                    return true;
-                }
-                // Fallback: assume object is a variable
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "(if (std.mem.indexOf(u8, {obj}, {arg})) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))",
-                        obj = obj_name,
-                        arg = arg_expr
-                    ));
+                    self.write(&format!("js_string.indexOf({}, {})", obj_repr, arg_expr));
                     return true;
                 }
                 false
@@ -2034,17 +2017,14 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::StringTrim => {
-                // str.trim() → std.mem.trim(u8, str, &std.ascii.whitespace)
+                // str.trim() → js_string.trim(str)
                 if !ce.arguments.is_empty() {
                     self.errors
                         .push("String.trim() requires no arguments".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!(
-                        "std.mem.trim(u8, {obj}, &std.ascii.whitespace)",
-                        obj = obj_name
-                    ));
+                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
+                    self.write(&format!("js_string.trim({})", obj_repr));
                     return true;
                 }
                 false
