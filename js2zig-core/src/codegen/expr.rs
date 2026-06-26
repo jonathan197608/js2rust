@@ -275,7 +275,7 @@ impl Codegen {
                         // obj[expr] → dynamic key lookup
                         let obj_type = self.infer_expr_type(&mem.object);
                         match obj_type {
-                            Some(ZigType::JsAny) => {
+                            Some(ZigType::JsAny) | Some(ZigType::Anytype) => {
                                 // JsAny.getByKey(key, alloc)
                                 self.emit_expr(&mem.object);
                                 self.write(".getByKey(");
@@ -5221,7 +5221,7 @@ impl Codegen {
     }
 
     /// Emit a single inline object property (shared by emit_object and capture_inline_struct).
-    fn emit_inline_prop(&mut self, p: &oxc_ast::ast::ObjectProperty, first: &mut bool) {
+    fn emit_inline_prop(&mut self, p: &ObjectProperty, first: &mut bool) {
         let field_name = match &p.key {
             PropertyKey::StaticIdentifier(id) => id.name.to_string(),
             PropertyKey::StringLiteral(s) => s.value.to_string(),
@@ -5258,9 +5258,7 @@ impl Codegen {
     }
 
     /// Extract the return expression from a function body (single return statement)
-    fn extract_return_expr_from_body<'a>(
-        body: &'a oxc_ast::ast::FunctionBody<'a>,
-    ) -> Option<&'a Expression<'a>> {
+    fn extract_return_expr_from_body<'a>(body: &'a FunctionBody<'a>) -> Option<&'a Expression<'a>> {
         if body.statements.len() == 1
             && let Statement::ReturnStatement(ret) = &body.statements[0]
         {
