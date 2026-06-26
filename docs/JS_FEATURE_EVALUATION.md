@@ -396,7 +396,7 @@
 | `Math.pow(b,e)` | `Math.pow(base, exponent)` | `base, exp: number` | `number` | `std.math.pow(f64, b, e)` | ✅ | ✅ | ✅ | ✅ |
 | `Math.max(...v)` | `Math.max(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
 | `Math.min(...v)` | `Math.min(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
-| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@compileError` | ✅ | ✅ | 🔶 | 🔶 故意不支持 |
+| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@compileError` | ✅ | ✅ | 🔘 | 🔘 不实现（niche 数学函数，很少使用） |
 | **— 三角函数 (6) —** | | | | | | | | |
 | `Math.sin(x)` | `Math.sin(x)` | `x: number` (弧度) | `number` | `@sin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
 | `Math.cos(x)` | `Math.cos(x)` | `x: number` (弧度) | `number` | `@cos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
@@ -621,7 +621,7 @@
 | `Object.values(obj)` | `Object.values(obj)` | `obj: object` | `T[]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.entries(obj)` | `Object.entries(obj)` | `obj: object` | `[string,T][]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.assign(tgt,...)` | `Object.assign(target, ...sources)` | `target, ...sources` | target 引用 | ✅ | ✅ | ✅ | ✅ |
-| `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | 🔶 Zig 默认不可变 |
+| `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | ✅ Zig struct 天然不可变 |
 | **— 缺失静态方法 (9) —** | | | | | | | |
 | `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | 🔘 | 🔘 | 🔘 | 🔘 不实现（复杂反射，很少用） |
 | `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级反射） |
@@ -672,8 +672,8 @@
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
 | `Date.now()` | `Date.now()` | — | `i64` (ms since epoch) | ✅ | ✅ | ✅ js_date.now | ✅ |
-| `Date.parse(s)` | `Date.parse(dateString)` | `dateString: string` | `i64` \| NaN | ✅ | ✅ | 🔶 stub (返回 0) | 🔶 |
-| `Date.UTC(y,m,d,...)` | `Date.UTC(year, monthIndex[, day, ...])` | `y,m,d,h,min,s,ms` | `i64` | ✅ | ✅ | 🔶 `@compileError` | 🔶 |
+| `Date.parse(s)` | `Date.parse(dateString)` | `dateString: string` | `i64` \| NaN | 🔴 | 🔴 | 🔴 | 🔴 P2 待实现（ISO 8601 解析） |
+| `Date.UTC(y,m,d,...)` | `Date.UTC(year, monthIndex[, day, ...])` | `y,m,d,h,min,s,ms` | `i64` | 🔴 | 🔴 | 🔴 | 🔴 P2 待实现（Date 组件→时间戳） |
 | `.getTime()` | `date.getTime()` | — | `i64` (ms) | ✅ | ✅ | ✅ | ✅ |
 | `.getFullYear()` | `date.getFullYear()` | — | `i64` (本地年份) | ✅ | ✅ | ✅ | ✅ |
 | `.getMonth()` | `date.getMonth()` | — | `i64` (0-11) | ✅ | ✅ | ✅ | ✅ |
@@ -801,7 +801,7 @@
 | 正则字面量 `/pat/flags` | `/pattern/flags` | — | `RegExp` | ✅ | ✅ | 字符串提取 | ✅ 语法可用 |
 | `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 | `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ P8 done |
-| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | 🔶 compileError | 🔶 deferred | 🔶 P3 |
+| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | 🟡 | 🟡 | 🟡 P3 待实现（复用 `host_regex_match` 基础设施） |
 | `/pat/g` 全局标志 | `String.match()` 全局匹配（`.matchStringGlobal()`） | — | `string[]` | ✅ | ✅ | ✅ | ✅ P2 done |
 | `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级正则用法，很少用） |
 
@@ -852,18 +852,18 @@
 
 | 类别 | 总方法数 | 有效覆盖 | 比例 | P2 高价值 | P3 中价值 | 不实现 | 备注 |
 |------|---------|---------|------|---------|---------|---------|------|
-| Math | 44 | 41 | 93% | — | — | 3 | Math.hypot 故意不支持 |
+| Math | 44 | 41 | 93% | — | — | 3 | Math.hypot 不实现（niche） |
 | Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
 | String | 35 | 30 | 86% | — | 3 | 2 | Phase 6 完成，.matchAll P3 |
 | Map | 12 | 11 | 92% | — | 1 | — | Map.groupBy P3 |
 | Set | 12 | 10 | 83% | — | — | 2 | ES2025 Set 操作不实现 |
-| Date | 55+ | 42 | ~76% | 13 | 5+ | — | 构造函数/setter/toISOString P2 |
+| Date | 55+ | 42 | ~76% | 15 | 5+ | — | 构造函数/setter/toISOString/parse/UTC P2 |
 | Object | 23 | 12 | 52% | — | 6 | 5 | fromEntries/groupBy P3，反射 API 不实现 |
 | JSON | 2 | 2 | 100% | — | — | — | ✅ |
 | Global | 8 | 7 | 88% | — | — | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | — | — | ✅ |
 | Number | 14 | 14 | 100% | — | — | — | ✅ |
-| RegExp | 5 | 3 | 60% | — | 1 | 1 | test/exec//g 完成，new RegExp P3 |
+| RegExp | 5 | 3 | 60% | — | 2 | 1 | test/exec//g 完成，new RegExp/.exec() P3 |
 | TypedArray | 11 | 10 | 91% | — | — | 1 | .slice() 用 .subarray() 替代 |
 | Error | 1 | 1 | 100% | — | — | — | ✅ |
 | Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
@@ -873,7 +873,7 @@
 | Intl | 10+ | 0 | 0% | — | — | 10+ | 不实现（可调用 Zig/C 库） |
 | BigInt | 5+ | 0 | 0% | — | 5+ | — | P3 中价值（大整数场景） |
 | Atomics | 10+ | 0 | 0% | — | — | 10+ | 不实现（niche 场景） |
-| **总计** | **~310** | **~193** | **~62%** | **~23** | **~15** | **~70** | |
+| **总计** | **~310** | **~194** | **~63%** | **~25** | **~16** | **~70** | |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1168,15 +1168,53 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 8.4 覆盖率变化
 
-| 指标 | 重新评估前 | 重新评估后 |
-|------|----------|----------|
-| 完全实现 | ~111 (~73%) | ~111 (~73%) |
-| 部分实现 | ~8 (~5%) | ~8 (~5%) |
-| 计划实现（P2/P3） | ~50 (~21%) | ~38 (~12%) |
-| 不实现（🔘） | 0 | ~13 (~9%) |
-| 内置对象有效覆盖率 | ~74% | ~62%（含不实现类别） |
+| 指标 | 重新评估前 | 重新评估后 | 本次更新 |
+|------|----------|----------|----------|
+| 完全实现 | ~111 (~73%) | ~112 (~73%) | +1 (Object.freeze ✅) |
+| 部分实现 | ~8 (~5%) | ~3 (~2%) | -5 (全部重新分类) |
+| 计划实现（P2/P3） | ~38 (~12%) | ~41 (~13%) | +3 (Date.parse/UTC P2, .exec P3) |
+| 不实现（🔘） | ~13 (~9%) | ~14 (~9%) | +1 (Math.hypot 🔘) |
+| 内置对象有效覆盖率 | ~62% | ~63% | +1% |
 
 > **说明**：不实现类别（Symbol/WeakMap/Reflect/Intl/BigInt/Atomics）共 ~70 个方法，标记为不实现后，有效覆盖率下降至 ~62%。这些类别实际项目中很少用到，不影响核心转译功能。
+
+---
+
+## 9. P2/P3 特征实现计划 (2026-06-27)
+
+### 9.1 🔴 P2 高价值特征（优先实现）
+
+#### `Date.parse(s)` — P2
+- **目标**: 实现 `Date.parse(dateString)` → `i64` (timestamp in ms)
+- **难点**: 日期字符串格式复杂（ISO 8601、RFC 2822、本地格式）
+- **实现方案**:
+  1. 先支持 ISO 8601 格式（`2024-01-15T12:30:00Z`）
+  2. 调用 Zig 日期解析库或自己实现简单解析
+  3. 返回 `i64` 时间戳（ms since epoch），失败返回 `std.math.nan` (f64)
+- **流水线**: 检测 (detect_builtin_call) → 发射 (emit_builtin_call) → 运行时 (js_date.parse)
+- **测试**: MDN 官方示例
+
+#### `Date.UTC(y,m,d,...)` — P2
+- **目标**: 实现 `Date.UTC(year, monthIndex[, day, ...])` → `i64` (timestamp in ms)
+- **难点**: 需要正确处理月份索引（0=1月）、UTC 时区
+- **实现方案**:
+  1. 参数：`year, monthIndex, day=1, hour=0, min=0, sec=0, ms=0`
+  2. 调用 Zig 标准库 `std.time.Timestamp.utc()` 或自己计算
+  3. 返回 `i64` 时间戳（ms since epoch）
+- **流水线**: 检测 → 发射 → 运行时 (js_date.utc)
+- **测试**: MDN 官方示例
+
+### 9.2 🟡 P3 中价值特征（延后实现）
+
+#### `RegExp.exec(str)` — P3
+- **目标**: 实现 `regexObj.exec(str)` → `string[] | null` (捕获组)
+- **难点**: 需要返回捕获组数组，且维护 `lastIndex` 属性（for `/g` flag）
+- **实现方案**:
+  1. 复用 `host_regex_match` 基础设施（已支持 `String.match()`）
+  2. `.exec()` 返回捕获组数组（或 null）
+  3. 如果 regex 有 `/g` flag，更新 `lastIndex` 属性
+- **流水线**: 检测 (detect_builtin_call) → 发射 (emit_builtin_call) → 运行时 (js_regex.exec)
+- **测试**: MDN 官方示例
 
 ---
 
