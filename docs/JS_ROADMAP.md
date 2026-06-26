@@ -9,7 +9,7 @@
 
 ## 当前状态
 
-项目 Phase 7 已完成（Set.forEach + encodeURI/decodeURI），String.match() Phase 1+2+3 已完成（正则字面量/RegExp变量//g标志/捕获组/边界情况）。250 测试通过，0 clippy 警告。
+项目 Phase 7 已完成（Set.forEach + encodeURI/decodeURI），String.match() Phase 1+2+3 已完成（正则字面量/RegExp变量//g标志/捕获组/边界情况），`obj[key]` 计算属性访问已完成（struct/HashMap 类型分发）。267 测试通过，0 clippy 警告。
 
 **✅ 2026-06-24 内置对象补齐完成**: 有效覆盖率从 ~22% 提升至 ~53%（~138/260）。P0/P1/P2/P3(Phase 3) 共 ~58 个方法全部接入 BuiltinCall 检测/发射流水线。
 **✅ 2026-06-25 Class 隐式字段推断 + codegen 审计完成**: #613-625 全部完成，206 测试通过。
@@ -44,7 +44,7 @@
 - 实现 `Set.forEach()` — inline for 循环遍历 `set.items.items`，回调签名 `fn(key, value, set)`
 - 实现 `encodeURI(s)` / `decodeURI(s)` — 新增 `EncodeURI`/`DecodeURI` BuiltinCall 变体，接入 `js_uri.encodeURI/decodeURI` runtime
 - Global 函数覆盖: 8/8 (100%) ✅
-- 246 个测试全部通过，0 clippy 警告 ✅
+- 267 个测试全部通过，0 clippy 警告 ✅
 
 详细特性实现状态请参考 [JS_FEATURE_EVALUATION.md](./JS_FEATURE_EVALUATION.md)。
 
@@ -581,6 +581,7 @@ examples/builtins-mdn-tests/
 | RegExp.test() via host fn | ❌ 缺乏引擎 | ✅ fancy-regex host 函数 `host_regex_test()` (RegExp 字面量) | 2026-06-25 |
 | String.search() via host fn | ❌ stub | ✅ host 函数 `host_regex_search()` (RegExp 字面量参数) | 2026-06-25 |
 | String.match() | ❌ stub | ✅ Phase 1+2+3 done (正则字面量/RegExp变量//g标志/捕获组/边界情况) | 2026-06-27 |
+| `obj[key]` 计算属性访问 | ❌ `@compileError` | ✅ 按 obj 类型分发（struct → .field，HashMap → .get()/.put()），9 个测试通过 | 2026-06-27 |
 | Codegen 审计 (codegen/) | 📋 待开始 | ✅ 修复 5 处 unwrap/expect panic，0 clippy 警告 | 2026-06-25 |
 | Class 隐式字段类型推断 | 📋 待开始 | ✅ `collect_this_fields_from_body()` + `collect_implicit_class_fields()` | 2026-06-25 |
 
@@ -640,7 +641,7 @@ examples/builtins-mdn-tests/
 
 | 日期 | 更新内容 | 更新人 |
 |------|----------|--------|
-| 2026-06-27 | String.match() Phase 1+2+3 完成: 正则字面量/RegExp变量//g标志/捕获组/边界情况，9 个 ast-check 测试通过；JS_FEATURE_EVALUATION.md + JS_ROADMAP.md 同步更新 | jonathan197608 |
+| 2026-06-27 | `obj[key]` 计算属性访问完成：按 obj 类型分发 codegen + String.match() Phase 1+2+3 完成：正则字面量/RegExp变量//g标志/捕获组/边界情况，共 18 个新测试；JS_FEATURE_EVALUATION.md + JS_ROADMAP.md 同步更新，测试计数 250→267 | jonathan197608 |
 | 2026-06-25 | P0/P1/P2 内置对象连线全部完成 (覆盖率 22%→53%)，FEATURE/ROADMAP 文档同步 | jonathan197608 |
 | 2026-06-25 | #628 Map/Set 迭代器完成: JsSet 重构为 JsAny HashMap + SameValueZero 语义，Set iterator codegen 接通 | jonathan197608 |
 | 2026-06-24 | 添加 P2 补充不确定项核实任务（15 项），来自 JS_FEATURE_EVALUATION.md 文档审计 | jonathan197608 |
@@ -657,5 +658,5 @@ examples/builtins-mdn-tests/
 ---
 
 **文档版本**: 2.0  
-**最后更新**: 2026-06-25  
+**最后更新**: 2026-06-27  
 **维护者**: jonathan197608

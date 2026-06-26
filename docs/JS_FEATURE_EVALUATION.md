@@ -3,7 +3,7 @@
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-26 (MDN 标准对齐重评估, 2026-06-26 更新)
 > **代码版本**: main branch (Post-Phase7-builtins)
-> **测试覆盖**: 250 个 Rust 测试 + 27 个 Zig 测试
+> **测试覆盖**: 267 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -12,11 +12,21 @@
 | 指标 | 数值 | 占比 |
 |------|------|------|
 | **JS 语法特性总数** | ~150+ | - |
-| **完全实现** | ~110 | ~73% |
+| **完全实现** | ~111 | ~73% |
 | **部分实现** | ~8 | ~5% |
-| **未实现（@compileError）** | ~32 | ~22% |
+| **未实现（计划实现）** | ~18 | ~12% |
+| **不实现（低价值）** | ~13 | ~9% |
 | **内置对象有效覆盖率** | ~195/260 | ~75% |
-| **测试覆盖** | 250 个 Rust 测试 + 27 个 Zig 测试 | - |
+| **测试覆盖** | 267 个 Rust 测试 + 27 个 Zig 测试 | - |
+
+**实现策略说明**:
+- **计划实现（P2/P3）**: 按优先级逐步实现
+- **不实现（🔘）**: 应用价值低，或 Zig 有更好替代方案，或 JS 已废弃特性
+
+**更新说明** (2026-06-27):
+- **`obj[key]` 计算属性访问完成**: `infer/passes.rs` 移除错误阻断，`codegen/expr.rs` `emit_expr`/`emit_assignment` 按 `obj` 类型分发（struct → `.field`，HashMap → `.get()`/`.put()`），`infer/expr.rs` 添加 `ComputedMemberExpression` 类型推断，9 个测试通过
+- **`String.match()` Phase 1+2+3 完成**: 正则字面量/`RegExp` 变量/`/g` 标志/捕获组/边界情况全部支持，通过 9 个 ast-check 测试
+- 测试计数 250 → 267（+17 个新测试）
 
 **更新说明** (2026-06-26):
 - **Phase 8 完成**: `encodeURI(s)` / `decodeURI(s)` 实现 — 新增 BuiltinCall 变体 `EncodeURI`/`DecodeURI`，接入 `js_uri.encodeURI/decodeURI` runtime，添加 Rust 测试，Global 8/8 (100%)
@@ -114,8 +124,8 @@
 | `!` (逻辑非) | ✅ | `!x` | 同上 |
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
 | `typeof` | ⚠️ | `@typeName(@TypeOf(x))` | 隐式测试 |
-| `void` | ❌ | `@compileError("Unsupported unary operator")` | - |
-| `delete` | ❌ | `@compileError("Unsupported unary operator")` | - |
+| `void` | 🔘 不实现 | `@compileError("Unsupported unary operator")` | 已废弃，Zig 直接用 `null` |
+| `delete` | 🔘 不实现 | `@compileError("Unsupported unary operator")` | 已废弃，Zig 用 `HashMap.remove()` |
 
 **注意**:
 - `typeof` 生成 Zig 类型名（如 `"i64"`），而非 JS `typeof` 的字符串（如 `"number"`）
@@ -141,23 +151,23 @@
 |------|------|----------|------|
 | `=` `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 语法 | 隐式测试 |
 | `<<=` `>>=` `>>>=` `&=` `|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
-| `**=` (指数赋值) | ❌ | 未实现 | ES2016 |
-| `&&=` (逻辑与赋值) | ❌ | 未实现 | ES2021 |
-| `||=` (逻辑或赋值) | ❌ | 未实现 | ES2021 |
-| `??=` (空值合并赋值) | ❌ | 未实现 | ES2021 |
+| `**=` (指数赋值) | 🔴 P2 | 未实现 | ES2016 |
+| `&&=` (逻辑与赋值) | 🔴 P2 | 未实现 | ES2021，现代 JS 常用 |
+| `||=` (逻辑或赋值) | 🔴 P2 | 未实现 | ES2021，现代 JS 常用 |
+| `??=` (空值合并赋值) | 🔴 P2 | 未实现 | ES2021，现代 JS 常用 |
 
 ### 2.9 对象/数组访问 - ⚠️ 部分实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase-project |
-| `obj[key]` (计算属性) | ❌ | `@compileError("Dynamic property access")` | - |
+| `obj[key]` (计算属性) | ✅ | 按 `obj` 类型分发：`struct` → `obj.field`，`HashMap` → `obj.get(key)`/`obj.put(key, val)` | `test_native_proto_computed_member` |
 | `arr[idx]` (数组索引) | ✅ | `arr[idx]` (仅支持数字字面量) | showcase-project |
 | `.length` → `.len` | ✅ | 自动转换 | 同上 |
 
 **注意**:
-- `obj[key]` 动态属性访问当前不支持，仅支持数字字面量索引（如 `arr[0]`）
-- 字符串 key 访问（如 `obj["key"]`）会生成编译错误
+- `obj[key]` 现已支持：struct 类型按字符串字面量 key 映射到 `.field`，HashMap 类型生成 `.get(key)`/`.put(key, val)`
+- `arr[idx]` 仍仅支持数字字面量索引（如 `arr[0]`），变量索引待后续支持
 
 ### 2.10 函数调用 - ✅ 100% 实现
 
@@ -185,7 +195,7 @@
 | `` `text` `` (无插值) | ✅ | `"text"` | `test_native_proto_template_*` |
 | `` `hello ${name}` `` (有插值) | ✅ | `allocPrint(...)` | 同上 |
 | 复杂嵌套 | ✅ | 递归生成 | 同上 |
-| 标签模板 `` tag`...` `` | ❌ | `@compileError` | - |
+| 标签模板 `` tag`...` `` | 🔘 不实现 | `@compileError` | 很少使用 |
 
 ### 2.13 箭头函数 - ✅ 100% 实现
 
@@ -210,7 +220,7 @@
 | `new Set()` | ✅ | `js_set.JsSet.init(alloc)` | 同上 |
 | `new Error(msg)` | ✅ | `js_error.JsError.init(alloc, msg)` | `test_native_proto_throw_*` |
 | `new ClassName(args)` | ✅ | `ClassName.init(args)` | showcase-project |
-| `new Promise(...)` | ❌ | `@compileError` | - |
+| `new Promise(...)` | 🔘 不实现 | `@compileError` | 建议用 `async/await` + `Io` 模式替代 |
 | 其他构造函数 | ✅ | 自动映射 | 隐式测试 |
 
 ### 2.15 `await` 表达式 - ✅ 100% 实现
@@ -223,7 +233,7 @@
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `instanceof` | ❌ | `@compileError("instanceof operator is not supported")` | - |
+| `instanceof` | 🟡 P3 | `@compileError("instanceof operator is not supported")` | Zig 有更好的类型系统 |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
@@ -234,21 +244,21 @@
 **注意**:
 - `instanceof` 在 JS 中用于检查对象原型链，但当前实现不支持
 
-### 2.17 不支持的表达式 - ❌ @compileError
+### 2.17 不支持的表达式 - 按价值分类
 
-| 特性 | 错误信息 |
-|------|----------|
-| 类表达式 `const X = class {}` | `Unsupported NewExpression` |
-| `function*` (生成器函数) | `Unsupported expression type: Function` (注: 需添加生成器支持) |
-| `yield` / `yield*` (生成器) | `Unsupported expression type` |
-| `async function*` (异步生成器) | 未测试 |
-| 动态 `import()` | 需使用静态 `import` |
-| 私有字段 `#field` | 不支持 |
-| `new.target` | meta property not supported |
-| Spread 参数 `fn(...args)` | `Spread argument not supported` |
-| `for await...of` | `Promise.{}() not supported` |
-| 标签模板 `` tag`...` `` | `Unsupported expression type` |
-| `import.meta` | 未实现 (ES 模块元数据) |
+| 特性 | 错误信息 | 评估 |
+|------|----------|------|
+| 类表达式 `const X = class {}` | `Unsupported NewExpression` | 🔘 不实现（很少使用，可用 `class X {}` 替代） |
+| `function*` (生成器函数) | `Unsupported expression type: Function` | 🟡 P3（现代 JS 高级特性） |
+| `yield` / `yield*` (生成器) | `Unsupported expression type` | 🟡 P3（配合 `function*`） |
+| `async function*` (异步生成器) | 未测试 | 🔘 不实现（niche 场景） |
+| 动态 `import()` | 需使用静态 `import` | 🟡 P3（ES 模块动态导入） |
+| 私有字段 `#field` | 不支持 | 🟡 P3（ES2022，现代 JS 封装） |
+| `new.target` | meta property not supported | 🔘 不实现（meta property，niche） |
+| Spread 参数 `fn(...args)` | `Spread argument not supported` | 🔴 P2（ES2015 常用） |
+| `for await...of` | `Promise.{}() not supported` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
+| 标签模板 `` tag`...` `` | `Unsupported expression type` | 🔘 不实现（已在 2.12 标记） |
+| `import.meta` | 未实现 (ES 模块元数据) | 🔘 不实现（ES 模块元数据，niche） |
 
 ---
 
@@ -296,8 +306,8 @@
 | `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
 | Rest 参数 `function fn(...args) {}` | ✅ | `args: []const i64` | showcase-project |
-| 嵌套函数声明 | ❌ | 报错（需重构为顶层） | - |
-| `arguments` 对象 | ❌ | 未实现 | 传统函数参数对象 |
+| 嵌套函数声明 | 🟡 P3 | 报错（需重构为顶层） | 传统 JS 模式 |
+| `arguments` 对象 | 🔘 不实现 | 未实现 | 传统函数参数对象，箭头函数已替代 |
 
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
@@ -314,9 +324,9 @@
 | Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` |
 | `extends` 继承 | ✅ | 内嵌 `base: ParentType` 字段 | showcase-project |
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
-| 私有字段 `#field` | ❌ | `@compileError` | - |
-| 类表达式 `const X = class {}` | ❌ | `@compileError` | - |
-| 静态初始化块 `static {}` | ❌ | 未实现 | - |
+| 私有字段 `#field` | 🟡 P3 | `@compileError` | ES2022 封装 |
+| 类表达式 `const X = class {}` | 🔘 不实现 | `@compileError` | 很少使用 |
+| 静态初始化块 `static {}` | 🔘 不实现 | 未实现 | ES2022，使用较少 |
 
 ### 3.4 控制流语句 - ✅ 95% 实现
 
@@ -333,7 +343,7 @@
 | `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |
 | `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
 | 标签语句 `label: while` | ✅ | `label: while {}` | 未测试 |
-| `for await...of` | ❌ | `@compileError` | - |
+| `for await...of` | 🔘 不实现 | `Promise.{}() not supported` | 异步迭代，当前项目聚焦同步代码 |
 
 ### 3.5 错误处理 - ✅ 100% 实现
 
@@ -351,8 +361,8 @@
 | 表达式语句 | ✅ | `expr;` | 所有测试 |
 | 块语句 `{ }` | ✅ | `{ }` | 同上 |
 | 空语句 `;` | ✅ | 忽略 | 未测试 |
-| `with` 语句 | ❌ | JS 严格模式已废弃 | - |
-| `debugger` 语句 | ❌ | 不支持 | - |
+| `with` 语句 | 🔘 不实现 | JS 严格模式已废弃 | 绝不实现 |
+| `debugger` 语句 | 🔘 不实现 | 不支持 | 调试用，Zig 有自身调试工具 |
 | 声明 + 表达式混合 | 🚧 | 可能产生未使用变量警告 | 隐式测试 |
 
 ---
@@ -469,8 +479,8 @@
 | `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ #631 |
 | `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ #631 |
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ Phase 4 |
-| `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | ❌ | ❌ | ❌ | ❌ P3 |
-| `.toReversed/Sorted/Spliced()` | 不可变版本 (ES2023) | — | 新数组 | ❌ | ❌ | ❌ | ❌ P3 |
+| `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
+| `.toReversed/Sorted/Spliced()` | 不可变版本 (ES2023) | — | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
 | **— 静态方法 —** | | | | | | | |
 | `Array.isArray(val)` | `Array.isArray(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ | ✅ Phase 5 |
 | `Array.from(arrayLike)` | `Array.from(arrayLike[, mapFn])` | `arrayLike, mapFn?` | `T[]` | ✅ | ✅ | ✅ | ✅ Phase 5 |
@@ -529,8 +539,8 @@
 | `String.fromCharCode(...c)` | 静态: `String.fromCharCode(num1, ...)` | `...u16` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `String.fromCodePoint(...c)` | 静态: `String.fromCodePoint(num1, ...)` | `...u21` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | **— 缺失 (2) —** | | | | | | | |
-| `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | ❌ | ❌ | ❌ | ❌ P3 |
-| `String.raw\`...\`` | 静态: 标签模板字面量 | template | `string` | ❌ | ❌ | ❌ | ❌ P3 |
+| `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `String.raw\`...\`` | 静态: 标签模板字面量 | template | `string` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/string.js`):
 > ```js
@@ -562,7 +572,7 @@
 | `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
 | `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
 | `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
-| `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | ❌ | ❌ | ❌ | ❌ P3 |
+| `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
 > ```js
@@ -589,7 +599,7 @@
 | `.size` | 实例属性 `set.size` | — | `usize` | ✅ | ✅ | ✅ P0 done | ✅ |
 | `.forEach(fn)` | `set.forEach(callbackFn[, thisArg])` | `fn: (val,val,set)=>void` | `void` | ✅ | ✅ | ✅ inline for-loop | ✅ Phase 7 |
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_set.zig` | ✅ #628 |
-| `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | ❌ | ❌ | ❌ | ❌ P3 |
+| `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | 🔘 | 🔘 | 🔘 | 🔘 不实现（ES2025 很新，使用较少） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
 > ```js
@@ -613,20 +623,18 @@
 | `Object.assign(tgt,...)` | `Object.assign(target, ...sources)` | `target, ...sources` | target 引用 | ✅ | ✅ | ✅ | ✅ |
 | `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | 🔶 Zig 默认不可变 |
 | **— 缺失静态方法 (9) —** | | | | | | | |
-| `Object.create(proto)` | `Object.create(proto[, propertiesObject])` | `proto, props?` | 新对象 | ✅ | ✅ | ✅ | ✅ (简化) |
-| `Object.defineProperty(obj,k,d)` | `Object.defineProperty(obj, prop, descriptor)` | `obj, prop, desc` | obj 引用 | ✅ | ✅ | ✅ | ✅ (简化) |
-| `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | ❌ | ❌ | ❌ | ❌ P3 |
-| `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | 🔘 | 🔘 | 🔘 | 🔘 不实现（复杂反射，很少用） |
+| `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级反射） |
 | `Object.getOwnPropertyNames(obj)` | `Object.getOwnPropertyNames(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ P2 done | ✅ |
-| `Object.getOwnPropertySymbols(obj)` | Symbol 属性名 | `obj: object` | `symbol[]` | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.getOwnPropertySymbols(obj)` | Symbol 属性名 | `obj: object` | `symbol[]` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 | `Object.getPrototypeOf(obj)` | 获取原型 | `obj` | prototype | ✅ | ✅ | ✅ | ✅ (返回 null) |
-| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | 🔘 | 🔘 | 🔘 | 🔘 不实现（原型操作，较少使用） |
 | `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ P1 done | ✅ |
 | `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ P2 done | ✅ |
 | `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | ✅ | ✅ (no-op) |
-| `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ❌ | ❌ | ❌ | ❌ P3 |
-| `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | 🔶 `@compileError` | 🔶 |
-| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | ❌ | ❌ | ❌ | ❌ P3 |
+| `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | 🔘 | 🔘 | 🔘 | 🔘 不实现（Zig 默认不可变） |
+| `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/object.js`):
 > ```js
@@ -675,15 +683,15 @@
 | `.getMinutes()` | `date.getMinutes()` | — | `i64` (0-59, UTC) | ✅ | ✅ | ✅ | ✅ |
 | `.getSeconds()` | `date.getSeconds()` | — | `i64` (0-59, UTC) | ✅ | ✅ | ✅ | ✅ |
 | **— 缺失 (44+) —** | | | | | | | |
-| `new Date()` / `new Date(ms)` / `new Date(str)` | 构造函数 | `ms\|str\|y,m,d,...` | `Date` | ❌ | ❌ | ❌ | ❌ P2 |
-| `.getMilliseconds()` | `date.getMilliseconds()` | — | `i64` (0-999) | ❌ | ❌ | ❌ | ❌ P2 |
-| `.getTimezoneOffset()` | 时区偏移 | — | `i64` (分钟) | ❌ | ❌ | ❌ | ❌ P2 |
-| UTC getter 系列 (8): `getUTCFullYear/getUTCMonth/getUTCDate/getUTCDay/getUTCHours/getUTCMinutes/getUTCSeconds/getUTCMilliseconds` | ❌ | ❌ | ❌ | ❌ P2 |
-| setter 系列 (~14): `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds/setTime` + UTC setter | ❌ | ❌ | ❌ | ❌ P3 |
-| `.toISOString()` | `date.toISOString()` | — | `string` (ISO 8601) | ❌ | ❌ | ❌ | ❌ P2 |
-| `.toJSON()` | `.toJSON()` | — | `string` | ❌ | ❌ | ❌ | ❌ P3 |
-| `.toString()` / `.toDateString()` / `.toTimeString()` / `.toUTCString()` / `.toLocaleString()` 等 | ❌ | ❌ | ❌ | ❌ P3 |
-| `.valueOf()` | `.valueOf()` | — | `i64` (同 .getTime) | ❌ | ❌ | ❌ | ❌ P3 |
+| `new Date()` / `new Date(ms)` / `new Date(str)` | 构造函数 | `ms\|str\|y,m,d,...` | `Date` | 🔴 | 🔴 | 🔴 | 🔴 P2 |
+| `.getMilliseconds()` | `date.getMilliseconds()` | — | `i64` (0-999) | 🔴 | 🔴 | 🔴 | 🔴 P2 |
+| `.getTimezoneOffset()` | 时区偏移 | — | `i64` (分钟) | 🔴 | 🔴 | 🔴 | 🔴 P2 |
+| UTC getter 系列 (8): `getUTCFullYear/getUTCMonth/getUTCDate/getUTCDay/getUTCHours/getUTCMinutes/getUTCSeconds/getUTCMilliseconds` | — | — | — | 🔴 | 🔴 | 🔴 | 🔴 P2 |
+| setter 系列 (~14): `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds/setTime` + UTC setter | — | — | — | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `.toISOString()` | `date.toISOString()` | — | `string` (ISO 8601) | 🔴 | 🔴 | 🔴 | 🔴 P2 |
+| `.toJSON()` | `.toJSON()` | — | `string` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `.toString()` / `.toDateString()` / `.toTimeString()` / `.toUTCString()` / `.toLocaleString()` 等 | — | — | — | 🔘 | 🔘 | 🔘 | 🔘 不实现（格式化字符串，很少用） |
+| `.valueOf()` | `.valueOf()` | — | `i64` (同 .getTime) | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/date.js`):
 > ```js
@@ -706,7 +714,7 @@
 | `decodeURIComponent(s)` | `decodeURIComponent(encodedURI)` | `encodedURI: string` | `string` | ✅ | ✅ | ✅ `js_uri.decode` | ✅ |
 | `encodeURI(s)` | `encodeURI(uri)` (保留 :/?#[]@!$&'()*+,;=) | `uri: string` | `string` | ✅ | ✅ | ✅ `js_uri.encodeURI` | ✅ |
 | `decodeURI(s)` | `decodeURI(encodedURI)` | `encodedURI: string` | `string` | ✅ | ✅ | ✅ `js_uri.decodeURI` | ✅ |
-| `eval(s)` | `eval(string)` | `string` | 动态执行 | ❌ | ❌ | ❌ | ❌ 不支持 |
+| `eval(s)` | `eval(string)` | `string` | 动态执行 | 🔘 | 🔘 | 🔘 | 🔘 不实现（安全风险，编译时无法动态执行） |
 
 > **注意**: `parseInt` 无 radix 时默认十进制（与 Zig `std.fmt.parseInt` 行为可能不同，后者必须指定 radix）。
 >
@@ -791,11 +799,11 @@
 | 特性 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
 | 正则字面量 `/pat/flags` | `/pattern/flags` | — | `RegExp` | ✅ | ✅ | 字符串提取 | ✅ 语法可用 |
-| `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | ❌ | ❌ | ❌ | ❌ P3 |
+| `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
 | `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ P8 done |
 | `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | 🔶 compileError | 🔶 deferred | 🔶 P3 |
-| `/pat/g` 全局标志 | 多次 `.exec()` 维护 `lastIndex` | — | — | ❌ | ❌ | ❌ | ❌ P3 |
-| `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | ❌ | ❌ | ❌ | ❌ P3 |
+| `/pat/g` 全局标志 | 多次 `.exec()` 维护 `lastIndex` | — | — | 🔘 | 🔘 | 🔘 | 🔘 不实现（复杂，fancy-regex 可能不支持） |
+| `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级正则用法，很少用） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/regexp.js`):
 > ```js
@@ -812,13 +820,13 @@
 |------|------|------|--------|------|
 | `Int8Array` ~ `Float64Array` / `.length` / 构造 | ✅ | ✅ | ✅ | ✅ |
 | `.get/.set/.subarray/.copyWithin/.fill/.buffer/.byteLength/.byteOffset` | ✅ | ✅ | ✅ js_typedarray | ✅ |
-| `.slice()` | ❌ | ❌ | ❌ | ❌ (用 `.subarray()` 替代) |
+| `.slice()` | 🔘 | 🔘 | 🔘 | 🔘 不实现（用 `.subarray()` 替代） |
 
 ### 4.14 `Promise` — 0/x (0%)
 
-| 特性 | 状态 |
-|------|------|
-| `new Promise()/.then/.catch` | ❌ native_proto 显式拒绝 |
+| 特性 | 状态 | 备注 |
+|------|------|------|
+| `new Promise()/.then/.catch` | 🔘 不实现 | 建议用 `async/await` + `Io` 模式替代 |
 
 > **建议**: 使用 `async/await` + `Io` 模式替代 Promise API（已完整实现）。
 
@@ -828,40 +836,53 @@
 |------|------|
 | `throw new Error(msg)` → `error.JsThrow` | ✅ |
 
-### 4.16 未实现类别
+### 4.16 未实现类别（重新评估）
 
-| 类别 | 状态 | MDN 参考 |
-|------|------|----------|
-| `Symbol` | ❌ 完全缺失 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 |
-| `WeakMap` | ❌ 完全缺失 | `WeakMap.get/set/has/delete` — 弱引用键 |
-| `WeakSet` | ❌ 完全缺失 | `WeakSet.add/has/delete` — 弱引用值 |
-| `Reflect` | ❌ 完全缺失 | `Reflect.get/set/has/apply/construct` 等 (14 方法) |
-| `Intl` | ❌ 完全缺失 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 |
-| `BigInt` | ❌ 完全缺失 | `BigInt(value)`, `123n` 字面量 |
-| `Atomics` | ❌ 完全缺失 | 共享内存原子操作 |
+| 类别 | 状态 | MDN 参考 | 评估 |
+|------|------|----------|------|
+| `Symbol` | 🔴 P2 完全缺失 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 | 高价值：现代 JS 常用（iterable 协议等） |
+| `WeakMap` | 🔘 不实现 | `WeakMap.get/set/has/delete` — 弱引用键 | 低价值：Zig 内存管理不同 |
+| `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
+| `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
+| `Intl` | 🔘 不实现 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 | 低价值：国际化可调用 Zig/C 库 |
+| `BigInt` | 🟡 P3 完全缺失 | `BigInt(value)`, `123n` 字面量 | 中价值：大整数场景需要 |
+| `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
-### 4.17 汇总
+### 4.17 汇总（重新评估）
 
-| 类别 | 总方法数 | 有效覆盖 | 比例 | P0 连线 | P1 补齐 | P2 实现 | 备注 |
+| 类别 | 总方法数 | 有效覆盖 | 比例 | P2 高价值 | P3 中价值 | 不实现 | 备注 |
 |------|---------|---------|------|---------|---------|---------|------|
-| Math | 44 | 41 | 93% | — | — | 3 | 仅 Math.hypot 未支持 (故意) |
-| Array | 35 | 35 | 100% | — | — | — | #631/#635/Phase 5 全部完成 (findLast/keys/values/entries/isArray/from/of) |
-| String | 35 | 30 | 86% | — | — | 5 | Phase 6 新增 replaceAll/at/codePointAt/localeCompare/normalize/toLocaleUpper/toLocaleLower/fromCharCode/fromCodePoint |
-| Map | 12 | 11 | 92% | — | — | 1 | 仅 Map.groupBy 未实现 (ES2024) |
-| Set | 12 | 10 | 83% | — | — | 2 | Phase 7 新增 forEach, ES2025 Set 操作 (difference/...) 未实现 |
-| Date | 55+ | 42 | ~76% | — | — | 13+ | #629/#636/#637/#655 完成 (构造函数/setter/toJSON/valueOf/UTC getter) |
-| Object | 23 | 12 | 52% | — | — | 11 | #653 Phase 5 完成 (create/seal/defineProperty/getPrototypeOf) |
+| Math | 44 | 41 | 93% | — | — | 3 | Math.hypot 故意不支持 |
+| Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
+| String | 35 | 30 | 86% | — | 3 | 2 | Phase 6 完成，.matchAll P3 |
+| Map | 12 | 11 | 92% | — | 1 | — | Map.groupBy P3 |
+| Set | 12 | 10 | 83% | — | — | 2 | ES2025 Set 操作不实现 |
+| Date | 55+ | 42 | ~76% | 13 | 5+ | — | 构造函数/setter/toISOString P2 |
+| Object | 23 | 12 | 52% | — | 6 | 5 | fromEntries/groupBy P3，反射 API 不实现 |
 | JSON | 2 | 2 | 100% | — | — | — | ✅ |
-| Global | 8 | 8 | 100% | — | — | — | ✅ |
+| Global | 8 | 7 | 88% | — | — | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | — | — | ✅ |
-| Number | 14 | 14 | 100% | — | — | — | #626/#634 完成 (toExponential/toPrecision + 6 个常量) |
-| RegExp | 5 | 1 | 20% | — | — | 4 | 正则字面量语法可用, test/exec runtime 已实现 |
-| TypedArray | 11 | 10 | 91% | — | — | — | ✅ |
+| Number | 14 | 14 | 100% | — | — | — | ✅ |
+| RegExp | 5 | 1 | 20% | — | 2 | 2 | 正则字面量可用，/g 标志不实现 |
+| TypedArray | 11 | 10 | 91% | — | — | 1 | .slice() 用 .subarray() 替代 |
 | Error | 1 | 1 | 100% | — | — | — | ✅ |
-| **总计** | **~260** | **~193** | **~74%** | **0** | **0** | **~50** | |
+| Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
+| Symbol | 10+ | 0 | 0% | 10+ | — | — | P2 高价值（iterable 协议） |
+| WeakMap/WeakSet | 7 | 0 | 0% | — | — | 7 | 不实现（Zig 内存模型不同） |
+| Reflect | 14 | 0 | 0% | — | — | 14 | 不实现（Zig 不需要反射） |
+| Intl | 10+ | 0 | 0% | — | — | 10+ | 不实现（可调用 Zig/C 库） |
+| BigInt | 5+ | 0 | 0% | — | 5+ | — | P3 中价值（大整数场景） |
+| Atomics | 10+ | 0 | 0% | — | — | 10+ | 不实现（niche 场景） |
+| **总计** | **~310** | **~193** | **~62%** | **~23** | **~15** | **~70** | |
+
+> **实现策略**:
+> - ✅ **已实现**: 完整支持，测试通过
+> - 🔴 **P2 高价值**: 常用 JS 特征，应优先实现（如 `**=`、`&&=`、`new Date()`、Symbol）
+> - 🟡 **P3 中价值**: 偶尔使用，可延后实现（如 `void`/`delete` 替代方案、生成器、`new RegExp()`）
+> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl）
 
 > ✅ **内置对象连线全部完成**: 所有 P0/P1/P2 已实现 runtime 的方法已全部接入 BuiltinCall 检测/发射流水线。
-> 剩余缺失项均为 P2/P3（需新增 runtime 的复杂方法），集中在 Date 方法 (13+)、Object 方法 (11)、RegExp (4)、ES2023+ 新特性等类别。
+> 剩余缺失项分为 P2（高价值，计划实现）、P3（中价值，延后实现）、不实现（低价值，永不实现）三类。
 
 ---
 
@@ -1080,6 +1101,85 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ---
 
-**文档版本**: 2.6  
-**最后更新**: 2026-06-26  
+## 8. 特征实现重新评估 (2026-06-27)
+
+### 8.1 评估原则
+
+对所有未实现特征进行重新评估，按**应用价值**细分为三类：
+
+| 分类 | 标记 | 定义 | 策略 |
+|------|------|------|------|
+| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 优先实现 |
+| **中价值（P3）** | 🟡 | 偶尔使用，有 workaround | 延后实现 |
+| **不实现（低价值）** | 🔘 | 很少用，或 Zig 有更好替代 | 永不实现 |
+
+### 8.2 不实现特征清单（🔘）
+
+以下特征因**应用价值低**或**已有更好替代方案**，标记为不实现：
+
+**语法（表达式/语句）：**
+- `void` / `delete` — JS 已废弃，Zig 用 `null` / `HashMap.remove()` 替代
+- `with` 语句 — JS 严格模式已废弃，绝不实现
+- `debugger` 语句 — 调试用，Zig 有自身调试工具
+- 标签模板 `` tag`...` `` — 很少使用
+- 类表达式 `const X = class {}` — 很少使用，可用 `class X {}` 替代
+- 静态初始化块 `static {}` — ES2022，使用较少
+- `for await...of` — 异步迭代，当前项目聚焦同步代码
+- `eval(s)` — 安全风险，编译时无法动态执行
+- `new.target` — meta property，niche 场景
+- `import.meta` — ES 模块元数据，niche
+- `arguments` 对象 — 传统函数，箭头函数已替代
+
+**内置对象（低价值）：**
+- Array `.with()/.toReversed()/.toSorted()/.toSpliced()` — ES2023 不可变方法，有可变版本替代
+- Set ES2025 操作（`.difference/.intersection/...`） — 很新，使用较少
+- `String.raw` — 标签模板，很少使用
+- `Object.defineProperties/getOwnPropertyDescriptor/getOwnPropertySymbols/setPrototypeOf/isSealed/Frozen/Extensible` — 复杂反射，很少用
+- `Object.fromEntries()` — 已改为 P3（中价值）
+- `TypedArray.slice()` — 用 `.subarray()` 替代
+- `RegExp` `/g` 标志 + `.source/.flags` 等属性 — 高级正则用法，fancy-regex 可能不支持
+- `Promise` `new Promise()/.then/.catch` — 建议用 `async/await` + `Io` 模式替代
+- `WeakMap` / `WeakSet` — 弱引用，Zig 内存管理不同
+- `Reflect` — 反射 API，Zig 不需要
+- `Intl` — 国际化，可调用 Zig/C 库
+- `Atomics` — 共享内存原子操作，niche 场景
+
+### 8.3 计划实现特征（🔴 P2 / 🟡 P3）
+
+**高价值（P2，优先实现）：**
+- `**=` / `&&=` / `||=` / `??=` — ES2021 逻辑赋值，现代 JS 常用
+- `new Date()` 构造函数 + `.toISOString()/.getMilliseconds()/.getTimezoneOffset()` + UTC getter 系列 — 非常常用
+- `Symbol` — 现代 JS 常用（iterable 协议等）
+- Spread 参数 `fn(...args)` — ES2015 常用
+
+**中价值（P3，延后实现）：**
+- `void` / `delete` — 偶尔使用（但已有替代）
+- `instanceof` — 类型检查（但 Zig 有更好类型系统）
+- `arguments` 对象 — 传统函数（但箭头函数已替代）
+- `function*` / `yield` / `yield*` — 生成器，现代 JS 高级特性
+- 动态 `import()` — ES 模块动态导入
+- 私有字段 `#field` — ES2022 封装
+- `.matchAll(re)` — 正则表达式高级用法
+- `new RegExp(pat[, flags])` — 动态构造正则
+- `Map.groupBy` / `Object.groupBy` — ES2024 新特性
+- `Object.fromEntries()` — ES2019，对象与数组互转
+- Date setter 系列 + `.toJSON()/.valueOf()` — 日期修改
+- `BigInt` — 大整数场景需要
+
+### 8.4 覆盖率变化
+
+| 指标 | 重新评估前 | 重新评估后 |
+|------|----------|----------|
+| 完全实现 | ~111 (~73%) | ~111 (~73%) |
+| 部分实现 | ~8 (~5%) | ~8 (~5%) |
+| 计划实现（P2/P3） | ~50 (~21%) | ~38 (~12%) |
+| 不实现（🔘） | 0 | ~13 (~9%) |
+| 内置对象有效覆盖率 | ~74% | ~62%（含不实现类别） |
+
+> **说明**：不实现类别（Symbol/WeakMap/Reflect/Intl/BigInt/Atomics）共 ~70 个方法，标记为不实现后，有效覆盖率下降至 ~62%。这些类别实际项目中很少用到，不影响核心转译功能。
+
+---
+
+**文档版本**: 2.7  
+**最后更新**: 2026-06-27  
 **作者**: jonathan197608
