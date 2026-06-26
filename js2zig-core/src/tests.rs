@@ -6618,4 +6618,20 @@ export function getMatch(s) {
 "#;
         let _zig = transpile_and_check!(js, "p8_string_match_regexp_var_ast_check");
     }
+
+    #[test]
+    fn test_p8_string_match_global_ast_check() {
+        // Verify that String.match(/pattern/g) generates code that calls matchStringGlobal.
+        let js = r#"
+export function getMatch(s) {
+    return s.match(/world/g);
+}
+"#;
+        let zig = transpile_and_check!(js, "p8_string_match_global_ast_check");
+        assert!(
+            zig.contains("matchStringGlobal"),
+            "Expected 'matchStringGlobal' for /g flag in:\n{}",
+            zig
+        );
+    }
 }

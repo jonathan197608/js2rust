@@ -4426,6 +4426,7 @@ impl Codegen {
 
             builtins::BuiltinCall::StringMatch => {
                 // str.match(/pattern/) → js_string.matchString(alloc, str, "pattern")
+                // str.match(/pattern/g) → js_string.matchStringGlobal(alloc, str, "pattern")
                 // str.match(regexpVar) → js_string.matchString(alloc, str, regexpVar.pattern)
                 if ce.arguments.len() != 1 {
                     self.errors
@@ -4440,10 +4441,31 @@ impl Codegen {
                         Expression::RegExpLiteral(re) => {
                             let pattern = re.regex.pattern.text.as_str().to_string();
                             let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
-                            self.write(&format!(
-                                "js_string.matchString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
-                                obj_repr, escaped
-                            ));
+                            // Parse flags from raw regex literal (e.g., "/abc/g" → "g")
+                            // re.raw is Option<Str>, so we need to handle the Option
+                            let has_global = re
+                                .raw
+                                .as_ref()
+                                .map(|raw| {
+                                    let raw_str = raw.as_str();
+                                    // Find the last '/' and extract flags
+                                    raw_str.rfind('/').is_some_and(|idx| {
+                                        let flags_part = &raw_str[idx + 1..];
+                                        flags_part.contains('g')
+                                    })
+                                })
+                                .unwrap_or(false);
+                            if has_global {
+                                self.write(&format!(
+                                    "js_string.matchStringGlobal(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                    obj_repr, escaped
+                                ));
+                            } else {
+                                self.write(&format!(
+                                    "js_string.matchString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                    obj_repr, escaped
+                                ));
+                            }
                         }
                         Expression::Identifier(id)
                             if self.regexp_vars.contains(id.name.as_str()) =>

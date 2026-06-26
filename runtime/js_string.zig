@@ -15,6 +15,14 @@ extern fn host_regex_match(
     out_count: *usize,
 ) callconv(.C) extern struct { ptr: [*]const u8, len: isize };
 
+extern fn host_regex_match_global(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_count: *usize,
+) callconv(.C) extern struct { ptr: [*]const u8, len: isize };
+
 /// Convert string to uppercase. Returns newly allocated string.
 pub fn toUpper(alloc: Allocator, s: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, s.len);
@@ -595,6 +603,28 @@ pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
 pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny {
     var count: usize = 0;
     const result = host_regex_match(pattern.ptr, pattern.len, s.ptr, s.len, &count);
+    if (count == 0) return JsAny.fromNull();
+
+    const bytes = result.ptr[0..@intCast(result.len)];
+    var arr = try JsAny.newArray(alloc);
+    errdefer arr.array.deinit(alloc);
+
+    var start: usize = 0;
+    for (0..count) |_| {
+        var end: usize = start;
+        while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
+        try arr.array.append(JsAny.from(bytes[start..end]));
+        start = end + 1;
+    }
+
+    return arr;
+}
+
+/// String.match() with /g flag — returns all matches (no capture groups).
+/// Returns null if no match, or an array of matched substrings.
+pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny {
+    var count: usize = 0;
+    const result = host_regex_match_global(pattern.ptr, pattern.len, s.ptr, s.len, &count);
     if (count == 0) return JsAny.fromNull();
 
     const bytes = result.ptr[0..@intCast(result.len)];
