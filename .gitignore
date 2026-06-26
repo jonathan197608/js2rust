@@ -6,3 +6,4 @@
 /docs-archive/
 /.zig-cache
 .js2zig-cache
+js_allocator.obj
