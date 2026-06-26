@@ -14,7 +14,7 @@
 | **JS 语法特性总数** | ~150+ | - |
 | **完全实现** | ~111 | ~73% |
 | **部分实现** | ~8 | ~5% |
-| **未实现（计划实现）** | ~18 | ~12% |
+| **未实现（计划实现）** | ~41 | ~13% |
 | **不实现（低价值）** | ~13 | ~9% |
 | **内置对象有效覆盖率** | ~195/260 | ~75% |
 | **测试覆盖** | 267 个 Rust 测试 + 27 个 Zig 测试 | - |
@@ -396,7 +396,7 @@
 | `Math.pow(b,e)` | `Math.pow(base, exponent)` | `base, exp: number` | `number` | `std.math.pow(f64, b, e)` | ✅ | ✅ | ✅ | ✅ |
 | `Math.max(...v)` | `Math.max(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
 | `Math.min(...v)` | `Math.min(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
-| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@compileError` | ✅ | ✅ | 🔘 | 🔘 不实现（niche 数学函数，很少使用） |
+| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `std.math.hypot(values)` | ✅ | ✅ | — | 🔵 P1 待实现（Zig 有 `std.math.hypot`） |
 | **— 三角函数 (6) —** | | | | | | | | |
 | `Math.sin(x)` | `Math.sin(x)` | `x: number` (弧度) | `number` | `@sin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
 | `Math.cos(x)` | `Math.cos(x)` | `x: number` (弧度) | `number` | `@cos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
@@ -852,7 +852,7 @@
 
 | 类别 | 总方法数 | 有效覆盖 | 比例 | P2 高价值 | P3 中价值 | 不实现 | 备注 |
 |------|---------|---------|------|---------|---------|---------|------|
-| Math | 44 | 41 | 93% | — | — | 3 | Math.hypot 不实现（niche） |
+| Math | 44 | 42 | 95% | 1 | — | 1 | Math.hypot P1（Zig 有 `std.math.hypot`） |
 | Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
 | String | 35 | 30 | 86% | — | 3 | 2 | Phase 6 完成，.matchAll P3 |
 | Map | 12 | 11 | 92% | — | 1 | — | Map.groupBy P3 |
@@ -1144,15 +1144,17 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - `Intl` — 国际化，可调用 Zig/C 库
 - `Atomics` — 共享内存原子操作，niche 场景
 
-### 8.3 计划实现特征（🔴 P2 / 🟡 P3）
+### 8.3 计划实现特征（🔵 P1）
 
-**高价值（P2，优先实现）：**
+**高价值（P1，优先实现）：**
+- `Math.hypot(...v)` — Zig 有 `std.math.hypot`
 - `**=` / `&&=` / `||=` / `??=` — ES2021 逻辑赋值，现代 JS 常用
 - `new Date()` 构造函数 + `.toISOString()/.getMilliseconds()/.getTimezoneOffset()` + UTC getter 系列 — 非常常用
+- `Date.parse(s)` / `Date.UTC(y,m,d,...)` — 常用（ISO 8601 解析/Date 组件→时间戳）
 - `Symbol` — 现代 JS 常用（iterable 协议等）
 - Spread 参数 `fn(...args)` — ES2015 常用
 
-**中价值（P3，延后实现）：**
+**中价值（P1，延后实现）：**
 - `void` / `delete` — 偶尔使用（但已有替代）
 - `instanceof` — 类型检查（但 Zig 有更好类型系统）
 - `arguments` 对象 — 传统函数（但箭头函数已替代）
@@ -1164,6 +1166,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - `Map.groupBy` / `Object.groupBy` — ES2024 新特性
 - `Object.fromEntries()` — ES2019，对象与数组互转
 - Date setter 系列 + `.toJSON()/.valueOf()` — 日期修改
+- `RegExp.exec(str)` — 复用 `host_regex_match` 基础设施
 - `BigInt` — 大整数场景需要
 
 ### 8.4 覆盖率变化
@@ -1172,19 +1175,30 @@ InferResult  →  Definite(ZigType) | Indeterminate
 |------|----------|----------|----------|
 | 完全实现 | ~111 (~73%) | ~112 (~73%) | +1 (Object.freeze ✅) |
 | 部分实现 | ~8 (~5%) | ~3 (~2%) | -5 (全部重新分类) |
-| 计划实现（P2/P3） | ~38 (~12%) | ~41 (~13%) | +3 (Date.parse/UTC P2, .exec P3) |
-| 不实现（🔘） | ~13 (~9%) | ~14 (~9%) | +1 (Math.hypot 🔘) |
+| 计划实现（P1） | ~18 (~12%) | ~41 (~13%) | +23 (P2/P3 → P1) |
+| 不实现（🔘） | ~13 (~9%) | ~13 (~9%) | -1 (Math.hypot → P1) |
 | 内置对象有效覆盖率 | ~62% | ~63% | +1% |
 
 > **说明**：不实现类别（Symbol/WeakMap/Reflect/Intl/BigInt/Atomics）共 ~70 个方法，标记为不实现后，有效覆盖率下降至 ~62%。这些类别实际项目中很少用到，不影响核心转译功能。
 
 ---
 
-## 9. P2/P3 特征实现计划 (2026-06-27)
+## 9. P1 特征实现计划 (2026-06-27)
 
-### 9.1 🔴 P2 高价值特征（优先实现）
+### 9.1 🔵 P1 高价值特征（优先实现）
 
-#### `Date.parse(s)` — P2
+#### `Math.hypot(...v)` — P1
+- **目标**: 实现 `Math.hypot(...values)` → `number` (平方根和)
+- **Zig 对应**: `std.math.hypot(f64, f64)` (二元版本); 多元需用 `@sqrt(@reduce(.Add, v * v))`
+- **实现方案**:
+  1. Runtime: `js_math.zig` 添加 `hypot(values: []f64)` → `f64`
+  2. 对 2 个参数直接用 `std.math.hypot(a, b)`
+  3. 对 3+ 个参数用 `@sqrt(@reduce(.Add, v * v))`
+  4. 检测: `detect_builtin_call` 匹配 `Math.hypot`
+  5. 发射: `emit_builtin_call` 生成 `js_math.hypot(args)`
+- **测试**: MDN 官方示例
+
+#### `Date.parse(s)` — P1
 - **目标**: 实现 `Date.parse(dateString)` → `i64` (timestamp in ms)
 - **难点**: 日期字符串格式复杂（ISO 8601、RFC 2822、本地格式）
 - **实现方案**:
@@ -1194,7 +1208,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - **流水线**: 检测 (detect_builtin_call) → 发射 (emit_builtin_call) → 运行时 (js_date.parse)
 - **测试**: MDN 官方示例
 
-#### `Date.UTC(y,m,d,...)` — P2
+#### `Date.UTC(y,m,d,...)` — P1
 - **目标**: 实现 `Date.UTC(year, monthIndex[, day, ...])` → `i64` (timestamp in ms)
 - **难点**: 需要正确处理月份索引（0=1月）、UTC 时区
 - **实现方案**:
@@ -1204,9 +1218,37 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - **流水线**: 检测 → 发射 → 运行时 (js_date.utc)
 - **测试**: MDN 官方示例
 
-### 9.2 🟡 P3 中价值特征（延后实现）
+#### `new Date()` 构造函数 — P1
+- **目标**: 实现 `new Date()` / `new Date(ms)` / `new Date(str)` / `new Date(y,m,d,...)`
+- **实现方案**:
+  1. Runtime: `js_date.zig` 添加 `Date` 结构体（timestamp: i64）
+  2. 构造函数重载：无参数→当前时间，1 个 number→timestamp，1 个 string→解析，多参数→组件
+  3. 代码生成：`emit_new_expression` 分发到对应重载
+- **测试**: MDN 官方示例
 
-#### `RegExp.exec(str)` — P3
+#### `**=` / `&&=` / `||=` / `??=` — P1
+- **目标**: 实现 ES2021 逻辑赋值运算符
+- **实现方案**:
+  1. 解析器：oxc 已支持，无需修改
+  2. 代码生成：`emit_assignment` 添加 `**=` / `&&=` / `||=` / `??=` 分支
+  3. `**=` → `left = left ** right`
+  4. `&&=` → `if (left) left = right`
+  5. `||=` → `if (!left) left = right`
+  6. `??=` → `if (left ?? undefined) left = right`
+- **测试**: 简单赋值 + 逻辑赋值对比
+
+#### `Symbol` — P1
+- **目标**: 实现 `Symbol(desc)` / `Symbol.for(key)` / `Symbol.iterator` 等
+- **实现方案**:
+  1. Runtime: `js_symbol.zig` 定义 `Symbol` 结构体（description: ?[]const u8, id: u64）
+  2. 全局 Symbol 注册表：`std.StringHashMap(u64)`
+  3. 代码生成：生成 `Symbol` 字面量 / `Symbol.for()` / `Symbol.iterator` 等
+  4. Iterable 协议：`for (const x of iterable)` → `while (iter.next())`
+- **测试**: MDN 官方示例（Symbol.iterator）
+
+### 9.2 🔵 P1 中价值特征（延后实现）
+
+#### `RegExp.exec(str)` — P1
 - **目标**: 实现 `regexObj.exec(str)` → `string[] | null` (捕获组)
 - **难点**: 需要返回捕获组数组，且维护 `lastIndex` 属性（for `/g` flag）
 - **实现方案**:
@@ -1216,8 +1258,18 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - **流水线**: 检测 (detect_builtin_call) → 发射 (emit_builtin_call) → 运行时 (js_regex.exec)
 - **测试**: MDN 官方示例
 
+#### `Object.fromEntries(iter)` — P1
+- **目标**: 实现 `Object.fromEntries(iterable)` → `object`
+- **实现方案**:
+  1. Runtime: `js_object.zig` 添加 `fromEntries(iterable: any)` → `JsObject`
+  2. 遍历 iterable，将 `[key, value]` 对插入 HashMap
+  3. 代码生成：生成 `js_object.fromEntries(iter)`
+- **测试**: MDN 官方示例
+
+（其他 P1 中价值特征类似，添加详细实现方案）
+
 ---
 
-**文档版本**: 2.7  
+**文档版本**: 2.8  
 **最后更新**: 2026-06-27  
 **作者**: jonathan197608
