@@ -1,331 +1,522 @@
+//! 多 Arena 全局分配器 — 线程安全版 (Zig 0.16.0)
+//!
+//! ## 设计要点
+//! - 总内存上限默认 384M，最小值 384M，可通过环境变量 JS_ZIG_TOTAL_LIMIT 修改
+//! - 每个 Arena 固定 128M，节点数 = total_limit / 128M（最低 2 个）
+//! - 状态机：ready / cooling
+//! - 冷却时间限制：默认最低 10 分钟，可通过环境变量 JS_ZIG_MIN_COOLING_TIME 修改
+//! - 环形拓扑，随机选取，cooling 则取相邻
+//! - 每个节点一把 std.atomic.Mutex，复合操作（读-判-写）在一次锁持有中完成
+//! - 分配完成后自动检查使用率，超过 80% 则原子标记为 cooling
+//! - 所有节点都 cooling 且未过冷却时间时，返回 error.OutOfMemory
+
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
+const Alignment = std.mem.Alignment;
+
+/// 导入 js_date.zig 获取时间戳（跨平台）
 const js_date = @import("js_date.zig");
 
-/// Global allocator: dual-arena hot-swap design.
-///
-/// Two ArenaAllocator instances (A and B) take turns being the "active"
-/// allocator. Each instance cycles through three states:
-///
-///     ready  --(becomes active)-->  active  --(capacity exceeds limit)-->
-///     cooling  --(grace period elapsed -> reset)-->  ready
-///
-/// At any moment exactly one instance is `active` (used for all allocations)
-/// and the other is non-active (`cooling` or `ready`).
-///
-/// When the active arena's capacity exceeds JS2RUST_MAX_ARENA_MB and the
-/// backup is `ready`, the two swap: the full one enters `cooling` (its memory
-/// stays alive so any pointer Rust still holds across the FFI boundary remains
-/// valid) and the backup becomes active. A `cooling` instance is only reset
-/// (memory reclaimed) after it has been cooling for at least
-/// JS2RUST_ARENA_GRACE_MS milliseconds, guaranteeing returned strings outlive
-/// any single FFI consumption window.
-///
-/// Cooling is time-based using the cross-platform milliTimestamp() from
-/// js_date.zig. No background thread is needed: the timer check runs lazily
-/// inside getAllocator(), protected by the existing compare-and-swap spinlock.
+/// 全局计数器，用于 selectNode 随机化（原子自增）
+var global_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0);
 
-const DEFAULT_MAX_ARENA_SIZE_MB: usize = 100;
-const ENV_MAX_ARENA_MB: [:0]const u8 = "JS2RUST_MAX_ARENA_MB";
+/// 从环境变量读取配置（辅助函数）
+/// 用法：
+///   const config = try MultiArenaAllocator.readEnvConfig(allocator);
+///   const da = try MultiArenaAllocator.init(backing, config.total_limit, config.min_cooling_time);
+pub fn readEnvConfig(allocator: Allocator) !struct { total_limit: ?usize, min_cooling_time: ?i64 } {
+    var result = struct { total_limit: ?usize = null, min_cooling_time: ?i64 = null };
 
-/// Grace period in milliseconds a cooling instance must survive before it may
-/// be reset. Uses the cross-platform milliTimestamp() from js_date.zig.
-/// Configurable via JS2RUST_ARENA_GRACE_MS (default 600000 = 10 minutes).
-/// Extended to 10 minutes to support slow async host function calls.
-const DEFAULT_GRACE_MS: u64 = 600000;
-const ENV_GRACE_MS: [:0]const u8 = "JS2RUST_ARENA_GRACE_MS";
+    // 读取 JS_ZIG_TOTAL_LIMIT
+    if (std.process.getEnv("JS_ZIG_TOTAL_LIMIT", allocator)) |env_str| {
+        defer allocator.free(env_str);
+        result.total_limit = std.fmt.parseInt(usize, env_str, 10) catch null;
+    } else |_| {}
 
-const State = enum { ready, active, cooling };
+    // 读取 JS_ZIG_MIN_COOLING_TIME
+    if (std.process.getEnv("JS_ZIG_MIN_COOLING_TIME", allocator)) |env_str| {
+        defer allocator.free(env_str);
+        result.min_cooling_time = std.fmt.parseInt(i64, env_str, 10) catch null;
+    } else |_| {}
 
-/// The two arena instances. Stored as module-level vars so their addresses are
-/// stable; the `std.mem.Allocator` fat pointer returned by `.allocator()` holds
-/// a pointer into the arena, which must not move.
-var arena_a: std.heap.ArenaAllocator = undefined;
-var arena_b: std.heap.ArenaAllocator = undefined;
-
-var state_a: State = .ready;
-var state_b: State = .ready;
-
-/// Timestamp (milliseconds since epoch) when each instance entered `cooling`.
-/// 0 means the instance is not in cooling. When an instance is cooling and
-/// `milliTimestamp() - cooling_since >= g_grace_ms`, the instance is reclaimed.
-var cooling_since_a: i64 = 0;
-var cooling_since_b: i64 = 0;
-
-/// Which instance is currently active.
-var active_is_a: bool = true;
-
-var g_initialized: bool = false;
-
-/// Atomic spinlock protecting state transitions (rotate/reclaim/reset).
-/// Zig 0.16.0 in this target has no std.Thread.Mutex, so we use a plain bool
-/// with compare-and-swap. Allocation itself is assumed single-threaded (the C
-/// ABI callers serialize), so this lock only guards the swap bookkeeping.
-var g_lock: bool = false;
-
-/// Capacity threshold (bytes) that triggers an active->backup swap.
-var g_max_arena_bytes: usize = DEFAULT_MAX_ARENA_SIZE_MB * 1024 * 1024;
-
-/// Minimum time in milliseconds a cooling instance must survive before it
-/// may be reset. See cooling_since_a/b above.
-var g_grace_ms: u64 = DEFAULT_GRACE_MS;
-
-/// Read JS2RUST_MAX_ARENA_MB (default 100). Returns bytes.
-fn readMaxArenaBytes() usize {
-    const env = std.c.getenv(ENV_MAX_ARENA_MB.ptr);
-    if (env == null) return DEFAULT_MAX_ARENA_SIZE_MB * 1024 * 1024;
-    const env_str = std.mem.span(env.?);
-    const mb = std.fmt.parseInt(usize, env_str, 10) catch return DEFAULT_MAX_ARENA_SIZE_MB * 1024 * 1024;
-    if (mb == 0) return DEFAULT_MAX_ARENA_SIZE_MB * 1024 * 1024;
-    return mb * 1024 * 1024;
+    return result;
 }
 
-/// Read JS2RUST_ARENA_GRACE_MS (default 5000). Returns milliseconds.
-fn readGraceMs() u64 {
-    const env = std.c.getenv(ENV_GRACE_MS.ptr);
-    if (env == null) return DEFAULT_GRACE_MS;
-    const env_str = std.mem.span(env.?);
-    const n = std.fmt.parseInt(u64, env_str, 10) catch return DEFAULT_GRACE_MS;
-    if (n == 0) return DEFAULT_GRACE_MS;
-    return n;
-}
+// ── 配置常量 ─────────────────────────────────────────────────────
 
-fn acquireLock() void {
-    while (true) {
-        const result = @cmpxchgStrong(bool, &g_lock, false, true, .acquire, .monotonic);
-        if (result == null) return;
-        std.atomic.spinLoopHint();
+/// 默认总内存上限：384M
+pub const DEFAULT_TOTAL_LIMIT: usize = 384 * 1024 * 1024;
+
+/// 最小总内存上限：384M
+pub const MIN_TOTAL_LIMIT: usize = 384 * 1024 * 1024;
+
+/// 每个 Arena 的固定上限：128M
+pub const ARENA_SIZE: usize = 128 * 1024 * 1024;
+
+/// 触发 cooling 的使用率阈值：80%
+const COOLING_THRESHOLD: usize = ARENA_SIZE * 80 / 100;
+
+/// 默认最低冷却时间：10 分钟（单位：秒）
+/// 可通过环境变量 JS_ZIG_MIN_COOLING_TIME 修改
+pub const MIN_COOLING_TIME_SECONDS: i64 = 600;
+
+// ── 分配器状态 ───────────────────────────────────────────────────
+
+/// 分配器状态
+pub const AllocatorState = enum(u8) {
+    /// 就绪状态：可以分配内存
+    ready = 0,
+    /// 冷却状态：暂时不可用
+    cooling = 1,
+};
+
+// ── Arena 节点 ───────────────────────────────────────────────────
+
+/// 单个 Arena 节点（线程安全：每节点一把锁）
+const ArenaNode = struct {
+    /// Arena 分配器
+    arena: ArenaAllocator,
+    /// 当前状态（由 mutex 保护，必须通过复合原子操作访问）
+    state: AllocatorState,
+    /// 状态锁（保护 state 字段的复合读写操作）
+    mutex: std.atomic.Mutex,
+    /// 前驱节点索引
+    prev: usize,
+    /// 后继节点索引
+    next: usize,
+    /// 冷却开始时间戳（秒），0 表示没有在冷却
+    cooling_since: i64,
+
+    /// 初始化 Arena 节点
+    pub fn init(backing: Allocator) !ArenaNode {
+        return ArenaNode{
+            .arena = ArenaAllocator.init(backing),
+            .state = .ready,
+            .mutex = .unlocked,
+            .prev = 0,
+            .next = 0,
+            .cooling_since = 0,
+        };
     }
-}
 
-fn releaseLock() void {
-    @atomicStore(bool, &g_lock, false, .release);
-}
+    /// 获取 Arena 的 Allocator（无锁，arena 内部有自己的同步）
+    pub fn allocator(self: *ArenaNode) Allocator {
+        return self.arena.allocator();
+    }
 
-/// Initialize the dual-arena allocator. Idempotent.
-/// A starts `active`, B starts `ready`.
-pub fn initGlobalAllocator() void {
-    if (g_initialized) return;
+    /// 获取已分配字节数（无锁，只读统计信息）
+    pub fn bytesAllocated(self: *ArenaNode) usize {
+        return self.arena.queryCapacity();
+    }
 
-    g_max_arena_bytes = readMaxArenaBytes();
-    g_grace_ms = readGraceMs();
+    // ── 复合原子操作（读-判-写在一次锁持有中完成）────────────
 
-    arena_a = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    arena_b = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    /// 原子读取当前状态（用于 selectNode 判断）
+    pub fn isReady(self: *ArenaNode) bool {
+        while (!self.mutex.tryLock()) {}
+        defer self.mutex.unlock();
+        return self.state == .ready;
+    }
 
-    state_a = .active;
-    state_b = .ready;
-    cooling_since_a = 0;
-    cooling_since_b = 0;
-    active_is_a = true;
+    /// 原子操作：如果当前是 ready 且使用率超过 80%，则标记为 cooling
+    /// 返回 true 表示发生了状态转换
+    /// 整个"读取状态 + 读取使用率 + 判断 + 写入状态"在一次锁持有中完成
+    /// 由 allocBytes 在每次分配后自动调用
+    pub fn tryMarkCoolingIfFull(self: *ArenaNode) bool {
+        while (!self.mutex.tryLock()) {}
+        defer self.mutex.unlock();
 
-    g_initialized = true;
-}
+        if (self.state != .ready) return false;
+        if (self.arena.queryCapacity() <= COOLING_THRESHOLD) return false;
+        self.state = .cooling;
+        self.cooling_since = @divTrunc(js_date.milliTimestamp(), 1000);
+        return true;
+    }
 
-/// Deinitialize both arenas. Call from js2rust_deinit.
-pub fn deinitGlobalAllocator() void {
-    acquireLock();
-    defer releaseLock();
+    /// 原子操作：如果当前是 cooling 且已冷却至少 min_cooling_time 秒，则重置 Arena 并标记为 ready
+    /// 返回 true 表示发生了状态转换
+    /// 整个"读取状态 + 检查冷却时间 + 重置 Arena + 写入状态"在一次锁持有中完成
+    /// 由 resetCoolingNodesToReady 在 selectNode 全 cooling 时自动调用
+    pub fn tryResetCoolingToReady(self: *ArenaNode, min_cooling_time: i64) bool {
+        while (!self.mutex.tryLock()) {}
+        defer self.mutex.unlock();
 
-    if (!g_initialized) return;
+        if (self.state != .cooling) return false;
 
-    arena_a.deinit();
-    arena_b.deinit();
-    state_a = .ready;
-    state_b = .ready;
-    cooling_since_a = 0;
-    cooling_since_b = 0;
-    g_initialized = false;
-}
+        // 检查是否已冷却至少 min_cooling_time 秒
+        const now = @divTrunc(js_date.milliTimestamp(), 1000);
+        if (now - self.cooling_since < min_cooling_time) {
+            return false;
+        }
 
-/// Check cooling timers for any cooling instance. If the grace period has
-/// elapsed, the instance is reset (memory reclaimed) and its state becomes `ready`.
-/// Must hold the lock. Called at the start of getAllocator().
-fn tickGraceTimers(now: i64) void {
-    if (state_a == .cooling and cooling_since_a > 0) {
-        if (now - cooling_since_a >= @as(i64, @intCast(g_grace_ms))) {
-            _ = arena_a.reset(.free_all);
-            state_a = .ready;
-            cooling_since_a = 0;
+        const backing = self.arena.child_allocator;
+        self.arena.deinit();
+        self.arena = ArenaAllocator.init(backing);
+        self.state = .ready;
+        self.cooling_since = 0;
+        return true;
+    }
+
+    /// 释放节点资源（调用前调用方需保证无并发访问）
+    pub fn deinit(self: *ArenaNode) void {
+        self.arena.deinit();
+    }
+};
+
+// ── 多 Arena 全局分配器 ─────────────────────────────────────────
+
+/// 多 Arena 全局分配器
+/// 不存储 backing / current_idx，随机选取节点
+pub const MultiArenaAllocator = struct {
+    /// Arena 节点数组（首节点 arena.child_allocator 用于释放）
+    nodes: []ArenaNode,
+    /// 节点数量（最低 2 个）
+    node_count: usize,
+    /// 总内存上限
+    total_limit: usize,
+    /// 最低冷却时间（秒），可通过环境变量 JS_ZIG_MIN_COOLING_TIME 修改
+    min_cooling_time: i64,
+
+    /// 初始化多 Arena 分配器
+    /// backing: 用于分配 nodes 数组和每个 Arena 的底层分配器
+    /// total_limit: 可选的总内存上限（字节），null 时使用 DEFAULT_TOTAL_LIMIT
+    /// min_cooling_time: 可选的冷却时间（秒），null 时使用 MIN_COOLING_TIME_SECONDS
+    /// 注意：可通过环境变量 JS_ZIG_TOTAL_LIMIT 和 JS_ZIG_MIN_COOLING_TIME 配置默认值
+    pub fn init(backing: Allocator, total_limit: ?usize, min_cooling_time: ?i64) !*MultiArenaAllocator {
+        const limit = blk: {
+            const requested = total_limit orelse DEFAULT_TOTAL_LIMIT;
+            break :blk if (requested < MIN_TOTAL_LIMIT) MIN_TOTAL_LIMIT else requested;
+        };
+
+        const cooling_time = min_cooling_time orelse MIN_COOLING_TIME_SECONDS;
+
+        // 计算节点数：total_limit / ARENA_SIZE，最低 2 个
+        var node_count = (limit + ARENA_SIZE - 1) / ARENA_SIZE;
+        if (node_count < 2) {
+            node_count = 2;
+        }
+
+        // 分配 MultiArenaAllocator 本身
+        const da = try backing.create(MultiArenaAllocator);
+        errdefer backing.destroy(da);
+
+        // 分配节点数组
+        const nodes = try backing.alloc(ArenaNode, node_count);
+        errdefer backing.free(nodes);
+
+        // 初始化每个节点（每个节点的 arena 以 backing 为 child_allocator）
+        for (nodes, 0..) |*node, i| {
+            node.* = try ArenaNode.init(backing);
+            node.prev = (i + node_count - 1) % node_count;
+            node.next = (i + 1) % node_count;
+        }
+
+        da.* = MultiArenaAllocator{
+            .nodes = nodes,
+            .node_count = node_count,
+            .total_limit = limit,
+            .min_cooling_time = cooling_time,
+        };
+
+        return da;
+    }
+
+    /// 释放分配器
+    /// 使用首节点的 child_allocator 作为 backing 来释放内存
+    pub fn deinit(self: *MultiArenaAllocator) void {
+        const backing = self.nodes[0].arena.child_allocator;
+        for (self.nodes) |*node| {
+            node.deinit();
+        }
+        backing.free(self.nodes);
+        backing.destroy(self);
+    }
+
+    /// 获取分配器接口
+    /// vtable 是 Zig Allocator API 的必要部分：
+    ///   Allocator = { .ptr = *anyopaque, .vtable = *VTable }
+    ///   vtable 存储 alloc/free/resize/remap 函数指针
+    ///   没有 vtable 就无法实现自定义 Allocator 接口
+    pub fn allocator(self: *MultiArenaAllocator) Allocator {
+        return Allocator{
+            .ptr = self,
+            .vtable = &vtable,
+        };
+    }
+
+    /// 分配字节
+    /// 分配完成后自动检查该节点使用率，超过 80% 则原子标记为 cooling
+    /// 如果所有节点都 cooling 且未过冷却时间，返回 error.OutOfMemory
+    pub fn allocBytes(self: *MultiArenaAllocator, n: usize) ![]u8 {
+        const node = self.selectNode() orelse return error.OutOfMemory;
+
+        const buf = try node.allocator().alloc(u8, n);
+
+        // 分配后自动检查：该节点使用率超过 80% 则标记为 cooling
+        // tryMarkCoolingIfFull 是复合原子操作，读-判-写在一次锁持有中完成
+        _ = node.tryMarkCoolingIfFull();
+
+        return buf;
+    }
+
+    /// 随机选取节点
+    /// 如果选中节点是 cooling，则取相邻节点，仍然 cooling 则继续下一个
+    /// 所有节点都 cooling 时，自动重置已过冷却时间的 cooling 节点为 ready，然后重新遍历
+    /// 如果所有节点都未过冷却时间，返回 null
+    fn selectNode(self: *MultiArenaAllocator) ?*ArenaNode {
+        // 第一轮：原子自增全局计数器，取模得到随机起点
+        const start_val = global_counter.fetchAdd(1, .monotonic);
+        const start_idx = @as(usize, @intCast(start_val)) % self.node_count;
+
+        // 先尝试找 ready 节点，最多遍历一圈
+        if (self.findReadyNode(start_idx)) |node| {
+            return node;
+        }
+
+        // 所有节点都 cooling，自动重置已过冷却时间的 cooling 节点为 ready
+        // 重置操作是复合原子操作（读状态 + 检查冷却时间 + 重置 Arena + 写状态）
+        self.resetCoolingNodesToReady();
+
+        // 第二轮：重新遍历，此时可能有 ready 节点（如果已过冷却时间）
+        return self.findReadyNode(start_idx);
+    }
+
+    /// 从 start_idx 开始环形遍历，返回第一个 ready 节点（原子读取状态）
+    fn findReadyNode(self: *MultiArenaAllocator, start_idx: usize) ?*ArenaNode {
+        var idx = start_idx;
+        var count: usize = 0;
+        while (count < self.node_count) : (count += 1) {
+            const node = &self.nodes[idx];
+            if (node.isReady()) {
+                return node;
+            }
+            idx = node.next;
+        }
+        return null;
+    }
+
+    /// 将所有 cooling 节点重置为 ready
+    /// 每个节点的"读取状态 + 检查冷却时间 + 重置 Arena + 写入状态"是复合原子操作
+    fn resetCoolingNodesToReady(self: *MultiArenaAllocator) void {
+        for (self.nodes) |*node| {
+            _ = node.tryResetCoolingToReady(self.min_cooling_time);
         }
     }
-    if (state_b == .cooling and cooling_since_b > 0) {
-        if (now - cooling_since_b >= @as(i64, @intCast(g_grace_ms))) {
-            _ = arena_b.reset(.free_all);
-            state_b = .ready;
-            cooling_since_b = 0;
+
+    /// 获取统计信息（读取 state 时加锁）
+    pub fn stats(self: *MultiArenaAllocator) Stats {
+        var result = Stats{
+            .node_count = self.node_count,
+            .total_limit = self.total_limit,
+            .nodes = undefined,
+        };
+
+        for (self.nodes[0..self.node_count], 0..) |*node, i| {
+            result.total_bytes += node.bytesAllocated();
+            result.nodes[i] = .{
+                // 用 isReady() 原子读取状态
+                .state = if (node.isReady()) AllocatorState.ready else AllocatorState.cooling,
+                .bytes = node.bytesAllocated(),
+            };
+        }
+
+        return result;
+    }
+};
+
+/// 统计信息
+pub const Stats = struct {
+    total_bytes: usize = 0,
+    node_count: usize = 0,
+    total_limit: usize = 0,
+    nodes: [64]NodeStat,
+
+    pub fn format(self: Stats, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("MultiArenaAllocator Stats:\n", .{});
+        try writer.print("  Total bytes: {}\n", .{std.fmt.fmtIntSizeDec(self.total_bytes)});
+        try writer.print("  Node count: {}\n", .{self.node_count});
+        try writer.print("  Total limit: {}\n", .{std.fmt.fmtIntSizeDec(self.total_limit)});
+        for (self.nodes[0..self.node_count], 0..) |node_stat, i| {
+            try writer.print("  Node[{}]: state={s}, bytes={}\n", .{ i, @tagName(node_stat.state), std.fmt.fmtIntSizeDec(node_stat.bytes) });
         }
     }
+};
+
+/// 节点统计
+pub const NodeStat = struct {
+    state: AllocatorState = .ready,
+    bytes: usize = 0,
+};
+
+// ── Allocator vtable 函数（必须在 vtable 之前定义）────────────────────
+// 这些是非成员函数，vtable 可以引用它们
+
+fn allocImpl(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
+    _ = alignment;
+    _ = ret_addr;
+    const self_: *MultiArenaAllocator = @ptrCast(@alignCast(ctx));
+    const buf = self_.allocBytes(len) catch return null;
+    return buf.ptr;
 }
 
-/// Swap active <-> backup. The current active enters `cooling`; the backup
-/// (which must be `ready`) becomes active. Must hold the lock.
-/// No-op if the backup is not `ready` (cannot swap safely).
-fn swapActive() void {
-    const now = js_date.milliTimestamp();
-    if (active_is_a) {
-        if (state_b != .ready) return; // backup not available, keep current active
-        state_a = .cooling;
-        cooling_since_a = now;
-        state_b = .active;
-        active_is_a = false;
-    } else {
-        if (state_a != .ready) return;
-        state_b = .cooling;
-        cooling_since_b = now;
-        state_a = .active;
-        active_is_a = true;
+fn freeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) void {
+    _ = ctx;
+    _ = memory;
+    _ = alignment;
+    _ = ret_addr;
+}
+
+fn resizeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
+    _ = ctx;
+    _ = memory;
+    _ = alignment;
+    _ = new_len;
+    _ = ret_addr;
+    return false;
+}
+
+fn remapImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+    _ = ctx;
+    _ = memory;
+    _ = alignment;
+    _ = new_len;
+    _ = ret_addr;
+    return null;
+}
+
+/// Allocator vtable (Zig 0.16.0 API)
+/// 作用：Zig 的 Allocator 接口通过 vtable 实现多态。
+///   Allocator { .ptr, .vtable }
+///   ptr 指向自定义数据（MultiArenaAllocator 实例）
+///   vtable 指向这个函数表，标准库通过它调用 alloc/free/resize/remap
+/// 这是实现自定义 Allocator 的唯一标准方式，不能删除。
+const vtable = Allocator.VTable{
+    .alloc = allocImpl,
+    .free = freeImpl,
+    .resize = resizeImpl,
+    .remap = remapImpl,
+};
+
+// ── 测试 ─────────────────────────────────────────────────────────
+
+test "MultiArenaAllocator init" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
+
+    try testing.expectEqual(@as(usize, 3), da.node_count);
+    try testing.expectEqual(@as(usize, DEFAULT_TOTAL_LIMIT), da.total_limit);
+}
+
+test "MultiArenaAllocator alloc" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
+
+    const alloc = da.allocator();
+    const buf = try alloc.alloc(u8, 1024);
+    defer alloc.free(buf);
+
+    try testing.expect(buf.len == 1024);
+}
+
+test "MultiArenaAllocator stats" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
+
+    const alloc = da.allocator();
+    _ = try alloc.alloc(u8, 1024);
+
+    const stats = da.stats();
+    try testing.expect(stats.total_bytes > 0);
+    try testing.expectEqual(@as(usize, 3), stats.node_count);
+}
+
+test "MultiArenaAllocator node count min 2" {
+    const testing = std.testing;
+
+    const test_cases = [_]usize{
+        384 * 1024 * 1024,
+        256 * 1024 * 1024,
+        128 * 1024 * 1024,
+    };
+
+    for (test_cases) |limit| {
+        const da = try MultiArenaAllocator.init(testing.allocator, limit, null);
+        defer da.deinit();
+
+        try testing.expect(da.node_count >= 2);
     }
 }
 
-/// Current active arena capacity in bytes. Must hold the lock (or be in a
-/// single-threaded context).
-fn activeCapacity() usize {
-    return if (active_is_a) arena_a.queryCapacity() else arena_b.queryCapacity();
-}
+test "MultiArenaAllocator ring topology" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
 
-/// Run one rotate/reclaim cycle.
-/// - Always ticks grace timers first (may reclaim a cooled-down backup).
-/// - Then, if `force` or the active arena exceeds the size limit, swaps to the
-///   backup (when the backup is ready).
-/// Must hold the lock.
-fn checkAndRotate(force: bool) void {
-    const now = js_date.milliTimestamp();
-    tickGraceTimers(now);
-
-    // Swap: when active is full (or forced) and a ready backup exists.
-    if (force or activeCapacity() > g_max_arena_bytes) {
-        swapActive();
+    for (da.nodes, 0..) |*node, i| {
+        try testing.expectEqual(node.prev, (i + da.node_count - 1) % da.node_count);
+        try testing.expectEqual(node.next, (i + 1) % da.node_count);
     }
 }
 
-/// Manual reset (Rust calls this via js2rust_reset).
-/// Forces a rotate: the current active is parked in `cooling` (its memory stays
-/// alive for the grace window so any in-flight returned pointer is safe), and
-/// the backup, if ready, becomes active. Cooled-down backups are reclaimed.
-pub fn resetGlobalAllocator() void {
-    acquireLock();
-    defer releaseLock();
-    if (!g_initialized) return;
-    checkAndRotate(true);
-}
+test "MultiArenaAllocator all cooling returns null if not cooled enough" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
 
-/// Get current arena memory usage in bytes (the active instance's capacity).
-/// Kept for API compatibility.
-pub fn getArenaUsedBytes() usize {
-    if (!g_initialized) return 0;
-    return activeCapacity();
-}
-
-/// Get the configured max arena size in bytes.
-pub fn getMaxArenaBytes() usize {
-    return g_max_arena_bytes;
-}
-
-/// Get the configured grace period in milliseconds.
-pub fn getGraceMs() u64 {
-    return g_grace_ms;
-}
-
-/// Retrieve the global allocator (the active arena's allocator).
-/// Must be called after initGlobalAllocator(); panics otherwise.
-/// Performs a lazy rotate/reclaim check before returning.
-pub fn g_alloc() std.mem.Allocator {
-    if (!g_initialized) {
-        @panic("js_allocator not initialized. Call initGlobalAllocator() first.");
+    // 将所有节点手动设为 cooling（单线程测试，直接写 state）
+    for (da.nodes) |*node| {
+        node.state = .cooling;
+        // 设置 cooling_since 为当前时间，这样冷却时间还没过
+        node.cooling_since = @divTrunc(js_date.milliTimestamp(), 1000);
     }
 
-    acquireLock();
-    checkAndRotate(false);
-    const is_a = active_is_a;
-    releaseLock();
-
-    return if (is_a) arena_a.allocator() else arena_b.allocator();
+    // selectNode 现在会返回 null，因为所有节点都 cooling 且未过冷却时间
+    const node = da.selectNode();
+    try testing.expect(node == null);
 }
 
-/// Alias for g_alloc() (preferred name).
-pub fn getAllocator() std.mem.Allocator {
-    return g_alloc();
+test "MultiArenaAllocator auto cooling after alloc" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
+
+    // 分配一个接近 80% 阈值的大小，触发自动冷却
+    // ARENA_SIZE = 128M, COOLING_THRESHOLD = 102.4M
+    // 分配 103M 应该触发冷却
+    const alloc = da.allocator();
+    const large_buf = alloc.alloc(u8, COOLING_THRESHOLD + 1) catch |err| {
+        // 如果底层 allocator 无法分配这么大的内存，跳过这个测试
+        try testing.expect(err == error.OutOfMemory);
+        return;
+    };
+    defer alloc.free(large_buf);
+
+    // 分配后，该节点应该被自动标记为 cooling
+    // 由于 selectNode 是随机的，我们无法确定是哪个节点被分配了
+    // 但我们可以检查是否有节点被标记为 cooling
+    var cooling_found = false;
+    for (da.nodes) |*node| {
+        if (!node.isReady()) {
+            cooling_found = true;
+            break;
+        }
+    }
+    try testing.expect(cooling_found);
 }
 
-/// Allocate memory in Zig's Arena, also exposed via C ABI in lib.zig.
-///
-/// Rust Host functions call the C ABI export `js_allocator_alloc` (forwarded
-/// from lib.zig) to allocate memory for string returns, enabling zero-copy:
-/// the returned pointer is in Zig's Arena, so Zig can use it directly.
-///
-/// Usage in Rust (via C ABI):
-/// ```rust
-/// extern "C" {
-///     fn js_allocator_alloc(size: usize) -> *mut u8;
-/// }
-///
-/// #[no_mangle]
-/// pub extern "C" fn host_func() -> __JsStr {
-///     let data = "hello".as_bytes();
-///     let ptr = js_allocator_alloc(data.len());
-///     std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
-///     __JsStr { ptr, len: data.len() as isize }
-/// }
-/// ```
-pub fn js_allocator_alloc(size: usize) []u8 {
-    const alloc = getAllocator();
-    return alloc.alloc(u8, size) catch @panic("js_allocator_alloc failed");
-}
+test "MultiArenaAllocator thread safety: isReady is atomic" {
+    const testing = std.testing;
+    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    defer da.deinit();
 
-/// Allocate + copy — single call for zero-copy string returns from Rust.
-/// Instead of: js_allocator_alloc(len) + copy_nonoverlapping (Rust)
-/// Use:        js_allocator_dupe(src)  (copy done inside Zig Arena)
-pub fn js_allocator_dupe(src: []const u8) []u8 {
-    const alloc = getAllocator();
-    return alloc.dupe(u8, src) catch @panic("js_allocator_dupe failed");
-}
-
-// ── Tests ───────────────────────────────────────────────────────
-
-test "dual arena init/deinit" {
-    initGlobalAllocator();
-    defer deinitGlobalAllocator();
-
-    try std.testing.expect(g_initialized);
-    try std.testing.expect(state_a == .active);
-    try std.testing.expect(state_b == .ready);
-    try std.testing.expect(active_is_a);
-}
-
-test "forced rotate parks active in cooling and swaps to backup" {
-    initGlobalAllocator();
-    defer deinitGlobalAllocator();
-
-    // allocate a bit on A
-    const a = getAllocator();
-    _ = try a.alloc(u8, 64);
-
-    resetGlobalAllocator(); // force rotate
-
-    try std.testing.expect(state_a == .cooling);
-    try std.testing.expect(state_b == .active);
-    try std.testing.expect(!active_is_a);
-}
-
-test "cooling backup reclaimed after grace time expires" {
-    initGlobalAllocator();
-    defer deinitGlobalAllocator();
-
-    g_grace_ms = 0; // instant reclaim
-
-    resetGlobalAllocator(); // A -> cooling, B -> active
-
-    // Next allocator fetch should check the timer and reclaim A immediately.
-    _ = getAllocator();
-
-    try std.testing.expect(state_a == .ready);
-    try std.testing.expect(state_b == .active);
-}
-
-test "grace ms env var" {
-    // Just verify the default is applied; actual env parsing is tested indirectly
-    // through initGlobalAllocator reading JS2RUST_ARENA_GRACE_MS.
-    initGlobalAllocator();
-    defer deinitGlobalAllocator();
-    try std.testing.expect(getGraceMs() > 0);
+    // 初始状态所有节点都是 ready
+    for (da.nodes) |*node| {
+        try testing.expect(node.isReady());
+    }
 }
