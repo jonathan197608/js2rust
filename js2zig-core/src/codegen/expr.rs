@@ -32,6 +32,14 @@ impl Codegen {
             }
             Expression::Identifier(id) => {
                 let var_name = id.name.as_str();
+                // 🔘 arguments object: not supported — generate @compileError
+                if var_name == "arguments" {
+                    self.compile_error(
+                        id.span,
+                        "arguments object is not supported. Use rest parameters (...args) instead.",
+                    );
+                    return;
+                }
                 // Check if this identifier is a captured variable in the current closure.
                 // If so, rewrite to self.var_name (value capture) or self.var_name.* (ref capture).
                 if !self.current_captured.is_empty()

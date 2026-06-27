@@ -7646,4 +7646,480 @@ export function testPerson() {
         // Verify: this.#age → self.age
         assert!(zig.contains("self.age"), "Expected self.age. Got:\n{}", zig);
     }
+
+    // ── 🔘 不实现特性检查 ─────────────────────────────────────────────
+    // 验证所有标记为 🔘 不实现的特性都能报编译错误
+    // 合格标准：result.errors 非空 或 zig_code 包含 @compileError
+
+    /// Helper: assert that a 🔘 feature produces a compile error.
+    /// Either `result.errors` is non-empty, or `zig_code` contains `@compileError`.
+    fn assert_not_implemented(js: &str, feature_name: &str) {
+        let result = parse_and_transpile(js, None);
+        match result {
+            Ok(result) => {
+                // Check if there are errors
+                if !result.errors.is_empty() {
+                    println!(
+                        "[✅ PASS] {}: transpiler returned errors: {:?}",
+                        feature_name, result.errors
+                    );
+                    return;
+                }
+                // Check if generated code contains @compileError
+                if result.zig_code.contains("@compileError") {
+                    println!(
+                        "[✅ PASS] {}: generated code contains @compileError",
+                        feature_name
+                    );
+                    return;
+                }
+                // Neither: this is a problem!
+                panic!(
+                    "[❌ FAIL] {}: feature is marked 🔘 but transpiler did NOT produce an error!\n\
+                     Generated Zig code (first 500 chars):\n{}\n\
+                     THIS MEANS THE TRANSPILER SILENTLY GENERATED CODE FOR AN UNSUPPORTED FEATURE.\n\
+                     Please add @compileError or return an error for this feature.",
+                    feature_name,
+                    &result.zig_code[..result.zig_code.len().min(500)]
+                );
+            }
+            Err(e) => {
+                // Transpiler returned Err: also acceptable
+                println!("[✅ PASS] {}: transpiler returned Err: {}", feature_name, e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_not_implemented_bigint_literal() {
+        // 🔘 BigInt 字面量: 123n
+        assert_not_implemented("const x = 123n;", "BigInt literal (123n)");
+    }
+
+    #[test]
+    fn test_not_implemented_tagged_template() {
+        // 🔘 标签模板: tag`...`
+        assert_not_implemented(
+            r#"
+function tag(parts, ...args) { return parts[0]; }
+const result = tag`hello ${1}`;
+"#,
+            "Tagged template literal",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_instanceof() {
+        // 🔘 instanceof 运算符
+        assert_not_implemented(
+            r#"
+function check(arr) {
+    return arr instanceof Array;
+}
+"#,
+            "instanceof operator",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_class_expression() {
+        // 🔘 类表达式: const X = class {}
+        assert_not_implemented(
+            r#"
+const X = class { constructor(x) { this.x = x; } };
+"#,
+            "Class expression (const X = class {})",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_generator_function() {
+        // 🔘 function*: 生成器函数
+        assert_not_implemented(
+            r#"
+function* gen() { yield 1; yield 2; }
+"#,
+            "Generator function (function*)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_yield_expression() {
+        // 🔘 yield: 生成器 yield 表达式
+        assert_not_implemented(
+            r#"
+function* gen() { yield 1; }
+const g = gen();
+const val = g.next().value;
+"#,
+            "Yield expression (inside generator)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_async_generator() {
+        // 🔘 async function*: 异步生成器
+        assert_not_implemented(
+            r#"
+async function* gen() { yield 1; }
+"#,
+            "Async generator (async function*)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_dynamic_import() {
+        // 🔘 动态 import(): import("module")
+        assert_not_implemented(
+            r#"
+const mod = import("some_module");
+"#,
+            "Dynamic import()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_new_target() {
+        // 🔘 new.target: meta property
+        assert_not_implemented(
+            r#"
+function Foo() {
+    if (new.target) { return 1; }
+    return 0;
+}
+"#,
+            "new.target meta property",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_for_await_of() {
+        // 🔘 for await...of: 异步迭代
+        assert_not_implemented(
+            r#"
+async function process(items) {
+    for await (const item of items) { }
+}
+"#,
+            "for await...of (async iteration)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_import_meta() {
+        // 🔘 import.meta: ES 模块元数据
+        assert_not_implemented(
+            r#"
+const url = import.meta.url;
+"#,
+            "import.meta (ES module metadata)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_with_statement() {
+        // 🔘 with 语句: with (obj) {}
+        assert_not_implemented(
+            r#"
+const obj = { x: 1 };
+with (obj) { console.log(x); }
+"#,
+            "with statement",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_debugger_statement() {
+        // 🔘 debugger 语句
+        assert_not_implemented(
+            r#"
+function buggy() {
+    debugger;
+}
+"#,
+            "debugger statement",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_arguments_object() {
+        // 🔘 arguments 对象
+        assert_not_implemented(
+            r#"
+function sum() {
+    let total = 0;
+    for (let i = 0; i < arguments.length; i++) { total += arguments[i]; }
+    return total;
+}
+"#,
+            "arguments object",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_static_block() {
+        // 🔘 static {}: 静态初始化块
+        assert_not_implemented(
+            r#"
+class Foo {
+    static x = 1;
+    static { console.log("static block"); }
+}
+"#,
+            "Static initialization block (static {})",
+        );
+    }
+
+    // ── 🔘 不实现内置对象方法 ─────────────────────────────────────────
+
+    #[test]
+    fn test_not_implemented_array_with() {
+        // 🔘 Array.prototype.with(): ES2023 不可变方法
+        assert_not_implemented(
+            r#"
+function test() {
+    const arr = [1, 2, 3];
+    return arr.with(0, 99);
+}
+"#,
+            "Array.prototype.with()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_array_to_reversed() {
+        // 🔘 Array.prototype.toReversed(): ES2023 不可变方法
+        assert_not_implemented(
+            r#"
+function test() {
+    const arr = [1, 2, 3];
+    return arr.toReversed();
+}
+"#,
+            "Array.prototype.toReversed()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_string_raw() {
+        // 🔘 String.raw: 标签模板静态方法
+        assert_not_implemented(
+            r#"
+function test() {
+    return String.raw`hello\nworld`;
+}
+"#,
+            "String.raw (tagged template static method)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_map_group_by() {
+        // 🔘 Map.groupBy(): ES2024 静态方法
+        assert_not_implemented(
+            r#"
+function groupByAge(people) {
+    return Map.groupBy(people, (p) => p.age > 18 ? "adult" : "child");
+}
+"#,
+            "Map.groupBy() (ES2024)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_set_operations() {
+        // 🔘 Set.prototype.difference() etc: ES2025 Set 操作
+        assert_not_implemented(
+            r#"
+function test() {
+    const a = new Set([1, 2, 3]);
+    const b = new Set([2, 3, 4]);
+    return a.difference(b);
+}
+"#,
+            "Set.prototype.difference() (ES2025)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_object_get_own_property_symbols() {
+        // 🔘 Object.getOwnPropertySymbols(): Symbol 属性
+        assert_not_implemented(
+            r#"
+function test(obj) {
+    return Object.getOwnPropertySymbols(obj);
+}
+"#,
+            "Object.getOwnPropertySymbols()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_object_group_by() {
+        // 🔘 Object.groupBy(): ES2024 静态方法
+        assert_not_implemented(
+            r#"
+function test() {
+    const items = [{ name: "a", age: 1 }, { name: "b", age: 2 }];
+    return Object.groupBy(items, (item) => item.age > 1 ? "adult" : "child");
+}
+"#,
+            "Object.groupBy() (ES2024)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_date_set_time() {
+        // 🔘 Date.prototype.setTime(): 很少用，用 new Date(ms) 替代
+        assert_not_implemented(
+            r#"
+function test() {
+    const d = new Date();
+    return d.setTime(0);
+}
+"#,
+            "Date.prototype.setTime()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_date_to_utc_string() {
+        // 🔘 Date.prototype.toUTCString(): 用 toISOString() 替代
+        assert_not_implemented(
+            r#"
+function test() {
+    const d = new Date();
+    return d.toUTCString();
+}
+"#,
+            "Date.prototype.toUTCString()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_eval() {
+        // 🔘 eval(): 安全风险，编译时无法动态执行
+        assert_not_implemented(
+            r#"
+function test() {
+    return eval("1 + 2");
+}
+"#,
+            "eval() (security risk)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_regexp_source() {
+        // 🔘 RegExp.prototype.source: 高级正则用法
+        assert_not_implemented(
+            r#"
+function test() {
+    const re = /abc/g;
+    return re.source;
+}
+"#,
+            "RegExp.prototype.source",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_promise() {
+        // 🔘 new Promise(): 建议用 async/await + Io 替代
+        assert_not_implemented(
+            r#"
+function test() {
+    const p = new Promise((resolve, reject) => { resolve(1); });
+    return p;
+}
+"#,
+            "new Promise() (use async/await instead)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_weakmap() {
+        // 🔘 WeakMap: Zig 内存管理不同
+        assert_not_implemented(
+            r#"
+function test() {
+    const wm = new WeakMap();
+    return wm;
+}
+"#,
+            "WeakMap (Zig memory model different)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_weakset() {
+        // 🔘 WeakSet: Zig 内存管理不同
+        assert_not_implemented(
+            r#"
+function test() {
+    const ws = new WeakSet();
+    return ws;
+}
+"#,
+            "WeakSet (Zig memory model different)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_reflect() {
+        // 🔘 Reflect: 反射 API，Zig 不需要
+        assert_not_implemented(
+            r#"
+function test(obj) {
+    return Reflect.has(obj, "x");
+}
+"#,
+            "Reflect API (not needed in Zig)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_intl() {
+        // 🔘 Intl: 国际化，可调用 Zig/C 库
+        assert_not_implemented(
+            r#"
+function test() {
+    const fmt = new Intl.NumberFormat("en-US");
+    return fmt.format(1234.5);
+}
+"#,
+            "Intl (use Zig/C library instead)",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_bigint_function() {
+        // 🔘 BigInt(): 大整数构造函数
+        assert_not_implemented(
+            r#"
+function test() {
+    return BigInt(123);
+}
+"#,
+            "BigInt() constructor",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_atomics() {
+        // 🔘 Atomics: 共享内存原子操作，niche 场景
+        assert_not_implemented(
+            r#"
+function test(arr) {
+    return Atomics.load(arr, 0);
+}
+"#,
+            "Atomics (niche scenario)",
+        );
+    }
+
+    // ── 🔘 汇总测试：运行所有测试并输出汇总报告 ─────────────────────
+    // 注意：以上每个测试独立运行。如需汇总报告，运行：
+    //   cargo test test_not_implemented_ -- --nocapture
+    // 将输出每个特性的测试结果。
 }

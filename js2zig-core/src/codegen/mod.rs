@@ -238,6 +238,13 @@ impl Codegen {
                     None => { /* skip (e.g., export {{ ... }} */ }
                 }
             }
+            // 🔘 with statement: not supported (deprecated in strict mode)
+            Statement::WithStatement(ws) => {
+                self.compile_error_stmt(
+                    ws.span,
+                    "with statement is not supported and deprecated in strict mode. Use explicit property access instead.",
+                );
+            }
             _ => { /* skip */ }
         }
     }

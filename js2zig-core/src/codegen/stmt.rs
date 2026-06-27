@@ -1367,6 +1367,13 @@ impl Codegen {
                     self.writeln("};");
                 }
             }
+            Statement::WithStatement(_ws) => {
+                // 🔘 with statement: not supported (deprecated in strict mode)
+                self.compile_error_stmt(
+                    GetSpan::span(stmt),
+                    "with statement is not supported and deprecated in strict mode. Use explicit property access instead.",
+                );
+            }
             _ => {
                 // Unsupported statement type: generate @compileError
                 self.write_indent();
@@ -1555,6 +1562,14 @@ impl Codegen {
     // Zig: for (iterable) |x| { ... }
     //  Map/Set: var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const x = __kv.key_ptr.*; ... }
     fn emit_for_of(&mut self, fos: &ForOfStatement) {
+        // 🔘 for await...of: not supported
+        if fos.r#await {
+            self.compile_error_stmt(
+                GetSpan::span(fos),
+                "for await...of is not supported. Use synchronous for...of instead.",
+            );
+            return;
+        }
         // Map / Set → HashMap iterator pattern
         if self.detect_map_set_iter(&fos.right, fos) {
             return;
@@ -2811,6 +2826,13 @@ impl Codegen {
                     if pd.r#static && !pd.computed => {
                         self.emit_static_field_init(pd);
                     }
+                // 🔘 static {} blocks: not supported — generate @compileError
+                ClassElement::StaticBlock(sb) => {
+                    self.compile_error_stmt(
+                        sb.span,
+                        "static {} blocks are not supported. Use static field initializers instead.",
+                    );
+                }
                 _ => {}
             }
         }
