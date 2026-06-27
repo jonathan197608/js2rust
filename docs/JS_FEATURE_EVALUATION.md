@@ -261,7 +261,7 @@
 | 动态 `import()` | 需使用静态 `import` | 🟡 P3（ES 模块动态导入） |
 | 私有字段 `#field` | 不支持 | 🟡 P3（ES2022，现代 JS 封装） |
 | `new.target` | meta property not supported | 🔘 不实现（meta property，niche） |
-| Spread 参数 `fn(...args)` | `Spread argument not supported` | 🔴 P2（ES2015 常用） |
+| Spread 参数 `fn(...args)` | ✅ `.items` 展开传递 | `emit_expr_arg()` 处理 SpreadElement |
 | `for await...of` | `Promise.{}() not supported` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `Unsupported expression type` | 🔘 不实现（已在 2.12 标记） |
 | `import.meta` | 未实现 (ES 模块元数据) | 🔘 不实现（ES 模块元数据，niche） |
@@ -1164,10 +1164,10 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - `Math.hypot(...v)` — Zig 有 `std.math.hypot`
 - ~~`new Date()` 构造函数 + `.toISOString()/.getMilliseconds()/.getTimezoneOffset()` + UTC getter 系列~~ ✅ 已完成 (#729 + Phase 3b/3c)
 - ~~`Symbol` — 现代 JS 常用（iterable 协议等）~~ 🟡 部分实现（基础 Symbol() 已完成，iterable 协议 for-of 仅 Array）
-- Spread 参数 `fn(...args)` — ES2015 常用
+- ~~Spread 参数 `fn(...args)` — ES2015 常用~~ ✅ 已完成（`emit_expr_arg` → `.items` 展开，rest 参数支持）
 
 **中价值（P1，延后实现）：**
-- `void` / `delete` — 偶尔使用（但已有替代）
+- ~~`void` / `delete` — 偶尔使用（但已有替代）~~ ✅ 已完成（#703/#704）
 - `instanceof` — 类型检查（但 Zig 有更好类型系统）
 - `arguments` 对象 — 传统函数（但箭头函数已替代）
 - `function*` / `yield` / `yield*` — 生成器，现代 JS 高级特性
@@ -1189,9 +1189,9 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | 不实现（🔘） | ~13 (~9%) | ~13 (~9%) | -1 (Math.hypot → P1) |
 | 内置对象有效覆盖率 | ~62% | ~63% | +1% |
 
-> **说明**：不实现类别（Symbol/WeakMap/Reflect/Intl/BigInt/Atomics）共 ~70 个方法，标记为不实现后，有效覆盖率下降至 ~62%。这些类别实际项目中很少用到，不影响核心转译功能。
+> **说明**：不实现类别（WeakMap/Reflect/Intl/BigInt/Atomics）共 ~50 个方法。Symbol 已部分实现（P3），不在此列。这些类别实际项目中很少用到，不影响核心转译功能。
 >
-> **本次更新 (2026-06-27 夜间)**: 审计发现 4 个 P1 特征已实现但文档未标记（`Date.parse`/`Date.UTC`/`**=` 等赋值运算符/`RegExp.exec`），已全部修正为 ✅。新增实现 `Object.fromEntries()`，完整流水线（检测→发射→运行时），267 tests ✅。
+> **本次更新 (2026-06-27 下午)**: 同步任务列表状态，修正 3 处文档不准确：Spread 参数标记为 ✅（已实现）、void/delete 标记为 ✅（#703/#704）、Symbol 从"不实现"移至"P3 部分实现"（#737-#739）。
 
 ---
 
@@ -1228,6 +1228,6 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ---
 
-**文档版本**: 2.13  
-**最后更新**: 2026-06-27 (夜间更新 #4 — Symbol + iterable 协议 for-of 决策：Array-only 部分支持，Map/Set 需手动迭代)  
+**文档版本**: 2.14  
+**最后更新**: 2026-06-27 (下午 — 任务列表同步：修正 Spread/void/delete 状态 + Symbol 分类)  
 **作者**: jonathan197608
