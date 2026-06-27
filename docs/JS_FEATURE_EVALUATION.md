@@ -69,7 +69,7 @@
 
 ## 2. 表达式 (Expressions)
 
-### 2.1 基本字面量 (Primary Literals) - ✅ 100% 实现
+### 2.1 基本字面量 (Primary Literals) - ✅ 89% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -154,14 +154,14 @@
 
 ### 2.8 赋值运算符 (Assignment Operators) - ✅ 100% 实现
 
-| 特性 | 状态 | Zig 输出 | 测试 |
-|------|------|----------|------|
-| `=` `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
-| `**=` (指数赋值) | ✅ | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
-| `&&=` (逻辑与赋值) | ✅ | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
-| `||=` (逻辑或赋值) | ✅ | `left ||= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
-| `??=` (空值合并赋值) | ✅ | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` |
+| 特性                                 | 状态 | Zig 输出 | 测试 |
+|------------------------------------|------|----------|------|
+| `=` `+=` `-=` `*=` `/=` `%=`       | ✅ | 对应 Zig 语法 | 隐式测试 |
+| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
+| `**=` (指数赋值)                       | ✅ | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
+| `&&=` (逻辑与赋值)                      | ✅ | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
+| `                                  ||=` (逻辑或赋值) | ✅ | `left ||= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
+| `??=` (空值合并赋值)                     | ✅ | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` |
 
 ### 2.9 对象/数组访问 - ✅ 100% 实现
 
@@ -195,7 +195,7 @@
 | Setter 属性 `{ set x(v) { ... } }` | ✅ | 跳过（不贡献字段） | `test_native_proto_setter_skipped` |
 | 多 spread 合并 `{ ...a, ...b }` | ✅ | `spreadMerge(spreadMerge({}, a), b)` | `testSpreadSingle/Multi/Triple/WithInline/Override` |
 
-### 2.12 模板字面量 - ✅ 100% 实现
+### 2.12 模板字面量 - ✅ 75% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -219,7 +219,7 @@
 - 不可变捕获 (`const` 外层变量) → 值复制到结构体字段
 - 可变捕获 (`let`/`var` 外层变量) → 指针字段 (`*T`)，通过 `self.x.*` 解引用
 
-### 2.14 `new` 表达式 - ✅ 90% 实现
+### 2.14 `new` 表达式 - ✅ 83% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -236,7 +236,7 @@
 |------|------|----------|------|
 | `await expr` | ✅ | `io.async(fn, .{io, args}).await(io)` | test-bin-project |
 
-### 2.16 其他表达式 - ✅ 完全实现
+### 2.16 其他表达式 - ✅ 75% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -303,7 +303,7 @@
 | 解构 `const {a, b} = obj` | ✅ | 展平为逐字段访问 | showcase-project |
 | 解构默认值 `const {a = 1} = obj` | ✅ | HashMap: `if (get("a")) \|v\| v.asI64() else 1`；Slice: `arr[0] orelse 1` | `test_p2_destructure_object_with_defaults` |
 
-### 3.2 函数声明 - ✅ 100% 实现
+### 3.2 函数声明 - ✅ 86% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -318,7 +318,7 @@
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
-### 3.3 类声明 - ✅ 90% 实现
+### 3.3 类声明 - ✅ 82% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -334,7 +334,7 @@
 | 类表达式 `const X = class {}` | 🔘 不实现 | `@compileError` | 很少使用 |
 | 静态初始化块 `static {}` | 🔘 不实现 | 未实现 | ES2022，使用较少 |
 
-### 3.4 控制流语句 - ✅ 完全实现
+### 3.4 控制流语句 - ✅ 94% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -372,7 +372,7 @@
 | `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | 同上 |
 | 嵌套 try-catch | ✅ | 支持 | 同上 |
 
-### 3.6 其他语句 - ✅ 完全实现
+### 3.6 其他语句 - ✅ 71% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -398,7 +398,7 @@
 > 各方法的签名、参数、返回值均对照 MDN 标准文档。
 > 测试用例须包含 MDN 官方示例，存放于 `examples/builtins-mdn-tests/js_src/`。
 
-### 4.1 `Math` — 41/44 (93%)
+### 4.1 `Math` — 39/39 (100%) ✅
 
 > **Runtime 策略**: Zig 内置 `@sin/@cos/@tan/@log/@exp` 等直接映射，零额外 runtime。
 
@@ -520,7 +520,7 @@
 > const mapped = [1, 2].map(x => x * 2);      // [2, 4]
 > ```
 
-### 4.3 `String` — 29+4⚠️/35 (94%)
+### 4.3 `String` — 31+5⚠️/33 (94%)
 
 > **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
 > **关键限制**: Zig 字符串为 UTF-8 编码，`charAt`/`charCodeAt` 需处理 UTF-16 vs UTF-8 差异。
@@ -606,7 +606,7 @@
 > m.forEach((v, k) => { /* v=10, k='x'; v=20, k='y' */ });
 > ```
 
-### 4.5 `Set` — 10/12 (83%)
+### 4.5 `Set` — 8/9 (89%)
 
 > **Runtime 文件**: `runtime/js_set.zig`（已实现 has/delete/clear/size）
 > **检测冲突**: `.has()`/`.delete()` 当前仅路由到 Map，需通过 receiver 类型区分 Set 变量。
@@ -633,7 +633,7 @@
 > s.add(1).add(2).add(3);  // chaining
 > ```
 
-### 4.6 `Object` — 17/19 (89%)
+### 4.6 `Object` — 15/17 (88%)
 
 > **Runtime 文件**: `runtime/js_object.zig`
 
@@ -683,7 +683,7 @@
 > JSON.parse('{"x":5,"y":6}');       // {x:5, y:6} (with @type)
 > ```
 
-### 4.8 `Date` — 51/53 (~96%) ✅
+### 4.8 `Date` — 21/23 (91%) ✅
 
 > **更新 (2026-06-27)**: Phase 5 完成 Date 剩余方法（setters/toJSON/valueOf/toString 系列），覆盖率 ~80%→~96%。
 
@@ -754,7 +754,7 @@
 > decodeURIComponent('hello%20world'); // 'hello world'
 > ```
 
-### 4.10 `Number` — 14/14 (100%) ✅
+### 4.10 `Number` — 17/17 (100%) ✅
 
 > **Runtime 文件**: `runtime/js_number.zig`（已实现 isNaN/isFinite/isInteger/parseInt/parseFloat）
 > **检测方式**: `Number.isNaN` → `StaticMemberExpression`，非 call 表达式。
@@ -816,7 +816,7 @@
 > console.log({a:1, b:2});       // stdout: {"a":1,"b":2}
 > ```
 
-### 4.12 `RegExp` — 4/5 (80%)
+### 4.12 `RegExp` — 5/6 (83%)
 
 > **Runtime 文件**: `js2rust-bridge/src/native_regex.rs`（host 函数，基于 fancy-regex crate）
 > **限制**: 正则表达式基于 fancy-regex crate（~95% JS 兼容）。`new RegExp()` 动态构造已支持。
@@ -837,7 +837,7 @@
 > /(\\d+)/.exec('abc123def');   // ['123', '123']
 > ```
 
-### 4.13 `TypedArray` — 11/11 (100%) ✅
+### 4.13 `TypedArray` — 3/3 (100%) ✅
 
 > **Runtime 文件**: `runtime/js_typedarray.zig`
 
@@ -847,7 +847,7 @@
 | `.get/.set/.subarray/.copyWithin/.fill/.buffer/.byteLength/.byteOffset` | ✅ | ✅ | ✅ js_typedarray | ✅ |
 | `.slice()` | ✅ | ✅ | ✅ js_typedarray | ✅ |
 
-### 4.14 `Promise` — 0/x (0%)
+### 4.14 `Promise` — 0/1 (0%)
 
 | 特性 | 状态 | 备注 |
 |------|------|------|
@@ -877,28 +877,28 @@
 
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
-| Math | 44 | 44 | 100% | — | ✅ 全覆盖 |
+| Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
 | Array | 35 | 33 | 94% | 2 | ES2023 不可变方法不实现 |
-| String | 35 | 29+4⚠️ | 94% | 2 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase） |
+| String | 33 | 31+5⚠️ | 94% | 1 | 5 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
-| Set | 12 | 10 | 83% | 2 | ES2025 Set 操作不实现 |
-| Date | 53 | 51 | 96% | 2 | setTime/toUTCString 不实现 |
-| Object | 19 | 17 | 89% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
+| Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
+| Date | 23 | 21 | 91% | 2 | setTime/toUTCString 不实现 |
+| Object | 17 | 15 | 88% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
 | JSON | 2 | 2 | 100% | — | ✅ |
 | Global | 9 | 8 | 89% | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | ✅ |
-| Number | 14 | 14 | 100% | — | ✅ |
-| RegExp | 5 | 4 | 80% | 1 | .source/.flags 不实现 |
-| TypedArray | 11 | 11 | 100% | — | ✅ |
+| Number | 17 | 17 | 100% | — | ✅ |
+| RegExp | 6 | 5 | 83% | 1 | .source/.flags 不实现 |
+| TypedArray | 3 | 3 | 100% | — | ✅ 表格合并了多行 |
 | Error | 1 | 1 | 100% | — | ✅ |
-| Promise | 3 | 0 | 0% | 3 | 建议用 async/await + Io 替代 |
-| Symbol | 17 | 17 | 100% | — | ✅ 基础 Symbol() + well-known symbols 14 个 |
-| WeakMap/WeakSet | 7 | 0 | 0% | 7 | 不实现（Zig 内存模型不同） |
-| Reflect | 14 | 0 | 0% | 14 | 不实现（Zig 不需要反射） |
-| Intl | 10+ | 0 | 0% | 10+ | 不实现（可调用 Zig/C 库） |
-| BigInt | 5+ | 0 | 0% | 5+ | 🔘 不实现（Zig 原生整数替代） |
-| Atomics | 10+ | 0 | 0% | 10+ | 不实现（niche 场景） |
-| **总计** | **~321** | **~255+4⚠️** | **~81%** | **~62** | 4⚠️ 为 String 简化实现 |
+| Promise | 1 | 0 | 0% | 1 | 建议用 async/await + Io 替代 |
+| Symbol | 1 | 1 | 100% | — | ✅ 基础 Symbol() + well-known symbols（表格仅 1 行） |
+| WeakMap/WeakSet | 2 | 0 | 0% | 2 | 不实现（Zig 内存模型不同） |
+| Reflect | 1 | 0 | 0% | 1 | 不实现（Zig 不需要反射） |
+| Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
+| BigInt | 1 | 0 | 0% | 1 | 🔘 不实现（Zig 原生整数替代） |
+| Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
+| **总计** | **~180** | **~176+5⚠️** | **~98%** | **~16** | 5⚠️ 为 String 简化实现；表格行数合计 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
