@@ -14,6 +14,7 @@ pub const js_date = @import("js_date.zig");
 pub const js_error = @import("js_error.zig");
 pub const js_collections = @import("js_collections.zig");
 pub const js_regexp = @import("js_regexp.zig");
+pub const js_symbol = @import("js_symbol.zig");
 pub const js_uri = @import("js_uri.zig");
 pub const jsvalue = @import("jsvalue.zig");
 pub const jsany = @import("jsany.zig");

@@ -108,6 +108,9 @@ pub enum ZigType {
     /// Used for JSON.parse() return type and dynamic property access.
     /// Allows runtime type coercion via asI64(), asF64(), asBool(), asString().
     JsAny,
+    /// Symbol value (JsSymbol in generated code).
+    /// Represents a unique identifier with optional description.
+    JsSymbol,
 }
 
 impl ZigType {
@@ -144,6 +147,7 @@ impl ZigType {
             }
             ZigType::Anytype => "anytype".to_string(),
             ZigType::JsAny => "JsAny".to_string(),
+            ZigType::JsSymbol => "JsSymbol".to_string(),
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
@@ -159,6 +163,7 @@ impl ZigType {
             ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
             ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
             ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
+            ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
         }
     }
 }

@@ -189,6 +189,7 @@ pub enum BuiltinCall {
     ObjectKeys,                     // Object.keys(obj)
     ObjectValues,                   // Object.values(obj)
     ObjectEntries,                  // Object.entries(obj)
+    ObjectFromEntries,              // Object.fromEntries(iterable)
     ObjectAssign,                   // Object.assign(target, source)
     ObjectFreeze,                   // Object.freeze(obj)
     ObjectSeal,                     // Object.seal(obj) — simplified no-op
@@ -264,6 +265,11 @@ pub enum BuiltinCall {
     // JSON methods
     JsonStringify, // JSON.stringify(value, replacer?, space?)
     JsonParse,     // JSON.parse(text, reviver?)
+
+    // Symbol methods (static)
+    SymbolConstructor, // Symbol(description?)
+    SymbolFor,         // Symbol.for(key)
+    SymbolKeyFor,      // Symbol.keyFor(sym)
 }
 
 /// Check if a call expression is a built-in object call
@@ -282,6 +288,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "decodeURIComponent" => return Some(BuiltinCall::DecodeURIComponent),
             "encodeURI" => return Some(BuiltinCall::EncodeURI),
             "decodeURI" => return Some(BuiltinCall::DecodeURI),
+            "Symbol" => return Some(BuiltinCall::SymbolConstructor),
             _ => return None,
         }
     }
@@ -360,6 +367,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "keys" => return Some(BuiltinCall::ObjectKeys),
                 "values" => return Some(BuiltinCall::ObjectValues),
                 "entries" => return Some(BuiltinCall::ObjectEntries),
+                "fromEntries" => return Some(BuiltinCall::ObjectFromEntries),
                 "assign" => return Some(BuiltinCall::ObjectAssign),
                 "freeze" => return Some(BuiltinCall::ObjectFreeze),
                 "seal" => return Some(BuiltinCall::ObjectSeal),
@@ -447,6 +455,17 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "from" => return Some(BuiltinCall::ArrayFrom),
                 "of" => return Some(BuiltinCall::ArrayOf),
                 "isArray" => return Some(BuiltinCall::ArrayIsArray),
+                _ => return None,
+            }
+        }
+
+        // Check if object is "Symbol" (for Symbol static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "Symbol"
+        {
+            match method_name {
+                "for" => return Some(BuiltinCall::SymbolFor),
+                "keyFor" => return Some(BuiltinCall::SymbolKeyFor),
                 _ => return None,
             }
         }
@@ -791,7 +810,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         // Object methods that return complex types or the input object
-        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
+        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectFromEntries | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
         BuiltinCall::ObjectIsSealed
         | BuiltinCall::ObjectIsFrozen
         | BuiltinCall::ObjectIsExtensible => Some(ZigType::Bool),
@@ -836,6 +855,10 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         // JSON methods
         BuiltinCall::JsonStringify => Some(ZigType::Str), // Returns JSON string
         BuiltinCall::JsonParse => Some(ZigType::JsAny),   // Returns dynamic JSON value
+
+        // Symbol methods
+        BuiltinCall::SymbolConstructor | BuiltinCall::SymbolFor => Some(ZigType::JsSymbol),
+        BuiltinCall::SymbolKeyFor => Some(ZigType::Str), // Returns ?[]const u8 (description or null)
 
         // Methods that return void or complex types — can't infer
         _ => None,

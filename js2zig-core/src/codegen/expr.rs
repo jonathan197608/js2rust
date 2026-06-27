@@ -422,8 +422,28 @@ impl Codegen {
                         // new Date() → js_date.JsDate.init()
                         // new Date(millis) → js_date.JsDate.fromMillis(millis)
                         // new Date(str) → js_date.JsDate.fromMillis(js_date.parse(str))
+                        // new Date(y, m, d?, h?, min?, s?, ms?) → js_date.JsDate.fromComponents(y, m, d, h, min, s, ms)
                         if ne.arguments.is_empty() {
                             self.write("js_date.JsDate.init()");
+                        } else if ne.arguments.len() >= 2 {
+                            // Multi-arg constructor with default padding
+                            // JS defaults: day=1, hours/minutes/seconds/ms=0
+                            self.write("js_date.JsDate.fromComponents(");
+                            for (i, arg) in ne.arguments.iter().enumerate() {
+                                if i > 0 {
+                                    self.write(", ");
+                                }
+                                self.emit_expr_arg(arg);
+                            }
+                            // Pad remaining args with defaults
+                            // Position: 0=year, 1=month, 2=day, 3=hour, 4=min, 5=sec, 6=ms
+                            const DEFAULTS: [&str; 5] = ["1", "0", "0", "0", "0"];
+                            let emitted = ne.arguments.len();
+                            for i in emitted..7 {
+                                self.write(", ");
+                                self.write(DEFAULTS[i - 2]);
+                            }
+                            self.write(")");
                         } else if let Some(first_arg) = ne.arguments.first()
                             && let Some(expr) = first_arg.as_expression()
                         {
@@ -3496,6 +3516,13 @@ impl Codegen {
                 self.write(")");
                 true
             }
+            builtins::BuiltinCall::ObjectFromEntries => {
+                // Object.fromEntries(iterable) → js_object.fromEntries(alloc, iterable)
+                self.write("js_object.fromEntries(js_allocator.getAllocator(), ");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
             builtins::BuiltinCall::ObjectAssign => {
                 // Object.assign(target, source) → js_object.assign(target, source)
                 if ce.arguments.len() >= 2 {
@@ -4767,6 +4794,46 @@ impl Codegen {
                 );
                 true
             }
+
+            // ── Symbol methods ────────────────────────────
+            builtins::BuiltinCall::SymbolConstructor => {
+                // Symbol(description?) → js_symbol.JsSymbol.init(description)
+                // or js_symbol.JsSymbol.initAnonymous()
+                if ce.arguments.is_empty() {
+                    self.write("js_symbol.JsSymbol.initAnonymous()");
+                } else {
+                    self.write("js_symbol.JsSymbol.init(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                }
+                true
+            }
+
+            builtins::BuiltinCall::SymbolFor => {
+                // Symbol.for(key) → js_symbol.symbolFor(key)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Symbol.for() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_symbol.symbolFor(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
+
+            builtins::BuiltinCall::SymbolKeyFor => {
+                // Symbol.keyFor(sym) → js_symbol.symbolKeyFor(sym)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Symbol.keyFor() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_symbol.symbolKeyFor(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")");
+                true
+            }
         }
     }
 
@@ -5469,7 +5536,8 @@ impl Codegen {
                 | Some(ZigType::I64)
                 | Some(ZigType::F64)
                 | Some(ZigType::Bool)
-                | Some(ZigType::Str) => false,
+                | Some(ZigType::Str)
+                | Some(ZigType::JsSymbol) => false,
                 Some(ZigType::Void) | Some(ZigType::Anytype) | Some(ZigType::JsAny) => true,
                 None => true,
             },

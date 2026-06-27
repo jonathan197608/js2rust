@@ -200,6 +200,14 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
+                    // JsSymbol property access
+                    InferResult::Definite(ZigType::JsSymbol) => {
+                        match mem.property.name.as_str() {
+                            // description is ?[]const u8 — return Str (callers handle optionality)
+                            "description" => InferResult::Definite(ZigType::Str),
+                            _ => InferResult::Indeterminate,
+                        }
+                    }
                     // JsAny property access: dynamic, returns JsAny
                     InferResult::Definite(ZigType::JsAny) => {
                         // Property access on JsAny returns JsAny
@@ -491,6 +499,12 @@ impl TypeInferrer {
                 "indexOf" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
                 "trim" | "split" | "padStart" | "padEnd" => InferResult::Definite(ZigType::Str),
+                _ => InferResult::Indeterminate,
+            },
+            // JsSymbol methods
+            ZigType::JsSymbol => match method {
+                // sym.toString() → "Symbol(description)" or "Symbol()"
+                "toString" => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
             _ => InferResult::Indeterminate,

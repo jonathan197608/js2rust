@@ -47,6 +47,18 @@ pub fn entries(alloc: Allocator, obj: *const JsValueHashMap) ![]Entry {
     return list.toOwnedSlice(alloc);
 }
 
+/// Object.fromEntries — create a HashMap from an array of [key, value] Entry pairs.
+pub fn fromEntries(alloc: Allocator, from_entries: []const Entry) !JsValueHashMap {
+    var map = JsValueHashMap.init(alloc);
+    errdefer map.deinit();
+    for (from_entries) |entry| {
+        const key_copy = try alloc.dupe(u8, entry.key);
+        errdefer alloc.free(key_copy);
+        try map.put(key_copy, entry.value);
+    }
+    return map;
+}
+
 /// Object.assign — copy entries from source to target HashMap.
 pub fn assign(target: *JsValueHashMap, source: *const JsValueHashMap) !void {
     var siter = source.iterator();

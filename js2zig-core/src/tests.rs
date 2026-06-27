@@ -39,6 +39,7 @@ mod native_proto_tests {
         let needs_js_collections = zig_code.contains("js_collections");
         let needs_js_uri = zig_code.contains("js_uri.");
         let needs_js_regexp = zig_code.contains("js_regexp.");
+        let needs_js_symbol = zig_code.contains("js_symbol.") || zig_code.contains("JsSymbol");
         let any_runtime = needs_js_date
             || needs_js_object
             || needs_js_number
@@ -50,7 +51,8 @@ mod native_proto_tests {
             || needs_js_array
             || needs_js_collections
             || needs_js_uri
-            || needs_js_regexp;
+            || needs_js_regexp
+            || needs_js_symbol;
 
         let wrapped = if needs_std || any_runtime {
             let mut w = String::new();
@@ -91,6 +93,11 @@ mod native_proto_tests {
             }
             if needs_js_any {
                 w.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
+            }
+            if needs_js_symbol {
+                w.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
+                // Also import the JsSymbol type for function signatures
+                w.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
             }
             if needs_string_hashmap {
                 w.push_str("const StringHashMap = std.StringHashMap;\n");
@@ -3623,6 +3630,166 @@ export function dateParts(d) {
         );
     }
 
+    // ── P1-2b: Date constructor overloads ──────────────────────────
+    // NOTE: use transpile_and_assert! instead of transpile_and_check!
+    // because the Zig AST checker cannot resolve js_date.JsDate as a return type.
+
+    #[test]
+    fn test_p1_date_new_empty() {
+        // new Date() → js_date.JsDate.init()
+        let js = r#"
+export function makeDate() {
+    return new Date();
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_empty");
+        assert!(
+            zig.contains("js_date.JsDate.init()"),
+            "Expected 'js_date.JsDate.init()' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_millis() {
+        // new Date(0) → js_date.JsDate.fromMillis(0)
+        let js = r#"
+export function epochDate() {
+    return new Date(0);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_millis");
+        assert!(
+            zig.contains("js_date.JsDate.fromMillis("),
+            "Expected 'js_date.JsDate.fromMillis(' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_string() {
+        // new Date("2024-01-15") → js_date.JsDate.fromMillis(js_date.parse("2024-01-15"))
+        let js = r#"
+export function dateFromStr() {
+    return new Date("2024-01-15");
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_string");
+        assert!(
+            zig.contains("js_date.parse("),
+            "Expected 'js_date.parse(' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_multi_2args() {
+        // new Date(2024, 5) → js_date.JsDate.fromComponents(2024, 5, 1, 0, 0, 0, 0)
+        let js = r#"
+export function dateYearMonth() {
+    return new Date(2024, 5);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_multi_2args");
+        assert!(
+            zig.contains("js_date.JsDate.fromComponents("),
+            "Expected 'js_date.JsDate.fromComponents(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(", 1, 0, 0, 0, 0)"),
+            "Expected default padding ', 1, 0, 0, 0, 0)' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_multi_3args() {
+        // new Date(2024, 5, 15) → js_date.JsDate.fromComponents(2024, 5, 15, 0, 0, 0, 0)
+        let js = r#"
+export function dateYMD() {
+    return new Date(2024, 5, 15);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_multi_3args");
+        assert!(
+            zig.contains("js_date.JsDate.fromComponents("),
+            "Expected 'js_date.JsDate.fromComponents(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(", 15, 0, 0, 0, 0)"),
+            "Expected default padding with 15 for day, rest 0 in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_multi_5args() {
+        // new Date(2024, 5, 15, 12, 30) → js_date.JsDate.fromComponents(2024, 5, 15, 12, 30, 0, 0)
+        let js = r#"
+export function dateYMDHM() {
+    return new Date(2024, 5, 15, 12, 30);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_multi_5args");
+        assert!(
+            zig.contains("js_date.JsDate.fromComponents("),
+            "Expected 'js_date.JsDate.fromComponents(' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(", 0, 0)"),
+            "Expected default padding for missing sec/ms in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p1_date_new_multi_7args() {
+        // new Date(2024, 5, 15, 12, 30, 45, 500) → js_date.JsDate.fromComponents(2024, 5, 15, 12, 30, 45, 500)
+        let js = r#"
+export function dateAll() {
+    return new Date(2024, 5, 15, 12, 30, 45, 500);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_multi_7args");
+        assert!(
+            zig.contains("js_date.JsDate.fromComponents("),
+            "Expected 'js_date.JsDate.fromComponents(' in:\n{}",
+            zig
+        );
+        // Should contain all 7 args with no default padding
+        assert!(zig.contains("500)"), "Expected ms=500 in:\n{}", zig);
+    }
+
+    #[test]
+    fn test_p1_date_new_multi_variable_args() {
+        // new Date(y, m, d) with variables → fromComponents(y, m, d, 0, 0, 0, 0)
+        let js = r#"
+/**
+ * @param {number} y
+ * @param {number} m
+ * @param {number} d
+ */
+export function dateFromVars(y, m, d) {
+    return new Date(y, m, d);
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_p1_date_new_multi_variable_args");
+        assert!(
+            zig.contains("js_date.JsDate.fromComponents("),
+            "Expected 'js_date.JsDate.fromComponents(' with variable args in:\n{}",
+            zig
+        );
+        // Should contain variable args + padding
+        assert!(
+            zig.contains("d, 0, 0, 0, 0)"),
+            "Expected 'd, 0, 0, 0, 0)' padding for variable args in:\n{}",
+            zig
+        );
+    }
+
     // ── P1-3: Object static methods ──────────────────────────────
 
     #[test]
@@ -3704,16 +3871,15 @@ function freezeObj(obj) {
 
     #[test]
     fn test_p1_object_from_entries() {
-        // Object.fromEntries is not yet implemented → generates @compileError
         let js = r#"
 function fromEntriesWrapper(entries) {
     return Object.fromEntries(entries);
 }
 "#;
-        let zig = transpile_and_assert!(js, "test_p1_object_from_entries");
+        let zig = transpile_and_check!(js, "test_p1_object_from_entries");
         assert!(
-            zig.contains("@compileError"),
-            "Expected @compileError for Object.fromEntries() in:\n{}",
+            zig.contains("js_object.fromEntries("),
+            "Expected js_object.fromEntries() in:\n{}",
             zig
         );
     }
@@ -6688,6 +6854,154 @@ export function matchEmptyStr() {
         let _zig = transpile_and_check!(js, "p8_string_match_empty_string_ast_check");
     }
 
+    // ══════════════════════════════════════════════════════════
+    // Symbol Type Tests (#737/#738/#739)
+    // ══════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_native_proto_symbol_basic() {
+        // Symbol() / Symbol("desc") construction
+        let js = r#"
+/**
+ * @returns {Symbol}
+ */
+export function makeSymbol() {
+    const s1 = Symbol();
+    return s1;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_basic");
+        println!("=== Symbol basic ===\n{}", zig);
+        // Should generate JsSymbol.init() for Symbol()
+        assert!(
+            zig.contains("JsSymbol.initAnonymous()"),
+            "Expected JsSymbol.initAnonymous() for Symbol(): {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_for_keyfor() {
+        // Symbol.for(key) / Symbol.keyFor(sym)
+        let js = r#"
+/**
+ * @returns {Symbol}
+ */
+export function registerSymbol(key) {
+    const sym = Symbol.for(key);
+    return sym;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_for_keyfor");
+        println!("=== Symbol.for()/keyFor() ===\n{}", zig);
+        // Should generate js_symbol.symbolFor(alloc, key)
+        assert!(
+            zig.contains("js_symbol.symbolFor("),
+            "Expected js_symbol.symbolFor() for Symbol.for(): {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_description() {
+        // sym.description property access
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function getDescription() {
+    const sym = Symbol("hello");
+    return sym.description;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_description");
+        println!("=== Symbol.description ===\n{}", zig);
+        // description is ?[]const u8, access generates sym.description
+        assert!(
+            zig.contains("sym.description"),
+            "Expected 'sym.description' access: {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_to_string() {
+        // sym.toString() method call
+        let js = r#"
+/**
+ * @returns {string}
+ */
+export function symbolToString(sym) {
+    return sym.toString();
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_toString");
+        println!("=== Symbol.toString() ===\n{}", zig);
+        // Should generate sym.toString(js_allocator.getAllocator())
+        assert!(
+            zig.contains("sym.toString(js_allocator.getAllocator())"),
+            "Expected sym.toString(alloc) for Symbol.toString(): {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_equality() {
+        // Symbol equality comparison (sym1 === sym2)
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function compareSymbols() {
+    const s1 = Symbol("a");
+    const s2 = Symbol("a");
+    const s3 = s1;
+    const r1 = s1 === s2;  // false (different symbols)
+    const r2 = s1 === s3;  // true (same symbol)
+    return r1 || r2;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_equality");
+        println!("=== Symbol equality ===\n{}", zig);
+        // Should generate === comparison for symbols
+        assert!(
+            zig.contains("s1") && zig.contains("s2"),
+            "Expected s1 and s2 in code: {}",
+            zig
+        );
+        // Symbol equality is pointer equality (id comparison)
+        // JsSymbol has `id: u64`, so === becomes s1.id == s2.id
+        // Actually, Zig generates s1 == s2 for === on structs (uses @field-wise comparison)
+        assert!(
+            zig.contains("=="),
+            "Expected == for Symbol equality: {}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_type_inference() {
+        // Verify Symbol type is correctly inferred for variables
+        let js = r#"
+/**
+ * @param {Symbol} sym
+ * @returns {string}
+ */
+export function processSymbol(sym) {
+    const desc = sym.description;
+    const str = sym.toString();
+    return desc || str;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_type_inference");
+        println!("=== Symbol type inference ===\n{}", zig);
+        // sym should be typed as JsSymbol
+        assert!(
+            zig.contains("sym: JsSymbol"),
+            "Expected 'sym: JsSymbol' parameter type: {}",
+            zig
+        );
+    }
     #[test]
     fn test_p8_string_match_global_empty_match_ast_check() {
         // Test: global matching with pattern that can match empty string.

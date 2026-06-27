@@ -429,6 +429,9 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
         "string" | "str" => "[]const u8".to_string(),
         "number" => "i64".to_string(),
         "boolean" => "bool".to_string(),
+        // Built-in runtime types
+        "Symbol" => "JsSymbol".to_string(),
+        "Date" => "js_date.JsDate".to_string(),
         // 自定义类型名（@typedef 定义的），直接返回
         _ => jsdoc_ty.to_string(),
     }
