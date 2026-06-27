@@ -150,6 +150,77 @@ pub unsafe extern "C" fn host_regex_match_global(
     }
 }
 
+/// str.matchAll(regex) → string[][] (array of match arrays with capture groups)
+///
+/// Returns all matches with capture groups as NUL-separated substrings.
+/// Groups within each match are NUL-separated; matches are concatenated sequentially.
+/// `out_match_count` receives the number of matches.
+/// `out_group_count` receives the number of groups per match (including full match at index 0).
+/// Both counts are 0 if no match.
+fn host_regex_match_all_inner(pattern: HostStr, text: HostStr) -> (String, usize, usize) {
+    let re = match fancy_regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return (String::new(), 0, 0),
+    };
+    let mut result = String::new();
+    let mut match_count: usize = 0;
+    let mut group_count: usize = 0;
+    let mut search_start: usize = 0;
+    while let Ok(Some(caps)) = re.captures_from_pos(&text, search_start) {
+        // Record group count from first match (all matches have same count)
+        if match_count == 0 {
+            group_count = caps.len();
+        }
+        for i in 0..caps.len() {
+            if !result.is_empty() {
+                result.push('\0');
+            }
+            if let Some(m) = caps.get(i) {
+                result.push_str(m.as_str());
+            }
+            // Missing groups produce empty string (NUL-separated placeholder)
+        }
+        match_count += 1;
+        // Advance past this match
+        let full_match = caps.get(0).unwrap();
+        search_start = full_match.end();
+        // If empty match, advance by 1 to avoid infinite loop
+        if full_match.start() == full_match.end() {
+            search_start += 1;
+        }
+        if search_start >= text.len() {
+            break;
+        }
+    }
+    (result, match_count, group_count)
+}
+
+/// # Safety
+///
+/// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn host_regex_match_all(
+    pattern_ptr: *const u8,
+    pattern_len: usize,
+    text_ptr: *const u8,
+    text_len: usize,
+    out_match_count: *mut usize,
+    out_group_count: *mut usize,
+) -> JsStr {
+    let pattern = unsafe { HostStr::from_raw(pattern_ptr, pattern_len) };
+    let text = unsafe { HostStr::from_raw(text_ptr, text_len) };
+    let (result_str, match_count, group_count) = host_regex_match_all_inner(pattern, text);
+    unsafe {
+        *out_match_count = match_count;
+        *out_group_count = group_count;
+    }
+    if result_str.is_empty() {
+        JsStr::empty()
+    } else {
+        JsStr::new(&result_str)
+    }
+}
+
 /// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.
 /// # Safety
 ///

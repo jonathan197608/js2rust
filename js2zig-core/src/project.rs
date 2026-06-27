@@ -255,6 +255,8 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
+    out.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
+    out.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
@@ -331,6 +333,8 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
     out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
+    out.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
+    out.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");

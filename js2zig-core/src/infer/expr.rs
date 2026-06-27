@@ -165,6 +165,20 @@ impl TypeInferrer {
                     return InferResult::Indeterminate;
                 }
 
+                // Symbol well-known symbols: Symbol.iterator, Symbol.asyncIterator, etc.
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Symbol"
+                {
+                    match mem.property.name.as_str() {
+                        "iterator" | "asyncIterator" | "hasInstance" | "isConcatSpreadable"
+                        | "species" | "toPrimitive" | "toStringTag" | "unscopables" | "match"
+                        | "matchAll" | "replace" | "search" | "split" | "dispose" => {
+                            return InferResult::Definite(ZigType::JsSymbol);
+                        }
+                        _ => {}
+                    }
+                }
+
                 match self.infer_expr_type(&mem.object) {
                     InferResult::Definite(ZigType::Str) => match mem.property.name.as_str() {
                         "length" => InferResult::Definite(ZigType::I64),

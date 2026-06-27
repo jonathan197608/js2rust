@@ -23,6 +23,15 @@ extern fn host_regex_match_global(
     out_count: *usize,
 ) callconv(.C) extern struct { ptr: [*]const u8, len: isize };
 
+extern fn host_regex_match_all(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_match_count: *usize,
+    out_group_count: *usize,
+) callconv(.C) extern struct { ptr: [*]const u8, len: isize };
+
 /// Convert string to uppercase. Returns newly allocated string.
 pub fn toUpper(alloc: Allocator, s: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, s.len);
@@ -640,6 +649,42 @@ pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !
     }
 
     return arr;
+}
+
+/// String.matchAll(regex) — returns array of match arrays (with capture groups).
+/// Each match array: [0] = full match, [1..] = capture groups.
+/// Returns empty array if no match (JS matchAll never returns null).
+pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny {
+    var match_count: usize = 0;
+    var group_count: usize = 0;
+    const result = host_regex_match_all(pattern.ptr, pattern.len, s.ptr, s.len, &match_count, &group_count);
+
+    // matchAll always returns an iterator (empty if no matches)
+    var outer_arr = try JsAny.newArray(alloc);
+    errdefer outer_arr.array.deinit(alloc);
+
+    if (match_count == 0 or group_count == 0) return outer_arr;
+
+    const bytes = result.ptr[0..@intCast(result.len)];
+
+    // Parse NUL-separated groups into match arrays
+    var pos: usize = 0;
+    for (0..match_count) |_| {
+        var inner_arr = try JsAny.newArray(alloc);
+        for (0..group_count) |_| {
+            var end: usize = pos;
+            while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
+            if (pos < bytes.len) {
+                try inner_arr.array.append(JsAny.from(bytes[pos..end]));
+            } else {
+                try inner_arr.array.append(JsAny.from(""));
+            }
+            pos = end + 1;
+        }
+        try outer_arr.array.append(inner_arr);
+    }
+
+    return outer_arr;
 }
 
 /// Search string for regex (stub: always returns -1).

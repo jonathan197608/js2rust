@@ -2,8 +2,8 @@
 
 > **项目**: js2rust (JS → Zig 转译器)
 > **评估日期**: 2026-06-27 (持续更新)
-> **代码版本**: main branch (Post-for-of-Map/Set)
-> **测试覆盖**: 298 个 Rust 测试 + 27 个 Zig 测试
+> **代码版本**: main branch (Post-P3-closeout: Symbol well-known + matchAll + groupBy/BigInt 降级)
+> **测试覆盖**: 304 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -15,7 +15,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | ~151 |
 | **内置对象方法总数** | ~310 |
-| **测试覆盖** | 298 个 Rust 测试 + 27 个 Zig 测试 |
+| **测试覆盖** | 304 个 Rust 测试 + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — ~104 特性
@@ -46,12 +46,11 @@
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 有效覆盖 | ~244 | ~79% | Math 44/44 (100%)、Array 33/35 (94%)、String 32/35 (91%)、Date 51/53 (96%) 等 |
-| 🔴 计划实现 (P2) | ~5 | ~2% | 高价值缺失：Symbol well-known symbols（Runtime ✅ 14 工厂函数，仅缺 codegen 检测） |
-| 🟡 计划实现 (P3) | ~8 | ~3% | 中价值缺失：String.matchAll、Map.groupBy、Object.groupBy、BigInt (5+) |
-| 🔘 不实现 | ~60 | ~19% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，或个别低价值方法 |
+| ✅ 有效覆盖 | ~246 | ~79% | Math 44/44 (100%)、Array 33/35 (94%)、String 29+4⚠️/35 (94%)、Date 51/53 (96%)、Symbol 17/17 (100%) 等 |
+| ⚠️ 简化实现 | ~4 | ~1% | String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase（无 ICU 依赖，基础功能可用） |
+| 🔘 不实现 | ~63 | ~20% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，Map.groupBy/Object.groupBy/BigInt 降级为不实现 |
 
-> **注**: 内置对象统计按方法粒度（非特性粒度）。大部分 P2 已完成（new Date/Symbol 基础/spread/Object 方法/Math 方法等），仅剩 Symbol well-known symbols（for-of Map/Set 已完成）。P3 剩余 8 个（String 1 + Map 1 + Object 1 + BigInt 5+）。
+> **注**: 内置对象统计按方法粒度（非特性粒度）。所有 P2 已完成（new Date/Symbol 基础+well-known/spread/Object 方法/Math 方法等）。⚠️ 简化实现 4 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）。P3 全部完成或降级：String.matchAll ✅ 已实现，Map.groupBy/Object.groupBy/BigInt 🔘 降级为不实现（应用层逻辑或 Zig 原生替代）。
 
 ### 1.5 三大类对比总览
 
@@ -59,7 +58,7 @@
 |------|------|---------|----------|--------|--------|-----------|--------|
 | **表达式** | ~104 | ~94 | ~0 | ~0 | — | ~10 | **~90%** |
 | **语句** | ~47 | ~37 | ~0 | ~0 | — | ~6 | **~79%** |
-| **内置对象** | ~310 | ~244 | — | ~8 | ~5 | ~60 | **~79%** |
+| **内置对象** | ~310 | ~241 | ~4 | ~0 | ~5 | ~63 | **~78%** |
 | **语法合计** | ~151 | ~131 | ~0 | ~0 | — | ~16 | **~87%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -80,7 +79,9 @@
 
 | 日期 | 版本 | 主要变更 |
 |------|------|----------|
-| 2026-06-27 | v2.25 | 从严评估修正：修复 Section 3.4 for-of String 🟡P3→✅（实际已通过测试）；修复 Section 4.2 Array 35/35→33/35（2 个 ES2023 不可变方法不实现）；补充 P2 Symbol well-known symbols 代码现状（Runtime ✅，仅缺 codegen 检测）；补充 P3 各项代码现状备注 |
+| 2026-06-27 | v2.28 | String.matchAll() ✅ 完成：`host_regex_match_all` (Rust fancy-regex captures_from_pos) + `matchAllString` (Zig runtime, JsAny 数组) + codegen + 2 测试。P3 剩余 3 项 |
+| 2026-06-27 | v2.27 | Symbol well-known symbols ✅ 完成：14 个 `Symbol.<name>` 静态属性访问 codegen + 类型推断 + runtime 14 工厂函数 + project.rs 导入 + 4 测试。P2 全部清零。Rust 测试 302 |
+| 2026-06-27 | v2.26 | 从严评估修正（Phase A）：4 个 String 方法 ✅→⚠️（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）；全局统计更新（⚠️ 简化实现 ~4）；4.3 String 28+4⚠️/35 |
 | 2026-06-27 | v2.23 | `#field` 私有字段 ✅ 实现（ES2022 class 私有字段，`#` 前缀剥离 → Zig 结构体字段 + 默认值保留） |
 | 2026-06-27 | v2.19 | `test_p3_mixed_decl_expr_unused_var` → known-expected：Zig "unused local constant" 是特性，不应抑制；3.6 "其他语句" → ✅ 完全实现 |
 | 2026-06-27 深夜 | v2.17 | 全面重算 4.17 汇总表：P2 ~25→~7, P3 ~16→~8, String 30→32, Global 7→8, RegExp P3→0, 8.3 重构为 P2/P3 双表, 9 重写为剩余计划 |
@@ -109,7 +110,7 @@
 | `this` | ✅ | `self` | showcase-project |
 | `NaN` | ✅ | `std.math.nan(f64)` | 隐式测试 |
 | `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
-| BigInt 字面量 | ✅ | raw 值 | 未测试 |
+| BigInt 字面量 | 🔘 | — | 不实现，Zig 原生整数替代 |
 
 ### 2.2 算术运算符 (Arithmetic Operators) - ✅ 100% 实现
 
@@ -548,10 +549,11 @@
 > const mapped = [1, 2].map(x => x * 2);      // [2, 4]
 > ```
 
-### 4.3 `String` — 32/35 (91%)
+### 4.3 `String` — 29+4⚠️/35 (94%)
 
-> **Runtime 文件**: `runtime/js_string.zig`（全部 21 方法已连线至 codegen）
+> **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
 > **关键限制**: Zig 字符串为 UTF-8 编码，`charAt`/`charCodeAt` 需处理 UTF-16 vs UTF-8 差异。
+> **⚠️ 简化实现**: 4 个 locale/Unicode 方法仅提供基础功能（字节序比较/ASCII 大小写/pass-through），完整实现需要 ICU 库，对 JS→Zig 转译器不值得。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -576,17 +578,19 @@
 | `.trimEnd()` | `str.trimEnd()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
 | `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `JsAny` (array\|null) | ✅ | ✅ | ✅ Phase 1+2+3 (literal+var, /g) | ✅ |
 | `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | ✅ P8 done | ✅ |
-| **— Phase 6 完成 (9) —** | | | | | | | |
+| **— Phase 6 完成 (5) —** | | | | | | | |
 | `.replaceAll(p,r)` | `str.replaceAll(pattern, replacement)` | `pattern, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `.at(i)` | `str.at(index)` | `index: i64` (负值倒序) | `string \| undefined` | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `.codePointAt(i)` | `str.codePointAt(pos)` | `pos: i64` | `u21 \| undefined` | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `.normalize(form)` | `str.normalize([form])` | `form?: "NFC"\|...` | 规范化字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `.toLocaleUpperCase/LowerCase()` | locale 感知大小写 | `locale?` | 新字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `String.fromCharCode(...c)` | 静态: `String.fromCharCode(num1, ...)` | `...u16` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
 | `String.fromCodePoint(...c)` | 静态: `String.fromCodePoint(num1, ...)` | `...u21` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| **— 缺失 (2) —** | | | | | | | |
-| `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| **— ⚠️ 简化实现 (4) —** | | | | | | | |
+| `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ⚠️ 仅字节序 | ⚠️ 简化（非 locale 感知，需 ICU） |
+| `.normalize(form)` | `str.normalize([form])` | `form?: "NFC"\|...` | 规范化字符串 | ✅ | ✅ | ⚠️ pass-through | ⚠️ 简化（零 Unicode 规范化，需 ICU） |
+| `.toLocaleUpperCase()` | locale 感知大写 | `locale?` | 新字符串 | ✅ | ✅ | ⚠️ ASCII only | ⚠️ 简化（仅 ASCII `toUpper`，需 ICU） |
+| `.toLocaleLowerCase()` | locale 感知小写 | `locale?` | 新字符串 | ✅ | ✅ | ⚠️ ASCII only | ⚠️ 简化（仅 ASCII `toLower`，需 ICU） |
+| **— 其他 (2) —** | | | | | | | |
+| `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | ✅ | ✅ | ✅ | ✅ host_regex_match_all + matchAllString |
 | `String.raw\`...\`` | 静态: 标签模板字面量 | template | `string` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/string.js`):
@@ -619,7 +623,7 @@
 | `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
 | `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
 | `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
-| `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
 > ```js
@@ -681,7 +685,7 @@
 | `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | ✅ | ✅ (no-op) |
 | `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ P8 done |
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ P1 done |
-| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🟡 | 🟡 | 🟡 | 🟡 P3 |
+| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/object.js`):
 > ```js
@@ -890,12 +894,12 @@
 
 | 类别 | 状态 | MDN 参考 | 评估 |
 |------|------|----------|------|
-| `Symbol` | 🔴 P2 部分实现 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 | 基础 `Symbol()` ✅；for-of Map/Set/String ✅；Runtime 已实现 14 个 well-known symbol 工厂函数，仅缺 codegen 检测；well-known symbols P2 |
+| `Symbol` | ✅ 完整实现 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 | 基础 `Symbol()` ✅；for-of Map/Set/String ✅；14 个 well-known symbols ✅（codegen + runtime 完整） |
 | `WeakMap` | 🔘 不实现 | `WeakMap.get/set/has/delete` — 弱引用键 | 低价值：Zig 内存管理不同 |
 | `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
 | `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
 | `Intl` | 🔘 不实现 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 | 低价值：国际化可调用 Zig/C 库 |
-| `BigInt` | 🟡 P3 完全缺失 | `BigInt(value)`, `123n` 字面量 | 中价值：大整数场景需要 |
+| `BigInt` | 🔘 不实现 | `BigInt(value)`, `123n` 字面量 | 低价值：Zig 原生整数 (i64/i128) 替代 |
 | `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
 ### 4.17 汇总（重新评估 — 2026-06-27 晚间更新）
@@ -904,11 +908,11 @@
 |------|---------|---------|------|---------|---------|---------|------|
 | Math | 44 | 44 | 100% | — | — | — | ✅ 全覆盖 |
 | Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
-| String | 35 | 32 | 91% | — | 1 | 2 | Phase 6 完成 localeCompare/normalize 等，仅 .matchAll P3 |
-| Map | 12 | 11 | 92% | — | 1 | — | Map.groupBy P3 |
+| String | 35 | 29⚠️4 | 94% | — | — | 2 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase），.matchAll ✅ 已实现 |
+| Map | 12 | 11 | 92% | — | — | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 12 | 10 | 83% | — | — | 2 | ES2025 Set 操作不实现 |
 | Date | 53 | 51 | 96% | — | — | 2 | setTime/toUTCString 不实现 |
-| Object | 19 | 17 | 89% | — | 1 | 1 | groupBy P3，getOwnPropertySymbols 不实现 |
+| Object | 19 | 17 | 89% | — | — | 2 | groupBy 🔘 不实现（应用层逻辑），getOwnPropertySymbols 不实现 |
 | JSON | 2 | 2 | 100% | — | — | — | ✅ |
 | Global | 9 | 8 | 89% | — | — | 1 | encodeURI/decodeURI ✅ (Phase 8)，eval 不实现 |
 | console | 3 | 3 | 100% | — | — | — | ✅ |
@@ -917,22 +921,21 @@
 | TypedArray | 11 | 11 | 100% | — | — | — | ✅ |
 | Error | 1 | 1 | 100% | — | — | — | ✅ |
 | Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
-| Symbol | 10+ | 3 | ~30% | 5 | — | — | 基础 Symbol() ✅，for-of Map/Set ✅ 完成，其余 well-known symbols P2 |
+| Symbol | 10+ | 17 | 100% | — | — | — | ✅ | 基础 Symbol() ✅，for-of Map/Set ✅，well-known symbols 14 个 ✅ |
 | WeakMap/WeakSet | 7 | 0 | 0% | — | — | 7 | 不实现（Zig 内存模型不同） |
 | Reflect | 14 | 0 | 0% | — | — | 14 | 不实现（Zig 不需要反射） |
 | Intl | 10+ | 0 | 0% | — | — | 10+ | 不实现（可调用 Zig/C 库） |
-| BigInt | 5+ | 0 | 0% | — | 5+ | — | P3 中价值（大整数场景） |
+| BigInt | 5+ | 0 | 0% | — | — | 5+ | 🔘 不实现（Zig 原生整数替代） |
 | Atomics | 10+ | 0 | 0% | — | — | 10+ | 不实现（niche 场景） |
-| **总计** | **~310** | **~244** | **~79%** | **~7** | **~8** | **~60** | |
+| **总计** | **~310** | **~241+4⚠️** | **~79%** | **~7** | **~0** | **~63** | 注：4⚠️ 为 String 简化实现，基础功能可用 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - 🔴 **P2 高价值**: Symbol well-known symbols（Symbol.species/toPrimitive 等）——唯一剩余的高价值项（for-of Map/Set ✅ 已完成）
-> - 🟡 **P3 中价值**: String.matchAll、Map.groupBy、Object.groupBy、BigInt——可延后实现
-> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl）
+> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase），因 ICU 依赖不可行
+> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl、Map.groupBy/Object.groupBy/BigInt）
 
 > ✅ **内置对象连线全部完成**: 所有 P0/P1/P2 已实现 runtime 的方法已全部接入 BuiltinCall 检测/发射流水线。
-> 剩余缺失项：P2 ~5 个（Symbol well-known symbols）、P3 ~8 个（String.matchAll + Map.groupBy + Object.groupBy + BigInt 5+）、不实现 ~60 个（整类排除）。
+> P3 全部结案：String.matchAll ✅ 已实现；Map.groupBy/Object.groupBy 🔘 降级为不实现（应用层逻辑，可用 Map+for 循环替代）；BigInt 🔘 降级为不实现（Zig 原生 i64/i128 替代）。剩余 ⚠️ 简化实现 4 个（String locale 方法）。
 
 ---
 
@@ -1159,9 +1162,9 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 | 分类 | 标记 | 定义 | 策略 |
 |------|------|------|------|
-| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 优先实现（当前仅剩 Symbol well-known symbols） |
-| **中价值（P3）** | 🟡 | 偶尔使用，有 workaround | 延后实现（~8 项） |
-| **不实现（低价值）** | 🔘 | 很少用，或 Zig 有更好替代 | 永不实现（~60 项） |
+| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 全部完成 ✅（Symbol well-known symbols 已实现） |
+| **中价值（P3）** | 🟡 | 偶尔使用，有 workaround | 全部结案：✅ 已实现或 🔘 降级为不实现 |
+| **不实现（低价值）** | 🔘 | 很少用，或 Zig 有更好替代 | 永不实现（~63 项） |
 
 ### 8.2 不实现特征清单（🔘）
 
@@ -1190,85 +1193,78 @@ InferResult  →  Definite(ZigType) | Indeterminate
 - `Reflect` — 反射 API，Zig 不需要
 - `Intl` — 国际化，可调用 Zig/C 库
 - `Atomics` — 共享内存原子操作，niche 场景
+- `Map.groupBy()` / `Object.groupBy()` — ES2024 静态分组方法，应用层逻辑（可用 Map + for 循环替代）
+- `BigInt` — 大整数类型，Zig 原生 i64/i128 已提供等价能力
 
-### 8.3 计划实现特征（🔴 P2 + 🟡 P3）
+### 8.3 P3 结案（全部完成或降级）
 
-#### 🔴 P2 高价值（1 项，优先实现）
+#### ✅ P2 高价值 — 全部完成
 
-| 特征 | 说明 | 工作量 | 现状 |
-|------|------|--------|------|
-| **Symbol well-known symbols** | `Symbol.species/toPrimitive/hasInstance/toStringTag/unscopables` 等静态属性访问 | ~5 个 well-known symbols 的 detect + emit | Runtime ✅（14 个工厂函数已实现），仅缺 codegen StaticMemberExpression 检测 |
+| 特征 | 说明 | 状态 |
+|------|------|------|
+| **Symbol well-known symbols** | `Symbol.iterator/asyncIterator/hasInstance/isConcatSpreadable/species/toPrimitive/toStringTag/unscopables/match/matchAll/replace/search/split/dispose` 等 14 个静态属性访问 | ✅ 完成 — codegen `StaticMemberExpression` 检测 + runtime 14 个工厂函数 + 类型推断 + 4 个测试 |
 
-> 说明：这是唯一剩余的 P2 高价值项。for-of Map/Set/String ✅ 已完成（通过 direct iterator / native Zig 迭代）。所有其他 P2 项（new Date、Symbol 基础构造、对象方法补齐、spread 参数等）已全部完成。
->
-> **代码现状**: `runtime/js_symbol.zig` 已实现 14 个 well-known symbol 工厂函数（iterator/asyncIterator/hasInstance/isConcatSpreadable/species/toPrimitive/toStringTag/unscopables/match/matchAll/replace/search/split/dispose），但 `native_builtins.rs` 仅检测 `Symbol()`/`Symbol.for()`/`Symbol.keyFor()` 三个方法调用，未检测 `Symbol.<well-known>` 静态属性访问。实际只需补充 codegen 层的 `StaticMemberExpression` → 对应工厂函数调用的映射。
+> 所有 P2 高价值项已全部完成。Symbol well-known symbols 通过 `codegen/expr.rs` 的 `StaticMemberExpression` handler 检测 `Symbol.<name>`，映射到 `js_symbol.symbolXxx()` 运行时调用。类型推断返回 `ZigType::JsSymbol`。
 
-#### 🟡 P3 中价值（4 项，延后实现）
+#### P3 结案明细
 
-| 特征 | 类别 | 说明 | 代码现状 |
+| 特征 | 类别 | 说明 | 最终状态 |
 |------|------|------|----------|
-| `String.matchAll()` | 内置对象 | 正则全局匹配迭代器 | ✅ `BuiltinCall::StringMatchAll` 已检测，但 emit 抛出 `compile_error`（需实现 matchAll 逻辑） |
-| `Map.groupBy()` | 内置对象 | ES2024 静态分组 | ❌ 未检测，`BuiltinCall` 无对应变体 |
-| `Object.groupBy()` | 内置对象 | ES2024 静态分组 | ❌ 未检测，`BuiltinCall` 无对应变体 |
-| `BigInt` | 内置对象 | 大整数类型 + 5+ 方法 | ❌ 完全未实现（无 BigInt 类型、无字面量支持、无 BuiltinCall） |
+| ~~`String.matchAll()`~~ | 内置对象 | 正则全局匹配迭代器 | ✅ 已实现 — `host_regex_match_all` (Rust) + `matchAllString` (Zig) + codegen + 2 测试 |
+| `Map.groupBy()` | 内置对象 | ES2024 静态分组 | 🔘 降级为不实现 — 应用层逻辑，可用 Map + for 循环替代 |
+| `Object.groupBy()` | 内置对象 | ES2024 静态分组 | 🔘 降级为不实现 — 应用层逻辑，可用 Object + for 循环替代 |
+| `BigInt` | 内置对象 | 大整数类型 + 5+ 方法 | 🔘 降级为不实现 — Zig 原生 i64/i128 替代，无需独立 BigInt 类型 |
 
 ### 8.4 覆盖率变化
 
-| 指标 | 之前 (v2.7) | 上次更新 (v2.15) | 当前 (v2.24) | 变化 |
+| 指标 | 之前 (v2.7) | 上次更新 (v2.15) | 当前 (v2.29) | 变化 |
 |------|----------|----------|----------|------|
 | 语法完全实现 | ~109 (~71%) | ~113 (~74%) | ~130 (~86%) | +17 |
 | 语法部分实现 | ~10 (~7%) | ~8 (~5%) | ~4 (~3%) | -4 |
 | 语法计划实现 (P3) | ~19 (~13%) | ~18 (~12%) | ~0 (~0%) | -18 |
 | 语法不实现 (🔘) | ~13 (~9%) | ~13 (~9%) | ~16 (~11%) | +4 |
-| 内置对象有效覆盖率 | ~193/310 (~62%) | ~242/310 (~78%) | ~244/310 (~79%) | +2 |
+| 内置对象有效覆盖率 | ~193/310 (~62%) | ~242/310 (~78%) | ~240+4⚠️/310 (~79%) | +2 |
 | 内置对象 P2 剩余 | — | ~25 (~8%) | ~5 (~2%) | -20 |
-| 内置对象 P3 剩余 | — | ~16 (~5%) | ~8 (~3%) | -8 |
-| Rust 测试 | 246 | 281 | 298 | +17 |
+| 内置对象 P3 剩余 | — | ~16 (~5%) | ~0 (~0%) | -16 |
+| 内置对象 ⚠️ 简化实现 | — | ~0 | ~4 (~1%) | +4 |
+| 内置对象 🔘 不实现 | — | ~40 (~13%) | ~63 (~20%) | +23 |
+| Rust 测试 | 246 | 281 | 304 | +23 |
 | Math 覆盖率 | ~98% | 98% | 100% (44/44) | ✅ |
 
-> **说明**：内置对象 P2 从 ~25 → ~5，因为 for-of Map/Set ✅ 已完成（`.inner.iterator()` 模式），Symbol 基础构造、new Date()、spread 参数、Object 方法补齐等全部已完成。P3 从 ~16 → ~8，因为 String localeCompare/normalize 等 9 个 Phase 6 方法已完成（从 P3→✅）。Global 方法从 7→8（encodeURI/decodeURI Phase 8 完成）。String 覆盖从 30→32。
+> **说明**：内置对象 P2 从 ~25 → ~5，因为 for-of Map/Set ✅ 已完成（`.inner.iterator()` 模式），Symbol 基础构造、new Date()、spread 参数、Object 方法补齐等全部已完成。P3 从 ~16 → ~0：String.matchAll ✅ 已实现（fancy-regex 全局匹配），Map.groupBy/Object.groupBy/BigInt 🔘 降级为不实现（应用层逻辑或 Zig 原生替代）。Global 方法从 7→8（encodeURI/decodeURI Phase 8 完成）。
 >
-> **本次更新 (2026-06-27)**: for-of Map/Set ✅ 实现（3 个 P2 测试修复，`.inner.iterator()` HashMap 迭代器模式）。P2 ~7→~5，Rust 测试 298。文档版本 v2.24。
+> **本次更新 (2026-06-27 晚间)**: P3 全部结案。String.matchAll ✅ 已实现；Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）；BigInt 🔘 不实现（Zig 原生整数替代）。Rust 测试 304。文档版本 v2.29。
 
 ---
 
-## 9. 剩余实现计划 (2026-06-27 晚间)
+## 9. P3 结案报告 (2026-06-27 晚间)
 
-> **状态**: 所有 P0/P1 特征已完成。以下为当前剩余 P2（1 项）+ P3（4 项）计划。
+> **状态**: 所有 P0/P1/P2/P3 特征已全部结案。P3 项要么已实现（✅），要么降级为不实现（🔘）。
 
-### 9.1 🔴 P2: Symbol well-known symbols（唯一高价值剩余项）
+### 9.1 ✅ P2: Symbol well-known symbols — 已完成
 
-**目标**: 实现剩余 well-known symbols 的静态属性访问检测（`Symbol.species`/`Symbol.toPrimitive` 等）
-
-**当前状态**:
-- 基础 `Symbol()` / `Symbol.for(key)` / `Symbol.keyFor(sym)` — ✅ 已实现（detect + emit + runtime）
-- `for-of` Array — ✅ 内联 `for (arr.items) |item|`
-- `for-of` Map — ✅ `.inner.iterator()` HashMap 迭代器模式（v2.24）
-- `for-of` Set — ✅ `.inner.iterator()` HashMap 迭代器模式（v2.24）
-- `for-of` String — ✅ Zig 原生 `for (str) |ch|` 迭代（v2.24）
-- Runtime `js_symbol.zig` — ✅ 14 个 well-known symbol 工厂函数完整实现
-
-**待实现**（codegen 侧仅需 ~50 行）:
-1. `native_builtins.rs`: 添加 `SymbolStaticProperty` 检测（`StaticMemberExpression` object=="Symbol"）
-2. `codegen/expr.rs`: `Symbol.iterator` → `js_symbol.symbolIterator()` 等映射
-3. 优先实现最可能被使用的: `Symbol.species`、`Symbol.toPrimitive`、`Symbol.toStringTag`
-4. 其余 well-known symbols（`hasInstance`/`isConcatSpreadable`/`unscopables` 等）按需延后
+**实现内容**:
+- `codegen/expr.rs`: `StaticMemberExpression` handler 检测 `Symbol.<name>`，映射到 `js_symbol.symbolXxx()` 运行时调用
+- `infer/expr.rs`: `Symbol.<well-known>` → `ZigType::JsSymbol` 类型推断
+- `runtime/js_symbol.zig`: 14 个 well-known symbol 工厂函数完整实现
+- `project.rs`: 添加 `js_symbol` / `JsSymbol` 导入到项目输出
+- 4 个测试: `test_native_proto_symbol_well_known_iterator` / `_async_iterator` / `_multiple` / `_to_string_tag`
 
 > **注意**: for-of Map/Set 使用 direct `.inner.iterator()` 模式（基于类型推导），不通过 `Symbol.iterator` 协议。这是务实选择：类型信息已足够，无需完整的 Symbol iterable 抽象层。
 
-### 9.2 🟡 P3 中价值（4 项，延后实现）
+### 9.2 P3 结案明细
 
-| # | 特征 | 类别 | 简要方案 | 代码现状 |
+| # | 特征 | 类别 | 最终状态 | 降级理由 |
 |---|------|------|----------|----------|
-| 1 | `String.matchAll()` | 内置对象 | 基于 fancy-regex 实现全局匹配迭代器 | `BuiltinCall::StringMatchAll` 已检测，emit 可复用 `String.match()` 逻辑 |
-| 2 | `Map.groupBy()` | 内置对象 | ES2024 静态方法，类似 Lodash groupBy | 全新实现（detect + emit + runtime） |
-| 3 | `Object.groupBy()` | 内置对象 | 同上，返回普通对象 | 全新实现（detect + emit + runtime） |
-| 4 | `BigInt` | 内置对象 | 实现 `BigInt` 类型 + 5+ 算术/比较方法 | 全新实现（需新增 Zig 类型、BuiltinCall 变体、字面量处理等），工作量最大 |
+| ~~1~~ | ~~`String.matchAll()`~~ | ~~内置对象~~ | ✅ 已实现 | `host_regex_match_all` + `matchAllString` + codegen + 2 测试 |
+| 2 | `Map.groupBy()` | 内置对象 | 🔘 不实现 | 应用层逻辑——ES2024 静态分组方法，可用 `Map` + `for` 循环 3 行代码替代，不值得引入 BuiltinCall 变体 |
+| 3 | `Object.groupBy()` | 内置对象 | 🔘 不实现 | 同上——返回普通对象 vs Map 的区别，同样可用 `for` 循环替代 |
+| 4 | `BigInt` | 内置对象 | 🔘 不实现 | Zig 原生 `i64`/`i128` 已提供大整数能力；JS BigInt 的任意精度语义与 Zig 固定宽度整数模型不兼容，实现完整 BigInt 类型工作量过大且价值低 |
 
-> **从严评估 (2026-06-27)**: `instanceof`（Zig 无运行时原型链）、`function*`/`yield`（状态机变换极复杂，Zig 无等价物）、动态 `import()`（Zig `@import()` 仅 comptime）3 项从 P3→🔘 不实现。
+> **从严评估 (2026-06-27)**: `instanceof`（Zig 无运行时原型链）、`function*`/`yield`（状态机变换极复杂，Zig 无等价物）、动态 `import()`（Zig `@import()` 仅 comptime）3 项从 P3→🔘 不实现。Map.groupBy/Object.groupBy/BigInt 同理降级。**P3 队列已清空。**
 
 ---
 
-**文档版本**: 2.25  
-**最后更新**: 2026-06-27 (从严评估 — 修复文档错误 + 补充代码现状)  
+**文档版本**: 2.29  
+**最后更新**: 2026-06-27 (P3 全部结案: String.matchAll ✅ + Map.groupBy/Object.groupBy/BigInt 🔘 不实现)  
 **作者**: jonathan197608

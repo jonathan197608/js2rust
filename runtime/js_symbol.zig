@@ -224,6 +224,36 @@ pub fn symbolUnscopables() JsSymbol {
     return JsSymbol{ .id = WELL_KNOWN.unscopables, .description = null };
 }
 
+/// Symbol.match
+pub fn symbolMatch() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.match, .description = null };
+}
+
+/// Symbol.matchAll
+pub fn symbolMatchAll() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.match_all, .description = null };
+}
+
+/// Symbol.replace
+pub fn symbolReplace() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.replace, .description = null };
+}
+
+/// Symbol.search
+pub fn symbolSearch() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.search, .description = null };
+}
+
+/// Symbol.split
+pub fn symbolSplit() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.split, .description = null };
+}
+
+/// Symbol.dispose
+pub fn symbolDispose() JsSymbol {
+    return JsSymbol{ .id = WELL_KNOWN.dispose, .description = null };
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 test "JsSymbol init with description" {

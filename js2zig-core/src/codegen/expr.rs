@@ -173,6 +173,70 @@ impl Codegen {
                         _ => {}
                     }
                 }
+                // Symbol well-known symbols (Symbol.iterator, Symbol.asyncIterator, etc.)
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Symbol"
+                {
+                    match mem.property.name.as_str() {
+                        "iterator" => {
+                            self.write("js_symbol.symbolIterator()");
+                            return;
+                        }
+                        "asyncIterator" => {
+                            self.write("js_symbol.symbolAsyncIterator()");
+                            return;
+                        }
+                        "hasInstance" => {
+                            self.write("js_symbol.symbolHasInstance()");
+                            return;
+                        }
+                        "isConcatSpreadable" => {
+                            self.write("js_symbol.symbolIsConcatSpreadable()");
+                            return;
+                        }
+                        "species" => {
+                            self.write("js_symbol.symbolSpecies()");
+                            return;
+                        }
+                        "toPrimitive" => {
+                            self.write("js_symbol.symbolToPrimitive()");
+                            return;
+                        }
+                        "toStringTag" => {
+                            self.write("js_symbol.symbolToStringTag()");
+                            return;
+                        }
+                        "unscopables" => {
+                            self.write("js_symbol.symbolUnscopables()");
+                            return;
+                        }
+                        "match" => {
+                            self.write("js_symbol.symbolMatch()");
+                            return;
+                        }
+                        "matchAll" => {
+                            self.write("js_symbol.symbolMatchAll()");
+                            return;
+                        }
+                        "replace" => {
+                            self.write("js_symbol.symbolReplace()");
+                            return;
+                        }
+                        "search" => {
+                            self.write("js_symbol.symbolSearch()");
+                            return;
+                        }
+                        "split" => {
+                            self.write("js_symbol.symbolSplit()");
+                            return;
+                        }
+                        "dispose" => {
+                            self.write("js_symbol.symbolDispose()");
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
                 // TypedArray .buffer / .byteLength / .byteOffset
                 let prop_name = mem.property.name.as_str();
                 if let Expression::Identifier(id) = &mem.object {
@@ -4148,10 +4212,49 @@ impl Codegen {
                 true
             }
 
-            // ── String methods (P2 — not yet implemented) ─────────────────────
+            // ── String methods (matchAll) ─────────────────────
             builtins::BuiltinCall::StringMatchAll => {
-                // str.matchAll(regex) — not yet supported (regex required)
-                self.compile_error(ce.span, "String.matchAll() requires regex support, which is not yet implemented in js2zig");
+                // str.matchAll(/pattern/g) → js_string.matchAllString(alloc, str, "pattern")
+                // str.matchAll(regexpVar) → js_string.matchAllString(alloc, str, regexpVar.pattern)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String.matchAll() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                if let Some(first_arg) = ce.arguments.first()
+                    && let Some(expr) = first_arg.as_expression()
+                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
+                {
+                    match expr {
+                        Expression::RegExpLiteral(re) => {
+                            let pattern = re.regex.pattern.text.as_str().to_string();
+                            let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                            self.write(&format!(
+                                "js_string.matchAllString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                obj_repr, escaped
+                            ));
+                        }
+                        Expression::Identifier(id)
+                            if self.regexp_vars.contains(id.name.as_str()) =>
+                        {
+                            self.write(&format!(
+                                "js_string.matchAllString(js_allocator.getAllocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                                obj_repr, id.name.as_str()
+                            ));
+                        }
+                        _ => {
+                            self.compile_error(
+                                ce.span,
+                                "String.matchAll() requires a regex literal or RegExp variable argument",
+                            );
+                        }
+                    }
+                    return true;
+                }
+                self.compile_error(
+                    ce.span,
+                    "String.matchAll() requires a regex literal or RegExp variable argument",
+                );
                 true
             }
             // ── Object methods (P2) ─────────────────────────────

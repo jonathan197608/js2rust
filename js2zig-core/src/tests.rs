@@ -7238,6 +7238,100 @@ export function processSymbol(sym) {
             zig
         );
     }
+
+    #[test]
+    fn test_native_proto_symbol_well_known_iterator() {
+        // Symbol.iterator → js_symbol.symbolIterator()
+        let js = r#"
+/**
+ * @returns {Symbol}
+ */
+export function getIteratorSymbol() {
+    return Symbol.iterator;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_well_known_iterator");
+        println!("=== Symbol.iterator ===\n{}", zig);
+        assert!(
+            zig.contains("js_symbol.symbolIterator()"),
+            "Expected js_symbol.symbolIterator() in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_well_known_async_iterator() {
+        // Symbol.asyncIterator → js_symbol.symbolAsyncIterator()
+        let js = r#"
+/**
+ * @returns {Symbol}
+ */
+export function getAsyncIteratorSymbol() {
+    return Symbol.asyncIterator;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_well_known_async_iterator");
+        println!("=== Symbol.asyncIterator ===\n{}", zig);
+        assert!(
+            zig.contains("js_symbol.symbolAsyncIterator()"),
+            "Expected js_symbol.symbolAsyncIterator() in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_well_known_multiple() {
+        // Multiple well-known symbols in one function
+        let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function checkWellKnownSymbols() {
+    const iter = Symbol.iterator;
+    const match = Symbol.match;
+    const tag = Symbol.toStringTag;
+    return iter.id == match.id;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_native_proto_symbol_well_known_multiple");
+        println!("=== Multiple well-known symbols ===\n{}", zig);
+        assert!(
+            zig.contains("js_symbol.symbolIterator()"),
+            "Expected symbolIterator in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_symbol.symbolMatch()"),
+            "Expected symbolMatch in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("js_symbol.symbolToStringTag()"),
+            "Expected symbolToStringTag in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_symbol_well_known_to_string_tag() {
+        // Symbol.toStringTag used as property key
+        let js = r#"
+/**
+ * @returns {Symbol}
+ */
+export function getToStringTag() {
+    return Symbol.toStringTag;
+}
+"#;
+        let zig = transpile_and_check!(js, "test_native_proto_symbol_well_known_to_string_tag");
+        println!("=== Symbol.toStringTag ===\n{}", zig);
+        assert!(
+            zig.contains("js_symbol.symbolToStringTag()"),
+            "Expected js_symbol.symbolToStringTag() in:\n{}",
+            zig
+        );
+    }
+
     #[test]
     fn test_p8_string_match_global_empty_match_ast_check() {
         // Test: global matching with pattern that can match empty string.
@@ -7251,6 +7345,46 @@ export function matchEmptyGlobal(s) {
         assert!(
             zig.contains("matchStringGlobal"),
             "Expected 'matchStringGlobal' for /g flag in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p3_string_match_all_ast_check() {
+        // str.matchAll(/pattern/g) → js_string.matchAllString(alloc, str, "pattern")
+        let js = r#"
+export function matchAllTest(s) {
+    return s.matchAll(/(\d)(\d)/g);
+}
+"#;
+        let zig = transpile_and_check!(js, "p3_string_match_all_ast_check");
+        println!("=== String.matchAll ===\n{}", zig);
+        assert!(
+            zig.contains("matchAllString"),
+            "Expected 'matchAllString' in:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_p3_string_match_all_regexp_var_ast_check() {
+        // str.matchAll(regexpVar) → js_string.matchAllString(alloc, str, regexpVar.pattern)
+        let js = r#"
+export function matchAllVarTest(s) {
+    const re = new RegExp("(\\d)(\\d)", "g");
+    return s.matchAll(re);
+}
+"#;
+        let zig = transpile_and_check!(js, "p3_string_match_all_regexp_var_ast_check");
+        println!("=== String.matchAll (regexp var) ===\n{}", zig);
+        assert!(
+            zig.contains("matchAllString"),
+            "Expected 'matchAllString' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains(".pattern"),
+            "Expected '.pattern' for regexp variable in:\n{}",
             zig
         );
     }

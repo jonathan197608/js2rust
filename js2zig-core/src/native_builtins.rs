@@ -253,9 +253,9 @@ pub enum BuiltinCall {
     StringAt,          // str.at(index) — negative index support
 
     // String methods (P2 — not yet implemented)
-    StringMatchAll,          // str.matchAll(regex) — requires regex support (skip)
-    StringLocaleCompare,     // str.localeCompare(other) — simplified (byte-wise comparison)
-    StringNormalize,         // str.normalize(form) — stub (pass-through)
+    StringMatchAll, // str.matchAll(regex) — returns array of match arrays with capture groups
+    StringLocaleCompare, // str.localeCompare(other) — simplified (byte-wise comparison)
+    StringNormalize, // str.normalize(form) — stub (pass-through)
     StringToLocaleUpperCase, // str.toLocaleUpperCase() — simplified (uses toUpper)
     StringToLocaleLowerCase, // str.toLocaleLowerCase() — simplified (uses toLower)
 
@@ -716,6 +716,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
             Some(ZigType::I64)
         }
         BuiltinCall::StringMatch => None, // returns ?[][]const u8 — complex type, defer to inference
+        BuiltinCall::StringMatchAll => Some(ZigType::JsAny), // returns JsAny array of arrays
         BuiltinCall::StringCodePointAt => Some(ZigType::I64),
         BuiltinCall::StringIncludes
         | BuiltinCall::StringStartsWith
