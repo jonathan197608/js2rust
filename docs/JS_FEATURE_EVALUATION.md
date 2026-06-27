@@ -23,8 +23,6 @@
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | ~94 | ~90% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof 等 |
-| ⚠️ 部分实现 | ~0 | ~0% | — |
-| 🟡 计划实现 (P3) | ~0 | ~0% | — |
 | 🔘 不实现 | ~10 | ~10% | 标签模板、`new Promise`、类表达式、`instanceof`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta` |
 
 ### 1.3 语句 (Statements) — ~47 特性
@@ -34,8 +32,6 @@
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | ~37 | ~79% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
-| ⚠️ 部分实现 | ~0 | ~0% | — |
-| 🟡 计划实现 (P3) | ~0 | ~0% | — |
 | 🔘 不实现 | ~6 | ~13% | `arguments`、类表达式、`static {}`、`for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — ~310 方法
@@ -48,28 +44,26 @@
 | ⚠️ 简化实现 | ~4 | ~1% | String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase（无 ICU 依赖，基础功能可用） |
 | 🔘 不实现 | ~63 | ~20% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，Map.groupBy/Object.groupBy/BigInt 降级为不实现 |
 
-> **注**: 内置对象统计按方法粒度（非特性粒度）。所有 P2 已完成（new Date/Symbol 基础+well-known/spread/Object 方法/Math 方法等）。⚠️ 简化实现 4 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）。P3 全部完成或降级：String.matchAll ✅ 已实现，Map.groupBy/Object.groupBy/BigInt 🔘 降级为不实现（应用层逻辑或 Zig 原生替代）。
+> **注**: 内置对象统计按方法粒度（非特性粒度）。⚠️ 简化实现 4 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）。Map.groupBy/Object.groupBy/BigInt 🔘 不实现（应用层逻辑或 Zig 原生替代）。
 
 ### 1.5 三大类对比总览
 
-| 类别 | 总数 | ✅ 实现 | ⚠️ 部分 | 🟡 P3 | 🔴 P2 | 🔘 不实现 | 实现率 |
-|------|------|---------|----------|--------|--------|-----------|--------|
-| **表达式** | ~104 | ~94 | ~0 | ~0 | — | ~10 | **~90%** |
-| **语句** | ~47 | ~37 | ~0 | ~0 | — | ~6 | **~79%** |
-| **内置对象** | ~310 | ~241 | ~4 | ~0 | ~5 | ~63 | **~78%** |
-| **语法合计** | ~151 | ~131 | ~0 | ~0 | — | ~16 | **~87%** |
+| 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
+|------|------|---------|----------|-----------|--------|
+| **表达式** | ~104 | ~94 | — | ~10 | **~90%** |
+| **语句** | ~47 | ~37 | — | ~6 | **~79%** |
+| **内置对象** | ~310 | ~241 | ~4 | ~63 | **~78%** |
+| **语法合计** | ~151 | ~131 | — | ~16 | **~87%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
-### 1.6 实现优先级策略
+### 1.6 状态标记说明
 
-| 分类 | 标记 | 定义 | 策略 |
-|------|------|------|------|
-| **完全实现** | ✅ | 完整支持，测试通过 | — |
-| **部分实现** | ⚠️ / 🚧 | 基本可用，有已知限制 | 逐步完善 |
-| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 优先实现 |
-| **中价值（P3）** | 🟡 | 偶尔使用，有 workaround | 延后实现 |
-| **不实现** | 🔘 | 很少用，或 Zig 有更好替代，或 JS 已废弃 | 永不实现 |
+| 标记 | 定义 |
+|------|------|
+| ✅ 完全实现 | 完整支持，测试通过 |
+| ⚠️ 简化实现 | 基本可用，有已知限制（如 ICU 依赖） |
+| 🔘 不实现 | 很少用，或 Zig 有更好替代，或 JS 已废弃 |
 
 ---
 
@@ -879,40 +873,37 @@
 | `BigInt` | 🔘 不实现 | `BigInt(value)`, `123n` 字面量 | 低价值：Zig 原生整数 (i64/i128) 替代 |
 | `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
-### 4.17 汇总（重新评估 — 2026-06-27 晚间更新）
+### 4.17 汇总
 
-| 类别 | 总方法数 | 有效覆盖 | 比例 | P2 高价值 | P3 中价值 | 不实现 | 备注 |
-|------|---------|---------|------|---------|---------|---------|------|
-| Math | 44 | 44 | 100% | — | — | — | ✅ 全覆盖 |
-| Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
-| String | 35 | 29⚠️4 | 94% | — | — | 2 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase），.matchAll ✅ 已实现 |
-| Map | 12 | 11 | 92% | — | — | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
-| Set | 12 | 10 | 83% | — | — | 2 | ES2025 Set 操作不实现 |
-| Date | 53 | 51 | 96% | — | — | 2 | setTime/toUTCString 不实现 |
-| Object | 19 | 17 | 89% | — | — | 2 | groupBy 🔘 不实现（应用层逻辑），getOwnPropertySymbols 不实现 |
-| JSON | 2 | 2 | 100% | — | — | — | ✅ |
-| Global | 9 | 8 | 89% | — | — | 1 | encodeURI/decodeURI ✅ (Phase 8)，eval 不实现 |
-| console | 3 | 3 | 100% | — | — | — | ✅ |
-| Number | 14 | 14 | 100% | — | — | — | ✅ |
-| RegExp | 5 | 4 | 80% | — | — | 1 | .source/.flags 不实现 |
-| TypedArray | 11 | 11 | 100% | — | — | — | ✅ |
-| Error | 1 | 1 | 100% | — | — | — | ✅ |
-| Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
-| Symbol | 10+ | 17 | 100% | — | — | — | ✅ | 基础 Symbol() ✅，for-of Map/Set ✅，well-known symbols 14 个 ✅ |
-| WeakMap/WeakSet | 7 | 0 | 0% | — | — | 7 | 不实现（Zig 内存模型不同） |
-| Reflect | 14 | 0 | 0% | — | — | 14 | 不实现（Zig 不需要反射） |
-| Intl | 10+ | 0 | 0% | — | — | 10+ | 不实现（可调用 Zig/C 库） |
-| BigInt | 5+ | 0 | 0% | — | — | 5+ | 🔘 不实现（Zig 原生整数替代） |
-| Atomics | 10+ | 0 | 0% | — | — | 10+ | 不实现（niche 场景） |
-| **总计** | **~310** | **~241+4⚠️** | **~79%** | **~7** | **~0** | **~63** | 注：4⚠️ 为 String 简化实现，基础功能可用 |
+| 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
+|------|---------|---------|------|---------|------|
+| Math | 44 | 44 | 100% | — | ✅ 全覆盖 |
+| Array | 35 | 33 | 94% | 2 | ES2023 不可变方法不实现 |
+| String | 35 | 29+4⚠️ | 94% | 2 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase） |
+| Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
+| Set | 12 | 10 | 83% | 2 | ES2025 Set 操作不实现 |
+| Date | 53 | 51 | 96% | 2 | setTime/toUTCString 不实现 |
+| Object | 19 | 17 | 89% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
+| JSON | 2 | 2 | 100% | — | ✅ |
+| Global | 9 | 8 | 89% | 1 | eval 不实现 |
+| console | 3 | 3 | 100% | — | ✅ |
+| Number | 14 | 14 | 100% | — | ✅ |
+| RegExp | 5 | 4 | 80% | 1 | .source/.flags 不实现 |
+| TypedArray | 11 | 11 | 100% | — | ✅ |
+| Error | 1 | 1 | 100% | — | ✅ |
+| Promise | 3 | 0 | 0% | 3 | 建议用 async/await + Io 替代 |
+| Symbol | 17 | 17 | 100% | — | ✅ 基础 Symbol() + well-known symbols 14 个 |
+| WeakMap/WeakSet | 7 | 0 | 0% | 7 | 不实现（Zig 内存模型不同） |
+| Reflect | 14 | 0 | 0% | 14 | 不实现（Zig 不需要反射） |
+| Intl | 10+ | 0 | 0% | 10+ | 不实现（可调用 Zig/C 库） |
+| BigInt | 5+ | 0 | 0% | 5+ | 🔘 不实现（Zig 原生整数替代） |
+| Atomics | 10+ | 0 | 0% | 10+ | 不实现（niche 场景） |
+| **总计** | **~310** | **~241+4⚠️** | **~79%** | **~63** | 4⚠️ 为 String 简化实现 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
 > - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase），因 ICU 依赖不可行
 > - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl、Map.groupBy/Object.groupBy/BigInt）
-
-> ✅ **内置对象连线全部完成**: 所有 P0/P1/P2 已实现 runtime 的方法已全部接入 BuiltinCall 检测/发射流水线。
-> P3 全部结案：String.matchAll ✅ 已实现；Map.groupBy/Object.groupBy 🔘 降级为不实现（应用层逻辑，可用 Map+for 循环替代）；BigInt 🔘 降级为不实现（Zig 原生 i64/i128 替代）。剩余 ⚠️ 简化实现 4 个（String locale 方法）。
 
 ---
 
