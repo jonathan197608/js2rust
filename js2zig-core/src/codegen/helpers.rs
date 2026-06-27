@@ -19,6 +19,7 @@ impl Codegen {
     pub(crate) fn property_key_name(&self, key: &PropertyKey) -> Option<String> {
         match key {
             PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
+            PropertyKey::PrivateIdentifier(id) => Some(id.name.to_string()),
             _ => None,
         }
     }

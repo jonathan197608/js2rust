@@ -119,6 +119,22 @@ impl TypeInferrer {
                 self.walk_expr_for_analysis(&fos.right);
                 self.walk_stmt_for_analysis(&fos.body);
             }
+            Statement::ForInStatement(fis) => {
+                // for-in loop variable is always string (property name) — no init to walk.
+                self.walk_expr_for_analysis(&fis.right);
+                self.walk_stmt_for_analysis(&fis.body);
+            }
+            Statement::SwitchStatement(ss) => {
+                self.walk_expr_for_analysis(&ss.discriminant);
+                for case in &ss.cases {
+                    if let Some(test) = &case.test {
+                        self.walk_expr_for_analysis(test);
+                    }
+                    for s in &case.consequent {
+                        self.walk_stmt_for_analysis(s);
+                    }
+                }
+            }
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {
                     self.walk_stmt_for_analysis(s);
@@ -311,6 +327,36 @@ impl TypeInferrer {
                 Self::collect_idents_from_expr(&fos.right, names);
                 Self::collect_idents_from_stmt(&fos.body, names);
             }
+            Statement::ForInStatement(fis) => {
+                Self::collect_idents_from_expr(&fis.right, names);
+                Self::collect_idents_from_stmt(&fis.body, names);
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    Self::collect_idents_from_stmt(s, names);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        Self::collect_idents_from_stmt(s, names);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        Self::collect_idents_from_stmt(s, names);
+                    }
+                }
+            }
+            Statement::SwitchStatement(ss) => {
+                Self::collect_idents_from_expr(&ss.discriminant, names);
+                for case in &ss.cases {
+                    if let Some(test) = &case.test {
+                        Self::collect_idents_from_expr(test, names);
+                    }
+                    for s in &case.consequent {
+                        Self::collect_idents_from_stmt(s, names);
+                    }
+                }
+            }
             Statement::BlockStatement(bs) => {
                 for s in &bs.body {
                     Self::collect_idents_from_stmt(s, names);
@@ -440,6 +486,39 @@ impl TypeInferrer {
                         if let Some(name) = Self::binding_name(&decl.id) {
                             self.var_types.insert(name.to_string(), elem_ty.clone());
                         }
+                    }
+                }
+            }
+            Statement::ForInStatement(fis) => {
+                self.walk_stmt_for_types(&fis.body);
+                // for-in loop variable is always a string (object property name).
+                if let ForStatementLeft::VariableDeclaration(vd) = &fis.left {
+                    for decl in &vd.declarations {
+                        if let Some(name) = Self::binding_name(&decl.id) {
+                            self.var_types.insert(name.to_string(), ZigType::Str);
+                        }
+                    }
+                }
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    self.walk_stmt_for_types(s);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        self.walk_stmt_for_types(s);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        self.walk_stmt_for_types(s);
+                    }
+                }
+            }
+            Statement::SwitchStatement(ss) => {
+                for case in &ss.cases {
+                    for s in &case.consequent {
+                        self.walk_stmt_for_types(s);
                     }
                 }
             }

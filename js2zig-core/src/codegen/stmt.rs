@@ -1553,7 +1553,13 @@ impl Codegen {
 
     // JS:  for (const x of iterable) { ... }
     // Zig: for (iterable) |x| { ... }
+    //  Map/Set: var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const x = __kv.key_ptr.*; ... }
     fn emit_for_of(&mut self, fos: &ForOfStatement) {
+        // Map / Set → HashMap iterator pattern
+        if self.detect_map_set_iter(&fos.right, fos) {
+            return;
+        }
+
         let var_name = match &fos.left {
             ForStatementLeft::VariableDeclaration(vd) => vd
                 .declarations
@@ -1591,6 +1597,11 @@ impl Codegen {
     }
 
     fn emit_for_of_labeled(&mut self, fos: &ForOfStatement) {
+        // Map / Set → HashMap iterator pattern
+        if self.detect_map_set_iter(&fos.right, fos) {
+            return;
+        }
+
         let var_name = match &fos.left {
             ForStatementLeft::VariableDeclaration(vd) => vd
                 .declarations
@@ -1619,6 +1630,115 @@ impl Codegen {
         self.emit_stmt_or_block(&fos.body);
         self.indent -= 1;
         self.writeln("}");
+    }
+
+    /// Detect if the for-of iterable is a Map or Set, and if so emit the
+    /// HashMap iterator pattern. Returns true if the pattern was matched.
+    ///
+    /// Generated pattern:
+    /// ```zig
+    /// var __it = obj.inner.iterator();
+    /// while (__it.next()) |__kv| {
+    ///     const {var} = __kv.key_ptr.*;          // single-var Map / Set
+    ///     // or for destructured Map:
+    ///     const key = __kv.key_ptr.*;
+    ///     const val = __kv.value_ptr.*;
+    ///     ...
+    /// }
+    /// ```
+    fn detect_map_set_iter(&mut self, right: &Expression, fos: &ForOfStatement) -> bool {
+        let (obj_name, is_map) = match right {
+            Expression::Identifier(id) => match self.type_info.var_types.get(id.name.as_str()) {
+                Some(ZigType::NamedStruct(name)) if name == "Map" => (id.name.to_string(), true),
+                Some(ZigType::NamedStruct(name)) if name == "Set" => (id.name.to_string(), false),
+                _ => return false,
+            },
+            _ => return false,
+        };
+
+        // Check if left side is an ArrayPattern destructure ([key, val])
+        let is_destructure = match &fos.left {
+            ForStatementLeft::VariableDeclaration(vd) => vd
+                .declarations
+                .first()
+                .map(|decl| matches!(&decl.id, BindingPattern::ArrayPattern(_)))
+                .unwrap_or(false),
+            _ => false,
+        };
+
+        // Infer the var name(s)
+        let var_decls: Vec<String> = if is_destructure && is_map {
+            self.extract_destructure_names(&fos.left)
+        } else {
+            let name = match &fos.left {
+                ForStatementLeft::VariableDeclaration(vd) => vd
+                    .declarations
+                    .first()
+                    .and_then(|decl| self.binding_name(&decl.id))
+                    .unwrap_or("item")
+                    .to_string(),
+                _ => "item".to_string(),
+            };
+            vec![name]
+        };
+
+        // Emit: var __it = obj.inner.iterator();
+        self.write_indent();
+        self.write(&format!(
+            "var __it = {obj}.inner.iterator();\n",
+            obj = obj_name
+        ));
+
+        // Emit: while (__it.next()) |__kv| {
+        self.write_indent();
+        self.write("while (__it.next()) |__kv| {\n");
+        self.indent += 1;
+
+        if is_destructure && is_map && var_decls.len() >= 2 {
+            // Destructure: const key = __kv.key_ptr.*;  const val = __kv.value_ptr.*;
+            self.write_indent();
+            self.write(&format!(
+                "const {key} = __kv.key_ptr.*;\n",
+                key = var_decls[0]
+            ));
+            self.write_indent();
+            self.write(&format!(
+                "const {val} = __kv.value_ptr.*;\n",
+                val = var_decls[1]
+            ));
+        } else {
+            // Single var: const x = __kv.key_ptr.*;
+            self.write_indent();
+            self.write(&format!(
+                "const {var} = __kv.key_ptr.*;\n",
+                var = var_decls[0]
+            ));
+        }
+
+        // Emit the loop body
+        self.emit_stmt_or_block(&fos.body);
+
+        self.indent -= 1;
+        self.write_indent();
+        self.write("}\n"); // while
+
+        true
+    }
+
+    /// Extract binding names from a destructuring ArrayPattern like [key, val].
+    fn extract_destructure_names(&self, left: &ForStatementLeft) -> Vec<String> {
+        if let ForStatementLeft::VariableDeclaration(vd) = left
+            && let Some(decl) = vd.declarations.first()
+            && let BindingPattern::ArrayPattern(ap) = &decl.id
+        {
+            return ap
+                .elements
+                .iter()
+                .filter_map(|elem| elem.as_ref().and_then(|pat| self.binding_name(pat)))
+                .map(|s| s.to_string())
+                .collect();
+        }
+        Vec::new()
     }
 
     /// JS: for (var key in obj) { ... }
@@ -2556,6 +2676,7 @@ pub(crate) fn property_key_name(key: &PropertyKey) -> Option<String> {
     match key {
         PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
         PropertyKey::StringLiteral(sl) => Some(sl.value.to_string()),
+        PropertyKey::PrivateIdentifier(id) => Some(id.name.to_string()),
         _ => None,
     }
 }
@@ -2566,6 +2687,20 @@ fn is_constructor_method(md: &MethodDefinition) -> bool {
         name == "constructor"
     } else {
         false
+    }
+}
+
+// ── Class declaration helpers ────────────────────────
+
+/// Convert a simple expression to a Zig default value string.
+/// Used for class field default values (e.g., `#secret = 42` → "42").
+fn expr_to_default_str(expr: &Expression) -> String {
+    match expr {
+        Expression::NumericLiteral(n) => format!("{}", n.value),
+        Expression::StringLiteral(s) => format!("\"{}\"", s.value),
+        Expression::BooleanLiteral(b) => format!("{}", b.value),
+        Expression::NullLiteral(_) => "null".to_string(),
+        _ => "0".to_string(), // fallback: use zero
     }
 }
 
@@ -2584,6 +2719,7 @@ impl Codegen {
         // Collect fields and methods from the class body
         let mut field_names: Vec<String> = Vec::new();
         let mut field_types: Vec<ZigType> = Vec::new();
+        let mut field_defaults: Vec<Option<String>> = Vec::new();
         let mut static_field_names: Vec<String> = Vec::new();
         let mut has_constructor = false;
 
@@ -2610,8 +2746,11 @@ impl Codegen {
                                 .and_then(|fields| fields.get(&name))
                                 .cloned()
                                 .unwrap_or(ZigType::I64);
+                            // Extract default value from initializer (e.g., `secret = 42` → "42")
+                            let default_val = pd.value.as_ref().map(expr_to_default_str);
                             field_names.push(name);
                             field_types.push(field_ty);
+                            field_defaults.push(default_val);
                         }
                     }
                 }
@@ -2640,6 +2779,7 @@ impl Codegen {
                     &class_name_s,
                     &mut field_names,
                     &mut field_types,
+                    &mut field_defaults,
                 );
             }
         }
@@ -2680,7 +2820,23 @@ impl Codegen {
             self.writeln("");
             self.writeln(&format!("pub fn init() {} {{", class_name));
             self.indent += 1;
-            self.writeln("return .{};");
+            if field_names.is_empty() {
+                self.writeln("return .{};");
+            } else {
+                let indent = "    ".repeat(self.indent);
+                self.write(&format!("{}return .{{ ", indent));
+                for (i, fname) in field_names.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    let default_val = field_defaults
+                        .get(i)
+                        .and_then(|d| d.as_deref())
+                        .unwrap_or("0");
+                    self.write(&format!(".{} = {}", fname, default_val));
+                }
+                self.write(" };\n");
+            }
             self.indent -= 1;
             self.writeln("}");
         }
@@ -2701,6 +2857,7 @@ impl Codegen {
         class_name: &str,
         field_names: &mut Vec<String>,
         field_types: &mut Vec<ZigType>,
+        field_defaults: &mut Vec<Option<String>>,
     ) {
         for stmt in stmts {
             match stmt {
@@ -2720,6 +2877,7 @@ impl Codegen {
                                 .unwrap_or(ZigType::I64);
                             field_names.push(fname);
                             field_types.push(ftype);
+                            field_defaults.push(None); // set by constructor, no static default
                         }
                     }
                 }
@@ -2729,6 +2887,7 @@ impl Codegen {
                         class_name,
                         field_names,
                         field_types,
+                        field_defaults,
                     );
                     if let Some(alt) = &is.alternate {
                         self.collect_implicit_class_fields(
@@ -2736,6 +2895,7 @@ impl Codegen {
                             class_name,
                             field_names,
                             field_types,
+                            field_defaults,
                         );
                     }
                 }
@@ -2745,6 +2905,7 @@ impl Codegen {
                         class_name,
                         field_names,
                         field_types,
+                        field_defaults,
                     );
                 }
                 _ => {}

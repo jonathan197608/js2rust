@@ -166,6 +166,23 @@ impl ZigType {
             ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
         }
     }
+
+    /// Map ZigType to JS typeof string.
+    /// Returns None for dynamic types (JsAny, Anytype) that need runtime dispatch.
+    pub fn to_js_typeof(&self) -> Option<&'static str> {
+        match self {
+            ZigType::I64 | ZigType::F64 => Some("\"number\""),
+            ZigType::Bool => Some("\"boolean\""),
+            ZigType::Str => Some("\"string\""),
+            ZigType::JsSymbol => Some("\"symbol\""),
+            ZigType::Void => Some("\"undefined\""),
+            ZigType::Struct(_) | ZigType::NamedStruct(_) | ZigType::ArrayList(_) => {
+                Some("\"object\"")
+            }
+            // Dynamic types — need runtime typeof helper
+            ZigType::JsAny | ZigType::Anytype => None,
+        }
+    }
 }
 
 /// Convert HostType to ZigType.
@@ -385,6 +402,8 @@ pub struct Codegen {
     pub oc_counter: u32,
     /// Counter for generating unique temp variable names in destructuring patterns.
     pub destructure_counter: u32,
+    /// Counter for generating unique iterator variable names in for-of (Map/Set) loops.
+    pub for_of_counter: u32,
     /// Variables initialized with TypedArray constructors (Int32Array, Uint8Array, Float64Array).
     /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
     /// Used to route method calls and property accesses correctly.

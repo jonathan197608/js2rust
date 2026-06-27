@@ -620,6 +620,29 @@ pub const JsAny = union(enum) {
     }
 };
 
+/// JS typeof operator — returns the JS typeof string for a JsAny value.
+/// Maps JsAny tagged union variants to JS typeof semantics:
+///   .value.int / .value.float → "number"
+///   .value.bool                → "boolean"
+///   .value.string              → "string"
+///   .value.null                → "object"  (JS quirk: typeof null === "object")
+///   .value.undefined           → "undefined"
+///   .array / .object           → "object"
+///   .null                      → "object"
+pub fn jsTypeof(val: JsAny) []const u8 {
+    return switch (val) {
+        .value => |v| switch (v) {
+            .int, .float => "number",
+            .bool => "boolean",
+            .string => "string",
+            .null => "object",
+            .undefined => "undefined",
+        },
+        .array, .object => "object",
+        .null => "object",
+    };
+}
+
 // ── Tests ──
 
 test "JsAny primitive constructors" {
@@ -818,4 +841,25 @@ test "JsAny at() on non-array returns undefined" {
 
     const result = obj.at(0);
     try std.testing.expect(result.isUndefined());
+}
+
+test "jsTypeof primitives" {
+    try std.testing.expectEqualStrings("number", jsTypeof(JsAny.fromI64(42)));
+    try std.testing.expectEqualStrings("number", jsTypeof(JsAny.fromF64(3.14)));
+    try std.testing.expectEqualStrings("boolean", jsTypeof(JsAny.fromBool(true)));
+    try std.testing.expectEqualStrings("boolean", jsTypeof(JsAny.fromBool(false)));
+    try std.testing.expectEqualStrings("string", jsTypeof(JsAny.fromString("hello")));
+    try std.testing.expectEqualStrings("object", jsTypeof(JsAny.fromNull()));
+    try std.testing.expectEqualStrings("undefined", jsTypeof(JsAny.undefined_value));
+}
+
+test "jsTypeof array and object" {
+    const alloc = std.testing.allocator;
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+    try std.testing.expectEqualStrings("object", jsTypeof(arr));
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try std.testing.expectEqualStrings("object", jsTypeof(obj));
 }

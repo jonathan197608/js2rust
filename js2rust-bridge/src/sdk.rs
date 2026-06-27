@@ -240,8 +240,9 @@ impl JsStrField {
 // `js_allocator_alloc`. These stubs leak memory (like the old Box::leak),
 // but tests don't run long enough for this to matter.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
     let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
@@ -253,12 +254,12 @@ pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
     ptr
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
     let layout = std::alloc::Layout::from_size_align(size, 1).unwrap();
-    let ptr = unsafe { std::alloc::alloc(layout) };
-    ptr
+    unsafe { std::alloc::alloc(layout) }
 }
 
 // ── StrRet helper (used by macro-generated safe wrappers) ──────────

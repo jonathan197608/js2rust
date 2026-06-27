@@ -16,3 +16,6 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 indexmap = { version = "2", features = ["serde"] }
 fancy-regex = "0.15"
+
+[features]
+stub-allocator = []

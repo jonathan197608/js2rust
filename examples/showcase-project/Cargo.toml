@@ -9,4 +9,4 @@ description = "Showcase project for js2rust — for-in static struct integration
 js2rust-bridge = { version = "0.5", path = "../../js2rust-bridge" }
 
 [build-dependencies]
-js2rust-bridge = { version = "0.5", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.5", path = "../../js2rust-bridge", features = ["stub-allocator"] }

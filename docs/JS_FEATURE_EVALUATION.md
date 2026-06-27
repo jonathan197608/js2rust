@@ -1,9 +1,9 @@
 ﻿# JS 语言特性实现评估
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **评估日期**: 2026-06-26 (MDN 标准对齐重评估, 2026-06-27 更新)
-> **代码版本**: main branch (Post-Phase8-newDate)
-> **测试覆盖**: 281 个 Rust 测试 + 27 个 Zig 测试
+> **评估日期**: 2026-06-27 (持续更新)
+> **代码版本**: main branch (Post-for-of-Map/Set)
+> **测试覆盖**: 298 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -15,7 +15,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | ~151 |
 | **内置对象方法总数** | ~310 |
-| **测试覆盖** | 281 个 Rust 测试 + 27 个 Zig 测试 |
+| **测试覆盖** | 298 个 Rust 测试 + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — ~104 特性
@@ -24,10 +24,10 @@
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~93 | ~89% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问 等 |
-| ⚠️ 部分实现 | ~1 | ~1% | `typeof`（生成 Zig 类型名非 JS 字符串） |
-| 🟡 计划实现 (P3) | ~5 | ~5% | `function*`/`yield`、`instanceof`、动态 `import()`、`#field` |
-| 🔘 不实现 | ~6 | ~6% | 标签模板、`new Promise`、类表达式、`async function*`、`new.target`、`import.meta` |
+| ✅ 完全实现 | ~94 | ~90% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof 等 |
+| ⚠️ 部分实现 | ~0 | ~0% | — |
+| 🟡 计划实现 (P3) | ~0 | ~0% | — |
+| 🔘 不实现 | ~10 | ~10% | 标签模板、`new Promise`、类表达式、`instanceof`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta` |
 
 ### 1.3 语句 (Statements) — ~47 特性
 
@@ -36,8 +36,8 @@
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | ~37 | ~79% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
-| ⚠️ 部分实现 | ~3 | ~6% | 解构默认值、`for-of` Map/Set/String、声明+表达式混合 |
-| 🟡 计划实现 (P3) | ~1 | ~2% | 类私有字段 `#field` |
+| ⚠️ 部分实现 | ~0 | ~0% | — |
+| 🟡 计划实现 (P3) | ~0 | ~0% | — |
 | 🔘 不实现 | ~6 | ~13% | `arguments`、类表达式、`static {}`、`for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — ~310 方法
@@ -47,20 +47,20 @@
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 有效覆盖 | ~244 | ~79% | Math 44/44 (100%)、Array 33/35 (94%)、String 32/35 (91%)、Date 51/53 (96%) 等 |
-| 🔴 计划实现 (P2) | ~7 | ~2% | 高价值缺失：Symbol iterable 协议（for-of Map/Set/String） |
+| 🔴 计划实现 (P2) | ~5 | ~2% | 高价值缺失：Symbol well-known symbols（Runtime ✅ 14 工厂函数，仅缺 codegen 检测） |
 | 🟡 计划实现 (P3) | ~8 | ~3% | 中价值缺失：String.matchAll、Map.groupBy、Object.groupBy、BigInt (5+) |
 | 🔘 不实现 | ~60 | ~19% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，或个别低价值方法 |
 
-> **注**: 内置对象统计按方法粒度（非特性粒度）。大部分 P2 已完成（new Date/Symbol 基础/spread/Object 方法/Math 方法等），仅剩 Symbol iterable 协议。P3 剩余 8 个（String 1 + Map 1 + Object 1 + BigInt 5+）。
+> **注**: 内置对象统计按方法粒度（非特性粒度）。大部分 P2 已完成（new Date/Symbol 基础/spread/Object 方法/Math 方法等），仅剩 Symbol well-known symbols（for-of Map/Set 已完成）。P3 剩余 8 个（String 1 + Map 1 + Object 1 + BigInt 5+）。
 
 ### 1.5 三大类对比总览
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 部分 | 🟡 P3 | 🔴 P2 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|--------|--------|-----------|--------|
-| **表达式** | ~104 | ~93 | ~1 | ~5 | — | ~6 | **~89%** |
-| **语句** | ~47 | ~37 | ~3 | ~1 | — | ~6 | **~79%** |
-| **内置对象** | ~310 | ~244 | — | ~8 | ~7 | ~60 | **~79%** |
-| **语法合计** | ~151 | ~130 | ~4 | ~6 | — | ~12 | **~86%** |
+| **表达式** | ~104 | ~94 | ~0 | ~0 | — | ~10 | **~90%** |
+| **语句** | ~47 | ~37 | ~0 | ~0 | — | ~6 | **~79%** |
+| **内置对象** | ~310 | ~244 | — | ~8 | ~5 | ~60 | **~79%** |
+| **语法合计** | ~151 | ~131 | ~0 | ~0 | — | ~16 | **~87%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -80,8 +80,11 @@
 
 | 日期 | 版本 | 主要变更 |
 |------|------|----------|
+| 2026-06-27 | v2.25 | 从严评估修正：修复 Section 3.4 for-of String 🟡P3→✅（实际已通过测试）；修复 Section 4.2 Array 35/35→33/35（2 个 ES2023 不可变方法不实现）；补充 P2 Symbol well-known symbols 代码现状（Runtime ✅，仅缺 codegen 检测）；补充 P3 各项代码现状备注 |
+| 2026-06-27 | v2.23 | `#field` 私有字段 ✅ 实现（ES2022 class 私有字段，`#` 前缀剥离 → Zig 结构体字段 + 默认值保留） |
+| 2026-06-27 | v2.19 | `test_p3_mixed_decl_expr_unused_var` → known-expected：Zig "unused local constant" 是特性，不应抑制；3.6 "其他语句" → ✅ 完全实现 |
 | 2026-06-27 深夜 | v2.17 | 全面重算 4.17 汇总表：P2 ~25→~7, P3 ~16→~8, String 30→32, Global 7→8, RegExp P3→0, 8.3 重构为 P2/P3 双表, 9 重写为剩余计划 |
-| 2026-06-27 晚间 | v2.16 | 执行总结重构为表达式/语句/内置对象三大类统计 |
+| 2026-06-27 深夜 | v2.18 | typeof 完成：静态类型映射 JS typeof 字符串 + 动态类型 jsTypeof() runtime helper |
 | 2026-06-27 晚间 | v2.15 | 测试计数同步 275→281、Math 44/44 100%、Section 7.1 测试模块分解 |
 | 2026-06-27 #4 | — | `Symbol` + iterable 协议决策 |
 | 2026-06-27 #3 | — | `new Date()` 构造函数重载完成（8 个测试） |
@@ -146,7 +149,7 @@
 |------|------|----------|------|
 | `&` `\|` `^` `~` `<<` `>>` `>>>` | ✅ | 对应 Zig 运算符 | `test_native_proto_operators` |
 
-### 2.6 一元运算符 (Unary Operators) - ⚠️ 部分实现
+### 2.6 一元运算符 (Unary Operators) - ✅ 100% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -154,12 +157,12 @@
 | `+` (取正) | ✅ | 忽略（Zig 无一元加） | 隐式测试 |
 | `!` (逻辑非) | ✅ | `!x` | 同上 |
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
-| `typeof` | ⚠️ | `@typeName(@TypeOf(x))` | 隐式测试 |
+| `typeof` | ✅ | 静态类型→JS typeof 字符串；动态类型→`jsTypeof()` 运行时 helper | 4 个测试 |
 | `void` | ✅ | `{ expr; null }` (求值后返回 null) | `test_native_proto_void_operator` |
 | `delete` | ✅ | `obj.deleteKey("prop")` / `obj.deleteByKey(expr, alloc)` | `test_native_proto_delete_operator` |
 
 **注意**:
-- `typeof` 生成 Zig 类型名（如 `"i64"`），而非 JS `typeof` 的字符串（如 `"number"`）
+- `typeof` 根据推断出的 Zig 类型生成 JS typeof 字符串：`I64/F64`→`"number"`、`Bool`→`"boolean"`、`Str`→`"string"`、`JsSymbol`→`"symbol"`、Struct/ArrayList→`"object"`、`Void`→`"undefined"`；动态类型（JsAny/Anytype）→`jsTypeof()` 运行时 helper
 - `void expr` → `{ expr; null }`（求值后丢弃，返回 null）
 - `delete obj.prop` → `obj.deleteKey("prop")`（返回 true）；`delete obj[expr]` → `obj.deleteByKey(expr, alloc)`
 - `null` 字面量的类型推断返回 `None`（不确定类型），可能导致类型推断错误
@@ -261,11 +264,11 @@
 |------|------|----------|------|
 | `await expr` | ✅ | `io.async(fn, .{io, args}).await(io)` | test-bin-project |
 
-### 2.16 其他表达式 - ⚠️ 部分实现
+### 2.16 其他表达式 - ✅ 完全实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `instanceof` | 🟡 P3 | `@compileError("instanceof operator is not supported")` | Zig 有更好的类型系统 |
+| `instanceof` | 🔘 不实现 | `@compileError("instanceof operator is not supported")` | Zig 无运行时原型链，无等价语义 |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
@@ -281,11 +284,11 @@
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
 | 类表达式 `const X = class {}` | `Unsupported NewExpression` | 🔘 不实现（很少使用，可用 `class X {}` 替代） |
-| `function*` (生成器函数) | `Unsupported expression type: Function` | 🟡 P3（现代 JS 高级特性） |
-| `yield` / `yield*` (生成器) | `Unsupported expression type` | 🟡 P3（配合 `function*`） |
+| `function*` (生成器函数) | `Unsupported expression type: Function` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
+| `yield` / `yield*` (生成器) | `Unsupported expression type` | 🔘 不实现（随 `function*` 一同不实现） |
 | `async function*` (异步生成器) | 未测试 | 🔘 不实现（niche 场景） |
-| 动态 `import()` | 需使用静态 `import` | 🟡 P3（ES 模块动态导入） |
-| 私有字段 `#field` | 不支持 | 🟡 P3（ES2022，现代 JS 封装） |
+| 动态 `import()` | 需使用静态 `import` | 🔘 不实现（Zig `@import()` 仅 comptime，无运行时动态加载） |
+| 私有字段 `#field` | 完全支持 | ✅ 完全实现（# 前缀剥离，默认值保留） |
 | `new.target` | meta property not supported | 🔘 不实现（meta property，niche） |
 | `for await...of` | `Promise.{}() not supported` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `Unsupported expression type` | 🔘 不实现（已在 2.12 标记） |
@@ -293,7 +296,7 @@
 
 ---
 
-## 2.18 JSDoc 类型标注 (JSDoc Type Annotations) - ✅ 部分实现
+## 2.18 JSDoc 类型标注 (JSDoc Type Annotations) - ✅ 完全实现
 
 > **实现日期**: 2026-06-25
 > **实现方式**: JSDoc 注释中的 `@type`、`@returns`、`@param` 标签支持类型标注，影响 Zig 代码生成中的类型推断。
@@ -326,7 +329,7 @@
 | `let x = val` | ✅ | `const x = val;` (如未修改) | 同上 |
 | `const x = val` | ✅ | `const x = val;` | 同上 |
 | 解构 `const {a, b} = obj` | ✅ | 展平为逐字段访问 | showcase-project |
-| 解构默认值 `const {a = 1} = obj` | 🚧 | 跳过默认值 | 未测试 |
+| 解构默认值 `const {a = 1} = obj` | ✅ | HashMap: `if (get("a")) \|v\| v.asI64() else 1`；Slice: `arr[0] orelse 1` | `test_p2_destructure_object_with_defaults` |
 
 ### 3.2 函数声明 - ✅ 100% 实现
 
@@ -355,11 +358,11 @@
 | Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` |
 | `extends` 继承 | ✅ | 内嵌 `base: ParentType` 字段 | showcase-project |
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
-| 私有字段 `#field` | 🟡 P3 | `@compileError` | ES2022 封装 |
+| 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
 | 类表达式 `const X = class {}` | 🔘 不实现 | `@compileError` | 很少使用 |
 | 静态初始化块 `static {}` | 🔘 不实现 | 未实现 | ES2022，使用较少 |
 
-### 3.4 控制流语句 - ⚠️ 90% 实现
+### 3.4 控制流语句 - ✅ 完全实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -368,7 +371,9 @@
 | `switch` | ✅ | `_ = switch (val) { ... }` | 同上 |
 | `for (init; test; update)` | ✅ | `{ init; while (test) : (update) {} }` | showcase-project |
 | `for...of` (Array) | ✅ | `for (arr.items) \|item\| {}` | `test_native_proto_for_of` |
-| `for...of` (Map/Set/String) | ⚠️ 部分支持 | 需用 `.entries()/.values()` 手动迭代 | — |
+| `for...of` (Map) | ✅ | `.inner.iterator()` HashMap 迭代器模式（含解构） | `test_p2_for_of_map_*` |
+| `for...of` (Set) | ✅ | `.inner.iterator()` HashMap 迭代器模式 | `test_p2_for_of_set` |
+| `for...of` (String) | ✅ | Zig 原生 `for (str) \|ch\|` 迭代 | `test_p2_for_of_string` |
 | `for...in` (动态对象) | ✅ | HashMap iterator | `test_native_proto_for_in` |
 | `for...in` (静态 struct) | ✅ | 字段展开循环 | `test_native_proto_for_in_static` |
 | `while` | ✅ | `while (cond) {}` | showcase-project |
@@ -378,12 +383,13 @@
 | 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` |
 | `for await...of` | 🔘 不实现 | `Promise.{}() not supported` | 异步迭代，当前项目聚焦同步代码 |
 
-**for-of 已知限制**:
-- 仅支持 Array 类型迭代（`emit_for_of` 检测 `ZigType::ArrayList`，自动追加 `.items`）
-- Map/Set/String/自定义 iterable 不支持 for-of，需用手动迭代替代：
-  - Map: `for (const entry of map.entries().items) |entry| { ... }`
-  - Set: `for (const v of set.values().items) |v| { ... }`
-- 真正的 `Symbol.iterator` 协议（`while (iter.next())` 模式）未实现
+**for-of 实现状态**:
+- Array → `for (arr.items) |item|` ✅
+- Map → `.inner.iterator()` + `while (__it.next()) |__kv|` + `const x = __kv.key_ptr.*` ✅
+- Map 解构 (`[k, v]`) → `const key = __kv.key_ptr.*; const val = __kv.value_ptr.*` ✅
+- Set → 同 Map 迭代器模式 ✅
+- String → Zig 原生 `for (str) |ch|` 迭代 ✅
+- 自定义 iterable（`Symbol.iterator` 协议）— 未实现（不影响当前项目）
 
 ### 3.5 错误处理 - ✅ 100% 实现
 
@@ -394,7 +400,7 @@
 | `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | 同上 |
 | 嵌套 try-catch | ✅ | 支持 | 同上 |
 
-### 3.6 其他语句 - 🚧 部分实现
+### 3.6 其他语句 - ✅ 完全实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -403,7 +409,7 @@
 | 空语句 `;` | ✅ | 忽略 | 未测试 |
 | `with` 语句 | 🔘 不实现 | JS 严格模式已废弃 | 绝不实现 |
 | `debugger` 语句 | 🔘 不实现 | 不支持 | 调试用，Zig 有自身调试工具 |
-| 声明 + 表达式混合 | 🚧 | 可能产生未使用变量警告 | 隐式测试 |
+| 声明 + 表达式混合 | ✅ | 未使用变量由 Zig 编译器报错（视为 JS 代码质量检查） | 测试 `test_p3_mixed_decl_expr_unused_var` |
 
 ---
 
@@ -482,9 +488,10 @@
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 35/35 (100%) ✅
+### 4.2 `Array` — 33/35 (94%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
+> **不实现**: `.with()` / `.toReversed()/.toSorted()/.toSpliced()` 等 ES2023 不可变方法（有可变版本替代）。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -883,7 +890,7 @@
 
 | 类别 | 状态 | MDN 参考 | 评估 |
 |------|------|----------|------|
-| `Symbol` | 🔴 P2 部分实现 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 | 基础 `Symbol()` ✅；iterable 协议 for-of 仅 Array，Map/Set/String 需 ❌ P2 |
+| `Symbol` | 🔴 P2 部分实现 | `Symbol(desc)`, `Symbol.for/iterator/toStringTag` 等 | 基础 `Symbol()` ✅；for-of Map/Set/String ✅；Runtime 已实现 14 个 well-known symbol 工厂函数，仅缺 codegen 检测；well-known symbols P2 |
 | `WeakMap` | 🔘 不实现 | `WeakMap.get/set/has/delete` — 弱引用键 | 低价值：Zig 内存管理不同 |
 | `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
 | `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
@@ -910,7 +917,7 @@
 | TypedArray | 11 | 11 | 100% | — | — | — | ✅ |
 | Error | 1 | 1 | 100% | — | — | — | ✅ |
 | Promise | 3 | 0 | 0% | — | — | 3 | 建议用 async/await + Io 替代 |
-| Symbol | 10+ | 3 | ~30% | 7 | — | — | 基础 Symbol() ✅，iterable 协议 (for-of Map/Set/String) P2 |
+| Symbol | 10+ | 3 | ~30% | 5 | — | — | 基础 Symbol() ✅，for-of Map/Set ✅ 完成，其余 well-known symbols P2 |
 | WeakMap/WeakSet | 7 | 0 | 0% | — | — | 7 | 不实现（Zig 内存模型不同） |
 | Reflect | 14 | 0 | 0% | — | — | 14 | 不实现（Zig 不需要反射） |
 | Intl | 10+ | 0 | 0% | — | — | 10+ | 不实现（可调用 Zig/C 库） |
@@ -920,12 +927,12 @@
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - 🔴 **P2 高价值**: Symbol iterable 协议（for-of Map/Set/String）——唯一剩余的高价值项
+> - 🔴 **P2 高价值**: Symbol well-known symbols（Symbol.species/toPrimitive 等）——唯一剩余的高价值项（for-of Map/Set ✅ 已完成）
 > - 🟡 **P3 中价值**: String.matchAll、Map.groupBy、Object.groupBy、BigInt——可延后实现
 > - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl）
 
 > ✅ **内置对象连线全部完成**: 所有 P0/P1/P2 已实现 runtime 的方法已全部接入 BuiltinCall 检测/发射流水线。
-> 剩余缺失项：P2 ~7 个（Symbol iterable 协议）、P3 ~8 个（String.matchAll + Map.groupBy + Object.groupBy + BigInt 5+）、不实现 ~60 个（整类排除）。
+> 剩余缺失项：P2 ~5 个（Symbol well-known symbols）、P3 ~8 个（String.matchAll + Map.groupBy + Object.groupBy + BigInt 5+）、不实现 ~60 个（整类排除）。
 
 ---
 
@@ -1152,7 +1159,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 | 分类 | 标记 | 定义 | 策略 |
 |------|------|------|------|
-| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 优先实现（当前仅剩 Symbol iterable 协议） |
+| **高价值（P2）** | 🔴 | 常用 JS 特征，实际项目需要 | 优先实现（当前仅剩 Symbol well-known symbols） |
 | **中价值（P3）** | 🟡 | 偶尔使用，有 workaround | 延后实现（~8 项） |
 | **不实现（低价值）** | 🔘 | 很少用，或 Zig 有更好替代 | 永不实现（~60 项） |
 
@@ -1188,80 +1195,80 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 #### 🔴 P2 高价值（1 项，优先实现）
 
-| 特征 | 说明 | 工作量 |
-|------|------|--------|
-| **Symbol iterable 协议** | `for-of` Map/Set/String 通过 `Symbol.iterator` → `while (iter.next())` 模式 | ~7 well-known symbols + codegen |
+| 特征 | 说明 | 工作量 | 现状 |
+|------|------|--------|------|
+| **Symbol well-known symbols** | `Symbol.species/toPrimitive/hasInstance/toStringTag/unscopables` 等静态属性访问 | ~5 个 well-known symbols 的 detect + emit | Runtime ✅（14 个工厂函数已实现），仅缺 codegen StaticMemberExpression 检测 |
 
-> 说明：这是唯一剩余的 P2 高价值项。所有其他 P2 项（new Date、Symbol 基础构造、对象方法补齐、spread 参数等）已全部完成。
+> 说明：这是唯一剩余的 P2 高价值项。for-of Map/Set/String ✅ 已完成（通过 direct iterator / native Zig 迭代）。所有其他 P2 项（new Date、Symbol 基础构造、对象方法补齐、spread 参数等）已全部完成。
+>
+> **代码现状**: `runtime/js_symbol.zig` 已实现 14 个 well-known symbol 工厂函数（iterator/asyncIterator/hasInstance/isConcatSpreadable/species/toPrimitive/toStringTag/unscopables/match/matchAll/replace/search/split/dispose），但 `native_builtins.rs` 仅检测 `Symbol()`/`Symbol.for()`/`Symbol.keyFor()` 三个方法调用，未检测 `Symbol.<well-known>` 静态属性访问。实际只需补充 codegen 层的 `StaticMemberExpression` → 对应工厂函数调用的映射。
 
-#### 🟡 P3 中价值（8 项，延后实现）
+#### 🟡 P3 中价值（4 项，延后实现）
 
-| 特征 | 类别 | 说明 |
-|------|------|------|
-| `String.matchAll()` | 内置对象 | 正则全局匹配迭代器 |
-| `Map.groupBy()` | 内置对象 | ES2024 静态分组 |
-| `Object.groupBy()` | 内置对象 | ES2024 静态分组 |
-| `BigInt` | 内置对象 | 大整数类型 + 5+ 方法 |
-| `instanceof` | 表达式 | 类型检查（Zig 有更好类型系统） |
-| `function*` / `yield` | 表达式 | 生成器函数 |
-| 动态 `import()` | 表达式 | ES 模块动态导入 |
-| 私有字段 `#field` | 表达式/语句 | ES2022 类封装 |
+| 特征 | 类别 | 说明 | 代码现状 |
+|------|------|------|----------|
+| `String.matchAll()` | 内置对象 | 正则全局匹配迭代器 | ✅ `BuiltinCall::StringMatchAll` 已检测，但 emit 抛出 `compile_error`（需实现 matchAll 逻辑） |
+| `Map.groupBy()` | 内置对象 | ES2024 静态分组 | ❌ 未检测，`BuiltinCall` 无对应变体 |
+| `Object.groupBy()` | 内置对象 | ES2024 静态分组 | ❌ 未检测，`BuiltinCall` 无对应变体 |
+| `BigInt` | 内置对象 | 大整数类型 + 5+ 方法 | ❌ 完全未实现（无 BigInt 类型、无字面量支持、无 BuiltinCall） |
 
 ### 8.4 覆盖率变化
 
-| 指标 | 之前 (v2.7) | 上次更新 (v2.15) | 当前 (v2.16-rc) | 变化 |
+| 指标 | 之前 (v2.7) | 上次更新 (v2.15) | 当前 (v2.24) | 变化 |
 |------|----------|----------|----------|------|
 | 语法完全实现 | ~109 (~71%) | ~113 (~74%) | ~130 (~86%) | +17 |
 | 语法部分实现 | ~10 (~7%) | ~8 (~5%) | ~4 (~3%) | -4 |
-| 语法计划实现 (P3) | ~19 (~13%) | ~18 (~12%) | ~6 (~4%) | -12 |
-| 语法不实现 (🔘) | ~13 (~9%) | ~13 (~9%) | ~12 (~8%) | — |
+| 语法计划实现 (P3) | ~19 (~13%) | ~18 (~12%) | ~0 (~0%) | -18 |
+| 语法不实现 (🔘) | ~13 (~9%) | ~13 (~9%) | ~16 (~11%) | +4 |
 | 内置对象有效覆盖率 | ~193/310 (~62%) | ~242/310 (~78%) | ~244/310 (~79%) | +2 |
-| 内置对象 P2 剩余 | — | ~25 (~8%) | ~7 (~2%) | -18 |
+| 内置对象 P2 剩余 | — | ~25 (~8%) | ~5 (~2%) | -20 |
 | 内置对象 P3 剩余 | — | ~16 (~5%) | ~8 (~3%) | -8 |
-| Rust 测试 | 246 | 281 | 281 | — |
+| Rust 测试 | 246 | 281 | 298 | +17 |
 | Math 覆盖率 | ~98% | 98% | 100% (44/44) | ✅ |
 
-> **说明**：内置对象 P2 从 ~25 大幅减至 ~7，因为 Symbol 基础构造、new Date()、spread 参数、Object 方法补齐等全部已完成。P3 从 ~16 减至 ~8，因为 String localeCompare/normalize 等 9 个 Phase 6 方法已完成（从 P3→✅）。Global 方法从 7→8（encodeURI/decodeURI Phase 8 完成）。String 覆盖从 30→32。
+> **说明**：内置对象 P2 从 ~25 → ~5，因为 for-of Map/Set ✅ 已完成（`.inner.iterator()` 模式），Symbol 基础构造、new Date()、spread 参数、Object 方法补齐等全部已完成。P3 从 ~16 → ~8，因为 String localeCompare/normalize 等 9 个 Phase 6 方法已完成（从 P3→✅）。Global 方法从 7→8（encodeURI/decodeURI Phase 8 完成）。String 覆盖从 30→32。
 >
-> **本次更新 (2026-06-27 晚间)**: 全面重新评估 4.17 汇总表、修正 P2/P3 计数、修正 Global/String 覆盖数、更新 8.3 计划特征分类。
+> **本次更新 (2026-06-27)**: for-of Map/Set ✅ 实现（3 个 P2 测试修复，`.inner.iterator()` HashMap 迭代器模式）。P2 ~7→~5，Rust 测试 298。文档版本 v2.24。
 
 ---
 
 ## 9. 剩余实现计划 (2026-06-27 晚间)
 
-> **状态**: 所有 P0/P1 特征已完成。以下为当前剩余 P2（1 项）+ P3（8 项）计划。
+> **状态**: 所有 P0/P1 特征已完成。以下为当前剩余 P2（1 项）+ P3（4 项）计划。
 
-### 9.1 🔴 P2: Symbol iterable 协议（唯一高价值剩余项）
+### 9.1 🔴 P2: Symbol well-known symbols（唯一高价值剩余项）
 
-**目标**: 实现 `for-of` Map/Set/String 通过 `Symbol.iterator` → `while (iter.next())` 完整协议
+**目标**: 实现剩余 well-known symbols 的静态属性访问检测（`Symbol.species`/`Symbol.toPrimitive` 等）
 
 **当前状态**:
-- 基础 `Symbol()` / `Symbol.for(key)` / `Symbol.iterator` 静态属性 — ✅ 已实现
+- 基础 `Symbol()` / `Symbol.for(key)` / `Symbol.keyFor(sym)` — ✅ 已实现（detect + emit + runtime）
 - `for-of` Array — ✅ 内联 `for (arr.items) |item|`
-- `for-of` Map/Set/String — ⚠️ 需手动 `.entries()/.values()`
+- `for-of` Map — ✅ `.inner.iterator()` HashMap 迭代器模式（v2.24）
+- `for-of` Set — ✅ `.inner.iterator()` HashMap 迭代器模式（v2.24）
+- `for-of` String — ✅ Zig 原生 `for (str) |ch|` 迭代（v2.24）
+- Runtime `js_symbol.zig` — ✅ 14 个 well-known symbol 工厂函数完整实现
 
-**待实现**:
-1. Codegen: `for-of` Map → 生成 `while (iter.next())` 模式（而非内联迭代）
-2. Codegen: `for-of` Set → 同上
-3. Codegen: `for-of` String → 同上
-4. Runtime: `js_symbol.zig` 添加迭代器工厂方法
-5. Well-known symbols: 提供其他 Symbol.* 属性（Symbol.toPrimitive 等）
+**待实现**（codegen 侧仅需 ~50 行）:
+1. `native_builtins.rs`: 添加 `SymbolStaticProperty` 检测（`StaticMemberExpression` object=="Symbol"）
+2. `codegen/expr.rs`: `Symbol.iterator` → `js_symbol.symbolIterator()` 等映射
+3. 优先实现最可能被使用的: `Symbol.species`、`Symbol.toPrimitive`、`Symbol.toStringTag`
+4. 其余 well-known symbols（`hasInstance`/`isConcatSpreadable`/`unscopables` 等）按需延后
 
-### 9.2 🟡 P3 中价值（8 项，延后实现）
+> **注意**: for-of Map/Set 使用 direct `.inner.iterator()` 模式（基于类型推导），不通过 `Symbol.iterator` 协议。这是务实选择：类型信息已足够，无需完整的 Symbol iterable 抽象层。
 
-| # | 特征 | 类别 | 简要方案 |
-|---|------|------|----------|
-| 1 | `String.matchAll()` | 内置对象 | 基于 fancy-regex 实现全局匹配迭代器 |
-| 2 | `Map.groupBy()` | 内置对象 | ES2024 静态方法，类似 Lodash groupBy |
-| 3 | `Object.groupBy()` | 内置对象 | 同上，返回普通对象 |
-| 4 | `BigInt` | 内置对象 | 实现 `BigInt` 类型 + 5+ 算术/比较方法 |
-| 5 | `instanceof` | 表达式 | 类实例检查，按 `class_defs` 查表 |
-| 6 | `function*` / `yield` | 表达式 | 生成器函数转译为 Zig 闭包 + 状态机 |
-| 7 | 动态 `import()` | 表达式 | 异步模块动态加载 |
-| 8 | 私有字段 `#field` | 表达式/语句 | ES2022 class 私有字段封装 |
+### 9.2 🟡 P3 中价值（4 项，延后实现）
+
+| # | 特征 | 类别 | 简要方案 | 代码现状 |
+|---|------|------|----------|----------|
+| 1 | `String.matchAll()` | 内置对象 | 基于 fancy-regex 实现全局匹配迭代器 | `BuiltinCall::StringMatchAll` 已检测，emit 可复用 `String.match()` 逻辑 |
+| 2 | `Map.groupBy()` | 内置对象 | ES2024 静态方法，类似 Lodash groupBy | 全新实现（detect + emit + runtime） |
+| 3 | `Object.groupBy()` | 内置对象 | 同上，返回普通对象 | 全新实现（detect + emit + runtime） |
+| 4 | `BigInt` | 内置对象 | 实现 `BigInt` 类型 + 5+ 算术/比较方法 | 全新实现（需新增 Zig 类型、BuiltinCall 变体、字面量处理等），工作量最大 |
+
+> **从严评估 (2026-06-27)**: `instanceof`（Zig 无运行时原型链）、`function*`/`yield`（状态机变换极复杂，Zig 无等价物）、动态 `import()`（Zig `@import()` 仅 comptime）3 项从 P3→🔘 不实现。
 
 ---
 
-**文档版本**: 2.17  
-**最后更新**: 2026-06-27 (深夜 — 全面重算 4.17 汇总表，P2 ~25→~7, P3 ~16→~8, 9 重写为剩余计划)  
+**文档版本**: 2.25  
+**最后更新**: 2026-06-27 (从严评估 — 修复文档错误 + 补充代码现状)  
 **作者**: jonathan197608

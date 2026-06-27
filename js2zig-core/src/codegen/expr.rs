@@ -528,6 +528,12 @@ impl Codegen {
             Expression::ChainExpression(chain) => {
                 self.emit_optional_chain(chain);
             }
+            Expression::PrivateFieldExpression(mem) => {
+                // `obj.#field` → `obj.field` (strip #, no pub needed in Zig)
+                self.emit_expr(&mem.object);
+                self.write(".");
+                self.write(mem.field.name.as_str());
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
@@ -5120,9 +5126,21 @@ impl Codegen {
                 self.emit_expr(&ue.argument);
             }
             UnaryOperator::Typeof => {
-                self.write("@typeName(@TypeOf(");
-                self.emit_expr(&ue.argument);
-                self.write("))");
+                // Use inferred Zig type to emit the JS typeof string at compile time.
+                // For dynamic types (JsAny/Anytype), call the runtime jsTypeof() helper.
+                if let Some(ty) = self.infer_expr_type(&ue.argument) {
+                    if let Some(js_typeof) = ty.to_js_typeof() {
+                        self.write(js_typeof);
+                    } else {
+                        self.write("jsTypeof(");
+                        self.emit_expr(&ue.argument);
+                        self.write(")");
+                    }
+                } else {
+                    self.write("jsTypeof(");
+                    self.emit_expr(&ue.argument);
+                    self.write(")");
+                }
             }
             UnaryOperator::Void => {
                 // void expr: evaluate expr for side effects, return undefined

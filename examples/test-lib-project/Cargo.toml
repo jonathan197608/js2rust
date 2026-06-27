@@ -7,4 +7,4 @@ edition = "2021"
 js2rust-bridge = { path = "../../js2rust-bridge" }
 
 [build-dependencies]
-js2rust-bridge = { path = "../../js2rust-bridge" }
+js2rust-bridge = { path = "../../js2rust-bridge", features = ["stub-allocator"] }

@@ -45,6 +45,7 @@ impl Codegen {
             closure_defs: Vec::new(),
             oc_counter: 0,
             destructure_counter: 0,
+            for_of_counter: 0,
             typedarray_vars: std::collections::HashMap::new(),
             regexp_vars: std::collections::HashSet::new(),
             async_host_fns,
