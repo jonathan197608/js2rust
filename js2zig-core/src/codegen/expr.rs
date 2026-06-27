@@ -1057,76 +1057,432 @@ impl Codegen {
         result
     }
 
+    // ── Builtin lookup tables (table-driven dispatch helpers) ──────
+
+    /// Descriptor for a simple 1-arg Math builtin mapped to a Zig call.
+    fn math_one_arg_desc(b: &builtins::BuiltinCall) -> Option<MathOneArgDesc> {
+        match b {
+            // Direct Zig builtins
+            builtins::BuiltinCall::MathAbs => Some(MathOneArgDesc {
+                name: "abs",
+                format: "@abs({arg})",
+            }),
+            builtins::BuiltinCall::MathFloor => Some(MathOneArgDesc {
+                name: "floor",
+                format: "@floor({arg})",
+            }),
+            builtins::BuiltinCall::MathCeil => Some(MathOneArgDesc {
+                name: "ceil",
+                format: "@ceil({arg})",
+            }),
+            builtins::BuiltinCall::MathRound => Some(MathOneArgDesc {
+                name: "round",
+                format: "@round({arg})",
+            }),
+            builtins::BuiltinCall::MathSqrt => Some(MathOneArgDesc {
+                name: "sqrt",
+                format: "@sqrt({arg})",
+            }),
+            // Trig: @fn(@as(f64, @floatFromInt(x)))
+            builtins::BuiltinCall::MathSin => Some(MathOneArgDesc {
+                name: "sin",
+                format: "@sin(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathCos => Some(MathOneArgDesc {
+                name: "cos",
+                format: "@cos(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathTan => Some(MathOneArgDesc {
+                name: "tan",
+                format: "@tan(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathAtan => Some(MathOneArgDesc {
+                name: "atan",
+                format: "@atan(@as(f64, @floatFromInt({arg})))",
+            }),
+            // Log: @fn(@as(f64, @floatFromInt(x)))
+            builtins::BuiltinCall::MathLog => Some(MathOneArgDesc {
+                name: "log",
+                format: "@log(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathLog10 => Some(MathOneArgDesc {
+                name: "log10",
+                format: "@log10(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathLog2 => Some(MathOneArgDesc {
+                name: "log2",
+                format: "@log2(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathExp => Some(MathOneArgDesc {
+                name: "exp",
+                format: "@exp(@as(f64, @floatFromInt({arg})))",
+            }),
+            // std.math with f64 wrapping
+            builtins::BuiltinCall::MathAsin => Some(MathOneArgDesc {
+                name: "asin",
+                format: "std.math.asin(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathAcos => Some(MathOneArgDesc {
+                name: "acos",
+                format: "std.math.acos(@as(f64, @floatFromInt({arg})))",
+            }),
+            // std.math without wrapping
+            builtins::BuiltinCall::MathTrunc => Some(MathOneArgDesc {
+                name: "trunc",
+                format: "@trunc(@as(f64, @floatFromInt({arg})))",
+            }),
+            builtins::BuiltinCall::MathCbrt => Some(MathOneArgDesc {
+                name: "cbrt",
+                format: "std.math.cbrt({arg})",
+            }),
+            builtins::BuiltinCall::MathExpm1 => Some(MathOneArgDesc {
+                name: "expm1",
+                format: "std.math.expm1({arg})",
+            }),
+            builtins::BuiltinCall::MathSinh => Some(MathOneArgDesc {
+                name: "sinh",
+                format: "std.math.sinh({arg})",
+            }),
+            builtins::BuiltinCall::MathCosh => Some(MathOneArgDesc {
+                name: "cosh",
+                format: "std.math.cosh({arg})",
+            }),
+            builtins::BuiltinCall::MathTanh => Some(MathOneArgDesc {
+                name: "tanh",
+                format: "std.math.tanh({arg})",
+            }),
+            builtins::BuiltinCall::MathAsinh => Some(MathOneArgDesc {
+                name: "asinh",
+                format: "std.math.asinh({arg})",
+            }),
+            builtins::BuiltinCall::MathAcosh => Some(MathOneArgDesc {
+                name: "acosh",
+                format: "std.math.acosh({arg})",
+            }),
+            builtins::BuiltinCall::MathAtanh => Some(MathOneArgDesc {
+                name: "atanh",
+                format: "std.math.atanh({arg})",
+            }),
+            builtins::BuiltinCall::MathLog1p => Some(MathOneArgDesc {
+                name: "log1p",
+                format: "std.math.log1p({arg})",
+            }),
+            _ => None,
+        }
+    }
+
+    /// Emit a simple 1-arg Math builtin call using a format string.
+    fn emit_math_one_arg(&mut self, desc: &MathOneArgDesc, ce: &CallExpression) -> bool {
+        if ce.arguments.len() != 1 {
+            self.errors
+                .push(format!("Math.{}() requires exactly 1 argument", desc.name));
+            return false;
+        }
+        let (prefix, suffix) = desc
+            .format
+            .split_once("{arg}")
+            .expect("invalid math format — missing {arg}");
+        self.write(prefix);
+        self.emit_first_arg(&ce.arguments);
+        self.write(suffix);
+        true
+    }
+
+    /// Returns the descriptor for simple String runtime forwarding builtins.
+    fn string_runtime_desc(b: &builtins::BuiltinCall) -> Option<StringRuntimeDesc> {
+        match b {
+            // ── No allocator, 0 args ──
+            builtins::BuiltinCall::StringTrim => Some(StringRuntimeDesc {
+                method: "trim",
+                needs_allocator: false,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringTrimStart => Some(StringRuntimeDesc {
+                method: "trimStart",
+                needs_allocator: false,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringTrimEnd => Some(StringRuntimeDesc {
+                method: "trimEnd",
+                needs_allocator: false,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            // ── No allocator, 1 arg ──
+            builtins::BuiltinCall::StringIndexOf => Some(StringRuntimeDesc {
+                method: "indexOf",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringIncludes => Some(StringRuntimeDesc {
+                method: "includes",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringStartsWith => Some(StringRuntimeDesc {
+                method: "startsWith",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringEndsWith => Some(StringRuntimeDesc {
+                method: "endsWith",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringLastIndexOf => Some(StringRuntimeDesc {
+                method: "lastIndexOf",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringCharCodeAt => Some(StringRuntimeDesc {
+                method: "charCodeAt",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringCodePointAt => Some(StringRuntimeDesc {
+                method: "codePointAt",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            // ── No allocator, 1-2 args (second is optional) ──
+            builtins::BuiltinCall::StringSlice => Some(StringRuntimeDesc {
+                method: "slice",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 2,
+                opt_defaults: &["std.math.maxInt(i64)"],
+            }),
+            builtins::BuiltinCall::StringSubstring => Some(StringRuntimeDesc {
+                method: "substring",
+                needs_allocator: false,
+                min_args: 1,
+                max_args: 2,
+                opt_defaults: &["std.math.maxInt(i64)"],
+            }),
+            // ── No allocator, 0-1 arg ──
+            builtins::BuiltinCall::StringLocaleCompare => Some(StringRuntimeDesc {
+                method: "localeCompare",
+                needs_allocator: false,
+                min_args: 0,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            // ── With allocator, 0 args ──
+            builtins::BuiltinCall::StringToUpperCase => Some(StringRuntimeDesc {
+                method: "toUpper",
+                needs_allocator: true,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringToLocaleUpperCase => Some(StringRuntimeDesc {
+                method: "toLocaleUpper",
+                needs_allocator: true,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringToLowerCase => Some(StringRuntimeDesc {
+                method: "toLower",
+                needs_allocator: true,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringToLocaleLowerCase => Some(StringRuntimeDesc {
+                method: "toLocaleLower",
+                needs_allocator: true,
+                min_args: 0,
+                max_args: 0,
+                opt_defaults: &[],
+            }),
+            // ── With allocator, 1 arg ──
+            builtins::BuiltinCall::StringCharAt => Some(StringRuntimeDesc {
+                method: "charAt",
+                needs_allocator: true,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringAt => Some(StringRuntimeDesc {
+                method: "at",
+                needs_allocator: true,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringConcat => Some(StringRuntimeDesc {
+                method: "concat",
+                needs_allocator: true,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringRepeat => Some(StringRuntimeDesc {
+                method: "repeat",
+                needs_allocator: true,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            // ── With allocator, 1 arg (new) ──
+            builtins::BuiltinCall::StringSplit => Some(StringRuntimeDesc {
+                method: "split",
+                needs_allocator: true,
+                min_args: 1,
+                max_args: 1,
+                opt_defaults: &[],
+            }),
+            // ── With allocator, 2 args ──
+            builtins::BuiltinCall::StringPadStart => Some(StringRuntimeDesc {
+                method: "padStart",
+                needs_allocator: true,
+                min_args: 2,
+                max_args: 2,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringPadEnd => Some(StringRuntimeDesc {
+                method: "padEnd",
+                needs_allocator: true,
+                min_args: 2,
+                max_args: 2,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringReplace => Some(StringRuntimeDesc {
+                method: "replace",
+                needs_allocator: true,
+                min_args: 2,
+                max_args: 2,
+                opt_defaults: &[],
+            }),
+            builtins::BuiltinCall::StringReplaceAll => Some(StringRuntimeDesc {
+                method: "replaceAll",
+                needs_allocator: true,
+                min_args: 2,
+                max_args: 2,
+                opt_defaults: &[],
+            }),
+            // ── With allocator, 0-1 arg (default: "NFC") ──
+            builtins::BuiltinCall::StringNormalize => Some(StringRuntimeDesc {
+                method: "normalize",
+                needs_allocator: true,
+                min_args: 0,
+                max_args: 1,
+                opt_defaults: &["\"NFC\""],
+            }),
+            _ => None,
+        }
+    }
+
+    /// Emit a simple String runtime forwarding call: `js_string.method(alloc?, obj, ...)`.
+    fn emit_string_runtime_call(&mut self, desc: &StringRuntimeDesc, ce: &CallExpression) -> bool {
+        let n_args = ce.arguments.len();
+        if n_args < desc.min_args || n_args > desc.max_args {
+            self.errors.push(if desc.min_args == desc.max_args {
+                format!(
+                    "String.{}() requires exactly {} argument(s)",
+                    desc.method, desc.min_args
+                )
+            } else {
+                format!(
+                    "String.{}() requires {}-{} argument(s)",
+                    desc.method, desc.min_args, desc.max_args
+                )
+            });
+            return false;
+        }
+        let Some(obj_repr) = self.callee_object_repr(&ce.callee) else {
+            return false;
+        };
+        self.write(&format!("js_string.{}(", desc.method));
+        if desc.needs_allocator {
+            self.write("js_allocator.getAllocator(), ");
+        }
+        self.write(&obj_repr);
+
+        let total_slots = desc.max_args;
+        for slot in 0..total_slots {
+            if slot < n_args {
+                // Emit actual argument
+                if let Some(expr) = ce.arguments[slot].as_expression() {
+                    self.write(", ");
+                    self.emit_expr(expr);
+                }
+            } else {
+                // Emit default for optional slot
+                let opt_idx = slot - desc.min_args;
+                if let Some(default) = desc.opt_defaults.get(opt_idx)
+                    && !default.is_empty()
+                {
+                    self.write(&format!(", {}", default));
+                }
+            }
+        }
+        self.write(")");
+        true
+    }
+
+    /// Returns the Zig method name for Date setter builtins.
+    fn date_setter_method_name(b: &builtins::BuiltinCall) -> Option<&'static str> {
+        match b {
+            builtins::BuiltinCall::DateSetFullYear => Some("setFullYear"),
+            builtins::BuiltinCall::DateSetMonth => Some("setMonth"),
+            builtins::BuiltinCall::DateSetDate => Some("setDate"),
+            builtins::BuiltinCall::DateSetHours => Some("setHours"),
+            builtins::BuiltinCall::DateSetMinutes => Some("setMinutes"),
+            builtins::BuiltinCall::DateSetSeconds => Some("setSeconds"),
+            builtins::BuiltinCall::DateSetMilliseconds => Some("setMilliseconds"),
+            builtins::BuiltinCall::DateSetUTCFullYear => Some("setUTCFullYear"),
+            builtins::BuiltinCall::DateSetUTCMonth => Some("setUTCMonth"),
+            builtins::BuiltinCall::DateSetUTCDate => Some("setUTCDate"),
+            builtins::BuiltinCall::DateSetUTCHours => Some("setUTCHours"),
+            builtins::BuiltinCall::DateSetUTCMinutes => Some("setUTCMinutes"),
+            builtins::BuiltinCall::DateSetUTCSeconds => Some("setUTCSeconds"),
+            builtins::BuiltinCall::DateSetUTCMilliseconds => Some("setUTCMilliseconds"),
+            _ => None,
+        }
+    }
+
+    /// Emit a Date setter method call: `obj.setXxx(args...)`.
+    fn emit_date_setter_method(&mut self, method: &str, ce: &CallExpression) -> bool {
+        if let Expression::StaticMemberExpression(mem) = &ce.callee {
+            self.emit_expr(&mem.object);
+            self.write(&format!(".{method}("));
+            self.emit_comma_separated_args(&ce.arguments);
+            self.write(")");
+            true
+        } else {
+            self.errors.push(format!(
+                "Date.{method}() called on non-static-member expression"
+            ));
+            false
+        }
+    }
+
     /// Emit Zig code for a built-in object call
     /// Returns true if the call was handled, false otherwise
     fn emit_builtin_call(&mut self, builtin: &builtins::BuiltinCall, ce: &CallExpression) -> bool {
         match builtin {
             // ── Math methods ─────────────────────────────
-            builtins::BuiltinCall::MathAbs => {
-                // Math.abs(x) → @abs(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.abs() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@abs(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathFloor => {
-                // Math.floor(x) → @floor(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.floor() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@floor(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathCeil => {
-                // Math.ceil(x) → @ceil(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.ceil() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@ceil(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathRound => {
-                // Math.round(x) → @round(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.round() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@round(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathSqrt => {
-                // Math.sqrt(x) → @sqrt(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.sqrt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@sqrt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
             builtins::BuiltinCall::MathRandom => {
                 // Math.random() → @as(f64, @floatFromInt(std.crypto.random.int(u64))) / @as(f64, std.math.maxInt(u64))
                 // Simplified: use std.time.timestamp() for now
@@ -1245,78 +1601,6 @@ impl Codegen {
             }
 
             // ── Math trig ─────────────────────────────
-            builtins::BuiltinCall::MathSin => {
-                // Math.sin(x) → @sin(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.sin() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@sin(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathCos => {
-                // Math.cos(x) → @cos(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.cos() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@cos(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathTan => {
-                // Math.tan(x) → @tan(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.tan() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@tan(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathAsin => {
-                // Math.asin(x) → std.math.asin(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.asin() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.asin(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathAcos => {
-                // Math.acos(x) → std.math.acos(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.acos() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.acos(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathAtan => {
-                // Math.atan(x) → @atan(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.atan() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@atan(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
             builtins::BuiltinCall::MathAtan2 => {
                 // Math.atan2(y, x) → std.math.atan2(f64, y, x)
                 if ce.arguments.len() != 2 {
@@ -1337,54 +1621,6 @@ impl Codegen {
             }
 
             // ── Math log / other ──────────────────────
-            builtins::BuiltinCall::MathLog => {
-                // Math.log(x) → @log(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.log() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@log(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathLog10 => {
-                // Math.log10(x) → @log10(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.log10() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@log10(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathLog2 => {
-                // Math.log2(x) → @log2(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.log2() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@log2(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathExp => {
-                // Math.exp(x) → @exp(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.exp() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@exp(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
             builtins::BuiltinCall::MathSign => {
                 // Math.sign(x) → @select(f64, @as(f64, @floatFromInt(x)) > 0, 1.0, ...)
                 if ce.arguments.len() != 1 {
@@ -1402,136 +1638,7 @@ impl Codegen {
                 self.write(")))");
                 true
             }
-            builtins::BuiltinCall::MathTrunc => {
-                // Math.trunc(x) → @trunc(@as(f64, @floatFromInt(x)))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.trunc() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("@trunc(@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")))");
-                true
-            }
-            builtins::BuiltinCall::MathCbrt => {
-                // Math.cbrt(x) → std.math.cbrt(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.cbrt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.cbrt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
             // ── Phase 4 Math methods ─────────────────────
-            builtins::BuiltinCall::MathExpm1 => {
-                // Math.expm1(x) → std.math.expm1(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.expm1() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.expm1(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathSinh => {
-                // Math.sinh(x) → std.math.sinh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.sinh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.sinh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathCosh => {
-                // Math.cosh(x) → std.math.cosh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.cosh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.cosh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathTanh => {
-                // Math.tanh(x) → std.math.tanh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.tanh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.tanh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathAsinh => {
-                // Math.asinh(x) → std.math.asinh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.asinh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.asinh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathAcosh => {
-                // Math.acosh(x) → std.math.acosh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.acosh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.acosh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathAtanh => {
-                // Math.atanh(x) → std.math.atanh(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.atanh() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.atanh(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            builtins::BuiltinCall::MathLog1p => {
-                // Math.log1p(x) → std.math.log1p(x)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("Math.log1p() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("std.math.log1p(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
-                true
-            }
-
             builtins::BuiltinCall::MathClz32 => {
                 // Math.clz32(x) → @clz(@as(u32, @bitCast(@as(i32, @intFromFloat(x)))))
                 // JavaScript: convert to 32-bit int, then count leading zeros
@@ -1581,6 +1688,19 @@ impl Codegen {
                 self.write("))))");
                 true
             }
+
+            // ── Math 1-arg (table-driven, 25 methods) ─────
+            b if Self::math_one_arg_desc(b).is_some() => {
+                let desc = Self::math_one_arg_desc(b).unwrap();
+                self.emit_math_one_arg(&desc, ce)
+            }
+
+            // ── String runtime forwarding (27 methods) ────
+            b if Self::string_runtime_desc(b).is_some() => {
+                let desc = Self::string_runtime_desc(b).unwrap();
+                self.emit_string_runtime_call(&desc, ce)
+            }
+
             builtins::BuiltinCall::ArrayPop => {
                 // arr.pop() → _ = arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
                 // In return context, skip the _ = prefix.
@@ -2240,167 +2360,6 @@ impl Codegen {
                     self.write(&format!(
                         "{}.entries(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            // ── String methods ─────────────────────────────
-            builtins::BuiltinCall::StringIndexOf => {
-                // str.indexOf(search) → js_string.indexOf(str, search)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.indexOf() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!("js_string.indexOf({}, {})", obj_repr, arg_expr));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringIncludes => {
-                // str.includes(search) → js_string.includes(str, search)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.includes() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.includes({obj}, {arg})",
-                        obj = obj_repr,
-                        arg = arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringStartsWith => {
-                // str.startsWith(prefix) → js_string.startsWith(str, prefix)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.startsWith() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.startsWith({obj}, {arg})",
-                        obj = obj_repr,
-                        arg = arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringEndsWith => {
-                // str.endsWith(suffix) → js_string.endsWith(str, suffix)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.endsWith() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.endsWith({obj}, {arg})",
-                        obj = obj_repr,
-                        arg = arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringTrim => {
-                // str.trim() → js_string.trim(str)
-                if !ce.arguments.is_empty() {
-                    self.errors
-                        .push("String.trim() requires no arguments".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!("js_string.trim({})", obj_repr));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringSplit => {
-                // str.split(sep) → js_string.split(allocator, str, sep)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.split() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.split(js_allocator.getAllocator(), {}, {})",
-                        obj_repr, arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringPadStart => {
-                // str.padStart(len, pad) → js_string.padStart(alloc, str, len, pad)
-                if ce.arguments.len() != 2 {
-                    self.errors.push(
-                        "String.padStart() requires exactly 2 arguments (len, pad)".to_string(),
-                    );
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let len_expr = self.first_arg_string(&ce.arguments);
-                    let pad_expr = if let Some(arg) = ce.arguments.get(1)
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr_to_string(expr)
-                    } else {
-                        "\" \"".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.padStart(js_allocator.getAllocator(), {obj}, {len}, {pad})",
-                        obj = obj_repr,
-                        len = len_expr,
-                        pad = pad_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringPadEnd => {
-                // str.padEnd(len, pad) → js_string.padEnd(alloc, str, len, pad)
-                if ce.arguments.len() != 2 {
-                    self.errors.push(
-                        "String.padEnd() requires exactly 2 arguments (len, pad)".to_string(),
-                    );
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let len_expr = self.first_arg_string(&ce.arguments);
-                    let pad_expr = if let Some(arg) = ce.arguments.get(1)
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr_to_string(expr)
-                    } else {
-                        "\" \"".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.padEnd(js_allocator.getAllocator(), {obj}, {len}, {pad})",
-                        obj = obj_repr,
-                        len = len_expr,
-                        pad = pad_expr
                     ));
                     return true;
                 }
@@ -3331,121 +3290,10 @@ impl Codegen {
                 true
             }
 
-            // ── Date local setters ─────────────────────
-            builtins::BuiltinCall::DateSetFullYear => {
-                // date.setFullYear(year, month?, date?) → obj.setFullYear(year, month, date)
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setFullYear(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetMonth => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setMonth(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetDate => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setDate(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetHours => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setHours(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetMinutes => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setMinutes(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetSeconds => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setSeconds(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetMilliseconds => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setMilliseconds(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-
-            // ── Date UTC setters ─────────────────────
-            builtins::BuiltinCall::DateSetUTCFullYear => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCFullYear(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCMonth => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCMonth(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCDate => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCDate(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCHours => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCHours(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCMinutes => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCMinutes(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCSeconds => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCSeconds(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
-            }
-            builtins::BuiltinCall::DateSetUTCMilliseconds => {
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(").setUTCMilliseconds(");
-                self.emit_comma_separated_args(&ce.arguments);
-                self.write(")");
-                true
+            // ── Date setters (table-driven, 14 methods) ──
+            b if Self::date_setter_method_name(b).is_some() => {
+                let method = Self::date_setter_method_name(b).unwrap();
+                self.emit_date_setter_method(method, ce)
             }
 
             // ── Object methods (static) ────────────────────
@@ -3779,249 +3627,6 @@ impl Codegen {
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
-            }
-
-            // ── String methods (extended) ──────────────────
-            builtins::BuiltinCall::StringToUpperCase => {
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "js_string.toUpper(js_allocator.getAllocator(), {})",
-                        obj_repr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringToLocaleUpperCase => {
-                // str.toLocaleUpperCase() → js_string.toLocaleUpper(alloc, str)
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "js_string.toLocaleUpper(js_allocator.getAllocator(), {})",
-                        obj_repr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringToLowerCase => {
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "js_string.toLower(js_allocator.getAllocator(), {})",
-                        obj_repr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringToLocaleLowerCase => {
-                // str.toLocaleLowerCase() → js_string.toLocaleLower(alloc, str)
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "js_string.toLocaleLower(js_allocator.getAllocator(), {})",
-                        obj_repr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringCharAt => {
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.charAt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.charAt(js_allocator.getAllocator(), {}, {})",
-                        obj_repr, idx_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringAt => {
-                // str.at(index) — supports negative indices
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.at() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.at(js_allocator.getAllocator(), {}, {})",
-                        obj_repr, idx_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringCharCodeAt => {
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.charCodeAt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!("js_string.charCodeAt({}, {})", obj_repr, idx_expr));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringCodePointAt => {
-                // str.codePointAt(idx) → returns Unicode code point (i64)
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.codePointAt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let idx_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.codePointAt({}, {})",
-                        obj_repr, idx_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringConcat => {
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.concat() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.concat(js_allocator.getAllocator(), {}, {})",
-                        obj_repr, arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringSlice => {
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let start_expr = self.first_arg_string_or(&ce.arguments, "0");
-                    let end_expr = if ce.arguments.len() >= 2 {
-                        if let Some(arg) = ce.arguments.get(1)
-                            && let Some(expr) = arg.as_expression()
-                        {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            "std.math.maxInt(i64)".to_string()
-                        }
-                    } else {
-                        "std.math.maxInt(i64)".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.slice({}, {}, {})",
-                        obj_repr, start_expr, end_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringReplace => {
-                if ce.arguments.len() != 2 {
-                    self.errors
-                        .push("String.replace() requires exactly 2 arguments".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let old_expr = self.first_arg_string(&ce.arguments);
-                    let new_expr = if let Some(arg) = ce.arguments.get(1)
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr_to_string(expr)
-                    } else {
-                        "\"\"".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.replace(js_allocator.getAllocator(), {}, {}, {})",
-                        obj_repr, old_expr, new_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringReplaceAll => {
-                // str.replaceAll(old, new) → js_string.replaceAll(allocator, str, old, new)
-                if ce.arguments.len() != 2 {
-                    self.errors
-                        .push("String.replaceAll() requires exactly 2 arguments".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let old_expr = self.first_arg_string(&ce.arguments);
-                    let new_expr = if let Some(arg) = ce.arguments.get(1)
-                        && let Some(expr) = arg.as_expression()
-                    {
-                        self.emit_expr_to_string(expr)
-                    } else {
-                        "\"".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.replaceAll(js_allocator.getAllocator(), {}, {}, {})",
-                        obj_repr, old_expr, new_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringRepeat => {
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.repeat() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let n_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.repeat(js_allocator.getAllocator(), {}, {})",
-                        obj_repr, n_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringSubstring => {
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let start_expr = self.first_arg_string_or(&ce.arguments, "0");
-                    let end_expr = if ce.arguments.len() >= 2 {
-                        if let Some(arg) = ce.arguments.get(1)
-                            && let Some(expr) = arg.as_expression()
-                        {
-                            self.emit_expr_to_string(expr)
-                        } else {
-                            "std.math.maxInt(i64)".to_string()
-                        }
-                    } else {
-                        "std.math.maxInt(i64)".to_string()
-                    };
-                    self.write(&format!(
-                        "js_string.substring({}, {}, {})",
-                        obj_repr, start_expr, end_expr
-                    ));
-                    return true;
-                }
-                false
             }
 
             // ── Global functions (extended) ────────────────────
@@ -4397,52 +4002,6 @@ impl Codegen {
             }
 
             // ── String methods (P2) ─────────────────────────────
-            builtins::BuiltinCall::StringTrimStart => {
-                // str.trimStart() → js_string.trimStart(str)
-                if !ce.arguments.is_empty() {
-                    self.errors
-                        .push("String.trimStart() requires no arguments".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!("js_string.trimStart({})", obj_repr));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringTrimEnd => {
-                // str.trimEnd() → js_string.trimEnd(str)
-                if !ce.arguments.is_empty() {
-                    self.errors
-                        .push("String.trimEnd() requires no arguments".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!("js_string.trimEnd({})", obj_repr));
-                    return true;
-                }
-                false
-            }
-
-            builtins::BuiltinCall::StringLastIndexOf => {
-                // str.lastIndexOf(search) → js_string.lastIndexOf(str, search) → i64 | -1
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("String.lastIndexOf() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                if let Some(obj_repr) = self.callee_object_repr(&ce.callee) {
-                    let arg_expr = self.first_arg_string(&ce.arguments);
-                    self.write(&format!(
-                        "js_string.lastIndexOf({}, {})",
-                        obj_repr, arg_expr
-                    ));
-                    return true;
-                }
-                false
-            }
-
             builtins::BuiltinCall::RegExpTest => {
                 // /pattern/.test(str) → host.regex_test("pattern", str)
                 // regexpVar.isMatch(str) → regexpVar.isMatch(str) (method call on JsRegExp)
@@ -4595,39 +4154,6 @@ impl Codegen {
                 self.compile_error(ce.span, "String.matchAll() requires regex support, which is not yet implemented in js2zig");
                 true
             }
-            builtins::BuiltinCall::StringLocaleCompare => {
-                // str.localeCompare(other) → js_string.localeCompare(str, other)
-                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!("js_string.localeCompare({}", obj_name));
-                    if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
-                        self.write(", ");
-                        self.emit_expr(arg);
-                    }
-                    self.write(")");
-                    true
-                } else {
-                    false
-                }
-            }
-            builtins::BuiltinCall::StringNormalize => {
-                // str.normalize(form) → js_string.normalize(alloc, str, form)
-                if let Some(obj_name) = self.callee_object_repr(&ce.callee) {
-                    self.write(&format!(
-                        "js_string.normalize(js_allocator.getAllocator(), {}, ",
-                        obj_name
-                    ));
-                    if let Some(arg) = ce.arguments.first().and_then(|a| a.as_expression()) {
-                        self.emit_expr(arg);
-                    } else {
-                        self.write("\"NFC\"");
-                    }
-                    self.write(")");
-                    true
-                } else {
-                    false
-                }
-            }
-
             // ── Object methods (P2) ─────────────────────────────
             builtins::BuiltinCall::ObjectIs => {
                 // Object.is(a, b) → SameValue comparison
@@ -4840,6 +4366,7 @@ impl Codegen {
                 self.write(")");
                 true
             }
+            _ => false,
         }
     }
 
@@ -5582,6 +5109,30 @@ impl Codegen {
 // Codegen is now purely generative — it reads from
 // self.type_info (TypeCheckResult) pre-computed by TypeInferrer.
 // ============================================================
+
+/// Descriptor for a simple 1-arg Math builtin mapped to a Zig call.
+struct MathOneArgDesc {
+    /// JS method name for error messages (e.g. "abs").
+    name: &'static str,
+    /// Zig format string with `{arg}` placeholder.
+    format: &'static str,
+}
+
+/// Descriptor for simple String runtime forwarding calls.
+struct StringRuntimeDesc {
+    /// Zig function name (e.g. "trim", "toUpper").
+    method: &'static str,
+    /// Whether the call needs `js_allocator.getAllocator()` as first arg.
+    needs_allocator: bool,
+    /// Minimum number of JS-level arguments required.
+    min_args: usize,
+    /// Maximum number of JS-level arguments accepted.
+    max_args: usize,
+    /// Default Zig expressions for optional argument slots beyond min_args.
+    /// One entry per optional slot (e.g. min=1,max=2 → 1 entry for 2nd arg).
+    /// Empty entries mean the slot is simply omitted when the arg is missing.
+    opt_defaults: &'static [&'static str],
+}
 
 impl Codegen {
     /// Infer the type of an expression. Returns ZigType.
