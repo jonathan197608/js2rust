@@ -154,14 +154,14 @@
 
 ### 2.8 赋值运算符 (Assignment Operators) - ✅ 100% 实现
 
-| 特性                                 | 状态 | Zig 输出 | 测试 |
-|------------------------------------|------|----------|------|
-| `=` `+=` `-=` `*=` `/=` `%=`       | ✅ | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅ | 对应 Zig 语法 | 未测试 |
-| `**=` (指数赋值)                       | ✅ | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
-| `&&=` (逻辑与赋值)                      | ✅ | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
-| `                                  ||=` (逻辑或赋值) | ✅ | `left ||= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
-| `??=` (空值合并赋值)                     | ✅ | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` |
+| 特性              | 状态           | Zig 输出 | 测试 |
+|-----------------|--------------|----------|------|
+| `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | 隐式测试 |
+| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | 未测试 |
+| `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
+| `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
+| `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
+| `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` |
 
 ### 2.9 对象/数组访问 - ✅ 100% 实现
 
