@@ -1191,8 +1191,30 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MathHypot => {
-                // Math.hypot() is not supported — generate @compileError
-                self.compile_error(ce.span, "Math.hypot() is not supported in js2zig");
+                // Math.hypot(...args) → sqrt(sum of squares)
+                // JS semantics: Math.hypot() = 0, Math.hypot(x) = |x|,
+                // Math.hypot(x, y, ...) = sqrt(x² + y² + ...)
+                if ce.arguments.is_empty() {
+                    self.write("0");
+                } else if ce.arguments.len() == 1 {
+                    // Math.hypot(x) → @abs(@as(f64, x))
+                    self.write("@abs(@as(f64, ");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write("))");
+                } else {
+                    // Math.hypot(x, y, ...) → @sqrt(@as(f64,x)*@as(f64,x) + ...)
+                    self.write("@sqrt(");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(" + ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            let arg_str = self.emit_expr_to_string(expr);
+                            self.write(&format!("@as(f64, {0})*@as(f64, {0})", arg_str));
+                        }
+                    }
+                    self.write(")");
+                }
                 true
             }
 

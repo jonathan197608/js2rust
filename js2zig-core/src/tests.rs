@@ -1799,7 +1799,7 @@ export function createUser() {
 
     #[test]
     fn test_native_proto_math_methods() {
-        // JS source: Math.abs(), Math.floor(), Math.ceil(), Math.round(), Math.sqrt()
+        // JS source: Math.abs(), Math.floor(), Math.ceil(), Math.round(), Math.sqrt(), Math.hypot()
         let js = r#"
 /**
  * @param {number} x
@@ -1811,7 +1811,8 @@ export function testMath(x) {
     const ceilX = Math.ceil(x);
     const roundX = Math.round(x);
     const sqrtX = Math.sqrt(x);
-    return absX + floorX + ceilX + roundX + sqrtX;
+    const hypotX = Math.hypot(x, 3, 4);
+    return absX + floorX + ceilX + roundX + sqrtX + hypotX;
 }
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_math_methods");
@@ -1822,6 +1823,17 @@ export function testMath(x) {
         assert!(zig.contains("@ceil("), "Expected '@ceil(' in:\n{}", zig);
         assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
         assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
+        // Math.hypot(x, 3, 4) → @sqrt(@as(f64,x)*@as(f64,x) + @as(f64,3)*@as(f64,3) + @as(f64,4)*@as(f64,4))
+        assert!(
+            zig.contains("@sqrt("),
+            "Expected '@sqrt(' for Math.hypot in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("*@as(f64,"),
+            "Expected squared terms for Math.hypot in:\n{}",
+            zig
+        );
     }
 
     // ── Test: Array.pop() built-in method ─────────────

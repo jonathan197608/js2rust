@@ -19,7 +19,7 @@ pub enum BuiltinCall {
     MathPow,    // Math.pow(base, exp)
     MathMax,    // Math.max(...args)
     MathMin,    // Math.min(...args)
-    MathHypot,  // Math.hypot(...) — 不支持，报编译错误
+    MathHypot,  // Math.hypot(...v) — sqrt(sum of squares)
     // Math trig
     MathSin,   // Math.sin(x)
     MathCos,   // Math.cos(x)
@@ -688,8 +688,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::MathClz32 | BuiltinCall::MathImul => Some(ZigType::I64),
         BuiltinCall::MathFround => Some(ZigType::F64),
 
-        // Math max/min — depends on args, can't statically determine
-        BuiltinCall::MathMax | BuiltinCall::MathMin | BuiltinCall::MathHypot => None,
+        // Math max/min/hypot — all return f64
+        BuiltinCall::MathMax | BuiltinCall::MathMin => None, // depends on args
+        BuiltinCall::MathHypot => Some(ZigType::F64),
 
         // String methods
         BuiltinCall::StringIndexOf | BuiltinCall::StringLastIndexOf | BuiltinCall::StringSearch => {

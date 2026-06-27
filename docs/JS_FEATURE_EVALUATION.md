@@ -396,7 +396,7 @@
 | `Math.pow(b,e)` | `Math.pow(base, exponent)` | `base, exp: number` | `number` | `std.math.pow(f64, b, e)` | ✅ | ✅ | ✅ | ✅ |
 | `Math.max(...v)` | `Math.max(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
 | `Math.min(...v)` | `Math.min(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
-| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `std.math.hypot(values)` | ✅ | ✅ | — | 🔵 P1 待实现（Zig 有 `std.math.hypot`） |
+| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@sqrt(sum of squares)` | ✅ | ✅ | — | ✅ P1 done |
 | **— 三角函数 (6) —** | | | | | | | | |
 | `Math.sin(x)` | `Math.sin(x)` | `x: number` (弧度) | `number` | `@sin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
 | `Math.cos(x)` | `Math.cos(x)` | `x: number` (弧度) | `number` | `@cos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
@@ -852,7 +852,7 @@
 
 | 类别 | 总方法数 | 有效覆盖 | 比例 | P2 高价值 | P3 中价值 | 不实现 | 备注 |
 |------|---------|---------|------|---------|---------|---------|------|
-| Math | 44 | 42 | 95% | 1 | — | 1 | Math.hypot P1（Zig 有 `std.math.hypot`） |
+| Math | 44 | 43 | 98% | 0 | — | 1 | ✅ P1 done (Math.hypot) |
 | Array | 35 | 33 | 94% | — | — | 2 | ES2023 不可变方法不实现 |
 | String | 35 | 30 | 86% | — | 3 | 2 | Phase 6 完成，.matchAll P3 |
 | Map | 12 | 11 | 92% | — | 1 | — | Map.groupBy P3 |
@@ -1187,17 +1187,6 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 9.1 🔵 P1 高价值特征（优先实现）
 
-#### `Math.hypot(...v)` — P1
-- **目标**: 实现 `Math.hypot(...values)` → `number` (平方根和)
-- **Zig 对应**: `std.math.hypot(f64, f64)` (二元版本); 多元需用 `@sqrt(@reduce(.Add, v * v))`
-- **实现方案**:
-  1. Runtime: `js_math.zig` 添加 `hypot(values: []f64)` → `f64`
-  2. 对 2 个参数直接用 `std.math.hypot(a, b)`
-  3. 对 3+ 个参数用 `@sqrt(@reduce(.Add, v * v))`
-  4. 检测: `detect_builtin_call` 匹配 `Math.hypot`
-  5. 发射: `emit_builtin_call` 生成 `js_math.hypot(args)`
-- **测试**: MDN 官方示例
-
 #### `Date.parse(s)` — P1
 - **目标**: 实现 `Date.parse(dateString)` → `i64` (timestamp in ms)
 - **难点**: 日期字符串格式复杂（ISO 8601、RFC 2822、本地格式）
@@ -1270,6 +1259,6 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ---
 
-**文档版本**: 2.8  
+**文档版本**: 2.9  
 **最后更新**: 2026-06-27  
 **作者**: jonathan197608
