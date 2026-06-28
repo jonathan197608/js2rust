@@ -66,33 +66,43 @@ impl TypeInferrer {
             Expression::BinaryExpression(be) => {
                 let left = self.infer_expr_type(&be.left);
                 let right = self.infer_expr_type(&be.right);
+
+                // Pre-compute flags used in multiple match arms (before left/right are moved)
+                let is_numeric_op = matches!(
+                    be.operator,
+                    BinaryOperator::Addition
+                        | BinaryOperator::Subtraction
+                        | BinaryOperator::Multiplication
+                        | BinaryOperator::Division
+                        | BinaryOperator::Remainder
+                );
+                let has_f64 = matches!(left, InferResult::Definite(ZigType::F64))
+                    || matches!(right, InferResult::Definite(ZigType::F64));
+                let is_compare_op = matches!(
+                    be.operator,
+                    BinaryOperator::Equality
+                        | BinaryOperator::Inequality
+                        | BinaryOperator::StrictEquality
+                        | BinaryOperator::StrictInequality
+                        | BinaryOperator::LessThan
+                        | BinaryOperator::LessEqualThan
+                        | BinaryOperator::GreaterThan
+                        | BinaryOperator::GreaterEqualThan
+                );
+                let is_addition = be.operator == BinaryOperator::Addition;
+                let is_string_concat = is_addition
+                    && (self.expr_is_string(&be.left) || self.expr_is_string(&be.right));
+
                 match (left, right) {
                     (InferResult::Definite(l), InferResult::Definite(r)) => {
                         InferResult::Definite(Self::infer_binary_type(be.operator, l, r))
                     }
-                    // Comparison operators always return Bool, regardless of operand types.
-                    _ if matches!(
-                        be.operator,
-                        BinaryOperator::Equality
-                            | BinaryOperator::Inequality
-                            | BinaryOperator::StrictEquality
-                            | BinaryOperator::StrictInequality
-                            | BinaryOperator::LessThan
-                            | BinaryOperator::LessEqualThan
-                            | BinaryOperator::GreaterThan
-                            | BinaryOperator::GreaterEqualThan
-                    ) =>
-                    {
-                        InferResult::Definite(ZigType::Bool)
-                    }
-                    // String concatenation: if either operand is definitely a string, result is Str
-                    _ if be.operator == BinaryOperator::Addition => {
-                        if self.expr_is_string(&be.left) || self.expr_is_string(&be.right) {
-                            InferResult::Definite(ZigType::Str)
-                        } else {
-                            InferResult::Indeterminate
-                        }
-                    }
+                    // Comparison operators always return Bool
+                    _ if is_compare_op => InferResult::Definite(ZigType::Bool),
+                    // String concatenation
+                    _ if is_string_concat => InferResult::Definite(ZigType::Str),
+                    // Numeric promotion: if one operand is F64, result is F64
+                    _ if is_numeric_op && has_f64 => InferResult::Definite(ZigType::F64),
                     _ => InferResult::Indeterminate,
                 }
             }
@@ -263,6 +273,18 @@ impl TypeInferrer {
                     match mem.property.name.as_str() {
                         "MAX_VALUE" | "MIN_VALUE" | "MAX_SAFE_INTEGER" | "MIN_SAFE_INTEGER"
                         | "EPSILON" | "NaN" | "POSITIVE_INFINITY" | "NEGATIVE_INFINITY" => {
+                            return InferResult::Definite(ZigType::F64);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Math static properties: Math.PI, Math.E, Math.LN2, etc.
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Math"
+                {
+                    match mem.property.name.as_str() {
+                        "PI" | "E" | "LN10" | "LN2" | "LOG10E" | "LOG2E" | "SQRT1_2" | "SQRT2" => {
                             return InferResult::Definite(ZigType::F64);
                         }
                         _ => {}
