@@ -1,9 +1,9 @@
 [package]
-name = "showcase-project"
+name = "mdn-test-project"
 version = "0.1.0"
 edition = "2021"
 authors = ["jonathan197608"]
-description = "Showcase project for js2rust — for-in static struct integration demo"
+description = "MDN JS Reference test project for js2rust — auto-generated tests from MDN examples"
 
 [dependencies]
 js2rust-bridge = { version = "0.7", path = "../../js2rust-bridge" }

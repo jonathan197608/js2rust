@@ -510,9 +510,11 @@ impl TypeInferrer {
             }
             // String methods called on a str-typed variable
             ZigType::Str => match method {
-                "indexOf" => InferResult::Definite(ZigType::I64),
+                "indexOf" | "lastIndexOf" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
-                "trim" | "split" | "padStart" | "padEnd" => InferResult::Definite(ZigType::Str),
+                "trim" | "trimStart" | "trimEnd" | "split" | "padStart" | "padEnd" | "charAt"
+                | "at" | "toUpperCase" | "toLowerCase" | "slice" | "substring" | "replace"
+                | "replaceAll" | "concat" | "repeat" => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
             // JsSymbol methods

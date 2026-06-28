@@ -8118,6 +8118,130 @@ function test(arr) {
         );
     }
 
+    // ── for 循环初始值修复 ──────────────────────────────────────────
+    #[test]
+    fn test_for_loop_nonzero_init() {
+        // Bug fix: `for (let i = 1; ...)` was erroneously emitting `var i: i64 = 0`
+        // instead of `var i: i64 = 1`. Now the actual init expression is emitted.
+        let js = r#"
+/**
+ * @returns {i64}
+ */
+export function sumFrom1() {
+    let sum = 0;
+    for (let i = 1; i <= 5; i = i + 1) {
+        sum = sum + i;
+    }
+    return sum;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_for_loop_nonzero_init");
+        assert!(
+            zig.contains("var i: i64 = 1"),
+            "Expected 'var i: i64 = 1' (not 0) in generated code:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains("var i: i64 = 0"),
+            "Should not contain 'var i: i64 = 0' when init is 1:\n{}",
+            zig
+        );
+    }
+
+    // ── 补充：遗漏的 🔘 不实现特性 ──────────────────────────────────
+
+    #[test]
+    fn test_not_implemented_array_to_sorted() {
+        // 🔘 Array.prototype.toSorted(): ES2023 不可变方法
+        assert_not_implemented(
+            r#"
+function test() {
+    const arr = [3, 1, 2];
+    return arr.toSorted();
+}
+"#,
+            "Array.prototype.toSorted()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_array_to_spliced() {
+        // 🔘 Array.prototype.toSpliced(): ES2023 不可变方法
+        assert_not_implemented(
+            r#"
+function test() {
+    const arr = [1, 2, 3, 4];
+    return arr.toSpliced(1, 2);
+}
+"#,
+            "Array.prototype.toSpliced()",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_regexp_flags() {
+        // 🔘 RegExp.prototype.flags: 高级正则属性
+        assert_not_implemented(
+            r#"
+function test() {
+    const re = /abc/gi;
+    return re.flags;
+}
+"#,
+            "RegExp.prototype.flags",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_regexp_global() {
+        // 🔘 RegExp.prototype.global: 高级正则属性
+        assert_not_implemented(
+            r#"
+function test() {
+    const re = /abc/g;
+    return re.global;
+}
+"#,
+            "RegExp.prototype.global",
+        );
+    }
+
+    // ── 边缘情况：带类型标注的 🔘 特性 ──────────────────────────────
+    // 验证即使添加 @returns 类型标注，不实现特性仍然报错
+
+    #[test]
+    fn test_not_implemented_instanceof_with_annotation() {
+        // 🔘 instanceof 带返回类型标注 — 不应静默通过
+        assert_not_implemented(
+            r#"
+/**
+ * @param {i64[]} arr
+ * @returns {bool}
+ */
+function check(arr) {
+    return arr instanceof Array;
+}
+"#,
+            "instanceof with @returns annotation",
+        );
+    }
+
+    #[test]
+    fn test_not_implemented_eval_with_annotation() {
+        // 🔘 eval() 带返回类型标注 — 不应静默通过
+        assert_not_implemented(
+            r#"
+/**
+ * @returns {i64}
+ */
+function test() {
+    return eval("1 + 2");
+}
+"#,
+            "eval() with @returns annotation",
+        );
+    }
+
     // ── 🔘 汇总测试：运行所有测试并输出汇总报告 ─────────────────────
     // 注意：以上每个测试独立运行。如需汇总报告，运行：
     //   cargo test test_not_implemented_ -- --nocapture

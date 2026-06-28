@@ -216,6 +216,9 @@ pub enum BuiltinCall {
     EncodeURI,          // encodeURI(s)
     DecodeURI,          // decodeURI(s)
 
+    // Unsupported global functions (emit @compileError)
+    Eval, // eval(s) — security risk, not supported
+
     // Console methods
     ConsoleLog,   // console.log(msg)
     ConsoleError, // console.error(msg)
@@ -288,6 +291,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "decodeURIComponent" => return Some(BuiltinCall::DecodeURIComponent),
             "encodeURI" => return Some(BuiltinCall::EncodeURI),
             "decodeURI" => return Some(BuiltinCall::DecodeURI),
+            "eval" => return Some(BuiltinCall::Eval),
             "Symbol" => return Some(BuiltinCall::SymbolConstructor),
             _ => return None,
         }

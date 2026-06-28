@@ -1514,7 +1514,13 @@ impl Codegen {
                 for decl in &vd.declarations {
                     if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                         self.write_indent();
-                        self.write(&format!("var {}: i64 = 0;\n", name));
+                        if let Some(init_expr) = &decl.init {
+                            // Emit the actual initializer value (e.g. `let i = 1` → `var i: i64 = 1`)
+                            let init_text = self.capture_expr(init_expr);
+                            self.write(&format!("var {}: i64 = {};\n", name, init_text.trim()));
+                        } else {
+                            self.write(&format!("var {}: i64 = 0;\n", name));
+                        }
                     }
                 }
             } else {

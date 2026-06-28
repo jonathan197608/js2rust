@@ -1263,10 +1263,11 @@ impl Codegen {
     /// Returns the descriptor for simple String runtime forwarding builtins.
     fn string_runtime_desc(b: &builtins::BuiltinCall) -> Option<StringRuntimeDesc> {
         match b {
-            // ── No allocator, 0 args ──
+            // ── No allocator, 0 args, non-fallible ──
             builtins::BuiltinCall::StringTrim => Some(StringRuntimeDesc {
                 method: "trim",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
@@ -1274,6 +1275,7 @@ impl Codegen {
             builtins::BuiltinCall::StringTrimStart => Some(StringRuntimeDesc {
                 method: "trimStart",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
@@ -1281,14 +1283,16 @@ impl Codegen {
             builtins::BuiltinCall::StringTrimEnd => Some(StringRuntimeDesc {
                 method: "trimEnd",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
             }),
-            // ── No allocator, 1 arg ──
+            // ── No allocator, 1 arg, non-fallible ──
             builtins::BuiltinCall::StringIndexOf => Some(StringRuntimeDesc {
                 method: "indexOf",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1296,6 +1300,7 @@ impl Codegen {
             builtins::BuiltinCall::StringIncludes => Some(StringRuntimeDesc {
                 method: "includes",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1303,6 +1308,7 @@ impl Codegen {
             builtins::BuiltinCall::StringStartsWith => Some(StringRuntimeDesc {
                 method: "startsWith",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1310,6 +1316,7 @@ impl Codegen {
             builtins::BuiltinCall::StringEndsWith => Some(StringRuntimeDesc {
                 method: "endsWith",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1317,6 +1324,7 @@ impl Codegen {
             builtins::BuiltinCall::StringLastIndexOf => Some(StringRuntimeDesc {
                 method: "lastIndexOf",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1324,6 +1332,7 @@ impl Codegen {
             builtins::BuiltinCall::StringCharCodeAt => Some(StringRuntimeDesc {
                 method: "charCodeAt",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1331,14 +1340,16 @@ impl Codegen {
             builtins::BuiltinCall::StringCodePointAt => Some(StringRuntimeDesc {
                 method: "codePointAt",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
             }),
-            // ── No allocator, 1-2 args (second is optional) ──
+            // ── No allocator, 1-2 args, non-fallible ──
             builtins::BuiltinCall::StringSlice => Some(StringRuntimeDesc {
                 method: "slice",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 2,
                 opt_defaults: &["std.math.maxInt(i64)"],
@@ -1346,22 +1357,25 @@ impl Codegen {
             builtins::BuiltinCall::StringSubstring => Some(StringRuntimeDesc {
                 method: "substring",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 1,
                 max_args: 2,
                 opt_defaults: &["std.math.maxInt(i64)"],
             }),
-            // ── No allocator, 0-1 arg ──
+            // ── No allocator, 0-1 arg, non-fallible ──
             builtins::BuiltinCall::StringLocaleCompare => Some(StringRuntimeDesc {
                 method: "localeCompare",
                 needs_allocator: false,
+                is_fallible: false,
                 min_args: 0,
                 max_args: 1,
                 opt_defaults: &[],
             }),
-            // ── With allocator, 0 args ──
+            // ── With allocator, 0 args, fallible (returns ![]const u8) ──
             builtins::BuiltinCall::StringToUpperCase => Some(StringRuntimeDesc {
                 method: "toUpper",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
@@ -1369,6 +1383,7 @@ impl Codegen {
             builtins::BuiltinCall::StringToLocaleUpperCase => Some(StringRuntimeDesc {
                 method: "toLocaleUpper",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
@@ -1376,6 +1391,7 @@ impl Codegen {
             builtins::BuiltinCall::StringToLowerCase => Some(StringRuntimeDesc {
                 method: "toLower",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
@@ -1383,14 +1399,16 @@ impl Codegen {
             builtins::BuiltinCall::StringToLocaleLowerCase => Some(StringRuntimeDesc {
                 method: "toLocaleLower",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 0,
                 max_args: 0,
                 opt_defaults: &[],
             }),
-            // ── With allocator, 1 arg ──
+            // ── With allocator, 1 arg, fallible ──
             builtins::BuiltinCall::StringCharAt => Some(StringRuntimeDesc {
                 method: "charAt",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1398,6 +1416,7 @@ impl Codegen {
             builtins::BuiltinCall::StringAt => Some(StringRuntimeDesc {
                 method: "at",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1405,6 +1424,7 @@ impl Codegen {
             builtins::BuiltinCall::StringConcat => Some(StringRuntimeDesc {
                 method: "concat",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
@@ -1412,22 +1432,25 @@ impl Codegen {
             builtins::BuiltinCall::StringRepeat => Some(StringRuntimeDesc {
                 method: "repeat",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
             }),
-            // ── With allocator, 1 arg (new) ──
+            // ── With allocator, 1 arg, fallible (returns ![][]const u8) ──
             builtins::BuiltinCall::StringSplit => Some(StringRuntimeDesc {
                 method: "split",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 1,
                 max_args: 1,
                 opt_defaults: &[],
             }),
-            // ── With allocator, 2 args ──
+            // ── With allocator, 2 args, fallible ──
             builtins::BuiltinCall::StringPadStart => Some(StringRuntimeDesc {
                 method: "padStart",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 2,
                 max_args: 2,
                 opt_defaults: &[],
@@ -1435,6 +1458,7 @@ impl Codegen {
             builtins::BuiltinCall::StringPadEnd => Some(StringRuntimeDesc {
                 method: "padEnd",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 2,
                 max_args: 2,
                 opt_defaults: &[],
@@ -1442,6 +1466,7 @@ impl Codegen {
             builtins::BuiltinCall::StringReplace => Some(StringRuntimeDesc {
                 method: "replace",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 2,
                 max_args: 2,
                 opt_defaults: &[],
@@ -1449,14 +1474,16 @@ impl Codegen {
             builtins::BuiltinCall::StringReplaceAll => Some(StringRuntimeDesc {
                 method: "replaceAll",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 2,
                 max_args: 2,
                 opt_defaults: &[],
             }),
-            // ── With allocator, 0-1 arg (default: "NFC") ──
+            // ── With allocator, 0-1 arg, fallible ──
             builtins::BuiltinCall::StringNormalize => Some(StringRuntimeDesc {
                 method: "normalize",
                 needs_allocator: true,
+                is_fallible: true,
                 min_args: 0,
                 max_args: 1,
                 opt_defaults: &["\"NFC\""],
@@ -1485,6 +1512,9 @@ impl Codegen {
         let Some(obj_repr) = self.callee_object_repr(&ce.callee) else {
             return false;
         };
+        if desc.is_fallible {
+            self.write("try ");
+        }
         self.write(&format!("js_string.{}(", desc.method));
         if desc.needs_allocator {
             self.write("js_allocator.getAllocator(), ");
@@ -4477,6 +4507,11 @@ impl Codegen {
                 self.write(")");
                 true
             }
+            builtins::BuiltinCall::Eval => {
+                // eval() is not supported — emit @compileError
+                self.compile_error(ce.span, "eval() is not supported (security risk, cannot dynamically execute at compile time)");
+                true
+            }
             _ => false,
         }
     }
@@ -4954,7 +4989,7 @@ impl Codegen {
     }
 
     /// Capture the output of an expression to a string, leaving self.output unchanged.
-    fn capture_expr(&mut self, expr: &Expression) -> String {
+    pub(crate) fn capture_expr(&mut self, expr: &Expression) -> String {
         let saved = self.output.len();
         self.emit_expr(expr);
         let result = self.output[saved..].to_string();
@@ -5235,6 +5270,9 @@ struct StringRuntimeDesc {
     method: &'static str,
     /// Whether the call needs `js_allocator.getAllocator()` as first arg.
     needs_allocator: bool,
+    /// Whether the Zig runtime function returns an error union (`!T`).
+    /// If true, `try` is prepended to the call expression.
+    is_fallible: bool,
     /// Minimum number of JS-level arguments required.
     min_args: usize,
     /// Maximum number of JS-level arguments accepted.

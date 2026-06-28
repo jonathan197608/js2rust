@@ -1,0 +1,7 @@
+[project]
+js_file = "js_src/app.js"
+additional_js_files = [
+    "js_src/test_expressions.js",
+    "js_src/test_statements.js",
+    "js_src/test_builtins.js",
+]

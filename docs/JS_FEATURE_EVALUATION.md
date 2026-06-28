@@ -1,7 +1,7 @@
 ﻿# JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 304 个 Rust 测试 + 27 个 Zig 测试
+> **测试覆盖**: 346 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | ~151 |
 | **内置对象方法总数** | ~321 |
-| **测试覆盖** | 304 个 Rust 测试 + 27 个 Zig 测试 |
+| **测试覆盖** | 346 个 Rust 测试 + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — ~102 特性
@@ -1106,17 +1106,18 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 304 个测试
+### 7.1 Rust 单元测试 - 346 个测试
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `native_proto::tests` | 277 | 所有核心语法、内置对象、闭包、错误处理 |
+| `native_proto::tests` | 317 | 所有核心语法、内置对象、闭包、错误处理 |
 | `native_proto::jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
 | `sourcemap` | 4 | Source Map 生成 |
 | `testgen` | 3 | Zig 测试代码生成 |
+| `test-lib-project` | 2 | 端到端集成测试 |
 
 ### 7.2 测试覆盖情况
 
-304 个 Rust 测试全部通过，0 clippy 警告，覆盖所有已实现特性的核心路径。
+346 个 Rust 测试全部通过，0 clippy 警告，覆盖所有已实现特性的核心路径。
 

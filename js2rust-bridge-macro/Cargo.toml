@@ -1,6 +1,6 @@
 [package]
 name = "js2rust-bridge-macro"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Proc-macro for generating Rust FFI bindings from js2rust C ABI export metadata"
 authors = ["jonathan197608"]
@@ -20,4 +20,4 @@ serde_json = "1"
 proc-macro2 = "1"
 toml = "0.8"
 indexmap = { version = "2", features = ["serde"] }
-js2zig-core = { version = "0.5", path = "../js2zig-core" }
+js2zig-core = { version = "0.6", path = "../js2zig-core" }

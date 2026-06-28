@@ -355,11 +355,14 @@ pub const NodeStat = struct {
 // 这些是非成员函数，vtable 可以引用它们
 
 fn allocImpl(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
-    _ = alignment;
-    _ = ret_addr;
     const self_: *MultiArenaAllocator = @ptrCast(@alignCast(ctx));
-    const buf = self_.allocBytes(len) catch return null;
-    return buf.ptr;
+    const node = self_.selectNode() orelse return null;
+    const arena_alloc = node.allocator();
+    // Delegate to the arena allocator's vtable, passing alignment through.
+    // This ensures ArrayList(i64) etc. get properly aligned memory.
+    const ptr = arena_alloc.vtable.alloc(arena_alloc.ptr, len, alignment, ret_addr) orelse return null;
+    _ = node.tryMarkCoolingIfFull();
+    return ptr;
 }
 
 fn freeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) void {
@@ -519,4 +522,52 @@ test "MultiArenaAllocator thread safety: isReady is atomic" {
     for (da.nodes) |*node| {
         try testing.expect(node.isReady());
     }
+}
+
+// ── 向后兼容的旧 API（全局分配器包装器）────────────────────────
+
+var g_allocator: ?*MultiArenaAllocator = null;
+var g_backing: ?Allocator = null;
+
+/// 初始化全局分配器（旧 API 兼容）
+pub fn initGlobalAllocator() void {
+    if (g_allocator != null) return;
+    const backing = std.heap.page_allocator;
+    g_backing = backing;
+    g_allocator = MultiArenaAllocator.init(backing, null, null) catch @panic("initGlobalAllocator failed");
+}
+
+/// 释放全局分配器（旧 API 兼容）
+pub fn deinitGlobalAllocator() void {
+    if (g_allocator == null) return;
+    g_allocator.?.deinit();
+    g_allocator = null;
+    g_backing = null;
+}
+
+/// 重置全局分配器（旧 API 兼容 — 轮换 Arena）
+pub fn resetGlobalAllocator() void {
+    if (g_allocator == null) return;
+    // MultiArenaAllocator 自动管理 Arena 轮换，无需手动重置
+    // 此函数保留是为了 API 兼容性
+}
+
+/// 分配内存（旧 API 兼容 — 供 C ABI 调用）
+pub fn js_allocator_alloc(size: usize) []u8 {
+    if (g_allocator == null) initGlobalAllocator();
+    return g_allocator.?.allocBytes(size) catch @panic("js_allocator_alloc failed");
+}
+
+/// 复制字符串（旧 API 兼容 — 供 C ABI 调用）
+pub fn js_allocator_dupe(src: []const u8) []u8 {
+    if (g_allocator == null) initGlobalAllocator();
+    const buf = g_allocator.?.allocBytes(src.len) catch @panic("js_allocator_dupe failed");
+    @memcpy(buf, src);
+    return buf;
+}
+
+/// 获取全局分配器的 Allocator 接口（旧 API 兼容）
+pub fn getAllocator() Allocator {
+    if (g_allocator == null) initGlobalAllocator();
+    return g_allocator.?.allocator();
 }
