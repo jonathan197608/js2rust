@@ -41,6 +41,13 @@ impl TypeInferrer {
                         &data.typedefs,
                     ));
                 }
+                // Built-in global constants
+                if matches!(id.name.as_str(), "NaN" | "Infinity") {
+                    return InferResult::Definite(ZigType::F64);
+                }
+                if id.name.as_str() == "undefined" {
+                    return InferResult::Definite(ZigType::JsAny);
+                }
                 // Then var_types
                 if let Some(ty) = self.var_types.get(id.name.as_str()) {
                     // Anytype params are indeterminate for type inference
@@ -87,6 +94,7 @@ impl TypeInferrer {
                 }
                 UnaryOperator::Void => InferResult::Definite(ZigType::JsAny),
                 UnaryOperator::Delete => InferResult::Definite(ZigType::Bool),
+                UnaryOperator::Typeof => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
 
@@ -103,6 +111,50 @@ impl TypeInferrer {
                         "Map" => InferResult::Definite(ZigType::NamedStruct("Map".to_string())),
                         "Set" => InferResult::Definite(ZigType::NamedStruct("Set".to_string())),
                         "Date" => InferResult::Definite(ZigType::NamedStruct("Date".to_string())),
+                        "DataView" => {
+                            InferResult::Definite(ZigType::NamedStruct("DataView".to_string()))
+                        }
+                        "ArrayBuffer" => {
+                            InferResult::Definite(ZigType::NamedStruct("ArrayBuffer".to_string()))
+                        }
+                        "Uint8Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Uint8Array".to_string()))
+                        }
+                        "Uint8ClampedArray" => InferResult::Definite(ZigType::NamedStruct(
+                            "Uint8ClampedArray".to_string(),
+                        )),
+                        "Uint16Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Uint16Array".to_string()))
+                        }
+                        "Uint32Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Uint32Array".to_string()))
+                        }
+                        "Int8Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Int8Array".to_string()))
+                        }
+                        "Int16Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Int16Array".to_string()))
+                        }
+                        "Int32Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Int32Array".to_string()))
+                        }
+                        "Float32Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Float32Array".to_string()))
+                        }
+                        "Float64Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("Float64Array".to_string()))
+                        }
+                        "BigInt64Array" => {
+                            InferResult::Definite(ZigType::NamedStruct("BigInt64Array".to_string()))
+                        }
+                        "BigUint64Array" => InferResult::Definite(ZigType::NamedStruct(
+                            "BigUint64Array".to_string(),
+                        )),
+                        "RegExp" => {
+                            InferResult::Definite(ZigType::NamedStruct("RegExp".to_string()))
+                        }
+                        "Boolean" => InferResult::Definite(ZigType::Bool),
+                        "String" => InferResult::Definite(ZigType::Str),
                         name if self.class_names.contains(name) => {
                             InferResult::Definite(ZigType::NamedStruct(name.to_string()))
                         }
@@ -184,6 +236,19 @@ impl TypeInferrer {
                         | "species" | "toPrimitive" | "toStringTag" | "unscopables" | "match"
                         | "matchAll" | "replace" | "search" | "split" | "dispose" => {
                             return InferResult::Definite(ZigType::JsSymbol);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Number static properties: Number.MAX_VALUE, Number.EPSILON, etc.
+                if let Expression::Identifier(id) = &mem.object
+                    && id.name.as_str() == "Number"
+                {
+                    match mem.property.name.as_str() {
+                        "MAX_VALUE" | "MIN_VALUE" | "MAX_SAFE_INTEGER" | "MIN_SAFE_INTEGER"
+                        | "EPSILON" | "NaN" | "POSITIVE_INFINITY" | "NEGATIVE_INFINITY" => {
+                            return InferResult::Definite(ZigType::F64);
                         }
                         _ => {}
                     }

@@ -4876,6 +4876,71 @@ impl Codegen {
                 self.write(")");
                 true
             }
+            // ── Global type constructors (used as functions) ──
+            builtins::BuiltinCall::NumberConstructor => {
+                // Number(x) → @as(f64, @floatFromInt(x)) for integer args,
+                // or @as(f64, @floatCast(x)) for float args.
+                // Strings and other types: not yet supported (use parseInt/parseFloat).
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Number() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("@as(f64, @floatFromInt(");
+                self.emit_first_arg(&ce.arguments);
+                self.write("))");
+                true
+            }
+            builtins::BuiltinCall::StringConstructor => {
+                // String(x) — string coercion
+                // For numeric types, use std.fmt.bufPrint or similar.
+                // TODO: full string coercion for all types.
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("String() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("(blk: { const _val = ");
+                self.emit_first_arg(&ce.arguments);
+                self.write("; ");
+                self.write("break :blk std.fmt.allocPrint(js_allocator.getAllocator(), \"{d}\", .{_val}) catch @panic(\"OOM\"); })");
+                true
+            }
+            builtins::BuiltinCall::BooleanConstructor => {
+                // Boolean(x) → x != 0 (truthy for numbers)
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("Boolean() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(" != 0)");
+                true
+            }
+            builtins::BuiltinCall::BigIntConstructor => {
+                // BigInt(x) → js_bigint.JsBigInt.fromI64(alloc, @intCast(x))
+                if ce.arguments.len() != 1 {
+                    self.errors
+                        .push("BigInt() requires exactly 1 argument".to_string());
+                    return false;
+                }
+                self.write("js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), @intCast(");
+                self.emit_first_arg(&ce.arguments);
+                self.write(")) catch @panic(\"OOM: BigInt\")");
+                true
+            }
+            builtins::BuiltinCall::ObjectConstructor => {
+                // Object(x) → x (identity in Zig — everything is a value)
+                if ce.arguments.is_empty() {
+                    // Object() → empty object, not supported in native mode
+                    self.compile_error(ce.span, "Object() without arguments would create an empty object which is not supported in native_proto mode. Use struct literal {} instead.");
+                } else {
+                    self.emit_first_arg(&ce.arguments);
+                }
+                true
+            }
+
             builtins::BuiltinCall::Eval => {
                 // eval() is not supported — emit @compileError
                 self.compile_error(ce.span, "eval() is not supported (security risk, cannot dynamically execute at compile time)");

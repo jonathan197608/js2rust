@@ -8098,15 +8098,20 @@ function test() {
     }
 
     #[test]
-    fn test_not_implemented_bigint_function() {
-        // 🔘 BigInt(): 大整数构造函数
-        assert_not_implemented(
+    fn test_bigint_constructor() {
+        // ✅ BigInt(): 大整数构造函数 (现已支持)
+        let zig = transpile_and_assert!(
             r#"
 function test() {
     return BigInt(123);
 }
 "#,
-            "BigInt() constructor",
+            "test_bigint_constructor"
+        );
+        assert!(
+            zig.contains("fromI64"),
+            "BigInt(123) should generate fromI64 code, got:\n{}",
+            zig
         );
     }
 

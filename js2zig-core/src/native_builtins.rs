@@ -216,6 +216,13 @@ pub enum BuiltinCall {
     EncodeURI,          // encodeURI(s)
     DecodeURI,          // decodeURI(s)
 
+    // Global type constructors (used as functions)
+    NumberConstructor,  // Number(x) → f64
+    StringConstructor,  // String(x) → []const u8
+    BooleanConstructor, // Boolean(x) → bool
+    BigIntConstructor,  // BigInt(x) → BigInt
+    ObjectConstructor,  // Object(x) → JsAny (wrapping primitive to object)
+
     // Unsupported global functions (emit @compileError)
     Eval, // eval(s) — security risk, not supported
 
@@ -292,6 +299,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "encodeURI" => return Some(BuiltinCall::EncodeURI),
             "decodeURI" => return Some(BuiltinCall::DecodeURI),
             "eval" => return Some(BuiltinCall::Eval),
+            "Number" => return Some(BuiltinCall::NumberConstructor),
+            "String" => return Some(BuiltinCall::StringConstructor),
+            "Boolean" => return Some(BuiltinCall::BooleanConstructor),
+            "BigInt" => return Some(BuiltinCall::BigIntConstructor),
+            "Object" => return Some(BuiltinCall::ObjectConstructor),
             "Symbol" => return Some(BuiltinCall::SymbolConstructor),
             _ => return None,
         }
@@ -864,6 +876,13 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         // Symbol methods
         BuiltinCall::SymbolConstructor | BuiltinCall::SymbolFor => Some(ZigType::JsSymbol),
         BuiltinCall::SymbolKeyFor => Some(ZigType::Str), // Returns ?[]const u8 (description or null)
+
+        // Global type constructors (used as functions)
+        BuiltinCall::NumberConstructor => Some(ZigType::F64),
+        BuiltinCall::StringConstructor => Some(ZigType::Str),
+        BuiltinCall::BooleanConstructor => Some(ZigType::Bool),
+        BuiltinCall::BigIntConstructor => Some(ZigType::BigInt),
+        BuiltinCall::ObjectConstructor => Some(ZigType::JsAny),
 
         // Methods that return void or complex types — can't infer
         _ => None,
