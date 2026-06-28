@@ -337,6 +337,9 @@ impl TypeInferrer {
                 _ => self.infer_expr_type(&ae.right),
             },
 
+            // ParenthesizedExpression: unwrap and recurse
+            Expression::ParenthesizedExpression(pe) => self.infer_expr_type(&pe.expression),
+
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
         }
@@ -359,6 +362,8 @@ impl TypeInferrer {
             Expression::ConditionalExpression(ce) => {
                 self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
             }
+            // ParenthesizedExpression: unwrap and recurse
+            Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             _ => false,
         }
     }

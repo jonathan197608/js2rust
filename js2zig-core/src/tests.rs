@@ -8242,6 +8242,59 @@ function test() {
         );
     }
 
+    // ── #811: ternary + string concat with parenthesized expression ────
+
+    #[test]
+    fn test_native_proto_ternary_concat_parens() {
+        // #811: ParenthesizedExpression wrapping ConditionalExpression in string concat
+        // Fix: emit_string_concat / expr_is_string / infer_expr_type now unwrap ParenthesizedExpression
+        let js = r#"
+export function format(x) {
+    return "value: " + (x > 5 ? "big" : "small");
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_ternary_concat_parens");
+        println!("=== Ternary concat with parens ===\n{}", zig);
+
+        // Should use {s} format specifier, not {}
+        assert!(
+            zig.contains("{s}"),
+            "Expected {{s}} format specifier for string ternary, got:\n{}",
+            zig
+        );
+        assert!(
+            !zig.contains("{}"),
+            "Should NOT use {{}} for string ternary, but got:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for concat, got:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_ternary_concat_no_parens() {
+        // Ternary in concat without explicit parens (sanity check: already worked)
+        let js = r#"
+export function format(x) {
+    return "value: " + x > 5 ? "big" : "small";
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_ternary_concat_no_parens");
+        println!("=== Ternary concat without parens ===\n{}", zig);
+
+        // Even without parens, the operator precedence means + binds tighter,
+        // so the ?? is "(value: " + x > 5) ? ...", which is a different semantic.
+        // This test mainly ensures we don't crash; format specifier check is omitted.
+        assert!(
+            zig.contains("std.fmt.allocPrint"),
+            "Expected allocPrint for concat, got:\n{}",
+            zig
+        );
+    }
+
     // ── 🔘 汇总测试：运行所有测试并输出汇总报告 ─────────────────────
     // 注意：以上每个测试独立运行。如需汇总报告，运行：
     //   cargo test test_not_implemented_ -- --nocapture

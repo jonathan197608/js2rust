@@ -682,7 +682,12 @@ impl Codegen {
             } else {
                 // Pick format specifier based on inferred type (match emit_template_literal logic).
                 // ConditionalExpression: use {s} only if both branches are strings
-                let placeholder = match op {
+                // Unwrap ParenthesizedExpression first (oxc wraps ternary in parens in concat)
+                let spec_expr = match op {
+                    Expression::ParenthesizedExpression(pe) => &pe.expression,
+                    other => other,
+                };
+                let placeholder = match spec_expr {
                     Expression::ConditionalExpression(ce) => {
                         // Check if both branches are definitely strings
                         let cons_str = match &ce.consequent {
@@ -697,7 +702,7 @@ impl Codegen {
                             "{s}"
                         } else {
                             // Fallback to infer_expr_type
-                            match self.infer_expr_type(op) {
+                            match self.infer_expr_type(spec_expr) {
                                 Some(ZigType::Str) => "{s}",
                                 Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
                                 Some(ZigType::Bool) => "{}",
@@ -706,10 +711,10 @@ impl Codegen {
                         }
                     }
                     _ => {
-                        if self.expr_is_string(op) {
+                        if self.expr_is_string(spec_expr) {
                             "{s}"
                         } else {
-                            match self.infer_expr_type(op) {
+                            match self.infer_expr_type(spec_expr) {
                                 Some(ZigType::Str) => "{s}",
                                 Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
                                 Some(ZigType::Bool) => "{}",
@@ -981,6 +986,8 @@ impl Codegen {
                 };
                 cons_is_str && alt_is_str
             }
+            // ParenthesizedExpression: unwrap and recurse
+            Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             _ => false,
         }
     }
@@ -5599,6 +5606,9 @@ impl Codegen {
                     _ => None,
                 }
             }
+
+            // ParenthesizedExpression: unwrap and recurse
+            Expression::ParenthesizedExpression(pe) => self.infer_expr_type(&pe.expression),
 
             // Rule 3: Other expressions → indeterminate
             _ => None,
