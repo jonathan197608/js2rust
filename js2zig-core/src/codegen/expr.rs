@@ -1298,6 +1298,66 @@ impl Codegen {
                 return;
             }
         }
+        // Handle ArrayExpression method calls: ['a','b'].includes('a')
+        // Generate a temporary array variable, then dispatch to builtin.
+        if let Expression::StaticMemberExpression(ref mem) = ce.callee
+            && matches!(mem.object, Expression::ArrayExpression(_))
+        {
+            // Generate temp variable name
+            let tmp_name = format!("_arr_lit_{}", self.task_counter);
+            self.task_counter += 1;
+            // Emit temp variable declaration
+            self.write(&format!("(blk: {{ const {} = ", tmp_name));
+            self.emit_expr(&mem.object);
+            self.write(";\n");
+            // Rewrite callee to use temp variable and re-detect builtin
+            let mut tmp_ce = ce.clone();
+            // We can't easily rewrite CE here; instead, manually emit the builtin call
+            // by constructing a new StaticMemberExpression with Identifier temp name.
+            // For simplicity, just emit the array method directly:
+            let method_name = mem.property.name.as_str();
+            match method_name {
+                "includes" => {
+                    // ['a','b'].includes(x) → (blk: { ... })
+                    if ce.arguments.len() != 1 {
+                        self.errors
+                            .push("Array.includes() requires 1 argument".to_string());
+                        return;
+                    }
+                    let arg_expr =
+                        self.emit_expr_to_string(ce.arguments[0].as_expression().unwrap());
+                    self.write(&format!(
+                        "if (std.mem.indexOf(u8, {tmp}.items, {arg}) != null) true else false;",
+                        tmp = tmp_name,
+                        arg = arg_expr
+                    ));
+                    self.write(" })");
+                    return;
+                }
+                "indexOf" => {
+                    if ce.arguments.len() != 1 {
+                        self.errors
+                            .push("Array.indexOf() requires 1 argument".to_string());
+                        return;
+                    }
+                    let arg_expr =
+                        self.emit_expr_to_string(ce.arguments[0].as_expression().unwrap());
+                    self.write(&format!(
+                        "((std.mem.indexOf(u8, {tmp}.items, {arg}) orelse -1) catch -1); }}",
+                        tmp = tmp_name,
+                        arg = arg_expr
+                    ));
+                    return;
+                }
+                _ => {
+                    self.errors.push(format!(
+                        "Array literal method '.{}()' not yet supported",
+                        method_name
+                    ));
+                    return;
+                }
+            }
+        }
         if let Some(mut builtin) = builtins::detect_builtin_call(ce) {
             // Override: if detect_builtin_call returns ArrayAt but object is a string, use StringAt
             if matches!(builtin, builtins::BuiltinCall::ArrayAt)
@@ -1412,6 +1472,7 @@ impl Codegen {
                 return;
             }
             // Member function call (obj.method(...)) — not fully supported
+            // Try to handle as builtin call first (for array methods, string methods, etc.)
             let callee_str = format!("{:?}", ce.callee);
             self.errors.push(format!(
                 "Member function calls (obj.method()) are not fully supported in native_proto mode: callee = {}",
@@ -2157,6 +2218,20 @@ impl Codegen {
             b if Self::string_runtime_desc(b).is_some() => {
                 let desc = Self::string_runtime_desc(b).unwrap();
                 self.emit_string_runtime_call(&desc, ce)
+            }
+
+            builtins::BuiltinCall::ArrayPush => {
+                // arr.push(x) → arr.append(alloc, x) catch @panic("OOM")
+                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                    self.write(&format!(
+                        "{}.append(js_allocator.getAllocator(), ",
+                        obj_name
+                    ));
+                    self.emit_comma_separated_args(&ce.arguments);
+                    self.write(") catch @panic(\"OOM: Array.push\")");
+                    return true;
+                }
+                false
             }
 
             builtins::BuiltinCall::ArrayPop => {

@@ -52,6 +52,7 @@ pub enum BuiltinCall {
 
     // Array methods (non-closure)
     ArrayPop,         // arr.pop()
+    ArrayPush,        // arr.push(x)
     ArrayShift,       // arr.shift()
     ArrayUnshift,     // arr.unshift(x)
     ArrayReverse,     // arr.reverse()
@@ -568,6 +569,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             }
 
             "pop" => Some(BuiltinCall::ArrayPop),
+            "push" => Some(BuiltinCall::ArrayPush),
             "shift" => Some(BuiltinCall::ArrayShift),
             "unshift" => Some(BuiltinCall::ArrayUnshift),
             "reverse" => Some(BuiltinCall::ArrayReverse),
