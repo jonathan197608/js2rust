@@ -3,9 +3,56 @@ js_file = "js_src/app.js"
 additional_js_files = [
     "js_src/test_minimal.js",
     "js_src/test_simple_ternary.js",
-    # "js_src/test_array_methods.js",  # disabled: member function calls not supported
-    # "js_src/test_nested_function.js",  # disabled: function return type inference issue
-    "js_src/test_ternary_concat.js",  # #811: fixed ParenthesizedExpression in ternary + string concat
-    # "js_src/test_ternary.js",  # disabled: separate ternary issue
-    # "js_src/test_expressions_part1.js",  # disabled: has codegen issues, enable after fixing
+    "js_src/test_ternary_concat.js",
+
+    # === Statements (5 parts, 44 fragments) ===
+    "js_src/test_statements_part1.js",
+    "js_src/test_statements_part2.js",
+    "js_src/test_statements_part3.js",
+    "js_src/test_statements_part4.js",
+    "js_src/test_statements_part5.js",
+
+    # === Expressions (17 parts, 168 fragments) ===
+    "js_src/test_expressions_part1.js",
+    "js_src/test_expressions_part2.js",
+    "js_src/test_expressions_part3.js",
+    "js_src/test_expressions_part4.js",
+    "js_src/test_expressions_part5.js",
+    "js_src/test_expressions_part6.js",
+    "js_src/test_expressions_part7.js",
+    "js_src/test_expressions_part8.js",
+    "js_src/test_expressions_part9.js",
+    "js_src/test_expressions_part10.js",
+    "js_src/test_expressions_part11.js",
+    "js_src/test_expressions_part12.js",
+    "js_src/test_expressions_part13.js",
+    "js_src/test_expressions_part14.js",
+    "js_src/test_expressions_part15.js",
+    "js_src/test_expressions_part16.js",
+    "js_src/test_expressions_part17.js",
+
+    # === Builtins (23 parts, 228 fragments) ===
+    "js_src/test_builtins_part1.js",
+    "js_src/test_builtins_part2.js",
+    "js_src/test_builtins_part3.js",
+    "js_src/test_builtins_part4.js",
+    "js_src/test_builtins_part5.js",
+    "js_src/test_builtins_part6.js",
+    "js_src/test_builtins_part7.js",
+    "js_src/test_builtins_part8.js",
+    "js_src/test_builtins_part9.js",
+    "js_src/test_builtins_part10.js",
+    "js_src/test_builtins_part11.js",
+    "js_src/test_builtins_part12.js",
+    "js_src/test_builtins_part13.js",
+    "js_src/test_builtins_part14.js",
+    "js_src/test_builtins_part15.js",
+    "js_src/test_builtins_part16.js",
+    "js_src/test_builtins_part17.js",
+    "js_src/test_builtins_part18.js",
+    "js_src/test_builtins_part19.js",
+    "js_src/test_builtins_part20.js",
+    "js_src/test_builtins_part21.js",
+    "js_src/test_builtins_part22.js",
+    "js_src/test_builtins_part23.js",
 ]

@@ -477,7 +477,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         }
                     }
                     has_error = true;
-                    break;
+                    // Continue to next file instead of breaking — log errors for all files
+                    // before deciding whether to skip the group.
+                    continue;
                 }
 
                 if !diagnostics.is_empty() {
@@ -533,13 +535,23 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
-            if has_error {
+            // Only skip the group if NO files succeeded codegen.
+            // Individual file errors are logged above; successful files still get compiled.
+            if per_file_modules.is_empty() {
+                if has_error {
+                    eprintln!("  skip: all files failed codegen");
+                } else {
+                    eprintln!("  skip: no valid modules after codegen");
+                }
                 continue;
             }
 
-            if per_file_modules.is_empty() {
-                eprintln!("  skip: no valid modules after codegen");
-                continue;
+            if has_error {
+                eprintln!(
+                    "  warning: {} file(s) had codegen errors, continuing with {} successful file(s)",
+                    group.members.len() - per_file_modules.len(),
+                    per_file_modules.len()
+                );
             }
 
             // --- Generate C ABI wrapper code for lib.zig ---

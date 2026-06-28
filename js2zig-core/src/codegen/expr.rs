@@ -606,6 +606,18 @@ impl Codegen {
                 self.write(".");
                 self.write(mem.field.name.as_str());
             }
+            Expression::NullLiteral(_) => {
+                // JS `null` → JsAny.fromNull()
+                self.write("JsAny.fromNull()");
+            }
+            Expression::RegExpLiteral(re) => {
+                // JS regexp literal `/pattern/flags` → try js_regexp.JsRegExp.init(alloc, pattern)
+                self.write("try js_regexp.JsRegExp.init(js_allocator.getAllocator(), ");
+                let pattern = re.regex.pattern.text.as_str();
+                let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                self.write(&format!("\"{}\"", escaped));
+                self.write(")");
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
