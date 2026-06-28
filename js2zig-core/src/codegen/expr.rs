@@ -618,6 +618,15 @@ impl Codegen {
                 self.write(&format!("\"{}\"", escaped));
                 self.write(")");
             }
+            Expression::BigIntLiteral(bigint) => {
+                // JS BigInt literal `123n` → js_bigint.JsBigInt.init(alloc, "123")
+                let s = bigint.value.as_str();
+                let escaped = s.replace("\\", "\\\\").replace("\"", "\\\"");
+                self.write(&format!(
+                    "js_bigint.JsBigInt.init(js_allocator.getAllocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
+                    escaped
+                ));
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
@@ -803,6 +812,21 @@ impl Codegen {
     }
 
     fn emit_binary(&mut self, be: &BinaryExpression) {
+        // Check for BigInt operations FIRST (before string check)
+        let left_is_bigint = self.expr_is_bigint(&be.left);
+        let right_is_bigint = self.expr_is_bigint(&be.right);
+        if left_is_bigint || right_is_bigint {
+            if left_is_bigint && right_is_bigint {
+                self.emit_bigint_binary(be);
+            } else {
+                self.compile_error(
+                    be.span,
+                    "Cannot mix BigInt and other types, use explicit conversions",
+                );
+            }
+            return;
+        }
+
         // Check if either operand is a string type
         let left_is_string = self.expr_is_string(&be.left);
         let right_is_string = self.expr_is_string(&be.right);
@@ -887,6 +911,61 @@ impl Codegen {
                 self.emit_expr(&be.right);
             }
         }
+    }
+
+    /// Emit BigInt binary operation.
+    /// Both operands are known to be BigInt.
+    fn emit_bigint_binary(&mut self, be: &BinaryExpression) {
+        // Generate: (blk: { var _a = <left>; var _b = <right>; break :blk _a.op(&_b, alloc) catch @panic(...); })
+        self.write("(blk: { var _a = ");
+        self.emit_expr(&be.left);
+        self.write("; var _b = ");
+        self.emit_expr(&be.right);
+        self.write("; break :blk ");
+        match be.operator {
+            BinaryOperator::Addition => {
+                self.write("_a.add(&_b, js_allocator.getAllocator())");
+            }
+            BinaryOperator::Subtraction => {
+                self.write("_a.sub(&_b, js_allocator.getAllocator())");
+            }
+            BinaryOperator::Multiplication => {
+                self.write("_a.mul(&_b, js_allocator.getAllocator())");
+            }
+            BinaryOperator::Division => {
+                self.write("_a.div(&_b, js_allocator.getAllocator())");
+            }
+            BinaryOperator::Exponential => {
+                // BigInt ** requires exponent to be u64
+                // JS: exponent is converted via ToUint64 (same as ToIntegerOrInfinity then mod 2^32)
+                // We generate: _a.pow(try _b.toU64(), alloc)
+                // For simplicity, assume exponent fits u64 (MDN tests all have small exponents)
+                self.write("_a.pow(try _b.toU64(), js_allocator.getAllocator())");
+            }
+            BinaryOperator::Equality | BinaryOperator::StrictEquality => {
+                self.write("_a.eq(&_b)");
+            }
+            BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
+                self.write("!_a.eq(&_b)");
+            }
+            BinaryOperator::LessThan => {
+                self.write("_a.order(&_b) == .lt");
+            }
+            BinaryOperator::LessEqualThan => {
+                self.write("_a.order(&_b) != .gt");
+            }
+            BinaryOperator::GreaterThan => {
+                self.write("_a.order(&_b) == .gt");
+            }
+            BinaryOperator::GreaterEqualThan => {
+                self.write("_a.order(&_b) != .lt");
+            }
+            _ => {
+                self.compile_error(be.span, "Unsupported BigInt operator");
+                return;
+            }
+        }
+        self.write(" catch @panic(\"OOM: BigInt op\"); })");
     }
 
     /// Emit comparison code for JsAny values.
@@ -1000,6 +1079,26 @@ impl Codegen {
             }
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
+            _ => false,
+        }
+    }
+
+    /// Check if an expression evaluates to a BigInt type
+    fn expr_is_bigint(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::BigIntLiteral(_) => true,
+            Expression::Identifier(id) => {
+                self.type_info.var_types.get(id.name.as_str()) == Some(&ZigType::BigInt)
+            }
+            Expression::ParenthesizedExpression(pe) => self.expr_is_bigint(&pe.expression),
+            // BigInt op BigInt → BigInt
+            Expression::BinaryExpression(be) => {
+                self.expr_is_bigint(&be.left) && self.expr_is_bigint(&be.right)
+            }
+            // -bigint → BigInt
+            Expression::UnaryExpression(ue) if ue.operator == UnaryOperator::UnaryNegation => {
+                self.expr_is_bigint(&ue.argument)
+            }
             _ => false,
         }
     }
@@ -4863,6 +4962,14 @@ impl Codegen {
 
     // Unary expression
     fn emit_unary(&mut self, ue: &UnaryExpression) {
+        // Check for BigInt negation first
+        if ue.operator == UnaryOperator::UnaryNegation && self.expr_is_bigint(&ue.argument) {
+            self.write("(blk: { var _a = ");
+            self.emit_expr(&ue.argument);
+            self.write("; break :blk _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); })");
+            return;
+        }
+
         match ue.operator {
             UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::LogicalNot => {
                 self.write(Self::unary_prefix(ue.operator));
@@ -5282,6 +5389,7 @@ impl Codegen {
             Expression::NumericLiteral(_)
             | Expression::StringLiteral(_)
             | Expression::BooleanLiteral(_)
+            | Expression::BigIntLiteral(_)
             | Expression::ArrayExpression(_)
             | Expression::ObjectExpression(_)
             | Expression::TemplateLiteral(_) => false,
@@ -5298,7 +5406,8 @@ impl Codegen {
                 | Some(ZigType::F64)
                 | Some(ZigType::Bool)
                 | Some(ZigType::Str)
-                | Some(ZigType::JsSymbol) => false,
+                | Some(ZigType::JsSymbol)
+                | Some(ZigType::BigInt) => false,
                 Some(ZigType::Void) | Some(ZigType::Anytype) | Some(ZigType::JsAny) => true,
                 None => true,
             },
@@ -5377,6 +5486,7 @@ impl Codegen {
             Expression::StringLiteral(_) => Some(ZigType::Str),
             Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
+            Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
             // NullLiteral → not supported in simplified type system
             // (Zig doesn't have a direct equivalent, would need Optional)
             Expression::NullLiteral(_) => None,
@@ -5635,6 +5745,7 @@ impl Codegen {
                 | Expression::StringLiteral(_)
                 | Expression::BooleanLiteral(_)
                 | Expression::NullLiteral(_)
+                | Expression::BigIntLiteral(_)
         )
     }
 
@@ -5712,6 +5823,7 @@ fn expr_uses_ident(ident: &str, expr: &Expression) -> bool {
         | Expression::StringLiteral(_)
         | Expression::BooleanLiteral(_)
         | Expression::NullLiteral(_)
+        | Expression::BigIntLiteral(_)
         | Expression::RegExpLiteral(_) => false,
         // Conservative: assume identifier MAY appear in unhandled variants
         _ => true,

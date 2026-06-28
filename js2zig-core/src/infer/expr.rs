@@ -28,6 +28,7 @@ impl TypeInferrer {
             Expression::TemplateLiteral(_) => InferResult::Definite(ZigType::Str),
             Expression::BooleanLiteral(_) => InferResult::Definite(ZigType::Bool),
             Expression::NullLiteral(_) => InferResult::Indeterminate,
+            Expression::BigIntLiteral(_) => InferResult::Definite(ZigType::BigInt),
 
             // Identifier: look up from var_types
             Expression::Identifier(id) => {

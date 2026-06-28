@@ -111,6 +111,9 @@ pub enum ZigType {
     /// Symbol value (JsSymbol in generated code).
     /// Represents a unique identifier with optional description.
     JsSymbol,
+    /// Arbitrary-precision integer (JsBigInt in generated code).
+    /// Wraps `std.math.big.int.Managed`.
+    BigInt,
 }
 
 impl ZigType {
@@ -148,6 +151,7 @@ impl ZigType {
             ZigType::Anytype => "anytype".to_string(),
             ZigType::JsAny => "JsAny".to_string(),
             ZigType::JsSymbol => "JsSymbol".to_string(),
+            ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
@@ -164,6 +168,7 @@ impl ZigType {
             ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
             ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
             ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
+            ZigType::BigInt => "i64".to_string(),        // C ABI: degrade to i64
         }
     }
 
@@ -179,6 +184,7 @@ impl ZigType {
             ZigType::Struct(_) | ZigType::NamedStruct(_) | ZigType::ArrayList(_) => {
                 Some("\"object\"")
             }
+            ZigType::BigInt => Some("\"bigint\""),
             // Dynamic types — need runtime typeof helper
             ZigType::JsAny | ZigType::Anytype => None,
         }

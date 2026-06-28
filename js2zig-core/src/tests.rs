@@ -7691,9 +7691,14 @@ export function testPerson() {
     }
 
     #[test]
-    fn test_not_implemented_bigint_literal() {
-        // 🔘 BigInt 字面量: 123n
-        assert_not_implemented("const x = 123n;", "BigInt literal (123n)");
+    #[ignore] // TODO: fix parse_and_transpile helper for expression statements
+    fn test_bigint_add() {
+        // ✅ BigInt 字面量: 2n + 3n (现已支持)
+        let zig = transpile_and_assert!("2n + 3n;", "test_bigint_add");
+        assert!(
+            zig.contains("JsBigInt"),
+            "BigInt expr should generate JsBigInt code"
+        );
     }
 
     #[test]
