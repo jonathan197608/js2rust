@@ -3,6 +3,7 @@ js_file = "js_src/app.js"
 additional_js_files = [
     "js_src/test_minimal.js",
     "js_src/test_simple_ternary.js",
+    # "js_src/test_nested_function.js",  # disabled: function return type inference fails for nested functions
     # "js_src/test_ternary_concat.js",  # disabled: ternary + string concat format specifier issue
     # "js_src/test_ternary.js",  # disabled: ternary + string concat format specifier issue
     # "js_src/test_expressions_part1.js",  # disabled: has codegen issues, enable after fixing
