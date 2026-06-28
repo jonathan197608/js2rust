@@ -900,6 +900,18 @@ impl Codegen {
 
 impl Codegen {
     pub(crate) fn emit_fn_stmt(&mut self, stmt: &Statement) {
+        // Flush any function definitions that were deferred from a previous statement.
+        if !self.pending_expr_fns.is_empty() {
+            let pending = std::mem::take(&mut self.pending_expr_fns);
+            for def in pending {
+                self.write(&def);
+            }
+        }
+
+        // Snapshot: if this statement generates new deferred function definitions,
+        // they must be inserted BEFORE the statement output (Zig requires def-before-use).
+        let snapshot = self.output.len();
+
         match stmt {
             Statement::VariableDeclaration(vd) => {
                 self.emit_var_decl(vd);
@@ -1379,6 +1391,21 @@ impl Codegen {
                 self.write_indent();
                 self.compile_error_stmt(GetSpan::span(stmt), "Unsupported statement type");
             }
+        }
+
+        // If this statement generated deferred function definitions (e.g., arrow functions
+        // or function expressions used as values), insert them BEFORE the statement output.
+        // Zig requires definitions to appear before use.
+        if !self.pending_expr_fns.is_empty() {
+            let pending = std::mem::take(&mut self.pending_expr_fns);
+            // Extract the post-snapshot portion (the statement we just emitted)
+            let statement_output = self.output[snapshot..].to_string();
+            self.output.truncate(snapshot);
+            // Emit deferred definitions first, then the statement
+            for def in pending {
+                self.write(&def);
+            }
+            self.write(&statement_output);
         }
     }
 }
@@ -2656,7 +2683,108 @@ impl Codegen {
     }
 }
 
-/// Check if an expression is a TypedArray constructor call
+/// Emit a FunctionExpression as a struct+instance inline.
+/// Returns the instance name for use as an expression value.
+impl Codegen {
+    pub(crate) fn emit_fn_expr(&mut self, func: &Function) -> String {
+        // Determine name: use function's own id if present, else generate unique name
+        let name = func
+            .id
+            .as_ref()
+            .map(|id| id.name.to_string())
+            .unwrap_or_else(|| {
+                let n = format!("_fn_expr_{}", self.fn_expr_counter);
+                self.fn_expr_counter += 1;
+                n
+            });
+
+        // Detect captured variables from enclosing scope
+        let captures = self.detect_fn_body_captures(func);
+
+        // Save state
+        let old_current_fn = self.current_fn.clone();
+        let old_fn_has_throw = self.fn_has_throw;
+        let old_seen_return = self.seen_return;
+        let old_captured = std::mem::take(&mut self.current_captured);
+
+        self.current_fn = Some(name.clone());
+
+        // Pre-scan for throw
+        let has_throw = func
+            .body
+            .as_ref()
+            .is_some_and(|b| Codegen::has_throw_in_body(b));
+        self.fn_has_throw = has_throw;
+
+        // Read pre-computed return type from type_info
+        let ret_ty = self.type_info.fn_return_types.get(&name).cloned();
+        self.current_fn_return_type = ret_ty.clone();
+
+        if !captures.is_empty() {
+            // Has captures: generate struct with capture fields + instance
+            self.nested_fn_names.insert(name.clone());
+
+            self.write_indent();
+            self.writeln(&format!("const {} = struct {{", name));
+            self.indent += 1;
+
+            // Add capture fields
+            for (cap_name, cap_type, _is_mut) in &captures {
+                let zig_type = cap_type.to_zig_type();
+                self.write_indent();
+                self.writeln(&format!("{}: {},", cap_name, zig_type));
+            }
+
+            self.current_captured = captures.clone();
+
+            // Generate call method
+            let old_nested = self.current_nested_fn_name.take();
+            self.current_nested_fn_name = Some(name.clone());
+            self.emit_fn(func);
+            self.current_nested_fn_name = old_nested;
+            self.current_captured.clear();
+
+            self.indent -= 1;
+            self.write_indent();
+
+            // Create instance
+            let mut init = String::from(".{{ ");
+            for (i, (cap_name, _, _)) in captures.iter().enumerate() {
+                if i > 0 {
+                    init.push_str(", ");
+                }
+                init.push_str(&format!(".{} = {}", cap_name, cap_name));
+            }
+            init.push_str(" }};");
+            self.writeln(&init);
+        } else {
+            // No captures: generate inline struct with static call method
+            self.nested_fn_names.insert(name.clone());
+
+            self.write_indent();
+            self.writeln(&format!("const {} = struct {{", name));
+            self.indent += 1;
+
+            let old_nested = self.current_nested_fn_name.take();
+            self.current_nested_fn_name = Some(name.clone());
+            self.emit_fn(func);
+            self.current_nested_fn_name = old_nested;
+
+            self.indent -= 1;
+            self.write_indent();
+            self.writeln("};");
+        }
+
+        // Restore state
+        self.current_fn = old_current_fn;
+        self.fn_has_throw = old_fn_has_throw;
+        self.seen_return = old_seen_return;
+        self.current_captured = old_captured;
+        self.current_fn_return_type = ret_ty;
+
+        name
+    }
+}
 /// (new Int32Array(...), new Uint8Array(...), new Float64Array(...)).
 /// Returns the Zig type suffix (e.g., "I32", "U8", "F64") if it is.
 pub(crate) fn typedarray_init_type(expr: &Expression) -> Option<&'static str> {

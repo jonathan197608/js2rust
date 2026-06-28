@@ -77,6 +77,18 @@ pub const JsBigInt = struct {
         return Self{ .value = result };
     }
 
+    /// Bitwise NOT (~x = -(x + 1) in two's complement)
+    pub fn bitwiseNot(self: *const Self, alloc: std.mem.Allocator) !Self {
+        var one = try std.math.big.int.Managed.init(alloc);
+        defer one.deinit();
+        try one.set(1);
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.add(&self.value, &one);
+        result.copySign(&result, -1);
+        return Self{ .value = result };
+    }
+
     // ---- comparison ----
 
     pub fn eq(self: *const Self, other: *const Self) bool {

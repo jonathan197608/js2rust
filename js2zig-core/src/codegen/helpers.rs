@@ -99,6 +99,7 @@ impl Codegen {
             UnaryOperator::UnaryNegation => "-",
             UnaryOperator::UnaryPlus => "+",
             UnaryOperator::LogicalNot => "!",
+            UnaryOperator::BitwiseNot => "~",
             _ => "",
         }
     }

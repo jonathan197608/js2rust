@@ -46,6 +46,8 @@ impl Codegen {
             oc_counter: 0,
             destructure_counter: 0,
             for_of_counter: 0,
+            fn_expr_counter: 0,
+            pending_expr_fns: Vec::new(),
             typedarray_vars: std::collections::HashMap::new(),
             regexp_vars: std::collections::HashSet::new(),
             async_host_fns,
@@ -183,6 +185,18 @@ impl Codegen {
     }
 
     fn emit_toplevel(&mut self, stmt: &Statement) {
+        // Flush any function definitions that were deferred from a previous statement.
+        if !self.pending_expr_fns.is_empty() {
+            let pending = std::mem::take(&mut self.pending_expr_fns);
+            for def in pending {
+                self.write(&def);
+            }
+        }
+
+        // Snapshot: if this statement generates deferred function definitions,
+        // they must be inserted BEFORE the statement output.
+        let snapshot = self.output.len();
+
         match stmt {
             Statement::VariableDeclaration(vd) => self.emit_var_decl(vd),
             Statement::ClassDeclaration(cd) => {
@@ -246,6 +260,18 @@ impl Codegen {
                 );
             }
             _ => { /* skip */ }
+        }
+
+        // If this toplevel statement generated deferred function definitions,
+        // insert them BEFORE the statement output (def-before-use).
+        if !self.pending_expr_fns.is_empty() {
+            let pending = std::mem::take(&mut self.pending_expr_fns);
+            let statement_output = self.output[snapshot..].to_string();
+            self.output.truncate(snapshot);
+            for def in pending {
+                self.write(&def);
+            }
+            self.write(&statement_output);
         }
     }
 }

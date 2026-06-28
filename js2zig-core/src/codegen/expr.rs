@@ -671,6 +671,38 @@ impl Codegen {
                     escaped
                 ));
             }
+            Expression::ArrowFunctionExpression(arrow) => {
+                // Arrow function as expression value — generate definition deferred
+                // so it appears before the current statement.
+                let saved_output = std::mem::take(&mut self.output);
+                let saved_indent = self.indent;
+                let fn_name = self.emit_arrow_function(arrow);
+                // emit_arrow_function wrote the fn definition to (now-saved) output,
+                // adjusted indent in the process. Restore and capture.
+                let fn_def = std::mem::take(&mut self.output);
+                self.output = saved_output;
+                self.indent = saved_indent;
+                self.pending_expr_fns.push(fn_def);
+                self.write(&fn_name);
+            }
+            Expression::FunctionExpression(func) => {
+                // Function expression as value — similar to arrow, defer definition.
+                let saved_output = std::mem::take(&mut self.output);
+                let saved_indent = self.indent;
+                let fn_name = self.emit_fn_expr(func);
+                let fn_def = std::mem::take(&mut self.output);
+                self.output = saved_output;
+                self.indent = saved_indent;
+                self.pending_expr_fns.push(fn_def);
+                self.write(&fn_name);
+            }
+            Expression::TaggedTemplateExpression(tte) => {
+                // Tagged template literals (e.g. tag`str`) are not supported.
+                self.compile_error(
+                    tte.span,
+                    "Tagged template literals (tag`str`) are not supported in native_proto mode",
+                );
+            }
             other => {
                 // Unsupported expression type
                 self.errors.push(format!(
@@ -1205,8 +1237,11 @@ impl Codegen {
             Expression::BinaryExpression(be) => {
                 self.expr_is_bigint(&be.left) && self.expr_is_bigint(&be.right)
             }
-            // -bigint → BigInt
-            Expression::UnaryExpression(ue) if ue.operator == UnaryOperator::UnaryNegation => {
+            // -bigint → BigInt, ~bigint → BigInt
+            Expression::UnaryExpression(ue)
+                if ue.operator == UnaryOperator::UnaryNegation
+                    || ue.operator == UnaryOperator::BitwiseNot =>
+            {
                 self.expr_is_bigint(&ue.argument)
             }
             _ => false,
@@ -1383,6 +1418,48 @@ impl Codegen {
                 callee_str
             )            );
             self.compile_error(ce.span, "Member function calls not supported");
+            return;
+        } else if let Expression::ParenthesizedExpression(pe) = &ce.callee {
+            // IIFE: (function(){})() or (()=>{})() — unwrap and handle the inner function
+            match &pe.expression {
+                Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {
+                    // emit_expr will generate the function definition (deferred)
+                    // and write the function name as the expression value.
+                    self.emit_expr(&pe.expression);
+                    // For FunctionExpression, call via .call(args)
+                    // For ArrowFunctionExpression, call directly (args)
+                    if matches!(&pe.expression, Expression::FunctionExpression(_)) {
+                        self.write(".call(");
+                    } else {
+                        self.write("(");
+                    }
+                    self.emit_comma_separated_args(&ce.arguments);
+                    self.write(")");
+                    return;
+                }
+                _ => {
+                    // Unsupported callee type inside parentheses
+                    let callee_str = format!("{:?}", ce.callee);
+                    self.errors.push(format!(
+                        "Unsupported callee type in native_proto mode: callee = {}",
+                        callee_str
+                    ));
+                    self.compile_error(ce.span, "Unsupported callee type");
+                    return;
+                }
+            }
+        } else if matches!(&ce.callee, Expression::FunctionExpression(_))
+            || matches!(&ce.callee, Expression::ArrowFunctionExpression(_))
+        {
+            // Direct function expression as callee: function(){}() or ()=>{})()
+            self.emit_expr(&ce.callee);
+            if matches!(&ce.callee, Expression::FunctionExpression(_)) {
+                self.write(".call(");
+            } else {
+                self.write("(");
+            }
+            self.emit_comma_separated_args(&ce.arguments);
+            self.write(")");
             return;
         } else {
             // Other unsupported callee types
@@ -5085,16 +5162,30 @@ impl Codegen {
 
     // Unary expression
     fn emit_unary(&mut self, ue: &UnaryExpression) {
-        // Check for BigInt negation first
-        if ue.operator == UnaryOperator::UnaryNegation && self.expr_is_bigint(&ue.argument) {
-            self.write("(blk: { var _a = ");
-            self.emit_expr(&ue.argument);
-            self.write("; break :blk _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); })");
-            return;
+        // Check for BigInt unary ops first (neg, bitwise NOT)
+        if self.expr_is_bigint(&ue.argument) {
+            match ue.operator {
+                UnaryOperator::UnaryNegation => {
+                    self.write("(blk: { var _a = ");
+                    self.emit_expr(&ue.argument);
+                    self.write("; break :blk _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); })");
+                    return;
+                }
+                UnaryOperator::BitwiseNot => {
+                    self.write("(blk: { var _a = ");
+                    self.emit_expr(&ue.argument);
+                    self.write("; break :blk _a.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); })");
+                    return;
+                }
+                _ => {}
+            }
         }
 
         match ue.operator {
-            UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus | UnaryOperator::LogicalNot => {
+            UnaryOperator::UnaryNegation
+            | UnaryOperator::UnaryPlus
+            | UnaryOperator::LogicalNot
+            | UnaryOperator::BitwiseNot => {
                 self.write(Self::unary_prefix(ue.operator));
                 self.emit_expr(&ue.argument);
             }
@@ -5146,10 +5237,6 @@ impl Codegen {
                         self.write("/* unsupported: delete */");
                     }
                 }
-            }
-            _ => {
-                self.errors.push("Unsupported unary operator".to_string());
-                self.write("/* unsupported unary */");
             }
         }
     }

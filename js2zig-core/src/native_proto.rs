@@ -410,6 +410,11 @@ pub struct Codegen {
     pub destructure_counter: u32,
     /// Counter for generating unique iterator variable names in for-of (Map/Set) loops.
     pub for_of_counter: u32,
+    /// Counter for generating unique function expression names.
+    pub fn_expr_counter: u32,
+    /// Function definitions deferred from expression context (Arrow/FunctionExpression in emit_expr).
+    /// These need to be emitted before the current statement at the current indent level.
+    pub pending_expr_fns: Vec<String>,
     /// Variables initialized with TypedArray constructors (Int32Array, Uint8Array, Float64Array).
     /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
     /// Used to route method calls and property accesses correctly.
