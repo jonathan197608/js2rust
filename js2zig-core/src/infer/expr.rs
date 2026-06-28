@@ -28,6 +28,10 @@ impl TypeInferrer {
             Expression::TemplateLiteral(_) => InferResult::Definite(ZigType::Str),
             Expression::BooleanLiteral(_) => InferResult::Definite(ZigType::Bool),
             Expression::NullLiteral(_) => InferResult::Indeterminate,
+            // RegExp literal (/pattern/) → NamedStruct("RegExp")
+            Expression::RegExpLiteral(_) => {
+                InferResult::Definite(ZigType::NamedStruct("RegExp".to_string()))
+            }
             Expression::BigIntLiteral(_) => InferResult::Definite(ZigType::BigInt),
 
             // Identifier: look up from var_types

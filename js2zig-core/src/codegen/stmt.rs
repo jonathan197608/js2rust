@@ -2806,7 +2806,8 @@ pub(crate) fn typedarray_init_type(expr: &Expression) -> Option<&'static str> {
 }
 
 /// Check if an expression is `new RegExp(...)` — a dynamic RegExp constructor.
-/// Returns true if it matches, so the codegen can track the variable as a RegExp object.
+/// Also returns true for RegExp literals (`/pattern/`).
+/// Returns true if it matches,  the codegen can track the variable as a RegExp object.
 pub(crate) fn is_regexp_new(expr: &Expression) -> bool {
     match expr {
         Expression::NewExpression(ne) => {
@@ -2816,6 +2817,7 @@ pub(crate) fn is_regexp_new(expr: &Expression) -> bool {
                 false
             }
         }
+        Expression::RegExpLiteral(_) => true, // RegExp literal /pattern/
         _ => false,
     }
 }
