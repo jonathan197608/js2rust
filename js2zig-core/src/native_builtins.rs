@@ -837,6 +837,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
             Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
         }
         BuiltinCall::ArrayIsArray => Some(ZigType::Bool),
+        BuiltinCall::ArrayIncludes | BuiltinCall::ArraySome | BuiltinCall::ArrayEvery => Some(ZigType::Bool),
 
         // Array methods — indexOf-type
         BuiltinCall::ArrayIndexOf | BuiltinCall::ArrayLastIndexOf | BuiltinCall::ArrayFindIndex | BuiltinCall::ArrayFindLastIndex => Some(ZigType::I64),

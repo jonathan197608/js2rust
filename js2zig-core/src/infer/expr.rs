@@ -477,11 +477,8 @@ impl TypeInferrer {
 
     pub(crate) fn infer_array_type(&mut self, ae: &ArrayExpression) -> InferResult {
         if ae.elements.is_empty() {
-            self.errors.push(
-                "Cannot infer element type for empty array. Use ArrayList with explicit type."
-                    .to_string(),
-            );
-            return InferResult::Indeterminate;
+            // Empty array: default to ArrayList(JsAny) — JS allows any type in [].
+            return InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)));
         }
         let first = match ae.elements.first() {
             Some(e) => e,
