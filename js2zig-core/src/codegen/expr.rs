@@ -680,7 +680,20 @@ impl Codegen {
                     }
                 }
             } else {
-                fmt.push_str("{s}");
+                // Pick format specifier based on inferred type (match emit_template_literal logic).
+                let placeholder = match self.infer_expr_type(op) {
+                    Some(ZigType::Str) => "{s}",
+                    Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
+                    Some(ZigType::Bool) => "{}",
+                    _ => {
+                        if self.expr_is_string(op) {
+                            "{s}"
+                        } else {
+                            "{}"
+                        }
+                    }
+                };
+                fmt.push_str(placeholder);
                 let arg_str = self.emit_expr_to_string(op);
                 args.push(arg_str);
             }
