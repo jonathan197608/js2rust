@@ -681,16 +681,40 @@ impl Codegen {
                 }
             } else {
                 // Pick format specifier based on inferred type (match emit_template_literal logic).
-                // Special case: ConditionalExpression → use infer_expr_type result
-                let placeholder = match self.infer_expr_type(op) {
-                    Some(ZigType::Str) => "{s}",
-                    Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
-                    Some(ZigType::Bool) => "{}",
+                // ConditionalExpression: use {s} only if both branches are strings
+                let placeholder = match op {
+                    Expression::ConditionalExpression(ce) => {
+                        // Check if both branches are definitely strings
+                        let cons_str = match &ce.consequent {
+                            Expression::StringLiteral(_) => true,
+                            _ => self.expr_is_string(&ce.consequent),
+                        };
+                        let alt_str = match &ce.alternate {
+                            Expression::StringLiteral(_) => true,
+                            _ => self.expr_is_string(&ce.alternate),
+                        };
+                        if cons_str && alt_str {
+                            "{s}"
+                        } else {
+                            // Fallback to infer_expr_type
+                            match self.infer_expr_type(op) {
+                                Some(ZigType::Str) => "{s}",
+                                Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
+                                Some(ZigType::Bool) => "{}",
+                                _ => "{}",
+                            }
+                        }
+                    }
                     _ => {
                         if self.expr_is_string(op) {
                             "{s}"
                         } else {
-                            "{}"
+                            match self.infer_expr_type(op) {
+                                Some(ZigType::Str) => "{s}",
+                                Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
+                                Some(ZigType::Bool) => "{}",
+                                _ => "{}",
+                            }
                         }
                     }
                 };

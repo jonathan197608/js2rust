@@ -17,9 +17,9 @@ fn main() {
     println!("\n=== MINIMAL ===");
     let _ = testMinimal_app();
 
-    // Run ternary string tests
-    println!("\n=== TERNARY STRING ===");
-    let _ = testTernaryString_app();
+    // Run simple ternary tests
+    println!("\n=== SIMPLE TERNARY ===");
+    let _ = testSimpleTernary_app();
 
     js2rust_deinit();
     println!("\n=== All tests done ===");
