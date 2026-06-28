@@ -943,6 +943,10 @@ impl Codegen {
             Expression::BinaryExpression(be) if be.operator == BinaryOperator::Addition => {
                 self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
             }
+            // ConditionalExpression (ternary): result is string if both branches are strings
+            Expression::ConditionalExpression(ce) => {
+                self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
+            }
             _ => false,
         }
     }
@@ -5528,6 +5532,31 @@ impl Codegen {
                         }
                     }
                     Some(ZigType::Struct(fields))
+                }
+            }
+
+            // ConditionalExpression (ternary: a ? b : c):
+            // return type = common type of both branches.
+            // If both branches have the same definite type, return that.
+            // If one is I64 and the other F64, return F64 (JS numeric coercion).
+            // Otherwise None.
+            Expression::ConditionalExpression(ce) => {
+                let cons_ty = self.infer_expr_type(&ce.consequent);
+                let alt_ty = self.infer_expr_type(&ce.alternate);
+                match (cons_ty, alt_ty) {
+                    (Some(t1), Some(t2)) => {
+                        if t1 == t2 {
+                            Some(t1)
+                        } else {
+                            // Numeric coercion: I64 + F64 → F64
+                            match (t1, t2) {
+                                (ZigType::I64, ZigType::F64) => Some(ZigType::F64),
+                                (ZigType::F64, ZigType::I64) => Some(ZigType::F64),
+                                _ => None,
+                            }
+                        }
+                    }
+                    _ => None,
                 }
             }
 

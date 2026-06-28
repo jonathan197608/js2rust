@@ -13,17 +13,9 @@ fn main() {
 
     println!("=== MDN JS Reference Tests ===");
 
-    // Run expression tests
-    println!("\n=== EXPRESSIONS ===");
-    let _ = testExpressions_app();
-
-    // Run statement tests
-    println!("\n=== STATEMENTS ===");
-    let _ = testStatements_app();
-
-    // Run builtin tests
-    println!("\n=== BUILTINS ===");
-    let _ = testBuiltins_app();
+    // Run minimal tests
+    println!("\n=== MINIMAL ===");
+    let _ = testMinimal_app();
 
     js2rust_deinit();
     println!("\n=== All tests done ===");

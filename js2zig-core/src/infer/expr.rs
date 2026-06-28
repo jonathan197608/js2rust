@@ -292,6 +292,31 @@ impl TypeInferrer {
             // AwaitExpression: strip the await, infer inner expression type
             Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
 
+            // ConditionalExpression (ternary: a ? b : c):
+            // return type = common type of both branches.
+            // If both branches have the same definite type, return that.
+            // If one is I64 and the other F64, return F64 (JS numeric coercion).
+            // Otherwise Indeterminate.
+            Expression::ConditionalExpression(ce) => {
+                let cons_ty = self.infer_expr_type(&ce.consequent);
+                let alt_ty = self.infer_expr_type(&ce.alternate);
+                match (cons_ty, alt_ty) {
+                    (InferResult::Definite(t1), InferResult::Definite(t2)) => {
+                        if t1 == t2 {
+                            InferResult::Definite(t1)
+                        } else {
+                            // Numeric coercion: I64 + F64 → F64
+                            match (t1, t2) {
+                                (ZigType::I64, ZigType::F64) => InferResult::Definite(ZigType::F64),
+                                (ZigType::F64, ZigType::I64) => InferResult::Definite(ZigType::F64),
+                                _ => InferResult::Indeterminate,
+                            }
+                        }
+                    }
+                    _ => InferResult::Indeterminate,
+                }
+            }
+
             // ChainExpression (?. ): result is nullable → Indeterminate.
             // The Zig compiler will infer optional type from 'if (obj) |v| v.prop else null'.
             Expression::ChainExpression(_chain) => InferResult::Indeterminate,
