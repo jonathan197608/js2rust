@@ -138,7 +138,7 @@ const ArenaNode = struct {
     /// 返回 true 表示发生了状态转换
     /// 整个"读取状态 + 检查冷却时间 + 重置 Arena + 写入状态"在一次锁持有中完成
     /// 由 selectNode 检测节点状态时自动调用
-    pub fn tryResetCoolingToReady(self: *ArenaNode) bool {
+    pub fn tryResetCoolingToReady(self: *ArenaNode, min_cooling_time: i64) bool {
         while (!self.mutex.tryLock()) {}
         defer self.mutex.unlock();
 
@@ -146,7 +146,7 @@ const ArenaNode = struct {
 
         // 检查是否已冷却至少 min_cooling_time 秒
         const now = @divTrunc(js_date.milliTimestamp(), 1000);
-        if (now - self.cooling_since < self.min_cooling_time) {
+        if (now - self.cooling_since < min_cooling_time) {
             return false;
         }
 
@@ -284,7 +284,7 @@ pub const MultiArenaAllocator = struct {
             if (node.isReady()) {
                 return node;
             }
-            if (node.tryResetCoolingToReady()) {
+            if (node.tryResetCoolingToReady(self.min_cooling_time)) {
                 return node;
             }
             idx = node.next;

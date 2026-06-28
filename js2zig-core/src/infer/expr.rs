@@ -70,6 +70,21 @@ impl TypeInferrer {
                     (InferResult::Definite(l), InferResult::Definite(r)) => {
                         InferResult::Definite(Self::infer_binary_type(be.operator, l, r))
                     }
+                    // Comparison operators always return Bool, regardless of operand types.
+                    _ if matches!(
+                        be.operator,
+                        BinaryOperator::Equality
+                            | BinaryOperator::Inequality
+                            | BinaryOperator::StrictEquality
+                            | BinaryOperator::StrictInequality
+                            | BinaryOperator::LessThan
+                            | BinaryOperator::LessEqualThan
+                            | BinaryOperator::GreaterThan
+                            | BinaryOperator::GreaterEqualThan
+                    ) =>
+                    {
+                        InferResult::Definite(ZigType::Bool)
+                    }
                     // String concatenation: if either operand is definitely a string, result is Str
                     _ if be.operator == BinaryOperator::Addition => {
                         if self.expr_is_string(&be.left) || self.expr_is_string(&be.right) {

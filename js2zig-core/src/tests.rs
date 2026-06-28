@@ -8305,6 +8305,81 @@ export function format(x) {
         );
     }
 
+    // ── P2: Comparison operators always return Bool ─────────────────
+
+    #[test]
+    fn test_native_proto_comparison_strict_eq_bool() {
+        // P2-1: When both operands are Indeterminate (e.g., function params),
+        // === should still return Bool (not default to i64).
+        let js = r#"
+export function isEqual(a, b) {
+    return a === b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_comparison_strict_eq_bool");
+        println!("=== Comparison strict eq ===\n{}", zig);
+
+        // Return type should be bool
+        assert!(
+            zig.contains("pub fn isEqual(") && zig.contains(") bool"),
+            "Expected return type bool for === on indeterminate operands:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_comparison_neq_bool() {
+        // !== should return Bool even with indeterminate operands.
+        let js = r#"
+export function isNotEqual(a, b) {
+    return a !== b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_comparison_neq_bool");
+        println!("=== Comparison neq ===\n{}", zig);
+        assert!(
+            zig.contains(") bool"),
+            "Expected return type bool for !== on indeterminate operands:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_comparison_lt_bool() {
+        // < should return Bool
+        let js = r#"
+export function isLess(a, b) {
+    return a < b;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_comparison_lt_bool");
+        println!("=== Comparison less than ===\n{}", zig);
+        assert!(
+            zig.contains(") bool"),
+            "Expected return type bool for < on indeterminate operands:\n{}",
+            zig
+        );
+    }
+
+    #[test]
+    fn test_native_proto_comparison_complex_bool() {
+        // Complex case: comparison in ternary should still produce bool
+        let js = r#"
+export function valueIsNaN(x) {
+    return x !== x ? "NaN" : "ok";
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_comparison_complex_bool");
+        println!("=== Comparison complex ===\n{}", zig);
+
+        // The comparison x !== x should produce bool (not i64)
+        assert!(
+            zig.contains("pub fn valueIsNaN("),
+            "Expected valueIsNaN to transpile successfully:\n{}",
+            zig
+        );
+    }
+
     // ── 🔘 汇总测试：运行所有测试并输出汇总报告 ─────────────────────
     // 注意：以上每个测试独立运行。如需汇总报告，运行：
     //   cargo test test_not_implemented_ -- --nocapture
