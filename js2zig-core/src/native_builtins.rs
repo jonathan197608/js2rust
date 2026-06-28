@@ -757,7 +757,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // RegExp instance methods
         BuiltinCall::RegExpTest => Some(ZigType::Bool),
-        BuiltinCall::RegExpExec => None, // Returns ?[][]const u8, inferred from usage
+        BuiltinCall::RegExpExec => Some(ZigType::JsAny), // Returns array-like object or null
 
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::JsAny), // JsMap.get() returns JsAny (undefined if not found)

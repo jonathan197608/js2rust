@@ -694,11 +694,21 @@ impl TypeInferrer {
                             }
                         }
                         InferResult::Indeterminate => {
-                            self.errors.push(format!(
-                                "Cannot infer type of variable '{}' (Rule 8). \
-                                 Add a type annotation or initialize with a literal.",
-                                name
-                            ));
+                            // Function expressions and arrow functions: assign JsAny
+                            // (functions are objects in JS, callable via JsAny in Zig)
+                            if matches!(
+                                init,
+                                Expression::FunctionExpression(_)
+                                    | Expression::ArrowFunctionExpression(_)
+                            ) {
+                                self.var_types.insert(name.to_string(), ZigType::JsAny);
+                            } else {
+                                self.errors.push(format!(
+                                    "Cannot infer type of variable '{}' (Rule 8). \
+                                     Add a type annotation or initialize with a literal.",
+                                    name
+                                ));
+                            }
                         }
                     }
                 } else {
