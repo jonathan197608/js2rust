@@ -54,12 +54,21 @@ impl TypeInferrer {
             }
 
             // Binary expression → definite only if BOTH operands are literals
+            // Special case: Addition (+) with a string operand → result is Str (string concatenation)
             Expression::BinaryExpression(be) => {
                 let left = self.infer_expr_type(&be.left);
                 let right = self.infer_expr_type(&be.right);
                 match (left, right) {
                     (InferResult::Definite(l), InferResult::Definite(r)) => {
                         InferResult::Definite(Self::infer_binary_type(be.operator, l, r))
+                    }
+                    // String concatenation: if either operand is definitely a string, result is Str
+                    _ if be.operator == BinaryOperator::Addition => {
+                        if self.expr_is_string(&be.left) || self.expr_is_string(&be.right) {
+                            InferResult::Definite(ZigType::Str)
+                        } else {
+                            InferResult::Indeterminate
+                        }
                     }
                     _ => InferResult::Indeterminate,
                 }
@@ -330,6 +339,27 @@ impl TypeInferrer {
 
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
+        }
+    }
+
+    /// Check if an expression definitely evaluates to a string type.
+    /// Used for string concatenation type inference.
+    fn expr_is_string(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::StringLiteral(_) => true,
+            Expression::TemplateLiteral(_) => true,
+            Expression::Identifier(id) => {
+                self.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
+            }
+            // Handle nested binary expressions: if it's string concatenation, result is string
+            Expression::BinaryExpression(be) if be.operator == BinaryOperator::Addition => {
+                self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
+            }
+            // ConditionalExpression (ternary): result is string if both branches are strings
+            Expression::ConditionalExpression(ce) => {
+                self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
+            }
+            _ => false,
         }
     }
 

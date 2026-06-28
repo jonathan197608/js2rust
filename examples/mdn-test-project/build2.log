@@ -1,0 +1,53 @@
+   Compiling mdn-test-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project)
+warning: mdn-test-project@0.1.0: js2zig: no compiled libraries found in C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache. Run `cargo build` twice on a clean checkout.
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache/groups.json
+
+=== app (3 members) ===
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache/app
+install
++- install app
+   +- compile lib app Debug native 1 errors
+C:\Users\18988\AppData\Local\Microsoft\WinGet\Packages\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\zig-x86_64-windows-0.16.0\lib\std\Io\Writer.zig:1379:21: error: cannot format slice without a specifier (i.e. {s}, {x}, {b64}, or {any})
+                    @compileError("cannot format slice without a specifier (i.e. {s}, {x}, {b64}, or {any})");
+                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+referenced by:
+    printValue__anon_3209: C:\Users\18988\AppData\Local\Microsoft\WinGet\Packages\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\zig-x86_64-windows-0.16.0\lib\std\Io\Writer.zig:1363:59
+    print__anon_3149: C:\Users\18988\AppData\Local\Microsoft\WinGet\Packages\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\zig-x86_64-windows-0.16.0\lib\std\Io\Writer.zig:719:25
+    8 reference(s) hidden; use '-freference-trace=10' to see all references
+error: 1 compilation errors
+failed command: "C:\\Users\\18988\\AppData\\Local\\Microsoft\\WinGet\\Packages\\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\\zig-x86_64-windows-0.16.0\\zig.exe" build-lib -ODebug "-Mroot=C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\.js2zig-cache\\app\\src\\lib.zig" -lc --cache-dir .zig-cache --global-cache-dir "C:\\Users\\18988\\AppData\\Local\\zig" --name app -static -fcompiler-rt --zig-lib-dir "C:\\Users\\18988\\AppData\\Local\\Microsoft\\WinGet\\Packages\\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\\zig-x86_64-windows-0.16.0\\lib\\" --listen=-
+
+Build Summary: 0/3 steps succeeded (1 failed)
+install transitive failure
++- install app transitive failure
+   +- compile lib app Debug native 1 errors
+
+error: the following build command failed with exit code 1:
+.zig-cache\o\d13c57b751835b7ce2ab271788996833\build.exe C:\Users\18988\AppData\Local\Microsoft\WinGet\Packages\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\zig-x86_64-windows-0.16.0\zig.exe C:\Users\18988\AppData\Local\Microsoft\WinGet\Packages\zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe\zig-x86_64-windows-0.16.0\lib C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache\app .zig-cache C:\Users\18988\AppData\Local\zig --seed 0x864fe9ca -Z2e37b6b70277840b
+error: linking with `rust-lld` failed: exit code: 1
+  |
+  = note: "rust-lld" "-flavor" "link" "/NOLOGO" "C:\\Users\\18988\\RustroverProjects\\js2rust\\target\\debug\\deps\\rustcu3zyNq\\symbols.o" "<10 object files omitted>" "C:\\Users\\18988\\RustroverProjects\\js2rust\\target\\debug\\deps/{libjs2rust_bridge-bc29d49f5a93abed,libfancy_regex-9e338f389d6b4b27,libbit_set-a2a90ed2fdf95287,libbit_vec-4e87d4f6ace111cf,libregex_automata-7a1ce1304ef9bf35,libaho_corasick-6e72f1f40f3265a1,libregex_syntax-212cf010bcf3b4b5,libtoml-0d3ad87b6e0104ff,libtoml_edit-2761fef0dbe8764e,libserde_spanned-5ebefd8277f64574,libwinnow-d12b79d17ec3867a,libtoml_write-f8335e1b7586b028,libtoml_datetime-75b0f0c26662d729,libjs2zig_core-34414ed93685c9aa,libserde_json-ded62a908d07fc89,libzmij-194831206729353d,liboxc_parser-f8f6a53b209ba094,libmemchr-cb529cb6f06bd008,liboxc_ecmascript-836f29c0c340c4cf,libnum_bigint-239ea31a3024fee1,libnum_integer-55c76aad32d65ac1,libnum_traits-04af35821554a6ca,liboxc_ast-971ea3a1e53e5f2e,liboxc_regular_expression-8186af8c3f450b59,liboxc_diagnostics-4b33d8de19e00801,libpercent_encoding-dcc8de800d85c95d,liboxc_syntax-2d37e02c107b0f76,libdragonbox_ecma-61743707aded4fc1,libphf-7c9dffb8bcd05610,libphf_shared-621275d6f7feffbc,libsiphasher-8d72de50d8cabc09,libunicode_id_start-748eef6b128d069f,libcow_utils-31e0b747d00e8eab,liboxc_index-83432ebfdfced030,libnonmax-0bb0cf762847a68a,libbitflags-7ebceeac0d21c7c3,liboxc_span-60a65188b70fa9fa,liboxc_str-8a3ae7a5d6a6a1a9,libcompact_str-4cc4cffcc2b1b2a5,libryu-b98bae970ed73c83,libitoa-2671aa452abccd39,libstatic_assertions-42c7c0ff0d66dc2f,libcastaway-b63011e629749e8b,libmiette-d6df04d639ea7b55,libtextwrap-a1bafef745475838,libunicode_linebreak-3a69d39a7f0be942,libsmawk-a26ccccdc204e168,libunicode_width-810950b8b664f422,libunicode_segmentation-c716c9ab8d026d00,libowo_colors-b0262da772a83e0c,libcfg_if-26ef73b6fc7ab60c,libthiserror-cb61652617aeb277,liboxc_estree-aeb33b4193e966d6,liboxc_allocator-0fd51766a244a23c,librustc_hash-119697d36645c991,liboxc_data_structures-9e2810bfd30eb4b8,libserde-a69d48844ad78271,libindexmap-b13a2b7a1c773e45,libequivalent-f9867ec3b95f0550,libserde_core-cf81c84a3550377d,libhashbrown-32079f532869d235,liballocator_api2-4f7cc3bf4f3ae733}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libstd-*,libpanic_unwind-*,libcfg_if-*,libwindows_link-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "kernel32.lib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/OUT:C:\\Users\\18988\\RustroverProjects\\js2rust\\target\\debug\\deps\\mdn_test_project.exe" "/OPT:REF,NOICF" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: rust-lld: error: undefined symbol: js2rust_init
+          >>> referenced by C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\src\main.rs:8
+          >>>               C:\Users\18988\RustroverProjects\js2rust\target\debug\deps\mdn_test_project.8o7bi5dhgwoaz2fo0vkvpacgz.1tac2pz.rcgu.o:(mdn_test_project::__js2rust_ffi_safe_app::js2rust_init::_$u7b$$u7b$closure$u7d$$u7d$::h044d019e5ec28ce0)
+          
+          rust-lld: error: undefined symbol: js2rust_deinit
+          >>> referenced by C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\src\main.rs:8
+          >>>               C:\Users\18988\RustroverProjects\js2rust\target\debug\deps\mdn_test_project.atph8oxxxxkh53z7wsy9ttz24.1tac2pz.rcgu.o:(mdn_test_project::__js2rust_ffi_safe_app::js2rust_deinit::h3beb2ec4ffe5a84f)
+          
+          rust-lld: error: undefined symbol: testMinimal
+          >>> referenced by C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\src\main.rs:8
+          >>>               C:\Users\18988\RustroverProjects\js2rust\target\debug\deps\mdn_test_project.atph8oxxxxkh53z7wsy9ttz24.1tac2pz.rcgu.o:(mdn_test_project::__js2rust_ffi_safe_app::testMinimal_app::h92dc50f287b833f7)
+          
+          rust-lld: error: undefined symbol: testExpressionsPart1
+          >>> referenced by C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\src\main.rs:8
+          >>>               C:\Users\18988\RustroverProjects\js2rust\target\debug\deps\mdn_test_project.atph8oxxxxkh53z7wsy9ttz24.1tac2pz.rcgu.o:(mdn_test_project::__js2rust_ffi_safe_app::testExpressionsPart1_app::h8f9fcc9536be109a)
+          
+          rust-lld: error: undefined symbol: js_allocator_dupe
+          >>> referenced by C:\Users\18988\RustroverProjects\js2rust\js2rust-bridge\src\sdk.rs:145
+          >>>               libjs2rust_bridge-bc29d49f5a93abed.rlib(js2rust_bridge-bc29d49f5a93abed.6kld472ryzw7u0jvx5lfhnqas.0w7zaur.rcgu.o):(js2rust_bridge::sdk::JsStr::new::h93868734bca51178)
+          
+
+warning: mdn-test-project@0.1.0: js2zig: no compiled libraries found in C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache. Run `cargo build` twice on a clean checkout.
+error: could not compile `mdn-test-project` (bin "mdn-test-project") due to 1 previous error

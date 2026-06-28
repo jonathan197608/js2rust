@@ -24,5 +24,35 @@ export function testMinimal() {
     console.log("true && false: " + (true && false));
     console.log("!true: " + (!true));
 
+    // ---- 8. 数组 ----
+    let arr = [1, 2, 3];
+    console.log("arr.length = " + arr.length);
+
+    // ---- 9. if 语句 ----
+    if (x > 5) {
+        console.log("x > 5");
+    }
+
+    // ---- 10. for 循环 ----
+    for (let i = 0; i < 3; i = i + 1) {
+        console.log("i = " + i);
+    }
+
+    // ---- 11. while 循环 ----
+    let j = 0;
+    while (j < 3) {
+        console.log("j = " + j);
+        j = j + 1;
+    }
+
+    // ---- 12. 字符串长度 ----
+    let s = "hello";
+    console.log("s.length = " + s.length);
+
+    // ---- 13. Math 函数 ----
+    console.log("Math.max(1,2,3) = " + Math.max(1, 2, 3));
+    console.log("Math.min(1,2,3) = " + Math.min(1, 2, 3));
+    console.log("Math.abs(-5) = " + Math.abs(-5));
+
     return 0;
 }

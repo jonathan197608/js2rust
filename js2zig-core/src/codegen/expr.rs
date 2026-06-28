@@ -681,6 +681,7 @@ impl Codegen {
                 }
             } else {
                 // Pick format specifier based on inferred type (match emit_template_literal logic).
+                // Special case: ConditionalExpression → use infer_expr_type result
                 let placeholder = match self.infer_expr_type(op) {
                     Some(ZigType::Str) => "{s}",
                     Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
@@ -945,7 +946,16 @@ impl Codegen {
             }
             // ConditionalExpression (ternary): result is string if both branches are strings
             Expression::ConditionalExpression(ce) => {
-                self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
+                // Check if both branches are definitely strings
+                let cons_is_str = match &ce.consequent {
+                    Expression::StringLiteral(_) => true,
+                    _ => self.expr_is_string(&ce.consequent),
+                };
+                let alt_is_str = match &ce.alternate {
+                    Expression::StringLiteral(_) => true,
+                    _ => self.expr_is_string(&ce.alternate),
+                };
+                cons_is_str && alt_is_str
             }
             _ => false,
         }
@@ -5351,6 +5361,7 @@ impl Codegen {
             }
 
             // Rule 2: Binary expression → definite only if BOTH operands are literals
+            // Special case: Addition (+) with a string operand → result is Str (string concatenation)
             Expression::BinaryExpression(be) => {
                 if Self::is_literal(&be.left) && Self::is_literal(&be.right) {
                     // Both are literals: infer types and compute result.
@@ -5363,6 +5374,11 @@ impl Codegen {
                         .infer_expr_type(&be.right)
                         .expect("is_literal() true → infer_expr_type() returns Some");
                     Some(Self::infer_binary_type(be.operator, left_ty, right_ty))
+                } else if be.operator == BinaryOperator::Addition
+                    && (self.expr_is_string(&be.left) || self.expr_is_string(&be.right))
+                {
+                    // String concatenation: if either operand is a string, result is Str
+                    Some(ZigType::Str)
                 } else {
                     // Rule 3: Cannot infer type
                     None

@@ -1,0 +1,176 @@
+[testExpressions] fragment 1 error: expression is not defined
+[testExpressions] fragment 5 error: checkbox is not defined
+[testExpressions] fragment 6 error: checkbox is not defined
+[testExpressions] fragment 8 error: x is not defined
+[testExpressions] fragment 12 error: x is not defined
+[testExpressions] fragment 14 error: bCondition is not defined
+[testExpressions] fragment 15 error: bCondition is not defined
+[testExpressions] fragment 17 error: x is not defined
+[testExpressions] fragment 21 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 27 error: x is not defined
+[testExpressions] fragment 31 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 34 error: x is not defined
+[testExpressions] fragment 37 error: Division by zero
+[testExpressions] fragment 38 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 41 error: x is not defined
+[testExpressions] fragment 47 error: x is not defined
+[testExpressions] fragment 48 error: Temporal is not defined
+[testExpressions] fragment 52 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 57 error: x is not defined
+[testExpressions] fragment 61 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 64 error: x is not defined
+[testExpressions] fragment 71 error: x is not defined
+[testExpressions] fragment 78 error: x is not defined
+[testExpressions] fragment 85 error: x is not defined
+[testExpressions] fragment 86 error: x is not defined
+[testExpressions] fragment 93 error: x is not defined
+[testExpressions] fragment 98 error: x is not defined
+[testExpressions] fragment 99 error: x is not defined
+[testExpressions] fragment 105 error: x is not defined
+[testExpressions] fragment 109 error: x is not defined
+[testExpressions] fragment 113 error: x is not defined
+[testExpressions] fragment 116 error: BigInts have no unsigned right shift, use >> instead
+[testExpressions] fragment 118 error: x is not defined
+[testExpressions] fragment 122 error: x is not defined
+[testExpressions] fragment 126 error: x is not defined
+[testExpressions] fragment 130 error: x is not defined
+[testExpressions] fragment 135 error: bCondition1 is not defined
+[testExpressions] fragment 136 error: bCondition1 is not defined
+[testExpressions] fragment 137 error: bCondition1 is not defined
+[testExpressions] fragment 138 error: bCondition1 is not defined
+[testExpressions] fragment 139 error: bCondition1 is not defined
+[testExpressions] fragment 140 error: bCondition1 is not defined
+[testExpressions] fragment 142 error: x is not defined
+[testExpressions] fragment 145 error: varObject is not defined
+[testExpressions] fragment 146 error: bCondition1 is not defined
+[testExpressions] fragment 147 error: bCondition1 is not defined
+[testExpressions] fragment 148 error: bCondition1 is not defined
+[testExpressions] fragment 149 error: bCondition1 is not defined
+[testExpressions] fragment 150 error: bCondition1 is not defined
+[testExpressions] fragment 151 error: bCondition1 is not defined
+[testExpressions] fragment 153 error: x is not defined
+[testExpressions] fragment 156 error: x is not defined
+[testExpressions] fragment 158 error: bar is not defined
+[testExpressions] fragment 159 error: Cannot mix BigInt and other types, use explicit conversions
+[testExpressions] fragment 161 error: x is not defined
+[testExpressions] fragment 164 error: Cannot mix BigInt and other types, use explicit conversions
+Error: Parameter is not a number!
+    at getRectArea (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:138:19)
+    at testStatements (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:143:11)
+    at Object.<anonymous> (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\run_all.js:22:5)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Object..js (node:internal/modules/cjs/loader:1838:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+[testStatements] fragment 8 error: expression is not defined
+[testStatements] fragment 9 error: error is not defined
+[testStatements] fragment 10 error: 
+TypeError: Can only add numbers
+    at sum (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:183:19)
+    at testStatements (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:190:11)
+    at Object.<anonymous> (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\run_all.js:22:5)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Object..js (node:internal/modules/cjs/loader:1838:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+[testStatements] fragment 12 error: readFile is not defined
+[testStatements] fragment 16 error: Assignment to constant variable.
+[testStatements] fragment 17 error: MY_OBJECT is not defined
+[testStatements] fragment 18 error: Assignment to constant variable.
+[testStatements] fragment 19 error: MY_ARRAY is not defined
+[testStatements] fragment 26 error: notHoisted is not a function
+[testStatements] fragment 32 error: condition is not defined
+[testStatements] fragment 33 error: myModule is not defined
+[testStatements] fragment 34 error: myModule is not defined
+[testStatements] fragment 38 error: myValue is not defined
+[testBuiltins] fragment 5 error: Cannot convert a BigInt value to a number
+[testBuiltins] fragment 10 error: value is not defined
+[testBuiltins] fragment 13 error: value is not defined
+[testBuiltins] fragment 16 error: string is not defined
+[testBuiltins] fragment 25 error: string is not defined
+[testBuiltins] fragment 36 error: encodedURI is not defined
+URIError: URI malformed
+    at decodeURI (<anonymous>)
+    at testBuiltins (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_builtins.js:461:21)
+    at Object.<anonymous> (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\run_all.js:29:5)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Object..js (node:internal/modules/cjs/loader:1838:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+[testBuiltins] fragment 39 error: encodedURI is not defined
+URIError: URI malformed
+    at decodeURIComponent (<anonymous>)
+    at testBuiltins (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_builtins.js:481:21)
+    at Object.<anonymous> (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\run_all.js:29:5)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Object..js (node:internal/modules/cjs/loader:1838:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+[testBuiltins] fragment 42 error: uri is not defined
+[testBuiltins] fragment 44 error: URI malformed
+[testBuiltins] fragment 46 error: uriComponent is not defined
+[testBuiltins] fragment 49 error: URI malformed
+[testBuiltins] fragment 50 error: str is not defined
+[testBuiltins] fragment 51 error: str is not defined
+[testBuiltins] fragment 52 error: x is not defined
+[testBuiltins] fragment 53 error: expression is not defined
+[testBuiltins] fragment 54 error: expression is not defined
+[testBuiltins] fragment 64 error: SuppressedError is not defined
+[testBuiltins] fragment 84 error: Cannot mix BigInt and other types, use explicit conversions
+[testBuiltins] fragment 103 error: s2 is not defined
+[testBuiltins] fragment 104 error: Cannot read properties of null (reading 'toString')
+[testBuiltins] fragment 108 error: registry is not defined
+[testBuiltins] fragment 109 error: registry is not defined
+[testBuiltins] fragment 140 error: Invalid code point NaN
+[testBuiltins] fragment 141 error: The normalization form should be one of NFC, NFD, NFKC, NFKD.
+[testBuiltins] fragment 143 error: Invalid time value
+[testBuiltins] fragment 144 error: invalid is not defined
+[testBuiltins] fragment 146 error: toExponential() argument must be between 0 and 100
+[testBuiltins] fragment 148 error: toString() radix argument must be between 2 and 36
+[testBuiltins] fragment 150 error: Invalid count value: Infinity
+[testBuiltins] fragment 152 error: Invalid count value: -1
+[testBuiltins] fragment 159 error: array is not defined
+[testBuiltins] fragment 160 error: array is not defined
+[testBuiltins] fragment 164 error: alert is not defined
+[testBuiltins] fragment 172 error: Invalid flags supplied to RegExp constructor 'flags'
+[testBuiltins] fragment 176 error: Unexpected token ']', "[1, 2, 3, 4,]" is not valid JSON
+[testBuiltins] fragment 178 error: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+[testBuiltins] fragment 180 error: Unexpected number in JSON at position 9 (line 1 column 10)
+[testBuiltins] fragment 186 error: condition is not defined
+[testBuiltins] fragment 188 error: done is not defined
+[testBuiltins] fragment 189 error: done is not defined
+[testBuiltins] fragment 198 error: obj is not defined
+[testBuiltins] fragment 211 error: b is not defined
+[testBuiltins] fragment 213 error: Using is not defined
+[testBuiltins] fragment 214 error: Property description must be an object: 1
+[testBuiltins] fragment 216 error: Immutable prototype object 'Object.prototype' cannot have their prototype set
+[testBuiltins] fragment 217 error: #<Object> is not extensible
+[testBuiltins] fragment 219 error: circularReference is not defined
+[testBuiltins] fragment 220 error: circularReference is not defined
+[testBuiltins] fragment 221 error: String.prototype.matchAll called with a non-global RegExp argument
+[testBuiltins] fragment 224 error: Cannot read properties of null (reading 'foo')
+[testBuiltins] fragment 225 error: URI malformed
+[testBuiltins] fragment 227 error: URI malformed
+ReferenceError: readFile is not defined
+    at C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:215:17
+    at new Promise (<anonymous>)
+    at readFilePromise (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:214:22)
+    at C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:225:34
+    at testStatements (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\test_statements.js:230:12)
+    at Object.<anonymous> (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\run_all.js:22:5)
+    at Module._compile (node:internal/modules/cjs/loader:1705:14)
+    at Object..js (node:internal/modules/cjs/loader:1838:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)

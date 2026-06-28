@@ -1,0 +1,386 @@
+Discovering URLs from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference ...
+  Found 365 pages
+Scraping 365 pages ...
+
+  [1/365] builtins        Reference                                 no valid JS
+  [2/365] builtins        globalThis                                ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [3/365] builtins        Infinity                                  ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [4/365] builtins        NaN                                       ✓ (7 fragments, 1704 chars)
+  [5/365] builtins        undefined                                 no valid JS
+  [6/365] builtins        eval                                      ERROR: [WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [7/365] builtins        isFinite                                  ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [8/365] builtins        isNaN                                     ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [9/365] builtins        parseFloat                                ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [10/365] builtins        parseInt                                  ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [11/365] builtins        decodeURI                                 ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [12/365] builtins        decodeURIComponent                        ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [13/365] builtins        encodeURI                                 ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [14/365] builtins        encodeURIComponent                        ✓ (4 fragments, 1454 chars)
+  [15/365] builtins        escape                                    ✓ (1 fragments, 11 chars)
+  [16/365] builtins        unescape                                  ✓ (1 fragments, 13 chars)
+  [17/365] builtins        Object                                    no valid JS
+  [18/365] builtins        Function                                  ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [19/365] builtins        Boolean                                   ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [20/365] builtins        Symbol                                    ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [21/365] builtins        Error                                     no valid JS
+  [22/365] builtins        AggregateError                            ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [23/365] builtins        EvalError                                 ✓ (1 fragments, 221 chars)
+  [24/365] builtins        RangeError                                merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [25/365] builtins        ReferenceError                            ✓ (1 fragments, 236 chars)
+  [26/365] builtins        SuppressedError                           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [27/365] builtins        SyntaxError                               ✓ (2 fragments, 430 chars)
+  [28/365] builtins        TypeError                                 ✓ (2 fragments, 441 chars)
+  [29/365] builtins        URIError                                  ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [30/365] builtins        InternalError                             merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [31/365] builtins        Number                                    ✓ (5 fragments, 1303 chars)
+  [32/365] builtins        BigInt                                    ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [33/365] builtins        Math                                      ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [34/365] builtins        Date                                      ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [35/365] builtins        Temporal                                  no valid JS
+  [36/365] builtins        String                                    ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [37/365] builtins        RegExp                                    no valid JS
+  [38/365] builtins        Array                                     ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [39/365] builtins        Int8Array                                 no valid JS
+  [40/365] builtins        Uint8Array                                no valid JS
+  [41/365] builtins        Uint8ClampedArray                         no valid JS
+  [42/365] builtins        Int16Array                                no valid JS
+  [43/365] builtins        Uint16Array                               ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [44/365] builtins        Int32Array                                no valid JS
+  [45/365] builtins        Uint32Array                               no valid JS
+  [46/365] builtins        BigInt64Array                             no valid JS
+  [47/365] builtins        BigUint64Array                            no valid JS
+  [48/365] builtins        Float16Array                              no valid JS
+  [49/365] builtins        Float32Array                              no valid JS
+  [50/365] builtins        Float64Array                              no valid JS
+  [51/365] builtins        Map                                       merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [52/365] builtins        Set                                       no valid JS
+  [53/365] builtins        WeakMap                                   ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [54/365] builtins        WeakSet                                   no valid JS
+  [55/365] builtins        ArrayBuffer                               ✓ (1 fragments, 71 chars)
+  [56/365] builtins        SharedArrayBuffer                         no valid JS
+  [57/365] builtins        DataView                                  ✓ (2 fragments, 396 chars)
+  [58/365] builtins        Atomics                                   no valid JS
+  [59/365] builtins        JSON                                      merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [60/365] builtins        WeakRef                                   no valid JS
+  [61/365] builtins        FinalizationRegistry                      ✓ (2 fragments, 85 chars)
+  [62/365] builtins        Iterator                                  no valid JS
+  [63/365] builtins        AsyncIterator                             no valid JS
+  [64/365] builtins        Promise                                   ERROR: ('Connection aborted.', ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None))
+  [65/365] builtins        GeneratorFunction                         no valid JS
+  [66/365] builtins        AsyncGeneratorFunction                    no valid JS
+  [67/365] builtins        Generator                                 ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [68/365] builtins        AsyncGenerator                            no valid JS
+  [69/365] builtins        AsyncFunction                             ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [70/365] builtins        DisposableStack                           ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [71/365] builtins        AsyncDisposableStack                      no valid JS
+  [72/365] builtins        Reflect                                   no valid JS
+  [73/365] builtins        Proxy                                     no valid JS
+  [74/365] builtins        Intl                                      no valid JS
+  [75/365] builtins        Collator                                  ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [76/365] builtins        DateTimeFormat                            no valid JS
+  [77/365] builtins        DisplayNames                              no valid JS
+  [78/365] builtins        DurationFormat                            no valid JS
+  [79/365] builtins        ListFormat                                no valid JS
+  [80/365] builtins        Locale                                    no valid JS
+  [81/365] builtins        NumberFormat                              no valid JS
+  [82/365] builtins        PluralRules                               no valid JS
+  [83/365] builtins        RelativeTimeFormat                        no valid JS
+  [84/365] builtins        Segmenter                                 no valid JS
+  [85/365] statements      return                                    ✓ (3 fragments, 632 chars)
+  [86/365] statements      break                                     ✓ (2 fragments, 218 chars)
+  [87/365] statements      continue                                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [88/365] statements      throw                                     ✓ (7 fragments, 1151 chars)
+  [89/365] statements      if...else                                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [90/365] statements      switch                                    no valid JS
+  [91/365] statements      try...catch                               merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [92/365] statements      var                                       ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [93/365] statements      let                                       ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [94/365] statements      const                                     ✓ (5 fragments, 465 chars)
+  [95/365] statements      using                                     ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [96/365] statements      await_using                               ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [97/365] statements      function                                  ✓ (7 fragments, 1104 chars)
+  [98/365] statements      function*                                 no valid JS
+  [99/365] statements      async_function                            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [100/365] statements      async_function*                           ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [101/365] statements      class                                     no valid JS
+  [102/365] statements      do...while                                ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [103/365] statements      for                                       ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [104/365] statements      for...in                                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [105/365] statements      for...of                                  no valid JS
+  [106/365] statements      for-await...of                            no valid JS
+  [107/365] statements      while                                     no valid JS
+  [108/365] statements      Empty                                     ✓ (4 fragments, 427 chars)
+  [109/365] statements      block                                     ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [110/365] statements      Expression_statement                      no valid JS
+  [111/365] statements      debugger                                  no valid JS
+  [112/365] statements      export                                    merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [113/365] statements      import                                    ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [114/365] statements      label                                     ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [115/365] statements      with                                      ✓ (3 fragments, 339 chars)
+  [116/365] expressions     this                                      no valid JS
+  [117/365] expressions     Object_initializer                        merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [118/365] expressions     function                                  ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [119/365] expressions     class                                     ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [120/365] expressions     function*                                 no valid JS
+  [121/365] expressions     async_function                            no valid JS
+  [122/365] expressions     async_function*                           no valid JS
+  [123/365] expressions     Grouping                                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [124/365] expressions     Property_accessors                        ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [125/365] expressions     Optional_chaining                         no valid JS
+  [126/365] expressions     new                                       no valid JS
+  [127/365] expressions     new.target                                no valid JS
+  [128/365] expressions     import.meta                               no valid JS
+  [129/365] expressions     super                                     no valid JS
+  [130/365] expressions     import                                    no valid JS
+  [131/365] expressions     Increment                                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [132/365] expressions     Decrement                                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [133/365] expressions     delete                                    merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [134/365] expressions     void                                      ✓ (6 fragments, 619 chars)
+  [135/365] expressions     typeof                                    ✓ (8 fragments, 2617 chars)
+  [136/365] expressions     Unary_plus                                merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [137/365] expressions     Unary_negation                            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [138/365] expressions     Bitwise_NOT                               ✓ (4 fragments, 391 chars)
+  [139/365] expressions     Logical_NOT                               ✓ (5 fragments, 196 chars)
+  [140/365] expressions     await                                     no valid JS
+  [141/365] expressions     Exponentiation                            ✓ (10 fragments, 683 chars)
+  [142/365] expressions     Multiplication                            ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [143/365] expressions     Division                                  ✓ (7 fragments, 592 chars)
+  [144/365] expressions     Remainder                                 ✓ (6 fragments, 364 chars)
+  [145/365] expressions     Addition                                  ✓ (8 fragments, 493 chars)
+  [146/365] expressions     Subtraction                               ✓ (7 fragments, 456 chars)
+  [147/365] expressions     Less_than                                 ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [148/365] expressions     Greater_than                              ✓ (7 fragments, 611 chars)
+  [149/365] expressions     Less_than_or_equal                        ✓ (7 fragments, 637 chars)
+  [150/365] expressions     Greater_than_or_equal                     ✓ (7 fragments, 635 chars)
+  [151/365] expressions     instanceof                                no valid JS
+  [152/365] expressions     in                                        no valid JS
+  [153/365] expressions     Equality                                  ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [154/365] expressions     Inequality                                ✓ (8 fragments, 778 chars)
+  [155/365] expressions     Strict_equality                           ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [156/365] expressions     Strict_inequality                         ✓ (7 fragments, 559 chars)
+  [157/365] expressions     Left_shift                                merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [158/365] expressions     Right_shift                               ✓ (4 fragments, 429 chars)
+  [159/365] expressions     Unsigned_right_shift                      ✓ (5 fragments, 504 chars)
+  [160/365] expressions     Bitwise_AND                               ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [161/365] expressions     Bitwise_OR                                ✓ (4 fragments, 419 chars)
+  [162/365] expressions     Bitwise_XOR                               ✓ (2 fragments, 155 chars)
+  [163/365] expressions     Logical_AND                               ✓ (10 fragments, 1233 chars)
+  [164/365] expressions     Logical_OR                                ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [165/365] expressions     Nullish_coalescing                        ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [166/365] expressions     Conditional_operator                      ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [167/365] expressions     Assignment                                ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [168/365] expressions     Multiplication_assignment                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [169/365] expressions     Division_assignment                       merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [170/365] expressions     Remainder_assignment                      ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [171/365] expressions     Addition_assignment                       merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [172/365] expressions     Subtraction_assignment                    ✓ (5 fragments, 240 chars)
+  [173/365] expressions     Left_shift_assignment                     merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [174/365] expressions     Right_shift_assignment                    merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [175/365] expressions     Unsigned_right_shift_assignment           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [176/365] expressions     Bitwise_AND_assignment                    ✓ (2 fragments, 145 chars)
+  [177/365] expressions     Bitwise_XOR_assignment                    ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [178/365] expressions     Bitwise_OR_assignment                     merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [179/365] expressions     Exponentiation_assignment                 ✓ (4 fragments, 276 chars)
+  [180/365] expressions     Logical_AND_assignment                    ✓ (3 fragments, 105 chars)
+  [181/365] expressions     Logical_OR_assignment                     ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [182/365] expressions     Nullish_coalescing_assignment             merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [183/365] expressions     Destructuring                             ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [184/365] expressions     yield                                     ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [185/365] expressions     yield*                                    ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [186/365] expressions     Spread_syntax                             merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [187/365] expressions     Comma_operator                            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [188/365] builtins        Arrow_functions                           ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [189/365] builtins        Default_parameters                        no valid JS
+  [190/365] builtins        rest_parameters                           ✓ (9 fragments, 1372 chars)
+  [191/365] builtins        arguments                                 no valid JS
+  [192/365] builtins        Method_definitions                        no valid JS
+  [193/365] builtins        get                                       no valid JS
+  [194/365] builtins        set                                       ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [195/365] builtins        constructor                               no valid JS
+  [196/365] builtins        extends                                   ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [197/365] builtins        Private_elements                          ERROR: [WinError 5] 拒绝访问。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [198/365] builtins        Public_class_fields                       no valid JS
+  [199/365] builtins        static                                    no valid JS
+  [200/365] builtins        Static_initialization_blocks              merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [201/365] builtins        Regular_expressions                       ✓ (1 fragments, 23 chars)
+  [202/365] builtins        Backreference                             ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [203/365] builtins        Capturing_group                           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [204/365] builtins        Character_class                           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [205/365] builtins        Character_class_escape                    ✓ (1 fragments, 199 chars)
+  [206/365] builtins        Character_escape                          ✓ (2 fragments, 287 chars)
+  [207/365] builtins        Disjunction                               ✓ (3 fragments, 344 chars)
+  [208/365] builtins        Input_boundary_assertion                  ✓ (4 fragments, 1128 chars)
+  [209/365] builtins        Literal_character                         ✓ (3 fragments, 118 chars)
+  [210/365] builtins        Lookahead_assertion                       ✓ (4 fragments, 570 chars)
+  [211/365] builtins        Lookbehind_assertion                      no valid JS
+  [212/365] builtins        Modifier                                  no valid JS
+  [213/365] builtins        Named_backreference                       ✓ (1 fragments, 23 chars)
+  [214/365] builtins        Named_capturing_group                     no valid JS
+  [215/365] builtins        Non-capturing_group                       merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [216/365] builtins        Quantifier                                ✓ (7 fragments, 842 chars)
+  [217/365] builtins        Unicode_character_class_escape            ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [218/365] builtins        Wildcard                                  no valid JS
+  [219/365] builtins        Word_boundary_assertion                   ✓ (2 fragments, 331 chars)
+  [220/365] builtins        JavaScript_technologies_overview          no valid JS
+  [221/365] builtins        Execution_model                           no valid JS
+  [222/365] builtins        Iteration_protocols                       no valid JS
+  [223/365] builtins        Trailing_commas                           no valid JS
+  [224/365] builtins        Errors                                    no valid JS
+  [225/365] builtins        Deprecated_and_obsolete_features          ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [226/365] builtins        contributors.txt                          no valid JS
+  [227/365] builtins        TypedArray                                no valid JS
+  [228/365] expressions     resolve                                   no valid JS
+  [229/365] expressions     null                                      ✓ (2 fragments, 158 chars)
+  [230/365] expressions     Operator_precedence                       no valid JS
+  [231/365] statements      with                                      ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [232/365] builtins        Symbol.iterator                           no valid JS
+  [233/365] builtins        callee                                    no valid JS
+  [234/365] builtins        length                                    ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [235/365] builtins        Promise_any_all_rejected                  no valid JS
+  [236/365] builtins        Property_access_denied                    no valid JS
+  [237/365] builtins        Too_much_recursion                        merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [238/365] builtins        Not_a_valid_code_point                    ✓ (1 fragments, 251 chars)
+  [239/365] builtins        BigInt_division_by_zero                   merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [240/365] builtins        BigInt_negative_exponent                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [241/365] builtins        Form_must_be_one_of                       ✓ (2 fragments, 111 chars)
+  [242/365] builtins        Invalid_array_length                      ERROR: [WinError 2] 系统找不到指定的文件。: 'C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\._tmp_check.js'
+  [243/365] builtins        Invalid_date                              ✓ (3 fragments, 411 chars)
+  [244/365] builtins        Precision_range                           ✓ (2 fragments, 517 chars)
+  [245/365] builtins        Bad_radix                                 ✓ (2 fragments, 323 chars)
+  [246/365] builtins        Resulting_string_too_large                ✓ (2 fragments, 222 chars)
+  [247/365] builtins        Negative_repetition_count                 ✓ (2 fragments, 181 chars)
+  [248/365] builtins        Cant_be_converted_to_BigInt_because_it_isnt_an_integer  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [249/365] builtins        Not_defined                               merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [250/365] builtins        Undeclared_var                            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [251/365] builtins        Cant_access_lexical_declaration_before_init  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [252/365] builtins        Super_not_called                          no valid JS
+  [253/365] builtins        Super_called_twice                        no valid JS
+  [254/365] builtins        Bad_strict_arguments_eval                 ✓ (1 fragments, 118 chars)
+  [255/365] builtins        Deprecated_octal_literal                  ✓ (1 fragments, 4 chars)
+  [256/365] builtins        Strict_non_simple_params                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [257/365] builtins        Reserved_identifier                       ✓ (2 fragments, 238 chars)
+  [258/365] builtins        Regex_backslash_at_end_of_pattern         merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [259/365] builtins        Invalid_for-of_initializer                ✓ (1 fragments, 118 chars)
+  [260/365] builtins        Delete_in_strict_mode                     no valid JS
+  [261/365] builtins        Arguments_not_allowed                     no valid JS
+  [262/365] builtins        Bad_await                                 no valid JS
+  [263/365] builtins        await_yield_in_parameter                  no valid JS
+  [264/365] builtins        Cant_use_nullish_coalescing_unparenthesized  no valid JS
+  [265/365] builtins        Regex_character_class_escape_in_class_range  no valid JS
+  [266/365] builtins        Bad_continue                              ✓ (2 fragments, 196 chars)
+  [267/365] builtins        Regex_duplicate_capture_group_name        no valid JS
+  [268/365] builtins        Duplicate_parameter                       no valid JS
+  [269/365] builtins        Invalid_for-in_initializer                ✓ (2 fragments, 185 chars)
+  [270/365] builtins        Unnamed_function_statement                merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [271/365] builtins        Function_label                            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [272/365] builtins        Either_be_both_static_or_non-static       no valid JS
+  [273/365] builtins        Getter_no_arguments                       no valid JS
+  [274/365] builtins        Identifier_after_number                   ✓ (2 fragments, 232 chars)
+  [275/365] builtins        Illegal_character                         ✓ (1 fragments, 56 chars)
+  [276/365] builtins        import_decl_module_top_level              no valid JS
+  [277/365] builtins        Regex_incomplete_quantifier               ✓ (1 fragments, 29 chars)
+  [278/365] builtins        Invalid_assignment_left-hand_side         merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [279/365] builtins        Invalid_BigInt_syntax                     merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [280/365] builtins        Regex_invalid_capture_group_name          merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [281/365] builtins        Regex_invalid_char_in_class               ✓ (1 fragments, 14 chars)
+  [282/365] builtins        Regex_invalid_class_set_operation         no valid JS
+  [283/365] builtins        Regex_invalid_decimal_escape              ✓ (1 fragments, 157 chars)
+  [284/365] builtins        Regex_invalid_identity_escape             ✓ (1 fragments, 54 chars)
+  [285/365] builtins        Regex_invalid_named_capture_reference     no valid JS
+  [286/365] builtins        Regex_invalid_property_name               ✓ (1 fragments, 213 chars)
+  [287/365] builtins        Regex_invalid_range_in_character_class    ✓ (1 fragments, 93 chars)
+  [288/365] builtins        Regex_invalid_group                       no valid JS
+  [289/365] builtins        Bad_regexp_flag                           ✓ (3 fragments, 109 chars)
+  [290/365] builtins        Regex_invalid_unicode_escape              ✓ (1 fragments, 101 chars)
+  [291/365] builtins        JSON_bad_parse                            ✓ (6 fragments, 676 chars)
+  [292/365] builtins        Label_not_found                           ✓ (1 fragments, 127 chars)
+  [293/365] builtins        Missing_colon_after_property_id           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [294/365] builtins        Missing_parenthesis_after_argument_list   ✓ (3 fragments, 216 chars)
+  [295/365] builtins        Missing_parenthesis_after_condition       ✓ (4 fragments, 213 chars)
+  [296/365] builtins        Missing_bracket_after_list                ✓ (1 fragments, 121 chars)
+  [297/365] builtins        Missing_curly_after_function_body         ✓ (2 fragments, 169 chars)
+  [298/365] builtins        Missing_curly_after_property_list         ✓ (1 fragments, 52 chars)
+  [299/365] builtins        Missing_initializer_in_const              ✓ (2 fragments, 33 chars)
+  [300/365] builtins        Missing_formal_parameter                  ✓ (2 fragments, 234 chars)
+  [301/365] builtins        Missing_name_after_dot_operator           ✓ (2 fragments, 236 chars)
+  [302/365] builtins        No_variable_name                          no valid JS
+  [303/365] builtins        Regex_negated_char_class_with_strings     ✓ (1 fragments, 99 chars)
+  [304/365] builtins        Bad_new_optional                          no valid JS
+  [305/365] builtins        Regex_nothing_to_repeat                   ✓ (1 fragments, 108 chars)
+  [306/365] builtins        Regex_numbers_out_of_order_in_quantifier  ✓ (1 fragments, 9 chars)
+  [307/365] builtins        Deprecated_octal_escape_sequence          ✓ (2 fragments, 65 chars)
+  [308/365] builtins        Parameter_after_rest_parameter            ✓ (1 fragments, 148 chars)
+  [309/365] builtins        Cant_delete_private_fields                no valid JS
+  [310/365] builtins        Duplicate_proto                           ✓ (1 fragments, 349 chars)
+  [311/365] builtins        Regex_raw_bracket                         ✓ (1 fragments, 96 chars)
+  [312/365] builtins        Redeclared_parameter                      ✓ (1 fragments, 74 chars)
+  [313/365] builtins        Undeclared_private_field_or_method        no valid JS
+  [314/365] builtins        Rest_with_default                         ✓ (1 fragments, 62 chars)
+  [315/365] builtins        Bad_return                                ✓ (1 fragments, 123 chars)
+  [316/365] builtins        Setter_one_argument                       no valid JS
+  [317/365] builtins        String_literal_EOL                        merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [318/365] builtins        Bad_super_call                            no valid JS
+  [319/365] builtins        Bad_optional_template                     no valid JS
+  [320/365] builtins        Hash_outside_class                        no valid JS
+  [321/365] builtins        Unexpected_token                          no valid JS
+  [322/365] builtins        Bad_break                                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [323/365] builtins        Unparenthesized_unary_expr_lhs_exponentiation  ✓ (2 fragments, 117 chars)
+  [324/365] builtins        Bad_super_prop                            no valid JS
+  [325/365] builtins        Deprecated_source_map_pragma              ✓ (1 fragments, 193 chars)
+  [326/365] builtins        Deprecated_caller_or_arguments_usage      no valid JS
+  [327/365] builtins        is_not_iterable                           no valid JS
+  [328/365] builtins        Unexpected_type                           merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [329/365] builtins        Not_a_constructor                         merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [330/365] builtins        Not_a_function                            no valid JS
+  [331/365] builtins        No_non-null_object                        ✓ (2 fragments, 232 chars)
+  [332/365] builtins        Read-only                                 merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [333/365] builtins        Already_executing_generator               no valid JS
+  [334/365] builtins        BigInt_not_serializable                   merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [335/365] builtins        Builtin_ctor_no_new                       merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [336/365] builtins        Get_set_missing_private                   no valid JS
+  [337/365] builtins        Cant_assign_to_property                   merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [338/365] builtins        Cant_convert_BigInt_to_number             merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [339/365] builtins        Cant_convert_x_to_BigInt                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [340/365] builtins        Cant_define_property_object_not_extensible  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [341/365] builtins        Non_configurable_array_element            merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [342/365] builtins        Cant_redefine_property                    merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [343/365] builtins        Cant_set_prototype                        ✓ (2 fragments, 173 chars)
+  [344/365] builtins        Cyclic_prototype                          merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [345/365] builtins        in_operator_no_object                     merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [346/365] builtins        Class_ctor_no_new                         merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [347/365] builtins        Cyclic_object_value                       ✓ (3 fragments, 862 chars)
+  [348/365] builtins        Invalid_derived_return                    no valid JS
+  [349/365] builtins        Private_setter_only                       no valid JS
+  [350/365] builtins        Private_double_initialization             no valid JS
+  [351/365] builtins        invalid_right_hand_side_instanceof_operand  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [352/365] builtins        Array_sort_argument                       no valid JS
+  [353/365] builtins        Invalid_const_assignment                  merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [354/365] builtins        Constructor_cant_be_used_directly         no valid JS
+  [355/365] builtins        Requires_global_RegExp                    ✓ (3 fragments, 448 chars)
+  [356/365] builtins        More_arguments_needed                     no valid JS
+  [357/365] builtins        No_properties                             ✓ (1 fragments, 104 chars)
+  [358/365] builtins        Cant_delete                               merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [359/365] builtins        Reduce_of_empty_array_with_no_initial_value  no valid JS
+  [360/365] builtins        Getter_only                               merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [361/365] builtins        Key_not_weakly_held                       no valid JS
+  [362/365] builtins        Called_on_incompatible_type               merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+  [363/365] builtins        Malformed_URI                             ✓ (3 fragments, 235 chars)
+  [364/365] builtins        Already_has_pragma                        no valid JS
+  [365/365] builtins        Stmt_after_return                         merged syntax error: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_
+
+Generating test files ...
+  ✗ test_statements.js syntax error:
+C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src\._tmp_check.js:191
+          const data = await readFilePromise("foo.txt");
+                       ^^^^^
+
+SyntaxError: Unexpected reserved word
+    at checkSyntax (node:internal/main/check_syntax:74:5)
+
+Node.js v22.22.2
+
+  ✓ test_expressions.js (138 fragments)
+  ✓ test_builtins.js (154 fragments)
+  ✓ run_all.js
+
+Done. Files in C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\js_src
