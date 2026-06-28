@@ -137,8 +137,8 @@ const ArenaNode = struct {
     /// 原子操作：如果当前是 cooling 且已冷却至少 min_cooling_time 秒，则重置 Arena 并标记为 ready
     /// 返回 true 表示发生了状态转换
     /// 整个"读取状态 + 检查冷却时间 + 重置 Arena + 写入状态"在一次锁持有中完成
-    /// 由 resetCoolingNodesToReady 在 selectNode 全 cooling 时自动调用
-    pub fn tryResetCoolingToReady(self: *ArenaNode, min_cooling_time: i64) bool {
+    /// 由 selectNode 检测节点状态时自动调用
+    pub fn tryResetCoolingToReady(self: *ArenaNode) bool {
         while (!self.mutex.tryLock()) {}
         defer self.mutex.unlock();
 
@@ -146,7 +146,7 @@ const ArenaNode = struct {
 
         // 检查是否已冷却至少 min_cooling_time 秒
         const now = @divTrunc(js_date.milliTimestamp(), 1000);
-        if (now - self.cooling_since < min_cooling_time) {
+        if (now - self.cooling_since < self.min_cooling_time) {
             return false;
         }
 
@@ -261,8 +261,7 @@ pub const MultiArenaAllocator = struct {
     }
 
     /// 随机选取节点
-    /// 如果选中节点是 cooling，则取相邻节点，仍然 cooling 则继续下一个
-    /// 所有节点都 cooling 时，自动重置已过冷却时间的 cooling 节点为 ready，然后重新遍历
+    /// 如果选中节点是 cooling且未过冷却时间，则继续下一个
     /// 如果所有节点都未过冷却时间，返回 null
     fn selectNode(self: *MultiArenaAllocator) ?*ArenaNode {
         // 第一轮：原子自增全局计数器，取模得到随机起点
@@ -273,13 +272,7 @@ pub const MultiArenaAllocator = struct {
         if (self.findReadyNode(start_idx)) |node| {
             return node;
         }
-
-        // 所有节点都 cooling，自动重置已过冷却时间的 cooling 节点为 ready
-        // 重置操作是复合原子操作（读状态 + 检查冷却时间 + 重置 Arena + 写状态）
-        self.resetCoolingNodesToReady();
-
-        // 第二轮：重新遍历，此时可能有 ready 节点（如果已过冷却时间）
-        return self.findReadyNode(start_idx);
+        return null;
     }
 
     /// 从 start_idx 开始环形遍历，返回第一个 ready 节点（原子读取状态）
@@ -291,17 +284,12 @@ pub const MultiArenaAllocator = struct {
             if (node.isReady()) {
                 return node;
             }
+            if (node.tryResetCoolingToReady()) {
+                return node;
+            }
             idx = node.next;
         }
         return null;
-    }
-
-    /// 将所有 cooling 节点重置为 ready
-    /// 每个节点的"读取状态 + 检查冷却时间 + 重置 Arena + 写入状态"是复合原子操作
-    fn resetCoolingNodesToReady(self: *MultiArenaAllocator) void {
-        for (self.nodes) |*node| {
-            _ = node.tryResetCoolingToReady(self.min_cooling_time);
-        }
     }
 
     /// 获取统计信息（读取 state 时加锁）
