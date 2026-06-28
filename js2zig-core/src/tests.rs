@@ -2428,8 +2428,8 @@ function makeBytes() {
         let zig = transpile_and_assert!(js, "test_native_proto_typedarray_uint8");
         println!("=== TypedArray Uint8 ===\n{}", zig);
         assert!(
-            zig.contains("fromU8"),
-            "Expected 'fromU8' in generated code:\n{}",
+            zig.contains("fromI64AsU8"),
+            "Expected 'fromI64AsU8' in generated code:\n{}",
             zig
         );
     }

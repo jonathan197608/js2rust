@@ -443,46 +443,90 @@ impl Codegen {
                 // Check if this is new Int32Array(...) or new Uint8Array(...)
                 if let Expression::Identifier(id) = &ne.callee {
                     let obj_name = id.name.as_str();
-                    if obj_name == "Int32Array" {
-                        // new Int32Array([...]) → js_typedarray.fromI64AsI32(...)
-                        self.write("js_typedarray.fromI64AsI32(");
+
+                    // TypedArray constructors
+                    if let Some(ta) = Self::typedarray_info(obj_name) {
+                        self.write(ta.func);
+                        self.write("(");
                         if let Some(first_arg) = ne.arguments.first()
                             && let Some(expr) = first_arg.as_expression()
                             && let Expression::ArrayExpression(ae) = expr
                         {
-                            self.write("&[_]i64{");
+                            self.write(ta.array_prefix);
                             self.emit_comma_separated_array_elements(&ae.elements);
                             self.write("}");
                         }
                         self.write(")");
                         return;
-                    } else if obj_name == "Uint8Array" {
-                        // new Uint8Array([...]) → js_typedarray.fromU8(...)
-                        self.write("js_typedarray.fromU8(");
+                    }
+
+                    // Error constructors (used with throw statements; value is discarded)
+                    if Self::is_error_constructor(obj_name) {
+                        // new Error(msg) → {} (throw immediately follows with error.JsThrow)
+                        self.write("{}");
+                        return;
+                    }
+
+                    // Wrapper constructors — emit the argument value directly
+                    if obj_name == "String" {
+                        // new String(x) → x (wrapper semantics rarely needed)
                         if let Some(first_arg) = ne.arguments.first()
                             && let Some(expr) = first_arg.as_expression()
-                            && let Expression::ArrayExpression(ae) = expr
                         {
-                            self.write("&[_]u8{");
-                            self.emit_comma_separated_array_elements(&ae.elements);
-                            self.write("}");
+                            self.emit_expr(expr);
+                        } else {
+                            self.write("\"\"");
                         }
-                        self.write(")");
                         return;
-                    } else if obj_name == "Float64Array" {
-                        // new Float64Array([...]) → js_typedarray.fromF64(...)
-                        self.write("js_typedarray.fromF64(");
+                    } else if obj_name == "Number" {
+                        // new Number(x) → x
                         if let Some(first_arg) = ne.arguments.first()
                             && let Some(expr) = first_arg.as_expression()
-                            && let Expression::ArrayExpression(ae) = expr
                         {
-                            self.write("&[_]f64{");
-                            self.emit_comma_separated_array_elements(&ae.elements);
-                            self.write("}");
+                            self.emit_expr(expr);
+                        } else {
+                            self.write("0");
                         }
-                        self.write(")");
                         return;
-                    } else if obj_name == "Map" {
+                    } else if obj_name == "Boolean" {
+                        // new Boolean(x) → x
+                        if let Some(first_arg) = ne.arguments.first()
+                            && let Some(expr) = first_arg.as_expression()
+                        {
+                            self.emit_expr(expr);
+                        } else {
+                            self.write("false");
+                        }
+                        return;
+                    }
+
+                    // Known unsupported constructors — specific error messages
+                    if matches!(
+                        obj_name,
+                        "ArrayBuffer"
+                            | "SharedArrayBuffer"
+                            | "Function"
+                            | "Promise"
+                            | "WeakMap"
+                            | "WeakSet"
+                            | "DataView"
+                    ) {
+                        let msg = match obj_name {
+                            "Function" => "Function constructor is not supported in Zig",
+                            "Promise" => "Promise constructor is not supported in Zig",
+                            other => other, // will be used in format! below
+                        };
+                        let full_msg = if obj_name == "Function" || obj_name == "Promise" {
+                            msg.to_string()
+                        } else {
+                            format!("{obj_name} is not supported in Zig")
+                        };
+                        self.errors.push(full_msg.clone());
+                        self.compile_error(ne.span, &full_msg);
+                        return;
+                    }
+
+                    if obj_name == "Map" {
                         // new Map() → js_collections.JsMap.init(js_allocator.getAllocator())
                         self.write("js_collections.JsMap.init(js_allocator.getAllocator())");
                         return;
@@ -640,6 +684,12 @@ impl Codegen {
 }
 
 // ── Binary / Call / Assignment / Unary / Conditional / Array ──
+
+/// TypedArray constructor codegen info.
+struct TypedArrayInfo {
+    func: &'static str,
+    array_prefix: &'static str,
+}
 
 impl Codegen {
     // Binary expression with string-concat special case
@@ -1050,6 +1100,66 @@ impl Codegen {
             self.emit_expr(expr);
             self.write(")");
         }
+    }
+
+    /// Map TypedArray constructor name to codegen info.
+    fn typedarray_info(name: &str) -> Option<TypedArrayInfo> {
+        match name {
+            "Int8Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsI8",
+                array_prefix: "&[_]i64{",
+            }),
+            "Uint8Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsU8",
+                array_prefix: "&[_]i64{",
+            }),
+            "Uint8ClampedArray" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsU8",
+                array_prefix: "&[_]i64{",
+            }),
+            "Int16Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsI16",
+                array_prefix: "&[_]i64{",
+            }),
+            "Uint16Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsU16",
+                array_prefix: "&[_]i64{",
+            }),
+            "Int32Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsI32",
+                array_prefix: "&[_]i64{",
+            }),
+            "Uint32Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromI64AsU32",
+                array_prefix: "&[_]i64{",
+            }),
+            "Float32Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromF64AsF32",
+                array_prefix: "&[_]f64{",
+            }),
+            "Float64Array" => Some(TypedArrayInfo {
+                func: "js_typedarray.fromF64",
+                array_prefix: "&[_]f64{",
+            }),
+            _ => None,
+        }
+    }
+
+    /// Check if name is an Error constructor.
+    fn is_error_constructor(name: &str) -> bool {
+        matches!(
+            name,
+            "Error"
+                | "TypeError"
+                | "RangeError"
+                | "ReferenceError"
+                | "SyntaxError"
+                | "EvalError"
+                | "URIError"
+                | "AggregateError"
+                | "SuppressedError"
+                | "InternalError"
+        )
     }
 
     /// Check if an expression evaluates to a string type
@@ -4083,6 +4193,11 @@ impl Codegen {
                     self.write(")");
                     return true;
                 }
+                // Handle numeric literal: (77.1234).toFixed(2)
+                // AST: StaticMemberExpression { object: ParenthesizedExpression(NumericLiteral), ... }
+                if self.emit_numeric_receiver(&ce.callee, "toFixed", &ce.arguments, true) {
+                    return true;
+                }
                 false
             }
 
@@ -4101,6 +4216,10 @@ impl Codegen {
                     self.write(")");
                     return true;
                 }
+                // Handle numeric literal: (77.1234).toExponential(2)
+                if self.emit_numeric_receiver(&ce.callee, "toExponential", &ce.arguments, false) {
+                    return true;
+                }
                 false
             }
 
@@ -4117,6 +4236,10 @@ impl Codegen {
                         self.emit_first_arg(&ce.arguments);
                     }
                     self.write(")");
+                    return true;
+                }
+                // Handle numeric literal: (5.123456).toPrecision(3)
+                if self.emit_numeric_receiver(&ce.callee, "toPrecision", &ce.arguments, false) {
                     return true;
                 }
                 false

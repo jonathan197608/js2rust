@@ -229,6 +229,54 @@ impl Codegen {
         None
     }
 
+    /// Try to emit a numeric literal receiver for Number instance methods
+    /// (toFixed, toExponential, toPrecision).
+    /// Handles `(77.1234).method()` where the AST object is
+    /// `ParenthesizedExpression(NumericLiteral)`.
+    /// `args_required`: if true, the method requires at least 1 argument.
+    /// Returns true if successfully emitted.
+    pub(crate) fn emit_numeric_receiver(
+        &mut self,
+        callee: &Expression,
+        method_name: &str,
+        arguments: &[Argument],
+        args_required: bool,
+    ) -> bool {
+        let num_expr = if let Expression::StaticMemberExpression(mem) = callee {
+            match &mem.object {
+                Expression::NumericLiteral(_) => Some(&mem.object),
+                Expression::ParenthesizedExpression(pe)
+                    if matches!(&pe.expression, Expression::NumericLiteral(_)) =>
+                {
+                    Some(&pe.expression)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(expr) = num_expr {
+            if args_required && arguments.is_empty() {
+                self.errors
+                    .push(format!("{method_name}() requires at least 1 argument"));
+                return false;
+            }
+            self.write(&format!(
+                "js_number.{method_name}(js_allocator.getAllocator(), ",
+            ));
+            self.emit_expr(expr);
+            if arguments.is_empty() {
+                self.write(", null");
+            } else {
+                self.write(", ");
+                self.emit_first_arg(arguments);
+            }
+            self.write(")");
+            return true;
+        }
+        false
+    }
+
     /// Emit a format string expression: either a plain string literal (no args)
     /// or an allocPrint call (when interpolating args).
     ///
