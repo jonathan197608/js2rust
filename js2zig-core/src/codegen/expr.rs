@@ -1305,9 +1305,7 @@ impl Codegen {
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             // CallExpression — check if return type is Str (e.g. jsTypeof(), String())
-            Expression::CallExpression(_ce) => {
-                self.infer_expr_type(expr) == Some(ZigType::Str)
-            }
+            Expression::CallExpression(_ce) => self.infer_expr_type(expr) == Some(ZigType::Str),
             _ => false,
         }
     }

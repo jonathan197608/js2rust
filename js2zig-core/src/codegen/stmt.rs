@@ -2297,8 +2297,27 @@ impl Codegen {
         }
     }
 
+    /// Collect locally declared variable names from a list of statements.
+    /// These variables (const/let/var in the function body) are NOT captures.
+    fn collect_local_declarations(
+        stmts: &oxc_allocator::Vec<'_, Statement>,
+    ) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        for stmt in stmts.iter() {
+            if let Statement::VariableDeclaration(var_decl) = stmt {
+                for declarator in &var_decl.declarations {
+                    if let Some(name) = crate::native_proto::infer::binding_name(&declarator.id) {
+                        names.insert(name.to_string());
+                    }
+                }
+            }
+        }
+        names
+    }
+
     /// Collect captured variables from an arrow function body.
-    /// A variable is "captured" if it's referenced in the body but is not a parameter.
+    /// A variable is "captured" if it's referenced in the body but is not a parameter
+    /// and not a locally declared variable.
     /// Correctly sets `is_mut` by detecting mutations in the arrow body.
     fn collect_captured_vars(
         &self,
@@ -2307,14 +2326,15 @@ impl Codegen {
         let mut captured = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        // Collect parameter names (as String for comparison)
-        let param_names: std::collections::HashSet<String> = arrow
+        // Collect parameter names + locally declared variable names
+        let mut local_names: std::collections::HashSet<String> = arrow
             .params
             .items
             .iter()
             .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
             .map(|s| s.to_string())
             .collect();
+        local_names.extend(Self::collect_local_declarations(&arrow.body.statements));
 
         // Walk the body statements to find Identifier references
         for stmt in &arrow.body.statements {
@@ -2322,7 +2342,7 @@ impl Codegen {
                 stmt,
                 &mut captured,
                 &mut seen,
-                &param_names,
+                &local_names,
                 &self.type_info,
             );
         }
@@ -2339,13 +2359,14 @@ impl Codegen {
 
     /// Detect variables captured by a nested function declaration.
     /// Returns list of (variable_name, ZigType, is_mutable) for variables from the
-    /// enclosing scope that are referenced in the function body but are not parameters.
+    /// enclosing scope that are referenced in the function body but are not parameters
+    /// and not locally declared variables.
     fn detect_fn_body_captures(&self, fd: &Function) -> Vec<(String, ZigType, bool)> {
         let mut captured = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        // Collect parameter names
-        let param_names: std::collections::HashSet<String> = fd
+        // Collect parameter names + locally declared variable names
+        let mut local_names: std::collections::HashSet<String> = fd
             .params
             .items
             .iter()
@@ -2355,12 +2376,13 @@ impl Codegen {
 
         // Walk the body statements to find Identifier references
         if let Some(body) = &fd.body {
+            local_names.extend(Self::collect_local_declarations(&body.statements));
             for stmt in &body.statements {
                 Self::collect_idents_from_stmt(
                     stmt,
                     &mut captured,
                     &mut seen,
-                    &param_names,
+                    &local_names,
                     &self.type_info,
                 );
             }
@@ -2380,7 +2402,7 @@ impl Codegen {
         stmt: &Statement,
         captured: &mut Vec<(String, ZigType, bool)>,
         seen: &mut std::collections::HashSet<String>,
-        param_names: &std::collections::HashSet<String>,
+        local_names: &std::collections::HashSet<String>,
         type_info: &crate::native_proto::TypeCheckResult,
     ) {
         match stmt {
@@ -2389,13 +2411,29 @@ impl Codegen {
                     &es.expression,
                     captured,
                     seen,
-                    param_names,
+                    local_names,
                     type_info,
                 );
             }
             Statement::ReturnStatement(ret) => {
                 if let Some(expr) = &ret.argument {
-                    Self::collect_idents_from_expr(expr, captured, seen, param_names, type_info);
+                    Self::collect_idents_from_expr(expr, captured, seen, local_names, type_info);
+                }
+            }
+            Statement::VariableDeclaration(var_decl) => {
+                // Process init expressions (right-hand side) — they may reference
+                // outer variables that need to be captured. The binding names (left-hand
+                // side) are local and already in `local_names`.
+                for declarator in &var_decl.declarations {
+                    if let Some(init) = &declarator.init {
+                        Self::collect_idents_from_expr(
+                            init,
+                            captured,
+                            seen,
+                            local_names,
+                            type_info,
+                        );
+                    }
                 }
             }
             _ => {}
@@ -2407,15 +2445,15 @@ impl Codegen {
         expr: &Expression,
         captured: &mut Vec<(String, ZigType, bool)>,
         seen: &mut std::collections::HashSet<String>,
-        param_names: &std::collections::HashSet<String>,
+        local_names: &std::collections::HashSet<String>,
         type_info: &crate::native_proto::TypeCheckResult,
     ) {
         use oxc_ast::ast::Expression;
         match expr {
             Expression::Identifier(id) => {
                 let name = id.name.as_str();
-                // If not a parameter and not already seen, it's a captured variable
-                if !param_names.contains(name) && !seen.contains(name) {
+                // Skip parameters and locally declared variables — they are not captures
+                if !local_names.contains(name) && !seen.contains(name) {
                     seen.insert(name.to_string());
                     let ztype = type_info
                         .var_types
@@ -2428,8 +2466,8 @@ impl Codegen {
                 }
             }
             Expression::BinaryExpression(be) => {
-                Self::collect_idents_from_expr(&be.left, captured, seen, param_names, type_info);
-                Self::collect_idents_from_expr(&be.right, captured, seen, param_names, type_info);
+                Self::collect_idents_from_expr(&be.left, captured, seen, local_names, type_info);
+                Self::collect_idents_from_expr(&be.right, captured, seen, local_names, type_info);
             }
             Expression::CallExpression(ce) => {
                 for arg in &ce.arguments {
@@ -2438,12 +2476,12 @@ impl Codegen {
                             expr,
                             captured,
                             seen,
-                            param_names,
+                            local_names,
                             type_info,
                         );
                     }
                 }
-                Self::collect_idents_from_expr(&ce.callee, captured, seen, param_names, type_info);
+                Self::collect_idents_from_expr(&ce.callee, captured, seen, local_names, type_info);
             }
             _ => {}
         }

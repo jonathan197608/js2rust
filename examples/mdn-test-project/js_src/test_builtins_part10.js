@@ -1,6 +1,6 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 90-99)
+// Fragments: 9 (fragment 90-98)
 // Generated: 2026-06-28
 
 function test_builtins_part10() {
@@ -36,23 +36,13 @@ function test_builtins_part10() {
           return degrees * (Math.PI / 180);
         }
 
-        function radToDeg(rad) {
-          return rad / (Math.PI / 180);
-        }
+        50 * Math.tan(degToRad(60));
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 92 error: ${e.message}`);
     }}
 
     
 // ---- fragment 93 ----
-    try {{
-        50 * Math.tan(degToRad(60));
-    }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 93 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 94 ----
     try {{
         function random(min, max) {
           const num = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -61,15 +51,27 @@ function test_builtins_part10() {
 
         random(1, 10);
     }} catch (e) {{
+        console.error(`[test_builtins_part10] fragment 93 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 94 ----
+    try {{
+        const string1 = "A string primitive";
+        const string2 = 'Also a string primitive';
+        const string3 = `Yet another string primitive`;
+        console.log(string1);
+        console.log(string2);
+        console.log(string3);
+    }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 94 error: ${e.message}`);
     }}
 
     
 // ---- fragment 95 ----
     try {{
-        const string1 = "A string primitive";
-        const string2 = 'Also a string primitive';
-        const string3 = `Yet another string primitive`;
+        const string4 = new String("A String object");
+        console.log(string4);
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 95 error: ${e.message}`);
     }}
@@ -77,7 +79,7 @@ function test_builtins_part10() {
     
 // ---- fragment 96 ----
     try {{
-        const string4 = new String("A String object");
+        "cat".charAt(1); // gives value "a"
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 96 error: ${e.message}`);
     }}
@@ -85,21 +87,13 @@ function test_builtins_part10() {
     
 // ---- fragment 97 ----
     try {{
-        "cat".charAt(1); // gives value "a"
+        "cat"[1]; // gives value "a"
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 97 error: ${e.message}`);
     }}
 
     
 // ---- fragment 98 ----
-    try {{
-        "cat"[1]; // gives value "a"
-    }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 98 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 99 ----
     try {{
         const a = "a";
         const b = "b";
@@ -112,7 +106,7 @@ function test_builtins_part10() {
           console.log(`${a} and ${b} are equal.`);
         }
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 99 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 98 error: ${e.message}`);
     }}
 
     
