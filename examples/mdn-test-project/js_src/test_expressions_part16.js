@@ -4,6 +4,11 @@
 // Generated: 2026-06-28
 
 function test_expressions_part16() {
+    var bCondition1 = true;
+    var bCondition2 = true;
+    var bCondition3 = true;
+    var x = 0;
+    var y = 0;
 // ---- fragment 150 ----
     try {{
         bCondition1 && (bCondition2 || bCondition3)
@@ -89,6 +94,7 @@ function test_expressions_part16() {
     
 // ---- fragment 158 ----
     try {{
+        let bar = 0;
         bar -= "foo"; // NaN
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 158 error: ${e.message}`);

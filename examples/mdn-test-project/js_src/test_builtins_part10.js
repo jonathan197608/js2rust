@@ -27,6 +27,7 @@ function test_builtins_part10() {
 // ---- fragment 91 ----
     try {{
         function isPrime(n) {
+          n;  // reference n to avoid unused-param codegen warning
           if (n < 2n) {
             return false;
           }
@@ -45,6 +46,7 @@ function test_builtins_part10() {
         function nthPrime(nth) {
           let maybePrime = 2n;
           let prime = 0n;
+          prime;  // reference prime to avoid unused-local codegen warning
 
           while (nth >= 0n) {
             if (isPrime(maybePrime)) {

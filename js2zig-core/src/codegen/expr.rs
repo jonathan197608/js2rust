@@ -13,7 +13,13 @@ impl Codegen {
     pub(crate) fn emit_expr(&mut self, expr: &Expression) {
         match expr {
             Expression::NumericLiteral(n) => {
-                self.write(&n.value.to_string());
+                // Zig considers `-0` ambiguous (could be integer 0 or float -0.0).
+                // JS `-0` is always the float -0.0, so emit `-0.0` explicitly.
+                if n.value == -0.0 && n.value.is_sign_negative() {
+                    self.write("-0.0");
+                } else {
+                    self.write(&n.value.to_string());
+                }
             }
             Expression::StringLiteral(s) => {
                 // Escape special characters for Zig string literal.
@@ -61,14 +67,15 @@ impl Codegen {
                         .iter()
                         .find(|(n, _, _)| n.as_str() == var_name)
                 {
+                    let safe_name = self.zig_safe_name(var_name);
                     if *is_mut {
-                        self.write(&format!("self.{}.*", var_name));
+                        self.write(&format!("self.{}.*", safe_name));
                     } else {
-                        self.write(&format!("self.{}", var_name));
+                        self.write(&format!("self.{}", safe_name));
                     }
                     return;
                 }
-                self.write(var_name);
+                self.write(&self.zig_safe_name(var_name));
             }
             Expression::ThisExpression(te) => {
                 // When inside a class method, `this` maps to `self`.
@@ -643,7 +650,7 @@ impl Codegen {
                 // Emit the target (SimpleAssignmentTarget)
                 match &ue.argument {
                     SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                        self.write(id.name.as_str());
+                        self.write(&self.zig_safe_name(id.name.as_str()));
                         self.write(op);
                     }
                     _ => {
@@ -908,6 +915,13 @@ impl Codegen {
     }
 
     fn emit_binary(&mut self, be: &BinaryExpression) {
+        // Sub-expressions of a binary expression are always in expression position,
+        // never in expression-statement position. Save/restore in_expr_stmt so that
+        // void/delete/assignment sub-expressions don't incorrectly inherit the
+        // statement-level flag from the enclosing ExpressionStatement.
+        let saved_expr_stmt = self.in_expr_stmt;
+        self.in_expr_stmt = false;
+
         // Check for BigInt operations FIRST (before string check)
         let left_is_bigint = self.expr_is_bigint(&be.left);
         let right_is_bigint = self.expr_is_bigint(&be.right);
@@ -1015,6 +1029,8 @@ impl Codegen {
                 self.emit_expr(&be.right);
             }
         }
+
+        self.in_expr_stmt = saved_expr_stmt;
     }
 
     /// Emit BigInt binary operation.
@@ -1176,39 +1192,39 @@ impl Codegen {
     fn typedarray_info(name: &str) -> Option<TypedArrayInfo> {
         match name {
             "Int8Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsI8",
+                func: "js_runtime.js_typedarray.fromI64AsI8",
                 array_prefix: "&[_]i64{",
             }),
             "Uint8Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsU8",
+                func: "js_runtime.js_typedarray.fromI64AsU8",
                 array_prefix: "&[_]i64{",
             }),
             "Uint8ClampedArray" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsU8",
+                func: "js_runtime.js_typedarray.fromI64AsU8",
                 array_prefix: "&[_]i64{",
             }),
             "Int16Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsI16",
+                func: "js_runtime.js_typedarray.fromI64AsI16",
                 array_prefix: "&[_]i64{",
             }),
             "Uint16Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsU16",
+                func: "js_runtime.js_typedarray.fromI64AsU16",
                 array_prefix: "&[_]i64{",
             }),
             "Int32Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsI32",
+                func: "js_runtime.js_typedarray.fromI64AsI32",
                 array_prefix: "&[_]i64{",
             }),
             "Uint32Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromI64AsU32",
+                func: "js_runtime.js_typedarray.fromI64AsU32",
                 array_prefix: "&[_]i64{",
             }),
             "Float32Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromF64AsF32",
+                func: "js_runtime.js_typedarray.fromF64AsF32",
                 array_prefix: "&[_]f64{",
             }),
             "Float64Array" => Some(TypedArrayInfo {
-                func: "js_typedarray.fromF64",
+                func: "js_runtime.js_typedarray.fromF64",
                 array_prefix: "&[_]f64{",
             }),
             _ => None,
@@ -1466,7 +1482,9 @@ impl Codegen {
                 || self.nested_fn_names.contains(name.as_str()))
         {
             // Rewrite to `variable.call(args)` or `NestedFn.call(args)`
-            self.write(name);
+            // Use zig_safe_name to handle Zig reserved keywords (e.g. test → _test)
+            let safe = self.zig_safe_name(name);
+            self.write(&safe);
             self.write(".call(");
             self.emit_comma_separated_args(&ce.arguments);
             self.write(")");
@@ -1483,7 +1501,7 @@ impl Codegen {
                 self.write(")");
                 return;
             }
-            self.write(name);
+            self.write(&self.zig_safe_name(name));
         } else if let Expression::StaticMemberExpression(ref mem) = ce.callee {
             // Member function call: obj.method(args)
             // Check if obj is a class instance → emit obj.method(args) directly
@@ -5072,10 +5090,11 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::BigIntConstructor => {
-                // BigInt(x) → js_bigint.JsBigInt.fromI64(alloc, x) catch @panic(...)
-                self.write("js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), ");
+                // BigInt(x) → (js_bigint.JsBigInt.fromI64(alloc, x) catch @panic(...))
+                // Parens are needed for correct parsing in if/else branches (Zig catch precedence).
+                self.write("(js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
-                self.write(") catch @panic(\"OOM: BigInt fromI64\")");
+                self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
                 true
             }
             builtins::BuiltinCall::ObjectConstructor => {
@@ -5100,6 +5119,10 @@ impl Codegen {
 
     /// Emit argument expression (handles spread etc.).
     pub(crate) fn emit_expr_arg(&mut self, arg: &Argument) {
+        // Arguments are in expression position, never statement position.
+        let saved = self.in_expr_stmt;
+        self.in_expr_stmt = false;
+
         // Argument inherits Expression variants via inherit_variants! macro.
         // SpreadElement is a variant: Argument::SpreadElement(Box<SpreadElement>).
         match arg {
@@ -5120,6 +5143,8 @@ impl Codegen {
                 }
             }
         }
+
+        self.in_expr_stmt = saved;
     }
 
     /// Emit a Date instance method call.
@@ -5440,14 +5465,15 @@ impl Codegen {
                 {
                     // Captured variable: rewrite to self.var_name (value capture)
                     // or self.var_name.* (reference capture, dereference for assignment)
+                    let safe_name = self.zig_safe_name(var_name);
                     if *is_mut {
-                        self.write(&format!("self.{}.*", var_name));
+                        self.write(&format!("self.{}.*", safe_name));
                     } else {
-                        self.write(&format!("self.{}", var_name));
+                        self.write(&format!("self.{}", safe_name));
                     }
                     return;
                 }
-                self.write(var_name);
+                self.write(&self.zig_safe_name(var_name));
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
                 self.emit_expr(&mem.object);
@@ -5492,10 +5518,20 @@ impl Codegen {
         }
 
         match ue.operator {
-            UnaryOperator::UnaryNegation
-            | UnaryOperator::UnaryPlus
-            | UnaryOperator::LogicalNot
-            | UnaryOperator::BitwiseNot => {
+            UnaryOperator::UnaryNegation => {
+                // Zig considers `-0` ambiguous (integer 0 or float -0.0).
+                // This happens because JS parses `-0` literally as UnaryNegation(NumericLiteral(0)).
+                // Emit `-0.0` explicitly to resolve the ambiguity.
+                if let Expression::NumericLiteral(n) = &ue.argument
+                    && n.value == 0.0
+                {
+                    self.write("-0.0");
+                } else {
+                    self.write("-");
+                    self.emit_expr(&ue.argument);
+                }
+            }
+            UnaryOperator::UnaryPlus | UnaryOperator::LogicalNot | UnaryOperator::BitwiseNot => {
                 self.write(Self::unary_prefix(ue.operator));
                 self.emit_expr(&ue.argument);
             }
@@ -5506,22 +5542,26 @@ impl Codegen {
                     if let Some(js_typeof) = ty.to_js_typeof() {
                         self.write(js_typeof);
                     } else {
-                        self.write("jsTypeof(");
+                        self.write("js_runtime.jsTypeof(");
                         self.emit_expr(&ue.argument);
                         self.write(")");
                     }
                 } else {
-                    self.write("jsTypeof(");
+                    self.write("js_runtime.jsTypeof(");
                     self.emit_expr(&ue.argument);
                     self.write(")");
                 }
             }
             UnaryOperator::Void => {
                 // void expr: evaluate expr for side effects, return undefined.
-                // Zig 0.16 does not allow bare `{ ...; value }` blocks as expression
-                // values; use a labeled block with `break :blk` instead.
+                // When in expression-statement position, prefix with `_ = blk: {};`
+                // to discard the result value (Zig forbids unused labeled-block values).
                 let blk = self.next_label();
-                self.write(&format!("{blk}: {{ _ = "));
+                if self.in_expr_stmt {
+                    self.write(&format!("_ = {blk}: {{ _ = "));
+                } else {
+                    self.write(&format!("{blk}: {{ _ = "));
+                }
                 self.emit_expr(&ue.argument);
                 self.write(&format!("; break :{blk} JsAny.fromUndefined(); }}"));
             }

@@ -5,6 +5,7 @@
 
 function test_builtins_part19() {
     let condition = true;
+    let done = true;
 // ---- fragment 180 ----
     try {{
         JSON.parse('{"foo": 01}');

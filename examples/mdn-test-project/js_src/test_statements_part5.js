@@ -52,5 +52,4 @@ function test_statements_part5() {
 
 }
 module.exports = { testStatements };
-}
 module.exports = { test_statements_part5 };

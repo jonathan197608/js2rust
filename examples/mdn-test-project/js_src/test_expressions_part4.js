@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_expressions_part4() {
+    var x = 0;
+    var y = 0;
 // ---- fragment 30 ----
     try {{
         2n * 2n; // 4n

@@ -4,9 +4,80 @@
 use super::Codegen;
 use oxc_ast::ast::*;
 
+// ── Zig reserved keyword detection ──────────────────
+
+/// Zig 0.16 reserved keywords. JS identifiers that collide with these
+/// must be renamed (prefixed with `_`) to produce valid Zig code.
+const ZIG_RESERVED_KEYWORDS: &[&str] = &[
+    "addrspace",
+    "align",
+    "allowzero",
+    "and",
+    "anyframe",
+    "anytype",
+    "asm",
+    "async",
+    "await",
+    "break",
+    "callconv",
+    "catch",
+    "comptime",
+    "const",
+    "continue",
+    "defer",
+    "else",
+    "enum",
+    "errdefer",
+    "error",
+    "export",
+    "extern",
+    "fn",
+    "for",
+    "if",
+    "inline",
+    "linksection",
+    "noalias",
+    "noinline",
+    "nosuspend",
+    "opaque",
+    "or",
+    "orelse",
+    "packed",
+    "pub",
+    "resume",
+    "return",
+    "struct",
+    "suspend",
+    "switch",
+    "test",
+    "threadlocal",
+    "try",
+    "union",
+    "unreachable",
+    "usingnamespace",
+    "var",
+    "volatile",
+    "while",
+];
+
+/// Convert a JS identifier to a Zig-safe identifier.
+/// Pre-pends `_` to avoid collisions with Zig reserved keywords.
+pub(crate) fn zig_safe_name(name: &str) -> String {
+    if ZIG_RESERVED_KEYWORDS.contains(&name) {
+        format!("_{}", name)
+    } else {
+        name.to_string()
+    }
+}
+
 // ── Helpers (methods) ──────────────────────────────
 
 impl Codegen {
+    /// Convenience method: convert a JS identifier to a Zig-safe identifier.
+    pub(crate) fn zig_safe_name(&self, name: &str) -> String {
+        zig_safe_name(name)
+    }
+
     pub(crate) fn binding_name<'a>(&self, pattern: &BindingPattern<'a>) -> Option<&'a str> {
         match pattern {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
@@ -189,7 +260,11 @@ impl Codegen {
         if let Some(arg) = args.first()
             && let Some(expr) = arg.as_expression()
         {
+            // Arguments are in expression position, never statement position.
+            let saved = self.in_expr_stmt;
+            self.in_expr_stmt = false;
             self.emit_expr(expr);
+            self.in_expr_stmt = saved;
         }
     }
 

@@ -95,5 +95,4 @@ function test_expressions_part17() {
 
 }
 module.exports = { testExpressions };
-}
 module.exports = { test_expressions_part17 };

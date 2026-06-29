@@ -79,8 +79,8 @@ function test_expressions_part11() {
     
 // ---- fragment 106 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        "Before: 11100110111110100000000000000110000000000001";
+        "After:              10100000000000000110000000000001";
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 106 error: ${e.message}`);
     }}

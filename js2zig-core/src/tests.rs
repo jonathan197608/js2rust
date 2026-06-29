@@ -507,8 +507,8 @@ function check(x) {
         let zig = transpile_and_assert!(js, "test_native_proto_typeof_dynamic");
         // Should use jsTypeof() for untyped parameters
         assert!(
-            zig.contains("jsTypeof"),
-            "typeof untyped param should use jsTypeof(): {}",
+            zig.contains("js_runtime.jsTypeof"),
+            "typeof untyped param should use js_runtime.jsTypeof(): {}",
             zig
         );
     }
@@ -3215,8 +3215,8 @@ export function powMixed() {
         );
         // Should generate a Zig function for the arrow function
         assert!(
-            zig.contains("fn _arrow_fn_"),
-            "Expected arrow function to generate a Zig function:
+            zig.contains("const _arrow_fn_"),
+            "Expected arrow function to generate a struct:
 {}",
             zig
         );
@@ -3300,7 +3300,10 @@ export function powMixed() {
 {}",
             zig
         );
-        assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
+        assert!(
+            zig.contains("const _arrow_fn_"),
+            "Expected arrow function struct"
+        );
         assert!(
             zig.contains("const double = _arrow_fn_"),
             "Expected assignment"
@@ -3322,7 +3325,10 @@ export function powMixed() {
 {}",
             zig
         );
-        assert!(zig.contains("fn _arrow_fn_"), "Expected arrow function");
+        assert!(
+            zig.contains("const _arrow_fn_"),
+            "Expected arrow function struct"
+        );
         assert!(
             zig.contains("return x + 1;"),
             "Expected return in block body"

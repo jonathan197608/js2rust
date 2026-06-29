@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_builtins_part2() {
+    var value = 0;
+    var string = "0";
 // ---- fragment 10 ----
     try {{
         isFinite(value)
@@ -88,15 +90,11 @@ function test_builtins_part2() {
     
 // ---- fragment 15 ----
     try {{
-        function circumference(r) {
-          return parseFloat(r) * 2.0 * Math.PI;
-        }
+        console.log(parseFloat(4.567) * 2.0 * Math.PI);
 
-        console.log(circumference(4.567));
+        console.log(parseFloat("4.567abcdefgh") * 2.0 * Math.PI);
 
-        console.log(circumference("4.567abcdefgh"));
-
-        console.log(circumference("abcdefgh"));
+        console.log(parseFloat("abcdefgh") * 2.0 * Math.PI);
     }} catch (e) {{
         console.error(`[test_builtins_part2] fragment 15 error: ${e.message}`);
     }}

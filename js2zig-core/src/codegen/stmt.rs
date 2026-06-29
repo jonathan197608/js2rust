@@ -64,6 +64,8 @@ impl Codegen {
     pub(crate) fn emit_var_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
             if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
+                let zig_name = self.zig_safe_name(name);
+
                 // Use Zig 'const' when the variable is never mutated (regardless of JS const/var/let).
                 // Only use Zig 'var' when the variable is actually reassigned.
                 let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
@@ -90,7 +92,7 @@ impl Codegen {
                     self.write_indent();
                     self.write(&format!(
                         "// error: toplevel only allows 'const', not '{}'",
-                        name
+                        zig_name
                     ));
                     self.writeln("");
                     continue;
@@ -107,16 +109,17 @@ impl Codegen {
                             let captured = self.closure_vars.get(&fn_name).cloned();
                             if let Some(captured) = captured {
                                 self.write_indent();
-                                self.write(&format!("const {} = {} {{ ", name, fn_name));
+                                self.write(&format!("const {} = {} {{ ", zig_name, fn_name));
                                 // Generate field initializers
                                 for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
                                     if i > 0 {
                                         self.write(", ");
                                     }
+                                    let safe_cap = self.zig_safe_name(cap_name);
                                     if *is_mut {
-                                        self.write(&format!(".{} = &{}", cap_name, cap_name));
+                                        self.write(&format!(".{} = &{}", safe_cap, safe_cap));
                                     } else {
-                                        self.write(&format!(".{} = {}", cap_name, cap_name));
+                                        self.write(&format!(".{} = {}", safe_cap, safe_cap));
                                     }
                                 }
                                 self.write(" };\n");
@@ -129,7 +132,7 @@ impl Codegen {
                             self.write(&format!(
                                 "const {} = {};
 ",
-                                name, fn_name
+                                zig_name, fn_name
                             ));
                         }
                     }
@@ -163,7 +166,7 @@ impl Codegen {
                                 .unwrap_or("i64");
                             self.write(&format!(
                                 "{} {}: {} = std.json.parse({}, ",
-                                kw, name, type_name, type_name
+                                kw, zig_name, type_name, type_name
                             ));
                             if let Expression::CallExpression(ce) = init
                                 && let Some(first_arg) = ce.arguments.first()
@@ -180,12 +183,12 @@ impl Codegen {
                                 ZigType::NamedStruct(_) | ZigType::ArrayList(_)
                             );
                             if is_const || skip_type_annotation {
-                                self.write(&format!("{} {} = ", kw, name));
+                                self.write(&format!("{} {} = ", kw, zig_name));
                             } else {
                                 self.write(&format!(
                                     "{} {}: {} = ",
                                     kw,
-                                    name,
+                                    zig_name,
                                     inferred_ty.to_zig_type()
                                 ));
                             }
@@ -204,18 +207,18 @@ impl Codegen {
                                 match inferred_ty {
                                     ZigType::ArrayList(_) => {
                                         self.write_indent();
-                                        self.write(&format!("_ = &{}; // var usage\n", name));
+                                        self.write(&format!("_ = &{}; // var usage\n", zig_name));
                                     }
                                     ZigType::NamedStruct(n) if n == "Map" || n == "Set" => {
                                         self.write_indent();
-                                        self.write(&format!("_ = &{}; // var usage\n", name));
+                                        self.write(&format!("_ = &{}; // var usage\n", zig_name));
                                     }
                                     _ => {}
                                 }
                             }
                         } else {
                             // Indeterminate type (Rule 8 error already in type_info.errors)
-                            self.write(&format!("{} {} = ", kw, name));
+                            self.write(&format!("{} {} = ", kw, zig_name));
                             self.emit_expr(init);
                             self.write(";\n");
                             // HACK 1: track JsMap.init() return type as NamedStruct("Map")
@@ -398,6 +401,7 @@ impl Codegen {
                 ));
                 continue;
             };
+            let zig_bind_name = self.zig_safe_name(bind_name);
 
             // Check is_const for individual binding
             let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
@@ -414,7 +418,7 @@ impl Codegen {
                 self.write_indent();
                 self.write(&format!(
                     "// error: toplevel only allows 'const', not '{}'",
-                    bind_name
+                    zig_bind_name
                 ));
                 self.writeln("");
                 continue;
@@ -423,7 +427,7 @@ impl Codegen {
             let kw = if is_const { "const" } else { "var" };
 
             self.write_indent();
-            self.write(&format!("{} {} = ", kw, bind_name));
+            self.write(&format!("{} {} = ", kw, zig_bind_name));
 
             if let Some(ref field_names) = struct_field_names {
                 // ── Struct: use direct field access ──
@@ -519,6 +523,7 @@ impl Codegen {
                 ));
                 continue;
             };
+            let zig_bind_name = self.zig_safe_name(bind_name);
 
             // Check is_const for individual binding
             let fn_prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
@@ -533,7 +538,7 @@ impl Codegen {
                 self.write_indent();
                 self.write(&format!(
                     "// error: toplevel only allows 'const', not '{}'",
-                    bind_name
+                    zig_bind_name
                 ));
                 self.writeln("");
                 continue;
@@ -542,7 +547,7 @@ impl Codegen {
             let kw = if is_const { "const" } else { "var" };
 
             self.write_indent();
-            self.write(&format!("{} {} = ", kw, bind_name));
+            self.write(&format!("{} {} = ", kw, zig_bind_name));
 
             if is_arraylist {
                 // ── ArrayList: bounds-safe .items[i] access ──
@@ -703,17 +708,21 @@ impl Codegen {
 
         // Generate function signature.
         let has_captures = !self.current_captured.is_empty();
+        let safe_emit_name = self.zig_safe_name(emit_name);
         if is_async {
             if has_captures {
-                self.write(&format!("pub fn {}(self: @This(), io: anytype", emit_name));
+                self.write(&format!(
+                    "pub fn {}(self: @This(), io: anytype",
+                    safe_emit_name
+                ));
             } else {
-                self.write(&format!("pub fn {}(io: anytype", emit_name));
+                self.write(&format!("pub fn {}(io: anytype", safe_emit_name));
             }
         } else {
             if has_captures {
-                self.write(&format!("pub fn {}(self: @This(), ", emit_name));
+                self.write(&format!("pub fn {}(self: @This(), ", safe_emit_name));
             } else {
-                self.write(&format!("pub fn {}(", emit_name));
+                self.write(&format!("pub fn {}(", safe_emit_name));
             }
         }
 
@@ -730,11 +739,12 @@ impl Codegen {
                 }
                 // Zig 0.16.0: unused params are compile errors. Prefix with _ if unused
                 // in THIS function body (per-function tracking).
+                let safe_pname = self.zig_safe_name(pname);
                 let zig_pname = if fn_used_names.contains(pname) {
-                    pname.as_str()
+                    safe_pname.as_str()
                 } else {
                     self.write("_");
-                    pname.as_str()
+                    safe_pname.as_str()
                 };
                 // Export function params: always typed; non-export: use anytype
                 if self.current_fn_is_export {
@@ -756,11 +766,12 @@ impl Codegen {
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
+                let safe_rname = self.zig_safe_name(rname);
                 let zig_pname = if fn_used_names.contains(rname) {
-                    rname
+                    safe_rname.as_str()
                 } else {
                     self.write("_");
-                    rname
+                    safe_rname.as_str()
                 };
                 // Rest parameter: accepts []const JsAny
                 self.write(&format!("{}: []const JsAny", zig_pname));
@@ -777,11 +788,12 @@ impl Codegen {
                         self.write(", ");
                     }
                     // Zig 0.16.0: unused params are compile errors.
+                    let safe_pname = self.zig_safe_name(pname);
                     let zig_pname = if fn_used_names.contains(pname) {
-                        pname
+                        safe_pname.as_str()
                     } else {
                         self.write("_");
-                        pname
+                        safe_pname.as_str()
                     };
                     self.write(&format!("{}: anytype", zig_pname));
                     param_idx += 1;
@@ -798,11 +810,12 @@ impl Codegen {
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
+                let safe_rname = self.zig_safe_name(rname);
                 let zig_pname = if fn_used_names.contains(rname) {
-                    rname
+                    safe_rname.as_str()
                 } else {
                     self.write("_");
-                    rname
+                    safe_rname.as_str()
                 };
                 self.write(&format!("{}: []const JsAny", zig_pname));
             }
@@ -982,7 +995,10 @@ impl Codegen {
             Statement::BreakStatement(bs) => {
                 self.write_indent();
                 if let Some(ref label) = bs.label {
-                    self.write(&format!("break :{};\n", label.name));
+                    self.write(&format!(
+                        "break :{};\n",
+                        self.zig_safe_name(label.name.as_str())
+                    ));
                 } else {
                     self.write("break;\n");
                 }
@@ -990,14 +1006,17 @@ impl Codegen {
             Statement::ContinueStatement(cs) => {
                 self.write_indent();
                 if let Some(ref label) = cs.label {
-                    self.write(&format!("continue :{};\n", label.name));
+                    self.write(&format!(
+                        "continue :{};\n",
+                        self.zig_safe_name(label.name.as_str())
+                    ));
                 } else {
                     self.write("continue;\n");
                 }
             }
             Statement::LabeledStatement(ls) => {
                 // labeled statement → Zig labeled block or loop
-                let label_name = ls.label.name.as_str();
+                let label_name = self.zig_safe_name(ls.label.name.as_str());
                 match &ls.body {
                     // For loops: label attaches directly to the loop syntax
                     Statement::WhileStatement(_) => {
@@ -1215,7 +1234,10 @@ impl Codegen {
                         let is_referenced = stmt_list_references_name(&handler.body.body, name);
                         self.write_indent();
                         if is_referenced {
-                            self.writeln(&format!("const {} = @errorName(err);", name));
+                            self.writeln(&format!(
+                                "const {} = @errorName(err);",
+                                self.zig_safe_name(name)
+                            ));
                         } else {
                             self.writeln("_ = @errorName(err);");
                         }
@@ -1291,6 +1313,7 @@ impl Codegen {
                     self.writeln("// error: nested function must have a name");
                     return;
                 };
+                let safe_fn_name = self.zig_safe_name(fn_name);
 
                 // Detect captured variables from enclosing scope
                 let captures = self.detect_fn_body_captures(fd);
@@ -1301,7 +1324,7 @@ impl Codegen {
 
                     // Zig 0.16 does not support `struct { .. }.{ .. }` inline syntax.
                     // Use a separate type declaration to avoid `} .{` on same line.
-                    let type_name = format!("_{fn_name}_type");
+                    let type_name = format!("_{safe_fn_name}_type");
                     self.write_indent();
                     self.writeln(&format!("const {type_name} = struct {{"));
                     self.indent += 1;
@@ -1310,7 +1333,7 @@ impl Codegen {
                     for (cap_name, cap_type, _is_mut) in &captures {
                         let zig_type = cap_type.to_zig_type();
                         self.write_indent();
-                        self.writeln(&format!("{}: {},", cap_name, zig_type));
+                        self.writeln(&format!("{}: {},", self.zig_safe_name(cap_name), zig_type));
                     }
 
                     // Set current_captured so variable references are rewritten to self.xxx
@@ -1341,7 +1364,7 @@ impl Codegen {
 
                     self.indent -= 1;
                     self.write_indent();
-                    self.writeln("}};");
+                    self.writeln("};");
 
                     // Create instance with captured values (named type syntax)
                     let mut init_fields = String::new();
@@ -1349,18 +1372,19 @@ impl Codegen {
                         if i > 0 {
                             init_fields.push_str(", ");
                         }
-                        init_fields.push_str(&format!(".{} = {}", cap_name, cap_name));
+                        let safe_cap = self.zig_safe_name(cap_name);
+                        init_fields.push_str(&format!(".{} = {}", safe_cap, safe_cap));
                     }
                     self.write_indent();
                     self.writeln(&format!(
-                        "const {fn_name} = {type_name}{{ {init_fields} }};"
+                        "const {safe_fn_name} = {type_name}{{ {init_fields} }};"
                     ));
                 } else {
                     // No captures: generate inline struct with static call method
                     self.nested_fn_names.insert(fn_name.to_string());
 
                     self.write_indent();
-                    self.writeln(&format!("const {} = struct {{", fn_name));
+                    self.writeln(&format!("const {} = struct {{", safe_fn_name));
                     self.indent += 1;
 
                     let old_current_fn = self.current_fn.clone();
@@ -1548,12 +1572,17 @@ impl Codegen {
                 for decl in &vd.declarations {
                     if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                         self.write_indent();
+                        let safe_name = self.zig_safe_name(name);
                         if let Some(init_expr) = &decl.init {
                             // Emit the actual initializer value (e.g. `let i = 1` → `var i: i64 = 1`)
                             let init_text = self.capture_expr(init_expr);
-                            self.write(&format!("var {}: i64 = {};\n", name, init_text.trim()));
+                            self.write(&format!(
+                                "var {}: i64 = {};\n",
+                                safe_name,
+                                init_text.trim()
+                            ));
                         } else {
-                            self.write(&format!("var {}: i64 = 0;\n", name));
+                            self.write(&format!("var {}: i64 = 0;\n", safe_name));
                         }
                     }
                 }
@@ -1620,8 +1649,8 @@ impl Codegen {
                 .declarations
                 .first()
                 .and_then(|decl| self.binding_name(&decl.id))
-                .unwrap_or("item")
-                .to_string(),
+                .map(|n| self.zig_safe_name(n))
+                .unwrap_or_else(|| "item".to_string()),
             _ => "item".to_string(),
         };
 
@@ -1662,8 +1691,8 @@ impl Codegen {
                 .declarations
                 .first()
                 .and_then(|decl| self.binding_name(&decl.id))
-                .unwrap_or("item")
-                .to_string(),
+                .map(|n| self.zig_safe_name(n))
+                .unwrap_or_else(|| "item".to_string()),
             _ => "item".to_string(),
         };
         let iterable_is_arraylist = match &fos.right {
@@ -1806,11 +1835,11 @@ impl Codegen {
                 .declarations
                 .first()
                 .and_then(|decl| self.binding_name(&decl.id))
-                .unwrap_or("key")
-                .to_string(),
+                .map(|n| self.zig_safe_name(n))
+                .unwrap_or_else(|| "key".to_string()),
             ForStatementLeft::AssignmentTargetIdentifier(id) => {
                 // for (key in obj) — key is an existing variable
-                id.name.to_string()
+                self.zig_safe_name(id.name.as_str())
             }
             _ => "key".to_string(),
         };
@@ -1882,9 +1911,11 @@ impl Codegen {
                 .declarations
                 .first()
                 .and_then(|decl| self.binding_name(&decl.id))
-                .unwrap_or("key")
-                .to_string(),
-            ForStatementLeft::AssignmentTargetIdentifier(id) => id.name.to_string(),
+                .map(|n| self.zig_safe_name(n))
+                .unwrap_or_else(|| "key".to_string()),
+            ForStatementLeft::AssignmentTargetIdentifier(id) => {
+                self.zig_safe_name(id.name.as_str())
+            }
             _ => "key".to_string(),
         };
         let obj_name = match &fis.right {
@@ -2632,14 +2663,20 @@ impl Codegen {
             let struct_name = self.emit_closure_struct(arrow, captured);
             return struct_name;
         }
-        // No captured vars: generate plain nested function (current behavior)
+        // No captured vars: generate struct with call method (Zig 0.16 does not
+        // allow nested `fn` declarations with return statements inside function
+        // bodies, so we use the same struct+call pattern as closures).
         let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
         self.arrow_counter += 1;
+        self.nested_fn_names.insert(fn_name.clone());
 
-        // Generate function signature (in a single string to avoid whitespace issues)
-        let mut sig = format!("fn {}(", fn_name);
+        // Struct definition
+        self.write_indent();
+        self.writeln(&format!("const {} = struct {{", fn_name));
+        self.indent += 1;
 
-        // Generate params
+        // call method signature
+        let mut sig = String::from("pub fn call(");
         for (param_idx, param) in arrow.params.items.iter().enumerate() {
             if param_idx > 0 {
                 sig.push_str(", ");
@@ -2648,8 +2685,6 @@ impl Codegen {
                 sig.push_str(&format!("{}: anytype", pname));
             }
         }
-
-        // Infer return type from arrow body.
         sig.push_str(&format!(") {} {{", self.arrow_return_type_str(arrow)));
         self.write_indent();
         self.writeln(&sig);
@@ -2684,7 +2719,13 @@ impl Codegen {
         }
 
         self.indent -= 1;
+        self.write_indent();
         self.writeln("}");
+
+        // Close struct
+        self.indent -= 1;
+        self.write_indent();
+        self.writeln("};");
 
         fn_name
     }
@@ -2704,6 +2745,7 @@ impl Codegen {
                 self.fn_expr_counter += 1;
                 n
             });
+        let safe_name = self.zig_safe_name(&name);
 
         // Detect captured variables from enclosing scope
         let captures = self.detect_fn_body_captures(func);
@@ -2732,14 +2774,14 @@ impl Codegen {
             self.nested_fn_names.insert(name.clone());
 
             self.write_indent();
-            self.writeln(&format!("const {} = struct {{", name));
+            self.writeln(&format!("const {} = struct {{", safe_name));
             self.indent += 1;
 
             // Add capture fields
             for (cap_name, cap_type, _is_mut) in &captures {
                 let zig_type = cap_type.to_zig_type();
                 self.write_indent();
-                self.writeln(&format!("{}: {},", cap_name, zig_type));
+                self.writeln(&format!("{}: {},", self.zig_safe_name(cap_name), zig_type));
             }
 
             self.current_captured = captures.clone();
@@ -2760,7 +2802,8 @@ impl Codegen {
                 if i > 0 {
                     init.push_str(", ");
                 }
-                init.push_str(&format!(".{} = {}", cap_name, cap_name));
+                let safe_cap = self.zig_safe_name(cap_name);
+                init.push_str(&format!(".{} = {}", safe_cap, safe_cap));
             }
             init.push_str(" }};");
             self.writeln(&init);
@@ -2769,7 +2812,7 @@ impl Codegen {
             self.nested_fn_names.insert(name.clone());
 
             self.write_indent();
-            self.writeln(&format!("const {} = struct {{", name));
+            self.writeln(&format!("const {} = struct {{", safe_name));
             self.indent += 1;
 
             let old_nested = self.current_nested_fn_name.take();
@@ -2789,7 +2832,7 @@ impl Codegen {
         self.current_captured = old_captured;
         self.current_fn_return_type = ret_ty;
 
-        name
+        safe_name
     }
 }
 /// (new Int32Array(...), new Uint8Array(...), new Float64Array(...)).
@@ -2873,6 +2916,7 @@ impl Codegen {
             .map(|id| id.name.as_str())
             .unwrap_or("AnonymousClass");
         let class_name_s = class_name.to_string();
+        let safe_class_name = self.zig_safe_name(class_name);
 
         // Collect fields and methods from the class body
         let mut field_names: Vec<String> = Vec::new();
@@ -2945,7 +2989,7 @@ impl Codegen {
         self.class_names.insert(class_name_s.clone());
 
         // ── Generate struct definition ──
-        self.writeln(&format!("const {} = struct {{", class_name));
+        self.writeln(&format!("const {} = struct {{", safe_class_name));
 
         // Emit struct fields
         self.indent += 1;
@@ -2983,7 +3027,7 @@ impl Codegen {
         // If no explicit constructor, generate a default init()
         if !has_constructor {
             self.writeln("");
-            self.writeln(&format!("pub fn init() {} {{", class_name));
+            self.writeln(&format!("pub fn init() {} {{", safe_class_name));
             self.indent += 1;
             if field_names.is_empty() {
                 self.writeln("return .{};");
@@ -3153,7 +3197,8 @@ impl Codegen {
             }
         }
 
-        self.writeln(&format!(") {} {{", class_name));
+        let safe_class_name = self.zig_safe_name(class_name);
+        self.writeln(&format!(") {} {{", safe_class_name));
 
         // Emit body
         self.indent += 1;

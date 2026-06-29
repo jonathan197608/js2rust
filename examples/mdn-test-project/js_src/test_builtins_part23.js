@@ -116,5 +116,4 @@ function test_builtins_part23() {
 
 }
 module.exports = { testBuiltins };
-}
 module.exports = { test_builtins_part23 };

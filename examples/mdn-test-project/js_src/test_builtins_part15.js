@@ -47,6 +47,7 @@ function test_builtins_part15() {
     
 // ---- fragment 144 ----
     try {{
+        const invalid = new Date("nothing");
         invalid.toString(); // "Invalid Date"
         invalid.getDate(); // NaN
     }} catch (e) {{
