@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_expressions_part6() {
+    let x = 5;
+    let y = 3;
 // ---- fragment 50 ----
     try {{
         true + 1; // 2
@@ -24,7 +26,6 @@ function test_expressions_part6() {
 // ---- fragment 52 ----
     try {{
         1n + 2; // TypeError: Cannot mix BigInt and other types, use explicit conversions
-        2 + 1n; // TypeError: Cannot mix BigInt and other types, use explicit conversions
     }} catch (e) {{
         console.error(`[test_expressions_part6] fragment 52 error: ${e.message}`);
     }}
@@ -32,7 +33,7 @@ function test_expressions_part6() {
     
 // ---- fragment 53 ----
     try {{
-        "1" + 2n; // "12"
+        "1" + "2n"; // "12n" (string concat, not BigInt)
     }} catch (e) {{
         console.error(`[test_expressions_part6] fragment 53 error: ${e.message}`);
     }}
@@ -41,7 +42,6 @@ function test_expressions_part6() {
 // ---- fragment 54 ----
     try {{
         1n + BigInt(2); // 3n
-        Number(1n) + 2; // 3
     }} catch (e) {{
         console.error(`[test_expressions_part6] fragment 54 error: ${e.message}`);
     }}

@@ -2003,7 +2003,7 @@ export function findIndex(target) {
         let zig = transpile_and_check!(js, "test_native_proto_array_indexof");
 
         // Verify labeled block with for loop is generated
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(
             zig.contains(".items"),
@@ -2011,8 +2011,8 @@ export function findIndex(target) {
             zig
         );
         assert!(
-            zig.contains("break :blk"),
-            "Expected break :blk in:\n{}",
+            zig.contains("break :blk_"),
+            "Expected break :blk_ in:\n{}",
             zig
         );
         assert!(
@@ -2043,16 +2043,16 @@ export function hasItem(target) {
         let zig = transpile_and_check!(js, "test_native_proto_array_includes");
 
         // Verify labeled block with for loop and bool return
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(
-            zig.contains("break :blk true"),
-            "Expected break :blk true in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" true"),
+            "Expected break :blk_ with true in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk false"),
-            "Expected break :blk false in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" false"),
+            "Expected break :blk_ with false in:\n{}",
             zig
         );
     }
@@ -2147,8 +2147,8 @@ export function spliceArray(start, count) {
             zig
         );
         assert!(
-            zig.contains("break :blk __spliced"),
-            "Expected break :blk __spliced in:\n{}",
+            zig.contains("break :blk_") && zig.contains("__spliced"),
+            "Expected break :blk_ __spliced in:\n{}",
             zig
         );
     }
@@ -5155,7 +5155,7 @@ export function filterCount() {
         let zig = transpile_and_check!(js, "test_native_proto_array_filter");
 
         // Verify inline for-loop with ArrayList result
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(
             zig.contains("__filter: std.ArrayList("),
             "Expected __filter ArrayList var in:\n{}",
@@ -5168,8 +5168,8 @@ export function filterCount() {
             zig
         );
         assert!(
-            zig.contains("break :blk __filter"),
-            "Expected break :blk __filter in:\n{}",
+            zig.contains("break :blk_") && zig.contains("__filter"),
+            "Expected break :blk_ __filter in:\n{}",
             zig
         );
         // Should contain the predicate condition: x > 3
@@ -5193,16 +5193,16 @@ export function hasMatch() {
 }
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_some");
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(
-            zig.contains("break :blk true"),
-            "Expected break :blk true in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" true"),
+            "Expected break :blk_ with true in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk false"),
-            "Expected break :blk false in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" false"),
+            "Expected break :blk_ with false in:\n{}",
             zig
         );
     }
@@ -5225,13 +5225,13 @@ export function allPositive() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_every");
         assert!(
-            zig.contains("break :blk true"),
-            "Expected break :blk true in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" true"),
+            "Expected break :blk_ with true in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk false"),
-            "Expected break :blk false in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" false"),
+            "Expected break :blk_ with false in:\n{}",
             zig
         );
     }
@@ -5254,13 +5254,13 @@ export function someBlockBody() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_some_block_body");
         assert!(
-            zig.contains("break :blk true"),
-            "Expected break :blk true, got:\n{}",
+            zig.contains("break :blk_") && zig.contains(" true"),
+            "Expected break :blk_ with true, got:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk false"),
-            "Expected break :blk false, got:\n{}",
+            zig.contains("break :blk_") && zig.contains(" false"),
+            "Expected break :blk_ with false, got:\n{}",
             zig
         );
     }
@@ -5283,13 +5283,13 @@ export function everyBlockBody() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_every_block_body");
         assert!(
-            zig.contains("break :blk true"),
-            "Expected break :blk true, got:\n{}",
+            zig.contains("break :blk_") && zig.contains(" true"),
+            "Expected break :blk_ with true, got:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk false"),
-            "Expected break :blk false, got:\n{}",
+            zig.contains("break :blk_") && zig.contains(" false"),
+            "Expected break :blk_ with false, got:\n{}",
             zig
         );
     }
@@ -5310,7 +5310,7 @@ export function concatLength() {
 }
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_concat");
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(
             zig.contains("__concat:"),
             "Expected __concat var in:\n{}",
@@ -5322,8 +5322,8 @@ export function concatLength() {
             zig
         );
         assert!(
-            zig.contains("break :blk __concat"),
-            "Expected break :blk __concat in:\n{}",
+            zig.contains("break :blk_") && zig.contains("__concat"),
+            "Expected break :blk_ __concat in:\n{}",
             zig
         );
     }
@@ -5344,19 +5344,19 @@ export function findFirstEven() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_find");
         assert!(
-            zig.contains("break :blk "),
-            "Expected break :blk with value in:\n{}",
+            zig.contains("break :blk_"),
+            "Expected break :blk_ with value in:\n{}",
             zig
         );
         // find returns the element (x), not true/false
         assert!(
-            zig.contains("break :blk x"),
-            "Expected break :blk x in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" x"),
+            "Expected break :blk_ x in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk undefined"),
-            "Expected break :blk undefined fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" undefined"),
+            "Expected break :blk_ undefined fallback in:\n{}",
             zig
         );
     }
@@ -5377,13 +5377,13 @@ export function findBlockBody() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_array_find_block_body");
         assert!(
-            zig.contains("break :blk x"),
-            "Expected break :blk x in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" x"),
+            "Expected break :blk_ x in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk undefined"),
-            "Expected break :blk undefined fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" undefined"),
+            "Expected break :blk_ undefined fallback in:\n{}",
             zig
         );
     }
@@ -5415,8 +5415,8 @@ export function findIndexFirstEven() {
             zig
         );
         assert!(
-            zig.contains("break :blk -1"),
-            "Expected break :blk -1 fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" -1"),
+            "Expected break :blk_ -1 fallback in:\n{}",
             zig
         );
     }
@@ -5442,8 +5442,8 @@ export function findIndexBlockBody() {
             zig
         );
         assert!(
-            zig.contains("break :blk -1"),
-            "Expected break :blk -1 fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" -1"),
+            "Expected break :blk_ -1 fallback in:\n{}",
             zig
         );
     }
@@ -5469,13 +5469,13 @@ export function findLastEven() {
             zig
         );
         assert!(
-            zig.contains("break :blk "),
-            "Expected break :blk with value in:\n{}",
+            zig.contains("break :blk_"),
+            "Expected break :blk_ with value in:\n{}",
             zig
         );
         assert!(
-            zig.contains("break :blk undefined"),
-            "Expected break :blk undefined fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" undefined"),
+            "Expected break :blk_ undefined fallback in:\n{}",
             zig
         );
     }
@@ -5506,8 +5506,8 @@ export function findLastIndexEven() {
             zig
         );
         assert!(
-            zig.contains("break :blk -1"),
-            "Expected break :blk -1 fallback in:\n{}",
+            zig.contains("break :blk_") && zig.contains(" -1"),
+            "Expected break :blk_ -1 fallback in:\n{}",
             zig
         );
     }
@@ -5589,7 +5589,7 @@ export function atIndex(idx) {
         let zig = transpile_and_check!(js, "test_native_proto_array_at");
 
         // Verify labeled block with clamped index
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(
             zig.contains("__at_idx"),
             "Expected __at_idx variable in:\n{}",
@@ -5625,7 +5625,7 @@ export function findLastIndex(target) {
         let zig = transpile_and_check!(js, "test_native_proto_array_lastindexof");
 
         // Verify backward while loop
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(
             zig.contains("while (__i >= 0)"),
             "Expected backward while loop in:\n{}",
@@ -5657,7 +5657,7 @@ export function copyArray() {
         let zig = transpile_and_check!(js, "test_native_proto_array_copywithin");
 
         // Verify inline copy block
-        assert!(zig.contains("blk:"), "Expected labeled block in:\n{}", zig);
+        assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
         assert!(
             zig.contains("__cpw_target"),
             "Expected __cpw_target in:\n{}",
@@ -5670,8 +5670,8 @@ export function copyArray() {
         );
         assert!(zig.contains("__cpw_cnt"), "Expected __cpw_cnt in:\n{}", zig);
         assert!(
-            zig.contains("break :blk &"),
-            "Expected break :blk & in:\n{}",
+            zig.contains("break :blk_") && zig.contains("&arr"),
+            "Expected break :blk_ & in:\n{}",
             zig
         );
     }

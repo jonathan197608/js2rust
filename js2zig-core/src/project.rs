@@ -257,6 +257,7 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
     out.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
+    out.push_str("const js_bigint = @import(\"js_runtime/js_bigint.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
@@ -335,6 +336,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
     out.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
+    out.push_str("const js_bigint = @import(\"js_runtime/js_bigint.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
     out.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
@@ -377,11 +379,12 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push('\n');
     }
 
-    // Per-file module imports
+    // Per-file module imports (prefixed with _ to avoid duplicate name errors
+    // when re-exporting pub const {name} = _{name}.{name}).
     out.push_str("// Per-file module imports\n");
     for module in &opts.per_file_code {
         out.push_str(&format!(
-            "const {} = @import(\"{}.zig\");\n",
+            "const _{} = @import(\"{}.zig\");\n",
             module.mod_name, module.mod_name
         ));
     }
@@ -396,7 +399,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     // Also call init_js2rust on each per-file module that defines its own
     for module in &opts.per_file_code {
         if module.zig_code.contains("pub fn init_js2rust") {
-            out.push_str(&format!("    {}.init_js2rust();\n", module.mod_name));
+            out.push_str(&format!("    _{}.init_js2rust();\n", module.mod_name));
         }
     }
     out.push_str("}\n\n");
@@ -448,7 +451,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("    js_runtime.deinitIo();\n");
     for module in &opts.per_file_code {
         if module.zig_code.contains("pub fn deinit_js2rust") {
-            out.push_str(&format!("    {}.deinit_js2rust();\n", module.mod_name));
+            out.push_str(&format!("    _{}.deinit_js2rust();\n", module.mod_name));
         }
     }
     out.push_str("    js_allocator.deinitGlobalAllocator();\n");
@@ -475,16 +478,16 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
             if cabi_string_fns.contains(exp_name.as_str()) {
                 // C ABI string-returning function: generate adapter
                 // pub fn greet(s: []const u8) []const u8 {
-                //     return std.mem.sliceTo(mod.greet(@ptrCast(s.ptr)), 0);
+                //     return std.mem.sliceTo(_mod.greet(@ptrCast(s.ptr)), 0);
                 // }
                 out.push_str(&format!(
-                    "pub fn {name}(s: []const u8) []const u8 {{\n    return std.mem.sliceTo({mod}.{name}(@ptrCast(s.ptr)), 0);\n}}\n",
+                    "pub fn {name}(s: []const u8) []const u8 {{\n    return std.mem.sliceTo(_{mod}.{name}(@ptrCast(s.ptr)), 0);\n}}\n",
                     name = exp_name,
                     mod = mod_name
                 ));
             } else {
                 out.push_str(&format!(
-                    "pub const {exp} = {mod}.{exp};\n",
+                    "pub const {exp} = _{mod}.{exp};\n",
                     exp = exp_name,
                     mod = mod_name
                 ));

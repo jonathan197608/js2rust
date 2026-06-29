@@ -442,4 +442,8 @@ pub struct Codegen {
     pub class_names: std::collections::HashSet<String>,
     /// Original JS source text, used to convert byte offsets → line:col for diagnostics.
     pub source: String,
+    /// Counter for generating unique block labels (blk_0, blk_1, ...).
+    /// Prevents "redefinition of label" errors when multiple block expressions
+    /// appear in the same scope.
+    pub label_counter: u32,
 }

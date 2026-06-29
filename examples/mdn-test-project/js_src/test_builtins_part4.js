@@ -4,6 +4,7 @@
 // Generated: 2026-06-28
 
 function test_builtins_part4() {
+    let encodedURI = "https://developer.mozilla.org/docs/JavaScript%3A%20a_scripting_language";
 // ---- fragment 30 ----
     try {{
         parseInt("900719925474099267n");
@@ -92,6 +93,7 @@ function test_builtins_part4() {
     try {{
         try {
           const a = decodeURI("%E0%A4%A");
+          console.log(a);
         } catch (e) {
           console.error(e);
         }

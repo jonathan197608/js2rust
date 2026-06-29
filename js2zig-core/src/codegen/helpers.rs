@@ -58,6 +58,7 @@ impl Codegen {
             BinaryOperator::StrictInequality => "!=",
             BinaryOperator::ShiftLeft => "<<",
             BinaryOperator::ShiftRight => ">>",
+            BinaryOperator::ShiftRightZeroFill => ">>",
             BinaryOperator::BitwiseAnd => "&",
             BinaryOperator::BitwiseOR => "|",
             BinaryOperator::BitwiseXOR => "^",
@@ -76,7 +77,7 @@ impl Codegen {
             AssignmentOperator::Exponential => "**=",
             AssignmentOperator::ShiftLeft => "<<=",
             AssignmentOperator::ShiftRight => ">>=",
-            AssignmentOperator::ShiftRightZeroFill => ">>>=",
+            AssignmentOperator::ShiftRightZeroFill => ">>=",
             AssignmentOperator::BitwiseAnd => "&=",
             AssignmentOperator::BitwiseOR => "|=",
             AssignmentOperator::BitwiseXOR => "^=",
@@ -126,6 +127,34 @@ impl Codegen {
         for _ in 0..self.indent {
             self.output.push_str("    ");
         }
+    }
+
+    /// Generate a unique block label (blk_0, blk_1, ...) to avoid
+    /// "redefinition of label" errors when multiple block expressions
+    /// appear in the same scope.
+    pub fn next_label(&mut self) -> String {
+        let id = self.label_counter;
+        self.label_counter += 1;
+        format!("blk_{}", id)
+    }
+
+    /// Start a block expression with a unique label.
+    /// Writes `(label: {` and returns the label string.
+    /// The caller must use `emit_break()` with the same label.
+    pub fn emit_blk_start(&mut self) -> String {
+        let label = self.next_label();
+        self.write(&format!("({}: {{", label));
+        label
+    }
+
+    /// Emit `break :label expr` inside a block expression.
+    pub fn emit_blk_break(&mut self, label: &str, expr: &str) {
+        self.write(&format!("break :{} {}", label, expr));
+    }
+
+    /// End a block expression: writes `})`.
+    pub fn emit_blk_end(&mut self) {
+        self.write("}");
     }
 }
 

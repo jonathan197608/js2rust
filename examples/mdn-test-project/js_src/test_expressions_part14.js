@@ -4,6 +4,10 @@
 // Generated: 2026-06-28
 
 function test_expressions_part14() {
+    let bCondition1 = true;
+    let bCondition2 = false;
+    let bCondition3 = true;
+    let a1, a2, a3, a4, a5, a6, a7, a8, a9;
 // ---- fragment 130 ----
     try {{
         x && y

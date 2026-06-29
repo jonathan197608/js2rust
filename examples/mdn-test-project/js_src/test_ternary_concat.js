@@ -4,6 +4,6 @@ export function testTernaryConcat() {
     
     // Test: ternary with strings + string concat
     let result = "value: " + (x > 5 ? "big" : "small");
-    
+    console.log(result);
     return 0;
 }

@@ -749,6 +749,8 @@ pub fn gen_cabi_wrappers(
         let Some(&module) = name_to_module.get(name) else {
             continue;
         };
+        // Prefix module name with _ to match orchestrator import (const _mod = @import(...))
+        let module = format!("_{}", module);
 
         let returns_string = exp.ret_type == crate::native_proto::ZigType::Str;
         let ret_is_js_any = exp.ret_type == crate::native_proto::ZigType::Anytype;

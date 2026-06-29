@@ -56,6 +56,7 @@ impl Codegen {
             current_class: None,
             class_names: std::collections::HashSet::new(),
             source,
+            label_counter: 0,
         }
     }
 }

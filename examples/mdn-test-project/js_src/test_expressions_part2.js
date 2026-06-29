@@ -4,6 +4,9 @@
 // Generated: 2026-06-28
 
 function test_expressions_part2() {
+    let x = 1;
+    let y = 2;
+    let bCondition = true;
 // ---- fragment 10 ----
     try {{
         ~0; // -1

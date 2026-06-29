@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_expressions_part13() {
+    let x = 14;
+    let y = 9;
 // ---- fragment 120 ----
     try {{
         // 9  (00000000000000000000000000001001)
@@ -39,8 +41,8 @@ function test_expressions_part13() {
     
 // ---- fragment 123 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 123 error: ${e.message}`);
     }}
@@ -81,8 +83,8 @@ function test_expressions_part13() {
     
 // ---- fragment 127 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 127 error: ${e.message}`);
     }}

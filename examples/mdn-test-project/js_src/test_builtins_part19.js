@@ -4,6 +4,7 @@
 // Generated: 2026-06-28
 
 function test_builtins_part19() {
+    let condition = true;
 // ---- fragment 180 ----
     try {{
         JSON.parse('{"foo": 01}');

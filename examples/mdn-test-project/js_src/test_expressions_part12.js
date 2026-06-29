@@ -4,10 +4,12 @@
 // Generated: 2026-06-28
 
 function test_expressions_part12() {
+    let x = 5;
+    let y = 3;
 // ---- fragment 110 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 110 error: ${e.message}`);
     }}
@@ -48,8 +50,8 @@ function test_expressions_part12() {
     
 // ---- fragment 114 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 114 error: ${e.message}`);
     }}
@@ -93,8 +95,8 @@ function test_expressions_part12() {
     
 // ---- fragment 119 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 119 error: ${e.message}`);
     }}

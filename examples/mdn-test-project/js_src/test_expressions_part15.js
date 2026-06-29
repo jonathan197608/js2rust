@@ -4,6 +4,12 @@
 // Generated: 2026-06-28
 
 function test_expressions_part15() {
+    let bCondition1 = true;
+    let bCondition2 = false;
+    let bCondition3 = true;
+    let x = true;
+    let y = false;
+    let varObject = { key: "value" };
 // ---- fragment 140 ----
     try {{
         bCondition1 || bCondition2 && bCondition3

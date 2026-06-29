@@ -40,6 +40,19 @@ impl Codegen {
                     );
                     return;
                 }
+                // JS global constants: NaN, Infinity, undefined
+                if var_name == "NaN" {
+                    self.write("std.math.nan(f64)");
+                    return;
+                }
+                if var_name == "Infinity" {
+                    self.write("std.math.inf(f64)");
+                    return;
+                }
+                if var_name == "undefined" {
+                    self.write("JsAny.undefined");
+                    return;
+                }
                 // Check if this identifier is a captured variable in the current closure.
                 // If so, rewrite to self.var_name (value capture) or self.var_name.* (ref capture).
                 if !self.current_captured.is_empty()
@@ -387,8 +400,9 @@ impl Codegen {
                 let task_var = format!("_t{}", self.task_counter);
                 self.task_counter += 1;
 
-                // emit: (blk: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
-                self.write("(blk: {\n");
+                // emit: (blk_N: { var _tN = io.async(fn_async, .{io, args...}); defer _ = _tN.cancel(io) catch undefined; break :blk_N try _tN.await(io); })
+                let blk = self.next_label();
+                self.write(&format!("({}: {{\n", blk));
                 self.indent += 1;
 
                 self.write_indent();
@@ -433,7 +447,7 @@ impl Codegen {
                 ));
 
                 self.write_indent();
-                self.write(&format!("break :blk try {}.await(io);\n", task_var));
+                self.write(&format!("break :{} try {}.await(io);\n", blk, task_var));
 
                 self.indent -= 1;
                 self.write_indent();
@@ -663,12 +677,12 @@ impl Codegen {
                 self.write(")");
             }
             Expression::BigIntLiteral(bigint) => {
-                // JS BigInt literal `123n` → js_bigint.JsBigInt.init(alloc, "123")
+                // BigInt literal: 9n → js_bigint.JsBigInt.init(alloc, "9")
+                // bigint.value is the decimal string without trailing `n`
                 let s = bigint.value.as_str();
-                let escaped = s.replace("\\", "\\\\").replace("\"", "\\\"");
                 self.write(&format!(
                     "js_bigint.JsBigInt.init(js_allocator.getAllocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
-                    escaped
+                    s
                 ));
             }
             Expression::ArrowFunctionExpression(arrow) => {
@@ -901,9 +915,10 @@ impl Codegen {
             if left_is_bigint && right_is_bigint {
                 self.emit_bigint_binary(be);
             } else {
-                self.compile_error(
-                    be.span,
-                    "Cannot mix BigInt and other types, use explicit conversions",
+                // JS throws TypeError at runtime when mixing BigInt and other types.
+                // Use @panic so the surrounding block remains valid Zig code.
+                self.write(
+                    "@panic(\"TypeError: Cannot mix BigInt and other types, use explicit conversions\")",
                 );
             }
             return;
@@ -953,12 +968,16 @@ impl Codegen {
             // ** operator: JS exponentiation
             // JS `**` always returns number (f64), even for integer operands.
             // Use std.math.pow(f64, ...) with temporary f64 variables.
-            self.write("(blk: { ");
+            let blk = self.next_label();
+            self.write(&format!("({}: {{ ", blk));
             self.write("const _base_f64: f64 = @as(f64, ");
             self.emit_expr(&be.left);
             self.write("); const _exp_f64: f64 = @as(f64, ");
             self.emit_expr(&be.right);
-            self.write("); break :blk std.math.pow(f64, _base_f64, _exp_f64); })");
+            self.write(&format!(
+                "); break :{} std.math.pow(f64, _base_f64, _exp_f64); }})",
+                blk
+            ));
         } else if be.operator == BinaryOperator::In {
             // `key in obj` → obj.contains(key)
             // Right side is the object, left side is the key
@@ -998,12 +1017,30 @@ impl Codegen {
     /// Emit BigInt binary operation.
     /// Both operands are known to be BigInt.
     fn emit_bigint_binary(&mut self, be: &BinaryExpression) {
-        // Generate: (blk: { var _a = <left>; var _b = <right>; break :blk _a.op(&_b, alloc) catch @panic(...); })
-        self.write("(blk: { var _a = ");
+        // Unsupported BigInt operators that have no runtime method.
+        // Emit a bare @panic (without the blk wrapper) so the surrounding
+        // expression statement doesn't get an unreachable "catch" appended.
+        if matches!(
+            be.operator,
+            BinaryOperator::Remainder
+                | BinaryOperator::BitwiseAnd
+                | BinaryOperator::BitwiseOR
+                | BinaryOperator::BitwiseXOR
+                | BinaryOperator::ShiftLeft
+                | BinaryOperator::ShiftRight
+                | BinaryOperator::ShiftRightZeroFill
+        ) {
+            self.write("@panic(\"Unsupported BigInt operator\")");
+            return;
+        }
+
+        // Generate: (blk_N: { var _a = <left>; var _b = <right>; break :blk_N _a.op(&_b, alloc) catch @panic(...); })
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ var _a = ", blk));
         self.emit_expr(&be.left);
         self.write("; var _b = ");
         self.emit_expr(&be.right);
-        self.write("; break :blk ");
+        self.write(&format!("; break :{} ", blk));
         match be.operator {
             BinaryOperator::Addition => {
                 self.write("_a.add(&_b, js_allocator.getAllocator())");
@@ -1042,10 +1079,8 @@ impl Codegen {
             BinaryOperator::GreaterEqualThan => {
                 self.write("_a.order(&_b) != .lt");
             }
-            _ => {
-                self.compile_error(be.span, "Unsupported BigInt operator");
-                return;
-            }
+            // All other operators were handled by the early-return guard above.
+            _ => unreachable!("BigInt operator should have been caught by early guard"),
         }
         self.write(" catch @panic(\"OOM: BigInt op\"); })");
     }
@@ -1307,11 +1342,10 @@ impl Codegen {
             let tmp_name = format!("_arr_lit_{}", self.task_counter);
             self.task_counter += 1;
             // Emit temp variable declaration
-            self.write(&format!("(blk: {{ const {} = ", tmp_name));
+            let blk_lit = self.next_label();
+            self.write(&format!("({}: {{ const {} = ", blk_lit, tmp_name));
             self.emit_expr(&mem.object);
             self.write(";\n");
-            // Rewrite callee to use temp variable and re-detect builtin
-            let mut tmp_ce = ce.clone();
             // We can't easily rewrite CE here; instead, manually emit the builtin call
             // by constructing a new StaticMemberExpression with Identifier temp name.
             // For simplicity, just emit the array method directly:
@@ -2041,7 +2075,8 @@ impl Codegen {
                     return false;
                 }
                 // Generate labeled block with loop
-                self.write("(blk: { var __max = @as(i64, ");
+                let blk = self.next_label();
+                self.write(&format!("({}: {{ var __max = @as(i64, ", blk));
                 self.emit_first_arg(&ce.arguments);
                 self.write("); ");
                 // Iterate over remaining arguments
@@ -2058,7 +2093,7 @@ impl Codegen {
                         ));
                     }
                 }
-                self.write(" break :blk __max; })");
+                self.write(&format!(" break :{} __max; }})", blk));
                 true
             }
 
@@ -2070,7 +2105,8 @@ impl Codegen {
                     return false;
                 }
                 // Generate labeled block with loop
-                self.write("(blk: { var __min = @as(i64, ");
+                let blk = self.next_label();
+                self.write(&format!("({}: {{ var __min = @as(i64, ", blk));
                 self.emit_first_arg(&ce.arguments);
                 self.write("); ");
                 // Iterate over remaining arguments
@@ -2087,7 +2123,7 @@ impl Codegen {
                         ));
                     }
                 }
-                self.write(" break :blk __min; })");
+                self.write(&format!(" break :{} __min; }})", blk));
                 true
             }
 
@@ -2336,8 +2372,10 @@ impl Codegen {
                         return true;
                     }
                     let arg_expr = self.first_arg_string(&ce.arguments);
+                    let blk = self.next_label();
                     self.write(&format!(
-                            "(blk: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :blk @as(i64, @intCast(i)); }} break :blk @as(i64, -1); }})",
+                            "({blk}: {{ for ({obj}.items, 0..) |item, i| {{ if (item == {arg}) break :{blk} @as(i64, @intCast(i)); }} break :{blk} @as(i64, -1); }})",
+                            blk = blk,
                             obj = obj_name,
                             arg = arg_expr
                         ));
@@ -2366,8 +2404,10 @@ impl Codegen {
                         return true;
                     }
                     let arg_expr = self.first_arg_string(&ce.arguments);
+                    let blk = self.next_label();
                     self.write(&format!(
-                            "(blk: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :blk true; }} break :blk false; }})",
+                            "({blk}: {{ for ({obj}.items) |item| {{ if (item == {arg}) break :{blk} true; }} break :{blk} false; }})",
+                            blk = blk,
                             obj = obj_name,
                             arg = arg_expr
                         ));
@@ -2393,8 +2433,10 @@ impl Codegen {
                         Some(ZigType::Str) => "{s}",
                         _ => "{any}",
                     };
+                    let blk = self.next_label();
                     self.write(&format!(
-                            "(blk: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :blk \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :blk \"\"; }} break :blk __join_buf.toOwnedSlice() catch \"\"; }})",
+                            "({blk}: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :{blk} \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :{blk} \"\"; }} break :{blk} __join_buf.toOwnedSlice() catch \"\"; }})",
+                            blk = blk,
                             obj = obj_name,
                             sep = sep_expr,
                             fmt = fmt_spec
@@ -2470,9 +2512,10 @@ impl Codegen {
                             return false;
                         }
                     };
+                    let blk = self.next_label();
                     self.write(&format!(
-                        "(blk: {{ var __slice: std.ArrayList({0}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {1}) catch @panic(\"OOM: Array.slice appendSlice\"); break :blk __slice; }})",
-                        elem_type, slice_expr
+                        "({0}: {{ var __slice: std.ArrayList({1}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {2}) catch @panic(\"OOM: Array.slice appendSlice\"); break :{0} __slice; }})",
+                        blk, elem_type, slice_expr
                     ));
                     return true;
                 }
@@ -2537,9 +2580,10 @@ impl Codegen {
                         "0".to_string()
                     };
 
+                    let blk = self.next_label();
                     self.write(&format!(
-                        "(blk: {{ var __spliced: std.ArrayList({0}) = .empty; const __start = @as(usize, @intCast(@max(0, {1}))); const __cnt = @as(usize, @intCast(@min(@max(0, {2}), {3}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.getAllocator(), {3}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
-                        elem_type, start_expr, count_expr, obj_name
+                        "({0}: {{ var __spliced: std.ArrayList({1}) = .empty; const __start = @as(usize, @intCast(@max(0, {2}))); const __cnt = @as(usize, @intCast(@min(@max(0, {3}), {4}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.getAllocator(), {4}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
+                        blk, elem_type, start_expr, count_expr, obj_name
                     ));
                     // Insert new items if any (args beyond index 1)
                     if ce.arguments.len() > 2 {
@@ -2561,7 +2605,7 @@ impl Codegen {
                         }
                         self.write("}) catch @panic(\"OOM: Array.splice insertSlice\");");
                     }
-                    self.write(" break :blk __spliced; })");
+                    self.write(&format!(" break :{} __spliced; }})", blk));
                     return true;
                 }
                 false
@@ -2576,13 +2620,14 @@ impl Codegen {
                         .get(obj_name)
                         .map(|t| t.to_zig_type())
                         .unwrap_or_else(|| "i64".to_string());
-                    // Generate: (blk: {
+                    // Generate: (blk_N: {
                     //   var __concat: std.ArrayList(T) = .empty;
                     //   __concat.appendSlice(alloc, arr.items) catch @panic("OOM");
                     //   __concat.appendSlice(alloc, other.items) catch @panic("OOM");
-                    //   break :blk __concat;
+                    //   break :blk_N __concat;
                     // })
-                    self.write("(blk: { ");
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ ", blk));
                     self.write(&format!(
                         "var __concat: std.ArrayList({0}) = .empty; ",
                         elem_type
@@ -2602,7 +2647,7 @@ impl Codegen {
                             ));
                         }
                     }
-                    self.write("break :blk __concat; })");
+                    self.write(&format!("break :{} __concat; }})", blk));
                     return true;
                 }
                 false
@@ -3028,14 +3073,15 @@ impl Codegen {
                         && let Some(Expression::ArrowFunctionExpression(arrow)) =
                             arg.as_expression()
                     {
-                        // Generate: (blk: {
+                        // Generate: (blk_N: {
                         //   var __filter: std.ArrayList(T) = .empty;
                         //   for (arr.items) |elem| {
                         //     if (predicate) __filter.append(alloc, elem) catch @panic("OOM");
                         //   }
-                        //   break :blk __filter;
+                        //   break :blk_N __filter;
                         // })
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         self.write(&format!(
                             "var __filter: std.ArrayList({0}) = .empty; ",
                             elem_type
@@ -3074,7 +3120,7 @@ impl Codegen {
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk __filter; })");
+                        self.write(&format!("break :{} __filter; }})", blk));
                         return true;
                     }
                     // Fallback: no arrow function argument → return original array
@@ -3103,7 +3149,8 @@ impl Codegen {
                             arg.as_expression()
                     {
                         // Generate labeled block with accumulator
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         // Determine accumulator type from init expression
                         let acc_type = if init_expr.contains(".") {
                             "f64"
@@ -3155,7 +3202,7 @@ impl Codegen {
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk acc; })");
+                        self.write(&format!("break :{} acc; }})", blk));
                         return true;
                     }
                     // Fallback: just return initial value
@@ -3192,7 +3239,8 @@ impl Codegen {
                             String::new()
                         };
                         let has_idx = !idx_param.is_empty();
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         if has_idx {
                             self.write(&format!("for ({}.items, 0..) |", obj_name));
                         } else {
@@ -3223,19 +3271,19 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(") break :blk true;");
+                                    self.write(&format!(") break :{} true;", blk));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(") break :blk true;");
+                                self.write(&format!(") break :{} true;", blk));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk false; })");
+                        self.write(&format!("break :{} false; }})", blk));
                         return true;
                     }
                     // Fallback: no arrow function → return false
@@ -3271,7 +3319,8 @@ impl Codegen {
                             idx_param
                         };
                         let has_idx = !idx_param.is_empty();
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         if has_idx {
                             self.write(&format!("for ({}.items, 0..) |", obj_name));
                         } else {
@@ -3302,19 +3351,19 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (!(");
                                     self.emit_expr(expr);
-                                    self.write(")) break :blk false;");
+                                    self.write(&format!(")) break :{} false;", blk));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (!(");
                                 self.emit_expr(&es.expression);
-                                self.write(")) break :blk false;");
+                                self.write(&format!(")) break :{} false;", blk));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk true; })");
+                        self.write(&format!("break :{} true; }})", blk));
                         return true;
                     }
                     // Fallback: no arrow function → return true
@@ -3356,7 +3405,8 @@ impl Codegen {
                         && let Some(Expression::ArrowFunctionExpression(arrow)) =
                             arg.as_expression()
                     {
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         self.write(&format!("for ({}.items) |", obj_name));
                         let param_name = if !arrow.params.items.is_empty() {
                             crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
@@ -3373,19 +3423,19 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(&format!(") break :blk {};", param_name));
+                                    self.write(&format!(") break :{} {};", blk, param_name));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(&format!(") break :blk {};", param_name));
+                                self.write(&format!(") break :{} {};", blk, param_name));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk undefined; })");
+                        self.write(&format!("break :{} undefined; }})", blk));
                         return true;
                     }
                     // Fallback: no arrow function → return undefined
@@ -3410,7 +3460,8 @@ impl Codegen {
                         && let Some(Expression::ArrowFunctionExpression(arrow)) =
                             arg.as_expression()
                     {
-                        self.write("(blk: { ");
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ ", blk));
                         self.write(&format!("for ({}.items, 0..) |", obj_name));
                         let param_name = if !arrow.params.items.is_empty() {
                             crate::native_proto::infer::binding_name(&arrow.params.items[0].pattern)
@@ -3434,19 +3485,19 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(&format!(") break :blk {};", idx_name));
+                                    self.write(&format!(") break :{} {};", blk, idx_name));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(&format!(") break :blk {};", idx_name));
+                                self.write(&format!(") break :{} {};", blk, idx_name));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
                         self.write("}");
                         self.write_indent();
-                        self.write("break :blk -1; })");
+                        self.write(&format!("break :{} -1; }})", blk));
                         return true;
                     }
                     // Fallback: no arrow function → return -1
@@ -3473,7 +3524,8 @@ impl Codegen {
                             "_".to_string()
                         };
                         // Generate reverse loop
-                        self.write(&format!("(blk: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ", obj_name, param_name, obj_name));
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ", blk, obj_name, param_name, obj_name));
                         self.indent += 1;
                         for stmt in &arrow.body.statements {
                             self.write_indent();
@@ -3481,17 +3533,17 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(&format!(") break :blk {};", param_name));
+                                    self.write(&format!(") break :{} {};", blk, param_name));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(&format!(") break :blk {};", param_name));
+                                self.write(&format!(") break :{} {};", blk, param_name));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
-                        self.write("} break :blk undefined; })");
+                        self.write(&format!("}} break :{} undefined; }})", blk));
                         return true;
                     }
                     self.write("undefined");
@@ -3518,7 +3570,8 @@ impl Codegen {
                         };
                         let idx_name = format!("__{}_idx", param_name);
                         // Generate reverse loop with index
-                        self.write(&format!("(blk: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ", obj_name, param_name, obj_name, idx_name));
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ", blk, obj_name, param_name, obj_name, idx_name));
                         self.indent += 1;
                         for stmt in &arrow.body.statements {
                             self.write_indent();
@@ -3526,17 +3579,17 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(&format!(") break :blk {};", idx_name));
+                                    self.write(&format!(") break :{} {};", blk, idx_name));
                                 }
                             } else if let Statement::ExpressionStatement(es) = stmt {
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(&format!(") break :blk {};", idx_name));
+                                self.write(&format!(") break :{} {};", blk, idx_name));
                             }
                         }
                         self.indent -= 1;
                         self.write_indent();
-                        self.write("} break :blk -1; })");
+                        self.write(&format!("}} break :{} -1; }})", blk));
                         return true;
                     }
                     self.write("-1");
@@ -3848,14 +3901,17 @@ impl Codegen {
                             .collect();
                         // Use a block that references the original variable (to prevent
                         // Zig "unused local constant" errors) and returns the keys inline.
+                        let blk = self.next_label();
                         if keys.is_empty() {
                             self.write(&format!(
-                                "(blk: {{ _ = {obj}; break :blk (&[_][]const u8{{}}); }})",
+                                "({blk}: {{ _ = {obj}; break :{blk} (&[_][]const u8{{}}); }})",
+                                blk = blk,
                                 obj = obj_name
                             ));
                         } else {
                             self.write(&format!(
-                                "(blk: {{ _ = {obj}; break :blk (&[_][]const u8{{ {keys} }}); }})",
+                                "({blk}: {{ _ = {obj}; break :{blk} (&[_][]const u8{{ {keys} }}); }})",
+                                blk = blk,
                                 obj = obj_name,
                                 keys = keys.join(", ")
                             ));
@@ -4423,8 +4479,10 @@ impl Codegen {
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
+                    let blk = self.next_label();
                     self.write(&format!(
-                        "(blk: {{ const __idx = {arg}; const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({obj}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); break :blk {obj}.items[__at_idx]; }})",
+                        "({blk}: {{ const __idx = {arg}; const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({obj}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); break :{blk} {obj}.items[__at_idx]; }})",
+                        blk = blk,
                         obj = obj_name,
                         arg = arg_expr
                     ));
@@ -4442,8 +4500,10 @@ impl Codegen {
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     let arg_expr = self.first_arg_string(&ce.arguments);
+                    let blk = self.next_label();
                     self.write(&format!(
-                        "(blk: {{ var __i: isize = @as(isize, @intCast({obj}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({obj}.items[@as(usize, @intCast(__i))] == {arg}) break :blk @as(i64, __i); }} break :blk @as(i64, -1); }})",
+                        "({blk}: {{ var __i: isize = @as(isize, @intCast({obj}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({obj}.items[@as(usize, @intCast(__i))] == {arg}) break :{blk} @as(i64, __i); }} break :{blk} @as(i64, -1); }})",
+                        blk = blk,
                         obj = obj_name,
                         arg = arg_expr
                     ));
@@ -4516,8 +4576,9 @@ impl Codegen {
                     } else {
                         format!("{}.items.len", obj_name)
                     };
+                    let blk = self.next_label();
                     self.write(&format!(
-                        "(blk: {{ \
+                        "({blk}: {{ \
                             const __cpw_target = @as(isize, @intCast({t})); \
                             const __cpw_start = @as(isize, @intCast({s})); \
                             const __cpw_end = @as(isize, @intCast({e})); \
@@ -4535,8 +4596,9 @@ impl Codegen {
                                     }} \
                                 }} \
                             }} \
-                            break :blk &{obj}; \
+                            break :{blk} &{obj}; \
                         }})",
+                        blk = blk,
                         obj = obj_name,
                         t = target_expr,
                         s = start_expr,
@@ -4975,10 +5037,11 @@ impl Codegen {
                         .push("String() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("(blk: { const _val = ");
+                let blk = self.next_label();
+                self.write(&format!("({}: {{ const _val = ", blk));
                 self.emit_first_arg(&ce.arguments);
                 self.write("; ");
-                self.write("break :blk std.fmt.allocPrint(js_allocator.getAllocator(), \"{d}\", .{_val}) catch @panic(\"OOM\"); })");
+                self.write(&format!("break :{} std.fmt.allocPrint(js_allocator.getAllocator(), \"{{d}}\", .{{_val}}) catch @panic(\"OOM\"); }})", blk));
                 true
             }
             builtins::BuiltinCall::BooleanConstructor => {
@@ -4994,15 +5057,10 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::BigIntConstructor => {
-                // BigInt(x) → js_bigint.JsBigInt.fromI64(alloc, @intCast(x))
-                if ce.arguments.len() != 1 {
-                    self.errors
-                        .push("BigInt() requires exactly 1 argument".to_string());
-                    return false;
-                }
-                self.write("js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), @intCast(");
+                // BigInt(x) → js_bigint.JsBigInt.fromI64(alloc, x) catch @panic(...)
+                self.write("js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
-                self.write(")) catch @panic(\"OOM: BigInt\")");
+                self.write(") catch @panic(\"OOM: BigInt fromI64\")");
                 true
             }
             builtins::BuiltinCall::ObjectConstructor => {
@@ -5082,14 +5140,16 @@ impl Codegen {
                             self.emit_expr(&ae.right);
                         }
                         Some(ZigType::JsAny) | None => {
-                            // JsAny: (blk: { obj.setByKey(JsAny.from(idx), val, alloc) catch undefined; break :blk val; })
-                            self.write("(blk: { ");
+                            // JsAny: (blk_N: { obj.setByKey(JsAny.from(idx), val, alloc) catch undefined; break :blk_N val; })
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(&format!(".setByKey(JsAny.from({}), ", idx));
                             self.emit_expr(&ae.right);
-                            self.write(
-                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
-                            );
+                            self.write(&format!(
+                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                blk
+                            ));
                             self.emit_expr(&ae.right);
                             self.write("; })");
                         }
@@ -5116,11 +5176,12 @@ impl Codegen {
                         }
                         _ => {
                             // JsAny/Map/unknown: block expr returning val
-                            self.write("(blk: { ");
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(&format!(".set(\"{}\", ", key));
                             self.emit_expr(&ae.right);
-                            self.write(") catch undefined; break :blk ");
+                            self.write(&format!(") catch undefined; break :{} ", blk));
                             self.emit_expr(&ae.right);
                             self.write("; })");
                             return;
@@ -5132,44 +5193,49 @@ impl Codegen {
                     let obj_type = self.infer_expr_type(&mem.object);
                     match obj_type {
                         Some(ZigType::JsAny) => {
-                            // JsAny: (blk: { obj.setByKey(key, val, alloc) catch undefined; break :blk val; })
-                            self.write("(blk: { ");
+                            // JsAny: (blk_N: { obj.setByKey(key, val, alloc) catch undefined; break :blk_N val; })
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(".setByKey(");
                             self.emit_expr(&mem.expression);
                             self.write(", ");
                             self.emit_expr(&ae.right);
-                            self.write(
-                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
-                            );
+                            self.write(&format!(
+                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                blk
+                            ));
                             self.emit_expr(&ae.right);
                             self.write("; })");
                             return;
                         }
                         Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
-                            // Map: (blk: { obj.set(key, val) catch undefined; break :blk val; })
-                            self.write("(blk: { ");
+                            // Map: (blk_N: { obj.set(key, val) catch undefined; break :blk_N val; })
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(".set(");
                             self.emit_expr(&mem.expression);
                             self.write(", ");
                             self.emit_expr(&ae.right);
-                            self.write(") catch undefined; break :blk ");
+                            self.write(&format!(") catch undefined; break :{} ", blk));
                             self.emit_expr(&ae.right);
                             self.write("; })");
                             return;
                         }
                         None => {
                             // Unknown type → fallback to JsAny.setByKey
-                            self.write("(blk: { ");
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(".setByKey(");
                             self.emit_expr(&mem.expression);
                             self.write(", ");
                             self.emit_expr(&ae.right);
-                            self.write(
-                                ", js_allocator.getAllocator()) catch undefined; break :blk ",
-                            );
+                            self.write(&format!(
+                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                blk
+                            ));
                             self.emit_expr(&ae.right);
                             self.write("; })");
                             return;
@@ -5209,12 +5275,13 @@ impl Codegen {
 
         // **= exponentiation assignment: a **= b → a = a ** b
         if ae.operator == AssignmentOperator::Exponential {
+            let blk = self.next_label();
             self.emit_assignment_target(&ae.left);
-            self.write(" = (blk: { const _b: f64 = @as(f64, ");
+            self.write(&format!(" = ({}: {{ const _b: f64 = @as(f64, ", blk));
             self.emit_assignment_target(&ae.left);
             self.write("); const _e: f64 = @as(f64, ");
             self.emit_expr(&ae.right);
-            self.write("); break :blk std.math.pow(f64, _b, _e); })");
+            self.write(&format!("); break :{} std.math.pow(f64, _b, _e); }})", blk));
             return;
         }
 
@@ -5306,15 +5373,17 @@ impl Codegen {
         if self.expr_is_bigint(&ue.argument) {
             match ue.operator {
                 UnaryOperator::UnaryNegation => {
-                    self.write("(blk: { var _a = ");
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ var _a = ", blk));
                     self.emit_expr(&ue.argument);
-                    self.write("; break :blk _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); })");
+                    self.write(&format!("; break :{} _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); }})", blk));
                     return;
                 }
                 UnaryOperator::BitwiseNot => {
-                    self.write("(blk: { var _a = ");
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ var _a = ", blk));
                     self.emit_expr(&ue.argument);
-                    self.write("; break :blk _a.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); })");
+                    self.write(&format!("; break :{} _a.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); }})", blk));
                     return;
                 }
                 _ => {}
@@ -5425,9 +5494,10 @@ impl Codegen {
                     .unwrap_or("i64")
                     .to_string()
             };
+            let blk = self.next_label();
             self.write(&format!(
-                "(blk: {{ var __arr: std.ArrayList({}) = .empty; ",
-                elem_type
+                "({}: {{ var __arr: std.ArrayList({}) = .empty; ",
+                blk, elem_type
             ));
             for elem in ae.elements.iter() {
                 match elem {
@@ -5448,7 +5518,7 @@ impl Codegen {
                     }
                 }
             }
-            self.write("break :blk __arr; })");
+            self.write(&format!("break :{} __arr; }})", blk));
         }
     }
 

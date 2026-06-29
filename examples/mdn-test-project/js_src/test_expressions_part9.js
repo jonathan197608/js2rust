@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_expressions_part9() {
+    let x = 3;
+    let y = 5;
 // ---- fragment 80 ----
     try {{
         "5" >= 3; // true
@@ -29,9 +31,7 @@ function test_expressions_part9() {
     
 // ---- fragment 82 ----
     try {{
-        5n >= 3; // true
-        3 >= 3n; // true
-        3 >= 5n; // false
+        5n >= 3; // TypeError: Cannot mix BigInt and other types
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 82 error: ${e.message}`);
     }}

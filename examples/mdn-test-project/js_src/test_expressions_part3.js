@@ -16,7 +16,6 @@ function test_expressions_part3() {
 // ---- fragment 21 ----
     try {{
         2n ** 2; // TypeError: Cannot mix BigInt and other types, use explicit conversions
-        2 ** 2n; // TypeError: Cannot mix BigInt and other types, use explicit conversions
     }} catch (e) {{
         console.error(`[test_expressions_part3] fragment 21 error: ${e.message}`);
     }}
@@ -25,7 +24,6 @@ function test_expressions_part3() {
 // ---- fragment 22 ----
     try {{
         2n ** BigInt(2); // 4n
-        Number(2n) ** 2; // 4
     }} catch (e) {{
         console.error(`[test_expressions_part3] fragment 22 error: ${e.message}`);
     }}

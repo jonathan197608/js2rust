@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_builtins_part3() {
+    let string = "123";
+    let radix = 10;
 // ---- fragment 20 ----
     try {{
         parseFloat("1.7976931348623159e+308"); // Infinity

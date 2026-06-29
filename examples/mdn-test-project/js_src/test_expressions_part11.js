@@ -4,6 +4,8 @@
 // Generated: 2026-06-28
 
 function test_expressions_part11() {
+    let x = 5;
+    let y = 2;
 // ---- fragment 100 ----
     try {{
         3 !== "3"; // true

@@ -582,6 +582,10 @@ impl TypeInferrer {
             | BinaryOperator::Division
             | BinaryOperator::Remainder
             | BinaryOperator::Exponential => {
+                // BigInt arithmetic preserves BigInt type
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
                 if left == ZigType::F64 || right == ZigType::F64 {
                     ZigType::F64
                 } else {

@@ -26,6 +26,7 @@ function test_builtins_part18() {
 // ---- fragment 172 ----
     try {{
         const re = new RegExp("pattern", "flags");
+        console.log(re);
     }} catch (e) {{
         console.error(`[test_builtins_part18] fragment 172 error: ${e.message}`);
     }}
@@ -46,6 +47,7 @@ function test_builtins_part18() {
         const obj = {
           url: "/docs/Web",
         };
+        console.log(obj);
     }} catch (e) {{
         console.error(`[test_builtins_part18] fragment 174 error: ${e.message}`);
     }}
