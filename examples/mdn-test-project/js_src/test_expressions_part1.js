@@ -30,6 +30,7 @@ function test_expressions_part1() {
     
 // ---- fragment 1 ----
     try {{
+        let expression = 0;
         void expression
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 1 error: ${e.message}`);
@@ -69,6 +70,8 @@ function test_expressions_part1() {
     
 // ---- fragment 5 ----
     try {{
+        function doSomething() {}
+        const checkbox = { onclick: null };
         checkbox.onclick = () => doSomething();
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 5 error: ${e.message}`);
@@ -77,7 +80,9 @@ function test_expressions_part1() {
     
 // ---- fragment 6 ----
     try {{
-        checkbox.onclick = () => void doSomething();
+        function doSomething2() {}
+        const checkbox2 = { onclick: null };
+        checkbox2.onclick = () => void doSomething2();
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 6 error: ${e.message}`);
     }}
@@ -98,6 +103,7 @@ function test_expressions_part1() {
     
 // ---- fragment 8 ----
     try {{
+        let x = 0;
         ~x
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 8 error: ${e.message}`);
@@ -106,8 +112,8 @@ function test_expressions_part1() {
     
 // ---- fragment 9 ----
     try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        const Before = 11100110111110100000000000000110000000000001;
+        const After = 10100000000000000110000000000001;
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 9 error: ${e.message}`);
     }}

@@ -1606,11 +1606,14 @@ impl Codegen {
         }
         self.write(")");
 
-        // update
+        // update — must be a void expression in Zig
         if let Some(update) = &fs.update {
-            self.write(" : (");
+            self.write(" : ({ ");
+            let saved = self.in_expr_stmt;
+            self.in_expr_stmt = true;
             self.emit_expr(update);
-            self.write(")");
+            self.in_expr_stmt = saved;
+            self.write("; })");
         }
 
         self.write(" {\n");

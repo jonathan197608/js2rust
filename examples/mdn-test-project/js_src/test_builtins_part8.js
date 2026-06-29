@@ -67,6 +67,11 @@ function test_builtins_part8() {
         const infiniteNum = Number.POSITIVE_INFINITY;
         const negInfiniteNum = Number.NEGATIVE_INFINITY;
         const notANum = Number.NaN;
+        console.log(biggestNum);
+        console.log(smallestNum);
+        console.log(infiniteNum);
+        console.log(negInfiniteNum);
+        console.log(notANum);
     }} catch (e) {{
         console.error(`[test_builtins_part8] fragment 74 error: ${e.message}`);
     }}
@@ -76,6 +81,8 @@ function test_builtins_part8() {
     try {{
         const biggestInt = Number.MAX_SAFE_INTEGER; // (2**53 - 1) => 9007199254740991
         const smallestInt = Number.MIN_SAFE_INTEGER; // -(2**53 - 1) => -9007199254740991
+        console.log(biggestInt);
+        console.log(smallestInt);
     }} catch (e) {{
         console.error(`[test_builtins_part8] fragment 75 error: ${e.message}`);
     }}
@@ -130,6 +137,12 @@ function test_builtins_part8() {
           "0b11111111111111111111111111111111111111111111111111111",
         );
         // 9007199254740991n
+        console.log(previouslyMaxSafeInteger);
+        console.log(alsoHuge);
+        console.log(hugeString);
+        console.log(hugeHex);
+        console.log(hugeOctal);
+        console.log(hugeBin);
     }} catch (e) {{
         console.error(`[test_builtins_part8] fragment 78 error: ${e.message}`);
     }}

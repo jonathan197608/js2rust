@@ -950,7 +950,8 @@ impl Codegen {
             self.emit_string_concat(be);
         } else if (be.operator == BinaryOperator::Equality
             || be.operator == BinaryOperator::StrictEquality)
-            && (left_is_string || right_is_string)
+            && left_is_string
+            && right_is_string
         {
             // String equality: use std.mem.eql(u8, a, b)
             self.write("std.mem.eql(u8, ");
@@ -960,7 +961,8 @@ impl Codegen {
             self.write(")");
         } else if (be.operator == BinaryOperator::Inequality
             || be.operator == BinaryOperator::StrictInequality)
-            && (left_is_string || right_is_string)
+            && left_is_string
+            && right_is_string
         {
             // String inequality: !std.mem.eql(u8, a, b)
             self.write("!std.mem.eql(u8, ");
@@ -968,6 +970,16 @@ impl Codegen {
             self.write(", ");
             self.emit_expr(&be.right);
             self.write(")");
+        } else if (be.operator == BinaryOperator::Equality
+            || be.operator == BinaryOperator::StrictEquality
+            || be.operator == BinaryOperator::Inequality
+            || be.operator == BinaryOperator::StrictInequality)
+            && (left_is_string || right_is_string)
+        {
+            // Mixed string/non-string comparison: one side is string, other is not.
+            // Use JsAny comparison for type-safe Zig code (JS allows cross-type
+            // comparison like `3 != "3"` → false, `"1" != 1` → false).
+            self.emit_jsany_comparison(be, left_is_string, right_is_string);
         } else if be.operator == BinaryOperator::Division {
             self.write("@divTrunc(");
             self.emit_expr(&be.left);
@@ -1053,50 +1065,67 @@ impl Codegen {
             return;
         }
 
-        // Generate: (blk_N: { var _a = <left>; var _b = <right>; break :blk_N _a.op(&_b, alloc) catch @panic(...); })
+        // Generate: (blk_N: { var _a_N = <left>; var _b_N = <right>; break :blk_N _a_N.op(&_b_N, alloc) catch @panic(...); })
+        // Use unique variable names based on label counter to avoid shadowing in nested BigInt expressions.
         let blk = self.next_label();
-        self.write(&format!("({}: {{ var _a = ", blk));
+        let var_suffix = self.label_counter - 1; // label_counter was already incremented by next_label()
+        let a_name = format!("_a{}", var_suffix);
+        let b_name = format!("_b{}", var_suffix);
+        self.write(&format!("({}: {{ var {} = ", blk, a_name));
         self.emit_expr(&be.left);
-        self.write("; var _b = ");
+        self.write(&format!("; var {} = ", b_name));
         self.emit_expr(&be.right);
         self.write(&format!("; break :{} ", blk));
         match be.operator {
             BinaryOperator::Addition => {
-                self.write("_a.add(&_b, js_allocator.getAllocator())");
+                self.write(&format!(
+                    "{}.add(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
             }
             BinaryOperator::Subtraction => {
-                self.write("_a.sub(&_b, js_allocator.getAllocator())");
+                self.write(&format!(
+                    "{}.sub(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
             }
             BinaryOperator::Multiplication => {
-                self.write("_a.mul(&_b, js_allocator.getAllocator())");
+                self.write(&format!(
+                    "{}.mul(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
             }
             BinaryOperator::Division => {
-                self.write("_a.div(&_b, js_allocator.getAllocator())");
+                self.write(&format!(
+                    "{}.div(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
             }
             BinaryOperator::Exponential => {
                 // BigInt ** requires exponent to be u64
                 // JS: exponent is converted via ToUint64 (same as ToIntegerOrInfinity then mod 2^32)
-                // We generate: _a.pow(try _b.toU64(), alloc)
-                // For simplicity, assume exponent fits u64 (MDN tests all have small exponents)
-                self.write("_a.pow(try _b.toU64(), js_allocator.getAllocator())");
+                self.write(&format!(
+                    "{}.pow(try {}.toU64(), js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
             }
             BinaryOperator::Equality | BinaryOperator::StrictEquality => {
-                self.write("_a.eq(&_b)");
+                self.write(&format!("{}.eq(&{})", a_name, b_name));
             }
             BinaryOperator::Inequality | BinaryOperator::StrictInequality => {
-                self.write("!_a.eq(&_b)");
+                self.write(&format!("!{}.eq(&{})", a_name, b_name));
             }
             BinaryOperator::LessThan => {
-                self.write("_a.order(&_b) == .lt");
+                self.write(&format!("{}.order(&{}) == .lt", a_name, b_name));
             }
             BinaryOperator::LessEqualThan => {
-                self.write("_a.order(&_b) != .gt");
+                self.write(&format!("{}.order(&{}) != .gt", a_name, b_name));
             }
             BinaryOperator::GreaterThan => {
-                self.write("_a.order(&_b) == .gt");
+                self.write(&format!("{}.order(&{}) == .gt", a_name, b_name));
             }
             BinaryOperator::GreaterEqualThan => {
-                self.write("_a.order(&_b) != .lt");
+                self.write(&format!("{}.order(&{}) != .lt", a_name, b_name));
             }
             // All other operators were handled by the early-return guard above.
             _ => unreachable!("BigInt operator should have been caught by early guard"),
@@ -1249,7 +1278,7 @@ impl Codegen {
     }
 
     /// Check if an expression evaluates to a string type
-    fn expr_is_string(&self, expr: &Expression) -> bool {
+    fn expr_is_string(&mut self, expr: &Expression) -> bool {
         match expr {
             Expression::StringLiteral(_) => true,
             Expression::TemplateLiteral(_) => true,
@@ -1275,6 +1304,10 @@ impl Codegen {
             }
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
+            // CallExpression — check if return type is Str (e.g. jsTypeof(), String())
+            Expression::CallExpression(_ce) => {
+                self.infer_expr_type(expr) == Some(ZigType::Str)
+            }
             _ => false,
         }
     }
@@ -5501,16 +5534,20 @@ impl Codegen {
             match ue.operator {
                 UnaryOperator::UnaryNegation => {
                     let blk = self.next_label();
-                    self.write(&format!("({}: {{ var _a = ", blk));
+                    let var_suffix = self.label_counter - 1;
+                    let a_name = format!("_a{}", var_suffix);
+                    self.write(&format!("({0}: {{ var {1} = ", blk, a_name));
                     self.emit_expr(&ue.argument);
-                    self.write(&format!("; break :{} _a.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); }})", blk));
+                    self.write(&format!("; break :{0} {1}.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); }})", blk, a_name));
                     return;
                 }
                 UnaryOperator::BitwiseNot => {
                     let blk = self.next_label();
-                    self.write(&format!("({}: {{ var _a = ", blk));
+                    let var_suffix = self.label_counter - 1;
+                    let a_name = format!("_a{}", var_suffix);
+                    self.write(&format!("({0}: {{ var {1} = ", blk, a_name));
                     self.emit_expr(&ue.argument);
-                    self.write(&format!("; break :{} _a.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); }})", blk));
+                    self.write(&format!("; break :{0} {1}.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); }})", blk, a_name));
                     return;
                 }
                 _ => {}
@@ -5556,14 +5593,34 @@ impl Codegen {
                 // void expr: evaluate expr for side effects, return undefined.
                 // When in expression-statement position, prefix with `_ = blk: {};`
                 // to discard the result value (Zig forbids unused labeled-block values).
-                let blk = self.next_label();
-                if self.in_expr_stmt {
-                    self.write(&format!("_ = {blk}: {{ _ = "));
+                //
+                // Function/arrow expressions are already emitted as type declarations
+                // (struct or closure struct) by emit_expr. The "side effect" _ = name
+                // incorrectly discards the type, breaking subsequent .call() usage.
+                // For these, fall through to emit the expression (which generates the
+                // declaration) but wrap only with undefined, not a discard.
+                if matches!(
+                    &ue.argument,
+                    Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)
+                ) {
+                    // Emit the function expression first (creates declaration)
+                    self.emit_expr(&ue.argument);
+                    // Then produce undefined as the void result, without discarding
+                    // the function name (it's a type, not a value).
+                    if self.in_expr_stmt {
+                        self.write("; _ = ");
+                    }
+                    self.write("JsAny.fromUndefined()");
                 } else {
-                    self.write(&format!("{blk}: {{ _ = "));
+                    let blk = self.next_label();
+                    if self.in_expr_stmt {
+                        self.write(&format!("_ = {blk}: {{ _ = "));
+                    } else {
+                        self.write(&format!("{blk}: {{ _ = "));
+                    }
+                    self.emit_expr(&ue.argument);
+                    self.write(&format!("; break :{blk} JsAny.fromUndefined(); }}"));
                 }
-                self.emit_expr(&ue.argument);
-                self.write(&format!("; break :{blk} JsAny.fromUndefined(); }}"));
             }
             UnaryOperator::Delete => {
                 // delete obj.prop / delete obj[expr] — remove property, return bool
@@ -6074,6 +6131,10 @@ impl Codegen {
                         } else {
                             None
                         }
+                    }
+                    UnaryOperator::Void => {
+                        // void expr → always returns undefined (JsAny)
+                        Some(ZigType::JsAny)
                     }
                     _ => None,
                 }

@@ -530,6 +530,12 @@ function void_expr(a, b) {
     void (a + b);
     return void (a * b);
 }
+
+function void_comp_to_string() {
+    // void 2 === "2" should NOT use std.mem.eql(u8, ...)
+    // void returns JsAny, must use .eq() comparison.
+    return void 2 === "2";
+}
 "#;
         let zig = transpile_and_assert!(js, "test_native_proto_void_operator");
         // void generates JsAny.fromUndefined()
@@ -542,6 +548,19 @@ function void_expr(a, b) {
         assert!(
             zig.contains("_ = "),
             "void should use _ = to discard: {}",
+            zig
+        );
+        // void in binary comparison: must NOT use std.mem.eql(u8, ...)
+        // because the void result is JsAny, not []const u8.
+        assert!(
+            !zig.contains("std.mem.eql(u8, blk_") && !zig.contains("std.mem.eql(u8, _ = blk_"),
+            "void === string must not use std.mem.eql with blk label: {}",
+            zig
+        );
+        // Should generate proper JsAny comparison using .eq()
+        assert!(
+            zig.contains(".eq("),
+            "void === string should use .eq() JsAny comparison: {}",
             zig
         );
     }
