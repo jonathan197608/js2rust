@@ -839,7 +839,15 @@ impl Codegen {
                 }
             }
             None => "void".to_string(),
-            Some(other) => other.to_zig_type(),
+            Some(other) => {
+                // Async host functions return structs defined in host.zig,
+                // so NamedStruct return types need the "host." prefix.
+                if is_async && matches!(other, ZigType::NamedStruct(_)) {
+                    format!("host.{}", other.to_zig_type())
+                } else {
+                    other.to_zig_type()
+                }
+            }
         };
         let ret_zig_type = if (is_async || self.fn_has_throw) && ret_zig_type != "void" {
             format!("!{}", ret_zig_type)
