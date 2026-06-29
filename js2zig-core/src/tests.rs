@@ -882,12 +882,18 @@ function outer(x) {
         let zig = parse_and_transpile(js, None).unwrap().zig_code;
         println!("=== Nested function (with capture) Zig code ===\n{}", zig);
 
-        // Verify: inner is defined as a struct with capture field
+        // Verify: inner is defined via named type with capture field (Zig 0.16 syntax)
         assert!(
-            zig.contains("const inner = struct {"),
-            "Expected inner to be a struct"
+            zig.contains("_inner_type = struct {"),
+            "Expected _inner_type struct declaration"
         );
         assert!(zig.contains("x:"), "Expected capture field x");
+
+        // Verify: inner is instantiated from named type
+        assert!(
+            zig.contains("inner = _inner_type"),
+            "Expected inner = _inner_type instantiation"
+        );
 
         // Verify: call is rewritten to inner.call(args)
         assert!(zig.contains("inner.call("), "Expected call to be rewritten");
@@ -4732,12 +4738,18 @@ function outer(x) {
         let zig = transpile_and_assert!(js, "test_p2_nested_function_capture_error");
         println!("=== Nested function capture Zig code ===\n{}", zig);
 
-        // Verify: inner is defined as a struct with capture field
+        // Verify: inner is defined via named type with capture field (Zig 0.16 syntax)
         assert!(
-            zig.contains("const inner = struct {"),
-            "Expected inner to be a struct"
+            zig.contains("_inner_type = struct {"),
+            "Expected _inner_type struct declaration"
         );
         assert!(zig.contains("x:"), "Expected capture field x");
+
+        // Verify: inner is instantiated from named type
+        assert!(
+            zig.contains("inner = _inner_type"),
+            "Expected inner = _inner_type instantiation"
+        );
 
         // Verify: call is rewritten to inner.call(args)
         assert!(zig.contains("inner.call("), "Expected call to be rewritten");

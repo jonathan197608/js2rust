@@ -1299,8 +1299,11 @@ impl Codegen {
                     // Has captures: generate struct with capture fields + instance
                     self.nested_fn_names.insert(fn_name.to_string());
 
+                    // Zig 0.16 does not support `struct { .. }.{ .. }` inline syntax.
+                    // Use a separate type declaration to avoid `} .{` on same line.
+                    let type_name = format!("_{fn_name}_type");
                     self.write_indent();
-                    self.writeln(&format!("const {} = struct {{", fn_name));
+                    self.writeln(&format!("const {type_name} = struct {{"));
                     self.indent += 1;
 
                     // Add capture fields to struct
@@ -1338,16 +1341,20 @@ impl Codegen {
 
                     self.indent -= 1;
                     self.write_indent();
-                    // Create instance with captured values
-                    let mut init = String::from(".{ ");
+                    self.writeln("}};");
+
+                    // Create instance with captured values (named type syntax)
+                    let mut init_fields = String::new();
                     for (i, (cap_name, _, _)) in captures.iter().enumerate() {
                         if i > 0 {
-                            init.push_str(", ");
+                            init_fields.push_str(", ");
                         }
-                        init.push_str(&format!(".{} = {}", cap_name, cap_name));
+                        init_fields.push_str(&format!(".{} = {}", cap_name, cap_name));
                     }
-                    init.push_str(" };");
-                    self.writeln(&format!("}}{}", init));
+                    self.write_indent();
+                    self.writeln(&format!(
+                        "const {fn_name} = {type_name}{{ {init_fields} }};"
+                    ));
                 } else {
                     // No captures: generate inline struct with static call method
                     self.nested_fn_names.insert(fn_name.to_string());

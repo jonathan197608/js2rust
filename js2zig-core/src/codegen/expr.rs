@@ -970,15 +970,16 @@ impl Codegen {
             // ** operator: JS exponentiation
             // JS `**` always returns number (f64), even for integer operands.
             // Use std.math.pow(f64, ...) with temporary f64 variables.
+            // Use a unique suffix to avoid variable shadowing in nested `**` expressions.
+            let pow_id = self.label_counter;
             let blk = self.next_label();
-            self.write(&format!("({}: {{ ", blk));
-            self.write("const _base_f64: f64 = @as(f64, ");
+            self.write(&format!("({blk}: {{ "));
+            self.write(&format!("const _base_f64_{pow_id}: f64 = @as(f64, "));
             self.emit_expr(&be.left);
-            self.write("); const _exp_f64: f64 = @as(f64, ");
+            self.write(&format!("); const _exp_f64_{pow_id}: f64 = @as(f64, "));
             self.emit_expr(&be.right);
             self.write(&format!(
-                "); break :{} std.math.pow(f64, _base_f64, _exp_f64); }})",
-                blk
+                "); break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
             ));
         } else if be.operator == BinaryOperator::In {
             // `key in obj` → obj.contains(key)
@@ -5276,68 +5277,154 @@ impl Codegen {
             } else {
                 "@rem"
             };
-            // Emit target, then " = op(target, value)"
-            self.emit_assignment_target(&ae.left);
-            self.write(&format!(" = {}(", op_fn));
-            // Re-emit target as first argument to the operation
-            self.emit_assignment_target(&ae.left);
-            self.write(", ");
-            self.emit_expr(&ae.right);
-            self.write(")");
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!(" = {}(", op_fn));
+                self.emit_assignment_target(&ae.left);
+                self.write(", ");
+                self.emit_expr(&ae.right);
+                self.write(")");
+            } else {
+                // Wrap in labeled block so assignment returns the assigned value (JS semantics)
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!(" = {}(", op_fn));
+                self.emit_assignment_target(&ae.left);
+                self.write(", ");
+                self.emit_expr(&ae.right);
+                self.write(&format!("); break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
             return;
         }
 
         // **= exponentiation assignment: a **= b → a = a ** b
         if ae.operator == AssignmentOperator::Exponential {
-            let blk = self.next_label();
-            self.emit_assignment_target(&ae.left);
-            self.write(&format!(" = ({}: {{ const _b: f64 = @as(f64, ", blk));
-            self.emit_assignment_target(&ae.left);
-            self.write("); const _e: f64 = @as(f64, ");
-            self.emit_expr(&ae.right);
-            self.write(&format!("); break :{} std.math.pow(f64, _b, _e); }})", blk));
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(" = std.math.pow(f64, @as(f64, ");
+                self.emit_assignment_target(&ae.left);
+                self.write("), @as(f64, ");
+                self.emit_expr(&ae.right);
+                self.write("))");
+            } else {
+                let blk = self.next_label();
+                let inner_blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!(" = ({inner_blk}: {{ const _b: f64 = @as(f64, "));
+                self.emit_assignment_target(&ae.left);
+                self.write("); const _e: f64 = @as(f64, ");
+                self.emit_expr(&ae.right);
+                self.write(&format!(
+                    "); break :{inner_blk} std.math.pow(f64, _b, _e); }}); break :{blk} "
+                ));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
             return;
         }
 
-        // &&= logical AND assignment: a &&= b → a = if (a.toBool()) b else a
+        // &&= logical AND assignment
         if ae.operator == AssignmentOperator::LogicalAnd {
-            self.emit_assignment_target(&ae.left);
-            self.write(" = if (");
-            self.emit_assignment_target(&ae.left);
-            self.write(".toBool()) ");
-            self.emit_expr(&ae.right);
-            self.write(" else ");
-            self.emit_assignment_target(&ae.left);
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (");
+                self.emit_assignment_target(&ae.left);
+                self.write(".toBool()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+            } else {
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (");
+                self.emit_assignment_target(&ae.left);
+                self.write(".toBool()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!("; break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
             return;
         }
 
-        // ||= logical OR assignment: a ||= b → a = if (!a.toBool()) b else a
+        // ||= logical OR assignment
         if ae.operator == AssignmentOperator::LogicalOr {
-            self.emit_assignment_target(&ae.left);
-            self.write(" = if (!");
-            self.emit_assignment_target(&ae.left);
-            self.write(".toBool()) ");
-            self.emit_expr(&ae.right);
-            self.write(" else ");
-            self.emit_assignment_target(&ae.left);
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (!");
+                self.emit_assignment_target(&ae.left);
+                self.write(".toBool()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+            } else {
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (!");
+                self.emit_assignment_target(&ae.left);
+                self.write(".toBool()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!("; break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
             return;
         }
 
-        // ??= nullish coalescing assignment: a ??= b → a = if (a.isNullish()) b else a
+        // ??= nullish coalescing assignment
         if ae.operator == AssignmentOperator::LogicalNullish {
-            self.emit_assignment_target(&ae.left);
-            self.write(" = if (");
-            self.emit_assignment_target(&ae.left);
-            self.write(".isNullish()) ");
-            self.emit_expr(&ae.right);
-            self.write(" else ");
-            self.emit_assignment_target(&ae.left);
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (");
+                self.emit_assignment_target(&ae.left);
+                self.write(".isNullish()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+            } else {
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(" = if (");
+                self.emit_assignment_target(&ae.left);
+                self.write(".isNullish()) ");
+                self.emit_expr(&ae.right);
+                self.write(" else ");
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!("; break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
             return;
         }
 
-        self.emit_assignment_target(&ae.left);
-        self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
-        self.emit_expr(&ae.right);
+        // Default: += -= *= <<= >>= >>>= &= |= ^=
+        {
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
+                self.emit_expr(&ae.right);
+            } else {
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(&format!(" {} ", Self::assignment_op(ae.operator)));
+                self.emit_expr(&ae.right);
+                self.write(&format!("; break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
+        }
     }
 
     fn emit_assignment_target(&mut self, target: &AssignmentTarget) {
@@ -5430,29 +5517,34 @@ impl Codegen {
                 }
             }
             UnaryOperator::Void => {
-                // void expr: evaluate expr for side effects, return undefined
-                self.write("{ _ = ");
+                // void expr: evaluate expr for side effects, return undefined.
+                // Zig 0.16 does not allow bare `{ ...; value }` blocks as expression
+                // values; use a labeled block with `break :blk` instead.
+                let blk = self.next_label();
+                self.write(&format!("{blk}: {{ _ = "));
                 self.emit_expr(&ue.argument);
-                self.write("; JsAny.fromUndefined() }");
+                self.write(&format!("; break :{blk} JsAny.fromUndefined(); }}"));
             }
             UnaryOperator::Delete => {
                 // delete obj.prop / delete obj[expr] — remove property, return bool
                 match &ue.argument {
                     Expression::StaticMemberExpression(mem) => {
                         // delete obj.prop → _ = obj.deleteKey("prop"); true
-                        self.write("{ _ = ");
+                        let blk = self.next_label();
+                        self.write(&format!("{blk}: {{ _ = "));
                         self.emit_expr(&mem.object);
                         self.write(".deleteKey(\"");
                         self.write(&mem.property.name);
-                        self.write("\"); true }");
+                        self.write(&format!("\"); break :{blk} true; }}"));
                     }
                     Expression::ComputedMemberExpression(mem) => {
                         // delete obj[expr] → _ = obj.deleteByKey(expr, alloc); true
-                        self.write("{ const _dk = ");
+                        let blk = self.next_label();
+                        self.write(&format!("{blk}: {{ const _dk = "));
                         self.emit_expr(&mem.expression);
                         self.write("; _ = ");
                         self.emit_expr(&mem.object);
-                        self.write(".deleteByKey(_dk, alloc); true }");
+                        self.write(&format!(".deleteByKey(_dk, alloc); break :{blk} true; }}"));
                     }
                     _ => {
                         self.errors
