@@ -2,11 +2,12 @@
 // Function-level type inference: parameters, return types, async detection.
 // Also contains private helper methods for TypeInferrer.
 
+use super::helpers::expr_depends_on_anytype;
 use super::{InferResult, TypeInferrer};
 use crate::native_proto::ZigType;
 use crate::native_proto::jsdoc;
 use oxc_ast::ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl TypeInferrer {
     // ============================================================
@@ -147,11 +148,33 @@ impl TypeInferrer {
         }
 
         match ty {
-            Some(definite_ty) => InferResult::Definite(definite_ty),
+            Some(definite_ty) => {
+                // When the return type is Anytype and all return expressions depend on
+                // anytype parameters, use AnytypeReturn so codegen emits @TypeOf(...).
+                // This lets Zig resolve the concrete type at the call site.
+                if definite_ty == ZigType::Anytype
+                    && Self::all_return_exprs_depend_on_anytype_params(
+                        fn_name,
+                        &return_exprs,
+                        &self.fn_param_types,
+                    )
+                {
+                    return InferResult::Definite(ZigType::AnytypeReturn);
+                }
+                InferResult::Definite(definite_ty)
+            }
             None => {
                 // No definite return type from expressions — check JSDoc
                 if let Some(ty) = self.lookup_jsdoc_return_type(fn_name) {
                     return InferResult::Definite(ty);
+                }
+                // Check if all return exprs depend on anytype params.
+                if Self::all_return_exprs_depend_on_anytype_params(
+                    fn_name,
+                    &return_exprs,
+                    &self.fn_param_types,
+                ) {
+                    return InferResult::Definite(ZigType::AnytypeReturn);
                 }
                 // Default to i64
                 self.errors.push(format!(
@@ -199,6 +222,42 @@ impl TypeInferrer {
             }
             _ => {}
         }
+    }
+
+    /// Check if all return expressions depend on anytype parameters.
+    /// Returns true if:
+    ///   1. There are return expressions
+    ///   2. The function has at least one anytype parameter
+    ///   3. ALL return expressions exclusively reference anytype parameters
+    fn all_return_exprs_depend_on_anytype_params(
+        fn_name: &str,
+        return_exprs: &[&Expression],
+        fn_param_types: &HashMap<String, Vec<(String, ZigType)>>,
+    ) -> bool {
+        if return_exprs.is_empty() {
+            return false;
+        }
+        let anytype_params: HashSet<String> = fn_param_types
+            .get(fn_name)
+            .map(|params| {
+                params
+                    .iter()
+                    .filter_map(|(name, ty)| {
+                        if *ty == ZigType::Anytype {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<HashSet<String>>()
+            })
+            .unwrap_or_default();
+        if anytype_params.is_empty() {
+            return false;
+        }
+        return_exprs
+            .iter()
+            .all(|expr| expr_depends_on_anytype(expr, &anytype_params))
     }
 
     // ============================================================

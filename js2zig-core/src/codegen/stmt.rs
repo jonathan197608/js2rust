@@ -828,6 +828,16 @@ impl Codegen {
             Some(ZigType::Bool) => "bool".to_string(),
             Some(ZigType::Str) => "[]const u8".to_string(),
             Some(ZigType::Void) => "void".to_string(),
+            Some(ZigType::AnytypeReturn) => {
+                if let Some(first_ret) =
+                    crate::native_proto::infer::helpers::find_first_return_expr(fd)
+                {
+                    let captured = self.capture_expr(first_ret);
+                    format!("@TypeOf({})", captured)
+                } else {
+                    "void".to_string()
+                }
+            }
             None => "void".to_string(),
             Some(other) => other.to_zig_type(),
         };

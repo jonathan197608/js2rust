@@ -199,6 +199,12 @@ impl TypeInferrer {
                 match &ce.callee {
                     Expression::Identifier(id) => {
                         if let Some(ret_ty) = self.fn_return_types.get(id.name.as_str()) {
+                            // AnytypeReturn cannot be propagated through function calls:
+                            // - Nested functions are not visible at the return-type position
+                            // - @TypeOf(call_expr) may reference undeclared names
+                            if *ret_ty == ZigType::AnytypeReturn {
+                                return InferResult::Indeterminate;
+                            }
                             return InferResult::Definite(ret_ty.clone());
                         }
                         if let Some(ret_ty) = self.host_return_types.get(id.name.as_str()) {

@@ -194,6 +194,7 @@ pub enum BuiltinCall {
     ObjectAssign,                   // Object.assign(target, source)
     ObjectFreeze,                   // Object.freeze(obj)
     ObjectSeal,                     // Object.seal(obj) — simplified no-op
+    ObjectPreventExtensions,        // Object.preventExtensions(obj)
     ObjectHasOwn,                   // Object.hasOwn(obj, key)
     ObjectIs,                       // Object.is(a, b) — SameValue comparison
     ObjectGetOwnPropertyNames,      // Object.getOwnPropertyNames(obj)
@@ -388,6 +389,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "assign" => return Some(BuiltinCall::ObjectAssign),
                 "freeze" => return Some(BuiltinCall::ObjectFreeze),
                 "seal" => return Some(BuiltinCall::ObjectSeal),
+                "preventExtensions" => return Some(BuiltinCall::ObjectPreventExtensions),
                 "hasOwn" => return Some(BuiltinCall::ObjectHasOwn),
                 "is" => return Some(BuiltinCall::ObjectIs),
                 "getOwnPropertyNames" => return Some(BuiltinCall::ObjectGetOwnPropertyNames),
@@ -829,7 +831,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
         BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         // Object methods that return complex types or the input object
-        BuiltinCall::ObjectSeal | BuiltinCall::ObjectCreate | BuiltinCall::ObjectFromEntries | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
+        BuiltinCall::ObjectSeal | BuiltinCall::ObjectPreventExtensions | BuiltinCall::ObjectCreate | BuiltinCall::ObjectFromEntries | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
         BuiltinCall::ObjectIsSealed
         | BuiltinCall::ObjectIsFrozen
         | BuiltinCall::ObjectIsExtensible => Some(ZigType::Bool),

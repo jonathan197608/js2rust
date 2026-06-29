@@ -114,6 +114,11 @@ pub enum ZigType {
     /// Arbitrary-precision integer (JsBigInt in generated code).
     /// Wraps `std.math.big.int.Managed`.
     BigInt,
+    /// Return type depends on anytype parameters (non-export functions only).
+    /// Codegen emits `@TypeOf(return_expr)` instead of a concrete Zig type.
+    /// This allows Zig to infer the return type at compile time from the
+    /// actual concrete types of anytype parameters.
+    AnytypeReturn,
 }
 
 impl ZigType {
@@ -152,6 +157,7 @@ impl ZigType {
             ZigType::JsAny => "JsAny".to_string(),
             ZigType::JsSymbol => "JsSymbol".to_string(),
             ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
+            ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Codegen replaces with @TypeOf
         }
     }
     /// Get the Zig type string for C ABI wrapper generation.
@@ -169,6 +175,7 @@ impl ZigType {
             ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
             ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
             ZigType::BigInt => "i64".to_string(),        // C ABI: degrade to i64
+            ZigType::AnytypeReturn => "i64".to_string(), // C ABI: shouldn't be used (exports can't be AnytypeReturn)
         }
     }
 
@@ -186,7 +193,7 @@ impl ZigType {
             }
             ZigType::BigInt => Some("\"bigint\""),
             // Dynamic types — need runtime typeof helper
-            ZigType::JsAny | ZigType::Anytype => None,
+            ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn => None,
         }
     }
 }

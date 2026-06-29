@@ -242,7 +242,7 @@ function abs(x) {
         let zig = transpile_and_assert!(js, "test_native_proto_if_else");
         // Rule 7: non-export function param is anytype
         // Rule 6: return type is anytype (both return expressions have type anytype)
-        assert!(zig.contains("fn abs(x: anytype) i64 {"));
+        assert!(zig.contains("fn abs(x: anytype) @TypeOf("));
         assert!(
             zig.contains("if (x") && zig.contains(">= 0"),
             "missing if: {}",
@@ -870,7 +870,16 @@ function outer(x) {
     return inner(x);
 }
 "#;
-        let zig = transpile_and_assert!(js, "test_p2_nested_function_no_capture");
+        // Use parse_and_transpile directly to access TranspileResult errors
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        eprintln!("=== DEBUG: outer() return type ===");
+        eprintln!("{}", zig);
+        assert!(
+            result.errors.is_empty(),
+            "Unexpected errors: {:?}",
+            result.errors
+        );
         println!("=== Nested function (no capture) Zig code ===\n{}", zig);
 
         // Verify: inner function is hoisted as a struct
@@ -2373,7 +2382,7 @@ function double(x) {
 
         // Step4: verify non-async function does NOT have `io: anytype`
         assert!(
-            zig.contains("fn double(x: anytype) i64 {"),
+            zig.contains("fn double(x: anytype) @TypeOf("),
             "Expected non-async function signature, got:\n{}",
             zig
         );
@@ -4354,10 +4363,11 @@ function spreadTwo(a, b) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_spread_multi");
+        // spreadMerge appears twice: once in @TypeOf(return_expr), once in return body
         let merge_count = zig.matches("spreadMerge").count();
         assert_eq!(
-            merge_count, 1,
-            "Expected exactly 1 spreadMerge call, got {}:\n{}",
+            merge_count, 2,
+            "Expected 2 spreadMerge calls, got {}:\n{}",
             merge_count, zig
         );
     }
@@ -4371,10 +4381,12 @@ function spreadThree(a, b) {
 }
 "#;
         let zig = transpile_and_assert!(js, "test_p1_spread_multi_with_inline");
+        // spreadMerge appears twice: once in @TypeOf(return_expr), once in return body
+        // Each occurrence has 2 spreadMerge calls (nested)
         let merge_count = zig.matches("spreadMerge").count();
         assert_eq!(
-            merge_count, 2,
-            "Expected 2 spreadMerge calls, got {}:\n{}",
+            merge_count, 4,
+            "Expected 4 spreadMerge calls, got {}:\n{}",
             merge_count, zig
         );
         assert!(zig.contains(".c = 1"), "Expected .c field in:\n{}", zig);

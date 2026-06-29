@@ -2120,63 +2120,103 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MathMax => {
-                // Math.max(a, b, ...) → find maximum of all arguments
-                if ce.arguments.len() < 2 {
-                    self.errors
-                        .push("Math.max() requires at least 2 arguments".to_string());
-                    return false;
-                }
-                // Generate labeled block with loop
-                let blk = self.next_label();
-                self.write(&format!("({}: {{ var __max = @as(i64, ", blk));
-                self.emit_first_arg(&ce.arguments);
-                self.write("); ");
-                // Iterate over remaining arguments
-                for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i == 0 {
-                        continue;
+                match ce.arguments.len() {
+                    // Math.max() → -Infinity (minInt(i64))
+                    0 => {
+                        self.write("@as(i64, -9223372036854775808)");
+                        true
                     }
-                    if let Some(expr) = arg.as_expression() {
-                        self.write("if (");
-                        let arg_str = self.emit_expr_to_string(expr);
-                        self.write(&format!(
-                            "@as(i64, {}) > __max) __max = @as(i64, {}); ",
-                            arg_str, arg_str
-                        ));
+                    // Math.max(x) or Math.max(...args) → if spread, iterate; else return x
+                    1 => {
+                        let single = &ce.arguments[0];
+                        if matches!(single, Argument::SpreadElement(_)) {
+                            let blk = self.next_label();
+                            self.write(&format!(
+                                "({}: {{ var __max: i64 = @as(i64, -9223372036854775808); for (",
+                                blk
+                            ));
+                            self.emit_expr_arg(single);
+                            self.write(&format!(") |item| {{ if (item > __max) __max = item; }} break :{} __max; }})", blk));
+                        } else {
+                            self.write("@as(i64, ");
+                            self.emit_expr_arg(single);
+                            self.write(")");
+                        }
+                        true
+                    }
+                    // Math.max(a, b, ...) → find maximum of all arguments
+                    _ => {
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ var __max = @as(i64, ", blk));
+                        self.emit_first_arg(&ce.arguments);
+                        self.write("); ");
+                        for (i, arg) in ce.arguments.iter().enumerate() {
+                            if i == 0 {
+                                continue;
+                            }
+                            if let Some(expr) = arg.as_expression() {
+                                self.write("if (");
+                                let arg_str = self.emit_expr_to_string(expr);
+                                self.write(&format!(
+                                    "@as(i64, {}) > __max) __max = @as(i64, {}); ",
+                                    arg_str, arg_str
+                                ));
+                            }
+                        }
+                        self.write(&format!(" break :{} __max; }})", blk));
+                        true
                     }
                 }
-                self.write(&format!(" break :{} __max; }})", blk));
-                true
             }
 
             builtins::BuiltinCall::MathMin => {
-                // Math.min(a, b, ...) → find minimum of all arguments
-                if ce.arguments.len() < 2 {
-                    self.errors
-                        .push("Math.min() requires at least 2 arguments".to_string());
-                    return false;
-                }
-                // Generate labeled block with loop
-                let blk = self.next_label();
-                self.write(&format!("({}: {{ var __min = @as(i64, ", blk));
-                self.emit_first_arg(&ce.arguments);
-                self.write("); ");
-                // Iterate over remaining arguments
-                for (i, arg) in ce.arguments.iter().enumerate() {
-                    if i == 0 {
-                        continue;
+                match ce.arguments.len() {
+                    // Math.min() → +Infinity (maxInt(i64))
+                    0 => {
+                        self.write("@as(i64, 9223372036854775807)");
+                        true
                     }
-                    if let Some(expr) = arg.as_expression() {
-                        self.write("if (");
-                        let arg_str = self.emit_expr_to_string(expr);
-                        self.write(&format!(
-                            "@as(i64, {}) < __min) __min = @as(i64, {}); ",
-                            arg_str, arg_str
-                        ));
+                    // Math.min(x) or Math.min(...args) → if spread, iterate; else return x
+                    1 => {
+                        let single = &ce.arguments[0];
+                        if matches!(single, Argument::SpreadElement(_)) {
+                            let blk = self.next_label();
+                            self.write(&format!(
+                                "({}: {{ var __min: i64 = @as(i64, 9223372036854775807); for (",
+                                blk
+                            ));
+                            self.emit_expr_arg(single);
+                            self.write(&format!(") |item| {{ if (item < __min) __min = item; }} break :{} __min; }})", blk));
+                        } else {
+                            self.write("@as(i64, ");
+                            self.emit_expr_arg(single);
+                            self.write(")");
+                        }
+                        true
+                    }
+                    // Math.min(a, b, ...) → find minimum of all arguments
+                    _ => {
+                        let blk = self.next_label();
+                        self.write(&format!("({}: {{ var __min = @as(i64, ", blk));
+                        self.emit_first_arg(&ce.arguments);
+                        self.write("); ");
+                        for (i, arg) in ce.arguments.iter().enumerate() {
+                            if i == 0 {
+                                continue;
+                            }
+                            if let Some(expr) = arg.as_expression() {
+                                self.write("if (");
+                                let arg_str = self.emit_expr_to_string(expr);
+                                self.write(&format!(
+                                    "@as(i64, {}) < __min) __min = @as(i64, {}); ",
+                                    arg_str, arg_str
+                                ));
+                            }
+                        }
+                        self.write(&format!(" break :{} __min; }})", blk));
+                        true
                     }
                 }
-                self.write(&format!(" break :{} __min; }})", blk));
-                true
             }
 
             builtins::BuiltinCall::MathHypot => {
@@ -4050,6 +4090,11 @@ impl Codegen {
             }
             builtins::BuiltinCall::ObjectSeal => {
                 // Object.seal(obj) — no-op in Zig (simplified)
+                self.emit_first_arg(&ce.arguments);
+                true
+            }
+            builtins::BuiltinCall::ObjectPreventExtensions => {
+                // Object.preventExtensions(obj) — no-op in Zig (immutable by default)
                 self.emit_first_arg(&ce.arguments);
                 true
             }
@@ -6028,7 +6073,8 @@ impl Codegen {
                 | Some(ZigType::Bool)
                 | Some(ZigType::Str)
                 | Some(ZigType::JsSymbol)
-                | Some(ZigType::BigInt) => false,
+                | Some(ZigType::BigInt)
+                | Some(ZigType::AnytypeReturn) => false,
                 Some(ZigType::Void) | Some(ZigType::Anytype) | Some(ZigType::JsAny) => true,
                 None => true,
             },
