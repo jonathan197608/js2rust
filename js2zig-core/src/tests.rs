@@ -4798,6 +4798,66 @@ function outer(x) {
         );
     }
 
+    #[test]
+    fn test_p2_nested_function_anytype_return() {
+        // Rule 8: Nested function with anytype parameters whose return
+        // depends on those parameters should use @TypeOf() via AnytypeReturn.
+        // The nested function correctly gets @TypeOf(...) for its return type.
+        // The outer function defaults to i64 with a Rule 8 warning because
+        // AnytypeReturn cannot be propagated through call boundaries
+        // (the nested function is not visible at the return-type position).
+        let js = r#"
+function outer() {
+    function add(a, b) {
+        return a + b;
+    }
+    return add(1, 2);
+}
+"#;
+        let result = parse_and_transpile(js, None).unwrap();
+        let zig = result.zig_code;
+        println!("=== Nested function (AnytypeReturn) Zig code ===\n{}", zig);
+
+        // Verify: add's return type uses @TypeOf(return expression)
+        assert!(
+            zig.contains("@TypeOf("),
+            "Expected @TypeOf() for AnytypeReturn in:\n{}",
+            zig
+        );
+
+        // Verify: add is properly lifted as a struct
+        assert!(
+            zig.contains("const add = struct {"),
+            "Expected 'const add = struct {{' in:\n{}",
+            zig
+        );
+        assert!(
+            zig.contains("add.call("),
+            "Expected call rewriting to add.call() in:\n{}",
+            zig
+        );
+
+        // The outer function gets a Rule 8 warning because it can't propagate
+        // AnytypeReturn through the function call boundary. This is acceptable:
+        // Zig's @TypeOf can't reference variables defined inside the function body.
+        let rule8_errors: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.contains("Rule 8"))
+            .collect();
+        assert_eq!(
+            rule8_errors.len(),
+            1,
+            "Expected exactly one Rule 8 error for 'outer', got: {:?}",
+            rule8_errors
+        );
+        assert!(
+            rule8_errors[0].contains("outer"),
+            "Rule 8 error should mention 'outer': {:?}",
+            rule8_errors
+        );
+    }
+
     // ── Class transpilation tests ────────────────────────────
 
     #[test]

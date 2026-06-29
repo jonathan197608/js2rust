@@ -57,6 +57,9 @@ impl Codegen {
             class_names: std::collections::HashSet::new(),
             source,
             label_counter: 0,
+            fn_scope_vars: std::collections::HashSet::new(),
+            shadow_renames: Vec::new(),
+            shadow_counter: 0,
         }
     }
 }

@@ -74,7 +74,15 @@ pub(crate) fn zig_safe_name(name: &str) -> String {
 
 impl Codegen {
     /// Convenience method: convert a JS identifier to a Zig-safe identifier.
+    /// Also checks `shadow_renames` to rewrite shadowed variables to their
+    /// renamed counterpart (e.g. `x` → `x_1` if shadowed in a nested block).
     pub(crate) fn zig_safe_name(&self, name: &str) -> String {
+        // Check shadow renames from innermost scope outward.
+        for scope in self.shadow_renames.iter().rev() {
+            if let Some(renamed) = scope.get(name) {
+                return renamed.clone();
+            }
+        }
         zig_safe_name(name)
     }
 

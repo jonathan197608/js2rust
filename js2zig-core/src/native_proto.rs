@@ -453,4 +453,14 @@ pub struct Codegen {
     /// Prevents "redefinition of label" errors when multiple block expressions
     /// appear in the same scope.
     pub label_counter: u32,
+    /// Set of variable names declared in the current function scope.
+    /// Used to detect shadowing in nested blocks (Zig 0.16.0 forbids it).
+    pub fn_scope_vars: std::collections::HashSet<String>,
+    /// Stack of shadowing rename maps: one HashMap per block scope depth.
+    /// When a shadowed variable is declared, its original name → renamed name
+    /// mapping is stored in the topmost HashMap. `zig_safe_name()` checks this
+    /// stack to rewrite references to the renamed variable.
+    pub shadow_renames: Vec<std::collections::HashMap<String, String>>,
+    /// Counter for generating unique renamed variable names when shadowing occurs.
+    pub shadow_counter: u32,
 }
