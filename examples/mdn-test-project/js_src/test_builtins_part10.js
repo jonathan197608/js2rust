@@ -10,8 +10,8 @@ function test_builtins_part10() {
           value !== null &&
           typeof value === "object" &&
           "$bigint" in value &&
-          typeof value.$bigint === "string"
-            ? BigInt(value.$bigint)
+          typeof value["$bigint"] === "string"
+            ? BigInt(value["$bigint"])
             : value;
 
         const payload = '{"number":1,"big":{"$bigint":"18014398509481982"}}';

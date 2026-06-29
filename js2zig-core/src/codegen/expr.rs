@@ -916,9 +916,11 @@ impl Codegen {
                 self.emit_bigint_binary(be);
             } else {
                 // JS throws TypeError at runtime when mixing BigInt and other types.
-                // Use @panic so the surrounding block remains valid Zig code.
+                // Use a parenthesized if-expression with noreturn coercion so that
+                // @panic does not make subsequent statements unreachable at compile
+                // time (Zig treats bare @panic as noreturn, blocking later code).
                 self.write(
-                    "@panic(\"TypeError: Cannot mix BigInt and other types, use explicit conversions\")",
+                    "(if (true) @panic(\"TypeError: Cannot mix BigInt and other types, use explicit conversions\") else {})",
                 );
             }
             return;
@@ -3856,9 +3858,15 @@ impl Codegen {
             builtins::BuiltinCall::DateToJSON => {
                 // date.toJSON() → obj.toJSON(alloc)
                 if ce.arguments.is_empty() {
-                    self.write("(");
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(").toJSON(alloc)");
+                    if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                        self.emit_expr(&mem.object);
+                        self.write(".toJSON(js_allocator.getAllocator())");
+                    } else {
+                        self.compile_error(
+                            ce.span,
+                            "Date.toJSON() called on non-static-member expression",
+                        );
+                    }
                 } else {
                     self.compile_error(ce.span, "Date.toJSON() takes no arguments");
                 }
@@ -3867,9 +3875,15 @@ impl Codegen {
             builtins::BuiltinCall::DateValueOf => {
                 // date.valueOf() → obj.valueOf()
                 if ce.arguments.is_empty() {
-                    self.write("(");
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(").valueOf()");
+                    if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                        self.emit_expr(&mem.object);
+                        self.write(".valueOf()");
+                    } else {
+                        self.compile_error(
+                            ce.span,
+                            "Date.valueOf() called on non-static-member expression",
+                        );
+                    }
                 } else {
                     self.compile_error(ce.span, "Date.valueOf() takes no arguments");
                 }
