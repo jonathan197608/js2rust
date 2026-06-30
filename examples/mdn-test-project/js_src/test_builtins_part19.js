@@ -1,114 +1,105 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 180-189)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 193-202)
+// Generated: 2026-06-30
 
 function test_builtins_part19() {
-    let condition = true;
-    let done = true;
-// ---- fragment 180 ----
-    try {{
-        JSON.parse('{"foo": 01}');
-        // SyntaxError: JSON.parse: expected ',' or '}' after property value
-        // in object at line 1 column 2 of the JSON data
-
-        JSON.parse('{"foo": 1.}');
-        // SyntaxError: JSON.parse: unterminated fractional number
-        // at line 1 column 2 of the JSON data
+// ---- fragment 193 ----
+try {{
+        const obj = {
+          a: 1,
+          b: { myProp: 2 },
+          c: 3,
+        };
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 180 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 193 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 181 ----
-    try {{
-        JSON.parse('{"foo": 1}');
-        JSON.parse('{"foo": 1.0}');
+// ---- fragment 194 ----
+try {{
+        const COLUMNS = 80;
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 181 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 194 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 182 ----
-    try {{
-        start: {
-          console.log("Hello, world!");
-          if (Math.random() > 0.5) {
-            break start;
-          }
-          console.log("Maybe I'm logged");
+// ---- fragment 195 ----
+try {{
+        let columns;
+    }} catch (e) {{
+        console.error(`[test_builtins_part19] fragment 195 error: ${e.message}`);
+    }}
+
+// ---- fragment 196 ----
+try {{
+        function square(number) {
+          return number * number;
+        }
+
+        function greet(greeting) {
+          return greeting;
+        }
+
+        function log(arg) {
+          console.log(arg);
         }
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 182 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 196 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 183 ----
-    try {{
-        console.log("PI: " + Math.PI);
-        // "PI: 3.141592653589793"
+// ---- fragment 197 ----
+try {{
+        square(2); // 4
+
+        greet("Howdy"); // "Howdy"
+
+        log({ obj: "value" }); // { obj: "value" }
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 183 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 197 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 184 ----
-    try {{
-        console.log(`PI: ${Math.PI}`);
-        console.log("PI:", Math.PI);
+// ---- fragment 198 ----
+try {{
+        obj.foo.bar; // "baz"
+        // or alternatively
+        obj["foo"]["bar"]; // "baz"
+
+        // computed properties require square brackets
+        obj.foo["bar" + i]; // "baz2"
+        // or as template literal
+        obj.foo[`bar${i}`]; // "baz2"
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 184 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 198 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 185 ----
-    try {{
-        console.log('"Java" + "Script" = "' + "Java" + 'Script"');
-        // '"Java" + "Script" = "JavaScript"'
+// ---- fragment 199 ----
+try {{
+        console.log("Hello" + "World");
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 185 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 199 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 186 ----
-    try {{
-        if (condition) {
-          // do something if the condition is true
-        }
+// ---- fragment 200 ----
+try {{
+        // Matches two characters that are not an emoji flag sequence
+        /(?!\p{RGI_Emoji_Flag_Sequence})../v;
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 186 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 200 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 187 ----
-    try {{
-        if (Math.PI < 3) {
-          console.log("wait what?");
-        }
+// ---- fragment 201 ----
+try {{
+        /b+/; // b is a character, it can be repeated
+        /(\*hello\*)/; // Escape the asterisks to match them literally
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 187 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 201 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 188 ----
-    try {{
-        if (done === true) {
-          console.log("we are done!");
-        }
+// ---- fragment 202 ----
+try {{
+        /1{1,2}/;
     }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 188 error: ${e.message}`);
+        console.error(`[test_builtins_part19] fragment 202 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 189 ----
-    try {{
-        if (done) {
-          console.log("we are done!");
-        }
-    }} catch (e) {{
-        console.error(`[test_builtins_part19] fragment 189 error: ${e.message}`);
-    }}
-
-    
 }
 module.exports = { test_builtins_part19 };

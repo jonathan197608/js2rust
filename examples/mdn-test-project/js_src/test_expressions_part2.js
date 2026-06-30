@@ -1,14 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 10-19)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part2() {
-    let x = 1;
-    let y = 2;
-    let bCondition = true;
 // ---- fragment 10 ----
-    try {{
+try {{
         ~0; // -1
         ~-1; // 0
         ~1; // -2
@@ -19,9 +16,8 @@ function test_expressions_part2() {
         console.error(`[test_expressions_part2] fragment 10 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 11 ----
-    try {{
+try {{
         const a = 3;
         const b = -2;
 
@@ -30,17 +26,15 @@ function test_expressions_part2() {
         console.error(`[test_expressions_part2] fragment 11 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 12 ----
-    try {{
+try {{
         !x
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 12 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 13 ----
-    try {{
+try {{
         !true; // !t returns false
         !false; // !f returns true
         !""; // !f returns true
@@ -49,25 +43,22 @@ function test_expressions_part2() {
         console.error(`[test_expressions_part2] fragment 13 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 14 ----
-    try {{
+try {{
         !!bCondition
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 14 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 15 ----
-    try {{
+try {{
         bCondition
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 15 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 16 ----
-    try {{
+try {{
         console.log(3 ** 4);
 
         console.log(10 ** -2);
@@ -79,17 +70,15 @@ function test_expressions_part2() {
         console.error(`[test_expressions_part2] fragment 16 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 17 ----
-    try {{
+try {{
         x ** y
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 17 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 18 ----
-    try {{
+try {{
         2 ** 3; // 8
         3 ** 2; // 9
         3 ** 2.5; // 15.588457268119896
@@ -102,15 +91,13 @@ function test_expressions_part2() {
         console.error(`[test_expressions_part2] fragment 18 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 19 ----
-    try {{
+try {{
         2 ** "3"; // 8
         2 ** "hello"; // NaN
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 19 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part2 };

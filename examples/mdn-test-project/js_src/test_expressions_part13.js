@@ -1,13 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 120-129)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part13() {
-    let x = 14;
-    let y = 9;
 // ---- fragment 120 ----
-    try {{
+try {{
         // 9  (00000000000000000000000000001001)
         // 14 (00000000000000000000000000001110)
 
@@ -19,9 +17,8 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 120 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 121 ----
-    try {{
+try {{
         const a = 5; // 00000000000000000000000000000101
         const b = 3; // 00000000000000000000000000000011
 
@@ -30,26 +27,23 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 121 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 122 ----
-    try {{
+try {{
         x | y
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 122 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 123 ----
-    try {{
-        // Before: 11100110111110100000000000000110000000000001
-        // After:              10100000000000000110000000000001
+try {{
+        Before: 11100110111110100000000000000110000000000001
+        After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 123 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 124 ----
-    try {{
+try {{
         // 9  (00000000000000000000000000001001)
         // 14 (00000000000000000000000000001110)
 
@@ -61,9 +55,8 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 124 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 125 ----
-    try {{
+try {{
         const a = 5; // 00000000000000000000000000000101
         const b = 3; // 00000000000000000000000000000011
 
@@ -72,26 +65,23 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 125 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 126 ----
-    try {{
+try {{
         x ^ y
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 126 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 127 ----
-    try {{
-        // Before: 11100110111110100000000000000110000000000001
-        // After:              10100000000000000110000000000001
+try {{
+        Before: 11100110111110100000000000000110000000000001
+        After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 127 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 128 ----
-    try {{
+try {{
         // 9  (00000000000000000000000000001001)
         // 14 (00000000000000000000000000001110)
 
@@ -103,9 +93,8 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 128 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 129 ----
-    try {{
+try {{
         const a = 3;
         const b = -2;
 
@@ -114,6 +103,5 @@ function test_expressions_part13() {
         console.error(`[test_expressions_part13] fragment 129 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part13 };

@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 90-99)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part10() {
 // ---- fragment 90 ----
-    try {{
+try {{
         "1" != 1; // false
         1 != "1"; // false
         0 != false; // false
@@ -15,17 +15,16 @@ function test_expressions_part10() {
         0 != !!undefined; // false, look at Logical NOT operator
         null != undefined; // false
 
-        const number1 = 3;
-        const number2 = 3;
+        const number1 = new Number(3);
+        const number2 = new Number(3);
         number1 != 3; // false
         number1 != number2; // true
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 90 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 91 ----
-    try {{
+try {{
         const object1 = {
           key: "value",
         };
@@ -40,9 +39,8 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 91 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 92 ----
-    try {{
+try {{
         console.log(1 === 1);
 
         console.log("hello" === "hello");
@@ -54,18 +52,15 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 92 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 93 ----
-    try {{
-        const x = 0; const y = 0;
+try {{
         x === y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 93 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 94 ----
-    try {{
+try {{
         "hello" === "hello"; // true
         "hello" === "hola"; // false
 
@@ -80,9 +75,8 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 94 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 95 ----
-    try {{
+try {{
         "3" === 3; // false
         true === 1; // false
         null === undefined; // false
@@ -91,9 +85,8 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 95 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 96 ----
-    try {{
+try {{
         const object1 = {
           key: "value",
         };
@@ -108,9 +101,8 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 96 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 97 ----
-    try {{
+try {{
         console.log(1 !== 1);
 
         console.log("hello" !== "hello");
@@ -122,19 +114,15 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 97 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 98 ----
-    try {{
-        const x = 0; const y = 0;
+try {{
         x !== y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 98 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 99 ----
-    try {{
-        const x = 0; const y = 0;
+try {{
         x !== y;
 
         !(x === y);
@@ -142,6 +130,5 @@ function test_expressions_part10() {
         console.error(`[test_expressions_part10] fragment 99 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part10 };

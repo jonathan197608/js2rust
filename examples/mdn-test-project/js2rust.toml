@@ -4,14 +4,12 @@ additional_js_files = [
     "js_src/test_minimal.js",
     "js_src/test_simple_ternary.js",
     "js_src/test_ternary_concat.js",
-
-    # === Statements (5 parts, 44 fragments) ===
+    # === Statements (5 parts, 42 fragments) ===
     "js_src/test_statements_part1.js",
     "js_src/test_statements_part2.js",
     "js_src/test_statements_part3.js",
     "js_src/test_statements_part4.js",
     "js_src/test_statements_part5.js",
-
     # === Expressions (17 parts, 168 fragments) ===
     "js_src/test_expressions_part1.js",
     "js_src/test_expressions_part2.js",
@@ -30,8 +28,7 @@ additional_js_files = [
     "js_src/test_expressions_part15.js",
     "js_src/test_expressions_part16.js",
     "js_src/test_expressions_part17.js",
-
-    # === Builtins (23 parts, 228 fragments) ===
+    # === Builtins (22 parts, 215 fragments) ===
     "js_src/test_builtins_part1.js",
     "js_src/test_builtins_part2.js",
     "js_src/test_builtins_part3.js",
@@ -54,5 +51,4 @@ additional_js_files = [
     "js_src/test_builtins_part20.js",
     "js_src/test_builtins_part21.js",
     "js_src/test_builtins_part22.js",
-    "js_src/test_builtins_part23.js",
 ]

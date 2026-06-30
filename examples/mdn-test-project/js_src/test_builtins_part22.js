@@ -1,117 +1,59 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 210-219)
-// Generated: 2026-06-28
+// Fragments: 5 (fragment 223-227)
+// Generated: 2026-06-30
 
 function test_builtins_part22() {
-// ---- fragment 210 ----
-    try {{
-        function cheer(score) {
-          if (score === 147) {
-            return "Maximum!";
-          }
-          if (score > 100) {
-            return "Century!";
-          }
-          return "Good effort";
-        }
+// ---- fragment 223 ----
+try {{
+        "abc".match(/./); // [ "a" ]
+        "abc".replace(/./, "f"); // "fbc"
 
-        console.log(cheer(147));
-        console.log(cheer(120));
+        [..././[Symbol.matchAll]("abc")]; // [[ "a" ]]
     }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 210 error: ${e.message}`);
+        console.error(`[test_builtins_part22] fragment 223 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 211 ----
-    try {{
-        const a = 2;
-        const b = 3;
-        const r1 = (-a) ** b;
-        const r2 = -(a ** b);
-        console.log(r1);
-        console.log(r2);
+// ---- fragment 224 ----
+try {{
+        null.foo;
+        // TypeError: null has no properties
+
+        undefined.bar;
+        // TypeError: undefined has no properties
     }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 211 error: ${e.message}`);
+        console.error(`[test_builtins_part22] fragment 224 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 212 ----
-    try {{
-        function taylorSin(x) {
-          return x - (x * x * x) / 6;
-        }
+// ---- fragment 225 ----
+try {{
+        encodeURI("\uD800");
+        // "URIError: malformed URI sequence"
 
-        console.log(taylorSin(1));
+        encodeURI("\uDFFF");
+        // "URIError: malformed URI sequence"
     }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 212 error: ${e.message}`);
+        console.error(`[test_builtins_part22] fragment 225 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 213 ----
-    try {{
-        const warning1 = "Using //@ to indicate sourceURL pragmas is deprecated. Use //# instead";
-        const warning2 = "Using //@ to indicate sourceMappingURL pragmas is deprecated. Use //# instead";
-        console.log(warning1);
-        console.log(warning2);
+// ---- fragment 226 ----
+try {{
+        encodeURI("\uD800\uDFFF");
+        // "%F0%90%8F%BF"
     }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 213 error: ${e.message}`);
+        console.error(`[test_builtins_part22] fragment 226 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 214 ----
-    try {{
-        const obj1 = { key: 1 };
-        console.log(obj1.key);
+// ---- fragment 227 ----
+try {{
+        decodeURIComponent("%E0%A4%A");
+        // "URIError: malformed URI sequence"
     }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 214 error: ${e.message}`);
+        console.error(`[test_builtins_part22] fragment 227 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 215 ----
-    try {{
-        const obj2 = { key: "foo" };
-        console.log(obj2.key);
-    }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 215 error: ${e.message}`);
-    }}
+}
+module.exports = { testBuiltins };
 
-    
-// ---- fragment 216 ----
-    try {{
-        const proto = {};
-        console.log(proto);
-    }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 216 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 217 ----
-    try {{
-        const obj3 = {};
-        console.log(obj3);
-    }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 217 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 218 ----
-    try {{
-        const circularReference = { otherData: 123 };
-        circularReference.myself = circularReference;
-        console.log(circularReference.otherData);
-    }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 218 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 219 ----
-    try {{
-        console.log("circular reference test");
-    }} catch (e) {{
-        console.error(`[test_builtins_part22] fragment 219 error: ${e.message}`);
-    }}
-
-    
 }
 module.exports = { test_builtins_part22 };

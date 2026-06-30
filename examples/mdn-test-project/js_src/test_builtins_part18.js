@@ -1,105 +1,103 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 170-179)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 183-192)
+// Generated: 2026-06-30
 
 function test_builtins_part18() {
-// ---- fragment 170 ----
-    try {{
-        /\p{Script=Latin}/u; // "Script=Latin" is a valid Unicode property
-        /\p{Letter}/u; // "Letter" is valid value for General_Category
-        /\p{RGI_Emoji_Flag_Sequence}/v; // Property of strings can only be used in "v" mode
+// ---- fragment 183 ----
+try {{
+        console.log("PI: " + Math.PI);
+        // "PI: 3.141592653589793"
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 170 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 183 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 171 ----
-    try {{
-        /[1-9]/; // Swap the range
-        /[_\-=]/; // Escape the hyphen so it matches the literal character
+// ---- fragment 184 ----
+try {{
+        console.log(`PI: ${Math.PI}`);
+        console.log("PI:", Math.PI);
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 171 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 184 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 172 ----
-    try {{
-        const re = new RegExp("pattern", "flags");
-        console.log(re);
+// ---- fragment 185 ----
+try {{
+        console.log('"Java" + "Script" = "' + "Java" + 'Script"');
+        // '"Java" + "Script" = "JavaScript"'
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 172 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 185 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 173 ----
-    try {{
-        /foo/g;
-        /foo/gims;
-        /foo/uy;
+// ---- fragment 186 ----
+try {{
+        if (condition) {
+          // do something if the condition is true
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 173 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 186 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 174 ----
-    try {{
-        const obj = {
-          url: "/docs/Web",
-        };
-        console.log(obj);
+// ---- fragment 187 ----
+try {{
+        if (Math.PI < 3) {
+          console.log("wait what?");
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 174 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 187 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 175 ----
-    try {{
-        /\u0065/u; // Lowercase "e"
-        /\u{1f600}/u; // Grinning face emoji
-        /\cA/u; // U+0001 (Start of Heading)
+// ---- fragment 188 ----
+try {{
+        if (done === true) {
+          console.log("we are done!");
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 175 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 188 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 176 ----
-    try {{
-        JSON.parse("[1, 2, 3, 4,]");
-        JSON.parse('{"foo": 1,}');
-        // SyntaxError JSON.parse: unexpected character
-        // at line 1 column 14 of the JSON data
+// ---- fragment 189 ----
+try {{
+        if (done) {
+          console.log("we are done!");
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 176 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 189 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 177 ----
-    try {{
-        JSON.parse("[1, 2, 3, 4]");
-        JSON.parse('{"foo": 1}');
+// ---- fragment 190 ----
+try {{
+        const list = [1, 2];
+
+        const instruments = ["Ukulele", "Guitar", "Piano"];
+
+        const data = [{ foo: "bar" }, { bar: "foo" }];
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 177 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 190 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 178 ----
-    try {{
-        JSON.parse("{'foo': 1}");
-        // SyntaxError: JSON.parse: expected property name or '}'
-        // at line 1 column 2 of the JSON data
+// ---- fragment 191 ----
+try {{
+        function charge() {
+          if (sunny) {
+            useSolarCells();
+          } else {
+            promptBikeRide();
+          }
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 178 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 191 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 179 ----
-    try {{
-        JSON.parse('{"foo": 1}');
+// ---- fragment 192 ----
+try {{
+        (function () {
+          if (Math.random() < 0.01) {
+            doSomething();
+          }
+        })();
     }} catch (e) {{
-        console.error(`[test_builtins_part18] fragment 179 error: ${e.message}`);
+        console.error(`[test_builtins_part18] fragment 192 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_builtins_part18 };

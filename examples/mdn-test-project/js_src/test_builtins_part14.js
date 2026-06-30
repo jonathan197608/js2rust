@@ -1,147 +1,110 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 130-139)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 143-152)
+// Generated: 2026-06-30
 
 function test_builtins_part14() {
-// ---- fragment 130 ----
-    try {{
-        /a*/.exec("aaa"); // ['aaa']; the entire input is consumed
-        /a*?/.exec("aaa"); // ['']; it's possible to consume no characters and still match successfully
-        /^a*?$/.exec("aaa"); // ['aaa']; it's not possible to consume fewer characters and still match successfully
+// ---- fragment 143 ----
+try {{
+        const invalid = new Date("nothing");
+        invalid.toISOString(); // RangeError: invalid date
+        invalid.toJSON(); // RangeError: invalid date
+        JSON.stringify({ date: invalid }); // RangeError: invalid date
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 130 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 143 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 131 ----
-    try {{
-        /a*?$/.exec("aaa"); // ['aaa']; the match already succeeds at the first character, so the regex never attempts to start matching at the second character
+// ---- fragment 144 ----
+try {{
+        invalid.toString(); // "Invalid Date"
+        invalid.getDate(); // NaN
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 131 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 144 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 132 ----
-    try {{
-        /[ab]+[abc]c/.exec("abbc"); // ['abbc']
+// ---- fragment 145 ----
+try {{
+        new Date("05 October 2011 14:48 UTC").toISOString(); // "2011-10-05T14:48:00.000Z"
+        new Date(1317826080).toISOString(); // "2011-10-05T14:48:00.000Z"
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 132 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 145 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 133 (SKIPPED: host.regex_test requires host.zig) ----
-    // try {{
-    //     /(?=a)?b/.test("b"); // true; the lookahead is matched 0 time
-    // }} catch (e) {{
-    //     console.error(`[test_builtins_part14] fragment 133 error: ${e.message}`);
-    // }}
+// ---- fragment 146 ----
+try {{
+        (77.1234).toExponential(-1); // RangeError
+        (77.1234).toExponential(101); // RangeError
 
-    
-// ---- fragment 134 ----
-    try {{
-        function countParagraphs(str) {
-          return str.match(/(?:\r?\n){2,}/g).length + 1;
-        }
+        (2.34).toFixed(-100); // RangeError
+        (2.34).toFixed(1001); // RangeError
 
-        countParagraphs(`
-        Paragraph 1
-
-        Paragraph 2
-        Containing some line breaks, but still the same paragraph
-
-        Another paragraph
-        `); // 3
+        (1234.5).toPrecision(-1); // RangeError
+        (1234.5).toPrecision(101); // RangeError
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 134 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 146 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 135 ----
-    try {{
-        // finding all the letters of a text
-        const story = "It's the Cheshire Cat: now I shall have somebody to talk to.";
+// ---- fragment 147 ----
+try {{
+        (77.1234).toExponential(4); // 7.7123e+1
+        (77.1234).toExponential(2); // 7.71e+1
 
-        // Most explicit form
-        story.match(/\p{General_Category=Letter}/gu);
+        (2.34).toFixed(1); // 2.3
+        (2.35).toFixed(1); // 2.4 (note that it rounds up in this case)
 
-        // It is not mandatory to use the property name for General categories
-        story.match(/\p{Letter}/gu);
-
-        // This is equivalent (short alias):
-        story.match(/\p{L}/gu);
-
-        // This is also equivalent (conjunction of all the subcategories using short aliases)
-        story.match(/\p{Lu}|\p{Ll}|\p{Lt}|\p{Lm}|\p{Lo}/gu);
+        (5.123456).toPrecision(5); // 5.1235
+        (5.123456).toPrecision(2); // 5.1
+        (5.123456).toPrecision(1); // 5
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 135 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 147 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 136 ----
-    try {{
-        // Ù¢ is the digit 2 in Arabic-Indic notation
-        // while it is predominantly written within the Arabic script
-        // it can also be written in the Thaana script
-
-        "Ù¢".match(/\p{Script=Thaana}/u);
-        // null as Thaana is not the predominant script
-
-        "Ù¢".match(/\p{Script_Extensions=Thaana}/u);
-        // ["Ù¢", index: 0, input: "Ù¢", groups: undefined]
+// ---- fragment 148 ----
+try {{
+        (42).toString(0);
+        (42).toString(1);
+        (42).toString(37);
+        (42).toString(150);
+        // You cannot use a string like this for formatting:
+        (12071989).toString("MM-dd-yyyy");
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 136 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 148 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 137 ----
-    try {{
-        /\ba/.exec("abc");
-        /c\b/.exec("abc");
-
-        /\B /.exec(" abc");
-        / \B/.exec("abc ");
+// ---- fragment 149 ----
+try {{
+        (42).toString(2); // "101010" (binary)
+        (13).toString(8); // "15" (octal)
+        (0x42).toString(10); // "66" (decimal)
+        (100000).toString(16); // "186a0" (hexadecimal)
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 137 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 149 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 138 (SKIPPED: host.regex_test requires host.zig) ----
-    // try {{
-    //     function hasThanks(str) {
-    //       return /\b(thanks|thank you)\b/i.test(str);
-    //     }
-    //
-    //     hasThanks("Thanks! You helped me a lot."); // true
-    //     hasThanks("Just want to say thank you for all your work."); // true
-    //     hasThanks("Thanksgiving is around the corner."); // false
-    // }} catch (e) {{
-    //     console.error(`[test_builtins_part14] fragment 138 error: ${e.message}`);
-    // }}
-
-    
-// ---- fragment 139 ----
-    try {{
-        var a = 2;
-        try {
-          throw new Error();
-        } catch (_a) {
-          a = 1; // Direct assignment to outer a (no var redeclaration to avoid Zig shadowing)
-        }
-        console.log(a); // 1
-
-        try {
-          throw new Error();
-          // Note: identifier changed to `err` to avoid conflict with
-          // the inner declaration of `a`.
-        } catch (err) {
-          a = 1; // Direct assignment to outer a
-        }
-        console.log(a); // 1
+// ---- fragment 150 ----
+try {{
+        "abc".repeat(Infinity); // RangeError
+        "a".repeat(2 ** 30); // RangeError
     }} catch (e) {{
-        console.error(`[test_builtins_part14] fragment 139 error: ${e.message}`);
+        console.error(`[test_builtins_part14] fragment 150 error: ${e.message}`);
     }}
 
-    
+// ---- fragment 151 ----
+try {{
+        "abc".repeat(0); // ''
+        "abc".repeat(1); // 'abc'
+        "abc".repeat(2); // 'abcabc'
+        "abc".repeat(3.5); // 'abcabcabc' (count will be converted to integer)
+    }} catch (e) {{
+        console.error(`[test_builtins_part14] fragment 151 error: ${e.message}`);
+    }}
+
+// ---- fragment 152 ----
+try {{
+        "abc".repeat(-1); // RangeError
+    }} catch (e) {{
+        console.error(`[test_builtins_part14] fragment 152 error: ${e.message}`);
+    }}
+
 }
 module.exports = { test_builtins_part14 };

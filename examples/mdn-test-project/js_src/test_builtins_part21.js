@@ -1,129 +1,123 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 200-209)
-// Generated: 2026-06-28
-// Note: RegExp literals simplified to string literals
+// Fragments: 10 (fragment 213-222)
+// Generated: 2026-06-30
 
 function test_builtins_part21() {
-// ---- fragment 200 ----
-    try {{
-        const regexStr = "emoji flag sequence";
-        console.log(regexStr);
+// ---- fragment 213 ----
+try {{
+        Warning: SyntaxError: Using //@ to indicate sourceURL pragmas is deprecated. Use //# instead
+
+        Warning: SyntaxError: Using //@ to indicate sourceMappingURL pragmas is deprecated. Use //# instead
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 200 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 213 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 201 ----
-    try {{
-        const r1 = "b+";
-        const r2 = "*hello*";
-        console.log(r1);
-        console.log(r2);
+// ---- fragment 214 ----
+try {{
+        Object.defineProperty({}, "key", 1);
+        // TypeError: 1 is not a non-null object
+
+        Object.defineProperty({}, "key", null);
+        // TypeError: null is not a non-null object
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 201 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 214 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 202 ----
-    try {{
-        const r3 = "1{1,2}";
-        console.log(r3);
+// ---- fragment 215 ----
+try {{
+        Object.defineProperty({}, "key", { value: "foo", writable: false });
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 202 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 215 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 203 ----
-    try {{
-        const copyright = "\xA9";
-        console.log(copyright);
+// ---- fragment 216 ----
+try {{
+        Object.setPrototypeOf(Object.prototype, {});
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 203 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 216 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 204 ----
-    try {{
-        const raw = "\\251";
-        console.log(raw);
+// ---- fragment 217 ----
+try {{
+        const obj = {};
+        Object.preventExtensions(obj);
+        Object.setPrototypeOf(obj, {});
+        // TypeError: can't set prototype of this object
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 204 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 217 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 205 ----
-    try {{
-        function replacer(match) {
-          const offset = 0;
-          console.log(match);
-          return offset;
+// ---- fragment 218 ----
+try {{
+        const circularReference = { otherData: 123 };
+        circularReference.myself = circularReference;
+    }} catch (e) {{
+        console.error(`[test_builtins_part21] fragment 218 error: ${e.message}`);
+    }}
+
+// ---- fragment 219 ----
+try {{
+        JSON.stringify(circularReference);
+        // TypeError: cyclic object value
+    }} catch (e) {{
+        console.error(`[test_builtins_part21] fragment 219 error: ${e.message}`);
+    }}
+
+// ---- fragment 220 ----
+try {{
+        function getCircularReplacer() {
+          const ancestors = [];
+          return function (key, value) {
+            if (typeof value !== "object" || value === null) {
+              return value;
+            }
+            // `this` is the object that value is contained in,
+            // i.e., its direct parent.
+            while (ancestors.length > 0 && ancestors.at(-1) !== this) {
+              ancestors.pop();
+            }
+            if (ancestors.includes(value)) {
+              return "[Circular]";
+            }
+            ancestors.push(value);
+            return value;
+          };
         }
 
-        console.log(replacer("test"));
+        JSON.stringify(circularReference, getCircularReplacer());
+        // {"otherData":123,"myself":"[Circular]"}
+
+        const o = {};
+        const notCircularReference = [o, o];
+        JSON.stringify(notCircularReference, getCircularReplacer());
+        // [{},{}]
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 205 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 220 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 206 ----
-    try {{
-        const obj = { __proto__: { a: 1 } };
-        console.log(obj.a);
-
-        const __proto__ = 0;
-        console.log(__proto__);
-
-        const obj2 = {
-          ["__proto__"]: {},
-        };
-        console.log(obj2);
+// ---- fragment 221 ----
+try {{
+        "abc".matchAll(/./); // TypeError
+        "abc".replaceAll(/./, "f"); // TypeError
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 206 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 221 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 207 ----
-    try {{
-        const macro = "MDN_Macro";
-        const sic = "sic";
-        console.log(macro);
-        console.log(sic);
+// ---- fragment 222 ----
+try {{
+        [..."abc".matchAll(/./g)]; // [[ "a" ], [ "b" ], [ "c" ]]
+        "abc".replaceAll(/./g, "f"); // "fff"
+
+        const existingPattern = /./;
+        const newPattern = new RegExp(
+          existingPattern.source,
+          `${existingPattern.flags}g`,
+        );
+        "abc".replaceAll(newPattern, "f"); // "fff"
     }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 207 error: ${e.message}`);
+        console.error(`[test_builtins_part21] fragment 222 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 208 ----
-    try {{
-        function f(arg) {
-          arg = "foo";
-          return arg;
-        }
-
-        function g(arg) {
-          let bar = "foo";
-          return bar;
-        }
-
-        console.log(f("test"));
-        console.log(g("test"));
-    }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 208 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 209 ----
-    try {{
-        function doSomething(...args) {
-          console.log(args.length);
-        }
-
-        doSomething(1, 2, 3);
-    }} catch (e) {{
-        console.error(`[test_builtins_part21] fragment 209 error: ${e.message}`);
-    }}
-
-    
 }
 module.exports = { test_builtins_part21 };

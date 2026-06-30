@@ -1,13 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 80-89)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part9() {
-    let x = 3;
-    let y = 5;
 // ---- fragment 80 ----
-    try {{
+try {{
         "5" >= 3; // true
         "3" >= 3; // true
         "3" >= 5; // false
@@ -18,9 +16,8 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 80 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 81 ----
-    try {{
+try {{
         5 >= 3; // true
         3 >= 3; // true
         3 >= 5; // false
@@ -28,17 +25,17 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 81 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 82 ----
-    try {{
-        5n >= 3; // TypeError: Cannot mix BigInt and other types
+try {{
+        5n >= 3; // true
+        3 >= 3n; // true
+        3 >= 5n; // false
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 82 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 83 ----
-    try {{
+try {{
         true >= false; // true
         true >= true; // true
         false >= true; // false
@@ -58,9 +55,8 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 83 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 84 ----
-    try {{
+try {{
         console.log(1 != 1);
 
         console.log("hello" != "hello");
@@ -72,17 +68,15 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 84 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 85 ----
-    try {{
+try {{
         x != y
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 85 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 86 ----
-    try {{
+try {{
         x != y;
 
         !(x == y);
@@ -90,25 +84,22 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 86 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 87 ----
-    try {{
+try {{
         3 != "3"; // false
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 87 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 88 ----
-    try {{
+try {{
         3 !== "3"; // true
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 88 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 89 ----
-    try {{
+try {{
         1 != 2; // true
         "hello" != "hola"; // true
 
@@ -118,6 +109,5 @@ function test_expressions_part9() {
         console.error(`[test_expressions_part9] fragment 89 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part9 };

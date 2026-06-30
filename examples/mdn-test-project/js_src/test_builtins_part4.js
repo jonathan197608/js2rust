@@ -1,56 +1,50 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
 // Fragments: 10 (fragment 30-39)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_builtins_part4() {
-    let encodedURI = "https://developer.mozilla.org/docs/JavaScript%3A%20a_scripting_language";
 // ---- fragment 30 ----
-    try {{
+try {{
         parseInt("900719925474099267n");
         // 900719925474099300
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 30 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 31 ----
-    try {{
+try {{
         BigInt("900719925474099267");
         // 900719925474099267n
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 31 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 32 ----
-    try {{
+try {{
         parseInt("123_456"); // 123
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 32 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 33 ----
-    try {{
+try {{
         parseInt(null, 36); // 1112745: The string "null" is 1112745 in base 36
         parseInt(undefined, 36); // 86464843759093: The string "undefined" is 86464843759093 in base 36
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 33 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 34 ----
-    try {{
+try {{
         parseInt(15.99, 10); // 15
         parseInt(-15.1, 10); // -15
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 34 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 35 ----
-    try {{
+try {{
         parseInt(4.7 * 1e22, 10); // Very large number becomes 4
         parseInt(0.00000000000434, 10); // Very small number becomes 4
 
@@ -64,17 +58,15 @@ function test_builtins_part4() {
         console.error(`[test_builtins_part4] fragment 35 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 36 ----
-    try {{
+try {{
         decodeURI(encodedURI)
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 36 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 37 ----
-    try {{
+try {{
         decodeURI(
           "https://developer.mozilla.org/docs/JavaScript%3A%20a_scripting_language",
         );
@@ -88,12 +80,10 @@ function test_builtins_part4() {
         console.error(`[test_builtins_part4] fragment 37 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 38 ----
-    try {{
+try {{
         try {
           const a = decodeURI("%E0%A4%A");
-          console.log(a);
         } catch (e) {
           console.error(e);
         }
@@ -103,14 +93,12 @@ function test_builtins_part4() {
         console.error(`[test_builtins_part4] fragment 38 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 39 ----
-    try {{
+try {{
         decodeURIComponent(encodedURI)
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 39 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_builtins_part4 };

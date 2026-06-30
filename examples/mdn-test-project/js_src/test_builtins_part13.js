@@ -1,144 +1,130 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 120-129)
-// Generated: 2026-06-28
-// Note: RegExp operations simplified to avoid host.zig dependency
+// Fragments: 10 (fragment 132-142)
+// Generated: 2026-06-30
 
 function test_builtins_part13() {
-// ---- fragment 120 ----
-    try {{
-        const result = "abc".substring(0, 1);
-        console.log(result); // 'a'
+// ---- fragment 132 ----
+try {{
+        /[ab]+[abc]c/.exec("abbc"); // ['abbc']
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 120 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 132 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 121 ----
-    try {{
-        const result = "abc";
-        console.log(result);
+// ---- fragment 133 ----
+try {{
+        /(?=a)?b/.test("b"); // true; the lookahead is matched 0 time
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 121 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 133 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 122 ----
-    try {{
-        function isImage(filename) {
-          const exts = [".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"];
-          for (const ext of exts) {
-            if (filename.endsWith(ext)) {
-              return true;
-            }
-          }
-          return false;
+// ---- fragment 135 ----
+try {{
+        // finding all the letters of a text
+        const story = "It's the Cheshire Cat: now I shall have somebody to talk to.";
+
+        // Most explicit form
+        story.match(/\p{General_Category=Letter}/gu);
+
+        // It is not mandatory to use the property name for General categories
+        story.match(/\p{Letter}/gu);
+
+        // This is equivalent (short alias):
+        story.match(/\p{L}/gu);
+
+        // This is also equivalent (conjunction of all the subcategories using short aliases)
+        story.match(/\p{Lu}|\p{Ll}|\p{Lt}|\p{Lm}|\p{Lo}/gu);
+    }} catch (e) {{
+        console.error(`[test_builtins_part13] fragment 135 error: ${e.message}`);
+    }}
+
+// ---- fragment 136 ----
+try {{
+        // Ù¢ is the digit 2 in Arabic-Indic notation
+        // while it is predominantly written within the Arabic script
+        // it can also be written in the Thaana script
+
+        "Ù¢".match(/\p{Script=Thaana}/u);
+        // null as Thaana is not the predominant script
+
+        "Ù¢".match(/\p{Script_Extensions=Thaana}/u);
+        // ["Ù¢", index: 0, input: "Ù¢", groups: undefined]
+    }} catch (e) {{
+        console.error(`[test_builtins_part13] fragment 136 error: ${e.message}`);
+    }}
+
+// ---- fragment 137 ----
+try {{
+        /\ba/.exec("abc");
+        /c\b/.exec("abc");
+
+        /\B /.exec(" abc");
+        / \B/.exec("abc ");
+    }} catch (e) {{
+        console.error(`[test_builtins_part13] fragment 137 error: ${e.message}`);
+    }}
+
+// ---- fragment 138 ----
+try {{
+        function hasThanks(str) {
+          return /\b(thanks|thank you)\b/i.test(str);
         }
 
-        console.log(isImage("image.png")); // true
-        console.log(isImage("image.jpg")); // true
-        console.log(isImage("image.pdf")); // false
+        hasThanks("Thanks! You helped me a lot."); // true
+        hasThanks("Just want to say thank you for all your work."); // true
+        hasThanks("Thanksgiving is around the corner."); // false
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 122 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 138 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 123 ----
-    try {{
-        function removeTrailingSlash(url) {
-          if (url.endsWith("/")) {
-            return url.substring(0, url.length - 1);
-          }
-          return url;
+// ---- fragment 139 ----
+try {{
+        var a = 2;
+        try {
+          throw new Error();
+        } catch (a) {
+          var a = 1; // This 1 is assigned to the caught `a`, not the outer `a`.
         }
+        console.log(a); // 2
 
-        console.log(removeTrailingSlash("https://example.com/")); // "https://example.com"
-        console.log(removeTrailingSlash("https://example.com/docs/")); // "https://example.com/docs"
-    }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 123 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 124 ----
-    try {{
-        function isImage2(filename) {
-          const exts = [".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"];
-          for (const ext of exts) {
-            if (filename.endsWith(ext)) {
-              return true;
-            }
-          }
-          return false;
+        try {
+          throw new Error();
+          // Note: identifier changed to `err` to avoid conflict with
+          // the inner declaration of `a`.
+        } catch (err) {
+          var a = 1; // This 1 is assigned to the upper-scope `a`.
         }
-
-        console.log(isImage2("image.png")); // true
-        console.log(isImage2("image.jpg")); // true
-        console.log(isImage2("image.pdf")); // false
+        console.log(a); // 1
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 124 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 139 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 125 ----
-    try {{
-        function isValidIdentifier(str) {
-          if (str.length === 0) return false;
-          if (str.startsWith("0") || str.startsWith(" ")) return false;
-          return true;
-        }
-
-        console.log(isValidIdentifier("foo")); // true
-        console.log(isValidIdentifier("$1")); // true
-        console.log(isValidIdentifier("1foo")); // false
-        console.log(isValidIdentifier("  foo  ")); // false
+// ---- fragment 140 ----
+try {{
+        String.fromCodePoint("_"); // RangeError
+        String.fromCodePoint(Infinity); // RangeError
+        String.fromCodePoint(-1); // RangeError
+        String.fromCodePoint(3.14); // RangeError
+        String.fromCodePoint(3e-2); // RangeError
+        String.fromCodePoint(NaN); // RangeError
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 125 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 140 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 126 ----
-    try {{
-        const variables = ["foo", "foo:bar", "  foo  "];
-
-        function toAssignment(key) {
-          if (key.startsWith("0") || key.startsWith(" ")) {
-            return `globalThis[${key}] = undefined;`;
-          }
-          return `globalThis.${key} = undefined;`;
-        }
-
-        const statements = toAssignment(variables[0]);
-        console.log(statements);
+// ---- fragment 141 ----
+try {{
+        "foo".normalize("nfc"); // RangeError
+        "foo".normalize(" NFC "); // RangeError
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 126 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 141 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 127 ----
-    try {{
-        console.log("k".includes("k")); // true
+// ---- fragment 142 ----
+try {{
+        "foo".normalize("NFC"); // 'foo'
     }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 127 error: ${e.message}`);
+        console.error(`[test_builtins_part13] fragment 142 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 128 ----
-    try {{
-        const re = "a{1, 3}";
-        console.log(re);
-    }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 128 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 129 ----
-    try {{
-        const result = "aba".substring(0, 3);
-        console.log(result); // 'aba'
-    }} catch (e) {{
-        console.error(`[test_builtins_part13] fragment 129 error: ${e.message}`);
-    }}
-
-    
 }
 module.exports = { test_builtins_part13 };

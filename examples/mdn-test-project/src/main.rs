@@ -1,25 +1,68 @@
-// src/main.rs — MDN JS Reference tests
-// Usage: cargo run 2>&1 | tee actual_output.txt
-//        python ../../scripts/compare_output.py expected_output.json actual_output.txt
+// src/main.rs — MDN JS Reference tests (auto-generated)
 use js2rust_bridge::js2rust_bridge;
 
-// Transpile JS -> Zig and generate FFI bindings.
-// All configuration is read from js2rust.toml.
 js2rust_bridge!();
 
 fn main() {
-    // Initialize Zig runtime
     js2rust_init();
-
     println!("=== MDN JS Reference Tests ===");
 
-    // Run minimal tests
+    // Minimal tests
     println!("\n=== MINIMAL ===");
     let _ = testMinimal_app();
 
-    // Run simple ternary tests
-    println!("\n=== SIMPLE TERNARY ===");
-    let _ = testSimpleTernary_app();
+    // Statements tests
+    println!("\n=== STATEMENTS ===");
+    let _ = test_statements_part1_app();
+    let _ = test_statements_part2_app();
+    let _ = test_statements_part3_app();
+    let _ = test_statements_part4_app();
+    let _ = test_statements_part5_app();
+
+    // Expressions tests
+    println!("\n=== EXPRESSIONS ===");
+    let _ = test_expressions_part1_app();
+    let _ = test_expressions_part2_app();
+    let _ = test_expressions_part3_app();
+    let _ = test_expressions_part4_app();
+    let _ = test_expressions_part5_app();
+    let _ = test_expressions_part6_app();
+    let _ = test_expressions_part7_app();
+    let _ = test_expressions_part8_app();
+    let _ = test_expressions_part9_app();
+    let _ = test_expressions_part10_app();
+    let _ = test_expressions_part11_app();
+    let _ = test_expressions_part12_app();
+    let _ = test_expressions_part13_app();
+    let _ = test_expressions_part14_app();
+    let _ = test_expressions_part15_app();
+    let _ = test_expressions_part16_app();
+    let _ = test_expressions_part17_app();
+
+    // Builtins tests
+    println!("\n=== BUILTINS ===");
+    let _ = test_builtins_part1_app();
+    let _ = test_builtins_part2_app();
+    let _ = test_builtins_part3_app();
+    let _ = test_builtins_part4_app();
+    let _ = test_builtins_part5_app();
+    let _ = test_builtins_part6_app();
+    let _ = test_builtins_part7_app();
+    let _ = test_builtins_part8_app();
+    let _ = test_builtins_part9_app();
+    let _ = test_builtins_part10_app();
+    let _ = test_builtins_part11_app();
+    let _ = test_builtins_part12_app();
+    let _ = test_builtins_part13_app();
+    let _ = test_builtins_part14_app();
+    let _ = test_builtins_part15_app();
+    let _ = test_builtins_part16_app();
+    let _ = test_builtins_part17_app();
+    let _ = test_builtins_part18_app();
+    let _ = test_builtins_part19_app();
+    let _ = test_builtins_part20_app();
+    let _ = test_builtins_part21_app();
+    let _ = test_builtins_part22_app();
 
     js2rust_deinit();
     println!("\n=== All tests done ===");

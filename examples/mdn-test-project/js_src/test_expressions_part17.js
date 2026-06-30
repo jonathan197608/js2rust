@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 8 (fragment 160-167)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part17() {
 // ---- fragment 160 ----
-    try {{
+try {{
         let a = 3;
 
         console.log((a **= 2));
@@ -17,36 +17,31 @@ function test_expressions_part17() {
         console.error(`[test_expressions_part17] fragment 160 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 161 ----
-    try {{
-        let x = 2; let y = 3;
+try {{
         x **= y
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 161 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 162 ----
-    try {{
+try {{
         let bar = 5;
         bar **= 2; // 25
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 162 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 163 ----
-    try {{
+try {{
         let baz = 5;
         baz **= "foo"; // NaN
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 163 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 164 ----
-    try {{
+try {{
         let foo = 3n;
         foo **= 2n; // 9n
         foo **= 1; // TypeError: Cannot mix BigInt and other types, use explicit conversions
@@ -54,15 +49,14 @@ function test_expressions_part17() {
         console.error(`[test_expressions_part17] fragment 164 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 165 ----
-    try {{
+try {{
         function getVowels(str) {
-          const m = 0;
-          if (m === 0) {
+          const m = str.match(/[aeiou]/gi);
+          if (m === null) {
             return 0;
           }
-          return m;
+          return m.length;
         }
 
         console.log(getVowels("sky"));
@@ -70,17 +64,15 @@ function test_expressions_part17() {
         console.error(`[test_expressions_part17] fragment 165 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 166 ----
-    try {{
+try {{
         null
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 166 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 167 ----
-    try {{
+try {{
         typeof null; // "object" (not "null" for legacy reasons)
         typeof undefined; // "undefined"
         null === undefined; // false
@@ -96,4 +88,6 @@ function test_expressions_part17() {
 
 }
 module.exports = { testExpressions };
+
+}
 module.exports = { test_expressions_part17 };

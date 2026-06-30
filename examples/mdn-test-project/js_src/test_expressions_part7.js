@@ -1,37 +1,34 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 60-69)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part7() {
-    let x = 5;
-    let y = 3;
 // ---- fragment 60 ----
-    try {{
+try {{
         2n - 1n; // 1n
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 60 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 61 ----
-    try {{
+try {{
         2n - 1; // TypeError: Cannot mix BigInt and other types, use explicit conversions
+        2 - 1n; // TypeError: Cannot mix BigInt and other types, use explicit conversions
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 61 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 62 ----
-    try {{
+try {{
         2n - BigInt(1); // 1n
+        Number(2n) - 1; // 1
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 62 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 63 ----
-    try {{
+try {{
         console.log(5 > 3);
 
         console.log(3 > 3);
@@ -44,17 +41,15 @@ function test_expressions_part7() {
         console.error(`[test_expressions_part7] fragment 63 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 64 ----
-    try {{
+try {{
         x > y
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 64 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 65 ----
-    try {{
+try {{
         "a" > "b"; // false
         "a" > "a"; // false
         "a" > "3"; // true
@@ -62,22 +57,23 @@ function test_expressions_part7() {
         console.error(`[test_expressions_part7] fragment 65 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 66 ----
-    try {{
+try {{
         "5" > 3; // true
         "3" > 3; // false
         "3" > 5; // false
 
         "hello" > 5; // false
         5 > "hello"; // false
+
+        "5" > 3n; // true
+        "3" > 5n; // false
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 66 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 67 ----
-    try {{
+try {{
         5 > 3; // true
         3 > 3; // false
         3 > 5; // false
@@ -85,17 +81,16 @@ function test_expressions_part7() {
         console.error(`[test_expressions_part7] fragment 67 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 68 ----
-    try {{
-        // Mixed BigInt comparisons (5n > 3, 3 > 5n) omitted - handled via @panic at runtime
+try {{
+        5n > 3; // true
+        3 > 5n; // false
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 68 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 69 ----
-    try {{
+try {{
         true > false; // true
         false > true; // false
 
@@ -114,6 +109,5 @@ function test_expressions_part7() {
         console.error(`[test_expressions_part7] fragment 69 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part7 };

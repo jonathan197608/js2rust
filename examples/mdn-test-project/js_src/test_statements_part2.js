@@ -1,60 +1,46 @@
 // Auto-generated from MDN JS Reference
 // Category: statements
-// Fragments: 10 (fragment 10-19)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 11-21)
+// Generated: 2026-06-30
 
 function test_statements_part2() {
-// ---- fragment 10 ----
-    try {{
-        console.log("Error thrown");
-    }} catch (e) {{
-        console.error(`[test_statements_part2] fragment 10 error: ${e.message}`);
-    }}
-
-    
 // ---- fragment 11 ----
-    try {{
+try {{
         function isNumeric(x) {
-          return typeof x === "number";
+          return ["number", "bigint"].includes(typeof x);
         }
 
         function sum(...values) {
-          let total = 0;
-          for (const v of values) {
-            total += v;
+          if (!values.every(isNumeric)) {
+            throw new TypeError("Can only add numbers");
           }
-          return total;
+          return values.reduce((a, b) => a + b);
         }
 
-        console.log(isNumeric(42));
         console.log(sum(1, 2, 3)); // 6
+        try {
+          sum("1", "2");
+        } catch (e) {
+          console.error(e); // TypeError: Can only add numbers
+        }
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 11 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 12 ----
-    try {{
-        console.log("readFile callback example");
+try {{
+        readFile("foo.txt", (err, data) => {
+          if (err) {
+            throw err;
+          }
+          console.log(data);
+        });
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 12 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 13 ----
-    try {{
-        function readFilePromise(path) {
-          return path;
-        }
-
-        console.log(readFilePromise("foo.txt"));
-    }} catch (e) {{
-        console.error(`[test_statements_part2] fragment 13 error: ${e.message}`);
-    }}
-
-    
 // ---- fragment 14 ----
-    try {{
+try {{
         const number = 42;
 
         try {
@@ -69,9 +55,8 @@ function test_statements_part2() {
         console.error(`[test_statements_part2] fragment 14 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 15 ----
-    try {{
+try {{
         // define MY_FAV as a constant and give it the value 7
         const MY_FAV = 7;
 
@@ -80,42 +65,55 @@ function test_statements_part2() {
         console.error(`[test_statements_part2] fragment 15 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 16 ----
-    try {{
+try {{
         const MY_OBJECT = { key: "value" };
         MY_OBJECT = { OTHER_KEY: "value" };
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 16 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 17 ----
-    try {{
-        const MY_OBJECT2 = { key: "value" };
-        MY_OBJECT2.key = "otherValue";
+try {{
+        MY_OBJECT.key = "otherValue";
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 17 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 18 ----
-    try {{
+try {{
         const MY_ARRAY = [];
         MY_ARRAY = ["B"];
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 18 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 19 ----
-    try {{
-        const MY_ARRAY2 = [];
-        MY_ARRAY2.push("A"); // ["A"]
+try {{
+        MY_ARRAY.push("A"); // ["A"]
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 19 error: ${e.message}`);
     }}
 
-    
+// ---- fragment 20 ----
+try {{
+        const result = /(a+)(b+)(c+)/.exec("aaabcc");
+        const [, a, b, c] = result;
+        console.log(a, b, c); // "aaa" "b" "cc"
+    }} catch (e) {{
+        console.error(`[test_statements_part2] fragment 20 error: ${e.message}`);
+    }}
+
+// ---- fragment 21 ----
+try {{
+        function calcRectArea(width, height) {
+          return width * height;
+        }
+
+        console.log(calcRectArea(5, 6));
+    }} catch (e) {{
+        console.error(`[test_statements_part2] fragment 21 error: ${e.message}`);
+    }}
+
 }
 module.exports = { test_statements_part2 };

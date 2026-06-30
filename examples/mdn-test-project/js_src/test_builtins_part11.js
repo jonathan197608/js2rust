@@ -1,125 +1,108 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 100-109)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 112-121)
+// Generated: 2026-06-30
 
 function test_builtins_part11() {
-// ---- fragment 100 ----
-    try {{
-        function areEqualCaseInsensitive(str1, str2) {
-          return str1.toUpperCase() === str2.toUpperCase();
+// ---- fragment 112 ----
+try {{
+        const regex2 = new RegExp("ab+c", "g");
+    }} catch (e) {{
+        console.error(`[test_builtins_part11] fragment 112 error: ${e.message}`);
+    }}
+
+// ---- fragment 113 ----
+try {{
+        /[\s-9]/.test("-"); // true
+    }} catch (e) {{
+        console.error(`[test_builtins_part11] fragment 113 error: ${e.message}`);
+    }}
+
+// ---- fragment 114 ----
+try {{
+        const r1 = /\p{Lowercase_Letter}/iu;
+        const r2 = /[^\P{Lowercase_Letter}]/iu;
+    }} catch (e) {{
+        console.error(`[test_builtins_part11] fragment 114 error: ${e.message}`);
+    }}
+
+// ---- fragment 115 ----
+try {{
+        function isHexadecimal(str) {
+          return /^[0-9A-F]+$/i.test(str);
         }
-        console.log(areEqualCaseInsensitive("A", "a"));
+
+        isHexadecimal("2F3"); // true
+        isHexadecimal("beef"); // true
+        isHexadecimal("undefined"); // false
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 100 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 115 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 101 ----
-    try {{
-        const strPrim = "foo"; // A literal is a string primitive
-        const strPrim2 = String(1); // Coerced into the string primitive "1"
-        const strPrim3 = String(true); // Coerced into the string primitive "true"
-        const strObj = String(strPrim); // String() returns a string primitive
+// ---- fragment 116 ----
+try {{
+        function getLineTerminators(str) {
+          return str.match(/[\r\n\u2028\u2029\q{\r\n}]/gv);
+        }
 
-        console.log(strPrim2);
-        console.log(strPrim3);
-        console.log(strObj);
+        getLineTerminators(`
+        A poem\r
+        Is split\r\n
+        Into many
+        Stanzas
+        `); // [ '\r', '\r\n', '\n' ]
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 101 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 116 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 102 ----
-    try {{
-        const s1 = "2 + 2"; // creates a string primitive
-        const s2 = String("2 + 2"); // creates a string primitive
-        console.log(s1);
-        console.log(s2);
+// ---- fragment 117 ----
+try {{
+        function splitWords(str) {
+          return str.split(/\s+/);
+        }
+
+        splitWords(`Look at the stars
+        Look  how they\tshine for you`);
+        // ['Look', 'at', 'the', 'stars', 'Look', 'how', 'they', 'shine', 'for', 'you']
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 102 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 117 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 103 ----
-    try {{
-        // eval not supported, s2 not in scope
-        console.log("eval not supported");
+// ---- fragment 118 ----
+try {{
+        /[\c0]/.test("\x10"); // true
+        /[\c_]/.test("\x1f"); // true
+        /[\c*]/.test("\\"); // true
+        /\c/.test("\\c"); // true
+        /\c0/.test("\\c0"); // true (the \c0 syntax is only supported in character classes)
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 103 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 118 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 104 ----
-    try {{
-        // You cannot access properties on null or undefined
-
-        const nullVar = 0;
-        // nullVar.toString(); // TypeError: Cannot read properties of null
-        String(nullVar); // "null"
-
-        const undefinedVar = 0;
-        // undefinedVar.toString(); // TypeError: Cannot read properties of undefined
-        String(undefinedVar); // "undefined"
+// ---- fragment 119 ----
+try {{
+        const pattern = /a\nb/;
+        const string = `a
+        b`;
+        console.log(pattern.test(string)); // true
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 104 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 119 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 105 ----
-    try {{
-        // ArrayBuffer/Int32Array not fully supported
-        const buffer = [0, 0, 0, 0];
-        const view = buffer;
+// ---- fragment 120 ----
+try {{
+        /a|ab/.exec("abc"); // ['a']
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 105 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 120 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 106 ----
-    try {{
-        // Simplified: ArrayBuffer/DataView endianness detection not supported
-        const littleEndian = true;
-        console.log(littleEndian); // true or false
+// ---- fragment 121 ----
+try {{
+        /(?:(a)|(ab))(?:(c)|(bc))/.exec("abc"); // ['abc', 'a', undefined, undefined, 'bc']
+        // Not ['abc', undefined, 'ab', 'c', undefined]
     }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 106 error: ${e.message}`);
+        console.error(`[test_builtins_part11] fragment 121 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 107 ----
-    try {{
-        // ArrayBuffer/DataView not fully supported
-        const buffer2 = [0, 0, 0, 0, 0, 0, 0, 0];
-        const view2 = buffer2;
-
-        view2[1] = 42;
-        view2[1]; // 42
-    }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 107 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 108 ----
-    try {{
-        // registry.register not supported (registry/target undeclared)
-        const registry = 0;
-        const target = 0;
-        console.log(registry);
-        console.log(target);
-    }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 108 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 109 ----
-    try {{
-        // registry.register not supported (registry/theObject undeclared)
-        const theObject = 0;
-        console.log(theObject);
-    }} catch (e) {{
-        console.error(`[test_builtins_part11] fragment 109 error: ${e.message}`);
-    }}
-
-    
 }
 module.exports = { test_builtins_part11 };

@@ -1,123 +1,121 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 140-149)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 153-162)
+// Generated: 2026-06-30
 
 function test_builtins_part15() {
-// ---- fragment 140 ----
-    try {{
-        String.fromCodePoint("_"); // RangeError
-        String.fromCodePoint(Infinity); // RangeError
-        String.fromCodePoint(-1); // RangeError
-        String.fromCodePoint(3.14); // RangeError
-        String.fromCodePoint(3e-2); // RangeError
-        String.fromCodePoint(NaN); // RangeError
+// ---- fragment 153 ----
+try {{
+        "abc".repeat(0); // ''
+        "abc".repeat(1); // 'abc'
+        "abc".repeat(2); // 'abcabc'
+        "abc".repeat(3.5); // 'abcabcabc' (count will be converted to integer)
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 140 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 153 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 141 ----
-    try {{
-        "foo".normalize("nfc"); // RangeError
-        "foo".normalize(" NFC "); // RangeError
+// ---- fragment 154 ----
+try {{
+        "use strict";
+
+        const args = [1, 2, 3];
+        console.log(Math.max(...args));
+
+        function foo(...args) {
+          console.log(args);
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 141 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 154 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 142 ----
-    try {{
-        "foo".normalize("NFC"); // 'foo'
+// ---- fragment 155 ----
+try {{
+        0o3;
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 142 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 155 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 143 ----
-    try {{
-        const invalid = new Date("nothing");
-        invalid.toISOString(); // RangeError: invalid date
-        invalid.toJSON(); // RangeError: invalid date
-        JSON.stringify({ date: invalid }); // RangeError: invalid date
+// ---- fragment 156 ----
+try {{
+        const colorEnum = { RED: 0, GREEN: 1, BLUE: 2 };
+        const list = ["potatoes", "rice", "fries"];
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 143 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 156 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 144 ----
-    try {{
-        const invalid = new Date("nothing");
-        invalid.toString(); // "Invalid Date"
-        invalid.getDate(); // NaN
+// ---- fragment 157 ----
+try {{
+        "use strict";
+        class DocArchiver {}
+
+        // SyntaxError: class is a reserved identifier
+        // (throws in older browsers only, e.g. Firefox 44 and older)
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 144 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 157 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 145 ----
-    try {{
-        new Date("05 October 2011 14:48 UTC").toISOString(); // "2011-10-05T14:48:00.000Z"
-        new Date(1317826080).toISOString(); // "2011-10-05T14:48:00.000Z"
+// ---- fragment 158 ----
+try {{
+        const iterable = [10, 20, 30];
+
+        for (let value of iterable) {
+          value += 50;
+          console.log(value);
+        }
+        // 60
+        // 70
+        // 80
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 145 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 158 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 146 ----
-    try {{
-        (77.1234).toExponential(-1); // RangeError
-        (77.1234).toExponential(101); // RangeError
-
-        (2.34).toFixed(-100); // RangeError
-        (2.34).toFixed(1001); // RangeError
-
-        (1234.5).toPrecision(-1); // RangeError
-        (1234.5).toPrecision(101); // RangeError
+// ---- fragment 159 ----
+try {{
+        array.forEach((value) => {
+          if (value === 5) {
+            return;
+          }
+          // do something with value
+        });
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 146 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 159 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 147 ----
-    try {{
-        (77.1234).toExponential(4); // 7.7123e+1
-        (77.1234).toExponential(2); // 7.71e+1
-
-        (2.34).toFixed(1); // 2.3
-        (2.35).toFixed(1); // 2.4 (note that it rounds up in this case)
-
-        (5.123456).toPrecision(5); // 5.1235
-        (5.123456).toPrecision(2); // 5.1
-        (5.123456).toPrecision(1); // 5
+// ---- fragment 160 ----
+try {{
+        for (const value of array) {
+          if (value === 5) {
+            continue;
+          }
+          // do something with value
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 147 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 160 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 148 ----
-    try {{
-        (42).toString(0);
-        (42).toString(1);
-        (42).toString(37);
-        (42).toString(150);
-        // You cannot use a string like this for formatting:
-        (12071989).toString("MM-dd-yyyy");
+// ---- fragment 161 ----
+try {{
+        const obj = { a: 1, b: 2, c: 3 };
+
+        for (const i in obj) {
+          console.log(obj[i]);
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 148 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 161 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 149 ----
-    try {{
-        (42).toString(2); // "101010" (binary)
-        (13).toString(8); // "15" (octal)
-        (0x42).toString(10); // "66" (decimal)
-        (100000).toString(16); // "186a0" (hexadecimal)
+// ---- fragment 162 ----
+try {{
+        const arr = ["a", "b", "c"];
+
+        for (let i = 2; i < arr.length; i++) {
+          console.log(arr[i]);
+        }
+
+        // "c"
     }} catch (e) {{
-        console.error(`[test_builtins_part15] fragment 149 error: ${e.message}`);
+        console.error(`[test_builtins_part15] fragment 162 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_builtins_part15 };

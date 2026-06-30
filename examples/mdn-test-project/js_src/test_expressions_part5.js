@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 40-49)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part5() {
 // ---- fragment 40 ----
-    try {{
+try {{
         console.log(13 % 5);
 
         console.log(-13 % 5);
@@ -17,18 +17,15 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 40 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 41 ----
-    try {{
-        const x = 0; const y = 0;
+try {{
         x % y
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 41 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 42 ----
-    try {{
+try {{
         13 % 5; // 3
         1 % -2; // 1
         1 % 2; // 1
@@ -40,9 +37,8 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 42 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 43 ----
-    try {{
+try {{
         -13 % 5; // -3
         -1 % 2; // -1
         -4 % 2; // -0
@@ -52,17 +48,15 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 43 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 44 ----
-    try {{
+try {{
         NaN % 2; // NaN
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 44 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 45 ----
-    try {{
+try {{
         Infinity % 2; // NaN
         Infinity % 0; // NaN
         Infinity % Infinity; // NaN
@@ -72,9 +66,8 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 45 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 46 ----
-    try {{
+try {{
         console.log(2 + 2);
 
         console.log(2 + true);
@@ -86,19 +79,16 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 46 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 47 ----
-    try {{
-        const x2 = 0; const y2 = 0;
-        x2 + y2
+try {{
+        x + y
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 47 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 48 ----
-    try {{
-        const t = "";
+try {{
+        const t = Temporal.Now.instant();
         "" + t; // Throws TypeError
         `${t}`; // '2022-07-31T04:48:56.113918308Z'
         "".concat(t); // '2022-07-31T04:48:56.113918308Z'
@@ -106,14 +96,12 @@ function test_expressions_part5() {
         console.error(`[test_expressions_part5] fragment 48 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 49 ----
-    try {{
+try {{
         1 + 2; // 3
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 49 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part5 };

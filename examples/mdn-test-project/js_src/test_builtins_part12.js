@@ -1,139 +1,121 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 110-119)
-// Generated: 2026-06-28
-// Note: RegExp operations simplified to avoid host.zig dependency
+// Fragments: 10 (fragment 122-131)
+// Generated: 2026-06-30
 
 function test_builtins_part12() {
-// ---- fragment 110 ----
-    try {{
-        const AsyncFunction = 0;
-        console.log(AsyncFunction);
-    }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 110 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 111 ----
-    try {{
-        const regex1 = "ab+c";
-        console.log(regex1);
-    }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 111 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 112 ----
-    try {{
-        const regex2 = "ab+c";
-        console.log(regex2);
-    }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 112 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 113 ----
-    try {{
-        const hasDash = "-".includes("-");
-        console.log(hasDash);
-    }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 113 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 114 ----
-    try {{
-        const r1 = "lowercase";
-        const r2 = "not lowercase";
-        console.log(r1);
-        console.log(r2);
-    }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 114 error: ${e.message}`);
-    }}
-
-    
-// ---- fragment 115 ----
-    try {{
-        function isHexadecimal(str) {
-          const hexChars = "0123456789ABCDEFabcdef";
-          for (const ch of str) {
-            if (!hexChars.includes(ch)) {
-              return false;
-            }
-          }
-          return str.length > 0;
+// ---- fragment 122 ----
+try {{
+        function isImage(filename) {
+          return /\.(?:png|jpe?g|webp|avif|gif)$/i.test(filename);
         }
 
-        console.log(isHexadecimal("2F3")); // true
-        console.log(isHexadecimal("beef")); // true
-        console.log(isHexadecimal("undefined")); // false
+        isImage("image.png"); // true
+        isImage("image.jpg"); // true
+        isImage("image.pdf"); // false
     }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 115 error: ${e.message}`);
+        console.error(`[test_builtins_part12] fragment 122 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 116 ----
-    try {{
-        function getLineTerminators(str) {
-          const result = [];
-          for (const ch of str) {
-            if (ch === "\r" || ch === "\n") {
-              result.push(ch);
-            }
-          }
-          return result;
+// ---- fragment 123 ----
+try {{
+        function removeTrailingSlash(url) {
+          return url.replace(/\/$/, "");
         }
 
-        console.log(getLineTerminators("A\r\nB"));
+        removeTrailingSlash("https://example.com/"); // "https://example.com"
+        removeTrailingSlash("https://example.com/docs/"); // "https://example.com/docs"
     }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 116 error: ${e.message}`);
+        console.error(`[test_builtins_part12] fragment 123 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 117 ----
-    try {{
-        function splitWords(str) {
-          const result = [];
-          let word = "";
-          for (const ch of str) {
-            if (ch === " ") {
-              if (word.length > 0) {
-                result.push(word);
-              }
-              word = "";
-            } else {
-              word = word + ch;
-            }
-          }
-          if (word.length > 0) {
-            result.push(word);
-          }
-          return result;
+// ---- fragment 124 ----
+try {{
+        function isImage(filename) {
+          return /\.(?:png|jpe?g|webp|avif|gif)$/i.test(filename);
         }
 
-        console.log(splitWords("Look at the stars"));
+        isImage("image.png"); // true
+        isImage("image.jpg"); // true
+        isImage("image.pdf"); // false
     }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 117 error: ${e.message}`);
+        console.error(`[test_builtins_part12] fragment 124 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 118 ----
-    try {{
-        console.log("control char test");
+// ---- fragment 125 ----
+try {{
+        function isValidIdentifier(str) {
+          return /^[$_\p{ID_Start}][$_\p{ID_Continue}]*$/u.test(str);
+        }
+
+        isValidIdentifier("foo"); // true
+        isValidIdentifier("$1"); // true
+        isValidIdentifier("1foo"); // false
+        isValidIdentifier("  foo  "); // false
     }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 118 error: ${e.message}`);
+        console.error(`[test_builtins_part12] fragment 125 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 119 ----
-    try {{
-        const pattern = "a\nb";
-        const string = "a\nb";
-        console.log(pattern === string); // true
+// ---- fragment 126 ----
+try {{
+        const variables = ["foo", "foo:bar", "  foo  "];
+
+        function toAssignment(key) {
+          if (isValidIdentifier(key)) {
+            return `globalThis.${key} = undefined;`;
+          }
+          // JSON.stringify() escapes quotes and other special characters
+          return `globalThis[${JSON.stringify(key)}] = undefined;`;
+        }
+
+        const statements = variables.map(toAssignment).join("\n");
+
+        console.log(statements);
+        // globalThis.foo = undefined;
+        // globalThis["foo:bar"] = undefined;
+        // globalThis["  foo  "] = undefined;
     }} catch (e) {{
-        console.error(`[test_builtins_part12] fragment 119 error: ${e.message}`);
+        console.error(`[test_builtins_part12] fragment 126 error: ${e.message}`);
     }}
 
-    
+// ---- fragment 127 ----
+try {{
+        /\k/.test("k"); // true
+    }} catch (e) {{
+        console.error(`[test_builtins_part12] fragment 127 error: ${e.message}`);
+    }}
+
+// ---- fragment 128 ----
+try {{
+        const re = /a{1, 3}/;
+        re.test("aa"); // false
+        re.test("a{1, 3}"); // true
+    }} catch (e) {{
+        console.error(`[test_builtins_part12] fragment 128 error: ${e.message}`);
+    }}
+
+// ---- fragment 129 ----
+try {{
+        /[ab]*/.exec("aba"); // ['aba']
+    }} catch (e) {{
+        console.error(`[test_builtins_part12] fragment 129 error: ${e.message}`);
+    }}
+
+// ---- fragment 130 ----
+try {{
+        /a*/.exec("aaa"); // ['aaa']; the entire input is consumed
+        /a*?/.exec("aaa"); // ['']; it's possible to consume no characters and still match successfully
+        /^a*?$/.exec("aaa"); // ['aaa']; it's not possible to consume fewer characters and still match successfully
+    }} catch (e) {{
+        console.error(`[test_builtins_part12] fragment 130 error: ${e.message}`);
+    }}
+
+// ---- fragment 131 ----
+try {{
+        /a*?$/.exec("aaa"); // ['aaa']; the match already succeeds at the first character, so the regex never attempts to start matching at the second character
+    }} catch (e) {{
+        console.error(`[test_builtins_part12] fragment 131 error: ${e.message}`);
+    }}
+
 }
 module.exports = { test_builtins_part12 };

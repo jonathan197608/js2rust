@@ -1,25 +1,18 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 140-149)
-// Generated: 2026-06-28
+// Generated: 2026-06-30
 
 function test_expressions_part15() {
-    let bCondition1 = true;
-    let bCondition2 = false;
-    let bCondition3 = true;
-    let x = true;
-    let y = false;
-    let varObject = { key: "value" };
 // ---- fragment 140 ----
-    try {{
+try {{
         bCondition1 || bCondition2 && bCondition3
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 140 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 141 ----
-    try {{
+try {{
         const a = 3;
         const b = -2;
 
@@ -28,17 +21,15 @@ function test_expressions_part15() {
         console.error(`[test_expressions_part15] fragment 141 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 142 ----
-    try {{
+try {{
         x || y
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 142 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 143 ----
-    try {{
+try {{
         function A() {
           console.log("called A");
           return false;
@@ -55,18 +46,16 @@ function test_expressions_part15() {
         console.error(`[test_expressions_part15] fragment 143 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 144 ----
-    try {{
+try {{
         true || false && false; // returns true, because && is executed first
         (true || false) && false; // returns false, because grouping has the highest precedence
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 144 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 145 ----
-    try {{
+try {{
         true || true; // t || t returns true
         false || true; // f || t returns true
         true || false; // t || f returns true
@@ -81,38 +70,33 @@ function test_expressions_part15() {
         console.error(`[test_expressions_part15] fragment 145 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 146 ----
-    try {{
+try {{
         bCondition1 && bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 146 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 147 ----
-    try {{
+try {{
         !(!bCondition1 || !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 147 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 148 ----
-    try {{
+try {{
         bCondition1 || bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 148 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 149 ----
-    try {{
+try {{
         !(!bCondition1 && !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 149 error: ${e.message}`);
     }}
 
-    
 }
 module.exports = { test_expressions_part15 };

@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: statements
-// Fragments: 10 (fragment 0-9)
-// Generated: 2026-06-28
+// Fragments: 10 (fragment 0-10)
+// Generated: 2026-06-30
 
 function test_statements_part1() {
 // ---- fragment 0 ----
-    try {{
+try {{
         function getRectArea(width, height) {
           if (width > 0 && height > 0) {
             return width * height;
@@ -20,9 +20,8 @@ function test_statements_part1() {
         console.error(`[test_statements_part1] fragment 0 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 1 ----
-    try {{
+try {{
         function counter() {
           // Infinite loop
           for (let count = 1; ; count++) {
@@ -32,6 +31,7 @@ function test_statements_part1() {
             }
             console.log(`${count}B`); // Until 4
           }
+          console.log(`${count}C`); // Never appears
         }
 
         counter();
@@ -50,21 +50,22 @@ function test_statements_part1() {
         console.error(`[test_statements_part1] fragment 1 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 2 ----
-    try {{
-        function magic(x) {
-          return x * 42;
+try {{
+        function magic() {
+          return function calc(x) {
+            return x * 42;
+          };
         }
 
-        console.log(magic(2)); // 84
+        const answer = magic();
+        answer(1337); // 56154
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 2 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 3 ----
-    try {{
+try {{
         let i = 0;
 
         while (i < 6) {
@@ -79,9 +80,8 @@ function test_statements_part1() {
         console.error(`[test_statements_part1] fragment 3 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 4 ----
-    try {{
+try {{
         function testBreak(x) {
           let i = 0;
 
@@ -92,46 +92,28 @@ function test_statements_part1() {
             i += 1;
           }
 
-          return i;
+          return i * x;
         }
-
-        console.log(testBreak(10));
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 4 error: ${e.message}`);
     }}
 
-    
-// ---- fragment 5 ----
-    try {{
-        const food = "sushi";
-
-        if (food === "sushi") {
-            console.log("Sushi is originally from Japan.");
-        } else if (food === "pizza") {
-            console.log("Pizza is originally from Italy.");
-        } else {
-            console.log("I have never heard of that dish.");
-        }
-    }} catch (e) {{
-        console.error(`[test_statements_part1] fragment 5 error: ${e.message}`);
-    }}
-
-    
 // ---- fragment 6 ----
-    try {{
+try {{
         outerBlock: {
-            {
-                console.log("1");
-                break outerBlock;
-            }
+          innerBlock: {
+            console.log("1");
+            break outerBlock; // breaks out of both innerBlock and outerBlock
+            console.log(":-("); // skipped
+          }
+          console.log("2"); // skipped
         }
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 6 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 7 ----
-    try {{
+try {{
         function getRectArea(width, height) {
           if (isNaN(width) || isNaN(height)) {
             throw new Error("Parameter is not a number!");
@@ -147,25 +129,29 @@ function test_statements_part1() {
         console.error(`[test_statements_part1] fragment 7 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 8 ----
-    try {{
-        let expression = 0;
-        console.log(expression);
+try {{
+        throw expression;
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 8 error: ${e.message}`);
     }}
 
-    
 // ---- fragment 9 ----
-    try {{
-        let error = 0;
-        console.log(error);
-        console.log("Required");
+try {{
+        throw error; // Throws a previously defined value (e.g. within a catch block)
+        throw new Error("Required"); // Throws a new Error object
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 9 error: ${e.message}`);
     }}
 
-    
+// ---- fragment 10 ----
+try {{
+        throw (
+          new Error()
+        );
+    }} catch (e) {{
+        console.error(`[test_statements_part1] fragment 10 error: ${e.message}`);
+    }}
+
 }
 module.exports = { test_statements_part1 };
