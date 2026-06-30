@@ -70,6 +70,8 @@ try {{
 
 // ---- fragment 85 ----
 try {{
+        var x = 1;
+        var y = 2;
         x != y
     }} catch (e) {{
         console.error(`[test_expressions_part9] fragment 85 error: ${e.message}`);
@@ -77,6 +79,8 @@ try {{
 
 // ---- fragment 86 ----
 try {{
+        var x = 1;
+        var y = 2;
         x != y;
 
         !(x == y);

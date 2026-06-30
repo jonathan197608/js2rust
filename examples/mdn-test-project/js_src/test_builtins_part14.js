@@ -6,16 +6,19 @@
 function test_builtins_part14() {
 // ---- fragment 143 ----
 try {{
+        var date = 0;
         const invalid = new Date("nothing");
         invalid.toISOString(); // RangeError: invalid date
         invalid.toJSON(); // RangeError: invalid date
         JSON.stringify({ date: invalid }); // RangeError: invalid date
-    }} catch (e) {{
+            _ = date;
+}} catch (e) {{
         console.error(`[test_builtins_part14] fragment 143 error: ${e.message}`);
     }}
 
 // ---- fragment 144 ----
 try {{
+        var invalid = 42;
         invalid.toString(); // "Invalid Date"
         invalid.getDate(); // NaN
     }} catch (e) {{

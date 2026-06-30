@@ -6,26 +6,37 @@
 function test_builtins_part19() {
 // ---- fragment 193 ----
 try {{
+        var a = 1;
+        var b = 2;
+        var c = 3;
+        var myProp = 0;
         const obj = {
           a: 1,
           b: { myProp: 2 },
           c: 3,
         };
-    }} catch (e) {{
+            _ = obj;
+        _ = a;
+        _ = b;
+        _ = c;
+        _ = myProp;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 193 error: ${e.message}`);
     }}
 
 // ---- fragment 194 ----
 try {{
         const COLUMNS = 80;
-    }} catch (e) {{
+            _ = COLUMNS;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 194 error: ${e.message}`);
     }}
 
 // ---- fragment 195 ----
 try {{
         let columns;
-    }} catch (e) {{
+            _ = columns;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 195 error: ${e.message}`);
     }}
 
@@ -42,12 +53,18 @@ try {{
         function log(arg) {
           console.log(arg);
         }
-    }} catch (e) {{
+            _ = greet;
+        _ = log;
+        _ = square;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 196 error: ${e.message}`);
     }}
 
 // ---- fragment 197 ----
 try {{
+        var log = 0;
+        var greet = 0;
+        var square = 0;
         square(2); // 4
 
         greet("Howdy"); // "Howdy"
@@ -59,6 +76,8 @@ try {{
 
 // ---- fragment 198 ----
 try {{
+        var i = 0;
+        var obj = 0;
         obj.foo.bar; // "baz"
         // or alternatively
         obj["foo"]["bar"]; // "baz"
@@ -80,17 +99,25 @@ try {{
 
 // ---- fragment 200 ----
 try {{
+        var p = 0;
+        var v = 0;
         // Matches two characters that are not an emoji flag sequence
         /(?!\p{RGI_Emoji_Flag_Sequence})../v;
-    }} catch (e) {{
+            _ = p;
+        _ = v;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 200 error: ${e.message}`);
     }}
 
 // ---- fragment 201 ----
 try {{
+        var b = 2;
+        var hello = 0;
         /b+/; // b is a character, it can be repeated
         /(\*hello\*)/; // Escape the asterisks to match them literally
-    }} catch (e) {{
+            _ = b;
+        _ = hello;
+}} catch (e) {{
         console.error(`[test_builtins_part19] fragment 201 error: ${e.message}`);
     }}
 

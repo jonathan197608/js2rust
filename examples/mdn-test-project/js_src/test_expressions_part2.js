@@ -28,6 +28,7 @@ try {{
 
 // ---- fragment 12 ----
 try {{
+        var x = 1;
         !x
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 12 error: ${e.message}`);
@@ -45,6 +46,7 @@ try {{
 
 // ---- fragment 14 ----
 try {{
+        var bCondition = 0;
         !!bCondition
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 14 error: ${e.message}`);
@@ -52,6 +54,7 @@ try {{
 
 // ---- fragment 15 ----
 try {{
+        var bCondition = 0;
         bCondition
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 15 error: ${e.message}`);
@@ -72,6 +75,8 @@ try {{
 
 // ---- fragment 17 ----
 try {{
+        var x = 1;
+        var y = 2;
         x ** y
     }} catch (e) {{
         console.error(`[test_expressions_part2] fragment 17 error: ${e.message}`);

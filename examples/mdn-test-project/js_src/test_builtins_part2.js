@@ -6,6 +6,7 @@
 function test_builtins_part2() {
 // ---- fragment 10 ----
 try {{
+        var value = 0;
         isFinite(value)
     }} catch (e) {{
         console.error(`[test_builtins_part2] fragment 10 error: ${e.message}`);
@@ -46,6 +47,7 @@ try {{
 
 // ---- fragment 13 ----
 try {{
+        var value = 0;
         isNaN(value)
     }} catch (e) {{
         console.error(`[test_builtins_part2] fragment 13 error: ${e.message}`);
@@ -98,6 +100,7 @@ try {{
 
 // ---- fragment 16 ----
 try {{
+        var string = "0";
         parseFloat(string)
     }} catch (e) {{
         console.error(`[test_builtins_part2] fragment 16 error: ${e.message}`);

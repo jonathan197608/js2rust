@@ -29,6 +29,7 @@ try {{
 
 // ---- fragment 12 ----
 try {{
+        var readFile = 0;
         readFile("foo.txt", (err, data) => {
           if (err) {
             throw err;
@@ -61,20 +62,27 @@ try {{
         const MY_FAV = 7;
 
         console.log(`my favorite number is: ${MY_FAV}`);
-    }} catch (e) {{
+            _ = MY_FAV;
+}} catch (e) {{
         console.error(`[test_statements_part2] fragment 15 error: ${e.message}`);
     }}
 
 // ---- fragment 16 ----
 try {{
+        var OTHER_KEY = 0;
+        var key = 0;
         const MY_OBJECT = { key: "value" };
         MY_OBJECT = { OTHER_KEY: "value" };
-    }} catch (e) {{
+            _ = MY_OBJECT;
+        _ = OTHER_KEY;
+        _ = key;
+}} catch (e) {{
         console.error(`[test_statements_part2] fragment 16 error: ${e.message}`);
     }}
 
 // ---- fragment 17 ----
 try {{
+        var MY_OBJECT = 0;
         MY_OBJECT.key = "otherValue";
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 17 error: ${e.message}`);
@@ -90,6 +98,7 @@ try {{
 
 // ---- fragment 19 ----
 try {{
+        var MY_ARRAY = 0;
         MY_ARRAY.push("A"); // ["A"]
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 19 error: ${e.message}`);

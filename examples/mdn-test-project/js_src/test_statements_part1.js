@@ -60,7 +60,8 @@ try {{
 
         const answer = magic();
         answer(1337); // 56154
-    }} catch (e) {{
+            _ = calc;
+}} catch (e) {{
         console.error(`[test_statements_part1] fragment 2 error: ${e.message}`);
     }}
 
@@ -94,12 +95,15 @@ try {{
 
           return i * x;
         }
-    }} catch (e) {{
+            _ = testBreak;
+}} catch (e) {{
         console.error(`[test_statements_part1] fragment 4 error: ${e.message}`);
     }}
 
 // ---- fragment 6 ----
 try {{
+        var innerBlock = 0;
+        var outerBlock = 0;
         outerBlock: {
           innerBlock: {
             console.log("1");
@@ -108,7 +112,8 @@ try {{
           }
           console.log("2"); // skipped
         }
-    }} catch (e) {{
+            _ = innerBlock;
+}} catch (e) {{
         console.error(`[test_statements_part1] fragment 6 error: ${e.message}`);
     }}
 
@@ -131,6 +136,7 @@ try {{
 
 // ---- fragment 8 ----
 try {{
+        var expression = 0;
         throw expression;
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 8 error: ${e.message}`);
@@ -138,6 +144,7 @@ try {{
 
 // ---- fragment 9 ----
 try {{
+        var error = 0;
         throw error; // Throws a previously defined value (e.g. within a catch block)
         throw new Error("Required"); // Throws a new Error object
     }} catch (e) {{

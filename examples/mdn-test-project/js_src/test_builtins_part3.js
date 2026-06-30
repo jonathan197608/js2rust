@@ -60,6 +60,8 @@ try {{
 
 // ---- fragment 25 ----
 try {{
+        var radix = 0;
+        var string = "0";
         parseInt(string)
         parseInt(string, radix)
     }} catch (e) {{

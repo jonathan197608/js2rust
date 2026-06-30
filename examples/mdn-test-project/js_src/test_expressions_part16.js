@@ -6,6 +6,9 @@
 function test_expressions_part16() {
 // ---- fragment 150 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
+        var bCondition3 = true;
         bCondition1 && (bCondition2 || bCondition3)
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 150 error: ${e.message}`);
@@ -13,6 +16,9 @@ try {{
 
 // ---- fragment 151 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
+        var bCondition3 = true;
         !(!bCondition1 || !bCondition2 && !bCondition3)
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 151 error: ${e.message}`);
@@ -33,6 +39,8 @@ try {{
 
 // ---- fragment 153 ----
 try {{
+        var x = 1;
+        var y = 2;
         x %= y
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 153 error: ${e.message}`);
@@ -65,6 +73,8 @@ try {{
 
 // ---- fragment 156 ----
 try {{
+        var x = 1;
+        var y = 2;
         x -= y
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 156 error: ${e.message}`);
@@ -81,6 +91,7 @@ try {{
 
 // ---- fragment 158 ----
 try {{
+        var bar = 0;
         bar -= "foo"; // NaN
     }} catch (e) {{
         console.error(`[test_expressions_part16] fragment 158 error: ${e.message}`);

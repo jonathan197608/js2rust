@@ -19,6 +19,8 @@ try {{
 
 // ---- fragment 41 ----
 try {{
+        var x = 1;
+        var y = 2;
         x % y
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 41 error: ${e.message}`);
@@ -81,6 +83,8 @@ try {{
 
 // ---- fragment 47 ----
 try {{
+        var x = 1;
+        var y = 2;
         x + y
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 47 error: ${e.message}`);
@@ -92,7 +96,8 @@ try {{
         "" + t; // Throws TypeError
         `${t}`; // '2022-07-31T04:48:56.113918308Z'
         "".concat(t); // '2022-07-31T04:48:56.113918308Z'
-    }} catch (e) {{
+            _ = t;
+}} catch (e) {{
         console.error(`[test_expressions_part5] fragment 48 error: ${e.message}`);
     }}
 

@@ -6,28 +6,43 @@
 function test_builtins_part17() {
 // ---- fragment 173 ----
 try {{
+        var g = 0;
+        var foo = 0;
+        var gims = 0;
+        var uy = 0;
         /foo/g;
         /foo/gims;
         /foo/uy;
-    }} catch (e) {{
+            _ = foo;
+        _ = g;
+        _ = gims;
+        _ = uy;
+}} catch (e) {{
         console.error(`[test_builtins_part17] fragment 173 error: ${e.message}`);
     }}
 
 // ---- fragment 174 ----
 try {{
+        var url = 0;
         const obj = {
           url: "/docs/Web",
         };
-    }} catch (e) {{
+            _ = obj;
+        _ = url;
+}} catch (e) {{
         console.error(`[test_builtins_part17] fragment 174 error: ${e.message}`);
     }}
 
 // ---- fragment 175 ----
 try {{
+        var u = 0;
+        var cA = 0;
         /\u0065/u; // Lowercase "e"
         /\u{1f600}/u; // Grinning face emoji
         /\cA/u; // U+0001 (Start of Heading)
-    }} catch (e) {{
+            _ = cA;
+        _ = u;
+}} catch (e) {{
         console.error(`[test_builtins_part17] fragment 175 error: ${e.message}`);
     }}
 
@@ -70,12 +85,16 @@ try {{
         JSON.parse('{"foo": 01}');
         // SyntaxError: JSON.parse: expected ',' or '}' after property value
         // in object at line 1 column 2 of the JSON data
+    }} catch (e) {{
+        console.error(`[test_builtins_part17] fragment 180a error: ${e.message}`);
+    }}
 
+try {{
         JSON.parse('{"foo": 1.}');
         // SyntaxError: JSON.parse: unterminated fractional number
         // at line 1 column 2 of the JSON data
     }} catch (e) {{
-        console.error(`[test_builtins_part17] fragment 180 error: ${e.message}`);
+        console.error(`[test_builtins_part17] fragment 180b error: ${e.message}`);
     }}
 
 // ---- fragment 181 ----

@@ -114,7 +114,9 @@ try {{
         console.log(Object.is(nan3, NaN)); // true
         console.log(f2b(NaN)); // Uint8Array(8) [0, 0, 0, 0, 0, 0, 248, 127]
         console.log(f2b(nan3)); // Uint8Array(8) [1, 0, 0, 0, 0, 0, 248, 127]
-    }} catch (e) {{
+            _ = n;
+        _ = nan2;
+}} catch (e) {{
         console.error(`[test_builtins_part1] fragment 7 error: ${e.message}`);
     }}
 

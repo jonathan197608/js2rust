@@ -59,6 +59,56 @@ fn expr_references_name(expr: &Expression, name: &str) -> bool {
     }
 }
 
+/// Recursively scan a statement tree for a `BreakStatement` targeting a specific label.
+/// Used to determine whether a JS labeled statement actually needs a Zig labeled block.
+fn has_break_to_label(stmt: &Statement, label_name: &str) -> bool {
+    match stmt {
+        Statement::BreakStatement(bs) => bs
+            .label
+            .as_ref()
+            .is_some_and(|l| l.name.as_str() == label_name),
+        Statement::BlockStatement(bs) => bs.body.iter().any(|s| has_break_to_label(s, label_name)),
+        Statement::IfStatement(is) => {
+            has_break_to_label(&is.consequent, label_name)
+                || is
+                    .alternate
+                    .as_ref()
+                    .is_some_and(|alt| has_break_to_label(alt, label_name))
+        }
+        Statement::LabeledStatement(ls) => {
+            // Only scan inner body, not checking self
+            has_break_to_label(&ls.body, label_name)
+        }
+        Statement::TryStatement(ts) => {
+            ts.block
+                .body
+                .iter()
+                .any(|s| has_break_to_label(s, label_name))
+                || ts.handler.as_ref().is_some_and(|h| {
+                    h.body
+                        .body
+                        .iter()
+                        .any(|s| has_break_to_label(s, label_name))
+                })
+                || ts
+                    .finalizer
+                    .as_ref()
+                    .is_some_and(|f| f.body.iter().any(|s| has_break_to_label(s, label_name)))
+        }
+        Statement::SwitchStatement(ss) => ss.cases.iter().any(|c| {
+            c.consequent
+                .iter()
+                .any(|s| has_break_to_label(s, label_name))
+        }),
+        Statement::ForStatement(fs) => has_break_to_label(&fs.body, label_name),
+        Statement::ForOfStatement(fos) => has_break_to_label(&fos.body, label_name),
+        Statement::ForInStatement(fis) => has_break_to_label(&fis.body, label_name),
+        Statement::WhileStatement(ws) => has_break_to_label(&ws.body, label_name),
+        Statement::DoWhileStatement(dws) => has_break_to_label(&dws.body, label_name),
+        _ => false,
+    }
+}
+
 impl Codegen {
     /// Emit a variable declaration. Toplevel: only `const` allowed.
     /// Inside functions: `var` with type inference + undefined init.
@@ -1159,14 +1209,20 @@ impl Codegen {
                         });
                     }
                     _ => {
-                        // Generic labeled block (for if/switch/block etc)
-                        self.write_indent();
-                        self.writeln(&format!("{}: {{", label_name));
-                        self.indent += 1;
-                        self.emit_fn_stmt(&ls.body);
-                        self.indent -= 1;
-                        self.write_indent();
-                        self.writeln("}");
+                        // Generic labeled block (for if/switch/block etc).
+                        // Skip the label if no break statement targets it (e.g. MDN
+                        // documentation labels like "Before: <expr>").
+                        if has_break_to_label(&ls.body, ls.label.name.as_str()) {
+                            self.write_indent();
+                            self.writeln(&format!("{}: {{", label_name));
+                            self.indent += 1;
+                            self.emit_fn_stmt(&ls.body);
+                            self.indent -= 1;
+                            self.write_indent();
+                            self.writeln("}");
+                        } else {
+                            self.emit_fn_stmt(&ls.body);
+                        }
                     }
                 }
             }
@@ -1324,6 +1380,11 @@ impl Codegen {
                 self.writeln("} else |err| {");
                 self.indent += 1;
 
+                // Push a shadow scope for the catch handler body.
+                // The catch parameter creates a block scope in JS; any variable
+                // shadowing within the catch handler must not leak outside.
+                self.push_shadow_scope();
+
                 if let Some(ref handler) = ts.handler {
                     // Bind catch parameter
                     if let Some(ref param) = handler.param
@@ -1363,6 +1424,8 @@ impl Codegen {
                     self.write_indent();
                     self.writeln("_ = err;");
                 }
+
+                self.pop_shadow_scope();
 
                 self.indent -= 1;
                 self.write_indent();

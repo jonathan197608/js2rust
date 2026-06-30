@@ -20,6 +20,8 @@ try {{
 
 // ---- fragment 71 ----
 try {{
+        var x = 1;
+        var y = 2;
         x <= y
     }} catch (e) {{
         console.error(`[test_expressions_part8] fragment 71 error: ${e.message}`);
@@ -101,6 +103,8 @@ try {{
 
 // ---- fragment 78 ----
 try {{
+        var x = 1;
+        var y = 2;
         x >= y
     }} catch (e) {{
         console.error(`[test_expressions_part8] fragment 78 error: ${e.message}`);

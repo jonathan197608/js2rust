@@ -6,6 +6,8 @@
 function test_builtins_part6() {
 // ---- fragment 50 ----
 try {{
+        var escape = 0;
+        var str = 0;
         escape(str)
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 50 error: ${e.message}`);
@@ -13,6 +15,8 @@ try {{
 
 // ---- fragment 51 ----
 try {{
+        var str = 0;
+        var unescape = 0;
         unescape(str)
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 51 error: ${e.message}`);
@@ -46,16 +50,21 @@ try {{
 
 // ---- fragment 53 ----
 try {{
+        var expression = 0;
         const good = Boolean(expression);
         const good2 = !!expression;
-    }} catch (e) {{
+            _ = good;
+        _ = good2;
+}} catch (e) {{
         console.error(`[test_builtins_part6] fragment 53 error: ${e.message}`);
     }}
 
 // ---- fragment 54 ----
 try {{
+        var expression = 0;
         const bad = new Boolean(expression); // don't use this!
-    }} catch (e) {{
+            _ = bad;
+}} catch (e) {{
         console.error(`[test_builtins_part6] fragment 54 error: ${e.message}`);
     }}
 
@@ -73,7 +82,9 @@ try {{
         const g = Boolean(myFalse); // g is true
         const myString = new String("Hello"); // myString is a String object
         const s = Boolean(myString); // s is true
-    }} catch (e) {{
+            _ = g;
+        _ = s;
+}} catch (e) {{
         console.error(`[test_builtins_part6] fragment 55 error: ${e.message}`);
     }}
 
@@ -98,7 +109,12 @@ try {{
         const bNull = Boolean(null);
         const bEmptyString = Boolean("");
         const bfalse = Boolean(false);
-    }} catch (e) {{
+            _ = bEmptyString;
+        _ = bNoParam;
+        _ = bNull;
+        _ = bZero;
+        _ = bfalse;
+}} catch (e) {{
         console.error(`[test_builtins_part6] fragment 57 error: ${e.message}`);
     }}
 
@@ -110,7 +126,13 @@ try {{
         const bSuLin = Boolean("Su Lin");
         const bArrayProto = Boolean([]);
         const bObjProto = Boolean({});
-    }} catch (e) {{
+            _ = bArrayProto;
+        _ = bObjProto;
+        _ = bSuLin;
+        _ = bfalseString;
+        _ = btrue;
+        _ = btrueString;
+}} catch (e) {{
         console.error(`[test_builtins_part6] fragment 58 error: ${e.message}`);
     }}
 

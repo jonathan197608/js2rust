@@ -25,6 +25,7 @@ try {{
 
 // ---- fragment 91 ----
 try {{
+        var key = 0;
         const object1 = {
           key: "value",
         };
@@ -35,7 +36,8 @@ try {{
 
         console.log(object1 != object2); // true
         console.log(object1 != object1); // false
-    }} catch (e) {{
+            _ = key;
+}} catch (e) {{
         console.error(`[test_expressions_part10] fragment 91 error: ${e.message}`);
     }}
 
@@ -54,6 +56,8 @@ try {{
 
 // ---- fragment 93 ----
 try {{
+        var x = 1;
+        var y = 2;
         x === y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 93 error: ${e.message}`);
@@ -87,6 +91,7 @@ try {{
 
 // ---- fragment 96 ----
 try {{
+        var key = 0;
         const object1 = {
           key: "value",
         };
@@ -97,7 +102,8 @@ try {{
 
         console.log(object1 === object2); // false
         console.log(object1 === object1); // true
-    }} catch (e) {{
+            _ = key;
+}} catch (e) {{
         console.error(`[test_expressions_part10] fragment 96 error: ${e.message}`);
     }}
 
@@ -116,6 +122,8 @@ try {{
 
 // ---- fragment 98 ----
 try {{
+        var x = 1;
+        var y = 2;
         x !== y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 98 error: ${e.message}`);
@@ -123,6 +131,8 @@ try {{
 
 // ---- fragment 99 ----
 try {{
+        var x = 1;
+        var y = 2;
         x !== y;
 
         !(x === y);

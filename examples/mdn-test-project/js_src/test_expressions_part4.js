@@ -43,6 +43,8 @@ try {{
 
 // ---- fragment 34 ----
 try {{
+        var x = 1;
+        var y = 2;
         x / y
     }} catch (e) {{
         console.error(`[test_expressions_part4] fragment 34 error: ${e.message}`);

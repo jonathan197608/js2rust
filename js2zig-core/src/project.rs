@@ -81,11 +81,16 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     let lib_zig = generate_orchestrator_lib(opts);
     fs::write(src_dir.join("lib.zig"), lib_zig).map_err(|e| format!("write lib.zig: {}", e))?;
 
-    // 3.5 src/host.zig — host function extern "c" declarations
-    if !opts.host_header.is_empty() {
-        fs::write(src_dir.join("host.zig"), &opts.host_header)
-            .map_err(|e| format!("write host.zig: {}", e))?;
-    }
+    // 3.5 src/host.zig — host function extern "c" declarations.
+    // Always write it (even empty) — some generated modules import it for
+    // builtin codegen that references host.* functions (e.g. host.regex_test).
+    let host_content = if opts.host_header.is_empty() {
+        "// No host functions registered.\n".to_string()
+    } else {
+        opts.host_header.clone()
+    };
+    fs::write(src_dir.join("host.zig"), &host_content)
+        .map_err(|e| format!("write host.zig: {}", e))?;
 
     // 4. Copy runtime/ if it exists (idempotent — skip if already copied)
     if let Some(ref rt_dir) = opts.runtime_dir {

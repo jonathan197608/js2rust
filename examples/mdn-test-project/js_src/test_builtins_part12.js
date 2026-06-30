@@ -58,6 +58,7 @@ try {{
 
 // ---- fragment 126 ----
 try {{
+        var isValidIdentifier = 0;
         const variables = ["foo", "foo:bar", "  foo  "];
 
         function toAssignment(key) {
@@ -80,8 +81,10 @@ try {{
 
 // ---- fragment 127 ----
 try {{
+        var k = 0;
         /\k/.test("k"); // true
-    }} catch (e) {{
+            _ = k;
+}} catch (e) {{
         console.error(`[test_builtins_part12] fragment 127 error: ${e.message}`);
     }}
 
@@ -103,17 +106,21 @@ try {{
 
 // ---- fragment 130 ----
 try {{
+        var a = 1;
         /a*/.exec("aaa"); // ['aaa']; the entire input is consumed
         /a*?/.exec("aaa"); // ['']; it's possible to consume no characters and still match successfully
         /^a*?$/.exec("aaa"); // ['aaa']; it's not possible to consume fewer characters and still match successfully
-    }} catch (e) {{
+            _ = a;
+}} catch (e) {{
         console.error(`[test_builtins_part12] fragment 130 error: ${e.message}`);
     }}
 
 // ---- fragment 131 ----
 try {{
+        var a = 1;
         /a*?$/.exec("aaa"); // ['aaa']; the match already succeeds at the first character, so the regex never attempts to start matching at the second character
-    }} catch (e) {{
+            _ = a;
+}} catch (e) {{
         console.error(`[test_builtins_part12] fragment 131 error: ${e.message}`);
     }}
 

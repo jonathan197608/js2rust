@@ -26,12 +26,18 @@ try {{
         }
 
         function doSomething(arg1, arg2, ...otherArgs) {}
-    }} catch (e) {{
+            _ = doSomething;
+        _ = offset;
+        _ = otherArgs;
+        _ = replacer;
+        _ = string;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 205 error: ${e.message}`);
     }}
 
 // ---- fragment 206 ----
 try {{
+        var a = 1;
         // Only setting the prototype once
         const obj = { __proto__: { a: 1 } };
 
@@ -46,17 +52,22 @@ try {{
             return 1;
           },
         };
-    }} catch (e) {{
+            _ = obj;
+        _ = obj2;
+        _ = a;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 206 error: ${e.message}`);
     }}
 
 // ---- fragment 207 ----
 try {{
+        var u = 0;
         // All { and } need to be escaped
         /\{\{MDN_Macro\}\}/u;
         // The ] needs to be escaped
         /\[sic\]/u;
-    }} catch (e) {{
+            _ = u;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 207 error: ${e.message}`);
     }}
 
@@ -69,7 +80,10 @@ try {{
         function g(arg) {
           let bar = "foo";
         }
-    }} catch (e) {{
+            _ = bar;
+        _ = f;
+        _ = g;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 208 error: ${e.message}`);
     }}
 
@@ -78,7 +92,9 @@ try {{
         function doSomething(...args) {
           // args is always an array
         }
-    }} catch (e) {{
+            _ = args;
+        _ = doSomething;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 209 error: ${e.message}`);
     }}
 
@@ -92,12 +108,15 @@ try {{
             return "Century!";
           }
         }
-    }} catch (e) {{
+            _ = cheer;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 210 error: ${e.message}`);
     }}
 
 // ---- fragment 211 ----
 try {{
+        var a = 1;
+        var b = 2;
         (-a) ** b
         -(a ** b)
     }} catch (e) {{
@@ -106,10 +125,12 @@ try {{
 
 // ---- fragment 212 ----
 try {{
+        var factorial = 0;
         function taylorSin(x) {
           return (n) => ((-1) ** n * x ** (2 * n + 1)) / factorial(2 * n + 1);
         }
-    }} catch (e) {{
+            _ = taylorSin;
+}} catch (e) {{
         console.error(`[test_builtins_part20] fragment 212 error: ${e.message}`);
     }}
 

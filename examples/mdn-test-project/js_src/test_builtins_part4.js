@@ -60,6 +60,7 @@ try {{
 
 // ---- fragment 36 ----
 try {{
+        var encodedURI = "https://example.com";
         decodeURI(encodedURI)
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 36 error: ${e.message}`);
@@ -89,12 +90,14 @@ try {{
         }
 
         // URIError: malformed URI sequence
-    }} catch (e) {{
+            _ = a;
+}} catch (e) {{
         console.error(`[test_builtins_part4] fragment 38 error: ${e.message}`);
     }}
 
 // ---- fragment 39 ----
 try {{
+        var encodedURI = "https://example.com";
         decodeURIComponent(encodedURI)
     }} catch (e) {{
         console.error(`[test_builtins_part4] fragment 39 error: ${e.message}`);

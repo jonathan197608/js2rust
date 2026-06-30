@@ -6,6 +6,8 @@
 function test_statements_part4() {
 // ---- fragment 32 ----
 try {{
+        var condition = 0;
+        var killTheUniverse = 0;
         if (condition);      // Caution, this "if" does nothing!
           killTheUniverse(); // So this always gets executed!!!
     }} catch (e) {{
@@ -14,6 +16,7 @@ try {{
 
 // ---- fragment 33 ----
 try {{
+        var myModule = 0;
         myModule.doAllTheAmazingThings();
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 33 error: ${e.message}`);
@@ -21,6 +24,7 @@ try {{
 
 // ---- fragment 34 ----
 try {{
+        var myModule = 0;
         myModule.doAllTheAmazingThings(); // myModule.doAllTheAmazingThings is imported by the next line
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 34 error: ${e.message}`);
@@ -28,6 +32,7 @@ try {{
 
 // ---- fragment 35 ----
 try {{
+        var number = 0;
         // getPrimes.js
         /**
          * Returns a list of prime numbers that are smaller than `max`.
@@ -47,12 +52,14 @@ try {{
             .filter(([, isPrime]) => isPrime)
             .map(([number]) => number);
         }
-    }} catch (e) {{
+            _ = getPrimes;
+}} catch (e) {{
         console.error(`[test_statements_part4] fragment 35 error: ${e.message}`);
     }}
 
 // ---- fragment 36 ----
 try {{
+        var getPrimes = 0;
         console.log(getPrimes(10)); // [2, 3, 5, 7]
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 36 error: ${e.message}`);
@@ -71,6 +78,8 @@ try {{
 
 // ---- fragment 38 ----
 try {{
+        var myModule = 0;
+        var myValue = 0;
         // main.js
 
         console.log(myValue); // 1
@@ -87,6 +96,7 @@ try {{
 
 // ---- fragment 39 ----
 try {{
+        var foo = 0;
         foo; // unqualified identifier
         foo.bar; // bar is a qualified identifier
     }} catch (e) {{
@@ -95,16 +105,19 @@ try {{
 
 // ---- fragment 40 ----
 try {{
+        var bar = 0;
         const foo = { bar: 1 };
         console.log(foo.bar);
         // foo is found in the scope chain as a variable;
         // bar is found in foo as a property
-    }} catch (e) {{
+            _ = bar;
+}} catch (e) {{
         console.error(`[test_statements_part4] fragment 40 error: ${e.message}`);
     }}
 
 // ---- fragment 41 ----
 try {{
+        var globalThis = {};
         console.log(globalThis.Math === Math); // true
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 41 error: ${e.message}`);

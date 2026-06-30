@@ -43,6 +43,8 @@ try {{
 
 // ---- fragment 64 ----
 try {{
+        var x = 1;
+        var y = 2;
         x > y
     }} catch (e) {{
         console.error(`[test_expressions_part7] fragment 64 error: ${e.message}`);

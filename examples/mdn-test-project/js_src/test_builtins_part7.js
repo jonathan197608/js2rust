@@ -42,7 +42,12 @@ try {{
         const infiniteNum = Number.POSITIVE_INFINITY;
         const negInfiniteNum = Number.NEGATIVE_INFINITY;
         const notANum = Number.NaN;
-    }} catch (e) {{
+            _ = biggestNum;
+        _ = infiniteNum;
+        _ = negInfiniteNum;
+        _ = notANum;
+        _ = smallestNum;
+}} catch (e) {{
         console.error(`[test_builtins_part7] fragment 74 error: ${e.message}`);
     }}
 
@@ -50,7 +55,9 @@ try {{
 try {{
         const biggestInt = Number.MAX_SAFE_INTEGER; // (2**53 - 1) => 9007199254740991
         const smallestInt = Number.MIN_SAFE_INTEGER; // -(2**53 - 1) => -9007199254740991
-    }} catch (e) {{
+            _ = biggestInt;
+        _ = smallestInt;
+}} catch (e) {{
         console.error(`[test_builtins_part7] fragment 75 error: ${e.message}`);
     }}
 
@@ -101,7 +108,13 @@ try {{
           "0b11111111111111111111111111111111111111111111111111111",
         );
         // 9007199254740991n
-    }} catch (e) {{
+            _ = alsoHuge;
+        _ = hugeBin;
+        _ = hugeHex;
+        _ = hugeOctal;
+        _ = hugeString;
+        _ = previouslyMaxSafeInteger;
+}} catch (e) {{
         console.error(`[test_builtins_part7] fragment 78 error: ${e.message}`);
     }}
 
@@ -132,7 +145,13 @@ try {{
         bigN * -1n; // -18014398509481984n
         const expected = 4n / 2n; // 2n
         const truncated = 5n / 2n; // 2n, not 2.5n
-    }} catch (e) {{
+            _ = diff;
+        _ = expected;
+        _ = maxPlusOne;
+        _ = mod;
+        _ = theFuture;
+        _ = truncated;
+}} catch (e) {{
         console.error(`[test_builtins_part7] fragment 81 error: ${e.message}`);
     }}
 

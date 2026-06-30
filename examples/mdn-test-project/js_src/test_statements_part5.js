@@ -6,6 +6,9 @@
 function test_statements_part5() {
 // ---- fragment 42 ----
 try {{
+        var x = 1;
+        var y = 2;
+        var sin = 0;
         let a, x, y;
         const r = 10;
 
@@ -15,18 +18,29 @@ try {{
           x = r * cos(PI);
           y = r * sin(PI / 2);
         }
-    }} catch (e) {{
+            _ = PI;
+        _ = PI;
+        _ = PI;
+        _ = PI;
+        _ = PI;
+        _ = PI;
+        _ = PI;
+}} catch (e) {{
         console.error(`[test_statements_part5] fragment 42 error: ${e.message}`);
     }}
 
 // ---- fragment 43 ----
 try {{
+        var bar = 0;
+        var foo = 0;
         const objectHavingAnEspeciallyLengthyName = { foo: true, bar: false };
 
         if (((o) => o.foo && !o.bar)(objectHavingAnEspeciallyLengthyName)) {
           // This branch runs.
         }
-    }} catch (e) {{
+            _ = bar;
+        _ = foo;
+}} catch (e) {{
         console.error(`[test_statements_part5] fragment 43 error: ${e.message}`);
     }}
 

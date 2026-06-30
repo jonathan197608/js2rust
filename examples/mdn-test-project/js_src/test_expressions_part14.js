@@ -6,6 +6,8 @@
 function test_expressions_part14() {
 // ---- fragment 130 ----
 try {{
+        var x = 1;
+        var y = 2;
         x && y
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 130 error: ${e.message}`);
@@ -13,6 +15,7 @@ try {{
 
 // ---- fragment 131 ----
 try {{
+        var result = 0;
         result = "" && "foo"; // result is assigned "" (empty string)
         result = 2 && 0; // result is assigned 0
         result = "foo" && 4; // result is assigned 4
@@ -50,6 +53,15 @@ try {{
 
 // ---- fragment 134 ----
 try {{
+        var a6 = false;
+        var a7 = false;
+        var a1 = false;
+        var a2 = false;
+        var a3 = false;
+        var a4 = false;
+        var a5 = false;
+        var a8 = false;
+        var a9 = false;
         a1 = true && true; // t && t returns true
         a2 = true && false; // t && f returns false
         a3 = false && true; // f && t returns false
@@ -65,6 +77,8 @@ try {{
 
 // ---- fragment 135 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         bCondition1 && bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 135 error: ${e.message}`);
@@ -72,6 +86,8 @@ try {{
 
 // ---- fragment 136 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         !(!bCondition1 || !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 136 error: ${e.message}`);
@@ -79,6 +95,8 @@ try {{
 
 // ---- fragment 137 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         bCondition1 || bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 137 error: ${e.message}`);
@@ -86,6 +104,8 @@ try {{
 
 // ---- fragment 138 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         !(!bCondition1 && !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 138 error: ${e.message}`);
@@ -93,6 +113,9 @@ try {{
 
 // ---- fragment 139 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
+        var bCondition3 = true;
         bCondition1 || (bCondition2 && bCondition3)
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 139 error: ${e.message}`);

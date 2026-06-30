@@ -74,23 +74,29 @@ try {{
 
 // ---- fragment 87 ----
 try {{
+        var bigint = 0;
         BigInt.prototype.toJSON = function () {
           return { $bigint: this.toString() };
         };
-    }} catch (e) {{
+            _ = bigint;
+}} catch (e) {{
         console.error(`[test_builtins_part8] fragment 87 error: ${e.message}`);
     }}
 
 // ---- fragment 88 ----
 try {{
+        var a = 1;
         console.log(JSON.stringify({ a: 1n }));
         // {"a":{"$bigint":"1"}}
-    }} catch (e) {{
+            _ = a;
+}} catch (e) {{
         console.error(`[test_builtins_part8] fragment 88 error: ${e.message}`);
     }}
 
 // ---- fragment 89 ----
 try {{
+        var big = 0;
+        var number = 0;
         const replacer = (key, value) =>
           typeof value === "bigint" ? { $bigint: value.toString() } : value;
 
@@ -102,12 +108,15 @@ try {{
 
         console.log(stringified);
         // {"number":1,"big":{"$bigint":"18014398509481982"}}
-    }} catch (e) {{
+            _ = big;
+        _ = number;
+}} catch (e) {{
         console.error(`[test_builtins_part8] fragment 89 error: ${e.message}`);
     }}
 
 // ---- fragment 90 ----
 try {{
+        var bigint = 0;
         const reviver = (key, value) =>
           value !== null &&
           typeof value === "object" &&

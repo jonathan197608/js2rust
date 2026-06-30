@@ -6,6 +6,9 @@
 function test_expressions_part15() {
 // ---- fragment 140 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
+        var bCondition3 = true;
         bCondition1 || bCondition2 && bCondition3
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 140 error: ${e.message}`);
@@ -23,6 +26,8 @@ try {{
 
 // ---- fragment 142 ----
 try {{
+        var x = 1;
+        var y = 2;
         x || y
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 142 error: ${e.message}`);
@@ -56,6 +61,7 @@ try {{
 
 // ---- fragment 145 ----
 try {{
+        var varObject = 0;
         true || true; // t || t returns true
         false || true; // f || t returns true
         true || false; // t || f returns true
@@ -72,6 +78,8 @@ try {{
 
 // ---- fragment 146 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         bCondition1 && bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 146 error: ${e.message}`);
@@ -79,6 +87,8 @@ try {{
 
 // ---- fragment 147 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         !(!bCondition1 || !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 147 error: ${e.message}`);
@@ -86,6 +96,8 @@ try {{
 
 // ---- fragment 148 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         bCondition1 || bCondition2
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 148 error: ${e.message}`);
@@ -93,6 +105,8 @@ try {{
 
 // ---- fragment 149 ----
 try {{
+        var bCondition1 = true;
+        var bCondition2 = false;
         !(!bCondition1 && !bCondition2)
     }} catch (e) {{
         console.error(`[test_expressions_part15] fragment 149 error: ${e.message}`);

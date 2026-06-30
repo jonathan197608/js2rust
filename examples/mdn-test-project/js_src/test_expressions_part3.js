@@ -66,6 +66,8 @@ try {{
 
 // ---- fragment 27 ----
 try {{
+        var x = 1;
+        var y = 2;
         x * y
     }} catch (e) {{
         console.error(`[test_expressions_part3] fragment 27 error: ${e.message}`);

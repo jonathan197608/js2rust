@@ -19,6 +19,8 @@ try {{
 
 // ---- fragment 161 ----
 try {{
+        var x = 1;
+        var y = 2;
         x **= y
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 161 error: ${e.message}`);

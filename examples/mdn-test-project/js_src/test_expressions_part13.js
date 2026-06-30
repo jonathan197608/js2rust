@@ -29,6 +29,8 @@ try {{
 
 // ---- fragment 122 ----
 try {{
+        var x = 1;
+        var y = 2;
         x | y
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 122 error: ${e.message}`);
@@ -36,9 +38,13 @@ try {{
 
 // ---- fragment 123 ----
 try {{
+        var After = 0;
+        var Before = 0;
         Before: 11100110111110100000000000000110000000000001
         After:              10100000000000000110000000000001
-    }} catch (e) {{
+            _ = After;
+        _ = Before;
+}} catch (e) {{
         console.error(`[test_expressions_part13] fragment 123 error: ${e.message}`);
     }}
 
@@ -67,6 +73,8 @@ try {{
 
 // ---- fragment 126 ----
 try {{
+        var x = 1;
+        var y = 2;
         x ^ y
     }} catch (e) {{
         console.error(`[test_expressions_part13] fragment 126 error: ${e.message}`);
@@ -74,9 +82,13 @@ try {{
 
 // ---- fragment 127 ----
 try {{
+        var After = 0;
+        var Before = 0;
         Before: 11100110111110100000000000000110000000000001
         After:              10100000000000000110000000000001
-    }} catch (e) {{
+            _ = After;
+        _ = Before;
+}} catch (e) {{
         console.error(`[test_expressions_part13] fragment 127 error: ${e.message}`);
     }}
 

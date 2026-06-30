@@ -6,8 +6,8 @@
 function test_expressions_part12() {
 // ---- fragment 110 ----
 try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 110 error: ${e.message}`);
     }}
@@ -37,6 +37,8 @@ try {{
 
 // ---- fragment 113 ----
 try {{
+        var x = 1;
+        var y = 2;
         x >>> y
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 113 error: ${e.message}`);
@@ -44,8 +46,8 @@ try {{
 
 // ---- fragment 114 ----
 try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 114 error: ${e.message}`);
     }}
@@ -77,6 +79,8 @@ try {{
 
 // ---- fragment 118 ----
 try {{
+        var x = 1;
+        var y = 2;
         x & y
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 118 error: ${e.message}`);
@@ -84,8 +88,8 @@ try {{
 
 // ---- fragment 119 ----
 try {{
-        Before: 11100110111110100000000000000110000000000001
-        After:              10100000000000000110000000000001
+        // Before: 11100110111110100000000000000110000000000001
+        // After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part12] fragment 119 error: ${e.message}`);
     }}

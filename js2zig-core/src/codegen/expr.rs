@@ -7,6 +7,28 @@ use crate::native_proto::builtins;
 use oxc_ast::ast::*;
 use oxc_span::GetSpan;
 
+/// Escape a string for use in a Zig string literal.
+/// Handles control characters (0x00-0x1F, 0x7F) by converting them to \\xNN hex escapes,
+/// and standard escapes for \\, \", \n, \r, \t.
+pub(crate) fn escape_zig_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 16);
+    for byte in s.bytes() {
+        match byte {
+            b'\\' => result.push_str("\\\\"),
+            b'"' => result.push_str("\\\""),
+            b'\n' => result.push_str("\\n"),
+            b'\r' => result.push_str("\\r"),
+            b'\t' => result.push_str("\\t"),
+            // Control characters and DEL — must use \\xNN escape in Zig
+            c @ 0x00..=0x1F | c @ 0x7F..=0xFF => {
+                result.push_str(&format!("\\x{:02X}", c));
+            }
+            _ => result.push(byte as char),
+        }
+    }
+    result
+}
+
 // ── Expressions ─────────────────────────────────────
 
 impl Codegen {
@@ -33,16 +55,7 @@ impl Codegen {
                 }
             }
             Expression::StringLiteral(s) => {
-                // Escape special characters for Zig string literal.
-                // Order matters: backslash first, then double-quote, then control chars.
-                let escaped = s
-                    .value
-                    .replace("\\", "\\\\")
-                    .replace("\"", "\\\"")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                    .replace("\t", "\\t");
-                self.write(&format!("\"{}\"", escaped));
+                self.write(&format!("\"{}\"", escape_zig_string(&s.value)));
             }
             Expression::BooleanLiteral(b) => {
                 self.write(if b.value { "true" } else { "false" });
@@ -1110,8 +1123,9 @@ impl Codegen {
     /// Both operands are known to be BigInt.
     fn emit_bigint_binary(&mut self, be: &BinaryExpression) {
         // Unsupported BigInt operators that have no runtime method.
-        // Emit a bare @panic (without the blk wrapper) so the surrounding
-        // expression statement doesn't get an unreachable "catch" appended.
+        // Wrap @panic in an if-else expression so Zig does not treat it
+        // as unconditionally noreturn (which would make subsequent
+        // statements unreachable at compile time).
         if matches!(
             be.operator,
             BinaryOperator::Remainder
@@ -1122,7 +1136,7 @@ impl Codegen {
                 | BinaryOperator::ShiftRight
                 | BinaryOperator::ShiftRightZeroFill
         ) {
-            self.write("@panic(\"Unsupported BigInt operator\")");
+            self.write("(if (true) @panic(\"Unsupported BigInt operator\") else {})");
             return;
         }
 
@@ -4822,8 +4836,7 @@ impl Codegen {
                 // Extract pattern from the receiver (RegExp literal or RegExp variable)
                 if let Expression::StaticMemberExpression(ref mem) = ce.callee {
                     if let Expression::RegExpLiteral(re) = &mem.object {
-                        let pattern = re.regex.pattern.text.as_str().to_string();
-                        let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
+                        let escaped = escape_zig_string(&re.regex.pattern.text);
                         self.write(&format!("host.regex_test(\"{}\", ", escaped));
                         self.emit_first_arg(&ce.arguments);
                         self.write(")");

@@ -50,14 +50,17 @@ try {{
 
 // ---- fragment 218 ----
 try {{
+        var otherData = 0;
         const circularReference = { otherData: 123 };
         circularReference.myself = circularReference;
-    }} catch (e) {{
+            _ = otherData;
+}} catch (e) {{
         console.error(`[test_builtins_part21] fragment 218 error: ${e.message}`);
     }}
 
 // ---- fragment 219 ----
 try {{
+        var circularReference = 0;
         JSON.stringify(circularReference);
         // TypeError: cyclic object value
     }} catch (e) {{
@@ -66,6 +69,9 @@ try {{
 
 // ---- fragment 220 ----
 try {{
+        var circularReference = 0;
+        var key = 0;
+        var value = 0;
         function getCircularReplacer() {
           const ancestors = [];
           return function (key, value) {
@@ -115,7 +121,8 @@ try {{
           `${existingPattern.flags}g`,
         );
         "abc".replaceAll(newPattern, "f"); // "fff"
-    }} catch (e) {{
+            _ = newPattern;
+}} catch (e) {{
         console.error(`[test_builtins_part21] fragment 222 error: ${e.message}`);
     }}
 

@@ -38,6 +38,7 @@ try {{
 
 // ---- fragment 103 ----
 try {{
+        var key = 0;
         const object1 = {
           key: "value",
         };
@@ -48,7 +49,8 @@ try {{
 
         console.log(object1 !== object2); // true
         console.log(object1 !== object1); // false
-    }} catch (e) {{
+            _ = key;
+}} catch (e) {{
         console.error(`[test_expressions_part11] fragment 103 error: ${e.message}`);
     }}
 
@@ -64,6 +66,8 @@ try {{
 
 // ---- fragment 105 ----
 try {{
+        var x = 1;
+        var y = 2;
         x << y
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 105 error: ${e.message}`);
@@ -71,9 +75,13 @@ try {{
 
 // ---- fragment 106 ----
 try {{
+        var After = 0;
+        var Before = 0;
         Before: 11100110111110100000000000000110000000000001
         After:              10100000000000000110000000000001
-    }} catch (e) {{
+            _ = After;
+        _ = Before;
+}} catch (e) {{
         console.error(`[test_expressions_part11] fragment 106 error: ${e.message}`);
     }}
 
@@ -103,6 +111,8 @@ try {{
 
 // ---- fragment 109 ----
 try {{
+        var x = 1;
+        var y = 2;
         x >> y
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 109 error: ${e.message}`);

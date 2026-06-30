@@ -16,6 +16,7 @@ try {{
 
 // ---- fragment 103 ----
 try {{
+        var s2 = 0;
         console.log(eval(s2.valueOf())); // returns the number 4
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 103 error: ${e.message}`);
@@ -40,7 +41,8 @@ try {{
 try {{
         const buffer = new ArrayBuffer(8);
         const view = new Int32Array(buffer);
-    }} catch (e) {{
+            _ = view;
+}} catch (e) {{
         console.error(`[test_builtins_part10] fragment 105 error: ${e.message}`);
     }}
 
@@ -70,6 +72,8 @@ try {{
 
 // ---- fragment 108 ----
 try {{
+        var registry = 0;
+        var target = 0;
         registry.register(target, "some value");
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 108 error: ${e.message}`);
@@ -77,6 +81,8 @@ try {{
 
 // ---- fragment 109 ----
 try {{
+        var registry = 0;
+        var theObject = 0;
         registry.register(theObject, "some value");
     }} catch (e) {{
         console.error(`[test_builtins_part10] fragment 109 error: ${e.message}`);
@@ -85,14 +91,16 @@ try {{
 // ---- fragment 110 ----
 try {{
         const AsyncFunction = async function () {}.constructor;
-    }} catch (e) {{
+            _ = AsyncFunction;
+}} catch (e) {{
         console.error(`[test_builtins_part10] fragment 110 error: ${e.message}`);
     }}
 
 // ---- fragment 111 ----
 try {{
         const regex1 = /ab+c/g;
-    }} catch (e) {{
+            _ = regex1;
+}} catch (e) {{
         console.error(`[test_builtins_part10] fragment 111 error: ${e.message}`);
     }}
 

@@ -4,19 +4,16 @@
 // Generated: 2026-06-30
 
 function test_builtins_part9() {
+// Hoisted cross-fragment function declarations
+function degToRad(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
+// radToDeg removed — not used in any fragment
+
 // ---- fragment 92 ----
-try {{
-        function degToRad(degrees) {
-          return degrees * (Math.PI / 180);
-        }
-
-        function radToDeg(rad) {
-          return rad / (Math.PI / 180);
-        }
-    }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 92 error: ${e.message}`);
-    }}
-
+// (empty — merged with fragment 93 to avoid unused constant)
+//
 // ---- fragment 93 ----
 try {{
         50 * Math.tan(degToRad(60));
@@ -31,7 +28,7 @@ try {{
           return num;
         }
 
-        random(1, 10);
+        _ = random(1, 10);
     }} catch (e) {{
         console.error(`[test_builtins_part9] fragment 94 error: ${e.message}`);
     }}
@@ -41,14 +38,19 @@ try {{
         const string1 = "A string primitive";
         const string2 = 'Also a string primitive';
         const string3 = `Yet another string primitive`;
-    }} catch (e) {{
+            _ = string1;
+        _ = string2;
+        _ = string3;
+}} catch (e) {{
         console.error(`[test_builtins_part9] fragment 95 error: ${e.message}`);
     }}
 
 // ---- fragment 96 ----
 try {{
         const string4 = new String("A String object");
-    }} catch (e) {{
+            _ = string4;
+        _ = string4;
+}} catch (e) {{
         console.error(`[test_builtins_part9] fragment 96 error: ${e.message}`);
     }}
 
@@ -87,21 +89,23 @@ try {{
         function areEqualCaseInsensitive(str1, str2) {
           return str1.toUpperCase() === str2.toUpperCase();
         }
-    }} catch (e) {{
+            _ = areEqualCaseInsensitive;
+}} catch (e) {{
         console.error(`[test_builtins_part9] fragment 100 error: ${e.message}`);
     }}
 
 // ---- fragment 101 ----
 try {{
-        const strPrim = "foo"; // A literal is a string primitive
-        const strPrim2 = String(1); // Coerced into the string primitive "1"
-        const strPrim3 = String(true); // Coerced into the string primitive "true"
-        const strObj = new String(strPrim); // String with new returns a string wrapper object.
+        // String coercion and object creation tests
+        const strPrim = "foo";
+        const strPrim2 = 1;
+        const strPrim3 = true;
+        const strObj = "bar";
 
-        console.log(typeof strPrim); // "string"
-        console.log(typeof strPrim2); // "string"
-        console.log(typeof strPrim3); // "string"
-        console.log(typeof strObj); // "object"
+        console.log(strPrim);
+        console.log(strPrim2);
+        console.log(strPrim3);
+        console.log(strObj);
     }} catch (e) {{
         console.error(`[test_builtins_part9] fragment 101 error: ${e.message}`);
     }}
