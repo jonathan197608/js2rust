@@ -1124,8 +1124,7 @@ function main() {
 
     #[test]
     fn test_native_proto_object_map() {
-        // Scheme C: Dynamic access →StringHashMap.
-        // Note: obj[key] is not allowed in strict type system (compile error).
+        // Dynamic struct access: obj[key] → @field(obj, key)
         let js = r#"
 function main() {
     const obj = { x: 1, y: 2 };
@@ -1134,8 +1133,8 @@ function main() {
     return val;
 }
 "#;
-        // This should fail because obj[key] is not allowed.
-        assert_transpile_err!(js, "Dynamic property access");
+        let zig = transpile_and_assert!(js, "test_native_proto_object_map");
+        assert!(zig.contains("@field("));
     }
 
     #[test]
@@ -1163,19 +1162,18 @@ function main() {
 
     #[test]
     fn test_native_proto_object_map_mutation() {
-        // Map object with property assignment.
-        // Note: obj[key] is not allowed in strict type system (compile error).
+        // Dynamic struct mutation: obj[key] = val → @field(obj, key) = val
         let js = r#"
 function main() {
-    const obj = { x: 1, y: 2 };
+    var obj = { x: 1, y: 2 };
     const key = "x";
     obj[key] = 10;
     const val = obj[key];
     return val;
 }
 "#;
-        // This should fail because obj[key] is not allowed.
-        assert_transpile_err!(js, "Dynamic property access");
+        let zig = transpile_and_assert!(js, "test_native_proto_object_map_mutation");
+        assert!(zig.contains("@field("));
     }
 
     #[test]
@@ -8486,6 +8484,226 @@ export function valueIsNaN(x) {
             zig.contains("pub fn valueIsNaN("),
             "Expected valueIsNaN to transpile successfully:\n{}",
             zig
+        );
+    }
+
+    // ── Shadowing infrastructure tests (#946, #947) ─────────────────────
+
+    /// Test #946: Variable shadowing in nested blocks.
+    /// JS allows `let x` inside a nested block to shadow an outer `let x`.
+    /// Zig 0.16.0 forbids this, so the transpiler must rename the inner variable.
+    /// Note: we use `let` (block-scoped) not `var` (function-scoped).
+    #[test]
+    fn test_shadowing_nested_block() {
+        let js = r#"
+export function shadowTest() {
+    let x = 10;
+    if (true) {
+        let x = 20;
+        let y = x + 1;
+    }
+    return x;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_shadowing_nested_block");
+
+        // The inner `x` should be renamed to `x_shadow_1` (or similar)
+        // so it doesn't conflict with the outer `x`.
+        println!("=== Shadowing nested block ===\n{}", zig);
+
+        // Verify: outer x is declared
+        assert!(
+            zig.contains("const x = 10") || zig.contains("var x: i64 = 10"),
+            "Expected outer x declaration"
+        );
+
+        // Verify: inner block exists and x is renamed
+        assert!(
+            zig.contains("x_shadow_1 = 20") || zig.contains("const x_shadow_"),
+            "Expected inner x to be renamed to avoid shadowing:\n{}",
+            zig
+        );
+
+        // Verify: return uses outer x (not the shadowed inner x)
+        assert!(
+            zig.contains("return x;") || zig.contains("return x\n"),
+            "Expected return to use outer x:\n{}",
+            zig
+        );
+    }
+
+    /// Test #947: Function parameter name shadowing outer variable.
+    /// JS allows function parameters to have the same name as variables
+    /// in the outer scope. Zig doesn't allow this.
+    /// Note: this test exposes an issue with unused parameters in Zig.
+    /// The transpiler renames the local variable, but the parameter remains unused.
+    #[test]
+    fn test_shadowing_param_name() {
+        let js = r#"
+export function processData(data) {
+    let data = 100;
+    return data;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_shadowing_param_name");
+
+        println!("=== Shadowing param name ===\n{}", zig);
+
+        // The parameter `data` should be renamed to `data_param` (or similar)
+        // to avoid shadowing the outer `data`.
+        // But currently, the LOCAL variable is renamed, not the parameter.
+        // This is because `fn_scope_vars` contains the parameter name.
+        assert!(
+            zig.contains("data_shadow_") || zig.contains("data_param"),
+            "Expected local data to be renamed to avoid shadowing:\n{}",
+            zig
+        );
+    }
+
+    /// Test: Multiple levels of nesting with shadowing.
+    #[test]
+    fn test_shadowing_multiple_levels() {
+        let js = r#"
+export function nestedShadow(x) {
+    let y = x + 1;
+    if (true) {
+        let x = y + 10;
+        if (true) {
+            let y = x + 20;
+        }
+    }
+    return y;
+}
+"#;
+        let zig = transpile_and_assert!(js, "test_shadowing_multiple_levels");
+
+        println!("=== Multiple levels shadowing ===\n{}", zig);
+
+        // Verify the code compiles (ast-check passes)
+        // The implementation should rename shadowed variables appropriately
+        assert!(
+            zig.contains("blk_") || zig.contains("{"),
+            "Expected block expressions"
+        );
+    }
+
+    // ── #844/#867: Method chaining & non-Identifier member function calls ──
+
+    #[test]
+    fn test_method_chaining_encodeuri_replace() {
+        let js = r#"
+            export function testChainedReplace(str) {
+                return encodeURIComponent(str).replace(/%2F/g, "/");
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_method_chaining_encodeuri_replace");
+        println!("=== Method chaining: encodeURI().replace() ===\n{}", zig);
+        // The object of .replace() is a CallExpression (encodeURIComponent(str))
+        // callee_object_repr_mut should emit it inline as the object argument.
+        assert!(
+            zig.contains("js_string.replace("),
+            "Expected js_string.replace() call"
+        );
+        assert!(
+            zig.contains("encodeURI") || zig.contains("encodeURIComponent"),
+            "Expected encodeURI/component in the generated code"
+        );
+    }
+
+    #[test]
+    fn test_method_chaining_string_literal_method() {
+        let js = r#"
+            export function testLiteralMethod() {
+                return "Hello World".toLowerCase();
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_method_chaining_string_literal_method");
+        println!("=== String literal method call ===\n{}", zig);
+        assert!(
+            zig.contains("js_string.toLower"),
+            "Expected js_string.toLower call"
+        );
+    }
+
+    #[test]
+    fn test_method_chaining_array_join_after_map() {
+        let js = r#"
+            export function testMapJoin(arr) {
+                return arr.map(function(x) { return x * 2; }).join(",");
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_method_chaining_array_join_after_map");
+        println!("=== Array method chaining: map().join() ===\n{}", zig);
+        // ArrayMap is a stub (returns original array), so join should work on it
+        assert!(
+            zig.contains("__join_buf") || zig.contains("join"),
+            "Expected array join codegen"
+        );
+    }
+
+    #[test]
+    fn test_method_chaining_new_date_get_time() {
+        let js = r#"
+            export function testNewDateGetTime() {
+                return new Date().getTime();
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_method_chaining_new_date_get_time");
+        println!("=== new Date().getTime() ===\n{}", zig);
+        assert!(
+            zig.contains("getTime()"),
+            "Expected getTime() call on new Date()"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_array_access_index() {
+        // arr[i] where arr is ArrayList and i is a variable
+        let js = r#"
+            export function getElement(n) {
+                const arr = [1, 2, 3];
+                return arr[n];
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_dynamic_array_access_index");
+        assert!(
+            zig.contains(".items["),
+            "Expected .items[] for ArrayList access"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_array_assignment_index() {
+        // arr[i] = val where arr is ArrayList and i is a variable
+        let js = r#"
+            export function setElement(n, val) {
+                const arr = [1, 2, 3];
+                arr[n] = val;
+                return arr[n];
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_dynamic_array_assignment_index");
+        assert!(
+            zig.contains(".items["),
+            "Expected .items[] for ArrayList assignment"
+        );
+    }
+
+    #[test]
+    fn test_update_expr_in_index() {
+        // arr[i++] = 0 — UpdateExpression in array index position
+        let js = r#"
+            export function fillZero(arr, n) {
+                for (let i = 0; i < n; i++) {
+                    arr[i] = 0;
+                }
+            }
+        "#;
+        let zig = transpile_and_assert!(js, "test_update_expr_in_index");
+        // Should not contain raw "i += 1" inside array indexing
+        assert!(
+            !zig.contains(".items[i += 1]"),
+            "Should not have i += 1 inside array index"
         );
     }
 

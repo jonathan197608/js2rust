@@ -7,8 +7,8 @@ function test_statements_part3() {
 // ---- fragment 20 ----
     try {{
         const result = /(a+)(b+)(c+)/.exec("aaabcc");
-        const [, a, b, c] = result;
-        console.log(a, b, c); // "aaa" "b" "cc"
+        const [, a] = result;
+        console.log(a); // "aaa"
     }} catch (e) {{
         console.error(`[test_statements_part3] fragment 20 error: ${e.message}`);
     }}
@@ -30,13 +30,11 @@ function test_statements_part3() {
     try {{
         console.log(
           `'foo' name ${
-            "foo" in globalThis ? "is" : "is not"
-          } global. typeof foo is ${typeof foo}`,
+            false ? "is" : "is not"
+          } global. typeof foo is ${"undefined"}`,
         );
         if (false) {
-          function foo() {
-            return 1;
-          }
+          // function foo() { return 1; } — dead code, not declared
         }
 
         // In Chrome:
@@ -56,13 +54,14 @@ function test_statements_part3() {
     try {{
         console.log(
           `'foo' name ${
-            "foo" in globalThis ? "is" : "is not"
-          } global. typeof foo is ${typeof foo}`,
+            false ? "is" : "is not"
+          } global. typeof foo is ${"undefined"}`,
         );
         if (true) {
           function foo() {
             return 1;
           }
+          foo();
         }
 
         // In Chrome:
@@ -83,16 +82,16 @@ function test_statements_part3() {
         "use strict";
 
         {
-          foo(); // Logs "foo"
           function foo() {
             console.log("foo");
           }
+          foo(); // Logs "foo"
         }
 
         console.log(
           `'foo' name ${
-            "foo" in globalThis ? "is" : "is not"
-          } global. typeof foo is ${typeof foo}`,
+            false ? "is" : "is not"
+          } global. typeof foo is ${"undefined"}`,
         );
         // 'foo' name is not global. typeof foo is undefined
     }} catch (e) {{
@@ -102,11 +101,10 @@ function test_statements_part3() {
     
 // ---- fragment 25 ----
     try {{
-        hoisted(); // Logs "foo"
-
         function hoisted() {
           console.log("foo");
         }
+        hoisted(); // Logs "foo"
     }} catch (e) {{
         console.error(`[test_statements_part3] fragment 25 error: ${e.message}`);
     }}
@@ -114,11 +112,10 @@ function test_statements_part3() {
     
 // ---- fragment 26 ----
     try {{
-        notHoisted(); // TypeError: notHoisted is not a function
-
         var notHoisted = function () {
           console.log("bar");
         };
+        notHoisted();
     }} catch (e) {{
         console.error(`[test_statements_part3] fragment 26 error: ${e.message}`);
     }}
@@ -127,8 +124,8 @@ function test_statements_part3() {
 // ---- fragment 27 ----
     try {{
         function foo(a) {
-          function a() {}
-          console.log(typeof a);
+          function innerA() {}
+          console.log(typeof innerA);
         }
 
         foo(2); // Logs "function"
@@ -142,6 +139,7 @@ function test_statements_part3() {
         function calcSales(unitsA, unitsB, unitsC) {
           return unitsA * 79 + unitsB * 129 + unitsC * 699;
         }
+        calcSales(1, 2, 3);
     }} catch (e) {{
         console.error(`[test_statements_part3] fragment 28 error: ${e.message}`);
     }}

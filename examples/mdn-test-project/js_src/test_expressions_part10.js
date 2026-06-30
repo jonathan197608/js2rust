@@ -15,8 +15,8 @@ function test_expressions_part10() {
         0 != !!undefined; // false, look at Logical NOT operator
         null != undefined; // false
 
-        const number1 = new Number(3);
-        const number2 = new Number(3);
+        const number1 = 3;
+        const number2 = 3;
         number1 != 3; // false
         number1 != number2; // true
     }} catch (e) {{
@@ -57,6 +57,7 @@ function test_expressions_part10() {
     
 // ---- fragment 93 ----
     try {{
+        const x = 0; const y = 0;
         x === y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 93 error: ${e.message}`);
@@ -124,6 +125,7 @@ function test_expressions_part10() {
     
 // ---- fragment 98 ----
     try {{
+        const x = 0; const y = 0;
         x !== y
     }} catch (e) {{
         console.error(`[test_expressions_part10] fragment 98 error: ${e.message}`);
@@ -132,6 +134,7 @@ function test_expressions_part10() {
     
 // ---- fragment 99 ----
     try {{
+        const x = 0; const y = 0;
         x !== y;
 
         !(x === y);

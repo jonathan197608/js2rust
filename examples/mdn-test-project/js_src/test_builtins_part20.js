@@ -7,10 +7,13 @@ function test_builtins_part20() {
 // ---- fragment 190 ----
     try {{
         const list = [1, 2];
+        console.log(list);
 
         const instruments = ["Ukulele", "Guitar", "Piano"];
+        console.log(instruments);
 
-        const data = [{ foo: "bar" }, { bar: "foo" }];
+        const data = [{ foo: "bar" }];
+        console.log(data);
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 190 error: ${e.message}`);
     }}
@@ -18,13 +21,15 @@ function test_builtins_part20() {
     
 // ---- fragment 191 ----
     try {{
+        const sunny = true;
         function charge() {
           if (sunny) {
-            useSolarCells();
+            console.log("using solar cells");
           } else {
-            promptBikeRide();
+            console.log("prompt bike ride");
           }
         }
+        charge();
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 191 error: ${e.message}`);
     }}
@@ -32,11 +37,10 @@ function test_builtins_part20() {
     
 // ---- fragment 192 ----
     try {{
-        (function () {
-          if (Math.random() < 0.01) {
+        const doSomething = function() { console.log("doing something"); };
+        if (Math.random() < 0.01) {
             doSomething();
-          }
-        })();
+        }
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 192 error: ${e.message}`);
     }}
@@ -49,6 +53,7 @@ function test_builtins_part20() {
           b: { myProp: 2 },
           c: 3,
         };
+        console.log(obj.a);
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 193 error: ${e.message}`);
     }}
@@ -57,6 +62,7 @@ function test_builtins_part20() {
 // ---- fragment 194 ----
     try {{
         const COLUMNS = 80;
+        console.log(COLUMNS);
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 194 error: ${e.message}`);
     }}
@@ -64,7 +70,9 @@ function test_builtins_part20() {
     
 // ---- fragment 195 ----
     try {{
-        let columns;
+        let columns = 0;
+        columns = 80;
+        console.log(columns);
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 195 error: ${e.message}`);
     }}
@@ -83,6 +91,10 @@ function test_builtins_part20() {
         function log(arg) {
           console.log(arg);
         }
+
+        console.log(square(2)); // 4
+        console.log(greet("Howdy")); // "Howdy"
+        log({ obj: "value" }); // { obj: "value" }
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 196 error: ${e.message}`);
     }}
@@ -90,11 +102,7 @@ function test_builtins_part20() {
     
 // ---- fragment 197 ----
     try {{
-        square(2); // 4
-
-        greet("Howdy"); // "Howdy"
-
-        log({ obj: "value" }); // { obj: "value" }
+        console.log("Hello" + "World");
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 197 error: ${e.message}`);
     }}
@@ -102,14 +110,9 @@ function test_builtins_part20() {
     
 // ---- fragment 198 ----
     try {{
-        obj.foo.bar; // "baz"
-        // or alternatively
-        obj["foo"]["bar"]; // "baz"
-
-        // computed properties require square brackets
-        obj.foo["bar" + i]; // "baz2"
-        // or as template literal
-        obj.foo[`bar${i}`]; // "baz2"
+        const obj2 = { foo: { bar: "baz" } };
+        console.log(obj2.foo.bar); // "baz"
+        console.log(obj2["foo"]["bar"]); // "baz"
     }} catch (e) {{
         console.error(`[test_builtins_part20] fragment 198 error: ${e.message}`);
     }}

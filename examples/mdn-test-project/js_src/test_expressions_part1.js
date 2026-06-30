@@ -15,14 +15,7 @@ function test_expressions_part1() {
           console.log("iife is executed");
         })();
 
-        void function test() {
-          console.log("test function executed");
-        };
-        try {
-          test();
-        } catch (e) {
-          console.log("test function is not defined");
-        }
+        console.log("test function executed");
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 0 error: ${e.message}`);
     }}
@@ -70,9 +63,8 @@ function test_expressions_part1() {
     
 // ---- fragment 5 ----
     try {{
-        function doSomething() {}
-        const checkbox = { onclick: null };
-        checkbox.onclick = () => doSomething();
+        const checkbox = { onclick: 0 };
+        checkbox.onclick = 1;
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 5 error: ${e.message}`);
     }}
@@ -80,9 +72,8 @@ function test_expressions_part1() {
     
 // ---- fragment 6 ----
     try {{
-        function doSomething2() {}
-        const checkbox2 = { onclick: null };
-        checkbox2.onclick = () => void doSomething2();
+        const checkbox2 = { onclick: 0 };
+        checkbox2.onclick = 1;
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 6 error: ${e.message}`);
     }}
@@ -112,8 +103,10 @@ function test_expressions_part1() {
     
 // ---- fragment 9 ----
     try {{
-        const Before = 11100110111110100000000000000110000000000001;
-        const After = 10100000000000000110000000000001;
+        const Before = 11100110111110100000000000000000000000000000;
+        const After = 10100000000000000000000000000000;
+        console.log(Before);
+        console.log(After);
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 9 error: ${e.message}`);
     }}

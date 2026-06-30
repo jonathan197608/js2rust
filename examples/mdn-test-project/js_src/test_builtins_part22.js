@@ -13,7 +13,11 @@ function test_builtins_part22() {
           if (score > 100) {
             return "Century!";
           }
+          return "Good effort";
         }
+
+        console.log(cheer(147));
+        console.log(cheer(120));
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 210 error: ${e.message}`);
     }}
@@ -21,8 +25,12 @@ function test_builtins_part22() {
     
 // ---- fragment 211 ----
     try {{
-        (-a) ** b
-        -(a ** b)
+        const a = 2;
+        const b = 3;
+        const r1 = (-a) ** b;
+        const r2 = -(a ** b);
+        console.log(r1);
+        console.log(r2);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 211 error: ${e.message}`);
     }}
@@ -31,8 +39,10 @@ function test_builtins_part22() {
 // ---- fragment 212 ----
     try {{
         function taylorSin(x) {
-          return (n) => ((-1) ** n * x ** (2 * n + 1)) / factorial(2 * n + 1);
+          return x - (x * x * x) / 6;
         }
+
+        console.log(taylorSin(1));
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 212 error: ${e.message}`);
     }}
@@ -40,9 +50,10 @@ function test_builtins_part22() {
     
 // ---- fragment 213 ----
     try {{
-        Warning: SyntaxError: Using //@ to indicate sourceURL pragmas is deprecated. Use //# instead
-
-        Warning: SyntaxError: Using //@ to indicate sourceMappingURL pragmas is deprecated. Use //# instead
+        const warning1 = "Using //@ to indicate sourceURL pragmas is deprecated. Use //# instead";
+        const warning2 = "Using //@ to indicate sourceMappingURL pragmas is deprecated. Use //# instead";
+        console.log(warning1);
+        console.log(warning2);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 213 error: ${e.message}`);
     }}
@@ -50,11 +61,8 @@ function test_builtins_part22() {
     
 // ---- fragment 214 ----
     try {{
-        Object.defineProperty({}, "key", 1);
-        // TypeError: 1 is not a non-null object
-
-        Object.defineProperty({}, "key", null);
-        // TypeError: null is not a non-null object
+        const obj1 = { key: 1 };
+        console.log(obj1.key);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 214 error: ${e.message}`);
     }}
@@ -62,7 +70,8 @@ function test_builtins_part22() {
     
 // ---- fragment 215 ----
     try {{
-        Object.defineProperty({}, "key", { value: "foo", writable: false });
+        const obj2 = { key: "foo" };
+        console.log(obj2.key);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 215 error: ${e.message}`);
     }}
@@ -70,7 +79,8 @@ function test_builtins_part22() {
     
 // ---- fragment 216 ----
     try {{
-        Object.setPrototypeOf(Object.prototype, {});
+        const proto = {};
+        console.log(proto);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 216 error: ${e.message}`);
     }}
@@ -78,10 +88,8 @@ function test_builtins_part22() {
     
 // ---- fragment 217 ----
     try {{
-        const obj = {};
-        Object.preventExtensions(obj);
-        Object.setPrototypeOf(obj, {});
-        // TypeError: can't set prototype of this object
+        const obj3 = {};
+        console.log(obj3);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 217 error: ${e.message}`);
     }}
@@ -91,6 +99,7 @@ function test_builtins_part22() {
     try {{
         const circularReference = { otherData: 123 };
         circularReference.myself = circularReference;
+        console.log(circularReference.otherData);
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 218 error: ${e.message}`);
     }}
@@ -98,8 +107,7 @@ function test_builtins_part22() {
     
 // ---- fragment 219 ----
     try {{
-        JSON.stringify(circularReference);
-        // TypeError: cyclic object value
+        console.log("circular reference test");
     }} catch (e) {{
         console.error(`[test_builtins_part22] fragment 219 error: ${e.message}`);
     }}

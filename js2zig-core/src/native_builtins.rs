@@ -284,6 +284,31 @@ pub enum BuiltinCall {
     SymbolKeyFor,      // Symbol.keyFor(sym)
 }
 
+/// Check if an identifier name is a JavaScript built-in (global function, constructor, object, or constant).
+/// Used to filter out builtins from closure captures — builtins are not user variables and should not
+/// become struct fields in generated Zig closure types.
+pub fn is_js_builtin_identifier(name: &str) -> bool {
+    matches!(
+        name,
+        // Global functions
+        "parseInt" | "parseFloat" | "isNaN" | "isFinite"
+        | "encodeURI" | "decodeURI"
+        | "encodeURIComponent" | "decodeURIComponent"
+        | "eval"
+        // Global objects
+        | "Math" | "Date" | "Object" | "JSON" | "console"
+        | "Number" | "String" | "Boolean" | "BigInt"
+        | "Array" | "Symbol" | "RegExp"
+        | "Map" | "Set" | "WeakMap" | "WeakSet"
+        | "Promise" | "ArrayBuffer" | "DataView"
+        // Error constructors
+        | "Error" | "TypeError" | "RangeError"
+        | "SyntaxError" | "ReferenceError"
+        // Global constants
+        | "NaN" | "Infinity" | "undefined" | "globalThis"
+    )
+}
+
 /// Check if a call expression is a built-in object call
 /// Returns Some(BuiltinCall) if it is, None otherwise
 pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinCall> {

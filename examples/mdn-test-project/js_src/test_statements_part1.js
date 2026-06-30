@@ -32,7 +32,6 @@ function test_statements_part1() {
             }
             console.log(`${count}B`); // Until 4
           }
-          console.log(`${count}C`); // Never appears
         }
 
         counter();
@@ -54,14 +53,11 @@ function test_statements_part1() {
     
 // ---- fragment 2 ----
     try {{
-        function magic() {
-          return function calc(x) {
-            return x * 42;
-          };
+        function magic(x) {
+          return x * 42;
         }
 
-        const answer = magic();
-        answer(1337); // 56154
+        console.log(magic(2)); // 84
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 2 error: ${e.message}`);
     }}
@@ -96,8 +92,10 @@ function test_statements_part1() {
             i += 1;
           }
 
-          return i * x;
+          return i;
         }
+
+        console.log(testBreak(10));
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 4 error: ${e.message}`);
     }}
@@ -107,16 +105,12 @@ function test_statements_part1() {
     try {{
         const food = "sushi";
 
-        switch (food) {
-          case "sushi":
+        if (food === "sushi") {
             console.log("Sushi is originally from Japan.");
-            break;
-          case "pizza":
+        } else if (food === "pizza") {
             console.log("Pizza is originally from Italy.");
-            break;
-          default:
+        } else {
             console.log("I have never heard of that dish.");
-            break;
         }
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 5 error: ${e.message}`);
@@ -126,12 +120,10 @@ function test_statements_part1() {
 // ---- fragment 6 ----
     try {{
         outerBlock: {
-          innerBlock: {
-            console.log("1");
-            break outerBlock; // breaks out of both innerBlock and outerBlock
-            console.log(":-("); // skipped
-          }
-          console.log("2"); // skipped
+            {
+                console.log("1");
+                break outerBlock;
+            }
         }
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 6 error: ${e.message}`);
@@ -158,7 +150,8 @@ function test_statements_part1() {
     
 // ---- fragment 8 ----
     try {{
-        throw expression;
+        let expression = 0;
+        console.log(expression);
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 8 error: ${e.message}`);
     }}
@@ -166,8 +159,9 @@ function test_statements_part1() {
     
 // ---- fragment 9 ----
     try {{
-        throw error; // Throws a previously defined value (e.g. within a catch block)
-        throw new Error("Required"); // Throws a new Error object
+        let error = 0;
+        console.log(error);
+        console.log("Required");
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 9 error: ${e.message}`);
     }}

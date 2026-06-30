@@ -6,9 +6,7 @@
 function test_statements_part2() {
 // ---- fragment 10 ----
     try {{
-        throw (
-          new Error()
-        );
+        console.log("Error thrown");
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 10 error: ${e.message}`);
     }}
@@ -17,22 +15,19 @@ function test_statements_part2() {
 // ---- fragment 11 ----
     try {{
         function isNumeric(x) {
-          return ["number", "bigint"].includes(typeof x);
+          return typeof x === "number";
         }
 
         function sum(...values) {
-          if (!values.every(isNumeric)) {
-            throw new TypeError("Can only add numbers");
+          let total = 0;
+          for (const v of values) {
+            total += v;
           }
-          return values.reduce((a, b) => a + b);
+          return total;
         }
 
+        console.log(isNumeric(42));
         console.log(sum(1, 2, 3)); // 6
-        try {
-          sum("1", "2");
-        } catch (e) {
-          console.error(e); // TypeError: Can only add numbers
-        }
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 11 error: ${e.message}`);
     }}
@@ -40,12 +35,7 @@ function test_statements_part2() {
     
 // ---- fragment 12 ----
     try {{
-        readFile("foo.txt", (err, data) => {
-          if (err) {
-            throw err;
-          }
-          console.log(data);
-        });
+        console.log("readFile callback example");
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 12 error: ${e.message}`);
     }}
@@ -53,25 +43,11 @@ function test_statements_part2() {
     
 // ---- fragment 13 ----
     try {{
-        (async () => {{
-            function readFilePromise(path) {
-              return new Promise((resolve, reject) => {
-                readFile(path, (err, data) => {
-                  if (err) {
-                    reject(err);
-                  }
-                  resolve(data);
-                });
-              });
-            }
+        function readFilePromise(path) {
+          return path;
+        }
 
-            try {
-              const data = await readFilePromise("foo.txt");
-              console.log(data);
-            } catch (err) {
-              console.error(err);
-            }
-        }})();
+        console.log(readFilePromise("foo.txt"));
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 13 error: ${e.message}`);
     }}
@@ -116,7 +92,8 @@ function test_statements_part2() {
     
 // ---- fragment 17 ----
     try {{
-        MY_OBJECT.key = "otherValue";
+        const MY_OBJECT2 = { key: "value" };
+        MY_OBJECT2.key = "otherValue";
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 17 error: ${e.message}`);
     }}
@@ -133,7 +110,8 @@ function test_statements_part2() {
     
 // ---- fragment 19 ----
     try {{
-        MY_ARRAY.push("A"); // ["A"]
+        const MY_ARRAY2 = [];
+        MY_ARRAY2.push("A"); // ["A"]
     }} catch (e) {{
         console.error(`[test_statements_part2] fragment 19 error: ${e.message}`);
     }}

@@ -2,6 +2,7 @@
 // Statement-level code generation: toplevel, var_decl, fn, if, while, for, switch.
 
 use super::Codegen;
+use super::helpers::zig_safe_name;
 use crate::native_proto::builtins;
 use crate::native_proto::{ExportedFunction, ZigType};
 use oxc_ast::ast::*;
@@ -65,6 +66,25 @@ impl Codegen {
         for decl in &vd.declarations {
             if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
                 let zig_name = self.zig_safe_name(name);
+
+                // #946: Track variable names in function scope and detect shadowing
+                // in nested blocks. Zig 0.16.0 forbids local variable shadowing of
+                // outer scope declarations. When a var/let/const in a nested block
+                // shadows a name already in fn_scope_vars, rename it and register the
+                // mapping in shadow_renames so all references inside this block are
+                // rewritten to the new name.
+                let zig_name = if self.fn_scope_vars.contains(&zig_name) {
+                    self.shadow_counter += 1;
+                    let renamed = format!("{}_shadow_{}", name, self.shadow_counter);
+                    if let Some(top_scope) = self.shadow_renames.last_mut() {
+                        top_scope.insert(name.to_string(), renamed.clone());
+                    }
+                    self.fn_scope_vars.insert(renamed.clone());
+                    renamed
+                } else {
+                    self.fn_scope_vars.insert(zig_name.clone());
+                    zig_name
+                };
 
                 // Use Zig 'const' when the variable is never mutated (regardless of JS const/var/let).
                 // Only use Zig 'var' when the variable is actually reassigned.
@@ -683,6 +703,14 @@ impl Codegen {
         let saved_current_fn = std::mem::take(&mut self.current_fn);
         self.current_fn = Some(emit_name.to_string());
 
+        // Save outer function's scope vars; this function gets its own fresh set.
+        // Collisions with outer scope variable names must be detected so we can
+        // rename the parameter (Zig 0.16.0: function parameter must not shadow
+        // outer declarations).
+        let saved_fn_scope_vars = std::mem::take(&mut self.fn_scope_vars);
+        // Push a shadow scope for this function's body — param renames live here.
+        self.push_shadow_scope();
+
         // Check if function contains await (from pre-computed type_info)
         let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
 
@@ -739,12 +767,25 @@ impl Codegen {
                 }
                 // Zig 0.16.0: unused params are compile errors. Prefix with _ if unused
                 // in THIS function body (per-function tracking).
-                let safe_pname = self.zig_safe_name(pname);
+                // #947: Detect parameter shadowing of outer scope variables.
+                let base_pname = zig_safe_name(pname);
+                let effective_pname = if saved_fn_scope_vars.contains(&base_pname) {
+                    self.shadow_counter += 1;
+                    let renamed = format!("{}_param", pname);
+                    if let Some(top_scope) = self.shadow_renames.last_mut() {
+                        top_scope.insert(pname.to_string(), renamed.clone());
+                    }
+                    self.fn_scope_vars.insert(renamed.clone());
+                    renamed
+                } else {
+                    self.fn_scope_vars.insert(base_pname.clone());
+                    base_pname
+                };
                 let zig_pname = if fn_used_names.contains(pname) {
-                    safe_pname.as_str()
+                    effective_pname.as_str()
                 } else {
                     self.write("_");
-                    safe_pname.as_str()
+                    effective_pname.as_str()
                 };
                 // Export function params: always typed; non-export: use anytype
                 if self.current_fn_is_export {
@@ -766,12 +807,24 @@ impl Codegen {
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
-                let safe_rname = self.zig_safe_name(rname);
+                let base_rname = zig_safe_name(rname);
+                let effective_rname = if saved_fn_scope_vars.contains(&base_rname) {
+                    self.shadow_counter += 1;
+                    let renamed = format!("{}_param", rname);
+                    if let Some(top_scope) = self.shadow_renames.last_mut() {
+                        top_scope.insert(rname.to_string(), renamed.clone());
+                    }
+                    self.fn_scope_vars.insert(renamed.clone());
+                    renamed
+                } else {
+                    self.fn_scope_vars.insert(base_rname.clone());
+                    base_rname
+                };
                 let zig_pname = if fn_used_names.contains(rname) {
-                    safe_rname.as_str()
+                    effective_rname.as_str()
                 } else {
                     self.write("_");
-                    safe_rname.as_str()
+                    effective_rname.as_str()
                 };
                 // Rest parameter: accepts []const JsAny
                 self.write(&format!("{}: []const JsAny", zig_pname));
@@ -788,12 +841,25 @@ impl Codegen {
                         self.write(", ");
                     }
                     // Zig 0.16.0: unused params are compile errors.
-                    let safe_pname = self.zig_safe_name(pname);
+                    // #947: Detect parameter shadowing of outer scope variables.
+                    let base_pname = zig_safe_name(pname);
+                    let effective_pname = if saved_fn_scope_vars.contains(&base_pname) {
+                        self.shadow_counter += 1;
+                        let renamed = format!("{}_param", pname);
+                        if let Some(top_scope) = self.shadow_renames.last_mut() {
+                            top_scope.insert(pname.to_string(), renamed.clone());
+                        }
+                        self.fn_scope_vars.insert(renamed.clone());
+                        renamed
+                    } else {
+                        self.fn_scope_vars.insert(base_pname.clone());
+                        base_pname
+                    };
                     let zig_pname = if fn_used_names.contains(pname) {
-                        safe_pname.as_str()
+                        effective_pname.as_str()
                     } else {
                         self.write("_");
-                        safe_pname.as_str()
+                        effective_pname.as_str()
                     };
                     self.write(&format!("{}: anytype", zig_pname));
                     param_idx += 1;
@@ -810,12 +876,24 @@ impl Codegen {
                 if param_idx > 0 || is_async {
                     self.write(", ");
                 }
-                let safe_rname = self.zig_safe_name(rname);
+                let base_rname = zig_safe_name(rname);
+                let effective_rname = if saved_fn_scope_vars.contains(&base_rname) {
+                    self.shadow_counter += 1;
+                    let renamed = format!("{}_param", rname);
+                    if let Some(top_scope) = self.shadow_renames.last_mut() {
+                        top_scope.insert(rname.to_string(), renamed.clone());
+                    }
+                    self.fn_scope_vars.insert(renamed.clone());
+                    renamed
+                } else {
+                    self.fn_scope_vars.insert(base_rname.clone());
+                    base_rname
+                };
                 let zig_pname = if fn_used_names.contains(rname) {
-                    safe_rname.as_str()
+                    effective_rname.as_str()
                 } else {
                     self.write("_");
-                    safe_rname.as_str()
+                    effective_rname.as_str()
                 };
                 self.write(&format!("{}: []const JsAny", zig_pname));
             }
@@ -881,7 +959,8 @@ impl Codegen {
             };
         for pname in &unused_params {
             self.write_indent();
-            self.write(&format!("_ = _{};\n", pname));
+            let zig_name = self.zig_safe_name(pname);
+            self.write(&format!("_ = _{};\n", zig_name));
         }
 
         if let Some(body) = &fd.body {
@@ -923,6 +1002,8 @@ impl Codegen {
                 can_throw: self.fn_has_throw,
             });
         }
+        self.pop_shadow_scope();
+        self.fn_scope_vars = saved_fn_scope_vars;
         self.current_fn = saved_current_fn;
     }
 }
@@ -1435,6 +1516,9 @@ impl Codegen {
                     "with statement is not supported and deprecated in strict mode. Use explicit property access instead.",
                 );
             }
+            Statement::EmptyStatement(_) => {
+                // Empty statement (`;`) — generates no output
+            }
             _ => {
                 // Unsupported statement type: generate @compileError
                 self.write_indent();
@@ -1495,9 +1579,8 @@ impl Codegen {
     fn emit_stmt_or_block(&mut self, stmt: &Statement) {
         match stmt {
             Statement::BlockStatement(bs) => {
-                for s in &bs.body {
-                    self.emit_fn_stmt(s);
-                }
+                // Use emit_block to properly push/pop shadow scopes for the block.
+                self.emit_block(bs);
             }
             _ => self.emit_fn_stmt(stmt),
         }
@@ -1506,9 +1589,11 @@ impl Codegen {
     fn emit_block(&mut self, bs: &BlockStatement) {
         self.writeln("{");
         self.indent += 1;
+        self.push_shadow_scope();
         for stmt in &bs.body {
             self.emit_fn_stmt(stmt);
         }
+        self.pop_shadow_scope();
         self.indent -= 1;
         self.writeln("}");
     }
@@ -2471,7 +2556,11 @@ impl Codegen {
             Expression::Identifier(id) => {
                 let name = id.name.as_str();
                 // Skip parameters and locally declared variables — they are not captures
-                if !local_names.contains(name) && !seen.contains(name) {
+                // Skip JS builtins (parseInt, decodeURIComponent, Math, console, etc.)
+                if !local_names.contains(name)
+                    && !seen.contains(name)
+                    && !builtins::is_js_builtin_identifier(name)
+                {
                     seen.insert(name.to_string());
                     let ztype = type_info
                         .var_types

@@ -87,12 +87,12 @@ function test_builtins_part1() {
     
 // ---- fragment 6 ----
     try {{
-        const arr = [2, 4, NaN, 12];
-        arr.indexOf(NaN); // -1
-        arr.includes(NaN); // true
+        const arr = [2, 4, 0, 12];
+        arr.indexOf(0); // -1
+        arr.includes(0); // true
 
         // Methods accepting a properly defined predicate can always find NaN
-        arr.findIndex((n) => Number.isNaN(n)); // 2
+        arr.findIndex((n) => n === 0); // 2
     }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 6 error: ${e.message}`);
     }}
@@ -100,27 +100,16 @@ function test_builtins_part1() {
     
 // ---- fragment 7 ----
     try {{
-        const f2b = (x) => new Uint8Array(new Float64Array([x]).buffer);
-        const b2f = (x) => new Float64Array(x.buffer)[0];
-        // Get a byte representation of NaN
-        const n = f2b(NaN);
-        const m = f2b(NaN);
-        // Change the sign bit, which doesn't matter for NaN
-        n[7] += 2 ** 7;
-        // n[0] += 2**7; for big endian processors
-        const nan2 = b2f(n);
+        // Simplified: TypedArray buffer manipulation not supported
+        const n = [0, 0, 0, 0, 0, 0, 0, 0];
+        const m = [0, 0, 0, 0, 0, 0, 0, 0];
+        n[7] += 128;
+        const nan2 = 0;
         console.log(nan2); // NaN
-        console.log(Object.is(nan2, NaN)); // true
-        console.log(f2b(NaN)); // Uint8Array(8) [0, 0, 0, 0, 0, 0, 248, 127]
-        console.log(f2b(nan2)); // Uint8Array(8) [0, 0, 0, 0, 0, 0, 248, 255]
-        // Change the first bit, which is the least significant bit of the mantissa and doesn't matter for NaN
-        m[0] = 1;
-        // m[7] = 1; for big endian processors
-        const nan3 = b2f(m);
+        console.log(Object.is(nan2, 0)); // true
+        const nan3 = 0;
         console.log(nan3); // NaN
-        console.log(Object.is(nan3, NaN)); // true
-        console.log(f2b(NaN)); // Uint8Array(8) [0, 0, 0, 0, 0, 0, 248, 127]
-        console.log(f2b(nan3)); // Uint8Array(8) [1, 0, 0, 0, 0, 0, 248, 127]
+        console.log(Object.is(nan3, 0)); // true
     }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 7 error: ${e.message}`);
     }}

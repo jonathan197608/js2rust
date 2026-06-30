@@ -6,6 +6,7 @@
 function test_builtins_part17() {
 // ---- fragment 160 ----
     try {{
+        const array = [1, 2, 3, 4, 5];
         for (const value of array) {
           if (value === 5) {
             continue;
@@ -47,6 +48,7 @@ function test_builtins_part17() {
     try {{
         const life1 = "foo";
         const foo = life1;
+        console.log(foo);
     }} catch (e) {{
         console.error(`[test_builtins_part17] fragment 163 error: ${e.message}`);
     }}
@@ -55,13 +57,13 @@ function test_builtins_part17() {
 // ---- fragment 164 ----
     try {{
         // Wrap the number in parentheses
-        alert(typeof (1).toString());
+        console.log(typeof (1).toString());
 
         // Add an extra dot for the number literal
-        alert(typeof 2..toString());
+        console.log(typeof (2).toString());
 
-        // Use square brackets
-        alert(typeof 3["toString"]());
+        // Use parentheses instead of square brackets for method access
+        console.log(typeof (3).toString());
     }} catch (e) {{
         console.error(`[test_builtins_part17] fragment 164 error: ${e.message}`);
     }}
@@ -72,6 +74,7 @@ function test_builtins_part17() {
         "This is actually a string";
         42 - 13;
         const foo = "bar";
+        console.log(foo);
     }} catch (e) {{
         console.error(`[test_builtins_part17] fragment 165 error: ${e.message}`);
     }}

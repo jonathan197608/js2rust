@@ -7,7 +7,7 @@ function test_builtins_part5() {
 // ---- fragment 40 ----
     try {{
         try {
-          const a = decodeURIComponent("%E0%A4%A");
+          decodeURIComponent("%E0%A4%A");
         } catch (e) {
           console.error(e);
         }
@@ -33,7 +33,7 @@ function test_builtins_part5() {
     
 // ---- fragment 42 ----
     try {{
-        encodeURI(uri)
+        encodeURI("https://example.com/path")
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 42 error: ${e.message}`);
     }}
@@ -83,6 +83,7 @@ function test_builtins_part5() {
               (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
             );
         }
+        encodeRFC3986URI("https://example.com/path");
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 45 error: ${e.message}`);
     }}
@@ -90,7 +91,7 @@ function test_builtins_part5() {
     
 // ---- fragment 46 ----
     try {{
-        encodeURIComponent(uriComponent)
+        encodeURIComponent("https://example.com/path")
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 46 error: ${e.message}`);
     }}
@@ -98,14 +99,6 @@ function test_builtins_part5() {
     
 // ---- fragment 47 ----
     try {{
-        const fileName = "my file(2).txt";
-        const header = `Content-Disposition: attachment; filename*=UTF-8''${encodeRFC5987ValueChars(
-          fileName,
-        )}`;
-
-        console.log(header);
-        // "Content-Disposition: attachment; filename*=UTF-8''my%20file%282%29.txt"
-
         function encodeRFC5987ValueChars(str) {
           return (
             encodeURIComponent(str)
@@ -119,11 +112,19 @@ function test_builtins_part5() {
               )
               // The following are not required for percent-encoding per RFC5987,
               // so we can allow for a little better readability over the wire: |`^
-              .replace(/%(7C|60|5E)/g, (str, hex) =>
+              .replace(/%(7C|60|5E)/g, (_, hex) =>
                 String.fromCharCode(parseInt(hex, 16)),
               )
           );
         }
+
+        const fileName = "my file(2).txt";
+        const header = `Content-Disposition: attachment; filename*=UTF-8''${encodeRFC5987ValueChars(
+          fileName,
+        )}`;
+
+        console.log(header);
+        // "Content-Disposition: attachment; filename*=UTF-8''my%20file%282%29.txt"
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 47 error: ${e.message}`);
     }}
@@ -137,6 +138,7 @@ function test_builtins_part5() {
             (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
           );
         }
+        encodeRFC3986URIComponent("https://example.com/path");
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 48 error: ${e.message}`);
     }}

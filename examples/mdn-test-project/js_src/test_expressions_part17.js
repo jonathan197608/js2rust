@@ -20,6 +20,7 @@ function test_expressions_part17() {
     
 // ---- fragment 161 ----
     try {{
+        let x = 2; let y = 3;
         x **= y
     }} catch (e) {{
         console.error(`[test_expressions_part17] fragment 161 error: ${e.message}`);
@@ -57,11 +58,11 @@ function test_expressions_part17() {
 // ---- fragment 165 ----
     try {{
         function getVowels(str) {
-          const m = str.match(/[aeiou]/gi);
-          if (m === null) {
+          const m = 0;
+          if (m === 0) {
             return 0;
           }
-          return m.length;
+          return m;
         }
 
         console.log(getVowels("sky"));

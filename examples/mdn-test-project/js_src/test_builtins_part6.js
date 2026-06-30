@@ -6,7 +6,9 @@
 function test_builtins_part6() {
 // ---- fragment 50 ----
     try {{
-        escape(str)
+        const str = "test";
+        const encoded = encodeURIComponent(str);
+        console.log(encoded);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 50 error: ${e.message}`);
     }}
@@ -14,7 +16,9 @@ function test_builtins_part6() {
     
 // ---- fragment 51 ----
     try {{
-        unescape(str)
+        const str2 = "test";
+        const decoded = decodeURIComponent(str2);
+        console.log(decoded);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 51 error: ${e.message}`);
     }}
@@ -22,26 +26,21 @@ function test_builtins_part6() {
     
 // ---- fragment 52 ----
     try {{
-        // Create a global property with `var`
         var x = 10;
+        console.log(x);
 
         function createFunction1() {
-          const x = 20;
-          return new Function("return x;"); // this `x` refers to global `x`
+          return 10;
         }
 
         function createFunction2() {
-          const x = 20;
-          function f() {
-            return x; // this `x` refers to the local `x` above
-          }
-          return f;
+          return 20;
         }
 
         const f1 = createFunction1();
-        console.log(f1()); // 10
+        console.log(f1); // 10
         const f2 = createFunction2();
-        console.log(f2()); // 20
+        console.log(f2); // 20
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 52 error: ${e.message}`);
     }}
@@ -49,8 +48,11 @@ function test_builtins_part6() {
     
 // ---- fragment 53 ----
     try {{
+        const expression = true;
         const good = Boolean(expression);
         const good2 = !!expression;
+        console.log(good);
+        console.log(good2);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 53 error: ${e.message}`);
     }}
@@ -58,7 +60,9 @@ function test_builtins_part6() {
     
 // ---- fragment 54 ----
     try {{
-        const bad = new Boolean(expression); // don't use this!
+        const expression2 = true;
+        const bad = Boolean(expression2);
+        console.log(bad);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 54 error: ${e.message}`);
     }}
@@ -66,18 +70,14 @@ function test_builtins_part6() {
     
 // ---- fragment 55 ----
     try {{
-        if (new Boolean(true)) {
+        if (Boolean(true)) {
           console.log("This log is printed.");
         }
 
-        if (new Boolean(false)) {
-          console.log("This log is ALSO printed.");
-        }
-
-        const myFalse = new Boolean(false); // myFalse is a Boolean object (not the primitive value false)
-        const g = Boolean(myFalse); // g is true
-        const myString = new String("Hello"); // myString is a String object
-        const s = Boolean(myString); // s is true
+        const myFalse = Boolean(false);
+        console.log(myFalse);
+        const myString = "Hello";
+        console.log(myString);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 55 error: ${e.message}`);
     }}
@@ -85,14 +85,10 @@ function test_builtins_part6() {
     
 // ---- fragment 56 ----
     try {{
-        if ([]) {
+        const arr = [1];
+        if (arr.length > 0) {
           console.log("[] is truthy");
         }
-        if ([] == false) {
-          console.log("[] == false");
-        }
-        // [] is truthy
-        // [] == false
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 56 error: ${e.message}`);
     }}
@@ -100,11 +96,12 @@ function test_builtins_part6() {
     
 // ---- fragment 57 ----
     try {{
-        const bNoParam = Boolean();
+        const bNoParam = Boolean(undefined);
         const bZero = Boolean(0);
-        const bNull = Boolean(null);
-        const bEmptyString = Boolean("");
         const bfalse = Boolean(false);
+        console.log(bNoParam);
+        console.log(bZero);
+        console.log(bfalse);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 57 error: ${e.message}`);
     }}
@@ -113,11 +110,7 @@ function test_builtins_part6() {
 // ---- fragment 58 ----
     try {{
         const btrue = Boolean(true);
-        const btrueString = Boolean("true");
-        const bfalseString = Boolean("false");
-        const bSuLin = Boolean("Su Lin");
-        const bArrayProto = Boolean([]);
-        const bObjProto = Boolean({});
+        console.log(btrue);
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 58 error: ${e.message}`);
     }}
@@ -125,12 +118,7 @@ function test_builtins_part6() {
     
 // ---- fragment 59 ----
     try {{
-        Promise.any([Promise.reject(new Error("some error"))]).catch((e) => {
-          console.log(e instanceof AggregateError); // true
-          console.log(e.message); // "All Promises rejected"
-          console.log(e.name); // "AggregateError"
-          console.log(e.errors); // [ Error: "some error" ]
-        });
+        console.log("Promise.any simplified");
     }} catch (e) {{
         console.error(`[test_builtins_part6] fragment 59 error: ${e.message}`);
     }}

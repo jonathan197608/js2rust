@@ -9,3 +9,4 @@
 __pycache__/
 js_allocator.obj
 build*.log
+run_output.log

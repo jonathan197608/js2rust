@@ -86,6 +86,20 @@ impl Codegen {
         zig_safe_name(name)
     }
 
+    /// Push a new shadowing scope onto the rename stack.
+    /// Called when entering a nested block — any variable shadowing detected
+    /// within this scope will be recorded in the pushed HashMap.
+    pub(crate) fn push_shadow_scope(&mut self) {
+        self.shadow_renames.push(std::collections::HashMap::new());
+    }
+
+    /// Pop the innermost shadowing scope from the rename stack.
+    /// Called when leaving a nested block — shadowed variable renames are
+    /// discarded since they only apply within that block's scope.
+    pub(crate) fn pop_shadow_scope(&mut self) {
+        self.shadow_renames.pop();
+    }
+
     pub(crate) fn binding_name<'a>(&self, pattern: &BindingPattern<'a>) -> Option<&'a str> {
         match pattern {
             BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
@@ -338,6 +352,23 @@ impl Codegen {
                     .replace('\t', "\\t");
                 return Some(format!("\"{}\"", escaped));
             }
+        }
+        None
+    }
+
+    /// Mutable version of `callee_object_repr` that can handle complex expressions.
+    ///
+    /// Falls back to `emit_expr_to_string()` for non-Identifier/non-StringLiteral objects,
+    /// enabling method chaining like `encodeURI(str).replace(...)` or
+    /// `new Date().getTime()`.
+    pub(crate) fn callee_object_repr_mut(&mut self, callee: &Expression) -> Option<String> {
+        // Fast path: try the immutable version first (Identifier, StringLiteral)
+        if let Some(repr) = self.callee_object_repr(callee) {
+            return Some(repr);
+        }
+        // Fallback: emit the object expression to a string for complex expressions
+        if let Expression::StaticMemberExpression(mem) = callee {
+            return Some(self.emit_expr_to_string(&mem.object));
         }
         None
     }

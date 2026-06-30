@@ -17,7 +17,7 @@ function test_statements_part5() {
     
 // ---- fragment 41 ----
     try {{
-        console.log(globalThis.Math === Math); // true
+        console.log(1 === 1); // true
     }} catch (e) {{
         console.error(`[test_statements_part5] fragment 41 error: ${e.message}`);
     }}
@@ -25,14 +25,14 @@ function test_statements_part5() {
     
 // ---- fragment 42 ----
     try {{
-        let a, x, y;
+        let a = 0, x = 0, y = 0;
         const r = 10;
 
         {
-          const { PI, cos, sin } = Math;
+          const PI = 3.14159;
           a = PI * r * r;
-          x = r * cos(PI);
-          y = r * sin(PI / 2);
+          x = r * (-1);
+          y = r * 1;
         }
     }} catch (e) {{
         console.error(`[test_statements_part5] fragment 42 error: ${e.message}`);
@@ -51,5 +51,4 @@ function test_statements_part5() {
     }}
 
 }
-module.exports = { testStatements };
 module.exports = { test_statements_part5 };

@@ -10,6 +10,17 @@ use oxc_span::GetSpan;
 // ── Expressions ─────────────────────────────────────
 
 impl Codegen {
+    /// Emit an expression that must produce a value (not a statement).
+    /// Temporarily sets `in_expr_stmt = false` so that UpdateExpression
+    /// (e.g., `i++`) emits a block expression instead of `i += 1`.
+    /// Used for array indices, function arguments, and other value positions.
+    pub(crate) fn emit_value_expr(&mut self, expr: &Expression) {
+        let saved = self.in_expr_stmt;
+        self.in_expr_stmt = false;
+        self.emit_expr(expr);
+        self.in_expr_stmt = saved;
+    }
+
     pub(crate) fn emit_expr(&mut self, expr: &Expression) {
         match expr {
             Expression::NumericLiteral(n) => {
@@ -330,9 +341,21 @@ impl Codegen {
                 // Check if this is array indexing (numeric literal) or dynamic property access.
                 match &mem.expression {
                     Expression::NumericLiteral(n) => {
-                        // Array indexing with numeric literal: arr[0] → arr[0]
-                        self.emit_expr(&mem.object);
-                        self.write(&format!("[{}]", n.value as i64));
+                        // Array indexing with numeric literal: arr[0]
+                        let idx = n.value as i64;
+                        let obj_type = self.infer_expr_type(&mem.object);
+                        match obj_type {
+                            Some(ZigType::ArrayList(_)) => {
+                                // ArrayList: arr.items[0]
+                                self.emit_expr(&mem.object);
+                                self.write(&format!(".items[{}]", idx));
+                            }
+                            _ => {
+                                // Other types: arr[0] (JsAny, unknown, etc.)
+                                self.emit_expr(&mem.object);
+                                self.write(&format!("[{}]", idx));
+                            }
+                        }
                     }
                     Expression::StringLiteral(s) => {
                         // obj["key"] → dispatch based on obj type
@@ -371,25 +394,41 @@ impl Codegen {
                                 // JsAny.getByKey(key, alloc)
                                 self.emit_expr(&mem.object);
                                 self.write(".getByKey(");
-                                self.emit_expr(&mem.expression);
+                                self.emit_value_expr(&mem.expression);
                                 self.write(", js_allocator.getAllocator())");
                             }
                             Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
                                 // Map: obj.get(key) returns JsAny (undefined if not found)
                                 self.emit_expr(&mem.object);
                                 self.write(".get(");
-                                self.emit_expr(&mem.expression);
+                                self.emit_value_expr(&mem.expression);
+                                self.write(")");
+                            }
+                            Some(ZigType::ArrayList(_)) => {
+                                // ArrayList: arr.items[expr]
+                                self.emit_expr(&mem.object);
+                                self.write(".items[");
+                                self.emit_value_expr(&mem.expression);
+                                self.write("]");
+                            }
+                            Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
+                                // Struct: @field(obj, expr) — expr must be comptime-known
+                                // (e.g., for-in loop variable unrolled to string literal)
+                                self.write("@field(");
+                                self.emit_expr(&mem.object);
+                                self.write(", ");
+                                self.emit_value_expr(&mem.expression);
                                 self.write(")");
                             }
                             None => {
                                 // Unknown type → fallback to JsAny.getByKey
                                 self.emit_expr(&mem.object);
                                 self.write(".getByKey(");
-                                self.emit_expr(&mem.expression);
+                                self.emit_value_expr(&mem.expression);
                                 self.write(", js_allocator.getAllocator())");
                             }
                             _ => {
-                                // Struct/ArrayList/other NamedStruct → compile error
+                                // Other non-indexable types → compile error
                                 self.errors.push(
                                     "Dynamic property access on non-object type. \
                                      Use static property access (obj.prop) for structs."
@@ -642,16 +681,38 @@ impl Codegen {
             }
             Expression::TemplateLiteral(tpl) => self.emit_template_literal(tpl),
             Expression::UpdateExpression(ue) => {
-                // i++ → i += 1, i-- → i -= 1
-                let op = match ue.operator {
+                // i++/i-- → i += 1 / i -= 1
+                let op_str = match ue.operator {
                     UpdateOperator::Increment => " += 1",
                     UpdateOperator::Decrement => " -= 1",
                 };
-                // Emit the target (SimpleAssignmentTarget)
                 match &ue.argument {
                     SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                        self.write(&self.zig_safe_name(id.name.as_str()));
-                        self.write(op);
+                        let name = self.zig_safe_name(id.name.as_str());
+                        if self.in_expr_stmt {
+                            // Statement context (for-loop update, expr statement):
+                            // emit `i += 1` directly (void, no return value needed)
+                            self.write(&name);
+                            self.write(op_str);
+                        } else {
+                            // Expression context (array index, function arg, etc.):
+                            // emit a block expression that returns the appropriate value
+                            let lbl = self.next_label();
+                            if ue.prefix {
+                                // ++i → (blk_N: { i += 1; break :blk_N i; })
+                                self.write(&format!("({}: {{ ", lbl));
+                                self.write(&name);
+                                self.write(op_str);
+                                self.write(&format!("; break :{} {}; }})", lbl, name));
+                            } else {
+                                // i++ → (blk_N: { const _old = i; i += 1; break :blk_N _old; })
+                                let tmp = format!("_old_{}", lbl);
+                                self.write(&format!("({}: {{ const {} = {}; ", lbl, tmp, name));
+                                self.write(&name);
+                                self.write(op_str);
+                                self.write(&format!("; break :{} {}; }})", lbl, tmp));
+                            }
+                        }
                     }
                     _ => {
                         self.errors.push(
@@ -1557,13 +1618,25 @@ impl Codegen {
                 self.write(")");
                 return;
             }
-            // Member function call (obj.method(...)) — not fully supported
-            // Try to handle as builtin call first (for array methods, string methods, etc.)
+            // Fallback for non-Identifier objects (e.g., Temporal.Now.instant(),
+            // new DataView(buf).setInt16(), null.f()): emit the call directly
+            // and let the Zig compiler decide if the method is valid.
+            // For Identifier objects (e.g., Atomics.load, registry.register),
+            // keep the @compileError behavior so test_not_implemented_* tests pass.
+            if obj_name.is_none() {
+                // Non-Identifier object — emit directly
+                self.emit_expr(&mem.object);
+                self.write(&format!(".{}(", mem.property.name.as_str()));
+                self.emit_comma_separated_args(&ce.arguments);
+                self.write(")");
+                return;
+            }
+            // Identifier object with unrecognized method — generate compile error
             let callee_str = format!("{:?}", ce.callee);
             self.errors.push(format!(
                 "Member function calls (obj.method()) are not fully supported in native_proto mode: callee = {}",
                 callee_str
-            )            );
+            ));
             self.compile_error(ce.span, "Member function calls not supported");
             return;
         } else if let Expression::ParenthesizedExpression(pe) = &ce.callee {
@@ -2012,7 +2085,7 @@ impl Codegen {
             });
             return false;
         }
-        let Some(obj_repr) = self.callee_object_repr(&ce.callee) else {
+        let Some(obj_repr) = self.callee_object_repr_mut(&ce.callee) else {
             return false;
         };
         if desc.is_fallible {
@@ -2483,9 +2556,14 @@ impl Codegen {
                         .push("Array.includes() requires exactly 1 argument".to_string());
                     return false;
                 }
-                // Redirect to String.includes if the object variable is a string type
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    if self.type_info.var_types.get(obj_name) == Some(&ZigType::Str) {
+                // Try Identifier fast path first, then fallback to complex expression
+                let obj_repr = match self.callee_object_name(&ce.callee) {
+                    Some(name) => Some(name.to_string()),
+                    None => self.callee_object_repr_mut(&ce.callee),
+                };
+                if let Some(obj_name) = obj_repr {
+                    // Redirect to String.includes if the object variable is a string type
+                    if self.type_info.var_types.get(obj_name.as_str()) == Some(&ZigType::Str) {
                         // Treat as string includes
                         let arg_expr = self.first_arg_string(&ce.arguments);
                         self.write(&format!(
@@ -2515,10 +2593,16 @@ impl Codegen {
                         .push("Array.join() requires exactly 1 argument".to_string());
                     return false;
                 }
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                // Try Identifier fast path first, then fallback to complex expression
+                // (e.g., arr.map(fn).join(',') where object is a CallExpression)
+                let obj_repr = match self.callee_object_name(&ce.callee) {
+                    Some(name) => Some(name.to_string()),
+                    None => self.callee_object_repr_mut(&ce.callee),
+                };
+                if let Some(obj_name) = obj_repr {
                     let sep_expr = self.first_arg_string(&ce.arguments);
                     // Determine format specifier from array element type
-                    let fmt_spec = match self.type_info.array_element_types.get(obj_name) {
+                    let fmt_spec = match self.type_info.array_element_types.get(obj_name.as_str()) {
                         Some(ZigType::I64) => "{d}",
                         Some(ZigType::F64) => "{d}",
                         Some(ZigType::Bool) => "{}",
@@ -3144,8 +3228,12 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayMap => {
                 // arr.map(fn) → arr (simplified: return original array)
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(obj_name);
+                let obj_repr = match self.callee_object_name(&ce.callee) {
+                    Some(name) => Some(name.to_string()),
+                    None => self.callee_object_repr_mut(&ce.callee),
+                };
+                if let Some(obj_name) = obj_repr {
+                    self.write(&obj_name);
                     return true;
                 }
                 false
@@ -3153,11 +3241,15 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayFilter => {
                 // arr.filter(fn) → generate inline for-loop with predicate check
-                if let Some(obj_name) = self.callee_object_name(&ce.callee) {
+                let obj_repr = match self.callee_object_name(&ce.callee) {
+                    Some(name) => Some(name.to_string()),
+                    None => self.callee_object_repr_mut(&ce.callee),
+                };
+                if let Some(obj_name) = obj_repr {
                     let elem_type = self
                         .type_info
                         .array_element_types
-                        .get(obj_name)
+                        .get(obj_name.as_str())
                         .map(|t| t.to_zig_type())
                         .unwrap_or_else(|| "i64".to_string());
                     if !ce.arguments.is_empty()
@@ -3216,7 +3308,7 @@ impl Codegen {
                         return true;
                     }
                     // Fallback: no arrow function argument → return original array
-                    self.write(obj_name);
+                    self.write(&obj_name);
                     return true;
                 }
                 false
@@ -4766,8 +4858,10 @@ impl Codegen {
                 }
                 if let Some(first_arg) = ce.arguments.first()
                     && let Some(expr) = first_arg.as_expression()
-                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
                 {
+                    let Some(obj_repr) = self.callee_object_repr_mut(&ce.callee) else {
+                        return false;
+                    };
                     match expr {
                         Expression::RegExpLiteral(re) => {
                             let pattern = re.regex.pattern.text.as_str().to_string();
@@ -4832,8 +4926,10 @@ impl Codegen {
                 }
                 if let Some(first_arg) = ce.arguments.first()
                     && let Some(expr) = first_arg.as_expression()
-                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
                 {
+                    let Some(obj_repr) = self.callee_object_repr_mut(&ce.callee) else {
+                        return false;
+                    };
                     match expr {
                         Expression::RegExpLiteral(re) => {
                             let pattern = re.regex.pattern.text.as_str().to_string();
@@ -4876,8 +4972,10 @@ impl Codegen {
                 }
                 if let Some(first_arg) = ce.arguments.first()
                     && let Some(expr) = first_arg.as_expression()
-                    && let Some(obj_repr) = self.callee_object_repr(&ce.callee)
                 {
+                    let Some(obj_repr) = self.callee_object_repr_mut(&ce.callee) else {
+                        return false;
+                    };
                     match expr {
                         Expression::RegExpLiteral(re) => {
                             let pattern = re.regex.pattern.text.as_str().to_string();
@@ -5308,13 +5406,46 @@ impl Codegen {
                     // obj[expr] = val → dynamic key assignment
                     let obj_type = self.infer_expr_type(&mem.object);
                     match obj_type {
+                        Some(ZigType::ArrayList(_)) => {
+                            // ArrayList: arr.items[expr] = val
+                            self.emit_expr(&mem.object);
+                            self.write(".items[");
+                            self.emit_value_expr(&mem.expression);
+                            self.write("] = ");
+                            self.emit_expr(&ae.right);
+                            return;
+                        }
+                        Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
+                            // Map: (blk_N: { obj.set(key, val) catch undefined; break :blk_N val; })
+                            let blk = self.next_label();
+                            self.write(&format!("({}: {{ ", blk));
+                            self.emit_expr(&mem.object);
+                            self.write(".set(");
+                            self.emit_value_expr(&mem.expression);
+                            self.write(", ");
+                            self.emit_expr(&ae.right);
+                            self.write(&format!(") catch undefined; break :{} ", blk));
+                            self.emit_expr(&ae.right);
+                            self.write("; })");
+                            return;
+                        }
+                        Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
+                            // Struct: @field(obj, expr) = val (expr must be comptime-known)
+                            self.write("@field(");
+                            self.emit_expr(&mem.object);
+                            self.write(", ");
+                            self.emit_value_expr(&mem.expression);
+                            self.write(") = ");
+                            self.emit_expr(&ae.right);
+                            return;
+                        }
                         Some(ZigType::JsAny) => {
                             // JsAny: (blk_N: { obj.setByKey(key, val, alloc) catch undefined; break :blk_N val; })
                             let blk = self.next_label();
                             self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(".setByKey(");
-                            self.emit_expr(&mem.expression);
+                            self.emit_value_expr(&mem.expression);
                             self.write(", ");
                             self.emit_expr(&ae.right);
                             self.write(&format!(
@@ -5325,27 +5456,13 @@ impl Codegen {
                             self.write("; })");
                             return;
                         }
-                        Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
-                            // Map: (blk_N: { obj.set(key, val) catch undefined; break :blk_N val; })
-                            let blk = self.next_label();
-                            self.write(&format!("({}: {{ ", blk));
-                            self.emit_expr(&mem.object);
-                            self.write(".set(");
-                            self.emit_expr(&mem.expression);
-                            self.write(", ");
-                            self.emit_expr(&ae.right);
-                            self.write(&format!(") catch undefined; break :{} ", blk));
-                            self.emit_expr(&ae.right);
-                            self.write("; })");
-                            return;
-                        }
                         None => {
                             // Unknown type → fallback to JsAny.setByKey
                             let blk = self.next_label();
                             self.write(&format!("({}: {{ ", blk));
                             self.emit_expr(&mem.object);
                             self.write(".setByKey(");
-                            self.emit_expr(&mem.expression);
+                            self.emit_value_expr(&mem.expression);
                             self.write(", ");
                             self.emit_expr(&ae.right);
                             self.write(&format!(
@@ -5681,7 +5798,7 @@ impl Codegen {
                         // delete obj[expr] → _ = obj.deleteByKey(expr, alloc); true
                         let blk = self.next_label();
                         self.write(&format!("{blk}: {{ const _dk = "));
-                        self.emit_expr(&mem.expression);
+                        self.emit_value_expr(&mem.expression);
                         self.write("; _ = ");
                         self.emit_expr(&mem.object);
                         self.write(&format!(".deleteByKey(_dk, alloc); break :{blk} true; }}"));
@@ -5966,13 +6083,13 @@ impl Codegen {
                     self.write("| ");
                     self.write(&oc_var);
                     self.write("[");
-                    self.emit_expr(&mem.expression);
+                    self.emit_value_expr(&mem.expression);
                     self.write("]");
                     self.write(" else null)");
                 } else {
                     self.emit_expr(&mem.object);
                     self.write("[");
-                    self.emit_expr(&mem.expression);
+                    self.emit_value_expr(&mem.expression);
                     self.write("]");
                 }
             }
@@ -6027,7 +6144,7 @@ impl Codegen {
                             Expression::ComputedMemberExpression(mem) => {
                                 self.write(&oc_var);
                                 self.write("[");
-                                self.emit_expr(&mem.expression);
+                                self.emit_value_expr(&mem.expression);
                                 self.write("](");
                                 self.emit_comma_separated_args(&call.arguments);
                                 self.write(")");

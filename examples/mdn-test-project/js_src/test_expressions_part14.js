@@ -7,9 +7,14 @@ function test_expressions_part14() {
     let bCondition1 = true;
     let bCondition2 = false;
     let bCondition3 = true;
-    let a1, a2, a3, a4, a5, a6, a7, a8, a9;
+    let a1 = false, a2 = false, a3 = false, a4 = false;
+    let a5 = "";
+    let a6 = false, a7 = false;
+    let a8 = "";
+    let a9 = false;
 // ---- fragment 130 ----
     try {{
+        const x = 0; const y = 0;
         x && y
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 130 error: ${e.message}`);
@@ -18,9 +23,11 @@ function test_expressions_part14() {
     
 // ---- fragment 131 ----
     try {{
+        let result = "";
         result = "" && "foo"; // result is assigned "" (empty string)
         result = 2 && 0; // result is assigned 0
         result = "foo" && 4; // result is assigned 4
+        console.log(result);
     }} catch (e) {{
         console.error(`[test_expressions_part14] fragment 131 error: ${e.message}`);
     }}

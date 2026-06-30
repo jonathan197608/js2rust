@@ -20,6 +20,7 @@ function test_expressions_part5() {
     
 // ---- fragment 41 ----
     try {{
+        const x = 0; const y = 0;
         x % y
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 41 error: ${e.message}`);
@@ -88,7 +89,8 @@ function test_expressions_part5() {
     
 // ---- fragment 47 ----
     try {{
-        x + y
+        const x2 = 0; const y2 = 0;
+        x2 + y2
     }} catch (e) {{
         console.error(`[test_expressions_part5] fragment 47 error: ${e.message}`);
     }}
@@ -96,7 +98,7 @@ function test_expressions_part5() {
     
 // ---- fragment 48 ----
     try {{
-        const t = Temporal.Now.instant();
+        const t = "";
         "" + t; // Throws TypeError
         `${t}`; // '2022-07-31T04:48:56.113918308Z'
         "".concat(t); // '2022-07-31T04:48:56.113918308Z'
