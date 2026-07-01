@@ -1,0 +1,2552 @@
+{
+  "statements": {
+    "0": {
+      "stdout": "12\n0\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "1": {
+      "stdout": "1A\n1B\n2A\n2B\n3A\n3B\n4A\n4B\n5A\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "2": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "3": {
+      "stdout": "3\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "4": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "5": {
+      "stdout": "Sushi is originally from Japan.\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "6": {
+      "stdout": "1\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "7": {
+      "stdout": "",
+      "stderr": "Error: Parameter is not a number!\n    at getRectArea (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_7.node.js:11:19)\n    at testStatements_frag_7 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_7.node.js:16:11)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_7.node.js:27:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+      "status": 0,
+      "timedOut": false
+    },
+    "8": {
+      "stdout": "6\n",
+      "stderr": "TypeError: Can only add numbers\n    at sum (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_8.node.js:15:19)\n    at testStatements_frag_8 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_8.node.js:22:11)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_8.node.js:33:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+      "status": 0,
+      "timedOut": false
+    },
+    "9": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_9] error: readFile is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "10": {
+      "stdout": "",
+      "stderr": "ReferenceError: readFile is not defined\n    at C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_10.node.js:12:17\n    at new Promise (<anonymous>)\n    at readFilePromise (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_10.node.js:11:22)\n    at C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_10.node.js:22:34\n    at testStatements_frag_10 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_10.node.js:27:12)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_10.node.js:35:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)",
+      "status": 0,
+      "timedOut": false
+    },
+    "11": {
+      "stdout": "TypeError: Assignment to constant variable.\n    at testStatements_frag_11 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_11.node.js:12:18)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_11.node.js:26:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n42\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "12": {
+      "stdout": "my favorite number is: 7\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "13": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_13] error: Assignment to constant variable.",
+      "status": 0,
+      "timedOut": false
+    },
+    "14": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_14] error: MY_OBJECT is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "15": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_15] error: Assignment to constant variable.",
+      "status": 0,
+      "timedOut": false
+    },
+    "16": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_16] error: MY_ARRAY is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "17": {
+      "stdout": "aaa b cc\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "18": {
+      "stdout": "30\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "19": {
+      "stdout": "'foo' name is not global. typeof foo is undefined\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "20": {
+      "stdout": "'foo' name is not global. typeof foo is undefined\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "21": {
+      "stdout": "foo\n'foo' name is not global. typeof foo is function\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "22": {
+      "stdout": "foo\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "23": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_23] error: notHoisted is not a function",
+      "status": 0,
+      "timedOut": false
+    },
+    "24": {
+      "stdout": "function\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "25": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "26": {
+      "stdout": "[ 0, 0, 0 ]\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "27": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "28": {
+      "stdout": "[ 0, 0, 0 ]\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "29": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_29] error: condition is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "30": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_30] error: myModule is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "31": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_31] error: myModule is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "32": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "33": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_33] error: getPrimes is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "34": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "35": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_35] error: myValue is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "36": {
+      "stdout": "",
+      "stderr": "[testStatements_frag_36] error: foo is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "37": {
+      "stdout": "1\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "38": {
+      "stdout": "true\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "39": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    }
+  },
+  "expressions": {
+    "0": {
+      "stdout": "undefined\nexpression evaluated\niife is executed\ntest function is not defined\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "1": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_1] error: expression is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "2": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "3": {
+      "stdout": "Executed!\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "4": {
+      "stdout": "Executed!\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "5": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_5] error: checkbox is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "6": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_6] error: checkbox is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "7": {
+      "stdout": "-6\n2\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "8": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_8] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "9": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "10": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "11": {
+      "stdout": "true\nfalse\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "12": {
+      "stdout": "true\ntrue\nfalse\nfalse\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "13": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_13] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "14": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "15": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "16": {
+      "stdout": "false\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "17": {
+      "stdout": "false\nfalse\ntrue\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "18": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_18] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "19": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_19] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "20": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "21": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "22": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "23": {
+      "stdout": "true\nfalse\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "24": {
+      "stdout": "20\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "25": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_25] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "26": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "27": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "28": {
+      "stdout": "1\n-2\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "29": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_29] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "30": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "31": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "32": {
+      "stdout": "1\n1073741822\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "33": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_33] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "34": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "35": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "36": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_36] error: BigInts have no unsigned right shift, use >> instead",
+      "status": 0,
+      "timedOut": false
+    },
+    "37": {
+      "stdout": "1\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "38": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_38] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "39": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "40": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "41": {
+      "stdout": "7\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "42": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_42] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "43": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "44": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "45": {
+      "stdout": "6\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "46": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_46] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "47": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "48": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "49": {
+      "stdout": "false\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "50": {
+      "stdout": "called A\nfalse\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "51": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "52": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_52] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "53": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_53] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "54": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_54] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "55": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_55] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "56": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_56] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "57": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_57] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "58": {
+      "stdout": "true\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "59": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_59] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "60": {
+      "stdout": "called B\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "61": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "62": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_62] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "63": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_63] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "64": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_64] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "65": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_65] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "66": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_66] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "67": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_67] error: bCondition1 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "68": {
+      "stdout": "1\nNaN\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "69": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_69] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "70": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "71": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_71] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "72": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "73": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_73] error: bar is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "74": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_74] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "75": {
+      "stdout": "9\n1\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "76": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_76] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "77": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "78": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "79": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_79] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "80": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "81": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "82": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "83": {
+      "stdout": "false\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "84": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_84] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "85": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "86": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_86] error: bCondition is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "87": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_87] error: bCondition is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "88": {
+      "stdout": "81\n0.01\n512\n64\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "89": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_89] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "90": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "91": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "92": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "93": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_93] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "94": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "95": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "96": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "97": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "98": {
+      "stdout": "12\n-12\n6\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "99": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_99] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "100": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "101": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "102": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "103": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_103] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "104": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "105": {
+      "stdout": "6\n1.5\n2\nInfinity\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "106": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_106] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "107": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "108": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "109": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_109] error: Division by zero",
+      "status": 0,
+      "timedOut": false
+    },
+    "110": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_110] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "111": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "112": {
+      "stdout": "3\n-3\n0\n-0\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "113": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_113] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "114": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "115": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "116": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "117": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "118": {
+      "stdout": "4\n3\nhello everyone\n2001: A Space Odyssey\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "119": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_119] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "120": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_120] error: Temporal is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "121": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "122": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "123": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_123] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "124": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "125": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "126": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "127": {
+      "stdout": "2\n-1.5\nNaN\n4\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "128": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_128] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "129": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "130": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "131": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "132": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_132] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "133": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "134": {
+      "stdout": "true\nfalse\nfalse\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "135": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_135] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "136": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "137": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "138": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "139": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "140": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "141": {
+      "stdout": "false\ntrue\ntrue\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "142": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_142] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "143": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "144": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "145": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "146": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "147": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "148": {
+      "stdout": "true\ntrue\nfalse\ntrue\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "149": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_149] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "150": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "151": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "152": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "153": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "154": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "155": {
+      "stdout": "false\nfalse\nfalse\nfalse\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "156": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_156] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "157": {
+      "stdout": "",
+      "stderr": "[testExpressions_frag_157] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "158": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "159": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "160": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    }
+  },
+  "builtins": {
+    "0": {
+      "stdout": "Let's call it Infinity!\n0\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "1": {
+      "stdout": "Infinity\nInfinity\nInfinity\n-Infinity\n0\nInfinity\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "2": {
+      "stdout": "1\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "3": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "4": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "5": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_5] error: Cannot convert a BigInt value to a number",
+      "status": 0,
+      "timedOut": false
+    },
+    "6": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "7": {
+      "stdout": "NaN\ntrue\nUint8Array(8) [\n  0, 0,   0,   0,\n  0, 0, 248, 127\n]\nUint8Array(8) [\n  0, 0,   0,   0,\n  0, 0, 248, 255\n]\nNaN\ntrue\nUint8Array(8) [\n  0, 0,   0,   0,\n  0, 0, 248, 127\n]\nUint8Array(8) [\n  1, 0,   0,   0,\n  0, 0, 248, 127\n]\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "8": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "9": {
+      "stdout": "Number is Infinity!\nNumber is NOT Infinity.\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "10": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "11": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "12": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_12] error: degToRad is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "13": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "14": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "15": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "16": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "17": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "18": {
+      "stdout": "a is less than b\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "19": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "20": {
+      "stdout": "string\nstring\nstring\nobject\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "21": {
+      "stdout": "4\n[String: '2 + 2']\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "22": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_22] error: s2 is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "23": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_23] error: Cannot read properties of null (reading 'toString')",
+      "status": 0,
+      "timedOut": false
+    },
+    "24": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "25": {
+      "stdout": "true\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "26": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "27": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_27] error: registry is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "28": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_28] error: registry is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "29": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "30": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "31": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "32": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "33": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "34": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "35": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "36": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "37": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "38": {
+      "stdout": "false\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "39": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "40": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "41": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "42": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "43": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "44": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "45": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_45] error: isValidIdentifier is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "46": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "47": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "48": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "49": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "50": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "51": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "52": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "53": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "54": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "55": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "56": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "57": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "58": {
+      "stdout": "2\n1\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "59": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_59] error: Invalid code point NaN",
+      "status": 0,
+      "timedOut": false
+    },
+    "60": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_60] error: The normalization form should be one of NFC, NFD, NFKC, NFKD.",
+      "status": 0,
+      "timedOut": false
+    },
+    "61": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "62": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_62] error: Invalid time value",
+      "status": 0,
+      "timedOut": false
+    },
+    "63": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_63] error: invalid is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "64": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "65": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_65] error: toExponential() argument must be between 0 and 100",
+      "status": 0,
+      "timedOut": false
+    },
+    "66": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "67": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_67] error: toString() radix argument must be between 2 and 36",
+      "status": 0,
+      "timedOut": false
+    },
+    "68": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "69": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_69] error: Invalid count value: Infinity",
+      "status": 0,
+      "timedOut": false
+    },
+    "70": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "71": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_71] error: Invalid count value: -1",
+      "status": 0,
+      "timedOut": false
+    },
+    "72": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "73": {
+      "stdout": "3\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "74": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "75": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "76": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "77": {
+      "stdout": "60\n70\n80\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "78": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_78] error: array is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "79": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_79] error: array is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "80": {
+      "stdout": "1\n2\n3\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "81": {
+      "stdout": "c\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "82": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "83": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_83] error: alert is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "84": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "85": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "86": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "87": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "88": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "89": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "90": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "91": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_91] error: Invalid flags supplied to RegExp constructor 'flags'",
+      "status": 0,
+      "timedOut": false
+    },
+    "92": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "93": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "94": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "95": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_95] error: Unexpected token ']', \"[1, 2, 3, 4,]\" is not valid JSON",
+      "status": 0,
+      "timedOut": false
+    },
+    "96": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "97": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "98": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "99": {
+      "stdout": "Hello, world!\nMaybe I'm logged\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "100": {
+      "stdout": "PI: 3.141592653589793\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "101": {
+      "stdout": "PI: 3.141592653589793\nPI: 3.141592653589793\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "102": {
+      "stdout": "\"Java\" + \"Script\" = \"JavaScript\"\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "103": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_103] error: condition is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "104": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "105": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_105] error: done is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "106": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_106] error: done is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "107": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_107] error: value is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "108": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "109": {
+      "stdout": "Not a Number!\n3140\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "110": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_110] error: value is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "111": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "112": {
+      "stdout": "28.695307297889173\n28.695307297889173\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "113": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_113] error: string is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "114": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "115": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "116": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "117": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "118": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "119": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "120": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "121": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "122": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "123": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "124": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_124] error: square is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "125": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_125] error: obj is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "126": {
+      "stdout": "HelloWorld\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "127": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "128": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "129": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "130": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "131": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "132": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "133": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "134": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "135": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "136": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "137": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_137] error: a is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "138": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "139": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_139] error: Using is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "140": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_140] error: Property description must be an object: 1",
+      "status": 0,
+      "timedOut": false
+    },
+    "141": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "142": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_142] error: Immutable prototype object 'Object.prototype' cannot have their prototype set",
+      "status": 0,
+      "timedOut": false
+    },
+    "143": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_143] error: #<Object> is not extensible",
+      "status": 0,
+      "timedOut": false
+    },
+    "144": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "145": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_145] error: circularReference is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "146": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_146] error: String.prototype.matchAll called with a non-global RegExp argument",
+      "status": 0,
+      "timedOut": false
+    },
+    "147": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "148": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "149": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_149] error: Cannot read properties of null (reading 'foo')",
+      "status": 0,
+      "timedOut": false
+    },
+    "150": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_150] error: URI malformed",
+      "status": 0,
+      "timedOut": false
+    },
+    "151": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "152": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_152] error: URI malformed",
+      "status": 0,
+      "timedOut": false
+    },
+    "153": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "154": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "155": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "156": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "157": {
+      "stdout": "123\n123\n123\n77\n1\n255\n255\nNaN\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "158": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_158] error: string is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "159": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "160": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "161": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "162": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "163": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "164": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "165": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "166": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "167": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "168": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "169": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_169] error: encodedURI is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "170": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "171": {
+      "stdout": "",
+      "stderr": "URIError: URI malformed\n    at decodeURI (<anonymous>)\n    at testBuiltins_frag_171 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_171.node.js:10:21)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_171.node.js:23:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+      "status": 0,
+      "timedOut": false
+    },
+    "172": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_172] error: encodedURI is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "173": {
+      "stdout": "",
+      "stderr": "URIError: URI malformed\n    at decodeURIComponent (<anonymous>)\n    at testBuiltins_frag_173 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_173.node.js:10:21)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_173.node.js:23:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+      "status": 0,
+      "timedOut": false
+    },
+    "174": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "175": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_175] error: uri is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "176": {
+      "stdout": ";/?:@&=+$,#\n-.!~*'()\nABC%20abc%20123\n%3B%2F%3F%3A%40%26%3D%2B%24%2C%23\n-.!~*'()\nABC%20abc%20123\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "177": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_177] error: URI malformed",
+      "status": 0,
+      "timedOut": false
+    },
+    "178": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "179": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_179] error: uriComponent is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "180": {
+      "stdout": "Content-Disposition: attachment; filename*=UTF-8''my%20file%282%29.txt\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "181": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "182": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_182] error: URI malformed",
+      "status": 0,
+      "timedOut": false
+    },
+    "183": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_183] error: str is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "184": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_184] error: str is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "185": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_185] error: x is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "186": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_186] error: expression is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "187": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_187] error: expression is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "188": {
+      "stdout": "This log is printed.\nThis log is ALSO printed.\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "189": {
+      "stdout": "[] is truthy\n[] == false\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "190": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "191": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "192": {
+      "stdout": "true\nAll promises were rejected\nAggregateError\n[\n  Error: some error\n      at testBuiltins_frag_192 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_192.node.js:9:37)\n      at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_192.node.js:22:5)\n      at Module._compile (node:internal/modules/cjs/loader:1705:14)\n      at Object..js (node:internal/modules/cjs/loader:1838:10)\n      at Module.load (node:internal/modules/cjs/loader:1441:32)\n      at Function._load (node:internal/modules/cjs/loader:1263:12)\n      at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n      at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n      at node:internal/main/run_main_module:36:49\n]\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "193": {
+      "stdout": "true\nHello\nAggregateError\n[\n  Error: some error\n      at testBuiltins_frag_193 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_193.node.js:10:37)\n      at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_193.node.js:24:5)\n      at Module._compile (node:internal/modules/cjs/loader:1705:14)\n      at Object..js (node:internal/modules/cjs/loader:1838:10)\n      at Module.load (node:internal/modules/cjs/loader:1441:32)\n      at Function._load (node:internal/modules/cjs/loader:1263:12)\n      at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n      at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n      at node:internal/main/run_main_module:36:49\n]\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "194": {
+      "stdout": "true\nHello\nEvalError\nEvalError: Hello\n    at testBuiltins_frag_194 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_194.node.js:10:17)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_194.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "195": {
+      "stdout": "true\nundefinedVariable is not defined\nReferenceError\nReferenceError: undefinedVariable is not defined\n    at testBuiltins_frag_195 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_195.node.js:10:19)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_195.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "196": {
+      "stdout": "true\nHello\nReferenceError\nReferenceError: Hello\n    at testBuiltins_frag_196 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_196.node.js:10:17)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_196.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "197": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_197] error: SuppressedError is not defined",
+      "status": 0,
+      "timedOut": false
+    },
+    "198": {
+      "stdout": "true\nUnexpected identifier 'bar'\nSyntaxError\nSyntaxError: Unexpected identifier 'bar'\n    at testBuiltins_frag_198 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_198.node.js:10:11)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_198.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "199": {
+      "stdout": "true\nHello\nSyntaxError\nSyntaxError: Hello\n    at testBuiltins_frag_199 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_199.node.js:10:17)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_199.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "200": {
+      "stdout": "true\nCannot read properties of null (reading 'f')\nTypeError\nTypeError: Cannot read properties of null (reading 'f')\n    at testBuiltins_frag_200 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_200.node.js:10:16)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_200.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "201": {
+      "stdout": "true\nHello\nTypeError\nTypeError: Hello\n    at testBuiltins_frag_201 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_201.node.js:10:17)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_201.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "202": {
+      "stdout": "true\nURI malformed\nURIError\nURIError: URI malformed\n    at decodeURIComponent (<anonymous>)\n    at testBuiltins_frag_202 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_202.node.js:10:11)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_202.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "203": {
+      "stdout": "true\nHello\nURIError\nURIError: Hello\n    at testBuiltins_frag_203 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_203.node.js:10:17)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_203.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "204": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "205": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "206": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "207": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "208": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "209": {
+      "stdout": "819141840000\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "210": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "211": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "212": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "213": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "214": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "215": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "216": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "217": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_217] error: Cannot mix BigInt and other types, use explicit conversions",
+      "status": 0,
+      "timedOut": false
+    },
+    "218": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "219": {
+      "stdout": "Hello from the else!\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "220": {
+      "stdout": "",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "221": {
+      "stdout": "",
+      "stderr": "[testBuiltins_frag_221] error: Do not know how to serialize a BigInt",
+      "status": 0,
+      "timedOut": false
+    },
+    "222": {
+      "stdout": "{\"number\":1,\"big\":{\"$bigint\":\"18014398509481982\"}}\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    }
+  }
+}

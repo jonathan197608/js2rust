@@ -1,0 +1,17 @@
+// Auto-generated MDN test fragment (Zig transpile target)
+// Category: builtins, Fragment: 203
+// Source: test_builtins_part*.js
+// Run with Node.js: node test_builtins_frag_203.node.js
+// Transpile with js2rust: cargo build -p mdn-test-project
+
+export function testBuiltins_frag_203() {
+
+        try {
+          throw new URIError("Hello");
+        } catch (e) {
+          console.log(e instanceof URIError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "URIError"
+          console.log(e.stack); // Stack of the error
+        }
+    }

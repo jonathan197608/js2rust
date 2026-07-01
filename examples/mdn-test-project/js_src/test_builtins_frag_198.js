@@ -1,0 +1,17 @@
+// Auto-generated MDN test fragment (Zig transpile target)
+// Category: builtins, Fragment: 198
+// Source: test_builtins_part*.js
+// Run with Node.js: node test_builtins_frag_198.node.js
+// Transpile with js2rust: cargo build -p mdn-test-project
+
+export function testBuiltins_frag_198() {
+
+        try {
+          eval("hoo bar");
+        } catch (e) {
+          console.log(e instanceof SyntaxError); // true
+          console.log(e.message);
+          console.log(e.name); // "SyntaxError"
+          console.log(e.stack); // Stack of the error
+        }
+    }

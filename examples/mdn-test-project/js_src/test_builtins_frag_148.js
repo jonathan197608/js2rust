@@ -1,0 +1,13 @@
+// Auto-generated MDN test fragment (Zig transpile target)
+// Category: builtins, Fragment: 148
+// Source: test_builtins_part*.js
+// Run with Node.js: node test_builtins_frag_148.node.js
+// Transpile with js2rust: cargo build -p mdn-test-project
+
+export function testBuiltins_frag_148() {
+
+        "abc".match(/./); // [ "a" ]
+        "abc".replace(/./, "f"); // "fbc"
+
+        [..././[Symbol.matchAll]("abc")]; // [[ "a" ]]
+    }
