@@ -55,25 +55,28 @@ pub const JsBigInt = struct {
     pub fn div(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
+        var remainder = try std.math.big.int.Managed.init(alloc);
+        defer remainder.deinit();
         // BigInt division truncates toward zero (like JS)
-        try result.divTrunc(&self.value, &other.value);
+        try result.divTrunc(&remainder, &self.value, &other.value);
         return Self{ .value = result };
     }
 
     /// Exponentiation: self ^ exp.
-    /// `exp` must fit in u64 (JS semantics: exponent is converted to u64 via ToUint64).
+    /// `exp` is cast to u32 (Zig 0.16.0 Managed.pow requires u32 exponent).
     pub fn pow(self: *const Self, exp: u64, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
-        // Managed.pow(r, a, b): r = a ^ b (b is u64)
-        std.math.big.int.Managed.pow(&result, &self.value, exp);
+        // Managed.pow(r, a, b): r = a ^ b (b is now u32 in Zig 0.16.0)
+        try std.math.big.int.Managed.pow(&result, &self.value, @intCast(exp));
         return Self{ .value = result };
     }
 
     pub fn neg(self: *const Self, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
-        result.copySign(&self.value, -1);
+        try result.copy(self.value.toConst());
+        result.negate();
         return Self{ .value = result };
     }
 
@@ -85,7 +88,7 @@ pub const JsBigInt = struct {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         try result.add(&self.value, &one);
-        result.copySign(&result, -1);
+        result.negate();
         return Self{ .value = result };
     }
 
@@ -102,11 +105,11 @@ pub const JsBigInt = struct {
     // ---- conversion ----
 
     pub fn toI64(self: *const Self) !i64 {
-        return try self.value.to(i64);
+        return try self.value.toConst().toInt(i64);
     }
 
     pub fn toU64(self: *const Self) !u64 {
-        return try self.value.to(u64);
+        return try self.value.toConst().toInt(u64);
     }
 
     pub fn toString(self: *const Self, alloc: std.mem.Allocator) ![]u8 {

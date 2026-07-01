@@ -1,177 +1,153 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 82-91)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 70-79)
+// Generated: 2026-06-28
 
 function test_builtins_part8() {
-// ---- fragment 82 ----
-try {{
-        0n === 0; // false
-        0n == 0; // true
-    }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 82 error: ${e.message}`);
-    }}
-
-// ---- fragment 83 ----
-try {{
-        1n < 2; // true
-        2n > 1; // true
-        2 > 2; // false
-        2n > 2; // false
-        2n >= 2; // true
-    }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 83 error: ${e.message}`);
-    }}
-
-// ---- fragment 84 ----
-try {{
-        const mixed = [4n, 6, -12n, 10, 4, 0, 0n];
-        // [4n, 6, -12n, 10, 4, 0, 0n]
-
-        mixed.sort(); // default sorting behavior
-        // [ -12n, 0, 0n, 10, 4n, 4, 6 ]
-
-        mixed.sort((a, b) => a - b);
-        // won't work since subtraction will not work with mixed types
-        // TypeError: can't convert BigInt value to Number value
-
-        // sort with an appropriate numeric comparator
-        mixed.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-        // [ -12n, 0, 0n, 4n, 4, 6, 10 ]
-    }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 84 error: ${e.message}`);
-    }}
-
-// ---- fragment 85 ----
-try {{
-        Object(0n) === 0n; // false
-        Object(0n) === Object(0n); // false
-
-        const o = Object(0n);
-        o === o; // true
-    }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 85 error: ${e.message}`);
-    }}
-
-// ---- fragment 86 ----
-try {{
-        if (0n) {
-          console.log("Hello from the if!");
-        } else {
-          console.log("Hello from the else!");
+// ---- fragment 70 ----
+    try {{
+        try {
+          throw new URIError("Hello");
+        } catch (e) {
+          console.log(e instanceof URIError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "URIError"
+          console.log(e.stack); // Stack of the error
         }
-        // "Hello from the else!"
-
-        0n || 12n; // 12n
-        0n && 12n; // 0n
-        Boolean(0n); // false
-        Boolean(12n); // true
-        !12n; // false
-        !0n; // true
     }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 86 error: ${e.message}`);
+        console.error(`[test_builtins_part8] fragment 70 error: ${e.message}`);
     }}
 
-// ---- fragment 87 ----
-try {{
-        var bigint = 0;
-        BigInt.prototype.toJSON = function () {
-          return { $bigint: this.toString() };
-        };
-            _ = bigint;
-}} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 87 error: ${e.message}`);
-    }}
-
-// ---- fragment 88 ----
-try {{
-        var a = 1;
-        console.log(JSON.stringify({ a: 1n }));
-        // {"a":{"$bigint":"1"}}
-            _ = a;
-}} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 88 error: ${e.message}`);
-    }}
-
-// ---- fragment 89 ----
-try {{
-        var big = 0;
-        var number = 0;
-        const replacer = (key, value) =>
-          typeof value === "bigint" ? { $bigint: value.toString() } : value;
-
-        const data = {
-          number: 1,
-          big: 18014398509481982n,
-        };
-        const stringified = JSON.stringify(data, replacer);
-
-        console.log(stringified);
-        // {"number":1,"big":{"$bigint":"18014398509481982"}}
-            _ = big;
-        _ = number;
-}} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 89 error: ${e.message}`);
-    }}
-
-// ---- fragment 90 ----
-try {{
-        var bigint = 0;
-        const reviver = (key, value) =>
-          value !== null &&
-          typeof value === "object" &&
-          "$bigint" in value &&
-          typeof value.$bigint === "string"
-            ? BigInt(value.$bigint)
-            : value;
-
-        const payload = '{"number":1,"big":{"$bigint":"18014398509481982"}}';
-        const parsed = JSON.parse(payload, reviver);
-
-        console.log(parsed);
-        // { number: 1, big: 18014398509481982n }
+    
+// ---- fragment 71 ----
+    try {{
+        255; // two-hundred and fifty-five
+        255.0; // same number
+        255 === 255.0; // true
+        255 === 0xff; // true (hexadecimal notation)
+        255 === 0b11111111; // true (binary notation)
+        255 === 0.255e3; // true (decimal exponential notation)
     }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 90 error: ${e.message}`);
+        console.error(`[test_builtins_part8] fragment 71 error: ${e.message}`);
     }}
 
-// ---- fragment 91 ----
-try {{
-        function isPrime(n) {
-          if (n < 2n) {
-            return false;
-          }
-          if (n % 2n === 0n) {
-            return n === 2n;
-          }
-          for (let factor = 3n; factor * factor <= n; factor += 2n) {
-            if (n % factor === 0n) {
-              return false;
-            }
-          }
-          return true;
-        }
+    
+// ---- fragment 72 ----
+    try {{
+        Number("123"); // returns the number 123
+        Number("123") === 123; // true
 
-        // Takes a BigInt value as an argument, returns nth prime number as a BigInt value
-        function nthPrime(nth) {
-          let maybePrime = 2n;
-          let prime = 0n;
-
-          while (nth >= 0n) {
-            if (isPrime(maybePrime)) {
-              nth--;
-              prime = maybePrime;
-            }
-            maybePrime++;
-          }
-
-          return prime;
-        }
-
-        nthPrime(20n);
-        // 73n
+        Number("unicorn"); // NaN
+        Number(undefined); // NaN
     }} catch (e) {{
-        console.error(`[test_builtins_part8] fragment 91 error: ${e.message}`);
+        console.error(`[test_builtins_part8] fragment 72 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 73 ----
+    try {{
+        new Int32Array([1.1, 1.9, -1.1, -1.9]); // Int32Array(4) [ 1, 1, -1, -1 ]
+
+        new Int8Array([257, -257]); // Int8Array(2) [ 1, -1 ]
+        // 257 = 0001 0000 0001
+        //     =      0000 0001 (mod 2^8)
+        //     = 1
+        // -257 = 1110 1111 1111
+        //      =      1111 1111 (mod 2^8)
+        //      = -1 (as signed integer)
+
+        new Uint8Array([257, -257]); // Uint8Array(2) [ 1, 255 ]
+        // -257 = 1110 1111 1111
+        //      =      1111 1111 (mod 2^8)
+        //      = 255 (as unsigned integer)
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 73 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 74 ----
+    try {{
+        const biggestNum = Number.MAX_VALUE;
+        const smallestNum = Number.MIN_VALUE;
+        const infiniteNum = Number.POSITIVE_INFINITY;
+        const negInfiniteNum = Number.NEGATIVE_INFINITY;
+        const notANum = Number.NaN;
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 74 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 75 ----
+    try {{
+        const biggestInt = Number.MAX_SAFE_INTEGER; // (2**53 - 1) => 9007199254740991
+        const smallestInt = Number.MIN_SAFE_INTEGER; // -(2**53 - 1) => -9007199254740991
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 75 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 76 ----
+    try {{
+        const d = new Date("1995-12-17T03:24:00");
+        console.log(Number(d));
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 76 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 77 ----
+    try {{
+        Number("123"); // 123
+        Number("123") === 123; // true
+        Number("12.3"); // 12.3
+        Number("12.00"); // 12
+        Number("123e-1"); // 12.3
+        Number(""); // 0
+        Number(null); // 0
+        Number("0x11"); // 17
+        Number("0b11"); // 3
+        Number("0o11"); // 9
+        Number("foo"); // NaN
+        Number("100a"); // NaN
+        Number("-Infinity"); // -Infinity
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 77 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 78 ----
+    try {{
+        const previouslyMaxSafeInteger = 9007199254740991n;
+
+        const alsoHuge = BigInt(9007199254740991);
+        // 9007199254740991n
+
+        const hugeString = BigInt("9007199254740991");
+        // 9007199254740991n
+
+        const hugeHex = BigInt("0x1fffffffffffff");
+        // 9007199254740991n
+
+        const hugeOctal = BigInt("0o377777777777777777");
+        // 9007199254740991n
+
+        const hugeBin = BigInt(
+          "0b11111111111111111111111111111111111111111111111111111",
+        );
+        // 9007199254740991n
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 78 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 79 ----
+    try {{
+        typeof 1n === "bigint"; // true
+        typeof BigInt("1") === "bigint"; // true
+    }} catch (e) {{
+        console.error(`[test_builtins_part8] fragment 79 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part8 };

@@ -184,7 +184,8 @@ impl Codegen {
         match op {
             LogicalOperator::And => "and",
             LogicalOperator::Or => "or",
-            LogicalOperator::Coalesce => "??",
+            // Zig uses `orelse` for null-coalescing, not `??`
+            LogicalOperator::Coalesce => "orelse",
         }
     }
 

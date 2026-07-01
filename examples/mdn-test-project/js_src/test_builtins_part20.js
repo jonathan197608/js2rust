@@ -1,138 +1,127 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 203-212)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 190-199)
+// Generated: 2026-06-28
 
 function test_builtins_part20() {
-// ---- fragment 203 ----
-try {{
-        "\xA9";
+// ---- fragment 190 ----
+    try {{
+        const list = [1, 2];
+
+        const instruments = ["Ukulele", "Guitar", "Piano"];
+
+        const data = [{ foo: "bar" }, { bar: "foo" }];
     }} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 203 error: ${e.message}`);
+        console.error(`[test_builtins_part20] fragment 190 error: ${e.message}`);
     }}
 
-// ---- fragment 204 ----
-try {{
-        String.raw`\251`; // A string containing four characters
-    }} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 204 error: ${e.message}`);
-    }}
-
-// ---- fragment 205 ----
-try {{
-        function replacer(match, ...args) {
-          const offset = args.at(-2);
-          const string = args.at(-1);
+    
+// ---- fragment 191 ----
+    try {{
+        function charge() {
+          if (sunny) {
+            useSolarCells();
+          } else {
+            promptBikeRide();
+          }
         }
-
-        function doSomething(arg1, arg2, ...otherArgs) {}
-            _ = doSomething;
-        _ = offset;
-        _ = otherArgs;
-        _ = replacer;
-        _ = string;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 205 error: ${e.message}`);
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 191 error: ${e.message}`);
     }}
 
-// ---- fragment 206 ----
-try {{
-        var a = 1;
-        // Only setting the prototype once
-        const obj = { __proto__: { a: 1 } };
+    
+// ---- fragment 192 ----
+    try {{
+        (function () {
+          if (Math.random() < 0.01) {
+            doSomething();
+          }
+        })();
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 192 error: ${e.message}`);
+    }}
 
-        // These syntaxes all create a property called "__proto__" and can coexist
-        // They would overwrite each other and the last one is actually used
-        const __proto__ = null;
-        const obj2 = {
-          ["__proto__"]: {},
-          __proto__,
-          __proto__() {},
-          get __proto__() {
-            return 1;
-          },
+    
+// ---- fragment 193 ----
+    try {{
+        const obj = {
+          a: 1,
+          b: { myProp: 2 },
+          c: 3,
         };
-            _ = obj;
-        _ = obj2;
-        _ = a;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 206 error: ${e.message}`);
-    }}
-
-// ---- fragment 207 ----
-try {{
-        var u = 0;
-        // All { and } need to be escaped
-        /\{\{MDN_Macro\}\}/u;
-        // The ] needs to be escaped
-        /\[sic\]/u;
-            _ = u;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 207 error: ${e.message}`);
-    }}
-
-// ---- fragment 208 ----
-try {{
-        function f(arg) {
-          arg = "foo";
-        }
-
-        function g(arg) {
-          let bar = "foo";
-        }
-            _ = bar;
-        _ = f;
-        _ = g;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 208 error: ${e.message}`);
-    }}
-
-// ---- fragment 209 ----
-try {{
-        function doSomething(...args) {
-          // args is always an array
-        }
-            _ = args;
-        _ = doSomething;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 209 error: ${e.message}`);
-    }}
-
-// ---- fragment 210 ----
-try {{
-        function cheer(score) {
-          if (score === 147) {
-            return "Maximum!";
-          }
-          if (score > 100) {
-            return "Century!";
-          }
-        }
-            _ = cheer;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 210 error: ${e.message}`);
-    }}
-
-// ---- fragment 211 ----
-try {{
-        var a = 1;
-        var b = 2;
-        (-a) ** b
-        -(a ** b)
     }} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 211 error: ${e.message}`);
+        console.error(`[test_builtins_part20] fragment 193 error: ${e.message}`);
     }}
 
-// ---- fragment 212 ----
-try {{
-        var factorial = 0;
-        function taylorSin(x) {
-          return (n) => ((-1) ** n * x ** (2 * n + 1)) / factorial(2 * n + 1);
+    
+// ---- fragment 194 ----
+    try {{
+        const COLUMNS = 80;
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 194 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 195 ----
+    try {{
+        let columns;
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 195 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 196 ----
+    try {{
+        function square(number) {
+          return number * number;
         }
-            _ = taylorSin;
-}} catch (e) {{
-        console.error(`[test_builtins_part20] fragment 212 error: ${e.message}`);
+
+        function greet(greeting) {
+          return greeting;
+        }
+
+        function log(arg) {
+          console.log(arg);
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 196 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 197 ----
+    try {{
+        square(2); // 4
+
+        greet("Howdy"); // "Howdy"
+
+        log({ obj: "value" }); // { obj: "value" }
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 197 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 198 ----
+    try {{
+        obj.foo.bar; // "baz"
+        // or alternatively
+        obj["foo"]["bar"]; // "baz"
+
+        // computed properties require square brackets
+        obj.foo["bar" + i]; // "baz2"
+        // or as template literal
+        obj.foo[`bar${i}`]; // "baz2"
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 198 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 199 ----
+    try {{
+        console.log("Hello" + "World");
+    }} catch (e) {{
+        console.error(`[test_builtins_part20] fragment 199 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part20 };

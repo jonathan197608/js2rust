@@ -9,11 +9,20 @@ use oxc_span::SourceType;
 /// import/export statements. This lets codegen read import/export directly
 /// from the AST instead of pre-scanning the raw source text.
 pub fn parse<'a>(allocator: &'a Allocator, source: &'a str) -> Program<'a> {
+    parse_with_name(allocator, source, "<unknown>")
+}
+
+/// Parse JS source text, with a debug name for diagnostics.
+pub fn parse_with_name<'a>(
+    allocator: &'a Allocator,
+    source: &'a str,
+    debug_name: &str,
+) -> Program<'a> {
     let source_type = SourceType::default().with_module(true);
     let ret = Parser::new(allocator, source, source_type).parse();
 
     for err in &ret.errors {
-        eprintln!("Parse error: {:?}", err);
+        eprintln!("Parse error [{}]: {:?}", debug_name, err);
     }
 
     ret.program

@@ -1,51 +1,46 @@
 // Auto-generated from MDN JS Reference
 // Category: statements
-// Fragments: 2 (fragment 42-43)
-// Generated: 2026-06-30
+// Fragments: 4 (fragment 40-43)
+// Generated: 2026-06-28
 
 function test_statements_part5() {
-// ---- fragment 42 ----
-try {{
-        var x = 1;
-        var y = 2;
-        var sin = 0;
-        let a, x, y;
-        const r = 10;
+// ---- fragment 40 ----
+    try {{
+        const foo = { bar: 1 };
+        console.log(foo.bar);
+        // foo is found in the scope chain as a variable;
+        // bar is found in foo as a property
+    }} catch (e) {{
+        console.error(`[test_statements_part5] fragment 40 error: ${e.message}`);
+    }}
 
-        {
-          const { PI, cos, sin } = Math;
-          a = PI * r * r;
-          x = r * cos(PI);
-          y = r * sin(PI / 2);
-        }
-            _ = PI;
-        _ = PI;
-        _ = PI;
-        _ = PI;
-        _ = PI;
-        _ = PI;
-        _ = PI;
-}} catch (e) {{
+    
+// ---- fragment 41 ----
+    try {{
+        console.log(globalThis.Math === Math); // true
+    }} catch (e) {{
+        console.error(`[test_statements_part5] fragment 41 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 42 ----
+    try {{
+        // SKIP: fractional to int coercion
+    }} catch (e) {{
         console.error(`[test_statements_part5] fragment 42 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 43 ----
-try {{
-        var bar = 0;
-        var foo = 0;
+    try {{
         const objectHavingAnEspeciallyLengthyName = { foo: true, bar: false };
 
         if (((o) => o.foo && !o.bar)(objectHavingAnEspeciallyLengthyName)) {
           // This branch runs.
         }
-            _ = bar;
-        _ = foo;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_statements_part5] fragment 43 error: ${e.message}`);
     }}
-
-}
-module.exports = { testStatements };
 
 }
 module.exports = { test_statements_part5 };

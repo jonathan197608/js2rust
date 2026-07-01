@@ -213,7 +213,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
                 functions: host_functions,
             })
         },
-        force_rebuild: false,
+        force_rebuild: true,
         run_zig_build: false,
     };
 

@@ -85,27 +85,89 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     // Always write it (even empty) — some generated modules import it for
     // builtin codegen that references host.* functions (e.g. host.regex_test).
     let host_content = if opts.host_header.is_empty() {
-        "// No host functions registered.\n".to_string()
+        // Minimum: always include regex_test and regex_search declarations
+        // since codegen may reference them.
+        r#"// Auto-generated host.zig — minimum declarations for builtin codegen
+// These symbols are defined in Rust with #[no_mangle] pub extern "C".
+pub extern fn host_regex_test(
+    pattern_ptr: [*]const u8, pattern_len: usize,
+    subject_ptr: [*]const u8, subject_len: usize,
+) callconv(.c) bool;
+pub extern fn host_regex_search(
+    pattern_ptr: [*]const u8, pattern_len: usize,
+    subject_ptr: [*]const u8, subject_len: usize,
+) callconv(.c) i64;
+
+// Wrapper functions: codegen generates host.regex_test(pattern, subject) (dot
+// notation, 2 args as []const u8 slices), but extern declarations use
+// host_regex_test with ptr+len pairs. These wrappers bridge the gap.
+pub fn regex_test(pattern: []const u8, subject: []const u8) bool {
+    return host_regex_test(pattern.ptr, pattern.len, subject.ptr, subject.len);
+}
+pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
+    return host_regex_search(pattern.ptr, pattern.len, subject.ptr, subject.len);
+}
+"#
+        .to_string()
     } else {
-        opts.host_header.clone()
+        let mut content = opts.host_header.clone();
+        // Ensure regex_test/regex_search are declared even if not in registered host fns
+        if !content.contains("host_regex_test") {
+            content.push_str(
+                r#"
+pub extern fn host_regex_test(
+    pattern_ptr: [*]const u8, pattern_len: usize,
+    subject_ptr: [*]const u8, subject_len: usize,
+) callconv(.c) bool;
+"#,
+            );
+        }
+        if !content.contains("host_regex_search") {
+            content.push_str(
+                r#"pub extern fn host_regex_search(
+    pattern_ptr: [*]const u8, pattern_len: usize,
+    subject_ptr: [*]const u8, subject_len: usize,
+) callconv(.c) i64;
+"#,
+            );
+        }
+        // Add wrapper functions so codegen's host.regex_test(...) (dot notation)
+        // resolves to the extern host_regex_test (underscore naming).
+        if !content.contains("pub fn regex_test(") {
+            content.push_str(
+                r#"
+pub fn regex_test(pattern: []const u8, subject: []const u8) bool {
+    return host_regex_test(pattern.ptr, pattern.len, subject.ptr, subject.len);
+}
+"#,
+            );
+        }
+        if !content.contains("pub fn regex_search(") {
+            content.push_str(
+                r#"
+pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
+    return host_regex_search(pattern.ptr, pattern.len, subject.ptr, subject.len);
+}
+"#,
+            );
+        }
+        content
     };
     fs::write(src_dir.join("host.zig"), &host_content)
         .map_err(|e| format!("write host.zig: {}", e))?;
 
-    // 4. Copy runtime/ if it exists (idempotent — skip if already copied)
+    // 4. Copy runtime/ if it exists (always overwrite to pick up runtime changes)
     if let Some(ref rt_dir) = opts.runtime_dir {
         let rt_src = Path::new(rt_dir);
         if rt_src.exists() && rt_src.is_dir() {
             let rt_dst = src_dir.join("js_runtime");
-            // Check if runtime is already present (may have been copied by concurrent macro invocation)
-            if !rt_dst.join("js_runtime.zig").exists() {
-                let _ = fs::remove_dir_all(&rt_dst);
-                if let Err(e) = copy_dir_recursive(rt_src, &rt_dst) {
-                    // If copy fails (e.g. concurrent process has the file), check if
-                    // another process already completed the copy.
-                    if !rt_dst.join("js_runtime.zig").exists() {
-                        return Err(format!("copy {}: {}", rt_dst.display(), e));
-                    }
+            // Always re-copy runtime files to pick up changes (e.g. js_console.zig updates)
+            let _ = fs::remove_dir_all(&rt_dst);
+            if let Err(e) = copy_dir_recursive(rt_src, &rt_dst) {
+                // If copy fails (e.g. concurrent process has the file), check if
+                // another process already completed the copy.
+                if !rt_dst.join("js_runtime.zig").exists() {
+                    return Err(format!("copy {}: {}", rt_dst.display(), e));
                 }
             }
         }

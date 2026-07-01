@@ -1,124 +1,120 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 163-172)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 150-159)
+// Generated: 2026-06-28
 
 function test_builtins_part16() {
-// ---- fragment 163 ----
-try {{
-        const life1 = "foo";
-        const foo = life1;
-            _ = foo;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 163 error: ${e.message}`);
-    }}
-
-// ---- fragment 164 ----
-try {{
-        // Wrap the number in parentheses
-        alert(typeof (1).toString());
-
-        // Add an extra dot for the number literal
-        alert(typeof 2..toString());
-
-        // Use square brackets
-        alert(typeof 3["toString"]());
+// ---- fragment 150 ----
+    try {{
+        "abc".repeat(Infinity); // RangeError
+        "a".repeat(2 ** 30); // RangeError
     }} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 164 error: ${e.message}`);
+        console.error(`[test_builtins_part16] fragment 150 error: ${e.message}`);
     }}
 
-// ---- fragment 165 ----
-try {{
-        "This is actually a string";
-        42 - 13;
-        const foo = "bar";
-            _ = foo;
-        _ = foo;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 165 error: ${e.message}`);
-    }}
-
-// ---- fragment 166 ----
-try {{
-        var u = 0;
-        /1{1}/u;
-        /1{1,}/u;
-        /1{1,2}/u;
-            _ = u;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 166 error: ${e.message}`);
-    }}
-
-// ---- fragment 167 ----
-try {{
-        var v = 0;
-        /[\(\)\{\}]/v;
-            _ = v;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 167 error: ${e.message}`);
-    }}
-
-// ---- fragment 168 ----
-try {{
-        var u = 0;
-        // If you want to match NULL followed by a digit, use a character class
-        /[\0]0/u;
-        // If you want to match a character by its character value, use \x
-        /\x01/u;
-            _ = u;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 168 error: ${e.message}`);
-    }}
-
-// ---- fragment 169 ----
-try {{
-        var f = 0;
-        var n = 0;
-        var t = 0;
-        var u = 0;
-        var v = 0;
-        // There's no need to escape the space
-        /[\f\v\n\t ]/u;
-            _ = f;
-        _ = n;
-        _ = t;
-        _ = u;
-        _ = v;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 169 error: ${e.message}`);
-    }}
-
-// ---- fragment 170 ----
-try {{
-        var p = 0;
-        var u = 0;
-        var v = 0;
-        /\p{Script=Latin}/u; // "Script=Latin" is a valid Unicode property
-        /\p{Letter}/u; // "Letter" is valid value for General_Category
-        /\p{RGI_Emoji_Flag_Sequence}/v; // Property of strings can only be used in "v" mode
-            _ = p;
-        _ = u;
-        _ = v;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 170 error: ${e.message}`);
-    }}
-
-// ---- fragment 171 ----
-try {{
-        /[1-9]/; // Swap the range
-        /[_\-=]/; // Escape the hyphen so it matches the literal character
+    
+// ---- fragment 151 ----
+    try {{
+        "abc".repeat(0); // ''
+        "abc".repeat(1); // 'abc'
+        "abc".repeat(2); // 'abcabc'
+        "abc".repeat(3.5); // 'abcabcabc' (count will be converted to integer)
     }} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 171 error: ${e.message}`);
+        console.error(`[test_builtins_part16] fragment 151 error: ${e.message}`);
     }}
 
-// ---- fragment 172 ----
-try {{
-        const re = new RegExp("pattern", "flags");
-            _ = re;
-        _ = re;
-}} catch (e) {{
-        console.error(`[test_builtins_part16] fragment 172 error: ${e.message}`);
+    
+// ---- fragment 152 ----
+    try {{
+        "abc".repeat(-1); // RangeError
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 152 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 153 ----
+    try {{
+        "abc".repeat(0); // ''
+        "abc".repeat(1); // 'abc'
+        "abc".repeat(2); // 'abcabc'
+        "abc".repeat(3.5); // 'abcabcabc' (count will be converted to integer)
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 153 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 154 ----
+    try {{
+        "use strict";
+
+        const args = [1, 2, 3];
+        console.log(Math.max(...args));
+
+        function foo(...args) {
+          console.log(args);
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 154 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 155 ----
+    try {{
+        0o3;
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 155 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 156 ----
+    try {{
+        const colorEnum = { RED: 0, GREEN: 1, BLUE: 2 };
+        const list = ["potatoes", "rice", "fries"];
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 156 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 157 ----
+    try {{
+        "use strict";
+        class DocArchiver {}
+
+        // SyntaxError: class is a reserved identifier
+        // (throws in older browsers only, e.g. Firefox 44 and older)
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 157 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 158 ----
+    try {{
+        const iterable = [10, 20, 30];
+
+        for (let value of iterable) {
+          value += 50;
+          console.log(value);
+        }
+        // 60
+        // 70
+        // 80
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 158 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 159 ----
+    try {{
+        array.forEach((value) => {
+          if (value === 5) {
+            return;
+          }
+          // do something with value
+        });
+    }} catch (e) {{
+        console.error(`[test_builtins_part16] fragment 159 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part16 };

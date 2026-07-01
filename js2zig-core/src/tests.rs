@@ -172,46 +172,6 @@ mod native_proto_tests {
         }};
     }
 
-    /// Macro: transpile JS (expect error), assert error message contains expected string.
-    /// Checks both Err case and TranspileResult.errors.
-    /// Usage: assert_transpile_err!(js, "expected error message");
-    macro_rules! assert_transpile_err {
-        ($js:expr, $expected_err:expr) => {{
-            let result = parse_and_transpile($js, None);
-            check_transpile_err(result, $expected_err);
-        }};
-    }
-
-    fn check_transpile_err(result: Result<TranspileResult, String>, expected_err: &str) {
-        // Case 1: hard error (Err)
-        if let Err(ref err) = result {
-            assert!(
-                err.contains(expected_err),
-                "Expected error containing '{}', got: {}",
-                expected_err,
-                err
-            );
-            return;
-        }
-        // Case 2: Ok with errors in .errors
-        if let Ok(ref res) = result
-            && !res.errors.is_empty()
-        {
-            let all_errors = res.errors.join("; ");
-            assert!(
-                all_errors.contains(expected_err),
-                "Expected error containing '{}', got errors: {}",
-                expected_err,
-                all_errors
-            );
-            return;
-        }
-        panic!(
-            "Expected error containing '{}', got: {:?}",
-            expected_err, result
-        );
-    }
-
     #[test]
     fn test_native_proto_basic() {
         let js = r#"
@@ -1657,7 +1617,7 @@ export function getUserJson(user) {
 
         // Verify JSON.stringify() is converted to js_json.stringify()
         assert!(
-            zig.contains("try js_json.stringify(js_allocator.g_alloc(), user"),
+            zig.contains("try js_json.stringify(js_allocator.getAllocator(), user"),
             "Expected try js_json.stringify(), got:\n{}",
             zig
         );

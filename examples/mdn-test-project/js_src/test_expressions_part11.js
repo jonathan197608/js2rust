@@ -1,18 +1,19 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 100-109)
-// Generated: 2026-06-30
+// Generated: 2026-06-28
 
 function test_expressions_part11() {
 // ---- fragment 100 ----
-try {{
+    try {{
         3 !== "3"; // true
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 100 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 101 ----
-try {{
+    try {{
         "hello" !== "hello"; // false
         "hello" !== "hola"; // true
 
@@ -27,8 +28,9 @@ try {{
         console.error(`[test_expressions_part11] fragment 101 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 102 ----
-try {{
+    try {{
         "3" !== 3; // true
         true !== 1; // true
         null !== undefined; // true
@@ -36,9 +38,9 @@ try {{
         console.error(`[test_expressions_part11] fragment 102 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 103 ----
-try {{
-        var key = 0;
+    try {{
         const object1 = {
           key: "value",
         };
@@ -49,13 +51,13 @@ try {{
 
         console.log(object1 !== object2); // true
         console.log(object1 !== object1); // false
-            _ = key;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 103 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 104 ----
-try {{
+    try {{
         const a = 5; // 00000000000000000000000000000101
         const b = 2; // 00000000000000000000000000000010
 
@@ -64,29 +66,26 @@ try {{
         console.error(`[test_expressions_part11] fragment 104 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 105 ----
-try {{
-        var x = 1;
-        var y = 2;
+    try {{
         x << y
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 105 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 106 ----
-try {{
-        var After = 0;
-        var Before = 0;
+    try {{
         Before: 11100110111110100000000000000110000000000001
         After:              10100000000000000110000000000001
-            _ = After;
-        _ = Before;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 106 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 107 ----
-try {{
+    try {{
         9 << 3; // 72
 
         // 9 * (2 ** 3) = 9 * (8) = 72
@@ -96,8 +95,9 @@ try {{
         console.error(`[test_expressions_part11] fragment 107 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 108 ----
-try {{
+    try {{
         const a = 5; //  00000000000000000000000000000101
         const b = 2; //  00000000000000000000000000000010
         const c = -5; //  11111111111111111111111111111011
@@ -109,14 +109,14 @@ try {{
         console.error(`[test_expressions_part11] fragment 108 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 109 ----
-try {{
-        var x = 1;
-        var y = 2;
+    try {{
         x >> y
     }} catch (e) {{
         console.error(`[test_expressions_part11] fragment 109 error: ${e.message}`);
     }}
 
+    
 }
 module.exports = { test_expressions_part11 };

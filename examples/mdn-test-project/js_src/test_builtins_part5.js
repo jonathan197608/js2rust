@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
 // Fragments: 10 (fragment 40-49)
-// Generated: 2026-06-30
+// Generated: 2026-06-28
 
 function test_builtins_part5() {
 // ---- fragment 40 ----
-try {{
+    try {{
         try {
           const a = decodeURIComponent("%E0%A4%A");
         } catch (e) {
@@ -13,13 +13,13 @@ try {{
         }
 
         // URIError: malformed URI sequence
-            _ = a;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 40 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 41 ----
-try {{
+    try {{
         function decodeQueryParam(p) {
           return decodeURIComponent(p.replace(/\+/g, " "));
         }
@@ -30,16 +30,17 @@ try {{
         console.error(`[test_builtins_part5] fragment 41 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 42 ----
-try {{
-        var uri = "https://example.com";
+    try {{
         encodeURI(uri)
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 42 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 43 ----
-try {{
+    try {{
         const set1 = ";/?:@&=+$,#"; // Reserved Characters
         const set2 = "-.!~*'()"; // Unreserved Marks
         const set3 = "ABC abc 123"; // Alphanumeric Characters + Space
@@ -55,8 +56,9 @@ try {{
         console.error(`[test_builtins_part5] fragment 43 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 44 ----
-try {{
+    try {{
         // High-low pair OK
         encodeURI("\uD800\uDFFF"); // "%F0%90%8F%BF"
 
@@ -69,8 +71,9 @@ try {{
         console.error(`[test_builtins_part5] fragment 44 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 45 ----
-try {{
+    try {{
         function encodeRFC3986URI(str) {
           return encodeURI(str)
             .replace(/%5B/g, "[")
@@ -80,21 +83,29 @@ try {{
               (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
             );
         }
-        encodeRFC3986URI("hello-world");
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 45 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 46 ----
-try {{
-        var uriComponent = 0;
+    try {{
         encodeURIComponent(uriComponent)
     }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 46 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 47 ----
-try {{
+    try {{
+        const fileName = "my file(2).txt";
+        const header = `Content-Disposition: attachment; filename*=UTF-8''${encodeRFC5987ValueChars(
+          fileName,
+        )}`;
+
+        console.log(header);
+        // "Content-Disposition: attachment; filename*=UTF-8''my%20file%282%29.txt"
+
         function encodeRFC5987ValueChars(str) {
           return (
             encodeURIComponent(str)
@@ -108,38 +119,31 @@ try {{
               )
               // The following are not required for percent-encoding per RFC5987,
               // so we can allow for a little better readability over the wire: |`^
-              .replace(/%(7C|60|5E)/g, (_, hex) =>
+              .replace(/%(7C|60|5E)/g, (str, hex) =>
                 String.fromCharCode(parseInt(hex, 16)),
               )
           );
         }
-
-        const fileName = "my file(2).txt";
-        const header = `Content-Disposition: attachment; filename*=UTF-8''${encodeRFC5987ValueChars(
-          fileName,
-        )}`;
-
-        console.log(header);
-        // "Content-Disposition: attachment; filename*=UTF-8''my%20file%282%29.txt"
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 47 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 48 ----
-try {{
+    try {{
         function encodeRFC3986URIComponent(str) {
           return encodeURIComponent(str).replace(
             /[!'()*]/g,
             (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
           );
         }
-        encodeRFC3986URIComponent("hello!");
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_builtins_part5] fragment 48 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 49 ----
-try {{
+    try {{
         // High-low pair OK
         encodeURIComponent("\uD800\uDFFF"); // "%F0%90%8F%BF"
 
@@ -152,5 +156,6 @@ try {{
         console.error(`[test_builtins_part5] fragment 49 error: ${e.message}`);
     }}
 
+    
 }
 module.exports = { test_builtins_part5 };

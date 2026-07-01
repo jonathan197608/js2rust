@@ -1,108 +1,154 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 102-111)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 90-99)
+// Generated: 2026-06-28
 
 function test_builtins_part10() {
-// ---- fragment 102 ----
-try {{
-        const s1 = "2 + 2"; // creates a string primitive
-        const s2 = new String("2 + 2"); // creates a String object
-        console.log(eval(s1)); // returns the number 4
-        console.log(eval(s2)); // returns the string "2 + 2"
+// ---- fragment 90 ----
+    try {{
+        const reviver = (key, value) =>
+          value !== null &&
+          typeof value === "object" &&
+          "$bigint" in value &&
+          typeof value.$bigint === "string"
+            ? BigInt(value.$bigint)
+            : value;
+
+        const payload = '{"number":1,"big":{"$bigint":"18014398509481982"}}';
+        const parsed = JSON.parse(payload, reviver);
+
+        console.log(parsed);
+        // { number: 1, big: 18014398509481982n }
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 102 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 90 error: ${e.message}`);
     }}
 
-// ---- fragment 103 ----
-try {{
-        var s2 = 0;
-        console.log(eval(s2.valueOf())); // returns the number 4
+    
+// ---- fragment 91 ----
+    try {{
+        function isPrime(n) {
+          if (n < 2n) {
+            return false;
+          }
+          if (n % 2n === 0n) {
+            return n === 2n;
+          }
+          for (let factor = 3n; factor * factor <= n; factor += 2n) {
+            if (n % factor === 0n) {
+              return false;
+            }
+          }
+          return true;
+        }
+
+        // Takes a BigInt value as an argument, returns nth prime number as a BigInt value
+        function nthPrime(nth) {
+          let maybePrime = 2n;
+          let prime = 0n;
+
+          while (nth >= 0n) {
+            if (isPrime(maybePrime)) {
+              nth--;
+              prime = maybePrime;
+            }
+            maybePrime++;
+          }
+
+          return prime;
+        }
+
+        nthPrime(20n);
+        // 73n
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 103 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 91 error: ${e.message}`);
     }}
 
-// ---- fragment 104 ----
-try {{
-        // You cannot access properties on null or undefined
+    
+// ---- fragment 92 ----
+    try {{
+        function degToRad(degrees) {
+          return degrees * (Math.PI / 180);
+        }
 
-        const nullVar = null;
-        nullVar.toString(); // TypeError: Cannot read properties of null
-        String(nullVar); // "null"
-
-        const undefinedVar = undefined;
-        undefinedVar.toString(); // TypeError: Cannot read properties of undefined
-        String(undefinedVar); // "undefined"
+        function radToDeg(rad) {
+          return rad / (Math.PI / 180);
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 104 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 92 error: ${e.message}`);
     }}
 
-// ---- fragment 105 ----
-try {{
-        const buffer = new ArrayBuffer(8);
-        const view = new Int32Array(buffer);
-            _ = view;
-}} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 105 error: ${e.message}`);
-    }}
-
-// ---- fragment 106 ----
-try {{
-        const littleEndian = (() => {
-          const buffer = new ArrayBuffer(2);
-          new DataView(buffer).setInt16(0, 256, true /* littleEndian */);
-          // Int16Array uses the platform's endianness.
-          return new Int16Array(buffer)[0] === 256;
-        })();
-        console.log(littleEndian); // true or false
+    
+// ---- fragment 93 ----
+    try {{
+        50 * Math.tan(degToRad(60));
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 106 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 93 error: ${e.message}`);
     }}
 
-// ---- fragment 107 ----
-try {{
-        const buffer = new ArrayBuffer(16);
-        const view = new DataView(buffer, 0);
+    
+// ---- fragment 94 ----
+    try {{
+        function random(min, max) {
+          const num = Math.floor(Math.random() * (max - min + 1)) + min;
+          return num;
+        }
 
-        view.setInt16(1, 42);
-        view.getInt16(1); // 42
+        random(1, 10);
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 107 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 94 error: ${e.message}`);
     }}
 
-// ---- fragment 108 ----
-try {{
-        var registry = 0;
-        var target = 0;
-        registry.register(target, "some value");
+    
+// ---- fragment 95 ----
+    try {{
+        const string1 = "A string primitive";
+        const string2 = 'Also a string primitive';
+        const string3 = `Yet another string primitive`;
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 108 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 95 error: ${e.message}`);
     }}
 
-// ---- fragment 109 ----
-try {{
-        var registry = 0;
-        var theObject = 0;
-        registry.register(theObject, "some value");
+    
+// ---- fragment 96 ----
+    try {{
+        const string4 = new String("A String object");
     }} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 109 error: ${e.message}`);
+        console.error(`[test_builtins_part10] fragment 96 error: ${e.message}`);
     }}
 
-// ---- fragment 110 ----
-try {{
-        const AsyncFunction = async function () {}.constructor;
-            _ = AsyncFunction;
-}} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 110 error: ${e.message}`);
+    
+// ---- fragment 97 ----
+    try {{
+        "cat".charAt(1); // gives value "a"
+    }} catch (e) {{
+        console.error(`[test_builtins_part10] fragment 97 error: ${e.message}`);
     }}
 
-// ---- fragment 111 ----
-try {{
-        const regex1 = /ab+c/g;
-            _ = regex1;
-}} catch (e) {{
-        console.error(`[test_builtins_part10] fragment 111 error: ${e.message}`);
+    
+// ---- fragment 98 ----
+    try {{
+        "cat"[1]; // gives value "a"
+    }} catch (e) {{
+        console.error(`[test_builtins_part10] fragment 98 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 99 ----
+    try {{
+        const a = "a";
+        const b = "b";
+        if (a < b) {
+          // true
+          console.log(`${a} is less than ${b}`);
+        } else if (a > b) {
+          console.log(`${a} is greater than ${b}`);
+        } else {
+          console.log(`${a} and ${b} are equal.`);
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part10] fragment 99 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part10 };

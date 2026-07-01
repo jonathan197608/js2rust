@@ -95,34 +95,37 @@ impl TypeInferrer {
             if let Some(ty) = self.lookup_jsdoc_return_type(fn_name) {
                 return InferResult::Definite(ty);
             }
-            // No @returns — try infer from return expressions (handles async host functions)
+            // No @returns — try infer from return expressions
             let return_exprs = Self::collect_return_exprs(fd);
-            if !return_exprs.is_empty() {
-                let mut ty: Option<ZigType> = None;
-                for expr in &return_exprs {
-                    let expr_ty = self.infer_expr_type(expr);
-                    match (&ty, &expr_ty) {
-                        (None, InferResult::Definite(et)) => ty = Some(et.clone()),
-                        (Some(t), InferResult::Definite(et)) if *t != *et => {
-                            self.errors.push(format!(
-                                "Return type mismatch in '{}': expected {:?}, found {:?}",
-                                fn_name, t, et
-                            ));
-                            return InferResult::Indeterminate;
-                        }
-                        _ => {}
+            if return_exprs.is_empty() {
+                // No return expressions → void (e.g. test functions,
+                // side-effect-only export functions)
+                return InferResult::Definite(ZigType::Void);
+            }
+            let mut ty: Option<ZigType> = None;
+            for expr in &return_exprs {
+                let expr_ty = self.infer_expr_type(expr);
+                match (&ty, &expr_ty) {
+                    (None, InferResult::Definite(et)) => ty = Some(et.clone()),
+                    (Some(t), InferResult::Definite(et)) if *t != *et => {
+                        self.errors.push(format!(
+                            "Return type mismatch in '{}': expected {:?}, found {:?}",
+                            fn_name, t, et
+                        ));
+                        return InferResult::Indeterminate;
                     }
-                }
-                if let Some(definite_ty) = ty {
-                    return InferResult::Definite(definite_ty);
+                    _ => {}
                 }
             }
-            // Still can't infer — report error and default
+            if let Some(definite_ty) = ty {
+                return InferResult::Definite(definite_ty);
+            }
+            // Has return expressions but can't infer — report error and default
             self.errors.push(format!(
                 "Export function '{}' must have @returns annotation (or return a value that can be inferred)",
                 fn_name
             ));
-            return InferResult::Definite(ZigType::Str); // default for export
+            return InferResult::Definite(ZigType::Str);
         }
 
         // Non-export: infer from return expressions

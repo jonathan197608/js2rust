@@ -149,7 +149,7 @@ pub fn join(alloc: Allocator, arr: []const i64, sep: []const u8) ![]const u8 {
         try writer.print("{d}", .{val});
     }
 
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(alloc);
 }
 
 /// Array.map — simplified: multiply each element by a scalar.
@@ -170,7 +170,7 @@ pub fn filter(alloc: Allocator, arr: []const i64, threshold: i64) ![]const i64 {
             try buf.append(alloc, val);
         }
     }
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(alloc);
 }
 
 /// Array.indexOf — find first index of val, or -1.

@@ -46,18 +46,18 @@ pub const JsRegExp = struct {
         if (count == 0) return null;
 
         const bytes = result.ptr[0..@intCast(result.len)];
-        var matches = std.ArrayList([]const u8).init(alloc);
-        errdefer matches.deinit();
+        var matches = std.ArrayList([]const u8).empty;
+        errdefer matches.deinit(alloc);
 
         var start: usize = 0;
         for (0..count) |_| {
             var end: usize = start;
             while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-            try matches.append(bytes[start..end]);
+            try matches.append(alloc, bytes[start..end]);
             start = end + 1;
         }
 
-        return try matches.toOwnedSlice();
+        return try matches.toOwnedSlice(alloc);
     }
 
     /// Execute the pattern against the subject, returning captured groups.
@@ -69,18 +69,18 @@ pub const JsRegExp = struct {
         if (count == 0) return null;
 
         const bytes = result.ptr[0..@intCast(result.len)];
-        var matches = std.ArrayList([]const u8).init(alloc);
-        errdefer matches.deinit();
+        var matches = std.ArrayList([]const u8).empty;
+        errdefer matches.deinit(alloc);
 
         var start: usize = 0;
         for (0..count) |_| {
             var end: usize = start;
             while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-            try matches.append(bytes[start..end]);
+            try matches.append(alloc, bytes[start..end]);
             start = end + 1;
         }
 
-        return try matches.toOwnedSlice();
+        return try matches.toOwnedSlice(alloc);
     }
 
     /// Search for the pattern in the subject.
@@ -98,18 +98,18 @@ pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !
     if (count == 0) return null;
 
     const bytes = result.ptr[0..@intCast(result.len)];
-    var matches = std.ArrayList([]const u8).init(alloc);
-    errdefer matches.deinit();
+    var matches: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
+    errdefer matches.deinit(alloc);
 
     var start: usize = 0;
     for (0..count) |_| {
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try matches.append(bytes[start..end]);
+        try matches.append(alloc, bytes[start..end]);
         start = end + 1;
     }
 
-    return try matches.toOwnedSlice();
+    return try matches.toOwnedSlice(alloc);
 }
 
 // ── Host C ABI function declarations ──

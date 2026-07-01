@@ -1,114 +1,143 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 92-101)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 80-89)
+// Generated: 2026-06-28
 
 function test_builtins_part9() {
-// Hoisted cross-fragment function declarations
-function degToRad(degrees) {
-  return degrees * (Math.PI / 180);
-}
-
-// radToDeg removed — not used in any fragment
-
-// ---- fragment 92 ----
-// (empty — merged with fragment 93 to avoid unused constant)
-//
-// ---- fragment 93 ----
-try {{
-        50 * Math.tan(degToRad(60));
+// ---- fragment 80 ----
+    try {{
+        typeof Object(1n) === "object"; // true
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 93 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 80 error: ${e.message}`);
     }}
 
-// ---- fragment 94 ----
-try {{
-        function random(min, max) {
-          const num = Math.floor(Math.random() * (max - min + 1)) + min;
-          return num;
-        }
-
-        _ = random(1, 10);
+    
+// ---- fragment 81 ----
+    try {{
+        const previousMaxSafe = BigInt(Number.MAX_SAFE_INTEGER); // 9007199254740991n
+        const maxPlusOne = previousMaxSafe + 1n; // 9007199254740992n
+        const theFuture = previousMaxSafe + 2n; // 9007199254740993n, this works now!
+        const prod = previousMaxSafe * 2n; // 18014398509481982n
+        const diff = prod - 10n; // 18014398509481972n
+        const mod = prod % 10n; // 2n
+        const bigN = 2n ** 54n; // 18014398509481984n
+        bigN * -1n; // -18014398509481984n
+        const expected = 4n / 2n; // 2n
+        const truncated = 5n / 2n; // 2n, not 2.5n
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 94 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 81 error: ${e.message}`);
     }}
 
-// ---- fragment 95 ----
-try {{
-        const string1 = "A string primitive";
-        const string2 = 'Also a string primitive';
-        const string3 = `Yet another string primitive`;
-            _ = string1;
-        _ = string2;
-        _ = string3;
-}} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 95 error: ${e.message}`);
-    }}
-
-// ---- fragment 96 ----
-try {{
-        const string4 = new String("A String object");
-            _ = string4;
-        _ = string4;
-}} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 96 error: ${e.message}`);
-    }}
-
-// ---- fragment 97 ----
-try {{
-        "cat".charAt(1); // gives value "a"
+    
+// ---- fragment 82 ----
+    try {{
+        0n === 0; // false
+        0n == 0; // true
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 97 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 82 error: ${e.message}`);
     }}
 
-// ---- fragment 98 ----
-try {{
-        "cat"[1]; // gives value "a"
+    
+// ---- fragment 83 ----
+    try {{
+        1n < 2; // true
+        2n > 1; // true
+        2 > 2; // false
+        2n > 2; // false
+        2n >= 2; // true
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 98 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 83 error: ${e.message}`);
     }}
 
-// ---- fragment 99 ----
-try {{
-        const a = "a";
-        const b = "b";
-        if (a < b) {
-          // true
-          console.log(`${a} is less than ${b}`);
-        } else if (a > b) {
-          console.log(`${a} is greater than ${b}`);
+    
+// ---- fragment 84 ----
+    try {{
+        const mixed = [4n, 6, -12n, 10, 4, 0, 0n];
+        // [4n, 6, -12n, 10, 4, 0, 0n]
+
+        mixed.sort(); // default sorting behavior
+        // [ -12n, 0, 0n, 10, 4n, 4, 6 ]
+
+        mixed.sort((a, b) => a - b);
+        // won't work since subtraction will not work with mixed types
+        // TypeError: can't convert BigInt value to Number value
+
+        // sort with an appropriate numeric comparator
+        mixed.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        // [ -12n, 0, 0n, 4n, 4, 6, 10 ]
+    }} catch (e) {{
+        console.error(`[test_builtins_part9] fragment 84 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 85 ----
+    try {{
+        Object(0n) === 0n; // false
+        Object(0n) === Object(0n); // false
+
+        const o = Object(0n);
+        o === o; // true
+    }} catch (e) {{
+        console.error(`[test_builtins_part9] fragment 85 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 86 ----
+    try {{
+        if (0n) {
+          console.log("Hello from the if!");
         } else {
-          console.log(`${a} and ${b} are equal.`);
+          console.log("Hello from the else!");
         }
+        // "Hello from the else!"
+
+        0n || 12n; // 12n
+        0n && 12n; // 0n
+        Boolean(0n); // false
+        Boolean(12n); // true
+        !12n; // false
+        !0n; // true
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 99 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 86 error: ${e.message}`);
     }}
 
-// ---- fragment 100 ----
-try {{
-        function areEqualCaseInsensitive(str1, str2) {
-          return str1.toUpperCase() === str2.toUpperCase();
-        }
-            _ = areEqualCaseInsensitive;
-}} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 100 error: ${e.message}`);
-    }}
-
-// ---- fragment 101 ----
-try {{
-        // String coercion and object creation tests
-        const strPrim = "foo";
-        const strPrim2 = 1;
-        const strPrim3 = true;
-        const strObj = "bar";
-
-        console.log(strPrim);
-        console.log(strPrim2);
-        console.log(strPrim3);
-        console.log(strObj);
+    
+// ---- fragment 87 ----
+    try {{
+        BigInt.prototype.toJSON = function () {
+          return { $bigint: this.toString() };
+        };
     }} catch (e) {{
-        console.error(`[test_builtins_part9] fragment 101 error: ${e.message}`);
+        console.error(`[test_builtins_part9] fragment 87 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 88 ----
+    try {{
+        console.log(JSON.stringify({ a: 1n }));
+        // {"a":{"$bigint":"1"}}
+    }} catch (e) {{
+        console.error(`[test_builtins_part9] fragment 88 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 89 ----
+    try {{
+        const replacer = (key, value) =>
+          typeof value === "bigint" ? { $bigint: value.toString() } : value;
+
+        const data = {
+          number: 1,
+          big: 18014398509481982n,
+        };
+        const stringified = JSON.stringify(data, replacer);
+
+        console.log(stringified);
+        // {"number":1,"big":{"$bigint":"18014398509481982"}}
+    }} catch (e) {{
+        console.error(`[test_builtins_part9] fragment 89 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part9 };

@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
 // Fragments: 10 (fragment 0-9)
-// Generated: 2026-06-30
+// Generated: 2026-06-28
 
 function test_builtins_part1() {
 // ---- fragment 0 ----
-try {{
+    try {{
         const maxNumber = 10 ** 1000; // Max positive number
 
         if (maxNumber === Infinity) {
@@ -17,8 +17,9 @@ try {{
         console.error(`[test_builtins_part1] fragment 0 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 1 ----
-try {{
+    try {{
         console.log(Infinity); /* Infinity */
         console.log(Infinity + 1); /* Infinity */
         console.log(10 ** 1000); /* Infinity */
@@ -29,8 +30,9 @@ try {{
         console.error(`[test_builtins_part1] fragment 1 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 2 ----
-try {{
+    try {{
         function sanitize(x) {
           if (isNaN(x)) {
             return NaN;
@@ -45,8 +47,9 @@ try {{
         console.error(`[test_builtins_part1] fragment 2 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 3 ----
-try {{
+    try {{
         NaN === NaN; // false
         Number.NaN === NaN; // false
         isNaN(NaN); // true
@@ -63,24 +66,27 @@ try {{
         console.error(`[test_builtins_part1] fragment 3 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 4 ----
-try {{
+    try {{
         isNaN("hello world"); // true
         Number.isNaN("hello world"); // false
     }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 4 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 5 ----
-try {{
+    try {{
         isNaN(1n); // TypeError: Conversion from 'BigInt' to 'number' is not allowed.
         Number.isNaN(1n); // false
     }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 5 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 6 ----
-try {{
+    try {{
         const arr = [2, 4, NaN, 12];
         arr.indexOf(NaN); // -1
         arr.includes(NaN); // true
@@ -91,8 +97,9 @@ try {{
         console.error(`[test_builtins_part1] fragment 6 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 7 ----
-try {{
+    try {{
         const f2b = (x) => new Uint8Array(new Float64Array([x]).buffer);
         const b2f = (x) => new Float64Array(x.buffer)[0];
         // Get a byte representation of NaN
@@ -114,21 +121,21 @@ try {{
         console.log(Object.is(nan3, NaN)); // true
         console.log(f2b(NaN)); // Uint8Array(8) [0, 0, 0, 0, 0, 0, 248, 127]
         console.log(f2b(nan3)); // Uint8Array(8) [1, 0, 0, 0, 0, 0, 248, 127]
-            _ = n;
-        _ = nan2;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 7 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 8 ----
-try {{
+    try {{
         NaN ** 0 === 1; // true
     }} catch (e) {{
         console.error(`[test_builtins_part1] fragment 8 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 9 ----
-try {{
+    try {{
         function div(x) {
           if (isFinite(1000 / x)) {
             return "Number is NOT Infinity.";
@@ -143,5 +150,6 @@ try {{
         console.error(`[test_builtins_part1] fragment 9 error: ${e.message}`);
     }}
 
+    
 }
 module.exports = { test_builtins_part1 };

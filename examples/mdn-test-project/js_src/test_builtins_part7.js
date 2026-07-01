@@ -1,159 +1,163 @@
 // Auto-generated from MDN JS Reference
 // Category: builtins
-// Fragments: 10 (fragment 72-81)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 60-69)
+// Generated: 2026-06-28
 
 function test_builtins_part7() {
-// ---- fragment 72 ----
-try {{
-        Number("123"); // returns the number 123
-        Number("123") === 123; // true
-
-        Number("unicorn"); // NaN
-        Number(undefined); // NaN
+// ---- fragment 60 ----
+    try {{
+        try {
+          throw new AggregateError([new Error("some error")], "Hello");
+        } catch (e) {
+          console.log(e instanceof AggregateError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "AggregateError"
+          console.log(e.errors); // [ Error: "some error" ]
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 72 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 60 error: ${e.message}`);
     }}
 
-// ---- fragment 73 ----
-try {{
-        new Int32Array([1.1, 1.9, -1.1, -1.9]); // Int32Array(4) [ 1, 1, -1, -1 ]
-
-        new Int8Array([257, -257]); // Int8Array(2) [ 1, -1 ]
-        // 257 = 0001 0000 0001
-        //     =      0000 0001 (mod 2^8)
-        //     = 1
-        // -257 = 1110 1111 1111
-        //      =      1111 1111 (mod 2^8)
-        //      = -1 (as signed integer)
-
-        new Uint8Array([257, -257]); // Uint8Array(2) [ 1, 255 ]
-        // -257 = 1110 1111 1111
-        //      =      1111 1111 (mod 2^8)
-        //      = 255 (as unsigned integer)
+    
+// ---- fragment 61 ----
+    try {{
+        try {
+          throw new EvalError("Hello");
+        } catch (e) {
+          console.log(e instanceof EvalError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "EvalError"
+          console.log(e.stack); // Stack of the error
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 73 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 61 error: ${e.message}`);
     }}
 
-// ---- fragment 74 ----
-try {{
-        const biggestNum = Number.MAX_VALUE;
-        const smallestNum = Number.MIN_VALUE;
-        const infiniteNum = Number.POSITIVE_INFINITY;
-        const negInfiniteNum = Number.NEGATIVE_INFINITY;
-        const notANum = Number.NaN;
-            _ = biggestNum;
-        _ = infiniteNum;
-        _ = negInfiniteNum;
-        _ = notANum;
-        _ = smallestNum;
-}} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 74 error: ${e.message}`);
-    }}
-
-// ---- fragment 75 ----
-try {{
-        const biggestInt = Number.MAX_SAFE_INTEGER; // (2**53 - 1) => 9007199254740991
-        const smallestInt = Number.MIN_SAFE_INTEGER; // -(2**53 - 1) => -9007199254740991
-            _ = biggestInt;
-        _ = smallestInt;
-}} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 75 error: ${e.message}`);
-    }}
-
-// ---- fragment 76 ----
-try {{
-        const d = new Date("1995-12-17T03:24:00");
-        console.log(Number(d));
+    
+// ---- fragment 62 ----
+    try {{
+        try {
+          let a = undefinedVariable;
+        } catch (e) {
+          console.log(e instanceof ReferenceError); // true
+          console.log(e.message); // "undefinedVariable is not defined"
+          console.log(e.name); // "ReferenceError"
+          console.log(e.stack); // Stack of the error
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 76 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 62 error: ${e.message}`);
     }}
 
-// ---- fragment 77 ----
-try {{
-        Number("123"); // 123
-        Number("123") === 123; // true
-        Number("12.3"); // 12.3
-        Number("12.00"); // 12
-        Number("123e-1"); // 12.3
-        Number(""); // 0
-        Number(null); // 0
-        Number("0x11"); // 17
-        Number("0b11"); // 3
-        Number("0o11"); // 9
-        Number("foo"); // NaN
-        Number("100a"); // NaN
-        Number("-Infinity"); // -Infinity
+    
+// ---- fragment 63 ----
+    try {{
+        try {
+          throw new ReferenceError("Hello");
+        } catch (e) {
+          console.log(e instanceof ReferenceError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "ReferenceError"
+          console.log(e.stack); // Stack of the error
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 77 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 63 error: ${e.message}`);
     }}
 
-// ---- fragment 78 ----
-try {{
-        const previouslyMaxSafeInteger = 9007199254740991n;
-
-        const alsoHuge = BigInt(9007199254740991);
-        // 9007199254740991n
-
-        const hugeString = BigInt("9007199254740991");
-        // 9007199254740991n
-
-        const hugeHex = BigInt("0x1fffffffffffff");
-        // 9007199254740991n
-
-        const hugeOctal = BigInt("0o377777777777777777");
-        // 9007199254740991n
-
-        const hugeBin = BigInt(
-          "0b11111111111111111111111111111111111111111111111111111",
-        );
-        // 9007199254740991n
-            _ = alsoHuge;
-        _ = hugeBin;
-        _ = hugeHex;
-        _ = hugeOctal;
-        _ = hugeString;
-        _ = previouslyMaxSafeInteger;
-}} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 78 error: ${e.message}`);
-    }}
-
-// ---- fragment 79 ----
-try {{
-        typeof 1n === "bigint"; // true
-        typeof BigInt("1") === "bigint"; // true
+    
+// ---- fragment 64 ----
+    try {{
+        try {
+          throw new SuppressedError(
+            new Error("New error"),
+            new Error("Original error"),
+            "Hello",
+          );
+        } catch (e) {
+          console.log(e instanceof SuppressedError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "SuppressedError"
+          console.log(e.error); // Error: "New error"
+          console.log(e.suppressed); // Error: "Original error"
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 79 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 64 error: ${e.message}`);
     }}
 
-// ---- fragment 80 ----
-try {{
-        typeof Object(1n) === "object"; // true
+    
+// ---- fragment 65 ----
+    try {{
+        try {
+          eval("hoo bar");
+        } catch (e) {
+          console.log(e instanceof SyntaxError); // true
+          console.log(e.message);
+          console.log(e.name); // "SyntaxError"
+          console.log(e.stack); // Stack of the error
+        }
     }} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 80 error: ${e.message}`);
+        console.error(`[test_builtins_part7] fragment 65 error: ${e.message}`);
     }}
 
-// ---- fragment 81 ----
-try {{
-        const previousMaxSafe = BigInt(Number.MAX_SAFE_INTEGER); // 9007199254740991n
-        const maxPlusOne = previousMaxSafe + 1n; // 9007199254740992n
-        const theFuture = previousMaxSafe + 2n; // 9007199254740993n, this works now!
-        const prod = previousMaxSafe * 2n; // 18014398509481982n
-        const diff = prod - 10n; // 18014398509481972n
-        const mod = prod % 10n; // 2n
-        const bigN = 2n ** 54n; // 18014398509481984n
-        bigN * -1n; // -18014398509481984n
-        const expected = 4n / 2n; // 2n
-        const truncated = 5n / 2n; // 2n, not 2.5n
-            _ = diff;
-        _ = expected;
-        _ = maxPlusOne;
-        _ = mod;
-        _ = theFuture;
-        _ = truncated;
-}} catch (e) {{
-        console.error(`[test_builtins_part7] fragment 81 error: ${e.message}`);
+    
+// ---- fragment 66 ----
+    try {{
+        try {
+          throw new SyntaxError("Hello");
+        } catch (e) {
+          console.log(e instanceof SyntaxError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "SyntaxError"
+          console.log(e.stack); // Stack of the error
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part7] fragment 66 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 67 ----
+    try {{
+        try {
+          null.f();
+        } catch (e) {
+          console.log(e instanceof TypeError); // true
+          console.log(e.message); // "null has no properties"
+          console.log(e.name); // "TypeError"
+          console.log(e.stack); // Stack of the error
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part7] fragment 67 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 68 ----
+    try {{
+        try {
+          throw new TypeError("Hello");
+        } catch (e) {
+          console.log(e instanceof TypeError); // true
+          console.log(e.message); // "Hello"
+          console.log(e.name); // "TypeError"
+          console.log(e.stack); // Stack of the error
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part7] fragment 68 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 69 ----
+    try {{
+        try {
+          decodeURIComponent("%");
+        } catch (e) {
+          console.log(e instanceof URIError); // true
+          console.log(e.message); // "malformed URI sequence"
+          console.log(e.name); // "URIError"
+          console.log(e.stack); // Stack of the error
+        }
+    }} catch (e) {{
+        console.error(`[test_builtins_part7] fragment 69 error: ${e.message}`);
+    }}
+
+    
 }
 module.exports = { test_builtins_part7 };

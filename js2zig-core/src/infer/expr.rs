@@ -586,8 +586,7 @@ impl TypeInferrer {
             | BinaryOperator::Subtraction
             | BinaryOperator::Multiplication
             | BinaryOperator::Division
-            | BinaryOperator::Remainder
-            | BinaryOperator::Exponential => {
+            | BinaryOperator::Remainder => {
                 // BigInt arithmetic preserves BigInt type
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;
@@ -597,6 +596,14 @@ impl TypeInferrer {
                 } else {
                     ZigType::I64
                 }
+            }
+            // Exponential: JS `**` always returns number (f64).
+            // Codegen generates std.math.pow(f64, ...) for all non-BigInt cases.
+            BinaryOperator::Exponential => {
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
+                ZigType::F64
             }
             BinaryOperator::Equality
             | BinaryOperator::Inequality

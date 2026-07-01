@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: statements
-// Fragments: 10 (fragment 0-10)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 0-9)
+// Generated: 2026-06-28
 
 function test_statements_part1() {
 // ---- fragment 0 ----
-try {{
+    try {{
         function getRectArea(width, height) {
           if (width > 0 && height > 0) {
             return width * height;
@@ -20,8 +20,9 @@ try {{
         console.error(`[test_statements_part1] fragment 0 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 1 ----
-try {{
+    try {{
         function counter() {
           // Infinite loop
           for (let count = 1; ; count++) {
@@ -50,8 +51,9 @@ try {{
         console.error(`[test_statements_part1] fragment 1 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 2 ----
-try {{
+    try {{
         function magic() {
           return function calc(x) {
             return x * 42;
@@ -60,13 +62,13 @@ try {{
 
         const answer = magic();
         answer(1337); // 56154
-            _ = calc;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_statements_part1] fragment 2 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 3 ----
-try {{
+    try {{
         let i = 0;
 
         while (i < 6) {
@@ -81,8 +83,9 @@ try {{
         console.error(`[test_statements_part1] fragment 3 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 4 ----
-try {{
+    try {{
         function testBreak(x) {
           let i = 0;
 
@@ -95,15 +98,33 @@ try {{
 
           return i * x;
         }
-            _ = testBreak;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_statements_part1] fragment 4 error: ${e.message}`);
     }}
 
+    
+// ---- fragment 5 ----
+    try {{
+        const food = "sushi";
+
+        switch (food) {
+          case "sushi":
+            console.log("Sushi is originally from Japan.");
+            break;
+          case "pizza":
+            console.log("Pizza is originally from Italy.");
+            break;
+          default:
+            console.log("I have never heard of that dish.");
+            break;
+        }
+    }} catch (e) {{
+        console.error(`[test_statements_part1] fragment 5 error: ${e.message}`);
+    }}
+
+    
 // ---- fragment 6 ----
-try {{
-        var innerBlock = 0;
-        var outerBlock = 0;
+    try {{
         outerBlock: {
           innerBlock: {
             console.log("1");
@@ -112,13 +133,13 @@ try {{
           }
           console.log("2"); // skipped
         }
-            _ = innerBlock;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_statements_part1] fragment 6 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 7 ----
-try {{
+    try {{
         function getRectArea(width, height) {
           if (isNaN(width) || isNaN(height)) {
             throw new Error("Parameter is not a number!");
@@ -134,31 +155,23 @@ try {{
         console.error(`[test_statements_part1] fragment 7 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 8 ----
-try {{
-        var expression = 0;
+    try {{
         throw expression;
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 8 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 9 ----
-try {{
-        var error = 0;
+    try {{
         throw error; // Throws a previously defined value (e.g. within a catch block)
         throw new Error("Required"); // Throws a new Error object
     }} catch (e) {{
         console.error(`[test_statements_part1] fragment 9 error: ${e.message}`);
     }}
 
-// ---- fragment 10 ----
-try {{
-        throw (
-          new Error()
-        );
-    }} catch (e) {{
-        console.error(`[test_statements_part1] fragment 10 error: ${e.message}`);
-    }}
-
+    
 }
 module.exports = { test_statements_part1 };

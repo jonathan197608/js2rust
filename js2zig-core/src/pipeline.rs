@@ -137,6 +137,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let in_dir = in_path.to_string_lossy().to_string();
     let out_dir: String = config.out_dir.to_string_lossy().to_string();
     let force_rebuild = config.force_rebuild;
+    eprintln!(
+        "DEBUG transpile_project: name='{}', force_rebuild={}, run_zig_build={}",
+        config.name, force_rebuild, config.run_zig_build
+    );
 
     // Ensure output directory exists.
     fs::create_dir_all(&out_dir)
@@ -260,10 +264,18 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
         // --- Incremental check ---
         let current_hash = compute_group_hash(&in_path, group, &runtime_path);
+        eprintln!(
+            "DEBUG: group={}, force_rebuild={}, has_cache={}, hash_len={}",
+            group.core_name,
+            force_rebuild,
+            build_cache.contains_key(&group.core_name),
+            current_hash.len()
+        );
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&group.core_name)
             && *cached_hash == current_hash
         {
+            eprintln!("DEBUG: SKIPPING (cache HIT)");
             println!("  unchanged, skipping (use --force to rebuild)");
             // Still collect the cabi_exports_json for the result
             let cabi_path = Path::new(&out_dir)
@@ -461,25 +473,38 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         }
                     };
 
-                let has_file_error = diagnostics
+                let (hard_errors, soft_errors): (Vec<_>, Vec<_>) = diagnostics
                     .iter()
-                    .any(|d| d.kind == crate::native_proto::DiagnosticKind::Error);
-                if has_file_error {
-                    let err_count = diagnostics
-                        .iter()
-                        .filter(|d| d.kind == crate::native_proto::DiagnosticKind::Error)
-                        .count();
+                    .filter(|d| d.kind == crate::native_proto::DiagnosticKind::Error)
+                    .partition(|d| !d.message.contains("(Rule 8)"));
+                if !hard_errors.is_empty() {
+                    let err_count = hard_errors.len();
                     eprintln!("  skip '{}': {} codegen error(s)", member, err_count);
-                    for diag in &diagnostics {
-                        if diag.kind == crate::native_proto::DiagnosticKind::Error {
-                            eprintln!("    {}", diag.message.as_str());
-                            file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
-                        }
+                    for diag in &hard_errors {
+                        eprintln!("    {}", diag.message.as_str());
+                        file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
+                    }
+                    // Also report soft Rule 8 errors for visibility
+                    for diag in &soft_errors {
+                        eprintln!("    [Rule 8] {}", diag.message.as_str());
+                        file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
                     }
                     has_error = true;
                     // Continue to next file instead of breaking — log errors for all files
                     // before deciding whether to skip the group.
                     continue;
+                }
+                // Only Rule 8 errors — don't skip the file, but report as warnings
+                if !soft_errors.is_empty() {
+                    eprintln!(
+                        "  '{}': {} Rule 8 diagnostic(s) (non-blocking)",
+                        member,
+                        soft_errors.len()
+                    );
+                    for diag in &soft_errors {
+                        eprintln!("    {}", diag.message.as_str());
+                        file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
+                    }
                 }
 
                 if !diagnostics.is_empty() {
@@ -754,10 +779,11 @@ pub fn gen_cabi_wrappers(
 
         let returns_string = exp.ret_type == crate::native_proto::ZigType::Str;
         let ret_is_js_any = exp.ret_type == crate::native_proto::ZigType::Anytype;
+        let ret_is_arraylist = matches!(exp.ret_type, crate::native_proto::ZigType::ArrayList(_));
 
-        // JsAny returns: re-export as const alias (no CABI export).
+        // JsAny/ArrayList returns: re-export as const alias (no CABI export).
         // This lets Zig test code call the function, but no C ABI symbol is emitted.
-        if ret_is_js_any {
+        if ret_is_js_any || ret_is_arraylist {
             out.push_str(&format!(
                 "pub const {name} = {mod}.{name};\n\n",
                 name = name,
@@ -1002,11 +1028,7 @@ pub fn gen_cabi_wrappers(
                 name = name,
             ));
         } else {
-            let ret_zig = if exp.ret_type == crate::native_proto::ZigType::Void {
-                "void".to_string()
-            } else {
-                exp.ret_type.to_zig_type()
-            };
+            let ret_zig = exp.ret_type.to_cabi_str();
             let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
 
             // Build C ABI param list: add _err out-param for can_throw non-string exports
@@ -1027,11 +1049,14 @@ pub fn gen_cabi_wrappers(
                         args = cabi_call_args,
                     )
                 } else {
+                    // Use type-appropriate zero value for the catch fallback
+                    let ret_zero = if ret_zig == "bool" { "false" } else { "0" };
                     format!(
-                        "    const _result = {mod}.{name}({args}) catch |err| {{\n        err_out.* = @errorName(err);\n        return 0;\n    }};",
+                        "    const _result = {mod}.{name}({args}) catch |err| {{\n        err_out.* = @errorName(err);\n        return {ret_zero};\n    }};",
                         mod = module,
                         name = name,
                         args = cabi_call_args,
+                        ret_zero = ret_zero,
                     )
                 };
                 let setup = if ret_zig == "void" {
@@ -1099,24 +1124,28 @@ pub fn gen_cabi_wrappers(
                     ));
                 }
             } else {
+                // Use type-appropriate zero value for void fallback
+                let rz = if ret_zig == "bool" { "false" } else { "0" };
                 if exp.can_throw {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}{call_expr}\n    return _result;\n}}\n",
+                        "pub export fn {name}({params}) {ret} {{\n{conv}{call_expr}\n    if (@TypeOf(_result) == void) {{\n        return {rz};\n    }} else {{\n        return _result;\n    }}\n}}\n",
                         name = name,
                         params = cabi_params_str,
                         conv = conversions,
                         ret = ret_zig,
                         call_expr = call_expr,
+                        rz = rz,
                     ));
                 } else {
                     out.push_str(&format!(
-                        "pub export fn {name}({params}) {ret} {{\n{conv}    return {mod}.{name}({args});\n}}\n",
+                        "pub export fn {name}({params}) {ret} {{\n{conv}    const _result = {mod}.{name}({args});\n    if (@TypeOf(_result) == void) {{\n        return {rz};\n    }} else {{\n        return _result;\n    }}\n}}\n",
                         name = name,
                         params = cabi_params_str,
                         ret = ret_zig,
                         conv = conversions,
                         mod = module,
                         args = cabi_call_args,
+                        rz = rz,
                     ));
                 }
             }
@@ -1202,6 +1231,18 @@ pub fn write_cabi_metadata(
             json_obj
         })
         .collect();
+
+    // Deduplicate exports by name — when multiple JS files produce identically-named
+    // C ABI exports (e.g. anonymous IIFEs), the bridge macro would generate duplicate
+    // Rust function definitions, causing E0428 compilation errors.
+    // We keep the first occurrence and skip subsequent duplicates.
+    {
+        let mut seen = std::collections::HashSet::new();
+        exports_value.retain(|exp| {
+            let name = exp["name"].as_str().unwrap_or("");
+            seen.insert(name.to_string())
+        });
+    }
 
     // Only include js2rust_init and js2rust_deinit for the first non-test group
     if include_init {

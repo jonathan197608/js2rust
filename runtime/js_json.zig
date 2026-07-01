@@ -57,8 +57,8 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
     _ = replacer;
     _ = space;
     // Simplified implementation: use std.json.Stringify
-    var out = std.ArrayList(u8).init(alloc);
-    defer out.deinit();
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(alloc);
     try stringifyValue(value, alloc, out.writer());
     return out.toOwnedSlice(alloc);
 }

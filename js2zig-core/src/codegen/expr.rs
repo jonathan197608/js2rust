@@ -80,7 +80,7 @@ impl Codegen {
                     return;
                 }
                 if var_name == "undefined" {
-                    self.write("JsAny.undefined");
+                    self.write("JsAny.fromUndefined()");
                     return;
                 }
                 // Check if this identifier is a captured variable in the current closure.
@@ -124,10 +124,23 @@ impl Codegen {
                 self.emit_unary(ue);
             }
             Expression::LogicalExpression(le) => {
+                // Zig `and`/`or` require bool operands. Coerce non-bool operands
+                // with `!= 0` (JS truthiness). This preserves JS short-circuit
+                // semantics for if-conditions; see emit_expr_as_bool.
+                let left_bool = self.expr_is_definitely_bool(&le.left);
+                let right_bool = self.expr_is_definitely_bool(&le.right);
                 self.write("(");
-                self.emit_expr(&le.left);
+                if left_bool {
+                    self.emit_expr(&le.left);
+                } else {
+                    self.emit_expr_as_bool(&le.left);
+                }
                 self.write(&format!(" {} ", Self::logical_op(le.operator)));
-                self.emit_expr(&le.right);
+                if right_bool {
+                    self.emit_expr(&le.right);
+                } else {
+                    self.emit_expr_as_bool(&le.right);
+                }
                 self.write(")");
             }
             Expression::ParenthesizedExpression(pe) => {
@@ -151,35 +164,35 @@ impl Codegen {
                 {
                     match mem.property.name.as_str() {
                         "PI" => {
-                            self.write("std.math.pi");
+                            self.write("@as(f64, std.math.pi)");
                             return;
                         }
                         "E" => {
-                            self.write("std.math.e");
+                            self.write("@as(f64, std.math.e)");
                             return;
                         }
                         "LN2" => {
-                            self.write("std.math.ln2");
+                            self.write("@as(f64, std.math.ln2)");
                             return;
                         }
                         "LN10" => {
-                            self.write("std.math.ln10");
+                            self.write("@as(f64, std.math.ln10)");
                             return;
                         }
                         "LOG2E" => {
-                            self.write("std.math.log2e");
+                            self.write("@as(f64, std.math.log2e)");
                             return;
                         }
                         "LOG10E" => {
-                            self.write("std.math.log10e");
+                            self.write("@as(f64, std.math.log10e)");
                             return;
                         }
                         "SQRT1_2" => {
-                            self.write("std.math.sqrt1_2");
+                            self.write("@as(f64, std.math.sqrt1_2)");
                             return;
                         }
                         "SQRT2" => {
-                            self.write("std.math.sqrt2");
+                            self.write("@as(f64, std.math.sqrt2)");
                             return;
                         }
                         _ => {}
@@ -419,9 +432,19 @@ impl Codegen {
                             }
                             Some(ZigType::ArrayList(_)) => {
                                 // ArrayList: arr.items[expr]
+                                // Zig requires usize for array indexing; convert i64 if needed.
+                                let idx_type = self.infer_expr_type(&mem.expression);
                                 self.emit_expr(&mem.object);
                                 self.write(".items[");
-                                self.emit_value_expr(&mem.expression);
+                                if idx_type == Some(ZigType::I64)
+                                    || idx_type == Some(ZigType::BigInt)
+                                {
+                                    self.write("@as(usize, @intCast(");
+                                    self.emit_value_expr(&mem.expression);
+                                    self.write("))");
+                                } else {
+                                    self.emit_value_expr(&mem.expression);
+                                }
                                 self.write("]");
                             }
                             Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
@@ -850,6 +873,42 @@ impl Codegen {
         }
     }
 
+    /// Emit an expression converted to f64.
+    /// For i64 variables, uses @floatFromInt (Zig doesn't allow @as(f64, i64_var)).
+    /// For comptime_int literals, uses @as(f64, expr).
+    /// For f64 expressions, emits directly without conversion.
+    fn emit_float_conversion(&mut self, expr: &Expression, ty: Option<ZigType>) {
+        match ty {
+            Some(ZigType::F64) => {
+                self.emit_expr_for_arithmetic(expr);
+            }
+            Some(ZigType::I64) | Some(ZigType::BigInt) => {
+                self.write("@as(f64, @floatFromInt(");
+                self.emit_expr_for_arithmetic(expr);
+                self.write("))");
+            }
+            _ => {
+                // comptime_int or unknown — @as(f64, expr) works for comptime_int
+                self.write("@as(f64, ");
+                self.emit_expr_for_arithmetic(expr);
+                self.write(")");
+            }
+        }
+    }
+
+    /// Emit an expression that will be used in an arithmetic context (+, -, *, /, %, **
+    /// and bitwise operators). Boolean literals are coerced to integer via `@intFromBool`
+    /// because Zig forbids `bool + comptime_int`.
+    fn emit_expr_for_arithmetic(&mut self, expr: &Expression) {
+        if matches!(expr, Expression::BooleanLiteral(_)) {
+            self.write("@intFromBool(");
+            self.emit_expr(expr);
+            self.write(")");
+        } else {
+            self.emit_expr(expr);
+        }
+    }
+
     /// Emit a string concatenation using std.fmt.allocPrint (Zig 0.16.0: ++ requires comptime-known slices).
     fn emit_string_concat(&mut self, be: &BinaryExpression) {
         let mut operands: Vec<&Expression> = Vec::new();
@@ -1053,33 +1112,65 @@ impl Codegen {
             // Mixed string/non-string comparison: one side is string, other is not.
             // Use JsAny comparison for type-safe Zig code (JS allows cross-type
             // comparison like `3 != "3"` → false, `"1" != 1` → false).
-            self.emit_jsany_comparison(be, left_is_string, right_is_string);
+            // NOTE: Must compute actual JsAny status — strings are NOT JsAny,
+            // so we can't pass left_is_string/right_is_string as JsAny flags.
+            let lt = self.infer_expr_type(&be.left);
+            let rt = self.infer_expr_type(&be.right);
+            self.emit_jsany_comparison(be, lt == Some(ZigType::JsAny), rt == Some(ZigType::JsAny));
         } else if be.operator == BinaryOperator::Division {
-            self.write("@divTrunc(");
-            self.emit_expr(&be.left);
-            self.write(", ");
-            self.emit_expr(&be.right);
-            self.write(")");
+            let left_type = self.infer_expr_type(&be.left);
+            let right_type = self.infer_expr_type(&be.right);
+            if left_type == Some(ZigType::F64) || right_type == Some(ZigType::F64) {
+                // Float division: use `/` operator (JS `/` always returns float)
+                self.write("(");
+                self.emit_expr_for_arithmetic(&be.left);
+                self.write(" / ");
+                self.emit_expr_for_arithmetic(&be.right);
+                self.write(")");
+            } else {
+                // Integer division: use @divTrunc
+                self.write("@divTrunc(");
+                self.emit_expr_for_arithmetic(&be.left);
+                self.write(", ");
+                self.emit_expr_for_arithmetic(&be.right);
+                self.write(")");
+            }
         } else if be.operator == BinaryOperator::Remainder {
-            self.write("@rem(");
-            self.emit_expr(&be.left);
-            self.write(", ");
-            self.emit_expr(&be.right);
-            self.write(")");
+            let left_type = self.infer_expr_type(&be.left);
+            let right_type = self.infer_expr_type(&be.right);
+            if left_type == Some(ZigType::F64) || right_type == Some(ZigType::F64) {
+                // Float remainder: use `%` operator
+                self.write("(");
+                self.emit_expr_for_arithmetic(&be.left);
+                self.write(" % ");
+                self.emit_expr_for_arithmetic(&be.right);
+                self.write(")");
+            } else {
+                // Integer remainder: use @rem
+                self.write("@rem(");
+                self.emit_expr_for_arithmetic(&be.left);
+                self.write(", ");
+                self.emit_expr_for_arithmetic(&be.right);
+                self.write(")");
+            }
         } else if be.operator == BinaryOperator::Exponential {
             // ** operator: JS exponentiation
             // JS `**` always returns number (f64), even for integer operands.
             // Use std.math.pow(f64, ...) with temporary f64 variables.
             // Use a unique suffix to avoid variable shadowing in nested `**` expressions.
+            // For i64 variables, use @floatFromInt (Zig doesn't allow @as(f64, i64_var)).
             let pow_id = self.label_counter;
             let blk = self.next_label();
             self.write(&format!("({blk}: {{ "));
-            self.write(&format!("const _base_f64_{pow_id}: f64 = @as(f64, "));
-            self.emit_expr(&be.left);
-            self.write(&format!("); const _exp_f64_{pow_id}: f64 = @as(f64, "));
-            self.emit_expr(&be.right);
+            // Left operand
+            let left_type = self.infer_expr_type(&be.left);
+            self.write(&format!("const _base_f64_{pow_id}: f64 = "));
+            self.emit_float_conversion(&be.left, left_type);
+            self.write(&format!("; const _exp_f64_{pow_id}: f64 = "));
+            let right_type = self.infer_expr_type(&be.right);
+            self.emit_float_conversion(&be.right, right_type);
             self.write(&format!(
-                "); break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
+                "; break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
             ));
         } else if be.operator == BinaryOperator::In {
             // `key in obj` → obj.contains(key)
@@ -1093,26 +1184,68 @@ impl Codegen {
             // Emit a compile error with source location info.
             self.compile_error(be.span, "instanceof operator is not supported in Zig");
         } else {
-            // Check if either side is JsAny — need to use method calls for comparison
-            let left_type = self.infer_expr_type(&be.left);
-            let right_type = self.infer_expr_type(&be.right);
-            // Only JsAny (not Anytype) should use .eq()/.asI64() methods.
-            // Anytype means "inferred at call site" — could be i64 or JsAny,
-            // so generate direct comparison (Zig will type-check at call site).
-            let left_is_jsany = left_type == Some(ZigType::JsAny);
-            let right_is_jsany = right_type == Some(ZigType::JsAny);
+            // Determine whether this is an arithmetic operator (where BooleanLiteral
+            // must be coerced to integer) or a comparison (where bool is fine and
+            // JsAny type incompatibility checks apply).
+            let is_arithmetic = matches!(
+                be.operator,
+                BinaryOperator::Addition
+                    | BinaryOperator::Subtraction
+                    | BinaryOperator::Multiplication
+                    | BinaryOperator::BitwiseAnd
+                    | BinaryOperator::BitwiseOR
+                    | BinaryOperator::BitwiseXOR
+                    | BinaryOperator::ShiftLeft
+                    | BinaryOperator::ShiftRight
+                    | BinaryOperator::ShiftRightZeroFill
+            );
 
-            // Only use JsAny comparison if type is known to be JsAny.
-            let should_use_jsany = left_is_jsany || right_is_jsany;
-
-            if should_use_jsany {
-                self.emit_jsany_comparison(be, left_is_jsany, right_is_jsany);
-            } else {
-                self.emit_expr(&be.left);
+            if is_arithmetic {
+                // Arithmetic: coerce BooleanLiteral to integer, emit directly.
+                // Do NOT route through JsAny comparison — cross-type arithmetic
+                // (e.g. bool + i64) should be handled via @intFromBool coercion,
+                // not via JsAny method calls.
+                self.emit_expr_for_arithmetic(&be.left);
                 self.write(" ");
                 self.write(Self::binary_op(be.operator));
                 self.write(" ");
-                self.emit_expr(&be.right);
+                self.emit_expr_for_arithmetic(&be.right);
+            } else {
+                // Check if either side is JsAny — need to use method calls for comparison
+                let left_type = self.infer_expr_type(&be.left);
+                let right_type = self.infer_expr_type(&be.right);
+                // Only JsAny (not Anytype) should use .eq()/.asI64() methods.
+                // Anytype means "inferred at call site" — could be i64 or JsAny,
+                // so generate direct comparison (Zig will type-check at call site).
+                let left_is_jsany = left_type == Some(ZigType::JsAny);
+                let right_is_jsany = right_type == Some(ZigType::JsAny);
+
+                // Check for incompatible types (e.g. I64 vs Bool, Str vs I64 for >=).
+                // JS allows cross-type comparisons via coercion, but Zig doesn't.
+                // Route these through JsAny comparison for type-safe code.
+                // Anytype is excluded: it resolves at the call site, not here.
+                let left_is_anytype = left_type == Some(ZigType::Anytype);
+                let right_is_anytype = right_type == Some(ZigType::Anytype);
+                let both_numeric = matches!(left_type, Some(ZigType::I64) | Some(ZigType::F64))
+                    && matches!(right_type, Some(ZigType::I64) | Some(ZigType::F64));
+                let types_incompatible = left_type.is_some()
+                    && right_type.is_some()
+                    && !both_numeric
+                    && left_type != right_type
+                    && !left_is_anytype
+                    && !right_is_anytype;
+
+                let should_use_jsany = left_is_jsany || right_is_jsany || types_incompatible;
+
+                if should_use_jsany {
+                    self.emit_jsany_comparison(be, left_is_jsany, right_is_jsany);
+                } else {
+                    self.emit_expr(&be.left);
+                    self.write(" ");
+                    self.write(Self::binary_op(be.operator));
+                    self.write(" ");
+                    self.emit_expr(&be.right);
+                }
             }
         }
 
@@ -1238,7 +1371,7 @@ impl Codegen {
                     self.write("JsAny.from(");
                     self.emit_expr(&be.left);
                     self.write(").eq(");
-                    self.emit_expr(&be.right);
+                    self.emit_as_jsany(&be.right, right_is_jsany);
                     self.write(")");
                 }
             }
@@ -1260,13 +1393,14 @@ impl Codegen {
                         self.emit_expr(&be.right);
                     }
                 } else {
-                    // left is primitive, right is JsAny → wrap left then compare as i64.
+                    // left is primitive → wrap left, then compare as i64.
+                    // Right may or may not be JsAny — use emit_as_jsany to handle both.
                     self.write("JsAny.from(");
                     self.emit_expr(&be.left);
                     self.write(").asI64() ");
                     self.write(op_str);
                     self.write(" ");
-                    self.emit_expr(&be.right);
+                    self.emit_as_jsany(&be.right, right_is_jsany);
                     self.write(".asI64()");
                 }
             }
@@ -1405,6 +1539,82 @@ impl Codegen {
                 self.expr_is_bigint(&ue.argument)
             }
             _ => false,
+        }
+    }
+
+    /// Check if an expression is known to produce a Bool result.
+    /// Used by control-flow statements (if/while/for) to decide whether
+    /// `!= 0` coercion is needed.
+    /// Check whether an expression is statically known to produce a `bool` result.
+    /// Used by `emit_condition` and `LogicalExpression` codegen to avoid
+    /// redundant `((expr) != 0)` coercion (which is illegal in Zig for `bool`).
+    pub(crate) fn expr_is_definitely_bool(&mut self, expr: &Expression) -> bool {
+        match expr {
+            Expression::BooleanLiteral(_) => true,
+            // LogicalExpression always produces Bool (operands are coerced in codegen)
+            Expression::LogicalExpression(_) => true,
+            Expression::ParenthesizedExpression(pe) => self.expr_is_definitely_bool(&pe.expression),
+            Expression::UnaryExpression(ue) => {
+                matches!(
+                    ue.operator,
+                    UnaryOperator::LogicalNot | UnaryOperator::Delete
+                )
+            }
+            Expression::BinaryExpression(be) => {
+                matches!(
+                    be.operator,
+                    BinaryOperator::Equality
+                        | BinaryOperator::StrictEquality
+                        | BinaryOperator::Inequality
+                        | BinaryOperator::StrictInequality
+                        | BinaryOperator::LessThan
+                        | BinaryOperator::LessEqualThan
+                        | BinaryOperator::GreaterThan
+                        | BinaryOperator::GreaterEqualThan
+                        | BinaryOperator::In
+                        | BinaryOperator::Instanceof
+                )
+            }
+            Expression::Identifier(id) => {
+                let ty = self.type_info.var_types.get(id.name.as_str());
+                // Bool and Anytype both pass through without coercion.
+                // Anytype resolves at call site; Zig will check there.
+                matches!(ty, Some(ZigType::Bool) | Some(ZigType::Anytype))
+            }
+            Expression::ConditionalExpression(ce) => {
+                self.expr_is_definitely_bool(&ce.consequent)
+                    && self.expr_is_definitely_bool(&ce.alternate)
+            }
+            // Fallback: ask the type inference system. Covers CallExpression
+            // (e.g. `A()` where A returns bool), StaticMemberExpression
+            // (e.g. `obj.isReady` field of type bool), etc.
+            _ => self.infer_expr_type(expr) == Some(ZigType::Bool),
+        }
+    }
+
+    /// Emit an expression with truthiness coercion for Zig `bool` context.
+    ///
+    /// When a non-bool expression appears in a position that Zig requires `bool`
+    /// (e.g. `if` condition, `and`/`or` operand), we coerce it via JS truthiness:
+    /// - `bool` expressions → emitted directly (no coercion needed)
+    /// - `Str` expressions → `.len != 0` (empty string is falsy in JS)
+    /// - numeric/other → `((expr) != 0)` (0 is falsy in JS)
+    pub(crate) fn emit_expr_as_bool(&mut self, expr: &Expression) {
+        if self.expr_is_definitely_bool(expr) {
+            // Already bool; just emit the expression directly.
+            // This also handles the case where infer_expr_type returns Bool
+            // for function calls that return bool.
+            self.emit_expr(expr);
+        } else if let Some(ZigType::Str) = self.infer_expr_type(expr) {
+            // String truthiness: non-empty → true, empty → false
+            self.write("(");
+            self.emit_expr(expr);
+            self.write(".len != 0)");
+        } else {
+            // Default numeric truthiness: 0 → false, non-zero → true
+            self.write("((");
+            self.emit_expr(expr);
+            self.write(") != 0)");
         }
     }
 
@@ -2893,9 +3103,7 @@ impl Codegen {
                                 .push("TypedArray.set() requires exactly 2 arguments".to_string());
                             return false;
                         }
-                        if self.in_expr_stmt {
-                            self.write("_ = ");
-                        }
+                        // Note: `_ =` prefix is handled by the expression statement handler.
                         self.write(&format!("js_runtime.js_typedarray.set{}(", ta_type));
                         self.emit_expr(&mem.object);
                         self.write(", ");
@@ -2986,16 +3194,14 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::MapDelete => {
-                // map.delete(key) → _ = map.delete(JsAny.from(key)) (if in statement context)
+                // map.delete(key) → map.delete(JsAny.from(key))
+                // Note: `_ =` prefix is handled by the expression statement handler.
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Map.delete() requires exactly 1 argument".to_string());
                     return false;
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    if self.in_expr_stmt {
-                        self.write("_ = ");
-                    }
                     self.write(&format!("{}.delete(JsAny.from(", obj_name));
                     self.emit_first_arg(&ce.arguments);
                     self.write("))");
@@ -3957,8 +4163,9 @@ impl Codegen {
                 self.emit_date_instance_method("getTimezoneOffset", ce)
             }
             builtins::BuiltinCall::DateToISOString => {
-                // date.toISOString() → date.toISOString(js_allocator.getAllocator())
+                // date.toISOString() → try date.toISOString(js_allocator.getAllocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.write("try ");
                     self.emit_expr(&mem.object);
                     self.write(".toISOString(js_allocator.getAllocator())");
                     true
@@ -3972,8 +4179,9 @@ impl Codegen {
 
             // ── Date string methods ────────────────────────
             builtins::BuiltinCall::DateToString => {
-                // date.toString() → date.toString(js_allocator.getAllocator())
+                // date.toString() → try date.toString(js_allocator.getAllocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.write("try ");
                     self.emit_expr(&mem.object);
                     self.write(".toString(js_allocator.getAllocator())");
                     true
@@ -3985,8 +4193,9 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToDateString => {
-                // date.toDateString() → date.toDateString(js_allocator.getAllocator())
+                // date.toDateString() → try date.toDateString(js_allocator.getAllocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.write("try ");
                     self.emit_expr(&mem.object);
                     self.write(".toDateString(js_allocator.getAllocator())");
                     true
@@ -3999,8 +4208,9 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToTimeString => {
-                // date.toTimeString() → date.toTimeString(js_allocator.getAllocator())
+                // date.toTimeString() → try date.toTimeString(js_allocator.getAllocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.write("try ");
                     self.emit_expr(&mem.object);
                     self.write(".toTimeString(js_allocator.getAllocator())");
                     true
@@ -4013,8 +4223,9 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToLocaleString => {
-                // date.toLocaleString() → date.toLocaleString(js_allocator.getAllocator())
+                // date.toLocaleString() → try date.toLocaleString(js_allocator.getAllocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    self.write("try ");
                     self.emit_expr(&mem.object);
                     self.write(".toLocaleString(js_allocator.getAllocator())");
                     true
@@ -4052,9 +4263,10 @@ impl Codegen {
 
             // ── Date toJSON/valueOf ─────────────────────
             builtins::BuiltinCall::DateToJSON => {
-                // date.toJSON() → obj.toJSON(alloc)
+                // date.toJSON() → try obj.toJSON(alloc)
                 if ce.arguments.is_empty() {
                     if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                        self.write("try ");
                         self.emit_expr(&mem.object);
                         self.write(".toJSON(js_allocator.getAllocator())");
                     } else {
@@ -4367,8 +4579,8 @@ impl Codegen {
 
             // ── JSON methods ─────────────────────────────
             builtins::BuiltinCall::JsonStringify => {
-                // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.g_alloc(), value, replacer, space)
-                self.write("try js_json.stringify(js_allocator.g_alloc(), ");
+                // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.getAllocator(), value, replacer, space)
+                self.write("try js_json.stringify(js_allocator.getAllocator(), ");
                 if let Some(first_arg) = ce.arguments.first() {
                     self.emit_expr_arg(first_arg);
                 } else {
@@ -4393,8 +4605,8 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::JsonParse => {
-                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.g_alloc(), text, reviver)
-                self.write("try js_json.parse(js_allocator.g_alloc(), ");
+                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.getAllocator(), text, reviver)
+                self.write("try js_json.parse(js_allocator.getAllocator(), ");
                 if let Some(first_arg) = ce.arguments.first() {
                     self.emit_expr_arg(first_arg);
                 } else {
@@ -5235,17 +5447,52 @@ impl Codegen {
             }
             // ── Global type constructors (used as functions) ──
             builtins::BuiltinCall::NumberConstructor => {
-                // Number(x) → @as(f64, @floatFromInt(x)) for integer args,
-                // or @as(f64, @floatCast(x)) for float args.
-                // Strings and other types: not yet supported (use parseInt/parseFloat).
+                // Number(x) — type-aware conversion:
+                //   string → std.fmt.parseFloat(f64, x) catch 0.0
+                //   float  → @as(f64, @floatCast(x))
+                //   int    → @as(f64, @floatFromInt(x))
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Number() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("@as(f64, @floatFromInt(");
-                self.emit_first_arg(&ce.arguments);
-                self.write("))");
+                if let Some(arg) = ce.arguments.first()
+                    && let Some(expr) = arg.as_expression()
+                {
+                    match self.infer_expr_type(expr) {
+                        Some(ZigType::Str) => {
+                            self.write("std.fmt.parseFloat(f64, ");
+                            self.emit_expr(expr);
+                            self.write(") catch 0.0");
+                        }
+                        Some(ZigType::F64) => {
+                            self.write("@as(f64, @floatCast(");
+                            self.emit_expr(expr);
+                            self.write("))");
+                        }
+                        Some(ZigType::JsAny) => {
+                            // Number(JsAny) → .asF64() (NaN for undefined, 0 for null, etc.)
+                            self.emit_expr(expr);
+                            self.write(".asF64()");
+                        }
+                        Some(ZigType::Bool) => {
+                            // Number(true) → 1.0, Number(false) → 0.0
+                            self.write("if (");
+                            self.emit_expr(expr);
+                            self.write(") @as(f64, 1.0) else @as(f64, 0.0)");
+                        }
+                        _ => {
+                            // Default: integer conversion
+                            self.write("@as(f64, @floatFromInt(");
+                            self.emit_expr(expr);
+                            self.write("))");
+                        }
+                    }
+                } else {
+                    self.errors
+                        .push("Number() requires an expression argument".to_string());
+                    return false;
+                }
                 true
             }
             builtins::BuiltinCall::StringConstructor => {
@@ -5265,15 +5512,61 @@ impl Codegen {
                 true
             }
             builtins::BuiltinCall::BooleanConstructor => {
-                // Boolean(x) → x != 0 (truthy for numbers)
+                // Boolean(x) → bool, type-dependent conversion:
+                //   Bool: identity (already bool)
+                //   Str:  str.len != 0 (empty string is falsy)
+                //   I64/F64: x != 0
+                //   undefined/null: always falsy
+                //   other: x != 0 (best-effort fallback)
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("Boolean() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(" != 0)");
+                let arg = &ce.arguments[0];
+                if let Some(expr) = arg.as_expression() {
+                    match self.infer_expr_type(expr) {
+                        Some(ZigType::Bool) => {
+                            // Boolean(bool) → identity
+                            self.emit_expr(expr);
+                        }
+                        Some(ZigType::Str) => {
+                            // Boolean("") → "".len != 0 (empty string is falsy)
+                            self.write("((");
+                            self.emit_expr(expr);
+                            self.write(").len != 0)");
+                        }
+                        Some(ZigType::I64) | Some(ZigType::F64) => {
+                            // Boolean(0) → 0 != 0 (falsy); Boolean(42) → 42 != 0 (truthy)
+                            self.write("(");
+                            self.emit_expr(expr);
+                            self.write(" != 0)");
+                        }
+                        _ => {
+                            // Unknown type: check for special JS falsy values
+                            if let Expression::NullLiteral(_) = expr {
+                                // Boolean(null) → false (null is always falsy)
+                                self.write("false");
+                                return true;
+                            }
+                            if let Expression::Identifier(id) = expr
+                                && id.name.as_str() == "undefined"
+                            {
+                                // Boolean(undefined) → false (undefined is always falsy)
+                                self.write("false");
+                                return true;
+                            }
+                            // Fallback: x != 0 (works for numbers, may fail for JsAny)
+                            self.write("(");
+                            self.emit_expr(expr);
+                            self.write(" != 0)");
+                        }
+                    }
+                } else {
+                    self.errors
+                        .push("Boolean() argument is not an expression".to_string());
+                    return false;
+                }
                 true
             }
             builtins::BuiltinCall::BigIntConstructor => {
@@ -5421,9 +5714,17 @@ impl Codegen {
                     match obj_type {
                         Some(ZigType::ArrayList(_)) => {
                             // ArrayList: arr.items[expr] = val
+                            // Zig requires usize for array indexing; convert i64 if needed.
                             self.emit_expr(&mem.object);
                             self.write(".items[");
-                            self.emit_value_expr(&mem.expression);
+                            let idx_type = self.infer_expr_type(&mem.expression);
+                            if idx_type == Some(ZigType::I64) || idx_type == Some(ZigType::BigInt) {
+                                self.write("@as(usize, @intCast(");
+                                self.emit_value_expr(&mem.expression);
+                                self.write("))");
+                            } else {
+                                self.emit_value_expr(&mem.expression);
+                            }
                             self.write("] = ");
                             self.emit_expr(&ae.right);
                             return;
@@ -5532,26 +5833,71 @@ impl Codegen {
         }
 
         // **= exponentiation assignment: a **= b → a = a ** b
+        // JS `**` always returns f64, but if `a` is i64, convert result back.
         if ae.operator == AssignmentOperator::Exponential {
+            // Infer target type (for simple identifiers, look up var_types)
+            let target_type = match &ae.left {
+                AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                    self.type_info.var_types.get(id.name.as_str()).cloned()
+                }
+                _ => None,
+            };
+            let needs_int_cast = matches!(target_type, Some(ZigType::I64) | Some(ZigType::BigInt));
+            let needs_float_from_int =
+                matches!(target_type, Some(ZigType::I64) | Some(ZigType::BigInt));
             if self.in_expr_stmt {
                 self.emit_assignment_target(&ae.left);
-                self.write(" = std.math.pow(f64, @as(f64, ");
-                self.emit_assignment_target(&ae.left);
-                self.write("), @as(f64, ");
-                self.emit_expr(&ae.right);
-                self.write("))");
+                self.write(" = ");
+                if needs_int_cast {
+                    self.write("@as(i64, @intFromFloat(std.math.pow(f64, ");
+                } else {
+                    self.write("std.math.pow(f64, ");
+                }
+                // Left operand: convert to f64
+                if needs_float_from_int {
+                    self.write("@as(f64, @floatFromInt(");
+                    self.emit_assignment_target(&ae.left);
+                    self.write("))");
+                } else {
+                    self.write("@as(f64, ");
+                    self.emit_assignment_target(&ae.left);
+                    self.write(")");
+                }
+                self.write(", ");
+                let right_type = self.infer_expr_type(&ae.right);
+                self.emit_float_conversion(&ae.right, right_type);
+                if needs_int_cast {
+                    self.write(")))");
+                } else {
+                    self.write(")");
+                }
             } else {
                 let blk = self.next_label();
                 let inner_blk = self.next_label();
                 self.write(&format!("({blk}: {{ "));
                 self.emit_assignment_target(&ae.left);
-                self.write(&format!(" = ({inner_blk}: {{ const _b: f64 = @as(f64, "));
-                self.emit_assignment_target(&ae.left);
-                self.write("); const _e: f64 = @as(f64, ");
-                self.emit_expr(&ae.right);
-                self.write(&format!(
-                    "); break :{inner_blk} std.math.pow(f64, _b, _e); }}); break :{blk} "
-                ));
+                self.write(&format!(" = ({inner_blk}: {{ const _b: f64 = "));
+                if needs_float_from_int {
+                    self.write("@as(f64, @floatFromInt(");
+                    self.emit_assignment_target(&ae.left);
+                    self.write("))");
+                } else {
+                    self.write("@as(f64, ");
+                    self.emit_assignment_target(&ae.left);
+                    self.write(")");
+                }
+                self.write("; const _e: f64 = ");
+                let right_type = self.infer_expr_type(&ae.right);
+                self.emit_float_conversion(&ae.right, right_type);
+                if needs_int_cast {
+                    self.write(&format!(
+                        "; break :{inner_blk} @as(i64, @intFromFloat(std.math.pow(f64, _b, _e))); }}); break :{blk} "
+                    ));
+                } else {
+                    self.write(&format!(
+                        "; break :{inner_blk} std.math.pow(f64, _b, _e); }}); break :{blk} "
+                    ));
+                }
                 self.emit_assignment_target(&ae.left);
                 self.write("; })");
             }
@@ -5741,9 +6087,47 @@ impl Codegen {
                     self.emit_expr(&ue.argument);
                 }
             }
-            UnaryOperator::UnaryPlus | UnaryOperator::LogicalNot | UnaryOperator::BitwiseNot => {
+            UnaryOperator::UnaryPlus => {
                 self.write(Self::unary_prefix(ue.operator));
                 self.emit_expr(&ue.argument);
+            }
+            UnaryOperator::LogicalNot => {
+                // Zig's ! requires bool operand. For non-bool types (i64, comptime_int),
+                // convert to bool via `expr != 0` (JS truthiness for numbers).
+                // Anytype is excluded: it resolves at the call site (Zig will check there).
+                let operand_type = self.infer_expr_type(&ue.argument);
+                if operand_type == Some(ZigType::Str) {
+                    // !"" → true (empty string is falsy in JS)
+                    // !"hello" → false (non-empty string is truthy in JS)
+                    self.write("(");
+                    self.emit_expr(&ue.argument);
+                    self.write(".len == 0)");
+                } else if operand_type == Some(ZigType::Bool)
+                    || operand_type == Some(ZigType::Anytype)
+                    || operand_type.is_none()
+                {
+                    self.write("!");
+                    self.emit_expr(&ue.argument);
+                } else {
+                    // !(expr != 0) — JS `!number` semantics
+                    self.write("!(");
+                    self.emit_expr(&ue.argument);
+                    self.write(" != 0)");
+                }
+            }
+            UnaryOperator::BitwiseNot => {
+                // Zig 0.16.0 doesn't allow ~ on comptime_int.
+                // Wrap operand with @as(i64, ...) to give it a concrete type.
+                let operand_type = self.infer_expr_type(&ue.argument);
+                let needs_wrap = !matches!(operand_type, Some(ZigType::F64));
+                if needs_wrap {
+                    self.write("~@as(i64, ");
+                    self.emit_expr(&ue.argument);
+                    self.write(")");
+                } else {
+                    self.write("~");
+                    self.emit_expr(&ue.argument);
+                }
             }
             UnaryOperator::Typeof => {
                 // Use inferred Zig type to emit the JS typeof string at compile time.
@@ -5786,11 +6170,7 @@ impl Codegen {
                     self.write("JsAny.fromUndefined()");
                 } else {
                     let blk = self.next_label();
-                    if self.in_expr_stmt {
-                        self.write(&format!("_ = {blk}: {{ _ = "));
-                    } else {
-                        self.write(&format!("{blk}: {{ _ = "));
-                    }
+                    self.write(&format!("{blk}: {{ _ = "));
                     self.emit_expr(&ue.argument);
                     self.write(&format!("; break :{blk} JsAny.fromUndefined(); }}"));
                 }
@@ -5829,7 +6209,7 @@ impl Codegen {
     // Conditional (ternary)
     fn emit_conditional(&mut self, ce: &ConditionalExpression) {
         self.write("if (");
-        self.emit_expr(&ce.test);
+        self.emit_condition(&ce.test);
         self.write(") ");
         self.emit_expr(&ce.consequent);
         self.write(" else ");
@@ -6284,9 +6664,8 @@ impl Codegen {
             Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
-            // NullLiteral → not supported in simplified type system
-            // (Zig doesn't have a direct equivalent, would need Optional)
-            Expression::NullLiteral(_) => None,
+            // NullLiteral → generates JsAny.fromNull() in codegen
+            Expression::NullLiteral(_) => Some(ZigType::JsAny),
             Expression::UnaryExpression(ue) => {
                 // -1, +1, !true → type can be determined from operand
                 match ue.operator {
@@ -6340,7 +6719,12 @@ impl Codegen {
             }
 
             // Identifier: look up variable type from var_types (Rule 5)
-            Expression::Identifier(id) => self.type_info.var_types.get(id.name.as_str()).cloned(),
+            // Also handle known global constants not in var_types
+            Expression::Identifier(id) => match id.name.as_str() {
+                "Infinity" | "NaN" => Some(ZigType::F64),
+                "undefined" => Some(ZigType::JsAny),
+                _ => self.type_info.var_types.get(id.name.as_str()).cloned(),
+            },
 
             // StaticMemberExpression: look up field type from struct type (Rule 5)
             Expression::StaticMemberExpression(mem) => {

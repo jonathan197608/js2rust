@@ -40,6 +40,10 @@ def split_file(filepath, base_name, category, total_fragments):
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # Strip trailing "}\nmodule.exports = ..." from source files
+    # so it doesn't leak into the last chunk's fragment text.
+    content = re.sub(r'\n\}\nmodule\.exports\s*=\s*\{[^}]*\};\s*$', '', content)
+
     fragments = parse_fragments(content)
     print(f"  Parsed {len(fragments)} fragments from {os.path.basename(filepath)}")
 

@@ -168,7 +168,7 @@ impl ZigType {
             ZigType::F64 => "f64".to_string(),
             ZigType::Bool => "bool".to_string(),
             ZigType::Str => "StrRet".to_string(), // C ABI: extern struct { ptr, len }
-            ZigType::ArrayList(_) => "std.ArrayList".to_string(), // Not directly supported in C ABI
+            ZigType::ArrayList(_) => "void".to_string(), // ArrayLists cannot be directly exported via C ABI
             ZigType::Struct(_) => "struct".to_string(), // Anonymous struct - not directly supported in C ABI
             ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
             ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)

@@ -1,11 +1,11 @@
 // Auto-generated from MDN JS Reference
 // Category: expressions
 // Fragments: 10 (fragment 0-9)
-// Generated: 2026-06-30
+// Generated: 2026-06-28
 
 function test_expressions_part1() {
 // ---- fragment 0 ----
-try {{
+    try {{
         const output = void 1;
         console.log(output);
 
@@ -27,28 +27,38 @@ try {{
         console.error(`[test_expressions_part1] fragment 0 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 1 ----
-try {{
-        var expression = 0;
-        _ = void expression
+    try {{
+        void expression
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 1 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 2 ----
-try {{
+    try {{
         void 2 === "2"; // (void 2) === '2', returns false
         void (2 === "2"); // void (2 === '2'), returns undefined
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 2 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 3 ----
-// SKIP: Tests void IIFE pattern which has codegen issues
-// Fragment 3 skipped — void + anonymous IIFE codegen issue
+    try {{
+        void function () {
+          console.log("Executed!");
+        }();
 
+        // Logs "Executed!"
+    }} catch (e) {{
+        console.error(`[test_expressions_part1] fragment 3 error: ${e.message}`);
+    }}
+
+    
 // ---- fragment 4 ----
-try {{
+    try {{
         (function () {
           console.log("Executed!");
         })();
@@ -56,26 +66,25 @@ try {{
         console.error(`[test_expressions_part1] fragment 4 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 5 ----
-try {{
-        function doSomething() { return 0; }
-        var checkbox = {};
+    try {{
         checkbox.onclick = () => doSomething();
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 5 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 6 ----
-try {{
-        function doSomething2() { return 0; }
-        var checkbox2 = {};
-        checkbox2.onclick = () => void doSomething2();
+    try {{
+        checkbox.onclick = () => void doSomething();
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 6 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 7 ----
-try {{
+    try {{
         const a = 5; // 00000000000000000000000000000101
         const b = -3; // 11111111111111111111111111111101
 
@@ -86,23 +95,23 @@ try {{
         console.error(`[test_expressions_part1] fragment 7 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 8 ----
-try {{
-        var x = 1;
-        _ = ~x
+    try {{
+        ~x
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 8 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 9 ----
-try {{
-        // Bitwise NOT operations on large numbers
-        const a = ~11100110111110100000000000000110000000000001;
-        const b = ~10100000000000000110000000000001;
-        console.log(typeof a, typeof b);
+    try {{
+        Before: 11100110111110100000000000000110000000000001
+        After:              10100000000000000110000000000001
     }} catch (e) {{
         console.error(`[test_expressions_part1] fragment 9 error: ${e.message}`);
     }}
 
+    
 }
 module.exports = { test_expressions_part1 };

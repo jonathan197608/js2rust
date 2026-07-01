@@ -246,7 +246,6 @@ impl Codegen {
                             self.write(") catch @panic(\"OOM: JSON.parse alloc\");\n");
                         } else if let Some(inferred_ty) = self.type_info.var_types.get(name) {
                             let inferred_ty = inferred_ty.clone();
-                            // Definite type from pre-computed type info.
                             // Skip type annotation for NamedStruct and ArrayList — Zig infers from init.
                             let skip_type_annotation = matches!(
                                 inferred_ty,
@@ -950,7 +949,7 @@ impl Codegen {
         }
 
         // Return type — async + throw functions return error unions
-        let ret_zig_type = match &self.current_fn_return_type {
+        let base_ret_type = match &self.current_fn_return_type {
             Some(ZigType::I64) => "i64".to_string(),
             Some(ZigType::F64) => "f64".to_string(),
             Some(ZigType::Bool) => "bool".to_string(),
@@ -960,7 +959,11 @@ impl Codegen {
                 if let Some(first_ret) =
                     crate::native_proto::infer::helpers::find_first_return_expr(fd)
                 {
-                    let captured = self.capture_expr(first_ret);
+                    let mut captured = self.capture_expr(first_ret);
+                    // Strip 'try ' prefixes — try is not valid in @TypeOf (comptime type expression).
+                    // We remove all occurrences since the expression may contain nested try:
+                    //   try js_string.replace(..., try js_regexp.JsRegExp.init(...), ...)
+                    captured = captured.replace("try ", "");
                     format!("@TypeOf({})", captured)
                 } else {
                     "void".to_string()
@@ -977,12 +980,13 @@ impl Codegen {
                 }
             }
         };
-        let ret_zig_type = if (is_async || self.fn_has_throw) && ret_zig_type != "void" {
-            format!("!{}", ret_zig_type)
-        } else if self.fn_has_throw && ret_zig_type == "void" {
+        let base_ztype = base_ret_type.clone();
+        let ret_zig_type = if (is_async || self.fn_has_throw) && base_ret_type != "void" {
+            format!("!{}", base_ret_type)
+        } else if self.fn_has_throw && base_ret_type == "void" {
             "!void".to_string()
         } else {
-            ret_zig_type
+            base_ret_type
         };
         self.writeln(&format!(") {} {{", ret_zig_type));
 
@@ -1020,7 +1024,7 @@ impl Codegen {
         }
         // If function has non-void return type but no explicit return,
         // add a default return 0 to avoid Zig compile error.
-        if !self.seen_return && ret_zig_type != "void" {
+        if !self.seen_return && base_ztype != "void" {
             self.write_indent();
             self.write("return 0;\n");
         }
@@ -1030,7 +1034,7 @@ impl Codegen {
         // If this is an export function, add to exported_fns for C ABI wrapper generation.
         if self.current_fn_is_export {
             let func_name = name.to_string();
-            let return_type = self.current_fn_return_type.clone().unwrap_or(ZigType::I64);
+            let return_type = self.current_fn_return_type.clone().unwrap_or(ZigType::Void);
 
             // Get parameter types from type_info.
             let params: Vec<ZigType> = self
@@ -1095,6 +1099,9 @@ impl Codegen {
                 // Special handling for forEach/some/every: they generate 'for' loops (statements), not expressions.
                 // If we add ';' after a 'for' loop, Zig will report a syntax error.
                 let mut need_semi = true;
+                // Whether to emit `_ = ` before the expression.
+                // Skip for: assignments, updates, for-loop builtins, void.
+                let mut add_discard = true;
                 if let Expression::CallExpression(ce) = &es.expression
                     && let Some(builtin) = builtins::detect_builtin_call(ce)
                 {
@@ -1105,13 +1112,28 @@ impl Codegen {
                         | builtins::BuiltinCall::ArrayFill => {
                             // These generate 'for' loops (statements), no ';' needed
                             need_semi = false;
+                            add_discard = false;
                         }
                         _ => {}
                     }
                 }
-
+                // Assignment expressions (a = b, i += 1, _ = view) are already valid
+                // Zig statements — `_ =` prefix would produce invalid `_ = a = b;` or
+                // double-discard `_ = _ = view;`.
+                if matches!(&es.expression, Expression::AssignmentExpression(_)) {
+                    add_discard = false;
+                }
+                // Update expressions (i++/i--) handle statement context via in_expr_stmt
+                // in emit_expr — no extra `_ =` needed.
+                if matches!(&es.expression, Expression::UpdateExpression(_)) {
+                    add_discard = false;
+                }
                 self.write_indent();
                 self.in_expr_stmt = true;
+                // Zig 0.16.0: expression statements must discard non-void values.
+                if add_discard {
+                    self.write("_ = ");
+                }
                 self.emit_expr(&es.expression);
                 self.in_expr_stmt = false;
                 if need_semi {
@@ -1609,10 +1631,22 @@ impl Codegen {
 // ── If / Else ──────────────────────────────────────
 
 impl Codegen {
+    /// Emit a condition expression for use inside `if (...)` / `while (...)`.
+    /// In Zig every condition must be `bool`; in JS any truthy value works.
+    /// When the expression is not statically known to be bool, we wrap it
+    /// with `(!= 0)` truthiness coercion.
+    pub(crate) fn emit_condition(&mut self, expr: &oxc_ast::ast::Expression) {
+        if self.expr_is_definitely_bool(expr) {
+            self.emit_expr(expr);
+        } else {
+            self.emit_expr_as_bool(expr);
+        }
+    }
+
     pub(crate) fn emit_if(&mut self, is: &IfStatement) {
         self.write_indent();
         self.write("if (");
-        self.emit_expr(&is.test);
+        self.emit_condition(&is.test);
         self.write(") {\n");
 
         self.indent += 1;
@@ -1668,7 +1702,7 @@ impl Codegen {
     pub(crate) fn emit_while(&mut self, ws: &WhileStatement) {
         self.write_indent();
         self.write("while (");
-        self.emit_expr(&ws.test);
+        self.emit_condition(&ws.test);
         self.write(") {\n");
         self.indent += 1;
         self.emit_stmt_or_block(&ws.body);
@@ -1679,7 +1713,7 @@ impl Codegen {
     fn emit_while_labeled(&mut self, ws: &WhileStatement) {
         // Label already written by LabeledStatement handler, no indent needed
         self.write("while (");
-        self.emit_expr(&ws.test);
+        self.emit_condition(&ws.test);
         self.write(") {\n");
         self.indent += 1;
         self.emit_stmt_or_block(&ws.body);
@@ -1697,7 +1731,7 @@ impl Codegen {
         self.emit_stmt_or_block(&dws.body);
         self.write_indent();
         self.write("if (");
-        self.emit_expr(&dws.test);
+        self.emit_condition(&dws.test);
         self.write(") {} else { break; }\n");
 
         self.indent -= 1;
@@ -1711,7 +1745,7 @@ impl Codegen {
         self.emit_stmt_or_block(&dws.body);
         self.write_indent();
         self.write("if (");
-        self.emit_expr(&dws.test);
+        self.emit_condition(&dws.test);
         self.write(") {} else { break; }\n");
         self.indent -= 1;
         self.writeln("}");
@@ -1766,7 +1800,7 @@ impl Codegen {
         self.write_indent();
         self.write("while (");
         if let Some(test) = &fs.test {
-            self.emit_expr(test);
+            self.emit_condition(test);
         } else {
             self.write("true");
         }
@@ -2965,6 +2999,7 @@ impl Codegen {
         let old_current_fn = self.current_fn.clone();
         let old_fn_has_throw = self.fn_has_throw;
         let old_seen_return = self.seen_return;
+        let old_fn_return_type = self.current_fn_return_type.clone();
         let old_captured = std::mem::take(&mut self.current_captured);
 
         self.current_fn = Some(name.clone());
@@ -3040,8 +3075,8 @@ impl Codegen {
         self.current_fn = old_current_fn;
         self.fn_has_throw = old_fn_has_throw;
         self.seen_return = old_seen_return;
+        self.current_fn_return_type = old_fn_return_type;
         self.current_captured = old_captured;
-        self.current_fn_return_type = ret_ty;
 
         safe_name
     }
@@ -3570,7 +3605,7 @@ impl Codegen {
             Statement::IfStatement(is) => {
                 self.write_indent();
                 self.write("if (");
-                self.emit_expr(&is.test);
+                self.emit_condition(&is.test);
                 self.writeln(") {");
                 self.indent += 1;
                 self.emit_stmt_with_this_rewrite(&is.consequent, field_names);

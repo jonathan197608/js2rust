@@ -1,38 +1,58 @@
 // Auto-generated from MDN JS Reference
 // Category: statements
-// Fragments: 10 (fragment 32-41)
-// Generated: 2026-06-30
+// Fragments: 10 (fragment 30-39)
+// Generated: 2026-06-28
 
 function test_statements_part4() {
+// ---- fragment 30 ----
+    try {{
+        ;
+    }} catch (e) {{
+        console.error(`[test_statements_part4] fragment 30 error: ${e.message}`);
+    }}
+
+    
+// ---- fragment 31 ----
+    try {{
+        const arr = [1, 2, 3];
+
+        // Assign all array values to 0
+        for (let i = 0; i < arr.length; arr[i++] = 0) /* empty statement */ ;
+
+        console.log(arr);
+        // [0, 0, 0]
+    }} catch (e) {{
+        console.error(`[test_statements_part4] fragment 31 error: ${e.message}`);
+    }}
+
+    
 // ---- fragment 32 ----
-try {{
-        var condition = 0;
-        var killTheUniverse = 0;
+    try {{
         if (condition);      // Caution, this "if" does nothing!
           killTheUniverse(); // So this always gets executed!!!
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 32 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 33 ----
-try {{
-        var myModule = 0;
+    try {{
         myModule.doAllTheAmazingThings();
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 33 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 34 ----
-try {{
-        var myModule = 0;
+    try {{
         myModule.doAllTheAmazingThings(); // myModule.doAllTheAmazingThings is imported by the next line
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 34 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 35 ----
-try {{
-        var number = 0;
+    try {{
         // getPrimes.js
         /**
          * Returns a list of prime numbers that are smaller than `max`.
@@ -52,21 +72,21 @@ try {{
             .filter(([, isPrime]) => isPrime)
             .map(([number]) => number);
         }
-            _ = getPrimes;
-}} catch (e) {{
+    }} catch (e) {{
         console.error(`[test_statements_part4] fragment 35 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 36 ----
-try {{
-        var getPrimes = 0;
+    try {{
         console.log(getPrimes(10)); // [2, 3, 5, 7]
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 36 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 37 ----
-try {{
+    try {{
         // my-module.js
         let myValue = 1;
         setTimeout(() => {
@@ -76,10 +96,9 @@ try {{
         console.error(`[test_statements_part4] fragment 37 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 38 ----
-try {{
-        var myModule = 0;
-        var myValue = 0;
+    try {{
         // main.js
 
         console.log(myValue); // 1
@@ -94,34 +113,15 @@ try {{
         console.error(`[test_statements_part4] fragment 38 error: ${e.message}`);
     }}
 
+    
 // ---- fragment 39 ----
-try {{
-        var foo = 0;
+    try {{
         foo; // unqualified identifier
         foo.bar; // bar is a qualified identifier
     }} catch (e) {{
         console.error(`[test_statements_part4] fragment 39 error: ${e.message}`);
     }}
 
-// ---- fragment 40 ----
-try {{
-        var bar = 0;
-        const foo = { bar: 1 };
-        console.log(foo.bar);
-        // foo is found in the scope chain as a variable;
-        // bar is found in foo as a property
-            _ = bar;
-}} catch (e) {{
-        console.error(`[test_statements_part4] fragment 40 error: ${e.message}`);
-    }}
-
-// ---- fragment 41 ----
-try {{
-        var globalThis = {};
-        console.log(globalThis.Math === Math); // true
-    }} catch (e) {{
-        console.error(`[test_statements_part4] fragment 41 error: ${e.message}`);
-    }}
-
+    
 }
 module.exports = { test_statements_part4 };

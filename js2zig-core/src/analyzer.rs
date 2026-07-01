@@ -139,7 +139,7 @@ pub fn analyze_single_group(
         // Program can be stored in the HashMap and reused by codegen later.
         let allocator: &'static Allocator = Box::leak(Box::new(Allocator::default()));
         let src_static: &'static str = Box::leak(src.clone().into_boxed_str());
-        let program: Program<'static> = crate::parser::parse(allocator, src_static);
+        let program: Program<'static> = crate::parser::parse_with_name(allocator, src_static, &cur);
 
         let info = analyze_module_ast(&program);
 
@@ -316,6 +316,14 @@ fn analyze_module_ast(program: &Program) -> ModuleInfo {
                     all_toplevel_fn_names.insert(id.name.as_str().to_string());
                 }
             }
+            Statement::ExpressionStatement(es) => {
+                // Detect `module.exports = { foo, bar, ... }` (CommonJS style)
+                if let Some(names) = extract_module_exports(es) {
+                    for name in names {
+                        exported_names.insert(name);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -330,6 +338,50 @@ fn analyze_module_ast(program: &Program) -> ModuleInfo {
         imported_names,
         exported_names,
         all_toplevel_fn_names,
+    }
+}
+
+/// Extract exported names from `module.exports = { ... }` expression statement.
+/// Returns `Some(names)` if it's a CommonJS export pattern, `None` otherwise.
+fn extract_module_exports(es: &ExpressionStatement) -> Option<Vec<String>> {
+    use oxc_ast::ast::AssignmentTarget;
+
+    let Expression::AssignmentExpression(assign) = &es.expression else {
+        return None;
+    };
+
+    // Check left side: `module.exports`
+    let AssignmentTarget::StaticMemberExpression(lhs) = &assign.left else {
+        return None;
+    };
+
+    let Expression::Identifier(obj) = &lhs.object else {
+        return None;
+    };
+    if obj.name.as_str() != "module" {
+        return None;
+    }
+    if lhs.property.name.as_str() != "exports" {
+        return None;
+    }
+
+    // Check right side: `{ ... }`
+    match &assign.right {
+        Expression::ObjectExpression(obj) => {
+            let names: Vec<String> = obj
+                .properties
+                .iter()
+                .filter_map(|p| match p {
+                    ObjectPropertyKind::ObjectProperty(op) => match &op.key {
+                        PropertyKey::StaticIdentifier(id) => Some(id.name.as_str().to_string()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect();
+            if names.is_empty() { None } else { Some(names) }
+        }
+        _ => None,
     }
 }
 
