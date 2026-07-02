@@ -17,7 +17,7 @@ fn main() {
             testStatements_frag_0_app();
         }
         "test_statements_frag_11" => {
-            testStatements_frag_11_app();
+            let _ = testStatements_frag_11_app();
         }
         "test_statements_frag_12" => {
             testStatements_frag_12_app();
@@ -569,7 +569,7 @@ fn main() {
             testBuiltins_frag_182_app();
         }
         "test_builtins_frag_202" => {
-            testBuiltins_frag_202_app();
+            let _ = testBuiltins_frag_202_app();
         }
         "test_builtins_frag_204" => {
             testBuiltins_frag_204_app();
