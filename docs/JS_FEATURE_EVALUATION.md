@@ -1123,11 +1123,11 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.3 mdn-test-project 输出对比
 
-153 个 fragment 与 Node.js expected 输出对比：
+159 个 fragment 与 Node.js expected 输出对比：
 
 | 结果 | 数量 | 说明 |
 |------|------|------|
-| MATCH | 149 | 完全匹配 |
+| MATCH | 155 | 完全匹配 |
 | MISMATCH | 4 | 已知差异 |
 
 **4 个已知 MISMATCH**:
@@ -1138,6 +1138,11 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `frag_112` | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | 已知限制 |
 | `frag_157` | `parseInt` 对无效输入返回 `NaN` vs `0` | 已知限制 |
 | `frag_202` | `decodeURIComponent` 错误处理方式不同 | 已知限制 |
+
+**+6 新增 fragment (2026-07-01)**:
+- `test_builtins_frag_18`, `test_builtins_frag_167`
+- `test_expressions_frag_92`, `test_expressions_frag_136`, `test_expressions_frag_143`, `test_expressions_frag_150`
+- 全部在 Node.js vs Zig 对比中 MATCH，无新增 MISMATCH
 
 **P2-A BigInt 混合类型残留已修复 (2026-07-01)**:
 - 6 个算术混合 TypeError（+,-,*,/,%,** BigInt+Number）: `return;` 替代 `@panic`
