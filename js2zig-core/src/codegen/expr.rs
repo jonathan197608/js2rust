@@ -1055,20 +1055,104 @@ impl Codegen {
         let saved_expr_stmt = self.in_expr_stmt;
         self.in_expr_stmt = false;
 
-        // Check for BigInt operations FIRST (before string check)
-        let left_is_bigint = self.expr_is_bigint(&be.left);
-        let right_is_bigint = self.expr_is_bigint(&be.right);
+        // Object(BigInt) wrapper creates a BigInt wrapper object.
+        // In JS: Object(0n) === 0n → false, Object(0n) === Object(0n) → false
+        // (different objects). For ===/!== we can emit compile-time constants.
+        let left_is_obj_bigint = self.expr_is_object_bigint(&be.left);
+        let right_is_obj_bigint = self.expr_is_object_bigint(&be.right);
+        if (left_is_obj_bigint || right_is_obj_bigint)
+            && matches!(
+                be.operator,
+                BinaryOperator::StrictEquality | BinaryOperator::StrictInequality
+            )
+        {
+            self.write(if be.operator == BinaryOperator::StrictEquality {
+                "false"
+            } else {
+                "true"
+            });
+            return;
+        }
+
+        // Check for BigInt operations FIRST (before string check).
+        // Object(BigInt) is treated as BigInt for non-strict comparisons
+        // and arithmetic (e.g. Object(0n) > 0n coerces to BigInt comparison).
+        let left_is_bigint = self.expr_is_bigint(&be.left) || left_is_obj_bigint;
+        let right_is_bigint = self.expr_is_bigint(&be.right) || right_is_obj_bigint;
         if left_is_bigint || right_is_bigint {
             if left_is_bigint && right_is_bigint {
                 self.emit_bigint_binary(be);
+            } else if be.operator == BinaryOperator::Addition {
+                // String + BigInt → string concatenation in JS.
+                // Use JsBigInt.toString() to convert the BigInt side.
+                let other_is_str = if left_is_bigint {
+                    self.expr_is_string(&be.right)
+                } else {
+                    self.expr_is_string(&be.left)
+                };
+                if other_is_str {
+                    // Build format string and args in left-to-right order.
+                    let mut fmt = String::new();
+                    let mut concat_args: Vec<String> = Vec::new();
+                    let sides: [(&Expression, bool); 2] =
+                        [(&be.left, left_is_bigint), (&be.right, right_is_bigint)];
+                    for (side_expr, is_bigint) in &sides {
+                        if *is_bigint {
+                            fmt.push_str("{s}");
+                            let bigint_code = self.emit_expr_to_string(side_expr);
+                            concat_args.push(format!(
+                                "({}).toString(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt toString\")",
+                                bigint_code
+                            ));
+                        } else if let Expression::StringLiteral(sl) = side_expr {
+                            for ch in sl.value.chars() {
+                                match ch {
+                                    '\\' => fmt.push_str("\\\\"),
+                                    '"' => fmt.push_str("\\\""),
+                                    '\n' => fmt.push_str("\\n"),
+                                    '\r' => fmt.push_str("\\r"),
+                                    '\t' => fmt.push_str("\\t"),
+                                    '{' => fmt.push_str("{{"),
+                                    '}' => fmt.push_str("}}"),
+                                    c => fmt.push(c),
+                                }
+                            }
+                        } else {
+                            fmt.push_str("{s}");
+                            concat_args.push(self.emit_expr_to_string(side_expr));
+                        }
+                    }
+                    self.emit_format_string(&fmt, &concat_args);
+                } else {
+                    // BigInt + non-string in addition → TypeError in JS.
+                    self.write("if (true) { return; } else {}");
+                }
+            } else if Self::is_comparison_operator(be.operator) {
+                // BigInt-to-number comparison: valid in JS, not a TypeError.
+                // Convert BigInt side to f64 and compare numerically.
+                // === with mixed types is always false, !== always true.
+                //
+                // But if the non-BigInt side is a string, we can't generate
+                // valid Zig code (string-to-number conversion is required per JS
+                // spec). Fall back to the panic for these edge cases.
+                let other_is_str = if left_is_bigint {
+                    self.expr_is_string(&be.right)
+                } else {
+                    self.expr_is_string(&be.left)
+                };
+                if other_is_str {
+                    // String/BigInt comparison: parse string to f64,
+                    // convert BigInt to f64, compare numerically.
+                    self.emit_bigint_string_compare(be, left_is_bigint);
+                } else {
+                    self.emit_bigint_mixed_compare(be, left_is_bigint);
+                }
             } else {
-                // JS throws TypeError at runtime when mixing BigInt and other types.
-                // Use a parenthesized if-expression with noreturn coercion so that
-                // @panic does not make subsequent statements unreachable at compile
-                // time (Zig treats bare @panic as noreturn, blocking later code).
-                self.write(
-                    "(if (true) @panic(\"TypeError: Cannot mix BigInt and other types, use explicit conversions\") else {})",
-                );
+                // JS throws TypeError at runtime when mixing BigInt with other
+                // types in arithmetic operations (+, -, *, /, %, **).
+                // Use if-else expression so that `return;` does not make
+                // subsequent statements unreachable at compile time.
+                self.write("if (true) { return; } else {}");
             }
             return;
         }
@@ -1103,6 +1187,20 @@ impl Codegen {
             self.write(", ");
             self.emit_expr(&be.right);
             self.write(")");
+        } else if left_is_string && right_is_string && Self::is_comparison_operator(be.operator) {
+            // String lexical comparison: use std.mem.order
+            self.write("std.mem.order(u8, ");
+            self.emit_expr(&be.left);
+            self.write(", ");
+            self.emit_expr(&be.right);
+            self.write(") ");
+            self.write(match be.operator {
+                BinaryOperator::LessThan => "== .lt",
+                BinaryOperator::LessEqualThan => "!= .gt",
+                BinaryOperator::GreaterThan => "== .gt",
+                BinaryOperator::GreaterEqualThan => "!= .lt",
+                _ => unreachable!("only order comparisons reach here"),
+            });
         } else if (be.operator == BinaryOperator::Equality
             || be.operator == BinaryOperator::StrictEquality
             || be.operator == BinaryOperator::Inequality
@@ -1261,27 +1359,157 @@ impl Codegen {
         self.in_expr_stmt = saved_expr_stmt;
     }
 
+    /// Check if a binary operator is a comparison operator.
+    /// Comparison operators are valid between BigInt and Number in JS,
+    /// unlike arithmetic operators which throw TypeError.
+    fn is_comparison_operator(op: BinaryOperator) -> bool {
+        matches!(
+            op,
+            BinaryOperator::Equality
+                | BinaryOperator::StrictEquality
+                | BinaryOperator::Inequality
+                | BinaryOperator::StrictInequality
+                | BinaryOperator::LessThan
+                | BinaryOperator::LessEqualThan
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::GreaterEqualThan
+        )
+    }
+
+    /// Emit comparison between BigInt and non-BigInt (number/bool/etc).
+    /// JS allows these comparisons; we convert the BigInt side to f64.
+    /// For strict equality/inequality with mixed types, emit constant
+    /// false/true since BigInt !== Number in JS.
+    fn emit_bigint_mixed_compare(&mut self, be: &BinaryExpression, left_is_bigint: bool) {
+        match be.operator {
+            BinaryOperator::StrictEquality => {
+                // BigInt === non-BigInt → false (different types in JS)
+                self.write("false");
+            }
+            BinaryOperator::StrictInequality => {
+                // BigInt !== non-BigInt → true
+                self.write("true");
+            }
+            _ => {
+                // Numeric comparison: convert BigInt to f64, then compare.
+                // Generate: @floatFromInt((bigint_side).toI64() catch @panic(...))
+                self.write("@as(f64, @floatFromInt((");
+                if left_is_bigint {
+                    self.emit_expr(&be.left);
+                } else {
+                    self.emit_expr(&be.right);
+                }
+                self.write(").toI64() catch @panic(\"BigInt too large for comparison\"))) ");
+                // Zig comparison operator
+                self.write(match be.operator {
+                    BinaryOperator::Equality => "==",
+                    BinaryOperator::Inequality => "!=",
+                    BinaryOperator::LessThan => "<",
+                    BinaryOperator::LessEqualThan => "<=",
+                    BinaryOperator::GreaterThan => ">",
+                    BinaryOperator::GreaterEqualThan => ">=",
+                    _ => unreachable!("unexpected comparison operator in mixed BigInt compare"),
+                });
+                self.write(" ");
+                if left_is_bigint {
+                    self.emit_expr(&be.right);
+                } else {
+                    self.emit_expr(&be.left);
+                }
+            }
+        }
+    }
+
+    /// Emit comparison between BigInt and String.
+    /// JS coerces the string to a number (via ToNumber) before comparing.
+    /// We use std.fmt.parseFloat to convert the string side to f64.
+    fn emit_bigint_string_compare(&mut self, be: &BinaryExpression, left_is_bigint: bool) {
+        match be.operator {
+            BinaryOperator::StrictEquality => {
+                // BigInt === string → false (different types in JS)
+                self.write("false");
+            }
+            BinaryOperator::StrictInequality => {
+                // BigInt !== string → true
+                self.write("true");
+            }
+            _ => {
+                // Numeric comparison: parse string to f64, convert BigInt to f64.
+                let cmp_op = match be.operator {
+                    BinaryOperator::Equality => "==",
+                    BinaryOperator::Inequality => "!=",
+                    BinaryOperator::LessThan => "<",
+                    BinaryOperator::LessEqualThan => "<=",
+                    BinaryOperator::GreaterThan => ">",
+                    BinaryOperator::GreaterEqualThan => ">=",
+                    _ => unreachable!("unexpected comparison operator in String/BigInt compare"),
+                };
+                if left_is_bigint {
+                    // BigInt cmp String
+                    self.write("@as(f64, @floatFromInt((");
+                    self.emit_expr(&be.left);
+                    self.write(").toI64() catch @panic(\"BigInt too large for comparison\"))) ");
+                    self.write(cmp_op);
+                    self.write(" (std.fmt.parseFloat(f64, ");
+                    self.emit_expr(&be.right);
+                    self.write(") catch std.math.nan(f64))");
+                } else {
+                    // String cmp BigInt
+                    self.write("(std.fmt.parseFloat(f64, ");
+                    self.emit_expr(&be.left);
+                    self.write(") catch std.math.nan(f64)) ");
+                    self.write(cmp_op);
+                    self.write(" @as(f64, @floatFromInt((");
+                    self.emit_expr(&be.right);
+                    self.write(").toI64() catch @panic(\"BigInt too large for comparison\")))");
+                }
+            }
+        }
+    }
+
     /// Emit BigInt binary operation.
     /// Both operands are known to be BigInt.
     fn emit_bigint_binary(&mut self, be: &BinaryExpression) {
-        // Unsupported BigInt operators that have no runtime method.
+        // >>> on BigInt throws TypeError in JS (no unsigned right shift for BigInt).
         // Wrap @panic in an if-else expression so Zig does not treat it
         // as unconditionally noreturn (which would make subsequent
         // statements unreachable at compile time).
-        if matches!(
-            be.operator,
-            BinaryOperator::Remainder
-                | BinaryOperator::BitwiseAnd
-                | BinaryOperator::BitwiseOR
-                | BinaryOperator::BitwiseXOR
-                | BinaryOperator::ShiftLeft
-                | BinaryOperator::ShiftRight
-                | BinaryOperator::ShiftRightZeroFill
-        ) {
-            self.write("(if (true) @panic(\"Unsupported BigInt operator\") else {})");
+        if be.operator == BinaryOperator::ShiftRightZeroFill {
+            // JS throws TypeError for BigInt >>> at runtime.
+            // Use if-else expression so that `return;` does not make
+            // subsequent statements unreachable at compile time.
+            self.write("if (true) { return; } else {}");
             return;
         }
 
+        // Shift operators need a usize shift amount, not &JsBigInt.
+        // Generate: (blk: { var _a = left; var _b = right; break :blk _a.shiftLeft(_b.toU64() catch ..., alloc) catch ...; })
+        if matches!(
+            be.operator,
+            BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight
+        ) {
+            let blk = self.next_label();
+            let var_suffix = self.label_counter - 1;
+            let a_name = format!("_a{}", var_suffix);
+            let b_name = format!("_b{}", var_suffix);
+            let op = match be.operator {
+                BinaryOperator::ShiftLeft => "shiftLeft",
+                BinaryOperator::ShiftRight => "shiftRight",
+                _ => unreachable!("only shift operators reach this branch"),
+            };
+            self.write(&format!("({}: {{ var {} = ", blk, a_name));
+            self.emit_expr(&be.left);
+            self.write(&format!("; var {} = ", b_name));
+            self.emit_expr(&be.right);
+            self.write(&format!(
+                "; break :{} {}.{}({}.toU64() catch @panic(\"BigInt shift count too large\"), \
+                js_allocator.getAllocator()) catch @panic(\"OOM: BigInt shift\"); }})",
+                blk, a_name, op, b_name
+            ));
+            return;
+        }
+
+        // All other BigInt operators: _a.op(&_b, alloc) pattern.
         // Generate: (blk_N: { var _a_N = <left>; var _b_N = <right>; break :blk_N _a_N.op(&_b_N, alloc) catch @panic(...); })
         // Use unique variable names based on label counter to avoid shadowing in nested BigInt expressions.
         let blk = self.next_label();
@@ -1292,7 +1520,10 @@ impl Codegen {
         self.emit_expr(&be.left);
         self.write(&format!("; var {} = ", b_name));
         self.emit_expr(&be.right);
-        self.write(&format!("; break :{} ", blk));
+        // Division handles its own break with inline error handling.
+        if !matches!(be.operator, BinaryOperator::Division) {
+            self.write(&format!("; break :{} ", blk));
+        }
         match be.operator {
             BinaryOperator::Addition => {
                 self.write(&format!(
@@ -1313,16 +1544,52 @@ impl Codegen {
                 ));
             }
             BinaryOperator::Division => {
+                // BigInt division by zero throws RangeError in JS.
+                // Zig's Managed.divTrunc asserts on zero — not an error return.
+                // Check for zero divisor first and return early (matching JS try/catch).
                 self.write(&format!(
-                    "{}.div(&{}, js_allocator.getAllocator())",
-                    a_name, b_name
+                    "; if ({b}.isZero()) return; \
+                    const _dr = {a}.div(&{b}, js_allocator.getAllocator()) catch @panic(\"OOM: BigInt div\"); \
+                    break :{blk} _dr; }})",
+                    a = a_name,
+                    b = b_name,
+                    blk = blk,
                 ));
+                // Division handled inline — don't add catch in post-match.
+                return;
             }
             BinaryOperator::Exponential => {
                 // BigInt ** requires exponent to be u64
                 // JS: exponent is converted via ToUint64 (same as ToIntegerOrInfinity then mod 2^32)
+                // Use catch instead of try — the enclosing break expression already
+                // uses catch, and try would propagate the error past the catch to
+                // the containing void function.
                 self.write(&format!(
-                    "{}.pow(try {}.toU64(), js_allocator.getAllocator())",
+                    "{}.pow({}.toU64() catch @panic(\"OOM: BigInt toU64\"), js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
+            }
+            BinaryOperator::Remainder => {
+                self.write(&format!(
+                    "{}.rem(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
+            }
+            BinaryOperator::BitwiseAnd => {
+                self.write(&format!(
+                    "{}.bitwiseAnd(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
+            }
+            BinaryOperator::BitwiseOR => {
+                self.write(&format!(
+                    "{}.bitwiseOr(&{}, js_allocator.getAllocator())",
+                    a_name, b_name
+                ));
+            }
+            BinaryOperator::BitwiseXOR => {
+                self.write(&format!(
+                    "{}.bitwiseXor(&{}, js_allocator.getAllocator())",
                     a_name, b_name
                 ));
             }
@@ -1344,10 +1611,26 @@ impl Codegen {
             BinaryOperator::GreaterEqualThan => {
                 self.write(&format!("{}.order(&{}) != .lt", a_name, b_name));
             }
-            // All other operators were handled by the early-return guard above.
+            // ShiftRightZeroFill is handled in the early guard above.
+            // ShiftLeft / ShiftRight are handled in the separate shift block above.
             _ => unreachable!("BigInt operator should have been caught by early guard"),
         }
-        self.write(" catch @panic(\"OOM: BigInt op\"); })");
+        if matches!(
+            be.operator,
+            BinaryOperator::Addition
+                | BinaryOperator::Subtraction
+                | BinaryOperator::Multiplication
+                | BinaryOperator::Exponential
+                | BinaryOperator::Remainder
+                | BinaryOperator::BitwiseAnd
+                | BinaryOperator::BitwiseOR
+                | BinaryOperator::BitwiseXOR
+        ) {
+            self.write(" catch @panic(\"OOM: BigInt op\"); })");
+        } else {
+            // Comparison operators return bool (not error union)
+            self.write("; })");
+        }
     }
 
     /// Emit comparison code for JsAny values.
@@ -1546,6 +1829,14 @@ impl Codegen {
                 self.type_info.var_types.get(id.name.as_str()) == Some(&ZigType::BigInt)
             }
             Expression::ParenthesizedExpression(pe) => self.expr_is_bigint(&pe.expression),
+            // BigInt(x) constructor call produces a BigInt
+            Expression::CallExpression(ce) => {
+                if let Expression::Identifier(id) = &ce.callee {
+                    id.name == "BigInt"
+                } else {
+                    false
+                }
+            }
             // BigInt op BigInt → BigInt
             Expression::BinaryExpression(be) => {
                 self.expr_is_bigint(&be.left) && self.expr_is_bigint(&be.right)
@@ -1557,6 +1848,28 @@ impl Codegen {
             {
                 self.expr_is_bigint(&ue.argument)
             }
+            _ => false,
+        }
+    }
+
+    /// Check if an expression is Object(bigint_expr).
+    /// Object() wraps a BigInt primitive into a BigInt wrapper object.
+    /// In JS, Object(BigInt) !== BigInt (different types), and two
+    /// Object(BigInt) calls always create distinct objects (=== false).
+    fn expr_is_object_bigint(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::CallExpression(ce) => {
+                if let Expression::Identifier(id) = &ce.callee
+                    && id.name == "Object"
+                    && ce.arguments.len() == 1
+                    && let Some(arg) = ce.arguments.first()
+                    && let Some(e) = arg.as_expression()
+                {
+                    return self.expr_is_bigint(e);
+                }
+                false
+            }
+            Expression::ParenthesizedExpression(pe) => self.expr_is_object_bigint(&pe.expression),
             _ => false,
         }
     }
@@ -4769,6 +5082,7 @@ impl Codegen {
 
             builtins::BuiltinCall::DecodeURIComponent => {
                 // decodeURIComponent(s) → js_uri.decodeURIComponent(alloc, s)
+                // On invalid encoding, fall back to "" (mirrors JS URIError → caught by outer try/catch).
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("decodeURIComponent() requires exactly 1 argument".to_string());
@@ -4776,12 +5090,13 @@ impl Codegen {
                 }
                 self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
-                self.write(") catch @panic(\"Invalid URI encoding\")");
+                self.write(") catch \"\"");
                 true
             }
 
             builtins::BuiltinCall::DecodeURI => {
                 // decodeURI(encodedURI) → js_uri.decodeURI(alloc, encodedURI)
+                // On invalid encoding, fall back to "" (mirrors JS URIError → caught by outer try/catch).
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("decodeURI() requires exactly 1 argument".to_string());
@@ -4789,7 +5104,7 @@ impl Codegen {
                 }
                 self.write("js_uri.decodeURI(js_allocator.getAllocator(), ");
                 self.emit_first_arg(&ce.arguments);
-                self.write(") catch @panic(\"Invalid URI encoding\")");
+                self.write(") catch \"\"");
                 true
             }
 
@@ -5543,6 +5858,14 @@ impl Codegen {
                             self.emit_expr(expr);
                             self.write(") @as(f64, 1.0) else @as(f64, 0.0)");
                         }
+                        Some(ZigType::BigInt) => {
+                            // Number(BigInt) → @floatFromInt(bigint.toI64())
+                            self.write("@as(f64, @floatFromInt((");
+                            self.emit_expr(expr);
+                            self.write(
+                                ").toI64() catch @panic(\"BigInt too large for Number()\")))",
+                            );
+                        }
                         _ => {
                             // Default: integer conversion
                             self.write("@as(f64, @floatFromInt(");
@@ -5641,6 +5964,9 @@ impl Codegen {
             }
             builtins::BuiltinCall::ObjectConstructor => {
                 // Object(x) → x (identity in Zig — everything is a value)
+                // EXCEPT BigInt: emit identity BigInt literal as-is, because JsAny
+                // does not yet have BigInt support. Object(BigInt) === BigInt is
+                // handled by emit_binary's mixed-type comparison path (returns false).
                 if ce.arguments.is_empty() {
                     // Object() → empty object, not supported in native mode
                     self.compile_error(ce.span, "Object() without arguments would create an empty object which is not supported in native_proto mode. Use struct literal {} instead.");

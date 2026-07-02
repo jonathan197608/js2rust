@@ -72,6 +72,54 @@ pub const JsBigInt = struct {
         return Self{ .value = result };
     }
 
+    /// Remainder (modulo): self % other.
+    /// JS BigInt remainder matches truncated division (sign of dividend).
+    pub fn rem(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        var quotient = try std.math.big.int.Managed.init(alloc);
+        defer quotient.deinit();
+        var remainder = try std.math.big.int.Managed.init(alloc);
+        errdefer remainder.deinit();
+        try quotient.divTrunc(&remainder, &self.value, &other.value);
+        return Self{ .value = remainder };
+    }
+
+    // ---- bitwise ----
+
+    pub fn bitwiseAnd(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.bitAnd(&self.value, &other.value);
+        return Self{ .value = result };
+    }
+
+    pub fn bitwiseOr(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.bitOr(&self.value, &other.value);
+        return Self{ .value = result };
+    }
+
+    pub fn bitwiseXor(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.bitXor(&self.value, &other.value);
+        return Self{ .value = result };
+    }
+
+    pub fn shiftLeft(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.shiftLeft(&self.value, shift);
+        return Self{ .value = result };
+    }
+
+    pub fn shiftRight(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.shiftRight(&self.value, shift);
+        return Self{ .value = result };
+    }
+
     pub fn neg(self: *const Self, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
@@ -95,11 +143,15 @@ pub const JsBigInt = struct {
     // ---- comparison ----
 
     pub fn eq(self: *const Self, other: *const Self) bool {
-        return self.value.order(&other.value) == .eq;
+        return self.value.order(other.value) == .eq;
+    }
+
+    pub fn isZero(self: *const Self) bool {
+        return self.value.toConst().eqlZero();
     }
 
     pub fn order(self: *const Self, other: *const Self) std.math.Order {
-        return self.value.order(&other.value);
+        return self.value.order(other.value);
     }
 
     // ---- conversion ----
@@ -113,10 +165,10 @@ pub const JsBigInt = struct {
     }
 
     pub fn toString(self: *const Self, alloc: std.mem.Allocator) ![]u8 {
-        return try self.value.toString(alloc, 10, false);
+        return try self.value.toString(alloc, 10, .lower);
     }
 
     pub fn format(self: *const Self, writer: anytype) !void {
-        try self.value.format(writer, 10, false);
+        try self.value.format(writer, 10, .lower);
     }
 };

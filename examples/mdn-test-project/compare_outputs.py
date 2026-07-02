@@ -28,10 +28,10 @@ mismatch_list = []
 error_list = []
 
 for i, frag in enumerate(all_frags):
-    # Run Node.js
+    # Run Node.js using the .node.js reference file (has try/catch for expected errors)
     try:
         node_result = subprocess.run(
-            [NODE_BIN, "run_node.mjs", frag],
+            [NODE_BIN, f"js_src/{frag}.node.js"],
             capture_output=True, text=True, timeout=10,
             cwd=PROJECT_DIR
         )
