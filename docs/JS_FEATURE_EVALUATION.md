@@ -1,7 +1,7 @@
 ﻿# JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 346 个 Rust 测试 + 27 个 Zig 测试
+> **测试覆盖**: 360 个 Rust 测试 + 27 个 Zig 测试
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | ~151 |
 | **内置对象方法总数** | ~321 |
-| **测试覆盖** | 346 个 Rust 测试 + 27 个 Zig 测试 |
+| **测试覆盖** | 360 个 Rust 测试 + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — ~102 特性
@@ -101,10 +101,10 @@
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `===` (严格相等) | ✅ | `==` 或 `.eq()` | `test_native_proto_operators` |
-| `!==` (严格不等) | ✅ | `!=` 或 `.neq()` | 同上 |
-| `==` (宽松相等) | ✅ | `==` (同 `===`) | 未区分 |
-| `!=` (宽松不等) | ✅ | `!=` (同 `!==`) | 未区分 |
+| `===` (严格相等) | ✅ | `.strictEq()` | `test_native_proto_operators` |
+| `!==` (严格不等) | ✅ | `!.strictEq()` | 同上 |
+| `==` (宽松相等) | ✅ | `.eq()` | `test_native_proto_operators` |
+| `!=` (宽松不等) | ✅ | `!.eq()` | 同上 |
 | `<` `>` `<=` `>=` | ✅ | `a < b` 或 `.lt()` | `test_native_proto_operators` |
 
 ### 2.4 逻辑运算符 (Logical Operators) - ✅ 100% 实现
@@ -732,7 +732,7 @@
 
 | 函数 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
-| `parseInt(s, radix?)` | `parseInt(string[, radix])` | `string, radix?: 2-36` | `i64` \| NaN | ✅ | ✅ | `std.fmt.parseInt` | ✅ |
+| `parseInt(s, radix?)` | `parseInt(string[, radix])` | `string, radix?: 2-36` | `i64` \| NaN | ✅ | ✅ | ✅ `js_number.parseInt` | ✅ |
 | `parseFloat(s)` | `parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `@floatCast` | ✅ |
 | `isNaN(v)` | `isNaN(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ `js_number.isNaN` | ✅ |
 | `isFinite(v)` | `isFinite(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ `js_number.isFinite` | ✅ |
@@ -742,7 +742,7 @@
 | `decodeURI(s)` | `decodeURI(encodedURI)` | `encodedURI: string` | `string` | ✅ | ✅ | ✅ `js_uri.decodeURI` | ✅ |
 | `eval(s)` | `eval(string)` | `string` | 动态执行 | 🔘 | 🔘 | 🔘 | 🔘 不实现（安全风险，编译时无法动态执行） |
 
-> **注意**: `parseInt` 无 radix 时默认十进制（与 Zig `std.fmt.parseInt` 行为可能不同，后者必须指定 radix）。
+> **注意**: `parseInt` 委托 `js_number.parseInt()` runtime 函数，支持前导空白、`0x` 十六进制前缀、小数截断等 JS 语义（`std.fmt.parseInt` 不处理这些）。
 >
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/global_functions.js`):
 > ```js
@@ -796,8 +796,8 @@
 
 ### 4.11 `console` — 3/3 (100%) ✅
 
-> **Runtime 文件**: `runtime/js_console.zig`（已实现 log/err/warn）
-> **检测方式**: `console.log()` → `StaticMemberExpression { object: Identifier("console"), property: "log" }`，非标准 `MemberExpression` 路径。
+> **Runtime 文件**: `runtime/js_console.zig`（已实现 log/err/warn + logMulti/errMulti/warnMulti 多参数支持）
+> **检测方式**: `console.log()` → `StaticMemberExpression { object: Identifier("console"), property: "log" }`，非标准 `MemberExpression` 路径。多参数调用使用 `logMulti()`/`errMulti()`/`warnMulti()` 运行时函数。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -1106,11 +1106,11 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 346 个测试
+### 7.1 Rust 单元测试 - 360 个测试
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `native_proto::tests` | 317 | 所有核心语法、内置对象、闭包、错误处理 |
+| `native_proto::tests` | 331 | 所有核心语法、内置对象、闭包、错误处理 |
 | `native_proto::jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
 | `sourcemap` | 4 | Source Map 生成 |
@@ -1119,5 +1119,5 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-346 个 Rust 测试全部通过，0 clippy 警告，覆盖所有已实现特性的核心路径。
+360 个 Rust 测试全部通过，0 clippy 警告，覆盖所有已实现特性的核心路径。
 
