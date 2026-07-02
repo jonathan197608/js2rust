@@ -40,11 +40,11 @@
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~255 | ~79% | Math 44/44 (100%)、Array 33/35 (94%)、String 29+4⚠️/35 (94%)、Date 51/53 (96%)、Symbol 17/17 (100%) 等 |
-| ⚠️ 简化实现 | ~4 | ~1% | String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase（无 ICU 依赖，基础功能可用） |
-| 🔘 不实现 | ~62 | ~20% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，Map.groupBy/Object.groupBy/BigInt 降级为不实现 |
+| ✅ 完全实现 | ~255 | ~80% | Math 44/44 (100%)、Array 33/35 (94%)、String 29+4⚠️/35 (94%)、Date 51/53 (96%)、Symbol 17/17 (100%) 等 |
+| ⚠️ 简化实现 | ~5 | ~2% | String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase（无 ICU 依赖，基础功能可用）+ BigInt（基本运算支持，混合类型受限） |
+| 🔘 不实现 | ~61 | ~19% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，Map.groupBy/Object.groupBy 降级为不实现 |
 
-> **注**: 内置对象统计按方法粒度（非特性粒度）。⚠️ 简化实现 4 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）。Map.groupBy/Object.groupBy/BigInt 🔘 不实现（应用层逻辑或 Zig 原生替代）。
+> **注**: 内置对象统计按方法粒度（非特性粒度）。⚠️ 简化实现 6 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
 
 ### 1.5 三大类对比总览
 
@@ -52,7 +52,7 @@
 |------|------|---------|----------|-----------|--------|
 | **表达式** | ~102 | ~92 | — | ~10 | **~90%** |
 | **语句** | ~49 | ~43 | — | ~6 | **~88%** |
-| **内置对象** | ~321 | ~255 | ~4 | ~62 | **~79%** |
+| **内置对象** | ~321 | ~256 | ~5 | ~60 | **~80%** |
 | **语法合计** | ~151 | ~135 | — | ~16 | **~89%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -81,7 +81,7 @@
 | `this` | ✅ | `self` | showcase-project |
 | `NaN` | ✅ | `std.math.nan(f64)` | 隐式测试 |
 | `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
-| BigInt 字面量 | 🔘 | — | 不实现，Zig 原生整数替代 |
+| BigInt 字面量 | ⚠️ | `js_bigint.JsBigInt.init(alloc, "9")` | 基本四则运算/位运算/比较已支持，混合类型受限 |
 
 ### 2.2 算术运算符 (Arithmetic Operators) - ✅ 100% 实现
 
@@ -870,7 +870,7 @@
 | `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
 | `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
 | `Intl` | 🔘 不实现 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 | 低价值：国际化可调用 Zig/C 库 |
-| `BigInt` | 🔘 不实现 | `BigInt(value)`, `123n` 字面量 | 低价值：Zig 原生整数 (i64/i128) 替代 |
+| `BigInt` | ⚠️ 简化实现 | `js_bigint.JsBigInt`（基于 `std.math.big.int.Managed`） | 基本四则/位运算/比较已支持（含字面量 `123n` + 构造函数 `BigInt(n)`），混合类型受限，不支持 `>>>` |
 | `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
 ### 4.17 汇总
@@ -896,14 +896,14 @@
 | WeakMap/WeakSet | 2 | 0 | 0% | 2 | 不实现（Zig 内存模型不同） |
 | Reflect | 1 | 0 | 0% | 1 | 不实现（Zig 不需要反射） |
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
-| BigInt | 1 | 0 | 0% | 1 | 🔘 不实现（Zig 原生整数替代） |
+| BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **~180** | **~176+5⚠️** | **~98%** | **~16** | 5⚠️ 为 String 简化实现；表格行数合计 |
+| **总计** | **~180** | **~177+6⚠️** | **~98%** | **~15** | 6⚠️: String ×4 + BigInt ×1；表格行数合计 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase），因 ICU 依赖不可行
-> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl、Map.groupBy/Object.groupBy/BigInt）
+> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt 基本运算支持但混合类型受限）
+> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl、Map.groupBy/Object.groupBy）
 
 ---
 
