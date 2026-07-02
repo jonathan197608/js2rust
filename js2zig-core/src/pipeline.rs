@@ -708,6 +708,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 eprintln!("  zig build FAILED:\n{}", stderr);
+                return Err(format!(
+                    "zig build failed for group '{}':\n{}",
+                    group.core_name,
+                    stderr.lines().take(20).collect::<Vec<_>>().join("\n")
+                ));
             }
             Err(_) => eprintln!("  warning: zig not found — skipping build"),
         }

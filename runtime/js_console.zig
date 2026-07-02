@@ -17,25 +17,43 @@ fn isStringType(comptime T: type) bool {
     };
 }
 
-/// Print a message with an optional prefix, using the appropriate format specifier
-/// based on the runtime type of `msg`.
-fn printMsg(prefix: []const u8, msg: anytype) void {
+/// Print a single value (no prefix, no newline) using the appropriate format specifier.
+fn printValue(msg: anytype) void {
     const T = @TypeOf(msg);
     if (comptime isStringType(T)) {
-        std.debug.print("{s}{s}\n", .{ prefix, msg });
+        std.debug.print("{s}", .{msg});
     } else {
         switch (@typeInfo(T)) {
-            .int, .comptime_int => std.debug.print("{s}{d}\n", .{ prefix, msg }),
-            .float, .comptime_float => std.debug.print("{s}{d}\n", .{ prefix, msg }),
-            .bool => std.debug.print("{s}{}\n", .{ prefix, msg }),
-            else => std.debug.print("{s}{any}\n", .{ prefix, msg }),
+            .int, .comptime_int => std.debug.print("{d}", .{msg}),
+            .float, .comptime_float => std.debug.print("{d}", .{msg}),
+            .bool => std.debug.print("{}", .{msg}),
+            else => std.debug.print("{any}", .{msg}),
         }
     }
 }
 
-/// Console.log — prints a formatted message to stdout.
+/// Print a message with an optional prefix, using the appropriate format specifier
+/// based on the runtime type of `msg`.
+fn printMsg(prefix: []const u8, msg: anytype) void {
+    std.debug.print("{s}", .{prefix});
+    printValue(msg);
+    std.debug.print("\n", .{});
+}
+
+/// Console.log — prints a single argument to stderr (Zig debug).
 pub fn log(msg: anytype) void {
     printMsg("", msg);
+}
+
+/// Console.log with multiple arguments — JS joins args with spaces.
+/// Usage: js_console.logMulti(.{ arg1, arg2, ... });
+pub fn logMulti(args: anytype) void {
+    const fields = std.meta.fields(@TypeOf(args));
+    inline for (fields, 0..) |field, i| {
+        if (i > 0) std.debug.print(" ", .{});
+        printValue(@field(args, field.name));
+    }
+    std.debug.print("\n", .{});
 }
 
 /// Console.error — prints to stderr with [ERROR] prefix.
@@ -43,9 +61,29 @@ pub fn err(msg: anytype) void {
     printMsg("[ERROR] ", msg);
 }
 
+/// Console.error with multiple arguments.
+pub fn errMulti(args: anytype) void {
+    const fields = std.meta.fields(@TypeOf(args));
+    inline for (fields, 0..) |field, i| {
+        if (i > 0) std.debug.print(" ", .{});
+        printValue(@field(args, field.name));
+    }
+    std.debug.print("\n", .{});
+}
+
 /// Console.warn — prints to stderr with [WARN] prefix.
 pub fn warn(msg: anytype) void {
     printMsg("[WARN] ", msg);
+}
+
+/// Console.warn with multiple arguments.
+pub fn warnMulti(args: anytype) void {
+    const fields = std.meta.fields(@TypeOf(args));
+    inline for (fields, 0..) |field, i| {
+        if (i > 0) std.debug.print(" ", .{});
+        printValue(@field(args, field.name));
+    }
+    std.debug.print("\n", .{});
 }
 
 test "log string" {
@@ -62,6 +100,10 @@ test "log float" {
 
 test "log bool" {
     log(true);
+}
+
+test "logMulti" {
+    logMulti(.{ "PI:", 3.14159 });
 }
 
 test "error" {

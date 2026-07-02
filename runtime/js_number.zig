@@ -2,6 +2,8 @@
 //! Operates on numeric values directly, no allocation needed.
 
 const std = @import("std");
+const js_allocator = @import("js_allocator.zig");
+const JsAny = @import("jsany.zig").JsAny;
 
 /// Number.isNaN — check if a value is NaN.
 pub fn isNaN(val: f64) bool {
@@ -19,9 +21,108 @@ pub fn isInteger(val: f64) bool {
     return @mod(val, 1.0) == 0.0;
 }
 
-/// Number.parseInt — parse an integer from a string.
-pub fn parseInt(s: []const u8) i64 {
-    return std.fmt.parseInt(i64, s, 10) catch 0;
+/// JS parseInt — parse an integer from a string with JS semantics.
+/// Handles leading whitespace, sign, 0x/0b/0o prefixes, and stops at first
+/// non-digit character (e.g. decimal point). Returns 0 for NaN (i64 can't
+/// represent NaN).
+pub fn parseInt(value: anytype, radix: ?i64) i64 {
+    const T = @TypeOf(value);
+    // Fast path: already a string slice
+    if (T == []const u8) {
+        return parseIntStr(value, radix);
+    }
+    // String literals: *const [N:0]u8 → coerce to []const u8
+    if (switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => switch (@typeInfo(p.child)) {
+                .array => |a| a.child == u8,
+                else => false,
+            },
+            else => false,
+        },
+        else => false,
+    }) {
+        return parseIntStr(value, radix);
+    }
+    if (T == JsAny) {
+        const s = value.asString(js_allocator.getAllocator());
+        return parseIntStr(s, radix);
+    }
+    // For numeric/bool types, format to a buffer
+    var buf: [64]u8 = undefined;
+    const s = switch (@typeInfo(T)) {
+        .int, .comptime_int => std.fmt.bufPrint(&buf, "{d}", .{value}) catch return 0,
+        .float, .comptime_float => std.fmt.bufPrint(&buf, "{d}", .{value}) catch return 0,
+        .bool => if (value) "true" else "false",
+        else => std.fmt.bufPrint(&buf, "{any}", .{value}) catch return 0,
+    };
+    return parseIntStr(s, radix);
+}
+
+fn parseIntStr(s: []const u8, radix: ?i64) i64 {
+    var i: usize = 0;
+    const len = s.len;
+
+    // Skip leading whitespace (JS: trimStart)
+    while (i < len and std.ascii.isWhitespace(s[i])) {
+        i += 1;
+    }
+    if (i >= len) return 0;
+
+    // Handle sign
+    var negative = false;
+    if (s[i] == '+' or s[i] == '-') {
+        negative = s[i] == '-';
+        i += 1;
+    }
+    if (i >= len) return 0;
+
+    // Determine effective radix
+    var r: u8 = if (radix) |rd| @intCast(@max(2, @min(36, rd))) else 10;
+
+    // Auto-detect 0x/0b/0o prefix:
+    //   - radix undefined/0 → auto-detect and set radix
+    //   - radix matches prefix type → strip prefix
+    const radix_undefined = (radix == null or radix.? == 0);
+    if (radix_undefined or r == 16) {
+        if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'x' or s[i + 1] == 'X')) {
+            r = 16;
+            i += 2;
+        }
+    }
+    if (radix_undefined or r == 2) {
+        if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'b' or s[i + 1] == 'B')) {
+            r = 2;
+            i += 2;
+        }
+    }
+    if (radix_undefined or r == 8) {
+        if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'o' or s[i + 1] == 'O')) {
+            r = 8;
+            i += 2;
+        }
+    }
+    if (r == 0) r = 10;
+
+    // Parse digits until first non-digit for this radix
+    var result: i64 = 0;
+    var has_digit = false;
+    while (i < len) {
+        const c = s[i];
+        const digit: u8 = blk: {
+            if (c >= '0' and c <= '9') break :blk c - '0';
+            if (c >= 'a' and c <= 'z') break :blk c - 'a' + 10;
+            if (c >= 'A' and c <= 'Z') break :blk c - 'A' + 10;
+            break :blk 255;
+        };
+        if (digit >= r) break;
+        result = result * @as(i64, r) + @as(i64, digit);
+        has_digit = true;
+        i += 1;
+    }
+
+    if (!has_digit) return 0;
+    return if (negative) -result else result;
 }
 
 /// Number.parseFloat — parse a float from a string.
@@ -148,8 +249,19 @@ test "isInteger" {
 }
 
 test "parseInt" {
-    try std.testing.expectEqual(@as(i64, 42), parseInt("42"));
-    try std.testing.expectEqual(@as(i64, 0), parseInt("abc"));
+    try std.testing.expectEqual(@as(i64, 42), parseInt("42", null));
+    try std.testing.expectEqual(@as(i64, 0), parseInt("abc", null));
+    // JS semantics: whitespace trimmed
+    try std.testing.expectEqual(@as(i64, 123), parseInt("   123 ", null));
+    // JS semantics: stops at decimal point
+    try std.testing.expectEqual(@as(i64, 1), parseInt("1.9", null));
+    // JS semantics: 0x prefix auto-detected
+    try std.testing.expectEqual(@as(i64, 255), parseInt("0xFF", null));
+    try std.testing.expectEqual(@as(i64, 255), parseInt("0xFF", 16));
+    // JS semantics: leading zeros ignored in base 10
+    try std.testing.expectEqual(@as(i64, 77), parseInt("077", null));
+    // JS semantics: hex digits with explicit radix
+    try std.testing.expectEqual(@as(i64, 255), parseInt("ff", 16));
 }
 
 test "parseFloat" {

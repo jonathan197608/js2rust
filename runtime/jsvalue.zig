@@ -185,24 +185,40 @@ pub const JsValue = union(enum) {
         return .{ .bool = !self.asBool() };
     }
 
-    // --- comparison (JS == semantics, not ===) ---
+    // --- comparison (JS == loose semantics, not ===) ---
 
     pub fn eq(self: JsValue, other: JsValue) bool {
+        // Same type: direct comparison
+        if (@as(std.meta.Tag(JsValue), self) == @as(std.meta.Tag(JsValue), other)) {
+            return switch (self) {
+                .int => |a| a == other.int,
+                .float => |a| a == other.float,
+                .bool => |a| a == other.bool,
+                .string => |a| std.mem.eql(u8, a, other.string),
+                .null => true,
+                .undefined => true,
+            };
+        }
+        // null == undefined → true (JS loose ==)
+        if ((self == .null or self == .undefined) and (other == .null or other == .undefined))
+            return true;
+        // Cross-type: coerce both to f64 and compare (JS loose == semantics).
+        // This handles: int vs float, int vs string, int vs bool,
+        //               float vs string, float vs bool, string vs bool.
+        return self.asF64() == other.asF64();
+    }
+
+    /// Strict equality (===): same type AND same value. No coercion.
+    pub fn strictEq(self: JsValue, other: JsValue) bool {
+        if (@as(std.meta.Tag(JsValue), self) != @as(std.meta.Tag(JsValue), other))
+            return false;
         return switch (self) {
-            .int => |a| switch (other) {
-                .int => |b| a == b,
-                .float => |b| @as(f64, @floatFromInt(a)) == b,
-                else => false,
-            },
-            .float => |a| switch (other) {
-                .int => |b| a == @as(f64, @floatFromInt(b)),
-                .float => |b| a == b,
-                else => false,
-            },
-            .bool => |a| switch (other) { .bool => |b| a == b, else => false },
-            .string => |a| switch (other) { .string => |b| std.mem.eql(u8, a, b), else => false },
-            .null => switch (other) { .null => true, .undefined => true, else => false },
-            .undefined => switch (other) { .undefined => true, .null => true, else => false },
+            .int => |a| a == other.int,
+            .float => |a| a == other.float,
+            .bool => |a| a == other.bool,
+            .string => |a| std.mem.eql(u8, a, other.string),
+            .null => true,
+            .undefined => true,
         };
     }
 

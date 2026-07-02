@@ -80,8 +80,7 @@ pub fn build(force_rebuild: bool) {
             link_from_cache(&cache_dir);
         }
         Err(e) => {
-            eprintln!("js2rust_bridge::build: transpilation error: {}", e);
-            link_from_cache(&cache_dir);
+            panic!("js2rust_bridge::build: transpilation/zig build failed: {e}");
         }
     }
 }

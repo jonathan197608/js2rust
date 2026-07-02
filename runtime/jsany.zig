@@ -359,6 +359,11 @@ pub const JsAny = union(enum) {
         return self.toValue().eq(other.toValue());
     }
 
+    /// Strict equality (===): same type AND same value. No coercion.
+    pub fn strictEq(self: JsAny, other: JsAny) bool {
+        return self.toValue().strictEq(other.toValue());
+    }
+
     pub fn neq(self: JsAny, other: JsAny) bool {
         return !self.eq(other);
     }

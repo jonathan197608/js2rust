@@ -1114,6 +1114,12 @@ impl Codegen {
                             need_semi = false;
                             add_discard = false;
                         }
+                        // ArrayPop/ArrayShift internally emit their own `_ = ` prefix
+                        // (to discard the return value). Adding another from stmt.rs
+                        // would produce invalid `_ = _ = arr.pop();`.
+                        builtins::BuiltinCall::ArrayPop | builtins::BuiltinCall::ArrayShift => {
+                            add_discard = false;
+                        }
                         _ => {}
                     }
                 }

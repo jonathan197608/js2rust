@@ -1179,6 +1179,16 @@ impl Codegen {
             self.write(".contains(");
             self.emit_expr(&be.left);
             self.write(")");
+        } else if be.operator == BinaryOperator::ShiftRightZeroFill {
+            // JS >>> (unsigned right shift): treat left as u32, shift right with zero fill.
+            // JS semantics: ToUint32(left) >>> (ToUint32(right) & 31)
+            // Zig has no >>> for signed ints, so we bit-cast through u32.
+            // Use @intCast (not @bitCast) for u32→i64 widening (zero-extend).
+            self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
+            self.emit_expr_for_arithmetic(&be.left);
+            self.write(")))) >> @intCast(");
+            self.emit_expr_for_arithmetic(&be.right);
+            self.write(" & 31)))");
         } else if be.operator == BinaryOperator::Instanceof {
             // `x instanceof Constructor` — not directly supported in Zig.
             // Emit a compile error with source location info.
@@ -1197,7 +1207,6 @@ impl Codegen {
                     | BinaryOperator::BitwiseXOR
                     | BinaryOperator::ShiftLeft
                     | BinaryOperator::ShiftRight
-                    | BinaryOperator::ShiftRightZeroFill
             );
 
             if is_arithmetic {
@@ -1358,19 +1367,29 @@ impl Codegen {
                     be.operator,
                     BinaryOperator::Inequality | BinaryOperator::StrictInequality
                 );
+                // Strict (===, !==) uses strictEq (no type coercion);
+                // Loose (==, !=) uses eq (JS coercion semantics).
+                let method = if matches!(
+                    be.operator,
+                    BinaryOperator::StrictEquality | BinaryOperator::StrictInequality
+                ) {
+                    "strictEq"
+                } else {
+                    "eq"
+                };
                 if negate {
                     self.write("!");
                 }
                 // left.eq(right) — prefer left as receiver if it's JsAny, otherwise wrap left.
                 if left_is_jsany {
                     self.emit_expr(&be.left);
-                    self.write(".eq(");
+                    self.write(&format!(".{method}("));
                     self.emit_as_jsany(&be.right, right_is_jsany);
                     self.write(")");
                 } else {
                     self.write("JsAny.from(");
                     self.emit_expr(&be.left);
-                    self.write(").eq(");
+                    self.write(&format!(").{method}("));
                     self.emit_as_jsany(&be.right, right_is_jsany);
                     self.write(")");
                 }
@@ -4552,26 +4571,22 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ParseInt => {
-                // parseInt(s) → std.fmt.parseInt(i64, s, 10) catch 0
-                // parseInt(s, radix) → switch (radix) { 2,8,10,16 => parse, else => 0 }
+                // parseInt(s) → js_number.parseInt(s, null)
+                // parseInt(s, radix) → js_number.parseInt(s, radix)
                 if let Some(arg) = ce.arguments.first()
-                    && let Some(expr) = arg.as_expression()
+                    && arg.as_expression().is_some()
                 {
-                    // Check for radix argument
+                    self.write("js_number.parseInt(");
+                    self.emit_expr_arg(&ce.arguments[0]);
                     if ce.arguments.len() >= 2
                         && let Some(radix_expr) = ce.arguments[1].as_expression()
                     {
-                        let s_str = self.emit_expr_to_string(expr);
-                        let r_str = self.emit_expr_to_string(radix_expr);
-                        // std.fmt.parseInt requires comptime radix, so expand each case
-                        self.write(&format!(
-                            "(switch ({r_str}) {{ 2 => std.fmt.parseInt(i64, {s_str}, 2) catch 0, 8 => std.fmt.parseInt(i64, {s_str}, 8) catch 0, 10 => std.fmt.parseInt(i64, {s_str}, 10) catch 0, 16 => std.fmt.parseInt(i64, {s_str}, 16) catch 0, else => 0 }})"
-                        ));
-                        return true;
+                        self.write(", ");
+                        self.emit_expr(radix_expr);
+                    } else {
+                        self.write(", null");
                     }
-                    self.write("std.fmt.parseInt(i64, ");
-                    self.emit_expr(expr);
-                    self.write(", 10) catch 0");
+                    self.write(")");
                     return true;
                 }
                 false
@@ -4625,23 +4640,62 @@ impl Codegen {
 
             // ── Console methods ─────────────────────────────
             builtins::BuiltinCall::ConsoleLog => {
-                self.write("js_console.log(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
+                if ce.arguments.len() <= 1 {
+                    self.write("js_console.log(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                } else {
+                    self.write("js_console.logMulti(.{ ");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write(" })");
+                }
                 true
             }
 
             builtins::BuiltinCall::ConsoleError => {
-                self.write("js_console.err(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
+                if ce.arguments.len() <= 1 {
+                    self.write("js_console.err(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                } else {
+                    self.write("js_console.errMulti(.{ ");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write(" })");
+                }
                 true
             }
 
             builtins::BuiltinCall::ConsoleWarn => {
-                self.write("js_console.warn(");
-                self.emit_first_arg(&ce.arguments);
-                self.write(")");
+                if ce.arguments.len() <= 1 {
+                    self.write("js_console.warn(");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(")");
+                } else {
+                    self.write("js_console.warnMulti(.{ ");
+                    for (i, arg) in ce.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        if let Some(expr) = arg.as_expression() {
+                            self.emit_expr(expr);
+                        }
+                    }
+                    self.write(" })");
+                }
                 true
             }
 
@@ -4777,13 +4831,21 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::NumberParseInt => {
-                if ce.arguments.len() != 1 {
+                if ce.arguments.is_empty() {
                     self.errors
-                        .push("Number.parseInt() requires exactly 1 argument".to_string());
+                        .push("Number.parseInt() requires at least 1 argument".to_string());
                     return false;
                 }
                 self.write("js_number.parseInt(");
                 self.emit_first_arg(&ce.arguments);
+                if ce.arguments.len() >= 2
+                    && let Some(radix_expr) = ce.arguments[1].as_expression()
+                {
+                    self.write(", ");
+                    self.emit_expr(radix_expr);
+                } else {
+                    self.write(", null");
+                }
                 self.write(")");
                 true
             }
@@ -5985,7 +6047,32 @@ impl Codegen {
             return;
         }
 
-        // Default: += -= *= <<= >>= >>>= &= |= ^=
+        // >>>= unsigned right shift assignment
+        if ae.operator == AssignmentOperator::ShiftRightZeroFill {
+            if self.in_expr_stmt {
+                self.emit_assignment_target(&ae.left);
+                self.write(" = @as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
+                self.emit_assignment_target(&ae.left);
+                self.write(")))) >> @intCast(");
+                self.emit_expr(&ae.right);
+                self.write(" & 31)))");
+            } else {
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.emit_assignment_target(&ae.left);
+                self.write(" = @as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
+                self.emit_assignment_target(&ae.left);
+                self.write(")))) >> @intCast(");
+                self.emit_expr(&ae.right);
+                self.write(" & 31)))");
+                self.write(&format!("; break :{blk} "));
+                self.emit_assignment_target(&ae.left);
+                self.write("; })");
+            }
+            return;
+        }
+
+        // Default: += -= *= <<= >>= &= |= ^=
         {
             if self.in_expr_stmt {
                 self.emit_assignment_target(&ae.left);
@@ -6778,6 +6865,23 @@ impl Codegen {
                                 if name == "Map" || name == "Set" =>
                             {
                                 return Some(ZigType::Bool);
+                            }
+                            // String methods returning Bool
+                            (ZigType::Str, "includes" | "startsWith" | "endsWith") => {
+                                return Some(ZigType::Bool);
+                            }
+                            // String methods returning I64
+                            (ZigType::Str, "indexOf" | "lastIndexOf") => {
+                                return Some(ZigType::I64);
+                            }
+                            // String methods returning Str
+                            (
+                                ZigType::Str,
+                                "trim" | "trimStart" | "trimEnd" | "split" | "padStart" | "padEnd"
+                                | "charAt" | "at" | "toUpperCase" | "toLowerCase" | "slice"
+                                | "substring" | "replace" | "replaceAll" | "concat" | "repeat",
+                            ) => {
+                                return Some(ZigType::Str);
                             }
                             _ => {}
                         }

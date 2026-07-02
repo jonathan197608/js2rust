@@ -493,7 +493,7 @@ function void_expr(a, b) {
 
 function void_comp_to_string() {
     // void 2 === "2" should NOT use std.mem.eql(u8, ...)
-    // void returns JsAny, must use .eq() comparison.
+    // void returns JsAny, must use .strictEq() (=== is strict equality).
     return void 2 === "2";
 }
 "#;
@@ -517,10 +517,11 @@ function void_comp_to_string() {
             "void === string must not use std.mem.eql with blk label: {}",
             zig
         );
-        // Should generate proper JsAny comparison using .eq()
+        // Should generate proper JsAny comparison using .strictEq()
+        // because void returns JsAny and === is strict equality.
         assert!(
-            zig.contains(".eq("),
-            "void === string should use .eq() JsAny comparison: {}",
+            zig.contains(".strictEq("),
+            "void === string should use .strictEq() JsAny comparison: {}",
             zig
         );
     }
