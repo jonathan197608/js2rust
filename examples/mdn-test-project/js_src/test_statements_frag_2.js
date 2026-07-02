@@ -5,6 +5,8 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testStatements_frag_2() {
+        // Auto-generated call for unused function
+        calc(1);
 
         function magic() {
           return function calc(x) {

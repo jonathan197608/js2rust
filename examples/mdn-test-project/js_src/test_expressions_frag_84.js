@@ -6,5 +6,6 @@
 
 export function testExpressions_frag_84() {
 
-        !x
+                const x = 1;
+!x
     }

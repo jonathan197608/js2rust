@@ -6,6 +6,8 @@
 
 export function testBuiltins_frag_128() {
 
-        /b+/; // b is a character, it can be repeated
+                const b = 1;
+        const hello = 1;
+/b+/; // b is a character, it can be repeated
         /(\*hello\*)/; // Escape the asterisks to match them literally
     }

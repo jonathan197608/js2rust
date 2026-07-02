@@ -6,6 +6,7 @@
 
 export function testStatements_frag_29() {
 
-        if (condition);      // Caution, this "if" does nothing!
+                const condition = true;
+if (condition);      // Caution, this "if" does nothing!
           killTheUniverse(); // So this always gets executed!!!
     }

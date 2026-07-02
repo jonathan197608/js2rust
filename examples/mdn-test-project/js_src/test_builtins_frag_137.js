@@ -6,6 +6,8 @@
 
 export function testBuiltins_frag_137() {
 
-        (-a) ** b
+                const a = 1;
+        const b = 1;
+(-a) ** b
         -(a ** b)
     }

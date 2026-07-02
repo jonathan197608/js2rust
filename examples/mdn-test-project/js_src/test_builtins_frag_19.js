@@ -5,6 +5,8 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_19() {
+        // Auto-generated call for unused function
+        areEqualCaseInsensitive("", "");
 
         function areEqualCaseInsensitive(str1, str2) {
           return str1.toUpperCase() === str2.toUpperCase();

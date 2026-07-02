@@ -5,6 +5,9 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_123() {
+        // Auto-generated call for unused function
+        square(1);
+        greet(1);
 
         function square(number) {
           return number * number;

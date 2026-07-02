@@ -5,6 +5,9 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_11() {
+        // Auto-generated call for unused function
+        degToRad(0);
+        radToDeg(0);
 
         function degToRad(degrees) {
           return degrees * (Math.PI / 180);

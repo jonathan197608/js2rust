@@ -5,7 +5,6 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testExpressions_frag_103() {
-
-        2n * 2; // TypeError: Cannot mix BigInt and other types, use explicit conversions
-        2 * 2n; // TypeError: Cannot mix BigInt and other types, use explicit conversions
+        2n * 2;
+        2 * 2n;
     }

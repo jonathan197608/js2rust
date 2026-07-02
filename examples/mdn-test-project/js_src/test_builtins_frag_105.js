@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_105() {
 
-        if (done === true) {
+                const done = false;
+if (done === true) {
           console.log("we are done!");
         }
     }

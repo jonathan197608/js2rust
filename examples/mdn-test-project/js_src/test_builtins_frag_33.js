@@ -6,6 +6,9 @@
 
 export function testBuiltins_frag_33() {
 
-        const r1 = /\p{Lowercase_Letter}/iu;
+                const Lowercase_Letter = 1;
+        const iu = 1;
+        const p = 1;
+const r1 = /\p{Lowercase_Letter}/iu;
         const r2 = /[^\P{Lowercase_Letter}]/iu;
     }

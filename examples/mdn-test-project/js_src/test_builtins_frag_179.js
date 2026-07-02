@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_179() {
 
-        encodeURIComponent(uriComponent)
+                const uriComponent = "";
+encodeURIComponent(uriComponent)
     }

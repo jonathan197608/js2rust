@@ -6,7 +6,9 @@
 
 export function testBuiltins_frag_133() {
 
-        // Only setting the prototype once
+                var __proto__;
+        const a = 1;
+// Only setting the prototype once
         const obj = { __proto__: { a: 1 } };
 
         // These syntaxes all create a property called "__proto__" and can coexist

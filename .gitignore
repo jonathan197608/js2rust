@@ -10,3 +10,10 @@ __pycache__/
 js_allocator.obj
 build*.log
 run_output.log
+
+# mdn-test-project temp files
+examples/mdn-test-project/*.py
+examples/mdn-test-project/js2rust_backup.toml
+examples/mdn-test-project/js2rust_filtered.toml
+examples/failing*.txt
+failing*.txt

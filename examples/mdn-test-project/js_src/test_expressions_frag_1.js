@@ -6,5 +6,6 @@
 
 export function testExpressions_frag_1() {
 
-        void expression
+                const expression = 1;
+void expression
     }

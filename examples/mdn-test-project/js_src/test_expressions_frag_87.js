@@ -6,5 +6,6 @@
 
 export function testExpressions_frag_87() {
 
-        bCondition
+                const bCondition = 1;
+bCondition
     }

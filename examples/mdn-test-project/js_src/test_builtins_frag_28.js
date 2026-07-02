@@ -6,5 +6,7 @@
 
 export function testBuiltins_frag_28() {
 
-        registry.register(theObject, "some value");
+                const registry = {};
+        const theObject = 1;
+registry.register(theObject, "some value");
     }

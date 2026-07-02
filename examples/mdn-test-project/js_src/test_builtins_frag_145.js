@@ -6,6 +6,7 @@
 
 export function testBuiltins_frag_145() {
 
-        JSON.stringify(circularReference);
+                const circularReference = 1;
+JSON.stringify(circularReference);
         // TypeError: cyclic object value
     }

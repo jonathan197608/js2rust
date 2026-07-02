@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_113() {
 
-        parseFloat(string)
+                const string = "";
+parseFloat(string)
     }

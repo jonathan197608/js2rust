@@ -6,5 +6,7 @@
 
 export function testExpressions_frag_42() {
 
-        x | y
+                const x = 1;
+        const y = 1;
+x | y
     }

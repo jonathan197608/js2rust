@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_118() {
 
-        function charge() {
+                const sunny = 1;
+function charge() {
           if (sunny) {
             useSolarCells();
           } else {

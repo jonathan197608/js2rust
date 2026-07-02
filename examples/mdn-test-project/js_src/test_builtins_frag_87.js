@@ -6,7 +6,9 @@
 
 export function testBuiltins_frag_87() {
 
-        // If you want to match NULL followed by a digit, use a character class
+                const u = 1;
+        const x01 = 1;
+// If you want to match NULL followed by a digit, use a character class
         /[\0]0/u;
         // If you want to match a character by its character value, use \x
         /\x01/u;

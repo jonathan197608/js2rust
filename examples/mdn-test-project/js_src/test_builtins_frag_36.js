@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_36() {
 
-        function splitWords(str) {
+                const s = 1;
+function splitWords(str) {
           return str.split(/\s+/);
         }
 

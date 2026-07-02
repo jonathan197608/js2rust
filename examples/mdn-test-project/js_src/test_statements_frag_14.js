@@ -6,5 +6,6 @@
 
 export function testStatements_frag_14() {
 
-        MY_OBJECT.key = "otherValue";
+                const MY_OBJECT = {};
+MY_OBJECT.key = "otherValue";
     }

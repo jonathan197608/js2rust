@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_85() {
 
-        /1{1}/u;
+                const u = 1;
+/1{1}/u;
         /1{1,}/u;
         /1{1,2}/u;
     }

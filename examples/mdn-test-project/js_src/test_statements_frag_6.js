@@ -6,7 +6,9 @@
 
 export function testStatements_frag_6() {
 
-        outerBlock: {
+                const innerBlock = 1;
+        const outerBlock = 1;
+outerBlock: {
           innerBlock: {
             console.log("1");
             break outerBlock; // breaks out of both innerBlock and outerBlock

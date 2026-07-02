@@ -35,6 +35,7 @@ impl Codegen {
             fn_has_throw: false,
             in_return_expr: false,
             in_expr_stmt: false,
+            call_generated_catch: false,
             try_label_counter: 0,
             arrow_counter: 0,
             inside_try_block: None,

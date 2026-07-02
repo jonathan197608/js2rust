@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_107() {
 
-        isFinite(value)
+                const value = 1;
+isFinite(value)
     }

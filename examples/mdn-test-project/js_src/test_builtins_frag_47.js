@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_47() {
 
-        const re = /a{1, 3}/;
+                const a = 1;
+const re = /a{1, 3}/;
         re.test("aa"); // false
         re.test("a{1, 3}"); // true
     }

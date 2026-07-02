@@ -6,5 +6,8 @@
 
 export function testExpressions_frag_57() {
 
-        bCondition1 || bCondition2 && bCondition3
+                const bCondition1 = 1;
+        const bCondition2 = 1;
+        const bCondition3 = 1;
+bCondition1 || bCondition2 && bCondition3
     }

@@ -6,7 +6,9 @@
 
 export function testBuiltins_frag_38() {
 
-        const pattern = /a\nb/;
+                const a = 1;
+        const nb = 1;
+const pattern = /a\nb/;
         const string = `a
         b`;
         console.log(pattern.test(string)); // true

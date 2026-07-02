@@ -6,5 +6,8 @@
 
 export function testBuiltins_frag_30() {
 
-        const regex1 = /ab+c/g;
+                const ab = 1;
+        const c = 1;
+        const g = 1;
+const regex1 = /ab+c/g;
     }

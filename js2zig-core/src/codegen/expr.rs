@@ -2714,7 +2714,11 @@ impl Codegen {
 
     /// Emit Zig code for a built-in object call
     /// Returns true if the call was handled, false otherwise
-    fn emit_builtin_call(&mut self, builtin: &builtins::BuiltinCall, ce: &CallExpression) -> bool {
+    pub(crate) fn emit_builtin_call(
+        &mut self,
+        builtin: &builtins::BuiltinCall,
+        ce: &CallExpression,
+    ) -> bool {
         match builtin {
             // ── Math methods ─────────────────────────────
             builtins::BuiltinCall::MathRandom => {
@@ -2992,12 +2996,9 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayPop => {
-                // arr.pop() → _ = arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
-                // In return context, skip the _ = prefix.
+                // arr.pop() → arr.pop(); (Zig 0.16.0: pop() returns ?T, no popOrNull)
+                // _ = 前缀由 stmt.rs ExpressionStatement 处理
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    if !self.in_return_expr {
-                        self.write("_ = ");
-                    }
                     self.write(&format!("{}.pop()", obj_name));
                     return true;
                 }
@@ -3005,10 +3006,11 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayShift => {
-                // arr.shift() → if (arr.items.len > 0) _ = arr.orderedRemove(0);
+                // arr.shift() → if (arr.items.len > 0) arr.orderedRemove(0);
+                // _ = 前缀由 stmt.rs ExpressionStatement 处理
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "if ({obj}.items.len > 0) _ = {obj}.orderedRemove(0)",
+                        "if ({obj}.items.len > 0) {obj}.orderedRemove(0)",
                         obj = obj_name
                     ));
                     return true;
@@ -5082,29 +5084,66 @@ impl Codegen {
 
             builtins::BuiltinCall::DecodeURIComponent => {
                 // decodeURIComponent(s) → js_uri.decodeURIComponent(alloc, s)
-                // On invalid encoding, fall back to "" (mirrors JS URIError → caught by outer try/catch).
+                // On invalid encoding, throw a URIError (mirrors JS semantics).
+                // If inside a try block, construct a JsError and break to the catch handler.
+                // Otherwise, fall back to catch "" to avoid unhandled errors.
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("decodeURIComponent() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
-                self.emit_first_arg(&ce.arguments);
-                self.write(") catch \"\"");
+                if let Some(ref body_blk) = self.inside_try_block {
+                    // Inside try: emit the COMPLETE statement including `_ = ` and `;\n`.
+                    // The outer emit_fn_stmt will skip `_ = ` and `;\n` because
+                    // call_generated_catch=true is set. This avoids the invalid Zig 0.16
+                    // pattern `_ = <err union> catch |_| { }` (discard + catch is illegal).
+                    let body_blk = body_blk.clone();
+                    self.call_generated_catch = true;
+                    self.write("_ = js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(") catch |_| { break :");
+                    self.write(&body_blk);
+                    self.write(" error.JsThrow; }\n");
+                    return true;
+                } else {
+                    // Outside try: swallow error to avoid unhandled error
+                    self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(") catch \"\"");
+                }
                 true
             }
 
             builtins::BuiltinCall::DecodeURI => {
                 // decodeURI(encodedURI) → js_uri.decodeURI(alloc, encodedURI)
-                // On invalid encoding, fall back to "" (mirrors JS URIError → caught by outer try/catch).
+                // On invalid encoding, throw a URIError (mirrors JS semantics).
+                // If inside a try block, construct a JsError and re-throw.
+                // Otherwise, fall back to catch "" to avoid unhandled errors.
                 if ce.arguments.len() != 1 {
                     self.errors
                         .push("decodeURI() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("js_uri.decodeURI(js_allocator.getAllocator(), ");
-                self.emit_first_arg(&ce.arguments);
-                self.write(") catch \"\"");
+                if let Some(ref body_blk) = self.inside_try_block {
+                    // Inside try: emit the COMPLETE statement (indentation + _ = + call + catch + semicolon).
+                    // The outer emit_fn_stmt will NOT emit _ = or ; because call_generated_catch=true.
+                    // We emit the full statement here to avoid the invalid `_ = <err union> catch |_| { }`
+                    // pattern in Zig 0.16 (discard and catch are mutually exclusive).
+                    let body_blk = body_blk.clone();
+                    self.call_generated_catch = true;
+                    self.write_indent();
+                    self.write("_ = js_uri.decodeURI(js_allocator.getAllocator(), ");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(") catch |_| { break :");
+                    self.write(&body_blk);
+                    self.write(" error.JsThrow; }\n");
+                    return true;
+                } else {
+                    // Outside try: swallow error to avoid unhandled error
+                    self.write("js_uri.decodeURI(js_allocator.getAllocator(), ");
+                    self.emit_first_arg(&ce.arguments);
+                    self.write(") catch \"\"");
+                }
                 true
             }
 

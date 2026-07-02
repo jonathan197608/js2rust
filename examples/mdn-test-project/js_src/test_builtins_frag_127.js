@@ -6,6 +6,9 @@
 
 export function testBuiltins_frag_127() {
 
-        // Matches two characters that are not an emoji flag sequence
+                const RGI_Emoji_Flag_Sequence = 1;
+        const p = 1;
+        const v = 1;
+// Matches two characters that are not an emoji flag sequence
         /(?!\p{RGI_Emoji_Flag_Sequence})../v;
     }

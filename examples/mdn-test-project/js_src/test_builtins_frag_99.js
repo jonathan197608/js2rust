@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_99() {
 
-        start: {
+                const start = 1;
+start: {
           console.log("Hello, world!");
           if (Math.random() > 0.5) {
             break start;

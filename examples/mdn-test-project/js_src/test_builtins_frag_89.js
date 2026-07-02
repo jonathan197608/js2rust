@@ -6,7 +6,11 @@
 
 export function testBuiltins_frag_89() {
 
-        /\p{Script=Latin}/u; // "Script=Latin" is a valid Unicode property
+                const Latin = 1;
+        var Script;
+        const p = 1;
+        const u = 1;
+/\p{Script=Latin}/u; // "Script=Latin" is a valid Unicode property
         /\p{Letter}/u; // "Letter" is valid value for General_Category
         /\p{RGI_Emoji_Flag_Sequence}/v; // Property of strings can only be used in "v" mode
     }

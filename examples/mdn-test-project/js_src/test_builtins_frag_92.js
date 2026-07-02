@@ -6,7 +6,11 @@
 
 export function testBuiltins_frag_92() {
 
-        /foo/g;
+                const foo = 1;
+        const g = 1;
+        const gims = 1;
+        const uy = 1;
+/foo/g;
         /foo/gims;
         /foo/uy;
     }

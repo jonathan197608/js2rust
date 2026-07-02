@@ -5,6 +5,9 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_135() {
+        // Auto-generated call for unused function
+        f(0);
+        g(0);
 
         function f(arg) {
           arg = "foo";

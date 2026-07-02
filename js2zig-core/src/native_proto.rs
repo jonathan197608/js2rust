@@ -391,6 +391,10 @@ pub struct Codegen {
     /// Whether we are currently emitting the top-level expression of an ExpressionStatement.
     /// When true, builtins that return non-void values should discard with `_ = `.
     pub in_expr_stmt: bool,
+    /// Whether the current call expression generated a `catch |_| { ... }` block.
+    /// Used to suppress the `_ = ` discard prefix in emit_fn_stmt when a catch
+    /// block is already present (Zig 0.16 rejects `_ = <err union> catch |_| { }`).
+    pub call_generated_catch: bool,
     /// Counter for generating unique try-block labels (for nested try-catch).
     pub try_label_counter: u32,
     /// Counter for generating unique arrow function names.

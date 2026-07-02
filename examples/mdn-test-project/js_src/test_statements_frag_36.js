@@ -6,6 +6,7 @@
 
 export function testStatements_frag_36() {
 
-        foo; // unqualified identifier
+                const foo = {};
+foo; // unqualified identifier
         foo.bar; // bar is a qualified identifier
     }

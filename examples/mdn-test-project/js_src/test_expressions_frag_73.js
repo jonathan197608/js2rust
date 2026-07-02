@@ -6,5 +6,6 @@
 
 export function testExpressions_frag_73() {
 
-        bar -= "foo"; // NaN
+                const bar = 1;
+bar -= "foo"; // NaN
     }

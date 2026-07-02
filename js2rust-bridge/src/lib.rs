@@ -72,7 +72,7 @@ pub fn build(force_rebuild: bool) {
         out_dir: cache_dir.clone(),
         host_config,
         force_rebuild,
-        run_zig_build: true,
+        run_zig_build: true, // compile Zig code
     };
 
     match js2zig_core::transpile_project(&project_config) {

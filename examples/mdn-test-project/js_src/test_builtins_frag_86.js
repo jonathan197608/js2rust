@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_86() {
 
-        /[\(\)\{\}]/v;
+                const v = 1;
+/[\(\)\{\}]/v;
     }

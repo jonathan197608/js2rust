@@ -6,5 +6,6 @@
 
 export function testStatements_frag_38() {
 
-        console.log(globalThis.Math === Math); // true
+                const globalThis = {};
+console.log(globalThis.Math === Math); // true
     }

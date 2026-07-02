@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_183() {
 
-        escape(str)
+                const str = "";
+escape(str)
     }

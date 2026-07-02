@@ -6,6 +6,7 @@
 
 export function testBuiltins_frag_221() {
 
-        console.log(JSON.stringify({ a: 1n }));
+                const a = 1;
+console.log(JSON.stringify({ a: 1n }));
         // {"a":{"$bigint":"1"}}
     }

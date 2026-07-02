@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_175() {
 
-        encodeURI(uri)
+                const uri = "";
+encodeURI(uri)
     }

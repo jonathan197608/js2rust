@@ -6,6 +6,7 @@
 
 export function testBuiltins_frag_90() {
 
-        /[1-9]/; // Swap the range
+                const _ = 1;
+/[1-9]/; // Swap the range
         /[_\-=]/; // Escape the hyphen so it matches the literal character
     }

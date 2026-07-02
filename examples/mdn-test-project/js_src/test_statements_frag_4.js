@@ -5,6 +5,8 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testStatements_frag_4() {
+        // Auto-generated call for unused function
+        testBreak(1);
 
         function testBreak(x) {
           let i = 0;

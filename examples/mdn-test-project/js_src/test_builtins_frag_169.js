@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_169() {
 
-        decodeURI(encodedURI)
+                const encodedURI = "";
+decodeURI(encodedURI)
     }

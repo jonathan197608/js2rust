@@ -6,5 +6,6 @@
 
 export function testStatements_frag_31() {
 
-        myModule.doAllTheAmazingThings(); // myModule.doAllTheAmazingThings is imported by the next line
+                const myModule = {};
+myModule.doAllTheAmazingThings(); // myModule.doAllTheAmazingThings is imported by the next line
     }

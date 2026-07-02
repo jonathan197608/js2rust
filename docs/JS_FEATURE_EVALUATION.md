@@ -1,7 +1,7 @@
 ﻿# JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试
+> **测试覆盖**: 363 个 Rust 测试 (363 pass + 0 ignore) + 27 个 Zig 测试
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | ~151 |
 | **内置对象方法总数** | ~321 |
-| **测试覆盖** | 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试 |
+| **测试覆盖** | 363 个 Rust 测试 (363 pass + 0 ignore) + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — ~102 特性
@@ -1106,12 +1106,12 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 361 个测试 (361 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 363 个测试 (363 pass + 0 ignore)
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `native_proto::tests` | 331 | 所有核心语法、内置对象、闭包、错误处理 |
-| `native_proto::jsdoc` | 13 | JSDoc 解析与类型标注 |
+| `native_proto::tests` | 334 | 所有核心语法、内置对象、闭包、错误处理 |
+| `jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
 | `sourcemap` | 4 | Source Map 生成 |
 | `testgen` | 3 | Zig 测试代码生成 |
@@ -1119,34 +1119,32 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-361 个 Rust 测试全部通过（361 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+363 个 Rust 测试全部通过（363 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
-159 个 fragment 与 Node.js expected 输出对比：
+204 个 fragment 与 Node.js expected 输出对比：
 
 | 结果 | 数量 | 说明 |
 |------|------|------|
-| MATCH | 155 | 完全匹配 |
+| MATCH | 200 | 完全匹配 |
 | MISMATCH | 4 | 已知差异 |
+
+**匹配率: 200/204 = 98.0%**
 
 **4 个已知 MISMATCH**:
 
 | Fragment | 差异原因 | 状态 |
 |----------|----------|------|
-| `frag_11` | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | 已知限制 |
-| `frag_112` | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | 已知限制 |
-| `frag_157` | `parseInt` 对无效输入返回 `NaN` vs `0` | 已知限制 |
-| `frag_202` | `decodeURIComponent` 错误处理方式不同 | 已知限制 |
+| `test_statements_frag_11` | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | 已知限制 |
+| `test_expressions_frag_112` | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | 已知限制 |
+| `test_builtins_frag_157` | `parseInt` 对无效输入返回 `NaN` vs `0` | 已知限制 |
+| `test_builtins_frag_202` | `decodeURIComponent` 错误处理方式不同 | 已知限制 |
 
-**+6 新增 fragment (2026-07-01)**:
-- `test_builtins_frag_18`, `test_builtins_frag_167`
-- `test_expressions_frag_92`, `test_expressions_frag_136`, `test_expressions_frag_143`, `test_expressions_frag_150`
-- 全部在 Node.js vs Zig 对比中 MATCH，无新增 MISMATCH
-
-**P2-A BigInt 混合类型残留已修复 (2026-07-01)**:
-- 6 个算术混合 TypeError（+,-,*,/,%,** BigInt+Number）: `return;` 替代 `@panic`
-- 1 个 `>>>` BigInt TypeError: `return;` 替代 `@panic`
-- 1 个 String+BigInt 加法 (`frag_124`): `JsBigInt.toString()` 字符串拼接
-- 1 个 String/BigInt 比较 (`frag_137`): 字符串 `parseFloat` + BigInt `floatFromInt` 数值比较
+**emit_if 三重 bug 修复 + mdn-test-project 扩容 (2026-07-03)**:
+- 修复 emit_if 双花括号、else-if 缩进损坏、额外闭合 `}` 三个 codegen bug
+- emit_stmt_or_block 重构：不再对 BlockStatement 生成重复花括号
+- call_generated_catch 标志：解决 Zig 0.16 中 `_ = <err union> catch |_| { }` 非法语法
+- decodeURI/decodeURIComponent try-catch 上下文感知
+- mdn-test-project 从 159 fragment 扩容到 204 fragment，匹配率 97.4% → 98.0%
 

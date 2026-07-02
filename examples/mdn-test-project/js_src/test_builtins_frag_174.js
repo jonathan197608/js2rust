@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_174() {
 
-        function decodeQueryParam(p) {
+                const g = 1;
+function decodeQueryParam(p) {
           return decodeURIComponent(p.replace(/\+/g, " "));
         }
 

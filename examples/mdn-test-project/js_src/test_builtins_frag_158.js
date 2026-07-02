@@ -6,6 +6,8 @@
 
 export function testBuiltins_frag_158() {
 
-        parseInt(string)
+                const radix = 1;
+        const string = "";
+parseInt(string)
         parseInt(string, radix)
     }

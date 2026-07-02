@@ -6,5 +6,6 @@
 
 export function testStatements_frag_16() {
 
-        MY_ARRAY.push("A"); // ["A"]
+                const MY_ARRAY = {};
+MY_ARRAY.push("A"); // ["A"]
     }

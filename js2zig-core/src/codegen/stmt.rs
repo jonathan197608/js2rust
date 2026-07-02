@@ -1096,48 +1096,45 @@ impl Codegen {
                 self.seen_return = true;
             }
             Statement::ExpressionStatement(es) => {
-                // Special handling for forEach/some/every: they generate 'for' loops (statements), not expressions.
-                // If we add ';' after a 'for' loop, Zig will report a syntax error.
+                // By default, ALL expression statements need `_ = ` prefix to discard their return
+                // value. Zig requires this for non-void expressions (string/float/bool literals,
+                // call expressions, subscript, etc.).
+                //
+                // Special cases (generate complete code including `;` or no `;`):
+                //   - ArrayForEach/ArrayFill: full for-loop, no `_ = ` and no `;` needed.
+                //   - ArraySome/ArrayEvery: block expression + `;`, need `_ = ` but no extra `;`.
+                //   - ArrayPop/ArrayShift: `arr.pop();`, need `_ = ` and `;` (already complete).
+                //   - AssignmentExpression/UpdateExpression: already valid Zig statement (void return).
                 let mut need_semi = true;
-                // Whether to emit `_ = ` before the expression.
-                // Skip for: assignments, updates, for-loop builtins, void.
-                let mut add_discard = true;
-                if let Expression::CallExpression(ce) = &es.expression
+                let mut needs_discard_prefix = true;
+                if matches!(
+                    &es.expression,
+                    Expression::AssignmentExpression(_) | Expression::UpdateExpression(_)
+                ) {
+                    // Assignment (`a = b`) and update (`i++`) are already valid Zig statements
+                    // (they return void). `_ = a = b;` is invalid Zig syntax.
+                    needs_discard_prefix = false;
+                } else if let Expression::CallExpression(ce) = &es.expression
                     && let Some(builtin) = builtins::detect_builtin_call(ce)
                 {
                     match builtin {
-                        builtins::BuiltinCall::ArrayForEach
-                        | builtins::BuiltinCall::ArraySome
-                        | builtins::BuiltinCall::ArrayEvery
-                        | builtins::BuiltinCall::ArrayFill => {
-                            // These generate 'for' loops (statements), no ';' needed
+                        // These generate complete for-loop code (void) — no `_ = ` and no `;`.
+                        builtins::BuiltinCall::ArrayForEach | builtins::BuiltinCall::ArrayFill => {
+                            needs_discard_prefix = false;
                             need_semi = false;
-                            add_discard = false;
                         }
-                        // ArrayPop/ArrayShift internally emit their own `_ = ` prefix
-                        // (to discard the return value). Adding another from stmt.rs
-                        // would produce invalid `_ = _ = arr.pop();`.
-                        builtins::BuiltinCall::ArrayPop | builtins::BuiltinCall::ArrayShift => {
-                            add_discard = false;
+                        // ArraySome/ArrayEvery: block expression returns bool; `_ = ` needed, no `;`.
+                        builtins::BuiltinCall::ArraySome | builtins::BuiltinCall::ArrayEvery => {
+                            // needs_discard_prefix = true (default), need_semi = false
                         }
+                        // ArrayPop/ArrayShift: full expression + `;`; need `_ = ` (default).
                         _ => {}
                     }
                 }
-                // Assignment expressions (a = b, i += 1, _ = view) are already valid
-                // Zig statements — `_ =` prefix would produce invalid `_ = a = b;` or
-                // double-discard `_ = _ = view;`.
-                if matches!(&es.expression, Expression::AssignmentExpression(_)) {
-                    add_discard = false;
-                }
-                // Update expressions (i++/i--) handle statement context via in_expr_stmt
-                // in emit_expr — no extra `_ =` needed.
-                if matches!(&es.expression, Expression::UpdateExpression(_)) {
-                    add_discard = false;
-                }
+                // Non-builtin calls: already handled by default (needs_discard_prefix = true)
                 self.write_indent();
                 self.in_expr_stmt = true;
-                // Zig 0.16.0: expression statements must discard non-void values.
-                if add_discard {
+                if needs_discard_prefix {
                     self.write("_ = ");
                 }
                 self.emit_expr(&es.expression);
@@ -1650,7 +1647,16 @@ impl Codegen {
     }
 
     pub(crate) fn emit_if(&mut self, is: &IfStatement) {
-        self.write_indent();
+        self.emit_if_impl(is, false);
+    }
+
+    /// Inner implementation with `skip_indent` flag.
+    /// When `skip_indent` is true, the leading `write_indent()` is omitted —
+    /// used for else-if chains where `} else ` was already written on the line.
+    fn emit_if_impl(&mut self, is: &IfStatement, skip_indent: bool) {
+        if !skip_indent {
+            self.write_indent();
+        }
         self.write("if (");
         self.emit_condition(&is.test);
         self.write(") {\n");
@@ -1663,9 +1669,13 @@ impl Codegen {
             let inner: &Statement = alt;
             match inner {
                 Statement::IfStatement(else_if) => {
+                    // Write `} else if (...)` on one line. The `}` closes the
+                    // consequent block at the current indent level.
                     self.write_indent();
                     self.write("} else ");
-                    self.emit_if(else_if);
+                    // Recursive call skips indent since we're mid-line after `} else `.
+                    // The recursive call handles ALL closing braces for the chain.
+                    self.emit_if_impl(else_if, true);
                     return;
                 }
                 other => {
@@ -1673,17 +1683,27 @@ impl Codegen {
                     self.indent += 1;
                     self.emit_stmt_or_block(other);
                     self.indent -= 1;
+                    self.writeln("}");
+                    return;
                 }
             }
         }
         self.writeln("}");
     }
 
+    /// Emit a statement that forms the body of a control-flow construct
+    /// (if/while/for/for-of/for-in/switch). The caller has already written
+    /// the opening `{` and will write the closing `}`.
+    /// For BlockStatement, emits the body statements directly (with shadow scope)
+    /// WITHOUT writing extra braces — avoiding double `{}`.
     fn emit_stmt_or_block(&mut self, stmt: &Statement) {
         match stmt {
             Statement::BlockStatement(bs) => {
-                // Use emit_block to properly push/pop shadow scopes for the block.
-                self.emit_block(bs);
+                self.push_shadow_scope();
+                for s in &bs.body {
+                    self.emit_fn_stmt(s);
+                }
+                self.pop_shadow_scope();
             }
             _ => self.emit_fn_stmt(stmt),
         }

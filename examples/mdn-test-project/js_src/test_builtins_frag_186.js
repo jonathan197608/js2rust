@@ -6,6 +6,7 @@
 
 export function testBuiltins_frag_186() {
 
-        const good = Boolean(expression);
+                const expression = 1;
+const good = Boolean(expression);
         const good2 = !!expression;
     }

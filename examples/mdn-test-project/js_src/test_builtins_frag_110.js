@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_110() {
 
-        isNaN(value)
+                const value = 1;
+isNaN(value)
     }

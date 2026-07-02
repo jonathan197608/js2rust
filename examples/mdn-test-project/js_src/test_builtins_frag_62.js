@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_62() {
 
-        const invalid = new Date("nothing");
+                const date = 1;
+const invalid = new Date("nothing");
         invalid.toISOString(); // RangeError: invalid date
         invalid.toJSON(); // RangeError: invalid date
         JSON.stringify({ date: invalid }); // RangeError: invalid date

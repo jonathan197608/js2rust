@@ -6,7 +6,9 @@
 
 export function testBuiltins_frag_94() {
 
-        /\u0065/u; // Lowercase "e"
+                const u = 1;
+        const u0065 = 1;
+/\u0065/u; // Lowercase "e"
         /\u{1f600}/u; // Grinning face emoji
         /\cA/u; // U+0001 (Start of Heading)
     }

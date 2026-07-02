@@ -6,5 +6,6 @@
 
 export function testStatements_frag_30() {
 
-        myModule.doAllTheAmazingThings();
+                const myModule = {};
+myModule.doAllTheAmazingThings();
     }

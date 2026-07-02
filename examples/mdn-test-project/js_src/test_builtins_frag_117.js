@@ -6,7 +6,9 @@
 
 export function testBuiltins_frag_117() {
 
-        const list = [1, 2];
+                const bar = 1;
+        const foo = 1;
+const list = [1, 2];
 
         const instruments = ["Ukulele", "Guitar", "Piano"];
 

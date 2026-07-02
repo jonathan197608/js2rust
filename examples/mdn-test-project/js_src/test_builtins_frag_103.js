@@ -6,7 +6,8 @@
 
 export function testBuiltins_frag_103() {
 
-        if (condition) {
+                const condition = true;
+if (condition) {
           // do something if the condition is true
         }
     }

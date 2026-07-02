@@ -6,5 +6,6 @@
 
 export function testBuiltins_frag_22() {
 
-        console.log(eval(s2.valueOf())); // returns the number 4
+                const s2 = {};
+console.log(eval(s2.valueOf())); // returns the number 4
     }

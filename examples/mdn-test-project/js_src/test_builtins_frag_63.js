@@ -6,6 +6,7 @@
 
 export function testBuiltins_frag_63() {
 
-        invalid.toString(); // "Invalid Date"
+                const invalid = {};
+invalid.toString(); // "Invalid Date"
         invalid.getDate(); // NaN
     }

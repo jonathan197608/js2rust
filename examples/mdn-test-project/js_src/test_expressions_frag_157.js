@@ -6,7 +6,9 @@
 
 export function testExpressions_frag_157() {
 
-        x != y;
+                const x = 1;
+        const y = 1;
+x != y;
 
         !(x == y);
     }

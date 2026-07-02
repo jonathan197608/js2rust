@@ -6,6 +6,11 @@
 
 export function testBuiltins_frag_88() {
 
-        // There's no need to escape the space
+                const f = 1;
+        const n = 1;
+        const t = 1;
+        const u = 1;
+        const v = 1;
+// There's no need to escape the space
         /[\f\v\n\t ]/u;
     }
