@@ -6,6 +6,7 @@ pub mod parser;
 pub mod project;
 pub mod sourcemap;
 pub mod testgen;
+pub mod types;
 
 /// Prototype: native-type system (anytype + @TypeOf).
 /// Work in progress, not integrated into pipeline yet.
@@ -14,8 +15,8 @@ pub mod native_proto;
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
-// ── native_proto submodules (flattened from native_proto/ directory) ──
-// Declared here so native_proto.rs can re-export them.
+// ── Submodules ──
+// Declared at crate level for direct access (e.g. crate::codegen, crate::infer).
 pub(crate) mod codegen;
 pub(crate) mod infer;
 pub(crate) mod jsdoc;

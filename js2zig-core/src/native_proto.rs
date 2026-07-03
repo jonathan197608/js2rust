@@ -2,239 +2,16 @@
 //
 // Native-type system codegen module.
 // Codegen impl methods are in codegen/; type inference in infer/.
-use std::collections::{HashMap, HashSet};
 
-// Strict static type system:
-// - All types must be known at compile time.
-// - No dynamic types (JsAny, Map, etc.).
-// - ComputedMemberExpression (obj[key]) is a compile error.
-// - Array elements must all have the same type.
-// - push() must push the same type as the array element type.
-
-/// C ABI export metadata for a single function.
-/// Used by pipeline.rs to generate C ABI wrappers.
-#[derive(Debug, Clone)]
-pub struct NativeCabiExport {
-    pub name: String,
-    /// (param_name, param_type)
-    pub params: Vec<(String, ZigType)>,
-    pub ret_type: ZigType,
-    /// Whether this is an async export (impl takes io: Io as first param).
-    pub is_async: bool,
-    /// Whether this function can throw (contains throw/try-catch).
-    /// When true, C ABI wrappers generate error propagation (StrRet sign-bit or _err out-param).
-    pub can_throw: bool,
-    /// For async functions returning a struct: the struct name (e.g., "FetchUserResult").
-    /// Set when `ret_type` is `ZigType::NamedStruct(name)`.
-    pub ret_struct_name: Option<String>,
-    /// For async functions returning a struct: the struct fields as (name, zig_type) pairs.
-    /// Used by js2rust-bridge-macro to generate the #[repr(C)] struct.
-    pub ret_struct_fields: Option<Vec<(String, String)>>,
-}
-
-/// Diagnostic severity level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiagnosticKind {
-    Error,
-    Warning,
-}
-
-/// A single diagnostic message (compile error/warning).
-#[derive(Debug, Clone)]
-pub struct Diagnostic {
-    pub kind: DiagnosticKind,
-    /// (line, col) in JS source — None for non-location errors.
-    pub span: Option<(usize, usize)>,
-    pub message: String,
-}
-
-/// Result of transpiling a JS file to Zig.
-/// Contains the generated Zig source AND metadata needed by the pipeline
-/// (exported functions, diagnostics, etc.).
-#[derive(Debug)]
-pub struct TranspileResult {
-    /// Generated Zig source code.
-    pub zig_code: String,
-    /// Compile errors (type inference failures, etc.).
-    pub errors: Vec<String>,
-    /// Non-fatal warnings (try-catch limitations, etc.) — do NOT block file generation.
-    pub warnings: Vec<String>,
-    /// Exported functions: (name, param_types, return_type).
-    pub exports: Vec<ExportedFunction>,
-    /// Inferred variable types (for cross-file type propagation, future use).
-    pub var_types: std::collections::HashMap<String, ZigType>,
-    /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).
-    /// Uses `codegen::CabiExport` for compatibility with the pipeline.
-    pub cabi_exports: Vec<NativeCabiExport>,
-}
-
-/// An exported function from a JS file.
-#[derive(Debug, Clone)]
-pub struct ExportedFunction {
-    pub name: String,
-    pub params: Vec<ZigType>,
-    pub return_type: ZigType,
-    /// Whether this function contains throw/try-catch statements.
-    pub can_throw: bool,
-}
-
-/// Zig type representation for type inference.
-/// Only static types are supported; unknown types are compile errors.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ZigType {
-    /// No return value
-    Void,
-    /// i64
-    I64,
-    /// f64
-    F64,
-    /// bool
-    Bool,
-    /// []const u8
-    Str,
-    /// std.ArrayList(T) — T must be a static type
-    ArrayList(Box<ZigType>),
-    /// Anonymous struct: .{ .field1 = T1, .field2 = T2 }
-    Struct(Vec<(String, ZigType)>),
-    /// Named struct referenced by name. Covers four sources:
-    /// - Host-defined structs (via `HostStructDef`, e.g. `"UserInfo"`)
-    /// - Built-in runtime types (`"Map"`, `"Set"`, `"Date"`)
-    /// - User-defined JS classes (e.g. `"MyClass"`)
-    /// - JSDoc `@typedef` types (e.g. `"User"`, `"Point"`)
-    NamedStruct(String),
-    /// anytype (for non-export function parameters)
-    Anytype,
-    /// Dynamic JSON value (JsAny in generated code).
-    /// Used for JSON.parse() return type and dynamic property access.
-    /// Allows runtime type coercion via asI64(), asF64(), asBool(), asString().
-    JsAny,
-    /// Symbol value (JsSymbol in generated code).
-    /// Represents a unique identifier with optional description.
-    JsSymbol,
-    /// Arbitrary-precision integer (JsBigInt in generated code).
-    /// Wraps `std.math.big.int.Managed`.
-    BigInt,
-    /// Return type depends on anytype parameters (non-export functions only).
-    /// Codegen emits `@TypeOf(return_expr)` instead of a concrete Zig type.
-    /// This allows Zig to infer the return type at compile time from the
-    /// actual concrete types of anytype parameters.
-    AnytypeReturn,
-}
-
-impl ZigType {
-    /// Get the Zig type string for code generation.
-    /// NOTE: This method does NOT add "host." prefix for NamedStruct.
-    /// If the type refers to a host-defined struct, the caller must add "host."
-    /// prefix manually (e.g., in codegen when generating non-host module code).
-    pub fn to_zig_type(&self) -> String {
-        match self {
-            ZigType::Void => "void".to_string(),
-            ZigType::I64 => "i64".to_string(),
-            ZigType::F64 => "f64".to_string(),
-            ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "[]const u8".to_string(),
-            ZigType::ArrayList(inner) => {
-                format!("std.ArrayList({})", inner.to_zig_type())
-            }
-            ZigType::Struct(fields) => {
-                // Generate anonymous struct type.
-                let mut s = ".{ ".to_string();
-                for (i, (name, ty)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-                    s.push_str(&format!(".{} = {}", name, ty.to_zig_type()));
-                }
-                s.push_str(" }");
-                s
-            }
-            ZigType::NamedStruct(name) => {
-                // Do NOT add "host." prefix here.
-                // The caller is responsible for adding it if needed.
-                name.clone()
-            }
-            ZigType::Anytype => "anytype".to_string(),
-            ZigType::JsAny => "JsAny".to_string(),
-            ZigType::JsSymbol => "JsSymbol".to_string(),
-            ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
-            ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Codegen replaces with @TypeOf
-        }
-    }
-    /// Get the Zig type string for C ABI wrapper generation.
-    pub fn to_cabi_str(&self) -> String {
-        match self {
-            ZigType::Void => "void".to_string(),
-            ZigType::I64 => "i64".to_string(),
-            ZigType::F64 => "f64".to_string(),
-            ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "StrRet".to_string(), // C ABI: extern struct { ptr, len }
-            ZigType::ArrayList(_) => "void".to_string(), // ArrayLists cannot be directly exported via C ABI
-            ZigType::Struct(_) => "struct".to_string(), // Anonymous struct - not directly supported in C ABI
-            ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
-            ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
-            ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
-            ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
-            ZigType::BigInt => "i64".to_string(),        // C ABI: degrade to i64
-            ZigType::AnytypeReturn => "i64".to_string(), // C ABI: shouldn't be used (exports can't be AnytypeReturn)
-        }
-    }
-
-    /// Map ZigType to JS typeof string.
-    /// Returns None for dynamic types (JsAny, Anytype) that need runtime dispatch.
-    pub fn to_js_typeof(&self) -> Option<&'static str> {
-        match self {
-            ZigType::I64 | ZigType::F64 => Some("\"number\""),
-            ZigType::Bool => Some("\"boolean\""),
-            ZigType::Str => Some("\"string\""),
-            ZigType::JsSymbol => Some("\"symbol\""),
-            ZigType::Void => Some("\"undefined\""),
-            ZigType::Struct(_) | ZigType::NamedStruct(_) | ZigType::ArrayList(_) => {
-                Some("\"object\"")
-            }
-            ZigType::BigInt => Some("\"bigint\""),
-            // Dynamic types — need runtime typeof helper
-            ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn => None,
-        }
-    }
-}
-
-/// Convert HostType to ZigType.
-impl From<crate::HostType> for ZigType {
-    fn from(t: crate::HostType) -> Self {
-        match t {
-            crate::HostType::Void => ZigType::Void,
-            crate::HostType::Bool => ZigType::Bool,
-            crate::HostType::I32 => ZigType::I64, // i32 widens to i64
-            crate::HostType::I64 => ZigType::I64,
-            crate::HostType::F64 => ZigType::F64,
-            crate::HostType::Str => ZigType::Str,
-        }
-    }
-}
-
-/// JSDoc 解析结果，传递给 Codegen
-#[derive(Debug, Clone)]
-pub struct JSDocData {
-    /// @typedef 定义：类型名 → TypedefDef
-    pub typedefs: std::collections::HashMap<String, jsdoc::TypedefDef>,
-    /// @type 注解：变量名 → 类型名
-    pub type_annotations: std::collections::HashMap<String, String>,
-    /// @returns 注解：函数名 → 类型名
-    pub return_types: std::collections::HashMap<String, String>,
-    /// @param 注解：函数名 → [(参数名, 类型名)]
-    pub param_types: std::collections::HashMap<String, Vec<(String, String)>>,
-}
+// Re-export types from the dedicated types module.
+pub use crate::types::{
+    ClosureManager, Diagnostic, DiagnosticKind, ExportedFunction, JSDocData, NameGen,
+    NativeCabiExport, TranspileResult, ZigType,
+};
 
 use oxc_ast::ast::Program;
 
-// Submodules declared in lib.rs (flattened from native_proto/ directory).
-// Re-exported here to preserve `crate::native_proto::<module>::*` paths.
-pub(crate) use crate::codegen;
-pub(crate) use crate::infer;
-pub(crate) use crate::jsdoc;
-pub(crate) use crate::native_builtins as builtins;
-
-pub use infer::TypeCheckResult;
+pub use crate::infer::TypeCheckResult;
 
 /// Transpile JS source text to Zig (native type system).
 ///
@@ -270,7 +47,7 @@ fn transpile_js_inner(
 ) -> Result<TranspileResult, String> {
     // JSDoc extraction (still needs raw source text)
     let (typedefs, type_annotations, return_types, param_types) =
-        jsdoc::extract_all_jsdoc(js_source);
+        crate::jsdoc::extract_all_jsdoc(js_source);
     let jsdoc_data = JSDocData {
         typedefs,
         type_annotations,
@@ -279,7 +56,7 @@ fn transpile_js_inner(
     };
 
     // ── Pass 1: Type inference ──
-    let mut inferrer = infer::TypeInferrer::new();
+    let mut inferrer = crate::infer::TypeInferrer::new();
     inferrer.set_jsdoc_data(jsdoc_data.clone());
     if let Some(hf) = host_fns {
         inferrer.set_host_fn_types(hf);
@@ -334,7 +111,7 @@ fn transpile_js_inner(
                     .unwrap_or(false);
                 // Extract struct name if return type is NamedStruct
                 let ret_struct_name =
-                    if let crate::native_proto::ZigType::NamedStruct(ref s) = ef.return_type {
+                    if let crate::types::ZigType::NamedStruct(ref s) = ef.return_type {
                         Some(s.clone())
                     } else {
                         None
@@ -376,7 +153,8 @@ pub struct Codegen {
     /// Exported functions metadata (for pipeline C ABI wrapper generation).
     pub exported_fns: Vec<ExportedFunction>,
     /// Task counter for generating unique task variable names in async/await code.
-    pub task_counter: u32,
+    /// (Moved into NameGen — keep this doc for context.)
+    pub names: crate::types::NameGen,
     /// Exported function names (from pipeline).
     pub exported_functions: Option<std::collections::HashSet<String>>,
     /// Whether a return/throw statement was seen in the current function body.
@@ -395,34 +173,14 @@ pub struct Codegen {
     /// Used to suppress the `_ = ` discard prefix in emit_fn_stmt when a catch
     /// block is already present (Zig 0.16 rejects `_ = <err union> catch |_| { }`).
     pub call_generated_catch: bool,
-    /// Counter for generating unique try-block labels (for nested try-catch).
-    pub try_label_counter: u32,
-    /// Counter for generating unique arrow function names.
-    pub arrow_counter: u32,
     /// When inside a try block, the label name for `break :label`.
     /// throw statements inside the try block emit `break :label error.JsThrow`
     /// instead of `return error.JsThrow`.
     pub inside_try_block: Option<String>,
     /// Current function name being generated (for function-scoped mutated_vars).
     pub current_fn: Option<String>,
-    /// Captured variables for the current arrow function: (name, type, is_mutable)
-    pub current_captured: Vec<(String, ZigType, bool)>,
-    /// Map: closure variable name → list of (captured_name, type, is_mutable)
-    /// Used to generate struct instance at assignment and .call() at call site.
-    pub closure_vars: HashMap<String, Vec<(String, ZigType, bool)>>,
-    /// Set of variable names that are closure instances (assigned from arrow functions with captures).
-    /// Used to rewrite `fn(args)` to `fn.call(args)` in emit_call.
-    pub closure_instances: HashSet<String>,
-    /// Closure struct definitions to be prepended to output (module-level).
-    pub closure_defs: Vec<String>,
-    /// Counter for generating unique temp variable names in optional chaining (?.)
-    pub oc_counter: u32,
-    /// Counter for generating unique temp variable names in destructuring patterns.
-    pub destructure_counter: u32,
-    /// Counter for generating unique iterator variable names in for-of (Map/Set) loops.
-    pub for_of_counter: u32,
-    /// Counter for generating unique function expression names.
-    pub fn_expr_counter: u32,
+    /// Closure state: captures, instances, struct definitions.
+    pub closures: crate::types::ClosureManager,
     /// Function definitions deferred from expression context (Arrow/FunctionExpression in emit_expr).
     /// These need to be emitted before the current statement at the current indent level.
     pub pending_expr_fns: Vec<String>,
@@ -453,10 +211,6 @@ pub struct Codegen {
     pub class_names: std::collections::HashSet<String>,
     /// Original JS source text, used to convert byte offsets → line:col for diagnostics.
     pub source: String,
-    /// Counter for generating unique block labels (blk_0, blk_1, ...).
-    /// Prevents "redefinition of label" errors when multiple block expressions
-    /// appear in the same scope.
-    pub label_counter: u32,
     /// Set of variable names declared in the current function scope.
     /// Used to detect shadowing in nested blocks (Zig 0.16.0 forbids it).
     pub fn_scope_vars: std::collections::HashSet<String>,
@@ -465,6 +219,4 @@ pub struct Codegen {
     /// mapping is stored in the topmost HashMap. `zig_safe_name()` checks this
     /// stack to rewrite references to the renamed variable.
     pub shadow_renames: Vec<std::collections::HashMap<String, String>>,
-    /// Counter for generating unique renamed variable names when shadowing occurs.
-    pub shadow_counter: u32,
 }

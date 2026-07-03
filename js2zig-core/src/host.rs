@@ -9,7 +9,7 @@
 //! In `main.rs`, create a `HostFnRegistry`, register Rust functions, and pass it
 //! to `project.rs` for metadata generation and to the native_proto codegen for translation.
 
-use crate::native_proto::ZigType;
+use crate::types::ZigType;
 use std::path::Path;
 
 // ── Struct definitions ──

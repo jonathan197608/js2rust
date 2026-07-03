@@ -1,0 +1,913 @@
+// Optional prop, Math, Array basic, Math P4, Await, TypedArray, string escape, JSON edge
+
+use super::common::*;
+
+#[test]
+fn test_native_proto_optional_property() {
+    // JS source: @typedef with optional property
+    let js = r#"
+/**
+ * @typedef {Object} User
+ * @property {string} name
+ * @property {number} age
+ * @property {string} [email]  →optional
+ * @property {number} [score]  →optional
+ */
+
+/**
+ * @param {User} user
+ * @returns {string}
+ */
+export function getUserJson(user) {
+return JSON.stringify(user);
+}
+
+/**
+ * @returns {string}
+ */
+export function createUser() {
+/**
+ * @type {User}
+ */
+const user = JSON.parse('{"name":"Alice","age":30}');
+// email and score are not provided (undefined)
+return user.name + " has email: " + (user.email || "none");
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_optional_property");
+
+    // Step2: verify optional fields are generated with ?Type
+    assert!(
+        zig.contains("name: []const u8,"),
+        "Expected 'name: []const u8,' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("age: i64,"),
+        "Expected 'age: i64,' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("email: ?[]const u8,"),
+        "Expected 'email: ?[]const u8,' (optional) in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("score: ?i64,"),
+        "Expected 'score: ?i64,' (optional) in:\n{}",
+        zig
+    );
+
+    // Step3: verify toJson() is generated (std.json.fmt() handles ?T automatically)
+    assert!(
+        zig.contains("pub fn toJson"),
+        "Expected toJson() method in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Math built-in methods ─────────────────────
+
+#[test]
+fn test_native_proto_math_methods() {
+    // JS source: Math.abs(), Math.floor(), Math.ceil(), Math.round(), Math.sqrt(), Math.hypot()
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+export function testMath(x) {
+const absX = Math.abs(x);
+const floorX = Math.floor(x);
+const ceilX = Math.ceil(x);
+const roundX = Math.round(x);
+const sqrtX = Math.sqrt(x);
+const hypotX = Math.hypot(x, 3, 4);
+return absX + floorX + ceilX + roundX + sqrtX + hypotX;
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_math_methods");
+
+    // Step2: verify Math methods are generated correctly
+    assert!(zig.contains("@abs("), "Expected '@abs(' in:\n{}", zig);
+    assert!(zig.contains("@floor("), "Expected '@floor(' in:\n{}", zig);
+    assert!(zig.contains("@ceil("), "Expected '@ceil(' in:\n{}", zig);
+    assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
+    assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
+    // Math.hypot(x, 3, 4) → @sqrt(@as(f64,x)*@as(f64,x) + @as(f64,3)*@as(f64,3) + @as(f64,4)*@as(f64,4))
+    assert!(
+        zig.contains("@sqrt("),
+        "Expected '@sqrt(' for Math.hypot in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("*@as(f64,"),
+        "Expected squared terms for Math.hypot in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.pop() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_pop() {
+    // JS source: arr.pop()
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function popArray() {
+const arr = [1, 2, 3];
+return arr.pop();
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_pop");
+
+    // Step2: verify arr.pop() is generated
+    assert!(
+        zig.contains("arr.pop()"),
+        "Expected 'arr.pop()' in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.indexOf() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_indexof() {
+    // JS source: arr.indexOf(x) - returns index or -1
+    let js = r#"
+/**
+ * @param {number} target
+ * @returns {number}
+ */
+export function findIndex(target) {
+const arr = [10, 20, 30, 40, 50];
+return arr.indexOf(target);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_indexof");
+
+    // Verify labeled block with for loop is generated
+    assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
+    assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+    assert!(
+        zig.contains(".items"),
+        "Expected .items access in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("break :blk_"),
+        "Expected break :blk_ in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(i64, -1)"),
+        "Expected @as(i64, -1) fallback in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.includes() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_includes() {
+    // JS source: arr.includes(x) - returns bool, used in numeric context
+    let js = r#"
+/**
+ * @param {number} target
+ * @returns {number}
+ */
+export function hasItem(target) {
+const arr = [10, 20, 30];
+if (arr.includes(target)) {
+    return 1;
+}
+return 0;
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_includes");
+
+    // Verify labeled block with for loop and bool return
+    assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
+    assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
+    assert!(
+        zig.contains("break :blk_") && zig.contains(" true"),
+        "Expected break :blk_ with true in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("break :blk_") && zig.contains(" false"),
+        "Expected break :blk_ with false in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.join() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_join() {
+    // JS source: arr.join(sep) - returns string
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function joinNumbers() {
+const arr = [1, 2, 3];
+return arr.join(", ");
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_join");
+
+    // Verify std.io.Writer.Allocating is used
+    assert!(
+        zig.contains("std.io.Writer.Allocating"),
+        "Expected std.io.Writer.Allocating in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__join_buf"),
+        "Expected __join_buf variable in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("writeAll"),
+        "Expected writeAll for separator in:\n{}",
+        zig
+    );
+    // i64 elements should use {d} format
+    assert!(
+        zig.contains("{d}"),
+        "Expected {{d}} format for i64 elements in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.slice() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_slice() {
+    // JS source: arr.slice(start, end) - returns sub-slice
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function sliceSum() {
+const arr = [10, 20, 30, 40, 50];
+const sub = arr.slice(1, 4);
+return sub[0] + sub[1] + sub[2];
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_slice");
+
+    // Verify slice expression is generated: arr.items[1..4]
+    assert!(
+        zig.contains(".items[1..4]"),
+        "Expected '.items[1..4]' slice in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.splice() built-in method ─────────────
+
+#[test]
+fn test_native_proto_array_splice() {
+    // JS source: arr.splice(start, deleteCount)
+    let js = r#"
+/**
+ * @param {number} start
+ * @param {number} count
+ * @returns {number}
+ */
+export function spliceArray(start, count) {
+const arr = [1, 2, 3, 4, 5];
+return arr.splice(start, count);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_splice");
+
+    // Verify splice generates ArrayList operations
+    assert!(
+        zig.contains("orderedRemove"),
+        "Expected orderedRemove in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("break :blk_") && zig.contains("__spliced"),
+        "Expected break :blk_ __spliced in:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.splice() with insert items ─────────────
+
+#[test]
+fn test_native_proto_array_splice_insert() {
+    // JS source: arr.splice(start, deleteCount, item1, item2)
+    let js = r#"
+/**
+ * @param {number} start
+ * @returns {number}
+ */
+export function spliceInsert(start) {
+const arr = [1, 2, 3, 4, 5];
+return arr.splice(start, 2, 99, 100);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_array_splice_insert");
+
+    // Verify splice generates insertSlice for multi-arg
+    assert!(
+        zig.contains("orderedRemove"),
+        "Expected orderedRemove in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("insertSlice"),
+        "Expected insertSlice for insertion in:\n{}",
+        zig
+    );
+}
+
+// ── Test: New Math methods (random, pow, max, min) ─────────────────────
+
+#[test]
+fn test_native_proto_math_new_methods() {
+    // JS source: Math.random(), Math.pow(), Math.max(), Math.min()
+    let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export function testMathNew(x, y) {
+const rand = Math.random();
+const powXY = Math.pow(x, y);
+const maxXY = Math.max(x, y);
+const minXY = Math.min(x, y);
+return powXY + maxXY + minXY;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_math_new_methods");
+
+    // Step2: verify Math methods are generated correctly
+    assert!(
+        zig.contains("std.crypto.random.int(u32)"),
+        "Expected 'std.crypto.random.int(u32)' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.pow(f64,"),
+        "Expected 'std.math.pow(f64,' in:\n{}",
+        zig
+    );
+    assert!(zig.contains("if ("), "Expected 'if (' in max/min:\n{}", zig);
+}
+
+// ── Test: Phase 4 Math methods (expm1/sinh/cosh/tanh/asinh/acosh/atanh/clz32/fround/imul/log1p) ──
+#[test]
+fn test_native_proto_math_phase4() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export function testMathPhase4(x, y) {
+const a = Math.expm1(x);
+const b = Math.sinh(x);
+const c = Math.cosh(x);
+const d = Math.tanh(x);
+const e = Math.asinh(x);
+const f = Math.acosh(x);
+const g = Math.atanh(x);
+const h = Math.clz32(x);
+const i = Math.fround(x);
+const j = Math.imul(x, y);
+const k = Math.log1p(x);
+return a + b + c + d + e + f + g + h + i + j + k;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_math_phase4");
+
+    // Verify Phase 4 Math methods are generated correctly
+    assert!(
+        zig.contains("std.math.expm1("),
+        "Expected 'std.math.expm1(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.sinh("),
+        "Expected 'std.math.sinh(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.cosh("),
+        "Expected 'std.math.cosh(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.tanh("),
+        "Expected 'std.math.tanh(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.asinh("),
+        "Expected 'std.math.asinh(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.acosh("),
+        "Expected 'std.math.acosh(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.atanh("),
+        "Expected 'std.math.atanh(' in:\n{}",
+        zig
+    );
+    assert!(zig.contains("@clz("), "Expected '@clz(' in:\n{}", zig);
+    assert!(zig.contains("@as(f32,"), "Expected '@as(f32,' in:\n{}", zig);
+    assert!(zig.contains("@as(i32,"), "Expected '@as(i32,' in:\n{}", zig);
+    assert!(
+        zig.contains("std.math.log1p("),
+        "Expected 'std.math.log1p(' in:\n{}",
+        zig
+    );
+}
+
+// ── Test: AwaitExpression support ────────────
+
+#[test]
+fn test_native_proto_await() {
+    // JS source: async function with await.
+    // NOTE: In the real pipeline, `export` is stripped by the preprocessor,
+    // and `exported_functions` is passed to transpile_js() to mark exports.
+    // This test simulates that: no `export` in JS, uses exported_functions param.
+    let js = r#"
+/**
+ * @param {i64} x
+ * @returns {i64}
+ */
+async function asyncDouble(x) {
+const result = await double(x);
+return result;
+}
+
+function double(x) {
+return x * 2;
+}
+"#;
+    let mut exports = std::collections::HashSet::new();
+    exports.insert("asyncDouble".to_string());
+    let zig = transpile_and_check_with_exports(js, "test_native_proto_await", exports);
+
+    // Step2: verify async function signature has `io: anytype`
+    assert!(
+        zig.contains("io: anytype"),
+        "Expected 'io: anytype' in async function signature, got:\n{}",
+        zig
+    );
+
+    // Step3: verify await is translated to io.async() + .await(io)
+    assert!(
+        zig.contains("io.async("),
+        "Expected 'io.async(' in generated code, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".await(io)"),
+        "Expected '.await(io)' in generated code, got:\n{}",
+        zig
+    );
+    // defer _ = _tN.cancel(io) catch undefined;
+    assert!(
+        zig.contains("defer"),
+        "Expected 'defer' in generated code, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".cancel(io)"),
+        "Expected '.cancel(io)' in generated code, got:\n{}",
+        zig
+    );
+
+    // Step4: verify non-async function does NOT have `io: anytype`
+    assert!(
+        zig.contains("fn double(x: anytype) @TypeOf("),
+        "Expected non-async function signature, got:\n{}",
+        zig
+    );
+}
+
+// ── Test: TypedArray support ─────────────
+
+#[test]
+fn test_native_proto_typedarray_basic() {
+    // JS source: new Int32Array(), .length, index access
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function sumInt32() {
+const arr = new Int32Array([1, 2, 3]);
+const len = arr.length;
+return len;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_basic");
+    println!("=== TypedArray basic ===\n{}", zig);
+    // Verify fromI64AsI32 is generated
+    assert!(
+        zig.contains("fromI64AsI32"),
+        "Expected 'fromI64AsI32' in generated code:\n{}",
+        zig
+    );
+    // Verify .length is generated as .len
+    assert!(
+        zig.contains(".len"),
+        "Expected '.len' for TypedArray length:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_string_escape_backslash() {
+    // Verify that backslashes in string literals are properly escaped for Zig output.
+    // Without escaping, a string like "hello\nworld" would produce an invalid Zig string.
+    let js = r#"function hasNewline() { return "hello\\nworld"; }"#;
+    let zig = transpile_and_assert(js, "test_native_proto_string_escape_backslash");
+    println!("=== String escape ===\n{}", zig);
+    // The JS string "hello\\nworld" has the actual value: hello\nworld (backslash-n)
+    // In Zig, this should be emitted as "hello\\nworld"
+    assert!(
+        zig.contains("hello\\\\nworld"),
+        "Expected escaped backslash in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_string_escape_quote() {
+    // Verify that double quotes in string literals are properly escaped for Zig output.
+    let js = r#"function hasQuote() { return 'he said "hello"'; }"#;
+    let zig = transpile_and_assert(js, "test_native_proto_string_escape_quote");
+    println!("=== String escape quote ===\n{}", zig);
+    // The JS string 'he said "hello"' has actual double quotes
+    // In Zig, this should be emitted as \"he said \\\"hello\\\"\"
+    assert!(
+        zig.contains(r#"\"hello\""#),
+        "Expected escaped double quote in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_uint8() {
+    // JS source: new Uint8Array()
+    let js = r#"
+function makeBytes() {
+const bytes = new Uint8Array([1, 2, 3]);
+return bytes.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_uint8");
+    println!("=== TypedArray Uint8 ===\n{}", zig);
+    assert!(
+        zig.contains("fromI64AsU8"),
+        "Expected 'fromI64AsU8' in generated code:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_length_in_expr() {
+    // .length used in arithmetic expression (not just return)
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function totalLength() {
+const arr1 = new Int32Array([1, 2]);
+const arr2 = new Int32Array([3, 4, 5]);
+return arr1.length + arr2.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_length_in_expr");
+    println!("=== TypedArray length in expr ===\n{}", zig);
+    // Verify .len is generated for both arrays
+    assert!(
+        zig.matches("arr1.len").count() >= 1,
+        "Expected arr1.len in:\n{}",
+        zig
+    );
+    assert!(
+        zig.matches("arr2.len").count() >= 1,
+        "Expected arr2.len in:\n{}",
+        zig
+    );
+    // Verify the addition is present
+    assert!(
+        zig.contains(" + "),
+        "Expected addition for length sum:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_length_as_param() {
+    // .length passed as function argument
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function identity(x) { return x; }
+
+/**
+ * @returns {number}
+ */
+export function getLength() {
+const arr = new Int32Array([10, 20, 30, 40]);
+return identity(arr.length);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_length_as_param");
+    println!("=== TypedArray length as param ===\n{}", zig);
+    // Verify arr.len is generated
+    assert!(zig.contains("arr.len"), "Expected arr.len in:\n{}", zig);
+    assert!(
+        zig.contains("identity"),
+        "Expected identity call in:\n{}",
+        zig
+    );
+}
+
+// ── TypedArray: set/get/slice/subarray/copyWithin/fill ──
+
+#[test]
+fn test_native_proto_typedarray_set() {
+    let js = r#"
+/**
+ * @param {number} idx
+ * @param {number} val
+ * @returns {number}
+ */
+export function setAndGet(idx, val) {
+const arr = new Int32Array([10, 20, 30]);
+arr.set(idx, val);
+return arr.get(idx);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_set");
+    println!("=== TypedArray set ===\n{}", zig);
+    assert!(zig.contains("setI32"), "Expected setI32 in:\n{}", zig);
+    assert!(zig.contains("getI32"), "Expected getI32 in:\n{}", zig);
+}
+
+#[test]
+fn test_native_proto_typedarray_slice() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function sliceArray() {
+const arr = new Int32Array([10, 20, 30, 40, 50]);
+const sub = arr.slice(1, 4);
+return sub.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_slice");
+    println!("=== TypedArray slice ===\n{}", zig);
+    assert!(zig.contains("sliceI32"), "Expected sliceI32 in:\n{}", zig);
+}
+
+#[test]
+fn test_native_proto_typedarray_subarray() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function subArray() {
+const arr = new Int32Array([1, 2, 3, 4, 5]);
+const sub = arr.subarray(1, 3);
+return sub.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_subarray");
+    println!("=== TypedArray subarray ===\n{}", zig);
+    assert!(
+        zig.contains("subarrayI32"),
+        "Expected subarrayI32 in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_copywithin() {
+    let js = r#"
+export function copyIn() {
+const arr = new Int32Array([1, 2, 3, 4, 5]);
+arr.copyWithin(0, 3, 5);
+return arr.get(1);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_copywithin");
+    println!("=== TypedArray copyWithin ===\n{}", zig);
+    assert!(
+        zig.contains("copyWithinI32"),
+        "Expected copyWithinI32 in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_fill() {
+    let js = r#"
+export function fillArr() {
+const arr = new Int32Array([1, 2, 3, 4, 5]);
+arr.fill(0, 1, 4);
+return arr.get(0);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_fill");
+    println!("=== TypedArray fill ===\n{}", zig);
+    assert!(zig.contains("fillI32"), "Expected fillI32 in:\n{}", zig);
+}
+
+// ── TypedArray: buffer / byteLength / byteOffset ──
+
+#[test]
+fn test_native_proto_typedarray_buffer() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function getBufferLength() {
+const arr = new Int32Array([1, 2, 3]);
+const buf = arr.buffer;
+return buf.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_buffer");
+    println!("=== TypedArray buffer ===\n{}", zig);
+    assert!(zig.contains("bufferI32"), "Expected bufferI32 in:\n{}", zig);
+}
+
+#[test]
+fn test_native_proto_typedarray_bytelength() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function getByteLength() {
+const arr = new Int32Array([1, 2, 3]);
+return arr.byteLength;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_bytelength");
+    println!("=== TypedArray byteLength ===\n{}", zig);
+    assert!(
+        zig.contains("byteLengthI32"),
+        "Expected byteLengthI32 in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_typedarray_byteoffset() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function getByteOffset() {
+const arr = new Int32Array([1, 2, 3]);
+return arr.byteOffset;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_typedarray_byteoffset");
+    println!("=== TypedArray byteOffset ===\n{}", zig);
+    assert!(
+        zig.contains("byteOffset"),
+        "Expected byteOffset in:\n{}",
+        zig
+    );
+}
+
+// ── TypedArray: Float64Array ──
+
+#[test]
+fn test_native_proto_float64array() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function floatTest() {
+const arr = new Float64Array([1.5, 2.5, 3.5]);
+return arr.length;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_float64array");
+    println!("=== Float64Array ===\n{}", zig);
+    assert!(zig.contains("fromF64"), "Expected fromF64 in:\n{}", zig);
+}
+
+// ── String escaping edge cases ────────────────────────
+
+#[test]
+fn test_native_proto_string_escape_newline() {
+    // Verify that newline characters in JS string literals are escaped as \\n in Zig output.
+    // JS "line1\nline2" → actual newline (0x0A) in JS → must emit Zig "line1\\nline2"
+    // where \\n is the two-byte escape sequence (backslash + n), NOT a raw newline.
+    let js = "function hasNewline() { return \"line1\\nline2\"; }";
+    let zig = transpile_and_assert(js, "test_native_proto_string_escape_newline");
+    println!("=== String escape newline ===\n{}", zig);
+    // The Zig output has literal '\' followed by 'n' (NOT the newline character).
+    // In Rust, "\\n" matches the two-byte sequence 0x5C 0x6E.
+    assert!(
+        zig.contains("line1\\nline2"),
+        "Expected \\n escape sequence (NOT raw newline) in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_string_escape_tab() {
+    // Verify that tab characters in JS string literals are escaped as \\t in Zig output.
+    let js = "function hasTab() { return \"col1\\tcol2\"; }";
+    let zig = transpile_and_assert(js, "test_native_proto_string_escape_tab");
+    println!("=== String escape tab ===\n{}", zig);
+    assert!(
+        zig.contains("col1\\tcol2"),
+        "Expected \\t escape sequence (NOT raw tab) in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_json_parse_escaped_quotes() {
+    // JSON.parse with a string that contains escaped double quotes.
+    let js = r#"
+/**
+ * @typedef {Object} Msg
+ * @property {string} text
+ */
+
+/**
+ * @returns {string}
+ */
+export function parseEscapedJson() {
+/**
+ * @type {Msg}
+ */
+const msg = JSON.parse('{"text":"he said \\"hello\\""}');
+return msg.text;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_json_parse_escaped_quotes");
+    println!("=== JSON parse escaped quotes ===\n{}", zig);
+    // Verify the JSON string is properly escaped in Zig
+    assert!(
+        zig.contains("std.json.parse(Msg,"),
+        "Expected std.json.parse(Msg, ...), got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_json_parse_unicode() {
+    // JSON.parse with unicode escape sequences.
+    let js = r#"
+/**
+ * @typedef {Object} Item
+ * @property {string} name
+ */
+
+/**
+ * @returns {string}
+ */
+export function parseUnicodeJson() {
+/**
+ * @type {Item}
+ */
+const item = JSON.parse('{"name":"\\u0048\\u0065\\u006c\\u006c\\u006f"}');
+return item.name;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_native_proto_json_parse_unicode");
+    println!("=== JSON parse unicode ===\n{}", zig);
+    // Verify std.json.parse is generated
+    assert!(
+        zig.contains("std.json.parse(Item,"),
+        "Expected std.json.parse(Item, ...), got:\n{}",
+        zig
+    );
+    // Unicode escapes should pass through (Zig's std.json.parse handles them)
+    assert!(
+        zig.contains("\\\\u0048"),
+        "Expected unicode escape in:\n{}",
+        zig
+    );
+}
+
+// ── Try-catch tests ──────────────────────────────────

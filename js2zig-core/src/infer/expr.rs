@@ -4,8 +4,8 @@
 // Rule 2: Binary expressions → definite only if BOTH operands are literals.
 
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
-use crate::native_proto::builtins;
+use crate::native_builtins as builtins;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 
 impl TypeInferrer {

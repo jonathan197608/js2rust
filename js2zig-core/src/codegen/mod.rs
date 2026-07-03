@@ -1,10 +1,11 @@
-// native_proto/codegen/mod.rs
+﻿// native_proto/codegen/mod.rs
 // Core Codegen struct, constructor, and entry point.
 
 use crate::native_proto::Codegen;
 use oxc_ast::ast::*;
 use oxc_span::Span;
 
+pub mod builtins;
 pub mod expr;
 pub mod helpers;
 pub mod stmt;
@@ -13,8 +14,8 @@ pub mod stmt;
 
 impl Codegen {
     pub fn new(
-        type_info: crate::native_proto::TypeCheckResult,
-        jsdoc_data: crate::native_proto::JSDocData,
+        type_info: crate::infer::TypeCheckResult,
+        jsdoc_data: crate::types::JSDocData,
         exported_functions: Option<std::collections::HashSet<String>>,
         async_host_fns: std::collections::HashSet<String>,
         source: String,
@@ -29,25 +30,16 @@ impl Codegen {
             current_fn_is_export: false,
             current_fn_return_type: None,
             exported_fns: Vec::new(),
-            task_counter: 0,
+            names: crate::types::NameGen::new(),
             exported_functions,
             seen_return: false,
             fn_has_throw: false,
             in_return_expr: false,
             in_expr_stmt: false,
             call_generated_catch: false,
-            try_label_counter: 0,
-            arrow_counter: 0,
             inside_try_block: None,
             current_fn: None,
-            current_captured: Vec::new(),
-            closure_vars: std::collections::HashMap::new(),
-            closure_instances: std::collections::HashSet::new(),
-            closure_defs: Vec::new(),
-            oc_counter: 0,
-            destructure_counter: 0,
-            for_of_counter: 0,
-            fn_expr_counter: 0,
+            closures: crate::types::ClosureManager::new(),
             pending_expr_fns: Vec::new(),
             typedarray_vars: std::collections::HashMap::new(),
             regexp_vars: std::collections::HashSet::new(),
@@ -57,10 +49,8 @@ impl Codegen {
             current_class: None,
             class_names: std::collections::HashSet::new(),
             source,
-            label_counter: 0,
             fn_scope_vars: std::collections::HashSet::new(),
             shadow_renames: Vec::new(),
-            shadow_counter: 0,
         }
     }
 }
@@ -136,7 +126,7 @@ impl Codegen {
             self.writeln(&format!("const {} = struct {{", name));
             self.indent += 1;
             for field in &td.fields {
-                let zig_ty = crate::native_proto::jsdoc::jsdoc_type_to_zig(&field.ty, &typedefs);
+                let zig_ty = crate::jsdoc::jsdoc_type_to_zig(&field.ty, &typedefs);
                 // Optional field: prepend ? to the type
                 let zig_ty = if field.optional {
                     format!("?{}", zig_ty)
@@ -177,9 +167,9 @@ impl Codegen {
 
         // After generating all statements, prepend closure struct definitions
         // so they appear at module level (before all functions).
-        if !self.closure_defs.is_empty() {
+        if !self.closures.closure_defs.is_empty() {
             let mut prefix = String::new();
-            for def in self.closure_defs.iter() {
+            for def in self.closures.closure_defs.iter() {
                 prefix.push_str(def);
                 prefix.push('\n');
             }

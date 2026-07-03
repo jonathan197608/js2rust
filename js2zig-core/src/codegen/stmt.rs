@@ -3,8 +3,8 @@
 
 use super::Codegen;
 use super::helpers::zig_safe_name;
-use crate::native_proto::builtins;
-use crate::native_proto::{ExportedFunction, ZigType};
+use crate::native_builtins as builtins;
+use crate::types::{ExportedFunction, ZigType};
 use oxc_ast::ast::*;
 use oxc_span::GetSpan;
 use std::collections::HashSet;
@@ -114,7 +114,7 @@ impl Codegen {
     /// Inside functions: `var` with type inference + undefined init.
     pub(crate) fn emit_var_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
-            if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
+            if let Some(name) = crate::infer::binding_name(&decl.id) {
                 let zig_name = self.zig_safe_name(name);
 
                 // #946: Track variable names in function scope and detect shadowing
@@ -124,8 +124,8 @@ impl Codegen {
                 // mapping in shadow_renames so all references inside this block are
                 // rewritten to the new name.
                 let zig_name = if self.fn_scope_vars.contains(&zig_name) {
-                    self.shadow_counter += 1;
-                    let renamed = format!("{}_shadow_{}", name, self.shadow_counter);
+                    let shadow_id = self.names.next_shadow();
+                    let renamed = format!("{}_shadow_{}", name, shadow_id);
                     if let Some(top_scope) = self.shadow_renames.last_mut() {
                         top_scope.insert(name.to_string(), renamed.clone());
                     }
@@ -173,10 +173,10 @@ impl Codegen {
                         // Generate arrow function or closure
                         let fn_name = self.emit_arrow_function(arrow);
                         // Check if this is a closure (struct name in closure_vars)
-                        if self.closure_vars.contains_key(&fn_name) {
+                        if self.closures.closure_vars.contains_key(&fn_name) {
                             // Closure: generate instantiation code
                             // Clone the captured vars to avoid borrow conflict
-                            let captured = self.closure_vars.get(&fn_name).cloned();
+                            let captured = self.closures.closure_vars.get(&fn_name).cloned();
                             if let Some(captured) = captured {
                                 self.write_indent();
                                 self.write(&format!("const {} = {} {{ ", zig_name, fn_name));
@@ -195,7 +195,7 @@ impl Codegen {
                                 self.write(" };\n");
                             }
                             // Mark this variable as a closure instance
-                            self.closure_instances.insert(name.to_string());
+                            self.closures.closure_instances.insert(name.to_string());
                         } else {
                             // Plain arrow function: assign function to variable
                             self.write_indent();
@@ -401,7 +401,7 @@ fn init_may_have_side_effects(init: &Expression) -> bool {
 
 impl Codegen {
     /// Get the ZigType of an expression if it's a simple identifier reference.
-    fn expr_var_type(&self, expr: &Expression) -> Option<&crate::native_proto::ZigType> {
+    fn expr_var_type(&self, expr: &Expression) -> Option<&crate::types::ZigType> {
         if let Expression::Identifier(id) = expr {
             self.type_info.var_types.get(id.name.as_str())
         } else {
@@ -422,8 +422,7 @@ impl Codegen {
         let init_str = self.emit_expr_to_string(init_expr);
         let needs_temp = init_may_have_side_effects(init_expr);
         let temp_name = if needs_temp || op.properties.len() > 1 {
-            let n = self.destructure_counter;
-            self.destructure_counter += 1;
+            let n = self.names.next_destructure();
             let name = format!("_js_dest_{}", n);
             self.write_indent();
             self.write(&format!("const {} = {};\n", name, init_str));
@@ -438,7 +437,7 @@ impl Codegen {
         // Clone field names to release the immutable borrow on self before the loop.
         let init_type = self.expr_var_type(init_expr);
         let struct_field_names: Option<std::collections::HashSet<String>> = match init_type {
-            Some(crate::native_proto::ZigType::Struct(fields)) => {
+            Some(crate::types::ZigType::Struct(fields)) => {
                 if fields.is_empty() {
                     None // empty struct → treat as HashMap
                 } else {
@@ -562,13 +561,12 @@ impl Codegen {
         let init_str = self.emit_expr_to_string(init_expr);
         // Determine the type for correct indexing
         let init_type = self.expr_var_type(init_expr);
-        let is_arraylist = matches!(init_type, Some(crate::native_proto::ZigType::ArrayList(_)));
+        let is_arraylist = matches!(init_type, Some(crate::types::ZigType::ArrayList(_)));
         // Count non-None elements to decide if we need a temp
         let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
         let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
         let temp_name = if needs_temp {
-            let n = self.destructure_counter;
-            self.destructure_counter += 1;
+            let n = self.names.next_destructure();
             let name = format!("_js_dest_{}", n);
             self.write_indent();
             self.write(&format!("const {} = {};\n", name, init_str));
@@ -685,28 +683,28 @@ impl Codegen {
         match stmt {
             Statement::ThrowStatement(_) => true,
             Statement::LabeledStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::IfStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.consequent)
-                    || s.alternate.as_ref().is_some_and(|a| {
-                        crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(a)
-                    })
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.consequent)
+                    || s.alternate
+                        .as_ref()
+                        .is_some_and(|a| crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(a))
             }
             Statement::WhileStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::DoWhileStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::ForStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::ForOfStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::ForInStatement(s) => {
-                crate::native_proto::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
+                crate::codegen::stmt::Codegen::stmt_has_throw_any_alt(&s.body)
             }
             Statement::BlockStatement(s) => s.body.iter().any(|s1| Self::stmt_has_throw_any(s1)),
             Statement::SwitchStatement(s) => s
@@ -784,7 +782,7 @@ impl Codegen {
         }
 
         // Generate function signature.
-        let has_captures = !self.current_captured.is_empty();
+        let has_captures = !self.closures.current_captured.is_empty();
         let safe_emit_name = self.zig_safe_name(emit_name);
         if is_async {
             if has_captures {
@@ -819,7 +817,7 @@ impl Codegen {
                 // #947: Detect parameter shadowing of outer scope variables.
                 let base_pname = zig_safe_name(pname);
                 let effective_pname = if saved_fn_scope_vars.contains(&base_pname) {
-                    self.shadow_counter += 1;
+                    self.names.next_shadow(); // consume counter for uniqueness (value not used in `_param` suffix)
                     let renamed = format!("{}_param", pname);
                     if let Some(top_scope) = self.shadow_renames.last_mut() {
                         top_scope.insert(pname.to_string(), renamed.clone());
@@ -850,7 +848,7 @@ impl Codegen {
                 .params
                 .rest
                 .as_ref()
-                .map(|r| crate::native_proto::infer::binding_name(&r.rest.argument))
+                .map(|r| crate::infer::binding_name(&r.rest.argument))
                 && let Some(rname) = rest_name
             {
                 if param_idx > 0 || is_async {
@@ -858,7 +856,7 @@ impl Codegen {
                 }
                 let base_rname = zig_safe_name(rname);
                 let effective_rname = if saved_fn_scope_vars.contains(&base_rname) {
-                    self.shadow_counter += 1;
+                    self.names.next_shadow();
                     let renamed = format!("{}_param", rname);
                     if let Some(top_scope) = self.shadow_renames.last_mut() {
                         top_scope.insert(rname.to_string(), renamed.clone());
@@ -882,7 +880,7 @@ impl Codegen {
             // Fallback: generate params from AST with anytype
             let mut param_idx = 0;
             for param in &fd.params.items {
-                if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                if let Some(pname) = crate::infer::binding_name(&param.pattern) {
                     if is_async && pname == "io" {
                         continue;
                     }
@@ -893,7 +891,7 @@ impl Codegen {
                     // #947: Detect parameter shadowing of outer scope variables.
                     let base_pname = zig_safe_name(pname);
                     let effective_pname = if saved_fn_scope_vars.contains(&base_pname) {
-                        self.shadow_counter += 1;
+                        self.names.next_shadow();
                         let renamed = format!("{}_param", pname);
                         if let Some(top_scope) = self.shadow_renames.last_mut() {
                             top_scope.insert(pname.to_string(), renamed.clone());
@@ -919,7 +917,7 @@ impl Codegen {
                 .params
                 .rest
                 .as_ref()
-                .map(|r| crate::native_proto::infer::binding_name(&r.rest.argument))
+                .map(|r| crate::infer::binding_name(&r.rest.argument))
                 && let Some(rname) = rest_name
             {
                 if param_idx > 0 || is_async {
@@ -927,7 +925,7 @@ impl Codegen {
                 }
                 let base_rname = zig_safe_name(rname);
                 let effective_rname = if saved_fn_scope_vars.contains(&base_rname) {
-                    self.shadow_counter += 1;
+                    self.names.next_shadow();
                     let renamed = format!("{}_param", rname);
                     if let Some(top_scope) = self.shadow_renames.last_mut() {
                         top_scope.insert(rname.to_string(), renamed.clone());
@@ -956,9 +954,7 @@ impl Codegen {
             Some(ZigType::Str) => "[]const u8".to_string(),
             Some(ZigType::Void) => "void".to_string(),
             Some(ZigType::AnytypeReturn) => {
-                if let Some(first_ret) =
-                    crate::native_proto::infer::helpers::find_first_return_expr(fd)
-                {
+                if let Some(first_ret) = crate::infer::helpers::find_first_return_expr(fd) {
                     let mut captured = self.capture_expr(first_ret);
                     // Strip 'try ' prefixes — try is not valid in @TypeOf (comptime type expression).
                     // We remove all occurrences since the expression may contain nested try:
@@ -1006,7 +1002,7 @@ impl Codegen {
                 fd.params
                     .items
                     .iter()
-                    .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+                    .filter_map(|p| crate::infer::binding_name(&p.pattern))
                     .filter(|pn| !fn_used_names.contains(*pn))
                     .map(|pn| pn.to_string())
                     .collect()
@@ -1149,19 +1145,19 @@ impl Codegen {
                 self.emit_if(is);
             }
             Statement::WhileStatement(ws) => {
-                self.emit_while(ws);
+                self.emit_while(ws, None);
             }
             Statement::DoWhileStatement(dws) => {
-                self.emit_do_while(dws);
+                self.emit_do_while(dws, None);
             }
             Statement::ForStatement(fs) => {
-                self.emit_for(fs);
+                self.emit_for(fs, None);
             }
             Statement::ForOfStatement(fos) => {
-                self.emit_for_of(fos);
+                self.emit_for_of(fos, None);
             }
             Statement::ForInStatement(fis) => {
-                self.emit_for_in(fis);
+                self.emit_for_in(fis, None);
             }
             Statement::SwitchStatement(ss) => {
                 self.emit_switch(ss);
@@ -1194,44 +1190,49 @@ impl Codegen {
                 match &ls.body {
                     // For loops: label attaches directly to the loop syntax
                     Statement::WhileStatement(_) => {
-                        self.write_indent();
-                        self.write(&format!("{}: ", label_name));
-                        self.emit_while_labeled(match &ls.body {
-                            Statement::WhileStatement(ws) => ws,
-                            _ => unreachable!(),
-                        });
+                        self.emit_while(
+                            match &ls.body {
+                                Statement::WhileStatement(ws) => ws,
+                                _ => unreachable!(),
+                            },
+                            Some(label_name.as_str()),
+                        );
                     }
                     Statement::ForStatement(_) => {
-                        self.write_indent();
-                        self.write(&format!("{}: ", label_name));
-                        self.emit_for_labeled(match &ls.body {
-                            Statement::ForStatement(fs) => fs,
-                            _ => unreachable!(),
-                        });
+                        self.emit_for(
+                            match &ls.body {
+                                Statement::ForStatement(fs) => fs,
+                                _ => unreachable!(),
+                            },
+                            Some(label_name.as_str()),
+                        );
                     }
                     Statement::ForOfStatement(_) => {
-                        self.write_indent();
-                        self.write(&format!("{}: ", label_name));
-                        self.emit_for_of_labeled(match &ls.body {
-                            Statement::ForOfStatement(fos) => fos,
-                            _ => unreachable!(),
-                        });
+                        self.emit_for_of(
+                            match &ls.body {
+                                Statement::ForOfStatement(fos) => fos,
+                                _ => unreachable!(),
+                            },
+                            Some(label_name.as_str()),
+                        );
                     }
                     Statement::ForInStatement(_) => {
-                        self.write_indent();
-                        self.write(&format!("{}: ", label_name));
-                        self.emit_for_in_labeled(match &ls.body {
-                            Statement::ForInStatement(fis) => fis,
-                            _ => unreachable!(),
-                        });
+                        self.emit_for_in(
+                            match &ls.body {
+                                Statement::ForInStatement(fis) => fis,
+                                _ => unreachable!(),
+                            },
+                            Some(label_name.as_str()),
+                        );
                     }
                     Statement::DoWhileStatement(_) => {
-                        self.write_indent();
-                        self.write(&format!("{}: ", label_name));
-                        self.emit_do_while_labeled(match &ls.body {
-                            Statement::DoWhileStatement(dws) => dws,
-                            _ => unreachable!(),
-                        });
+                        self.emit_do_while(
+                            match &ls.body {
+                                Statement::DoWhileStatement(dws) => dws,
+                                _ => unreachable!(),
+                            },
+                            Some(label_name.as_str()),
+                        );
                     }
                     _ => {
                         // Generic labeled block (for if/switch/block etc).
@@ -1328,8 +1329,7 @@ impl Codegen {
                 // Case A: try body has throw, or has nested try-catch
                 // → always generate full labeled block + if-else catch handler
 
-                let label_id = self.try_label_counter;
-                self.try_label_counter += 1;
+                let label_id = self.names.next_try_label();
                 let blk_label = format!("_js_try_blk_{}", label_id);
                 let result_var = format!("_js_try_{}", label_id);
 
@@ -1524,8 +1524,8 @@ impl Codegen {
                     }
 
                     // Set current_captured so variable references are rewritten to self.xxx
-                    let saved_captured = std::mem::take(&mut self.current_captured);
-                    self.current_captured = captures.clone();
+                    let saved_captured = self.closures.take_captured();
+                    self.closures.current_captured = captures.clone();
 
                     // Generate function body
                     let old_current_fn = self.current_fn.clone();
@@ -1547,7 +1547,7 @@ impl Codegen {
                     self.current_fn = old_current_fn;
 
                     // Restore current_captured
-                    self.current_captured = saved_captured;
+                    self.closures.restore_captured(saved_captured);
 
                     self.indent -= 1;
                     self.write_indent();
@@ -1725,19 +1725,11 @@ impl Codegen {
 // ── While / Do-While / For-Of / Switch ───────────
 
 impl Codegen {
-    pub(crate) fn emit_while(&mut self, ws: &WhileStatement) {
+    pub(crate) fn emit_while(&mut self, ws: &WhileStatement, label: Option<&str>) {
         self.write_indent();
-        self.write("while (");
-        self.emit_condition(&ws.test);
-        self.write(") {\n");
-        self.indent += 1;
-        self.emit_stmt_or_block(&ws.body);
-        self.indent -= 1;
-        self.writeln("}");
-    }
-
-    fn emit_while_labeled(&mut self, ws: &WhileStatement) {
-        // Label already written by LabeledStatement handler, no indent needed
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.write("while (");
         self.emit_condition(&ws.test);
         self.write(") {\n");
@@ -1749,8 +1741,11 @@ impl Codegen {
 
     // JS:  do { ... } while (cond);
     // Zig: while (true) { ...; if (cond) {} else { break; } }
-    fn emit_do_while(&mut self, dws: &DoWhileStatement) {
+    fn emit_do_while(&mut self, dws: &DoWhileStatement, label: Option<&str>) {
         self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.writeln("while (true) {");
 
         self.indent += 1;
@@ -1762,29 +1757,16 @@ impl Codegen {
 
         self.indent -= 1;
 
-        self.writeln("}");
-    }
-
-    fn emit_do_while_labeled(&mut self, dws: &DoWhileStatement) {
-        self.writeln("while (true) {");
-        self.indent += 1;
-        self.emit_stmt_or_block(&dws.body);
-        self.write_indent();
-        self.write("if (");
-        self.emit_condition(&dws.test);
-        self.write(") {} else { break; }\n");
-        self.indent -= 1;
         self.writeln("}");
     }
 
     // JS:  for (init; test; update) { ... }
     // Zig: { init; while (test) : (update) { ... } }
-    fn emit_for(&mut self, fs: &ForStatement) {
+    fn emit_for(&mut self, fs: &ForStatement, label: Option<&str>) {
         self.write_indent();
-        self.emit_for_body(fs);
-    }
-
-    fn emit_for_labeled(&mut self, fs: &ForStatement) {
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.emit_for_body(fs);
     }
 
@@ -1796,7 +1778,7 @@ impl Codegen {
         if let Some(init) = &fs.init {
             if let ForStatementInit::VariableDeclaration(vd) = init {
                 for decl in &vd.declarations {
-                    if let Some(name) = crate::native_proto::infer::binding_name(&decl.id) {
+                    if let Some(name) = crate::infer::binding_name(&decl.id) {
                         self.write_indent();
                         let safe_name = self.zig_safe_name(name);
                         if let Some(init_expr) = &decl.init {
@@ -1859,7 +1841,7 @@ impl Codegen {
     // JS:  for (const x of iterable) { ... }
     // Zig: for (iterable) |x| { ... }
     //  Map/Set: var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const x = __kv.key_ptr.*; ... }
-    fn emit_for_of(&mut self, fos: &ForOfStatement) {
+    fn emit_for_of(&mut self, fos: &ForOfStatement, label: Option<&str>) {
         // 🔘 for await...of: not supported
         if fos.r#await {
             self.compile_error_stmt(
@@ -1869,7 +1851,7 @@ impl Codegen {
             return;
         }
         // Map / Set → HashMap iterator pattern
-        if self.detect_map_set_iter(&fos.right, fos) {
+        if self.detect_map_set_iter(&fos.right, fos, label) {
             return;
         }
 
@@ -1877,7 +1859,7 @@ impl Codegen {
             ForStatementLeft::VariableDeclaration(vd) => vd
                 .declarations
                 .first()
-                .and_then(|decl| self.binding_name(&decl.id))
+                .and_then(|decl| crate::infer::helpers::binding_name(&decl.id))
                 .map(|n| self.zig_safe_name(n))
                 .unwrap_or_else(|| "item".to_string()),
             _ => "item".to_string(),
@@ -1895,6 +1877,9 @@ impl Codegen {
         };
 
         self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.write("for (");
         self.emit_expr(&fos.right);
         if iterable_is_arraylist {
@@ -1906,42 +1891,6 @@ impl Codegen {
         self.emit_stmt_or_block(&fos.body);
         self.indent -= 1;
 
-        self.writeln("}");
-    }
-
-    fn emit_for_of_labeled(&mut self, fos: &ForOfStatement) {
-        // Map / Set → HashMap iterator pattern
-        if self.detect_map_set_iter(&fos.right, fos) {
-            return;
-        }
-
-        let var_name = match &fos.left {
-            ForStatementLeft::VariableDeclaration(vd) => vd
-                .declarations
-                .first()
-                .and_then(|decl| self.binding_name(&decl.id))
-                .map(|n| self.zig_safe_name(n))
-                .unwrap_or_else(|| "item".to_string()),
-            _ => "item".to_string(),
-        };
-        let iterable_is_arraylist = match &fos.right {
-            Expression::Identifier(id) => self
-                .type_info
-                .var_types
-                .get(id.name.as_str())
-                .map(|t| matches!(t, ZigType::ArrayList(_)))
-                .unwrap_or(false),
-            _ => false,
-        };
-        self.write("for (");
-        self.emit_expr(&fos.right);
-        if iterable_is_arraylist {
-            self.write(".items");
-        }
-        self.write(&format!(") |{}| {{\n", var_name));
-        self.indent += 1;
-        self.emit_stmt_or_block(&fos.body);
-        self.indent -= 1;
         self.writeln("}");
     }
 
@@ -1959,7 +1908,12 @@ impl Codegen {
     ///     ...
     /// }
     /// ```
-    fn detect_map_set_iter(&mut self, right: &Expression, fos: &ForOfStatement) -> bool {
+    fn detect_map_set_iter(
+        &mut self,
+        right: &Expression,
+        fos: &ForOfStatement,
+        label: Option<&str>,
+    ) -> bool {
         let (obj_name, is_map) = match right {
             Expression::Identifier(id) => match self.type_info.var_types.get(id.name.as_str()) {
                 Some(ZigType::NamedStruct(name)) if name == "Map" => (id.name.to_string(), true),
@@ -1987,7 +1941,7 @@ impl Codegen {
                 ForStatementLeft::VariableDeclaration(vd) => vd
                     .declarations
                     .first()
-                    .and_then(|decl| self.binding_name(&decl.id))
+                    .and_then(|decl| crate::infer::helpers::binding_name(&decl.id))
                     .unwrap_or("item")
                     .to_string(),
                 _ => "item".to_string(),
@@ -2004,6 +1958,9 @@ impl Codegen {
 
         // Emit: while (__it.next()) |__kv| {
         self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.write("while (__it.next()) |__kv| {\n");
         self.indent += 1;
 
@@ -2047,7 +2004,10 @@ impl Codegen {
             return ap
                 .elements
                 .iter()
-                .filter_map(|elem| elem.as_ref().and_then(|pat| self.binding_name(pat)))
+                .filter_map(|elem| {
+                    elem.as_ref()
+                        .and_then(|pat| crate::infer::helpers::binding_name(pat))
+                })
                 .map(|s| s.to_string())
                 .collect();
         }
@@ -2058,12 +2018,12 @@ impl Codegen {
     /// Zig:
     ///   - HashMap: var it = obj.iterator(); while (it.next()) |kv| { const key = kv.key_ptr.*; ... }
     ///   - Static struct: unroll loop — one block per field with const key = "fieldName"
-    fn emit_for_in(&mut self, fis: &ForInStatement) {
+    fn emit_for_in(&mut self, fis: &ForInStatement, label: Option<&str>) {
         let var_name = match &fis.left {
             ForStatementLeft::VariableDeclaration(vd) => vd
                 .declarations
                 .first()
-                .and_then(|decl| self.binding_name(&decl.id))
+                .and_then(|decl| crate::infer::helpers::binding_name(&decl.id))
                 .map(|n| self.zig_safe_name(n))
                 .unwrap_or_else(|| "key".to_string()),
             ForStatementLeft::AssignmentTargetIdentifier(id) => {
@@ -2079,6 +2039,9 @@ impl Codegen {
             _ => {
                 // Non-identifier expressions not supported for for-in
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.compile_error_stmt(fis.span, "for-in only supported with identifier objects");
                 return;
             }
@@ -2094,6 +2057,9 @@ impl Codegen {
 
         if is_dynamic {
             self.write_indent();
+            if let Some(lbl) = label {
+                self.write(&format!("{}: ", lbl));
+            }
             self.write(&format!(
                 "{{ var __it = {obj}.iterator(); while (__it.next()) |__kv| {{ const {var} = __kv.key_ptr.*;\n",
                 obj = obj_name,
@@ -2112,8 +2078,13 @@ impl Codegen {
             && !fields.is_empty()
         {
             let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
-            for (field_name, _) in &fields {
+            for (i, (field_name, _)) in fields.iter().enumerate() {
                 self.write_indent();
+                if i == 0
+                    && let Some(lbl) = label
+                {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.writeln("{");
                 self.indent += 1;
                 self.write_indent();
@@ -2128,64 +2099,8 @@ impl Codegen {
 
         // Case 3: Unknown type → compile error
         self.write_indent();
-        self.compile_error_stmt_fmt(
-            fis.span,
-            format!("for-in: '{}' is not a dynamic object", obj_name),
-        );
-    }
-
-    fn emit_for_in_labeled(&mut self, fis: &ForInStatement) {
-        let var_name = match &fis.left {
-            ForStatementLeft::VariableDeclaration(vd) => vd
-                .declarations
-                .first()
-                .and_then(|decl| self.binding_name(&decl.id))
-                .map(|n| self.zig_safe_name(n))
-                .unwrap_or_else(|| "key".to_string()),
-            ForStatementLeft::AssignmentTargetIdentifier(id) => {
-                self.zig_safe_name(id.name.as_str())
-            }
-            _ => "key".to_string(),
-        };
-        let obj_name = match &fis.right {
-            Expression::Identifier(id) => id.name.to_string(),
-            _ => {
-                self.compile_error_stmt(fis.span, "for-in only supported with identifier objects");
-                return;
-            }
-        };
-        let obj_type = self.type_info.var_types.get(&obj_name);
-        let is_dynamic = obj_type
-            .map(|t| matches!(t, ZigType::Anytype))
-            .unwrap_or(false);
-        if is_dynamic {
-            self.write(&format!(
-                "{{ var __it = {obj}.iterator(); while (__it.next()) |__kv| {{ const {var} = __kv.key_ptr.*;\n",
-                obj = obj_name, var = var_name
-            ));
-            self.indent += 1;
-            self.emit_stmt_or_block(&fis.body);
-            self.indent -= 1;
-            self.write_indent();
-            self.writeln(&format!("}}}} // for-in {}", obj_name));
-            return;
-        }
-        if let Some(ZigType::Struct(fields)) = obj_type
-            && !fields.is_empty()
-        {
-            let fields: Vec<_> = fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
-            for (field_name, _) in &fields {
-                self.write_indent();
-                self.writeln("{");
-                self.indent += 1;
-                self.write_indent();
-                self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
-                self.emit_stmt_or_block(&fis.body);
-                self.indent -= 1;
-                self.write_indent();
-                self.writeln("}");
-            }
-            return;
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
         }
         self.compile_error_stmt_fmt(
             fis.span,
@@ -2532,7 +2447,7 @@ impl Codegen {
         for stmt in stmts.iter() {
             if let Statement::VariableDeclaration(var_decl) = stmt {
                 for declarator in &var_decl.declarations {
-                    if let Some(name) = crate::native_proto::infer::binding_name(&declarator.id) {
+                    if let Some(name) = crate::infer::binding_name(&declarator.id) {
                         names.insert(name.to_string());
                     }
                 }
@@ -2557,7 +2472,7 @@ impl Codegen {
             .params
             .items
             .iter()
-            .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+            .filter_map(|p| crate::infer::binding_name(&p.pattern))
             .map(|s| s.to_string())
             .collect();
         local_names.extend(Self::collect_local_declarations(&arrow.body.statements));
@@ -2596,7 +2511,7 @@ impl Codegen {
             .params
             .items
             .iter()
-            .filter_map(|p| crate::native_proto::infer::binding_name(&p.pattern))
+            .filter_map(|p| crate::infer::binding_name(&p.pattern))
             .map(|s| s.to_string())
             .collect();
 
@@ -2629,7 +2544,7 @@ impl Codegen {
         captured: &mut Vec<(String, ZigType, bool)>,
         seen: &mut std::collections::HashSet<String>,
         local_names: &std::collections::HashSet<String>,
-        type_info: &crate::native_proto::TypeCheckResult,
+        type_info: &crate::infer::TypeCheckResult,
     ) {
         match stmt {
             Statement::ExpressionStatement(es) => {
@@ -2672,7 +2587,7 @@ impl Codegen {
         captured: &mut Vec<(String, ZigType, bool)>,
         seen: &mut std::collections::HashSet<String>,
         local_names: &std::collections::HashSet<String>,
-        type_info: &crate::native_proto::TypeCheckResult,
+        type_info: &crate::infer::TypeCheckResult,
     ) {
         use oxc_ast::ast::Expression;
         match expr {
@@ -2819,18 +2734,18 @@ impl Codegen {
             _ => None,
         }
     }
-    /// Generates the struct definition (with fields and call method) and stores it in self.closure_defs.
+    /// Generates the struct definition (with fields and call method) and stores it in self.closures.closure_defs.
     /// Returns the struct name.
     fn emit_closure_struct(
         &mut self,
         arrow: &ArrowFunctionExpression,
         captured: Vec<(String, ZigType, bool)>,
     ) -> String {
-        let struct_name = format!("Closure_{}", self.arrow_counter);
-        self.arrow_counter += 1;
+        let struct_name = format!("Closure_{}", self.names.next_arrow());
 
         // Store closure info for assignment site (so emit_var_decl can generate instantiation)
-        self.closure_vars
+        self.closures
+            .closure_vars
             .insert(struct_name.clone(), captured.clone());
 
         // ── Temporarily redirect output to build the struct definition ──
@@ -2870,7 +2785,7 @@ impl Codegen {
         let mut sig = String::from("fn call(self: *@This()");
         for param in &arrow.params.items {
             sig.push_str(", ");
-            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+            if let Some(pname) = crate::infer::binding_name(&param.pattern) {
                 sig.push_str(&format!("{}: anytype", pname));
             }
         }
@@ -2881,8 +2796,8 @@ impl Codegen {
 
         // ── Generate method body ──
         // Set current_captured so emit_expr rewrites identifiers to self.xxx
-        let saved_captured = std::mem::take(&mut self.current_captured);
-        self.current_captured = captured.clone();
+        let saved_captured = self.closures.take_captured();
+        self.closures.current_captured = captured.clone();
 
         // Check if arrow function has expression body (single ExpressionStatement without return)
         // In JS: `(y) => x + y` → oxc parses as ExpressionStatement(x + y)
@@ -2907,7 +2822,7 @@ impl Codegen {
         }
 
         // Restore
-        self.current_captured = saved_captured;
+        self.closures.restore_captured(saved_captured);
 
         self.indent = 1;
         self.writeln("}");
@@ -2921,7 +2836,7 @@ impl Codegen {
         self.indent = old_indent;
 
         // Store in closure_defs (will be prepended to output later)
-        self.closure_defs.push(struct_def);
+        self.closures.closure_defs.push(struct_def);
 
         struct_name
     }
@@ -2937,8 +2852,7 @@ impl Codegen {
         // No captured vars: generate struct with call method (Zig 0.16 does not
         // allow nested `fn` declarations with return statements inside function
         // bodies, so we use the same struct+call pattern as closures).
-        let fn_name = format!("_arrow_fn_{}", self.arrow_counter);
-        self.arrow_counter += 1;
+        let fn_name = format!("_arrow_fn_{}", self.names.next_arrow());
         self.nested_fn_names.insert(fn_name.clone());
 
         // Struct definition
@@ -2952,7 +2866,7 @@ impl Codegen {
             if param_idx > 0 {
                 sig.push_str(", ");
             }
-            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+            if let Some(pname) = crate::infer::binding_name(&param.pattern) {
                 sig.push_str(&format!("{}: anytype", pname));
             }
         }
@@ -3012,8 +2926,7 @@ impl Codegen {
             .as_ref()
             .map(|id| id.name.to_string())
             .unwrap_or_else(|| {
-                let n = format!("_fn_expr_{}", self.fn_expr_counter);
-                self.fn_expr_counter += 1;
+                let n = format!("_fn_expr_{}", self.names.next_fn_expr());
                 n
             });
         let safe_name = self.zig_safe_name(&name);
@@ -3026,7 +2939,7 @@ impl Codegen {
         let old_fn_has_throw = self.fn_has_throw;
         let old_seen_return = self.seen_return;
         let old_fn_return_type = self.current_fn_return_type.clone();
-        let old_captured = std::mem::take(&mut self.current_captured);
+        let old_captured = self.closures.take_captured();
 
         self.current_fn = Some(name.clone());
 
@@ -3056,14 +2969,14 @@ impl Codegen {
                 self.writeln(&format!("{}: {},", self.zig_safe_name(cap_name), zig_type));
             }
 
-            self.current_captured = captures.clone();
+            self.closures.current_captured = captures.clone();
 
             // Generate call method
             let old_nested = self.current_nested_fn_name.take();
             self.current_nested_fn_name = Some(name.clone());
             self.emit_fn(func);
             self.current_nested_fn_name = old_nested;
-            self.current_captured.clear();
+            self.closures.current_captured.clear();
 
             self.indent -= 1;
             self.write_indent();
@@ -3102,7 +3015,7 @@ impl Codegen {
         self.fn_has_throw = old_fn_has_throw;
         self.seen_return = old_seen_return;
         self.current_fn_return_type = old_fn_return_type;
-        self.current_captured = old_captured;
+        self.closures.restore_captured(old_captured);
 
         safe_name
     }
@@ -3448,7 +3361,7 @@ impl Codegen {
         // Parameters
         let mut param_idx = 0;
         for param in &func.params.items {
-            if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+            if let Some(pname) = crate::infer::binding_name(&param.pattern) {
                 if param_idx > 0 {
                     self.write(", ");
                 }
@@ -3570,7 +3483,7 @@ impl Codegen {
         } else {
             // Fallback: generate from AST
             for param in &func.params.items {
-                if let Some(pname) = crate::native_proto::infer::binding_name(&param.pattern) {
+                if let Some(pname) = crate::infer::binding_name(&param.pattern) {
                     self.write(&format!(", {}: anytype", pname));
                 }
             }

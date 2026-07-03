@@ -1,9 +1,10 @@
-// native_proto/infer/passes.rs
+﻿// native_proto/infer/passes.rs
 // Analysis passes: Pass 0 (object analysis), Pass 1 (used names),
 // Pass 2 (toplevel type walker) — excluding walk_fn_for_types.
 
+use super::helpers::binding_name;
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
@@ -483,7 +484,7 @@ impl TypeInferrer {
                         _ => ZigType::I64,
                     };
                     for decl in &vd.declarations {
-                        if let Some(name) = Self::binding_name(&decl.id) {
+                        if let Some(name) = binding_name(&decl.id) {
                             self.var_types.insert(name.to_string(), elem_ty.clone());
                         }
                     }
@@ -494,7 +495,7 @@ impl TypeInferrer {
                 // for-in loop variable is always a string (object property name).
                 if let ForStatementLeft::VariableDeclaration(vd) = &fis.left {
                     for decl in &vd.declarations {
-                        if let Some(name) = Self::binding_name(&decl.id) {
+                        if let Some(name) = binding_name(&decl.id) {
                             self.var_types.insert(name.to_string(), ZigType::Str);
                         }
                     }
@@ -658,7 +659,7 @@ impl TypeInferrer {
 
     pub(crate) fn collect_var_types_from_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
-            if let Some(name) = Self::binding_name(&decl.id) {
+            if let Some(name) = binding_name(&decl.id) {
                 if let Some(init) = &decl.init {
                     // Check if this is JSON.parse(@type)
                     if let Some(type_name) = self.get_json_parse_type(name, init) {

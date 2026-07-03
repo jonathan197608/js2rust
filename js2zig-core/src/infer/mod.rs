@@ -1,4 +1,4 @@
-// native_proto/infer/mod.rs
+﻿// native_proto/infer/mod.rs
 // Type inference for native_proto mode.
 // Follows the 8-rule simplification plan:
 // 1. Literal expressions → definite type (use JSDoc if available)
@@ -17,8 +17,8 @@
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::native_proto::JSDocData;
-use crate::native_proto::ZigType;
+use crate::types::JSDocData;
+use crate::types::ZigType;
 
 pub mod expr;
 pub mod fn_types;
@@ -26,7 +26,7 @@ pub mod helpers;
 pub mod passes;
 
 // Re-export public utilities for backward compatibility
-// (codegen uses crate::native_proto::infer::binding_name)
+// (codegen uses crate::infer::binding_name)
 pub use helpers::binding_name;
 
 /// Result of type inference: either a definite type or indeterminate.
@@ -150,7 +150,7 @@ impl TypeInferrer {
             self.host_return_types
                 .insert(def.name.clone(), def.ret_type.clone());
             // Populate struct field types for async return structs
-            if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = def.ret_type
+            if let crate::types::ZigType::NamedStruct(ref struct_name) = def.ret_type
                 && let Some(fields) = host_fns.struct_fields_map().get(struct_name)
             {
                 let field_map: std::collections::HashMap<String, ZigType> =

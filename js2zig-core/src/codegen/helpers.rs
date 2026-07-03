@@ -1,4 +1,4 @@
-// native_proto/codegen/helpers.rs
+﻿// native_proto/codegen/helpers.rs
 // Type inference helpers, operator mappings, and output helpers.
 
 use super::Codegen;
@@ -100,13 +100,6 @@ impl Codegen {
         self.shadow_renames.pop();
     }
 
-    pub(crate) fn binding_name<'a>(&self, pattern: &BindingPattern<'a>) -> Option<&'a str> {
-        match pattern {
-            BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
-            _ => None,
-        }
-    }
-
     /// Extract a property key name from a PropertyKey for destructuring.
     /// Returns None for computed keys (not yet supported).
     pub(crate) fn property_key_name(&self, key: &PropertyKey) -> Option<String> {
@@ -126,7 +119,7 @@ impl Codegen {
         match pattern {
             BindingPattern::BindingIdentifier(id) => Some((id.name.as_str(), None)),
             BindingPattern::AssignmentPattern(ap) => {
-                let name = self.binding_name(&ap.left)?;
+                let name = crate::infer::helpers::binding_name(&ap.left)?;
                 let default_str = self.emit_expr_to_string(&ap.right);
                 Some((name, Some(default_str)))
             }
@@ -227,9 +220,7 @@ impl Codegen {
     /// "redefinition of label" errors when multiple block expressions
     /// appear in the same scope.
     pub fn next_label(&mut self) -> String {
-        let id = self.label_counter;
-        self.label_counter += 1;
-        format!("blk_{}", id)
+        self.names.next_label()
     }
 
     /// Start a block expression with a unique label.

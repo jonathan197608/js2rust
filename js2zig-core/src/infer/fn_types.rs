@@ -2,10 +2,10 @@
 // Function-level type inference: parameters, return types, async detection.
 // Also contains private helper methods for TypeInferrer.
 
-use super::helpers::expr_depends_on_anytype;
+use super::helpers::{binding_name, expr_depends_on_anytype};
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
-use crate::native_proto::jsdoc;
+use crate::jsdoc;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
@@ -318,7 +318,7 @@ impl TypeInferrer {
         let mut params = Vec::new();
 
         for param in &fd.params.items {
-            if let Some(pname) = Self::binding_name(&param.pattern) {
+            if let Some(pname) = binding_name(&param.pattern) {
                 if is_export {
                     // Export: check JSDoc @param
                     let mut found_jsdoc = false;
@@ -435,13 +435,6 @@ impl TypeInferrer {
         self.exported_functions
             .as_ref()
             .is_some_and(|set| set.contains(fn_name))
-    }
-
-    pub(crate) fn binding_name<'a>(pattern: &BindingPattern<'a>) -> Option<&'a str> {
-        match pattern {
-            BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
-            _ => None,
-        }
     }
 
     /// Check if an initializer is JSON.parse() and return the @type annotation.
