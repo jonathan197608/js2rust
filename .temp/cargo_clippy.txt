@@ -1,0 +1,40 @@
+﻿cargo :     Blocking waiting for file lock on build directory
+所在位置 行:91 字符: 46
++ ... d C:\Users\18988\RustroverProjects\js2rust; cargo clippy 2>&1 | Out-F ...
++                                                 ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling js2zig-core v0.7.3 (C:\Users\18988\RustroverProjects\js2rust\js2zig-core)
+    Checking js2rust-bridge-macro v0.8.3 (C:\Users\18988\RustroverProjects\js2rust\js2rust-bridge-macro)
+   Compiling js2rust-bridge v0.8.3 (C:\Users\18988\RustroverProjects\js2rust\js2rust-bridge)
+   Compiling test-bin-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\test-bin-project)
+   Compiling showcase-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\showcase-project)
+   Compiling mdn-test-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project)
+   Compiling test-lib-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project)
+DEBUG transpile_project: name='main', force_rebuild=true, run_zig_build=false
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/groups.json
+
+=== main (1 member) ===
+DEBUG transpile_project: name='app', force_rebuild=true, run_zig_build=false
+DEBUG: group=main, force_rebuild=true, has_cache=true, hash_len=16
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\showcase-project\.js2zig-cache/groups.json
+
+=== app (8 members) ===
+DEBUG: group=app, force_rebuild=true, has_cache=true, hash_len=16
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/main
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\showcase-project\.js2zig-cache/app
+DEBUG transpile_project: name='main', force_rebuild=true, run_zig_build=false
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\test-bin-project\.js2zig-cache/groups.json
+
+=== main (1 member) ===
+DEBUG: group=main, force_rebuild=true, has_cache=false, hash_len=16
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\test-bin-project\.js2zig-cache/main
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\test-bin-project\.js2zig-cache/host.zig
+DEBUG transpile_project: name='app', force_rebuild=true, run_zig_build=false
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache/groups.json
+
+=== app (205 members) ===
+DEBUG: group=app, force_rebuild=true, has_cache=false, hash_len=16
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project\.js2zig-cache/app
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 04s

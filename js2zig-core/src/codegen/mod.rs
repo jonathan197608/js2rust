@@ -6,9 +6,12 @@ use oxc_ast::ast::*;
 use oxc_span::Span;
 
 pub mod builtins;
+pub mod class;
+pub mod closures;
 pub mod expr;
 pub mod helpers;
 pub mod stmt;
+pub mod tables;
 
 // ── Constructor ─────────────────────────────────────
 

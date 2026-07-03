@@ -2260,122 +2260,12 @@ impl Codegen {
         result
     }
 
-    // ── Builtin lookup tables (table-driven dispatch helpers) ──────
-
-    /// Descriptor for a simple 1-arg Math builtin mapped to a Zig call.
-    pub(crate) fn math_one_arg_desc(b: &builtins::BuiltinCall) -> Option<MathOneArgDesc> {
-        match b {
-            // Direct Zig builtins
-            builtins::BuiltinCall::MathAbs => Some(MathOneArgDesc {
-                name: "abs",
-                format: "@abs({arg})",
-            }),
-            builtins::BuiltinCall::MathFloor => Some(MathOneArgDesc {
-                name: "floor",
-                format: "@floor({arg})",
-            }),
-            builtins::BuiltinCall::MathCeil => Some(MathOneArgDesc {
-                name: "ceil",
-                format: "@ceil({arg})",
-            }),
-            builtins::BuiltinCall::MathRound => Some(MathOneArgDesc {
-                name: "round",
-                format: "@round({arg})",
-            }),
-            builtins::BuiltinCall::MathSqrt => Some(MathOneArgDesc {
-                name: "sqrt",
-                format: "@sqrt({arg})",
-            }),
-            // Trig: @fn(@as(f64, @floatFromInt(x)))
-            builtins::BuiltinCall::MathSin => Some(MathOneArgDesc {
-                name: "sin",
-                format: "@sin(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathCos => Some(MathOneArgDesc {
-                name: "cos",
-                format: "@cos(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathTan => Some(MathOneArgDesc {
-                name: "tan",
-                format: "@tan(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathAtan => Some(MathOneArgDesc {
-                name: "atan",
-                format: "@atan(@as(f64, @floatFromInt({arg})))",
-            }),
-            // Log: @fn(@as(f64, @floatFromInt(x)))
-            builtins::BuiltinCall::MathLog => Some(MathOneArgDesc {
-                name: "log",
-                format: "@log(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathLog10 => Some(MathOneArgDesc {
-                name: "log10",
-                format: "@log10(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathLog2 => Some(MathOneArgDesc {
-                name: "log2",
-                format: "@log2(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathExp => Some(MathOneArgDesc {
-                name: "exp",
-                format: "@exp(@as(f64, @floatFromInt({arg})))",
-            }),
-            // std.math with f64 wrapping
-            builtins::BuiltinCall::MathAsin => Some(MathOneArgDesc {
-                name: "asin",
-                format: "std.math.asin(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathAcos => Some(MathOneArgDesc {
-                name: "acos",
-                format: "std.math.acos(@as(f64, @floatFromInt({arg})))",
-            }),
-            // std.math without wrapping
-            builtins::BuiltinCall::MathTrunc => Some(MathOneArgDesc {
-                name: "trunc",
-                format: "@trunc(@as(f64, @floatFromInt({arg})))",
-            }),
-            builtins::BuiltinCall::MathCbrt => Some(MathOneArgDesc {
-                name: "cbrt",
-                format: "std.math.cbrt({arg})",
-            }),
-            builtins::BuiltinCall::MathExpm1 => Some(MathOneArgDesc {
-                name: "expm1",
-                format: "std.math.expm1({arg})",
-            }),
-            builtins::BuiltinCall::MathSinh => Some(MathOneArgDesc {
-                name: "sinh",
-                format: "std.math.sinh({arg})",
-            }),
-            builtins::BuiltinCall::MathCosh => Some(MathOneArgDesc {
-                name: "cosh",
-                format: "std.math.cosh({arg})",
-            }),
-            builtins::BuiltinCall::MathTanh => Some(MathOneArgDesc {
-                name: "tanh",
-                format: "std.math.tanh({arg})",
-            }),
-            builtins::BuiltinCall::MathAsinh => Some(MathOneArgDesc {
-                name: "asinh",
-                format: "std.math.asinh({arg})",
-            }),
-            builtins::BuiltinCall::MathAcosh => Some(MathOneArgDesc {
-                name: "acosh",
-                format: "std.math.acosh({arg})",
-            }),
-            builtins::BuiltinCall::MathAtanh => Some(MathOneArgDesc {
-                name: "atanh",
-                format: "std.math.atanh({arg})",
-            }),
-            builtins::BuiltinCall::MathLog1p => Some(MathOneArgDesc {
-                name: "log1p",
-                format: "std.math.log1p({arg})",
-            }),
-            _ => None,
-        }
-    }
-
     /// Emit a simple 1-arg Math builtin call using a format string.
-    pub(crate) fn emit_math_one_arg(&mut self, desc: &MathOneArgDesc, ce: &CallExpression) -> bool {
+    pub(crate) fn emit_math_one_arg(
+        &mut self,
+        desc: &super::tables::MathOneArgDesc,
+        ce: &CallExpression,
+    ) -> bool {
         if ce.arguments.len() != 1 {
             self.errors
                 .push(format!("Math.{}() requires exactly 1 argument", desc.name));
@@ -2391,240 +2281,12 @@ impl Codegen {
         true
     }
 
-    /// Returns the descriptor for simple String runtime forwarding builtins.
-    fn string_runtime_desc(b: &builtins::BuiltinCall) -> Option<StringRuntimeDesc> {
-        match b {
-            // ── No allocator, 0 args, non-fallible ──
-            builtins::BuiltinCall::StringTrim => Some(StringRuntimeDesc {
-                method: "trim",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringTrimStart => Some(StringRuntimeDesc {
-                method: "trimStart",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringTrimEnd => Some(StringRuntimeDesc {
-                method: "trimEnd",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            // ── No allocator, 1 arg, non-fallible ──
-            builtins::BuiltinCall::StringIndexOf => Some(StringRuntimeDesc {
-                method: "indexOf",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringIncludes => Some(StringRuntimeDesc {
-                method: "includes",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringStartsWith => Some(StringRuntimeDesc {
-                method: "startsWith",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringEndsWith => Some(StringRuntimeDesc {
-                method: "endsWith",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringLastIndexOf => Some(StringRuntimeDesc {
-                method: "lastIndexOf",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringCharCodeAt => Some(StringRuntimeDesc {
-                method: "charCodeAt",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringCodePointAt => Some(StringRuntimeDesc {
-                method: "codePointAt",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            // ── No allocator, 1-2 args, non-fallible ──
-            builtins::BuiltinCall::StringSlice => Some(StringRuntimeDesc {
-                method: "slice",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 2,
-                opt_defaults: &["std.math.maxInt(i64)"],
-            }),
-            builtins::BuiltinCall::StringSubstring => Some(StringRuntimeDesc {
-                method: "substring",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 1,
-                max_args: 2,
-                opt_defaults: &["std.math.maxInt(i64)"],
-            }),
-            // ── No allocator, 0-1 arg, non-fallible ──
-            builtins::BuiltinCall::StringLocaleCompare => Some(StringRuntimeDesc {
-                method: "localeCompare",
-                needs_allocator: false,
-                is_fallible: false,
-                min_args: 0,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            // ── With allocator, 0 args, fallible (returns ![]const u8) ──
-            builtins::BuiltinCall::StringToUpperCase => Some(StringRuntimeDesc {
-                method: "toUpper",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringToLocaleUpperCase => Some(StringRuntimeDesc {
-                method: "toLocaleUpper",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringToLowerCase => Some(StringRuntimeDesc {
-                method: "toLower",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringToLocaleLowerCase => Some(StringRuntimeDesc {
-                method: "toLocaleLower",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 0,
-                max_args: 0,
-                opt_defaults: &[],
-            }),
-            // ── With allocator, 1 arg, fallible ──
-            builtins::BuiltinCall::StringCharAt => Some(StringRuntimeDesc {
-                method: "charAt",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringAt => Some(StringRuntimeDesc {
-                method: "at",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringConcat => Some(StringRuntimeDesc {
-                method: "concat",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringRepeat => Some(StringRuntimeDesc {
-                method: "repeat",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            // ── With allocator, 1 arg, fallible (returns ![][]const u8) ──
-            builtins::BuiltinCall::StringSplit => Some(StringRuntimeDesc {
-                method: "split",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 1,
-                max_args: 1,
-                opt_defaults: &[],
-            }),
-            // ── With allocator, 2 args, fallible ──
-            builtins::BuiltinCall::StringPadStart => Some(StringRuntimeDesc {
-                method: "padStart",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 2,
-                max_args: 2,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringPadEnd => Some(StringRuntimeDesc {
-                method: "padEnd",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 2,
-                max_args: 2,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringReplace => Some(StringRuntimeDesc {
-                method: "replace",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 2,
-                max_args: 2,
-                opt_defaults: &[],
-            }),
-            builtins::BuiltinCall::StringReplaceAll => Some(StringRuntimeDesc {
-                method: "replaceAll",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 2,
-                max_args: 2,
-                opt_defaults: &[],
-            }),
-            // ── With allocator, 0-1 arg, fallible ──
-            builtins::BuiltinCall::StringNormalize => Some(StringRuntimeDesc {
-                method: "normalize",
-                needs_allocator: true,
-                is_fallible: true,
-                min_args: 0,
-                max_args: 1,
-                opt_defaults: &["\"NFC\""],
-            }),
-            _ => None,
-        }
-    }
-
     /// Emit a simple String runtime forwarding call: `js_string.method(alloc?, obj, ...)`.
-    fn emit_string_runtime_call(&mut self, desc: &StringRuntimeDesc, ce: &CallExpression) -> bool {
+    fn emit_string_runtime_call(
+        &mut self,
+        desc: &super::tables::StringRuntimeDesc,
+        ce: &CallExpression,
+    ) -> bool {
         let n_args = ce.arguments.len();
         if n_args < desc.min_args || n_args > desc.max_args {
             self.errors.push(if desc.min_args == desc.max_args {
@@ -2725,8 +2387,8 @@ impl Codegen {
             b if self.emit_builtin_console(b, ce) => true,
 
             // ── String runtime forwarding (27 methods) ────
-            b if Self::string_runtime_desc(b).is_some() => {
-                let desc = Self::string_runtime_desc(b).unwrap();
+            b if super::tables::string_runtime_desc(b).is_some() => {
+                let desc = super::tables::string_runtime_desc(b).unwrap();
                 self.emit_string_runtime_call(&desc, ce)
             }
 
@@ -3800,33 +3462,6 @@ impl Codegen {
 // Codegen is now purely generative — it reads from
 // self.type_info (TypeCheckResult) pre-computed by TypeInferrer.
 // ============================================================
-
-/// Descriptor for a simple 1-arg Math builtin mapped to a Zig call.
-pub(crate) struct MathOneArgDesc {
-    /// JS method name for error messages (e.g. "abs").
-    pub(crate) name: &'static str,
-    /// Zig format string with `{arg}` placeholder.
-    pub(crate) format: &'static str,
-}
-
-/// Descriptor for simple String runtime forwarding calls.
-struct StringRuntimeDesc {
-    /// Zig function name (e.g. "trim", "toUpper").
-    method: &'static str,
-    /// Whether the call needs `js_allocator.allocator()` as first arg.
-    needs_allocator: bool,
-    /// Whether the Zig runtime function returns an error union (`!T`).
-    /// If true, `try` is prepended to the call expression.
-    is_fallible: bool,
-    /// Minimum number of JS-level arguments required.
-    min_args: usize,
-    /// Maximum number of JS-level arguments accepted.
-    max_args: usize,
-    /// Default Zig expressions for optional argument slots beyond min_args.
-    /// One entry per optional slot (e.g. min=1,max=2 → 1 entry for 2nd arg).
-    /// Empty entries mean the slot is simply omitted when the arg is missing.
-    opt_defaults: &'static [&'static str],
-}
 
 impl Codegen {
     /// Infer the type of an expression. Returns ZigType.

@@ -240,8 +240,8 @@ impl Codegen {
             }
 
             // Math 1-arg (table-driven, 25 methods)
-            b if Self::math_one_arg_desc(b).is_some() => {
-                let desc = Self::math_one_arg_desc(b).unwrap();
+            b if super::tables::math_one_arg_desc(b).is_some() => {
+                let desc = super::tables::math_one_arg_desc(b).unwrap();
                 self.emit_math_one_arg(&desc, ce)
             }
 
@@ -258,69 +258,30 @@ impl Codegen {
         builtin: &builtins::BuiltinCall,
         ce: &CallExpression,
     ) -> bool {
-        match builtin {
-            builtins::BuiltinCall::ConsoleLog => {
-                if ce.arguments.len() <= 1 {
-                    self.write("js_console.log(");
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(")");
-                } else {
-                    self.write("js_console.logMulti(.{ ");
-                    for (i, arg) in ce.arguments.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                    }
-                    self.write(" })");
-                }
-                true
-            }
+        let (fn_name, multi_fn_name) = match builtin {
+            builtins::BuiltinCall::ConsoleLog => ("log", "logMulti"),
+            builtins::BuiltinCall::ConsoleError => ("err", "errMulti"),
+            builtins::BuiltinCall::ConsoleWarn => ("warn", "warnMulti"),
+            _ => return false,
+        };
 
-            builtins::BuiltinCall::ConsoleError => {
-                if ce.arguments.len() <= 1 {
-                    self.write("js_console.err(");
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(")");
-                } else {
-                    self.write("js_console.errMulti(.{ ");
-                    for (i, arg) in ce.arguments.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                    }
-                    self.write(" })");
+        if ce.arguments.len() <= 1 {
+            self.write(&format!("js_console.{fn_name}("));
+            self.emit_first_arg(&ce.arguments);
+            self.write(")");
+        } else {
+            self.write(&format!("js_console.{multi_fn_name}(.{{ "));
+            for (i, arg) in ce.arguments.iter().enumerate() {
+                if i > 0 {
+                    self.write(", ");
                 }
-                true
-            }
-
-            builtins::BuiltinCall::ConsoleWarn => {
-                if ce.arguments.len() <= 1 {
-                    self.write("js_console.warn(");
-                    self.emit_first_arg(&ce.arguments);
-                    self.write(")");
-                } else {
-                    self.write("js_console.warnMulti(.{ ");
-                    for (i, arg) in ce.arguments.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        if let Some(expr) = arg.as_expression() {
-                            self.emit_expr(expr);
-                        }
-                    }
-                    self.write(" })");
+                if let Some(expr) = arg.as_expression() {
+                    self.emit_expr(expr);
                 }
-                true
             }
-
-            _ => false,
+            self.write(" })");
         }
+        true
     }
 }
 

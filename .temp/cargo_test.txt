@@ -1,0 +1,45 @@
+﻿cargo :    Compiling js2zig-core v0.7.3 (C:\Users\18988\RustroverProjects\js2rust\js2zig-core)
+所在位置 行:91 字符: 46
++ cd C:\Users\18988\RustroverProjects\js2rust; cargo test 2>&1 | Out-Fi ...
++                                              ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling js...st\js2zig-core):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: function `assert_not_implemented` is never used
+   --> js2zig-core\src\tests\common.rs:167:8
+    |
+167 | pub fn assert_not_implemented(js: &str, feature_name: &str) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `js2zig-core` (lib test) generated 1 warning
+   Compiling js2rust-bridge-macro v0.8.3 (C:\Users\18988\RustroverProjects\js2rust\js2rust-bridge-macro)
+   Compiling js2rust-bridge v0.8.3 (C:\Users\18988\RustroverProjects\js2rust\js2rust-bridge)
+   Compiling test-lib-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project)
+   Compiling showcase-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\showcase-project)
+   Compiling test-bin-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\test-bin-project)
+   Compiling mdn-test-project v0.1.0 (C:\Users\18988\RustroverProjects\js2rust\examples\mdn-test-project)
+DEBUG transpile_project: name='main', force_rebuild=true, run_zig_build=false
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/groups.json
+
+=== main (1 member) ===
+DEBUG: group=main, force_rebuild=true, has_cache=true, hash_len=16
+DEBUG transpile_project: name='main', force_rebuild=true, run_zig_build=false
+Wrote: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/groups.json
+
+=== main (1 member) ===
+DEBUG: group=main, force_rebuild=true, has_cache=true, hash_len=16
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/main
+  Generated: C:\Users\18988\RustroverProjects\js2rust\examples\test-lib-project\.js2zig-cache/main
+error: js2rust_bridge: failed to parse cabi_exports for group 'main': EOF while parsing a value at line 1 column 0
+ --> examples\test-lib-project\src\lib.rs:8:1
+  |
+8 | js2rust_bridge!();
+  | ^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `js2rust_bridge` (in Nightly builds, run with -Z macro-backtrace for more 
+info)
+
+error: could not compile `test-lib-project` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

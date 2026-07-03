@@ -15,6 +15,10 @@ pub mod native_proto;
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
+/// ZigIR — structured intermediate representation between AST and Zig source.
+/// Work in progress, not integrated into pipeline yet.
+pub mod zigir;
+
 // ── Submodules ──
 // Declared at crate level for direct access (e.g. crate::codegen, crate::infer).
 pub(crate) mod codegen;

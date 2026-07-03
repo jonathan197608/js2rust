@@ -1,0 +1,807 @@
+// zigir/types.rs
+// Core IR node types: module, declarations, statements, expressions.
+
+use crate::types::ZigType;
+use crate::zigir::builtins::BuiltinModule;
+use crate::zigir::ident::IrIdent;
+use crate::zigir::kinds::{CallKind, ComputedKeyKind, FieldKind, IndexKind, NewConstructor};
+use crate::zigir::ops::{AssignOp, BinOp, LogicalOp, UnaOp, UpdateOp};
+use crate::zigir::source_span::{IrDiagnostic, SourceSpan};
+
+// ═══════════════════════════════════════════════════════
+//  Top-level: IrModule
+// ═══════════════════════════════════════════════════════
+
+/// A complete Zig module (one JS file's transpilation result).
+#[derive(Debug, Clone)]
+pub struct IrModule {
+    /// Module name (sanitized).
+    pub name: String,
+    /// Dependency imports.
+    pub imports: Vec<IrImport>,
+    /// JSDoc @typedef struct definitions.
+    pub typedefs: Vec<IrTypedef>,
+    /// Closure struct definitions (prepended before declarations in output).
+    pub closure_structs: Vec<IrClosureStruct>,
+    /// Top-level declarations (functions, variables, classes, compile errors).
+    pub declarations: Vec<IrDecl>,
+    /// Diagnostic messages.
+    pub diagnostics: Vec<IrDiagnostic>,
+    /// C ABI export metadata.
+    pub cabi_exports: Vec<IrCabiExport>,
+}
+
+impl IrModule {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            imports: Vec::new(),
+            typedefs: Vec::new(),
+            closure_structs: Vec::new(),
+            declarations: Vec::new(),
+            diagnostics: Vec::new(),
+            cabi_exports: Vec::new(),
+        }
+    }
+}
+
+/// Import declaration.
+#[derive(Debug, Clone)]
+pub struct IrImport {
+    /// Sanitized Zig module name (e.g. "js_array", "std.json").
+    pub module_name: String,
+    /// (imported_name, local_alias) pairs.
+    pub items: Vec<(String, String)>,
+}
+
+/// JSDoc @typedef struct definition.
+#[derive(Debug, Clone)]
+pub struct IrTypedef {
+    pub name: String,
+    pub fields: Vec<IrTypedefField>,
+    pub is_opaque: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrTypedefField {
+    pub name: String,
+    pub zig_type: ZigType,
+    pub optional: bool,
+}
+
+/// Closure struct definition (prepended at module level).
+#[derive(Debug, Clone)]
+pub struct IrClosureStruct {
+    pub name: IrIdent,
+    pub captured: Vec<IrCapture>,
+    pub fn_param: IrParam,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+}
+
+/// C ABI export metadata.
+#[derive(Debug, Clone)]
+pub struct IrCabiExport {
+    pub name: String,
+    pub params: Vec<IrParam>,
+    pub return_type: ZigType,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Declarations: IrDecl
+// ═══════════════════════════════════════════════════════
+
+/// Top-level declaration.
+#[derive(Debug, Clone)]
+pub enum IrDecl {
+    /// const/var variable declaration.
+    Var(IrVarDecl),
+    /// function declaration (export/regular/C ABI).
+    Fn(IrFnDecl),
+    /// class declaration → struct + init + methods.
+    Class(IrClassDecl),
+    /// @compileError at top level.
+    CompileError { span: SourceSpan, msg: String },
+}
+
+// ── Variable declaration ──────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrVarDecl {
+    pub name: IrIdent,
+    pub is_const: bool,
+    pub zig_type: Option<ZigType>,
+    pub init: Option<IrExpr>,
+    pub is_json_parse: bool,
+    pub needs_var_suppression: bool,
+}
+
+// ── Function declaration ──────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrFnDecl {
+    pub name: IrIdent,
+    pub params: Vec<IrParam>,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+    pub is_export: bool,
+    pub is_async: bool,
+    pub can_throw: bool,
+    pub is_cabi: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrParam {
+    pub name: IrIdent,
+    pub zig_type: ZigType,
+}
+
+/// A sequence of statements with an optional label.
+#[derive(Debug, Clone)]
+pub struct IrBlock {
+    pub stmts: Vec<IrStmt>,
+    pub label: Option<String>,
+}
+
+impl IrBlock {
+    pub fn new(stmts: Vec<IrStmt>) -> Self {
+        Self { stmts, label: None }
+    }
+
+    pub fn with_label(stmts: Vec<IrStmt>, label: String) -> Self {
+        Self {
+            stmts,
+            label: Some(label),
+        }
+    }
+}
+
+// ── Class declaration ─────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrClassDecl {
+    pub name: IrIdent,
+    pub fields: Vec<IrClassField>,
+    pub constructor: Option<IrClassMethod>,
+    pub methods: Vec<IrClassMethod>,
+    pub static_inits: Vec<IrExpr>,
+    pub extends: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrClassField {
+    pub name: String,
+    pub zig_type: ZigType,
+    pub default: Option<IrExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrClassMethod {
+    pub name: String,
+    pub params: Vec<IrParam>,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+    pub is_static: bool,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Statements: IrStmt
+// ═══════════════════════════════════════════════════════
+
+#[derive(Debug, Clone)]
+pub enum IrStmt {
+    // ── Variable & assignment ───────────────────────
+    VarDecl(IrVarDecl),
+    Assign {
+        target: IrAssignTarget,
+        op: AssignOp,
+        value: IrExpr,
+    },
+
+    // ── Control flow ────────────────────────────────
+    If {
+        cond: IrExpr,
+        then: IrBlock,
+        else_: Option<IrBlock>,
+    },
+    While {
+        cond: IrExpr,
+        body: IrBlock,
+    },
+    DoWhile {
+        body: IrBlock,
+        cond: IrExpr,
+    },
+    For {
+        init: Option<Box<IrStmt>>,
+        cond: Option<IrExpr>,
+        update: Option<Box<IrStmt>>,
+        body: IrBlock,
+    },
+    ForIn {
+        var: IrIdent,
+        iterable: IrExpr,
+        body: IrBlock,
+        is_struct: bool,
+    },
+    ForOf {
+        var: IrIdent,
+        iterable: IrExpr,
+        body: IrBlock,
+        is_async: bool,
+    },
+    Switch {
+        expr: IrExpr,
+        cases: Vec<IrSwitchCase>,
+    },
+
+    // ── Exception handling ──────────────────────────
+    Try {
+        try_block: IrBlock,
+        catch_var: Option<IrIdent>,
+        catch_block: IrBlock,
+        finally: Option<IrBlock>,
+    },
+    Throw {
+        value: IrExpr,
+    },
+
+    // ── Function control ────────────────────────────
+    Return {
+        value: Option<IrExpr>,
+    },
+    Break {
+        label: Option<String>,
+    },
+    Continue {
+        label: Option<String>,
+    },
+
+    // ── Expression statement ────────────────────────
+    Expr(IrExpr),
+
+    // ── Block ───────────────────────────────────────
+    Block(IrBlock),
+
+    // ── Debug / diagnostics ─────────────────────────
+    CompileError {
+        span: SourceSpan,
+        msg: String,
+    },
+    Comment(String),
+}
+
+/// Assignment target (lhs of an assignment).
+#[derive(Debug, Clone)]
+pub enum IrAssignTarget {
+    /// Simple identifier.
+    Ident(IrIdent),
+    /// Member field: `obj.field`
+    Member {
+        object: Box<IrExpr>,
+        field: String,
+        is_pointer: bool,
+    },
+    /// Index access: `obj[idx]`
+    Index {
+        object: Box<IrExpr>,
+        index: Box<IrExpr>,
+    },
+    /// Destructuring assignment.
+    Destructure(Vec<IrDestructureBinding>),
+}
+
+#[derive(Debug, Clone)]
+pub struct IrDestructureBinding {
+    pub pattern: IrIdent,
+    pub default: Option<IrExpr>,
+}
+
+/// A single switch case.
+#[derive(Debug, Clone)]
+pub struct IrSwitchCase {
+    /// None = default case.
+    pub test: Option<IrExpr>,
+    pub body: Vec<IrStmt>,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Expressions: IrExpr
+// ═══════════════════════════════════════════════════════
+
+#[derive(Debug, Clone)]
+pub enum IrExpr {
+    // ── Literals ────────────────────────────────────
+    IntLiteral(i64),
+    FloatLiteral(f64),
+    StringLiteral(String),
+    BoolLiteral(bool),
+    Null,
+    Undefined,
+
+    // ── Identifier reference ────────────────────────
+    Ident(IrIdent),
+    This,
+
+    // ── Arithmetic / comparison ─────────────────────
+    Binary {
+        op: BinOp,
+        left: Box<IrExpr>,
+        right: Box<IrExpr>,
+    },
+    Unary {
+        op: UnaOp,
+        operand: Box<IrExpr>,
+    },
+    Logical {
+        op: LogicalOp,
+        left: Box<IrExpr>,
+        right: Box<IrExpr>,
+    },
+    Update {
+        op: UpdateOp,
+        target: Box<IrAssignTarget>,
+        is_expr_stmt: bool,
+    },
+    Assign {
+        op: AssignOp,
+        target: Box<IrAssignTarget>,
+        value: Box<IrExpr>,
+    },
+
+    // ── Calls ───────────────────────────────────────
+    Call(IrCallExpr),
+    BuiltinCall(IrBuiltinCall),
+    HostCall(IrHostCall),
+
+    // ── Member access ───────────────────────────────
+    FieldAccess {
+        object: Box<IrExpr>,
+        field: String,
+        field_kind: FieldKind,
+    },
+    IndexAccess {
+        object: Box<IrExpr>,
+        index: Box<IrExpr>,
+        index_kind: IndexKind,
+    },
+    ComputedField {
+        object: Box<IrExpr>,
+        key: Box<IrExpr>,
+        key_kind: ComputedKeyKind,
+    },
+
+    // ── Object / Array ──────────────────────────────
+    ArrayLiteral(IrArrayLiteral),
+    ObjectLiteral(IrObjectLiteral),
+
+    // ── Function expressions ────────────────────────
+    ArrowFn(IrArrowFn),
+    Closure(IrClosure),
+    FnExpr(IrFnExpr),
+
+    // ── Conditional / template ──────────────────────
+    Conditional {
+        cond: Box<IrExpr>,
+        then: Box<IrExpr>,
+        else_: Box<IrExpr>,
+    },
+    TemplateLiteral {
+        parts: Vec<String>,
+        exprs: Vec<IrExpr>,
+    },
+
+    // ── Async ───────────────────────────────────────
+    Await(IrAwaitExpr),
+
+    // ── Construction ────────────────────────────────
+    New(IrNewExpr),
+
+    // ── Block expression ────────────────────────────
+    BlockExpr {
+        label: String,
+        body: Vec<IrStmt>,
+        result: Box<IrExpr>,
+    },
+
+    // ── Special ─────────────────────────────────────
+    Spread(Box<IrExpr>),
+    Typeof(Box<IrExpr>),
+    Void(Box<IrExpr>),
+    Paren(Box<IrExpr>),
+    Sequence(Vec<IrExpr>),
+    CompileError {
+        span: SourceSpan,
+        msg: String,
+    },
+}
+
+// ── Call types ─────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrCallExpr {
+    pub callee: Box<IrExpr>,
+    pub args: Vec<IrExpr>,
+    pub call_kind: CallKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrBuiltinCall {
+    pub module: BuiltinModule,
+    pub method: String,
+    pub args: Vec<IrExpr>,
+    pub return_type: ZigType,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrHostCall {
+    pub name: String,
+    pub args: Vec<IrExpr>,
+    pub return_type: ZigType,
+    pub is_async: bool,
+}
+
+// ── Await ──────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrAwaitExpr {
+    pub task_var: IrIdent,
+    pub callee: Box<IrExpr>,
+    pub args: Vec<IrExpr>,
+    pub is_host_async: bool,
+    pub block_label: String,
+}
+
+// ── Closure ────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrClosure {
+    pub struct_name: IrIdent,
+    pub captured: Vec<IrCapture>,
+    pub fn_param: IrParam,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+    pub instance_name: IrIdent,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrCapture {
+    pub name: IrIdent,
+    pub zig_type: ZigType,
+    pub is_mut: bool,
+}
+
+// ── Arrow function ─────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrArrowFn {
+    pub params: Vec<IrParam>,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+    pub is_concise: bool,
+}
+
+// ── Function expression ────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrFnExpr {
+    pub name: Option<IrIdent>,
+    pub params: Vec<IrParam>,
+    pub return_type: ZigType,
+    pub body: IrBlock,
+}
+
+// ── Array literal ──────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrArrayLiteral {
+    pub elements: Vec<IrExpr>,
+    pub spread_indices: Vec<usize>,
+}
+
+// ── Object literal ─────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrObjectLiteral {
+    pub fields: Vec<IrObjectField>,
+    pub spreads: Vec<IrExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrObjectField {
+    pub key: String,
+    pub value: IrExpr,
+    pub is_computed: bool,
+}
+
+// ── New expression ─────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct IrNewExpr {
+    pub constructor: NewConstructor,
+    pub args: Vec<IrExpr>,
+    pub result_type: ZigType,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Tests
+// ═══════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::zigir::kinds::DateConstructorKind;
+
+    #[test]
+    fn test_ir_module_construction() {
+        let m = IrModule::new("main".to_string());
+        assert_eq!(m.name, "main");
+        assert!(m.imports.is_empty());
+        assert!(m.declarations.is_empty());
+    }
+
+    #[test]
+    fn test_ir_var_decl() {
+        let v = IrVarDecl {
+            name: IrIdent::new("x"),
+            is_const: true,
+            zig_type: Some(ZigType::I64),
+            init: Some(IrExpr::IntLiteral(42)),
+            is_json_parse: false,
+            needs_var_suppression: false,
+        };
+        assert_eq!(v.name.zig_name, "x");
+        assert!(v.is_const);
+    }
+
+    #[test]
+    fn test_ir_fn_decl() {
+        let f = IrFnDecl {
+            name: IrIdent::new("add"),
+            params: vec![
+                IrParam {
+                    name: IrIdent::new("a"),
+                    zig_type: ZigType::I64,
+                },
+                IrParam {
+                    name: IrIdent::new("b"),
+                    zig_type: ZigType::I64,
+                },
+            ],
+            return_type: ZigType::I64,
+            body: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
+                    right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                }),
+            }]),
+            is_export: true,
+            is_async: false,
+            can_throw: false,
+            is_cabi: false,
+        };
+        assert_eq!(f.params.len(), 2);
+        assert!(f.is_export);
+    }
+
+    #[test]
+    fn test_ir_if_stmt() {
+        let stmt = IrStmt::If {
+            cond: IrExpr::BoolLiteral(true),
+            then: IrBlock::new(vec![IrStmt::Expr(IrExpr::IntLiteral(1))]),
+            else_: Some(IrBlock::new(vec![IrStmt::Expr(IrExpr::IntLiteral(2))])),
+        };
+        assert!(matches!(stmt, IrStmt::If { .. }));
+    }
+
+    #[test]
+    fn test_ir_try_catch() {
+        let stmt = IrStmt::Try {
+            try_block: IrBlock::new(vec![]),
+            catch_var: Some(IrIdent::new("e")),
+            catch_block: IrBlock::new(vec![]),
+            finally: None,
+        };
+        assert!(matches!(stmt, IrStmt::Try { .. }));
+    }
+
+    #[test]
+    fn test_ir_call_expr() {
+        let call = IrCallExpr {
+            callee: Box::new(IrExpr::Ident(IrIdent::new("foo"))),
+            args: vec![IrExpr::IntLiteral(1), IrExpr::IntLiteral(2)],
+            call_kind: CallKind::Direct,
+        };
+        assert_eq!(call.args.len(), 2);
+    }
+
+    #[test]
+    fn test_ir_builtin_call() {
+        let bc = IrBuiltinCall {
+            module: BuiltinModule::JsArray,
+            method: "push".to_string(),
+            args: vec![IrExpr::Ident(IrIdent::new("x"))],
+            return_type: ZigType::Void,
+        };
+        assert_eq!(bc.module.module_path(), "js_array");
+    }
+
+    #[test]
+    fn test_ir_closure() {
+        let closure = IrClosure {
+            struct_name: IrIdent::new("_closure_0"),
+            captured: vec![IrCapture {
+                name: IrIdent::new("a"),
+                zig_type: ZigType::I64,
+                is_mut: false,
+            }],
+            fn_param: IrParam {
+                name: IrIdent::new("b"),
+                zig_type: ZigType::I64,
+            },
+            return_type: ZigType::I64,
+            body: IrBlock::new(vec![]),
+            instance_name: IrIdent::new("_cl_0"),
+        };
+        assert_eq!(closure.captured.len(), 1);
+    }
+
+    #[test]
+    fn test_ir_new_expr_date() {
+        let ne = IrNewExpr {
+            constructor: NewConstructor::Date(DateConstructorKind::FromMillis),
+            args: vec![IrExpr::IntLiteral(1000)],
+            result_type: ZigType::NamedStruct("JsDate".to_string()),
+        };
+        assert!(matches!(
+            ne.constructor,
+            NewConstructor::Date(DateConstructorKind::FromMillis)
+        ));
+    }
+
+    #[test]
+    fn test_ir_array_literal_with_spread() {
+        let arr = IrArrayLiteral {
+            elements: vec![
+                IrExpr::IntLiteral(1),
+                IrExpr::IntLiteral(2),
+                IrExpr::Spread(Box::new(IrExpr::Ident(IrIdent::new("rest")))),
+            ],
+            spread_indices: vec![2],
+        };
+        assert_eq!(arr.spread_indices.len(), 1);
+    }
+
+    #[test]
+    fn test_ir_object_literal() {
+        let obj = IrObjectLiteral {
+            fields: vec![IrObjectField {
+                key: "name".to_string(),
+                value: IrExpr::StringLiteral("foo".to_string()),
+                is_computed: false,
+            }],
+            spreads: vec![],
+        };
+        assert_eq!(obj.fields.len(), 1);
+    }
+
+    #[test]
+    fn test_ir_arrow_fn_concise() {
+        let arrow = IrArrowFn {
+            params: vec![IrParam {
+                name: IrIdent::new("x"),
+                zig_type: ZigType::I64,
+            }],
+            return_type: ZigType::I64,
+            body: IrBlock::new(vec![]),
+            is_concise: true,
+        };
+        assert!(arrow.is_concise);
+    }
+
+    #[test]
+    fn test_ir_switch_case() {
+        let case = IrSwitchCase {
+            test: Some(IrExpr::IntLiteral(1)),
+            body: vec![IrStmt::Break { label: None }],
+        };
+        assert!(case.test.is_some());
+        assert_eq!(case.body.len(), 1);
+    }
+
+    #[test]
+    fn test_ir_for_loop() {
+        let for_stmt = IrStmt::For {
+            init: Some(Box::new(IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new("i"),
+                is_const: true,
+                zig_type: Some(ZigType::I64),
+                init: Some(IrExpr::IntLiteral(0)),
+                is_json_parse: false,
+                needs_var_suppression: false,
+            }))),
+            cond: Some(IrExpr::Binary {
+                op: BinOp::Lt,
+                left: Box::new(IrExpr::Ident(IrIdent::new("i"))),
+                right: Box::new(IrExpr::IntLiteral(10)),
+            }),
+            update: Some(Box::new(IrStmt::Expr(IrExpr::Update {
+                op: UpdateOp::Increment,
+                target: Box::new(IrAssignTarget::Ident(IrIdent::new("i"))),
+                is_expr_stmt: false,
+            }))),
+            body: IrBlock::new(vec![]),
+        };
+        assert!(matches!(for_stmt, IrStmt::For { .. }));
+    }
+
+    #[test]
+    fn test_ir_class_decl() {
+        let cls = IrClassDecl {
+            name: IrIdent::new("Foo"),
+            fields: vec![IrClassField {
+                name: "x".to_string(),
+                zig_type: ZigType::I64,
+                default: None,
+            }],
+            constructor: None,
+            methods: vec![IrClassMethod {
+                name: "getX".to_string(),
+                params: vec![],
+                return_type: ZigType::I64,
+                body: IrBlock::new(vec![]),
+                is_static: false,
+            }],
+            static_inits: vec![],
+            extends: None,
+        };
+        assert_eq!(cls.fields.len(), 1);
+        assert_eq!(cls.methods.len(), 1);
+    }
+
+    #[test]
+    fn test_ir_template_literal() {
+        let tl = IrExpr::TemplateLiteral {
+            parts: vec!["Hello, ".to_string(), "!".to_string()],
+            exprs: vec![IrExpr::Ident(IrIdent::new("name"))],
+        };
+        assert!(matches!(tl, IrExpr::TemplateLiteral { .. }));
+    }
+
+    #[test]
+    fn test_ir_await_expr() {
+        let aw = IrAwaitExpr {
+            task_var: IrIdent::new("_t0"),
+            callee: Box::new(IrExpr::HostCall(IrHostCall {
+                name: "fetch_data".to_string(),
+                args: vec![],
+                return_type: ZigType::I64,
+                is_async: true,
+            })),
+            args: vec![],
+            is_host_async: true,
+            block_label: "blk_0".to_string(),
+        };
+        assert!(aw.is_host_async);
+    }
+
+    #[test]
+    fn test_ir_assign_target_destructure() {
+        let target = IrAssignTarget::Destructure(vec![
+            IrDestructureBinding {
+                pattern: IrIdent::new("a"),
+                default: None,
+            },
+            IrDestructureBinding {
+                pattern: IrIdent::new("b"),
+                default: Some(IrExpr::IntLiteral(0)),
+            },
+        ]);
+        if let IrAssignTarget::Destructure(bindings) = target {
+            assert_eq!(bindings.len(), 2);
+        } else {
+            panic!("expected Destructure");
+        }
+    }
+}

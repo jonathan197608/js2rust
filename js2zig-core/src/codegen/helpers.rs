@@ -100,16 +100,6 @@ impl Codegen {
         self.shadow_renames.pop();
     }
 
-    /// Extract a property key name from a PropertyKey for destructuring.
-    /// Returns None for computed keys (not yet supported).
-    pub(crate) fn property_key_name(&self, key: &PropertyKey) -> Option<String> {
-        match key {
-            PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
-            PropertyKey::PrivateIdentifier(id) => Some(id.name.to_string()),
-            _ => None,
-        }
-    }
-
     /// Resolve a destructuring binding pattern, returning (name, optional_default_expr).
     /// Handles both plain bindings and `BindingPattern::AssignmentPattern` (with default).
     pub(crate) fn destructure_binding<'a>(
