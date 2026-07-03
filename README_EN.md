@@ -1,6 +1,20 @@
 # js2rust — JS-to-Zig Transpiler for Rust FFI
 
-`js2rust` is a JS-to-Zig transpiler that enables seamless integration of JavaScript code into Rust projects via automatic FFI bridge generation.
+`js2rust` is a JS-to-Zig source-level transpiler that enables seamless integration of JavaScript code into Rust projects via automatic FFI bridge generation.
+
+## Status
+
+| Metric | Value |
+|--------|-------|
+| Rust tests | 361 (361 pass, 0 ignore) |
+| Zig tests | 27 |
+| Clippy warnings | 0 |
+| JS expression coverage | 78/91 (~86%) |
+| JS statement coverage | 43/49 (~88%) |
+| JS built-in coverage | 194/217 (~89%, incl. 5 simplified impls) |
+| Crate versions | [js2zig-core 0.7](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.8](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.8](https://crates.io/crates/js2rust-bridge-macro) |
+
+> Detailed feature evaluation: [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) (Chinese).
 
 ## Features
 
@@ -8,15 +22,15 @@
 - **Proc-macro FFI bridge**: `js2rust_bridge!()` transpiles and generates Rust FFI bindings in one step
 - **Host functions**: Call Rust functions from JS via C ABI
   - Synchronous: `i64`, `f64`, `bool`, `str` parameters and return values
-  - **Async** (new in 0.2): `async fn` with struct return types, bridged via tokio
-- **Async export functions** (new in 0.2): `export async function` generates a C ABI blocking wrapper using a global Zig `Io` instance
-- **String host functions** (new in 0.2): Automatic `[*:0]const u8` ↔ `[]const u8` conversion with heap-allocated returns
-- **Source Map** (new in 0.2): `// @src(file:line)` inline comments + `source_map.json`
-- **Incremental compilation** (new in 0.2): Hash-based cache — unchanged files are skipped on rebuild (`--force` to override)
-- **WASM target** (new in 0.2): `zig build wasm` (wasm32-wasi) support
-- **Multi-file project support**: Transpile entire JS project directories
-- **Type inference**: Automatic JS type inference (number -> i64/f64, string -> []u8, etc.)
-- **No build.rs code generation**: Everything happens in the proc-macro — IDE-friendly
+  - **Async**: `async fn` with struct return types, bridged via tokio
+- **Async export functions**: `export async function` generates a C ABI blocking wrapper using a global Zig `Io` instance
+- **String host functions**: Automatic `[*:0]const u8` ↔ `[]const u8` conversion with heap-allocated returns
+- **Source Map**: `// @src(file:line)` inline comments + `source_map.json`
+- **Incremental compilation**: Hash-based cache — unchanged files are skipped on rebuild (`--force` to override)
+- **WASM target**: `zig build wasm` (wasm32-wasi) support
+- **Multi-file project support**: Transpile entire JS project directories with DFS dependency ordering
+- **Type inference**: Automatic JS type inference (number → i64/f64, string → `[]u8`, etc.)
+- **Zero code generation**: Everything happens in the proc-macro — IDE-friendly
 
 ## Quick Start
 
@@ -24,10 +38,10 @@
 
 ```toml
 [dependencies]
-js2rust-bridge = "0.2"
+js2rust-bridge = "0.8"
 
 [build-dependencies]
-js2rust-bridge = "0.2"
+js2rust-bridge = "0.8"
 ```
 
 ### 2. Write JS code in `js_src/main.js`
@@ -92,7 +106,7 @@ pub extern "C" fn host_concat(a: *const std::ffi::c_char, b: *const std::ffi::c_
 }
 ```
 
-### Async host functions (0.2)
+### Async host functions
 
 Declare an async host function with a struct return type:
 
@@ -125,31 +139,25 @@ pub struct HostFetchUserResult {
     pub name: [u8; 256],
 }
 
-async fn fetch_user_from_db(name: &str) -> User {
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    // ... database lookup ...
-}
-
 #[no_mangle]
 pub extern "C" fn fetch_user(name: *const std::ffi::c_char) -> HostFetchUserResult {
     let name = unsafe { std::ffi::CStr::from_ptr(name).to_string_lossy() };
-    let user = runtime().block_on(fetch_user_from_db(&name));
-    // ... pack into HostFetchUserResult ...
+    runtime().block_on(fetch_user_from_db(&name))
 }
 ```
 
 Call from JS with `await`:
 
 ```js
-async function getUserInfo(name) {
+export async function getUserInfo(name) {
     const user = await fetch_user(name);
-    return user.name;  // Access struct fields
+    return user.name;
 }
 ```
 
-### Async export functions (0.2)
+### Async export functions
 
-`export async function` is exported via C ABI as a blocking wrapper. The transpiler generates a `getUserInfo_impl` async function and a `getUserInfo_cabi` wrapper that obtains a global `Io` instance and blocks on the async result:
+`export async function` is exported via C ABI as a blocking wrapper:
 
 ```js
 export async function getUserInfo(name) {
@@ -164,7 +172,7 @@ Call from Rust as a regular synchronous function:
 fn main() {
     js2rust_init();  // Initialize global Io (required for async exports)
     let name = getUserInfo_main("alice");
-    println!("User: {}", name);  // "Alice Smith"
+    println!("User: {}", name);
     js2rust_deinit();
 }
 ```
@@ -176,10 +184,13 @@ js2rust/
 ├── js2zig-core/            # Core transpiler library (parser, type inference, codegen)
 ├── js2rust-bridge/         # Facade crate (re-exports the proc-macro + link helper)
 ├── js2rust-bridge-macro/   # Proc-macro: transpile + generate FFI bindings
-├── runtime/                # Zig runtime (js_runtime.zig, allocator, builtins)
+├── runtime/                # Zig runtime (js_array, js_string, js_map, js_date, js_regexp, etc.)
+├── native_proto/           # Code generator (expr → Zig, stmt → Zig, builtin calls)
 └── examples/
     ├── test-bin-project/   # Binary project with sync + async host functions
-    └── test-lib-project/   # Library project
+    ├── test-lib-project/   # Library project
+    ├── showcase-project/   # Multi-file demo
+    └── mdn-test-project/   # MDN semantic conformance test suite (149+ cases)
 ```
 
 ### How it works
@@ -210,30 +221,7 @@ Rust: getUserInfo_main("alice")
 
 ## Documentation
 
-- [Language Feature Evaluation](docs/JS_FEATURE_EVALUATION.md) — Detailed per-feature implementation status
-- [Project Roadmap](docs/JS_ROADMAP.md) — Task prioritization and planning (Chinese)
-
-## Changelog
-
-### 0.2.0
-
-- **Async host functions**: `async fn` with struct return types, tokio `block_on` bridge
-- **Async export functions**: `export async function` generates C ABI blocking wrapper via global `Io`
-- **String host functions**: Automatic C string ↔ Zig string conversion with heap-allocated returns
-- **Source Map**: `// @src(file:line)` inline comments + `source_map.json`
-- **Incremental compilation**: Hash-based build cache, `--force` flag for full rebuild
-- **WASM target**: `zig build wasm` (wasm32-wasi) support
-- Global `js_runtime.initIo()` / `js2rust_init()` for async export support
-- Use-after-free fix: async host string returns now heap-allocated via `dupe(u8, ...)`
-
-### 0.1.0
-
-- Initial release
-- JS-to-Zig transpilation with proc-macro FFI bridge
-- Synchronous host functions (i64, f64, bool, string)
-- Multi-file project support
-- Type inference
-- 12 Zig test groups, 90+ Rust tests
+- [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) — Per-feature implementation status across 140 syntax features + 217 built-in method rows (Chinese)
 
 ## License
 

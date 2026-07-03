@@ -1,7 +1,7 @@
-﻿# JS 语言特性实现说明
+# JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 363 个 Rust 测试 (363 pass + 0 ignore) + 27 个 Zig 测试
+> **测试覆盖**: 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试
 
 ---
 
@@ -11,19 +11,20 @@
 
 | 指标 | 数值 |
 |------|------|
-| **JS 语法特性总数** (表达式 + 语句) | ~151 |
-| **内置对象方法总数** | ~321 |
-| **测试覆盖** | 363 个 Rust 测试 (363 pass + 0 ignore) + 27 个 Zig 测试 |
+| **JS 语法特性总数** (表达式 + 语句) | 140 |
+| **内置对象表格行数** | 217 |
+| **测试覆盖** | 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试 |
 | **代码质量** | 0 clippy 警告 |
 
-### 1.2 表达式 (Expressions) — ~102 特性
+### 1.2 表达式 (Expressions) — 91 特性
 
-> 对应 Section 2.1–2.17，涵盖字面量、运算符、函数调用、箭头函数、模板字面量等所有表达式语法。
+> 对应 Section 2.1–2.18，涵盖字面量、运算符、函数调用、箭头函数、模板字面量、JSDoc 类型标注等所有表达式语法。
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~92 | ~90% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof 等 |
-| 🔘 不实现 | ~10 | ~10% | 标签模板、`new Promise`、类表达式、`instanceof`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta` |
+| ✅ 完全实现 | 78 | ~86% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/JSDoc 等 |
+| ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
+| 🔘 不实现 | 12 | ~13% | 标签模板、`new Promise`、类表达式、`instanceof`、`function*`/`yield`、`async function*`、类表达式、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
 
@@ -34,26 +35,26 @@
 | ✅ 完全实现 | ~43 | ~88% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
 | 🔘 不实现 | ~6 | ~12% | `arguments`、类表达式、`static {}`、`for await...of`、`with`、`debugger` |
 
-### 1.4 内置对象 (Built-in Objects) — ~321 方法
+### 1.4 内置对象 (Built-in Objects) — 217 个表格行
 
-> 对应 Section 4.1–4.17，按方法粒度统计（22 个内置对象类别，详见 4.17 汇总表）。
+> 对应 Section 4.1–4.17（21 个内置对象类别，详见 4.17 汇总表）。统计粒度：表格行数（部分行含多个方法，如 Math.sinh/cosh/tanh 合并为 1 行）。
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~255 | ~80% | Math 44/44 (100%)、Array 33/35 (94%)、String 29+4⚠️/35 (94%)、Date 51/53 (96%)、Symbol 17/17 (100%) 等 |
-| ⚠️ 简化实现 | ~5 | ~2% | String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase（无 ICU 依赖，基础功能可用）+ BigInt（基本运算支持，混合类型受限） |
-| 🔘 不实现 | ~61 | ~19% | Promise/WeakMap/WeakSet/Reflect/Intl/Atomics 等整类不实现，Map.groupBy/Object.groupBy 降级为不实现 |
+| ✅ 完全实现 | 194 | ~89% | Math 39/39 (100%)、Array 33/35 (94%)、Number 17/17 (100%)、Date 21/23 (91%) 等 |
+| ⚠️ 简化实现 | 5 | ~2% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ BigInt ×1 |
+| 🔘 不实现 | 17 | ~8% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
 
-> **注**: 内置对象统计按方法粒度（非特性粒度）。⚠️ 简化实现 6 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
+> **注**: ⚠️ 简化实现 5 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
 
 ### 1.5 三大类对比总览
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
-| **表达式** | ~102 | ~92 | — | ~10 | **~90%** |
-| **语句** | ~49 | ~43 | — | ~6 | **~88%** |
-| **内置对象** | ~321 | ~256 | ~5 | ~60 | **~80%** |
-| **语法合计** | ~151 | ~135 | — | ~16 | **~89%** |
+| **表达式** | 91 | 78 | 1 | 12 | **~86%** |
+| **语句** | 49 | 43 | — | 6 | **~88%** |
+| **内置对象** | 217 | 194 | 5 | 18 | **~89%** |
+| **语法合计** | 140 | 121 | 1 | 18 | **~86%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -270,7 +271,6 @@
 
 ## 2.18 JSDoc 类型标注 (JSDoc Type Annotations) - ✅ 完全实现
 
-> **实现日期**: 2026-06-25
 > **实现方式**: JSDoc 注释中的 `@type`、`@returns`、`@param` 标签支持类型标注，影响 Zig 代码生成中的类型推断。
 
 | 特性 | 状态 | 说明 | 测试 |
@@ -414,39 +414,39 @@
 | `Math.pow(b,e)` | `Math.pow(base, exponent)` | `base, exp: number` | `number` | `std.math.pow(f64, b, e)` | ✅ | ✅ | ✅ | ✅ |
 | `Math.max(...v)` | `Math.max(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
 | `Math.min(...v)` | `Math.min(...values)` | `values: number[]` | `number` | labeled block + loop | ✅ | ✅ | ✅ | ✅ |
-| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@sqrt(sum of squares)` | ✅ | ✅ | — | ✅ P1 done |
+| `Math.hypot(...v)` | `Math.hypot(...values)` | `values: number[]` | `number` | `@sqrt(sum of squares)` | ✅ | ✅ | — | ✅ |
 | **— 三角函数 (6) —** | | | | | | | | |
-| `Math.sin(x)` | `Math.sin(x)` | `x: number` (弧度) | `number` | `@sin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.cos(x)` | `Math.cos(x)` | `x: number` (弧度) | `number` | `@cos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.tan(x)` | `Math.tan(x)` | `x: number` (弧度) | `number` | `@tan(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.asin(x)` | `Math.asin(x)` | `x: number [-1,1]` | `number` (弧度) | `std.math.asin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.acos(x)` | `Math.acos(x)` | `x: number [-1,1]` | `number` (弧度) | `std.math.acos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.atan(x)` | `Math.atan(x)` | `x: number` | `number` (弧度) | `@atan(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.atan2(y,x)` | `Math.atan2(y, x)` | `y, x: number` | `number` (弧度) | `std.math.atan2(f64, y, x)` | ✅ | ✅ | — | ✅ P1 done |
+| `Math.sin(x)` | `Math.sin(x)` | `x: number` (弧度) | `number` | `@sin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.cos(x)` | `Math.cos(x)` | `x: number` (弧度) | `number` | `@cos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.tan(x)` | `Math.tan(x)` | `x: number` (弧度) | `number` | `@tan(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.asin(x)` | `Math.asin(x)` | `x: number [-1,1]` | `number` (弧度) | `std.math.asin(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.acos(x)` | `Math.acos(x)` | `x: number [-1,1]` | `number` (弧度) | `std.math.acos(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.atan(x)` | `Math.atan(x)` | `x: number` | `number` (弧度) | `@atan(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.atan2(y,x)` | `Math.atan2(y, x)` | `y, x: number` | `number` (弧度) | `std.math.atan2(f64, y, x)` | ✅ | ✅ | — | ✅ |
 | **— 对数/指数 (5) —** | | | | | | | | |
-| `Math.log(x)` | `Math.log(x)` | `x: number` | `number` (ln) | `@log(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.log10(x)` | `Math.log10(x)` | `x: number` | `number` | `@log10(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.log2(x)` | `Math.log2(x)` | `x: number` | `number` | `@log2(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.exp(x)` | `Math.exp(x)` | `x: number` | `eˣ` | `@exp(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.expm1(x)` | `Math.expm1(x)` | `x: number` | `eˣ - 1` | `std.math.expm1(x)` | ✅ | ✅ | — | ✅ Phase 4 |
+| `Math.log(x)` | `Math.log(x)` | `x: number` | `number` (ln) | `@log(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.log10(x)` | `Math.log10(x)` | `x: number` | `number` | `@log10(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.log2(x)` | `Math.log2(x)` | `x: number` | `number` | `@log2(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.exp(x)` | `Math.exp(x)` | `x: number` | `eˣ` | `@exp(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.expm1(x)` | `Math.expm1(x)` | `x: number` | `eˣ - 1` | `std.math.expm1(x)` | ✅ | ✅ | — | ✅ |
 | **— 其他数学函数 (8) —** | | | | | | | | |
-| `Math.sign(x)` | `Math.sign(x)` | `x: number` | `-1\|0\|1\|NaN` | inline if/else→f64 | ✅ | ✅ | — | ✅ P1 done |
-| `Math.trunc(x)` | `Math.trunc(x)` | `x: number` | `number` (截断) | `@trunc(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.cbrt(x)` | `Math.cbrt(x)` | `x: number` | `number` (立方根) | `std.math.cbrt(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.sinh/cosh/tanh(x)` | 双曲函数 | `x: number` | `number` | `std.math.sinh/cosh/tanh` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Math.asinh/acosh/atanh(x)` | 反双曲 | `x: number` | `number` | `std.math.asinh/acosh/atanh` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Math.clz32(x)` | `Math.clz32(x)` | `x: number` | `0-32` | `@clz(@as(u32, @intCast(x)))` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Math.fround(x)` | `Math.fround(x)` | `x: number` | `f32` | `@as(f32, @floatCast(x))` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Math.imul(a,b)` | `Math.imul(a, b)` | `a, b: number` | `number` | `@mulWithOverflow` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Math.log1p(x)` | `Math.log1p(x)` | `x: number` | `ln(1+x)` | `std.math.log1p(@floatCast(x))` | ✅ | ✅ | — | ✅ Phase 4 |
+| `Math.sign(x)` | `Math.sign(x)` | `x: number` | `-1\|0\|1\|NaN` | inline if/else→f64 | ✅ | ✅ | — | ✅ |
+| `Math.trunc(x)` | `Math.trunc(x)` | `x: number` | `number` (截断) | `@trunc(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.cbrt(x)` | `Math.cbrt(x)` | `x: number` | `number` (立方根) | `std.math.cbrt(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.sinh/cosh/tanh(x)` | 双曲函数 | `x: number` | `number` | `std.math.sinh/cosh/tanh` | ✅ | ✅ | — | ✅ |
+| `Math.asinh/acosh/atanh(x)` | 反双曲 | `x: number` | `number` | `std.math.asinh/acosh/atanh` | ✅ | ✅ | — | ✅ |
+| `Math.clz32(x)` | `Math.clz32(x)` | `x: number` | `0-32` | `@clz(@as(u32, @intCast(x)))` | ✅ | ✅ | — | ✅ |
+| `Math.fround(x)` | `Math.fround(x)` | `x: number` | `f32` | `@as(f32, @floatCast(x))` | ✅ | ✅ | — | ✅ |
+| `Math.imul(a,b)` | `Math.imul(a, b)` | `a, b: number` | `number` | `@mulWithOverflow` | ✅ | ✅ | — | ✅ |
+| `Math.log1p(x)` | `Math.log1p(x)` | `x: number` | `ln(1+x)` | `std.math.log1p(@floatCast(x))` | ✅ | ✅ | — | ✅ |
 | **— 静态常量 (7) —** | | | | | | | | |
-| `Math.E` | 自然对数的底数 | — | `f64` | `std.math.e` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.LN2` | ln(2) | — | `f64` | `std.math.ln2` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.LN10` | ln(10) | — | `f64` | `std.math.ln10` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.LOG2E` | log₂(e) | — | `f64` | `std.math.log2e` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.LOG10E` | log₁₀(e) | — | `f64` | `std.math.log10e` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.SQRT1_2` | √½ | — | `f64` | `std.math.sqrt1_2` | ✅ | ✅ | — | ✅ P1 done |
-| `Math.SQRT2` | √2 | — | `f64` | `std.math.sqrt2` | ✅ | ✅ | — | ✅ P1 done |
+| `Math.E` | 自然对数的底数 | — | `f64` | `std.math.e` | ✅ | ✅ | — | ✅ |
+| `Math.LN2` | ln(2) | — | `f64` | `std.math.ln2` | ✅ | ✅ | — | ✅ |
+| `Math.LN10` | ln(10) | — | `f64` | `std.math.ln10` | ✅ | ✅ | — | ✅ |
+| `Math.LOG2E` | log₂(e) | — | `f64` | `std.math.log2e` | ✅ | ✅ | — | ✅ |
+| `Math.LOG10E` | log₁₀(e) | — | `f64` | `std.math.log10e` | ✅ | ✅ | — | ✅ |
+| `Math.SQRT1_2` | √½ | — | `f64` | `std.math.sqrt1_2` | ✅ | ✅ | — | ✅ |
+| `Math.SQRT2` | √2 | — | `f64` | `std.math.sqrt2` | ✅ | ✅ | — | ✅ |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/math.js`):
 > ```js
@@ -494,16 +494,16 @@
 | `.lastIndexOf(item)` | `arr.lastIndexOf(searchElement[, fromIndex])` | `item: T, from?: i64` | `i64` | ✅ | ✅ | ✅ inline for-loop | ✅ |
 | `.copyWithin(t,s,e)` | `arr.copyWithin(target, start[, end])` | `target, start, end: i64` | 原数组引用 | ✅ | ✅ | ✅ inline for-loop | ✅ |
 | **— 已完成实例方法 (续) —** | | | | | | |
-| `.findLast(fn)` | `arr.findLast(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `T | undefined` | ✅ | ✅ | ✅ | ✅ #631 |
-| `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ #631 |
-| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ #631 |
-| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ Phase 4 |
+| `.findLast(fn)` | `arr.findLast(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `T | undefined` | ✅ | ✅ | ✅ | ✅ |
+| `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ |
+| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ |
+| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ |
 | `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
 | `.toReversed/Sorted/Spliced()` | 不可变版本 (ES2023) | — | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
 | **— 静态方法 —** | | | | | | | |
-| `Array.isArray(val)` | `Array.isArray(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| `Array.from(arrayLike)` | `Array.from(arrayLike[, mapFn])` | `arrayLike, mapFn?` | `T[]` | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| `Array.of(...items)` | `Array.of(element1, ..., elementN)` | `...T` | `T[]` | ✅ | ✅ | ✅ | ✅ Phase 5 |
+| `Array.isArray(val)` | `Array.isArray(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `Array.from(arrayLike)` | `Array.from(arrayLike[, mapFn])` | `arrayLike, mapFn?` | `T[]` | ✅ | ✅ | ✅ | ✅ |
+| `Array.of(...items)` | `Array.of(element1, ..., elementN)` | `...T` | `T[]` | ✅ | ✅ | ✅ | ✅ |
 
 > **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由。
 >
@@ -536,25 +536,25 @@
 | `.split(sep)` | `str.split(separator[, limit])` | `sep, limit?: i64` | `string[]` | ✅ | ✅ | ✅ | ✅ |
 | `.padStart(len,p)` | `str.padStart(targetLength[, padString])` | `len: i64, pad?: string` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
 | `.padEnd(len,p)` | `str.padEnd(targetLength[, padString])` | `len: i64, pad?: string` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
-| `.charAt(i)` | `str.charAt(index)` | `index: i64` | `string` (单字符) | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.charCodeAt(i)` | `str.charCodeAt(index)` | `index: i64` | `u16` (UTF-16 码元) | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.concat(...s)` | `str.concat(string1, ..., stringN)` | `...string` | 新字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.slice(s,e)` | `str.slice(beginIndex[, endIndex])` | `begin, end?: i64` | 子字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.replace(p,r)` | `str.replace(pattern, replacement)` | `pattern: string\|RegExp, replacement` | 新字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.repeat(n)` | `str.repeat(count)` | `count: i64` | 新字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.toUpperCase()` | `str.toUpperCase()` | — | 大写字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.toLowerCase()` | `str.toLowerCase()` | — | 小写字符串 | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.substring(s,e)` | `str.substring(indexStart[, indexEnd])` | `start, end?: i64` | 子字符串 | ✅ | ✅ | ✅ P1 done | ✅ |
-| `.trimStart()` | `str.trimStart()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
-| `.trimEnd()` | `str.trimEnd()` | — | 新字符串 | ✅ | ✅ | ✅ P2 done | ✅ |
-| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `JsAny` (array\|null) | ✅ | ✅ | ✅ Phase 1+2+3 (literal+var, /g) | ✅ |
-| `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | ✅ P8 done | ✅ |
-| **— Phase 6 完成 (5) —** | | | | | | | |
-| `.replaceAll(p,r)` | `str.replaceAll(pattern, replacement)` | `pattern, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `.at(i)` | `str.at(index)` | `index: i64` (负值倒序) | `string \| undefined` | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `.codePointAt(i)` | `str.codePointAt(pos)` | `pos: i64` | `u21 \| undefined` | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `String.fromCharCode(...c)` | 静态: `String.fromCharCode(num1, ...)` | `...u16` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
-| `String.fromCodePoint(...c)` | 静态: `String.fromCodePoint(num1, ...)` | `...u21` | `string` | ✅ | ✅ | ✅ | ✅ Phase 6 |
+| `.charAt(i)` | `str.charAt(index)` | `index: i64` | `string` (单字符) | ✅ | ✅ | ✅ | ✅ |
+| `.charCodeAt(i)` | `str.charCodeAt(index)` | `index: i64` | `u16` (UTF-16 码元) | ✅ | ✅ | ✅ | ✅ |
+| `.concat(...s)` | `str.concat(string1, ..., stringN)` | `...string` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.slice(s,e)` | `str.slice(beginIndex[, endIndex])` | `begin, end?: i64` | 子字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.replace(p,r)` | `str.replace(pattern, replacement)` | `pattern: string\|RegExp, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.repeat(n)` | `str.repeat(count)` | `count: i64` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.toUpperCase()` | `str.toUpperCase()` | — | 大写字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.toLowerCase()` | `str.toLowerCase()` | — | 小写字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.substring(s,e)` | `str.substring(indexStart[, indexEnd])` | `start, end?: i64` | 子字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.trimStart()` | `str.trimStart()` | — | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.trimEnd()` | `str.trimEnd()` | — | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.match(re)` | `str.match(regexp)` | `regexp: RegExp` | `JsAny` (array\|null) | ✅ | ✅ | ✅ | ✅ |
+| `.search(re)` | `str.search(regexp)` | `regexp: RegExp` | `i64` (index) | ✅ | ✅ | ✅ | ✅ |
+| **— 实例方法 (续) —** | | | | | | | |
+| `.replaceAll(p,r)` | `str.replaceAll(pattern, replacement)` | `pattern, replacement` | 新字符串 | ✅ | ✅ | ✅ | ✅ |
+| `.at(i)` | `str.at(index)` | `index: i64` (负值倒序) | `string \| undefined` | ✅ | ✅ | ✅ | ✅ |
+| `.codePointAt(i)` | `str.codePointAt(pos)` | `pos: i64` | `u21 \| undefined` | ✅ | ✅ | ✅ | ✅ |
+| `String.fromCharCode(...c)` | 静态: `String.fromCharCode(num1, ...)` | `...u16` | `string` | ✅ | ✅ | ✅ | ✅ |
+| `String.fromCodePoint(...c)` | 静态: `String.fromCodePoint(num1, ...)` | `...u21` | `string` | ✅ | ✅ | ✅ | ✅ |
 | **— ⚠️ 简化实现 (4) —** | | | | | | | |
 | `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ⚠️ 仅字节序 | ⚠️ 简化（非 locale 感知，需 ICU） |
 | `.normalize(form)` | `str.normalize([form])` | `form?: "NFC"\|...` | 规范化字符串 | ✅ | ✅ | ⚠️ pass-through | ⚠️ 简化（零 Unicode 规范化，需 ICU） |
@@ -588,12 +588,12 @@
 | `.get(k)` | `map.get(key)` | `key: K` | `V \| undefined` | ✅ | ✅ | ✅ JsMap.get | ✅ |
 | `.has(k)` | `map.has(key)` | `key: K` | `bool` | ✅ | ✅ | ✅ JsMap.has | ✅ |
 | `.delete(k)` | `map.delete(key)` | `key: K` | `bool` | ✅ | ✅ | ✅ JsMap.delete | ✅ |
-| `.clear()` | `map.clear()` | — | `void` | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.size` | 实例属性 `map.size` | — | `usize` | ✅ | ✅ | ✅ P0 done | ✅ |
+| `.clear()` | `map.clear()` | — | `void` | ✅ | ✅ | ✅ | ✅ |
+| `.size` | 实例属性 `map.size` | — | `usize` | ✅ | ✅ | ✅ | ✅ |
 | `.forEach(fn)` | `map.forEach(callbackFn[, thisArg])` | `fn: (val,key,map)=>void` | `void` | ✅ | ✅ | ✅ runtime | ✅ |
-| `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
-| `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
-| `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ #628 |
+| `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
+| `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
+| `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
 | `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
@@ -615,12 +615,12 @@
 |----------|----------|------|--------|------|------|--------|------|
 | `new Set()` | `new Set([iterable])` | `iterable?: T[]` | `JsSet` | ✅ | ✅ | ✅ JsSet.init | ✅ |
 | `.add(v)` | `set.add(value)` | `value: T` | set 引用 (链式) | ✅ | ✅ | ✅ JsSet.add | ✅ |
-| `.has(v)` | `set.has(value)` | `value: T` | `bool` | ✅ | ✅ | ✅ P0 done (MapHas 分派) | ✅ |
-| `.delete(v)` | `set.delete(value)` | `value: T` | `bool` | ✅ | ✅ | ✅ P0 done (MapDelete 分派) | ✅ |
-| `.clear()` | `set.clear()` | — | `void` | ✅ | ✅ | ✅ P0 done (MapClear 分派) | ✅ |
-| `.size` | 实例属性 `set.size` | — | `usize` | ✅ | ✅ | ✅ P0 done | ✅ |
-| `.forEach(fn)` | `set.forEach(callbackFn[, thisArg])` | `fn: (val,val,set)=>void` | `void` | ✅ | ✅ | ✅ inline for-loop | ✅ Phase 7 |
-| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_set.zig` | ✅ #628 |
+| `.has(v)` | `set.has(value)` | `value: T` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `.delete(v)` | `set.delete(value)` | `value: T` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `.clear()` | `set.clear()` | — | `void` | ✅ | ✅ | ✅ | ✅ |
+| `.size` | 实例属性 `set.size` | — | `usize` | ✅ | ✅ | ✅ | ✅ |
+| `.forEach(fn)` | `set.forEach(callbackFn[, thisArg])` | `fn: (val,val,set)=>void` | `void` | ✅ | ✅ | ✅ inline for-loop | ✅ |
+| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_set.zig` | ✅ |
 | `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | 🔘 | 🔘 | 🔘 | 🔘 不实现（ES2025 很新，使用较少） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
@@ -645,17 +645,17 @@
 | `Object.assign(tgt,...)` | `Object.assign(target, ...sources)` | `target, ...sources` | target 引用 | ✅ | ✅ | ✅ | ✅ |
 | `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | ✅ Zig struct 天然不可变 |
 | **— 缺失静态方法 (9) —** | | | | | | | |
-| `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | ✅ | ✅ | ✅ | ✅ P7 done |
-| `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | ✅ | ✅ | ✅ | ✅ P7 done |
-| `Object.getOwnPropertyNames(obj)` | `Object.getOwnPropertyNames(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ P2 done | ✅ |
+| `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | ✅ | ✅ | ✅ | ✅ |
+| `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | ✅ | ✅ | ✅ | ✅ |
+| `Object.getOwnPropertyNames(obj)` | `Object.getOwnPropertyNames(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.getOwnPropertySymbols(obj)` | Symbol 属性名 | `obj: object` | `symbol[]` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 | `Object.getPrototypeOf(obj)` | 获取原型 | `obj` | prototype | ✅ | ✅ | ✅ | ✅ (返回 null) |
-| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ✅ | ✅ | ✅ | ✅ P7 done |
-| `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ P1 done | ✅ |
-| `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ P2 done | ✅ |
+| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ✅ | ✅ | ✅ | ✅ |
+| `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ | ✅ |
 | `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | ✅ | ✅ (no-op) |
-| `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ P8 done |
-| `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ P1 done |
+| `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/object.js`):
@@ -685,7 +685,6 @@
 
 ### 4.8 `Date` — 21/23 (91%) ✅
 
-> **更新 (2026-06-27)**: Phase 5 完成 Date 剩余方法（setters/toJSON/valueOf/toString 系列），覆盖率 ~80%→~96%。
 
 **Runtime 文件**: `runtime/js_date.zig`
 
@@ -694,8 +693,8 @@
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
 | `Date.now()` | `Date.now()` | — | `i64` (ms since epoch) | ✅ | ✅ | ✅ js_date.now | ✅ |
-| `Date.parse(s)` | `Date.parse(dateString)` | `dateString: string` | `i64` \| NaN | ✅ | ✅ | ✅ | ✅ P1 done |
-| `Date.UTC(y,m,d,...)` | `Date.UTC(year, monthIndex[, day, ...])` | `y,m,d,h,min,s,ms` | `i64` | ✅ | ✅ | ✅ | ✅ P1 done |
+| `Date.parse(s)` | `Date.parse(dateString)` | `dateString: string` | `i64` \| NaN | ✅ | ✅ | ✅ | ✅ |
+| `Date.UTC(y,m,d,...)` | `Date.UTC(year, monthIndex[, day, ...])` | `y,m,d,h,min,s,ms` | `i64` | ✅ | ✅ | ✅ | ✅ |
 | `.getTime()` | `date.getTime()` | — | `i64` (ms) | ✅ | ✅ | ✅ | ✅ |
 | `.getFullYear()` | `date.getFullYear()` | — | `i64` (本地年份) | ✅ | ✅ | ✅ | ✅ |
 | `.getMonth()` | `date.getMonth()` | — | `i64` (0-11) | ✅ | ✅ | ✅ | ✅ |
@@ -705,16 +704,16 @@
 | `.getMinutes()` | `date.getMinutes()` | — | `i64` (0-59, UTC) | ✅ | ✅ | ✅ | ✅ |
 | `.getSeconds()` | `date.getSeconds()` | — | `i64` (0-59, UTC) | ✅ | ✅ | ✅ | ✅ |
 | **— 已完成 (续) —** | | | | | | | |
-| `new Date()` / `new Date(ms)` / `new Date(str)` / `new Date(y,m,d,...)` | 构造函数 (全重载) | `ms\|str\|y,m,d,...` | `Date` | ✅ | ✅ | ✅ | ✅ P2 done (#729) |
-| `.getMilliseconds()` | `date.getMilliseconds()` | — | `i64` (0-999) | ✅ | ✅ | ✅ | ✅ Phase 3b |
-| `.getTimezoneOffset()` | 时区偏移 | — | `i64` (分钟) | ✅ | ✅ | ✅ | ✅ Phase 3b |
-| UTC getter 系列 (8): `getUTCFullYear/getUTCMonth/getUTCDate/getUTCDay/getUTCHours/getUTCMinutes/getUTCSeconds/getUTCMilliseconds` | — | — | — | ✅ | ✅ | ✅ | ✅ Phase 3c |
-| setter 系列 (7): `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds` | — | — | `i64` (新时间戳) | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| UTC setter 系列 (8): `setUTCFullYear/setUTCMonth/setUTCDate/setUTCHours/setUTCMinutes/setUTCSeconds/setUTCMilliseconds` | — | — | `i64` (新时间戳) | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| `.toISOString()` | `date.toISOString()` | — | `string` (ISO 8601) | ✅ | ✅ | ✅ | ✅ Phase 3b |
-| `.toJSON()` | `.toJSON()` | — | `string` (ISO 8601) | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| `.valueOf()` | `.valueOf()` | — | `i64` (同 .getTime) | ✅ | ✅ | ✅ | ✅ Phase 5 |
-| `.toString()` / `.toDateString()` / `.toTimeString()` / `.toLocaleString()` | 格式化字符串 | — | `string` | ✅ | ✅ | ✅ | ✅ Phase 5 |
+| `new Date()` / `new Date(ms)` / `new Date(str)` / `new Date(y,m,d,...)` | 构造函数 (全重载) | `ms\|str\|y,m,d,...` | `Date` | ✅ | ✅ | ✅ | ✅ |
+| `.getMilliseconds()` | `date.getMilliseconds()` | — | `i64` (0-999) | ✅ | ✅ | ✅ | ✅ |
+| `.getTimezoneOffset()` | 时区偏移 | — | `i64` (分钟) | ✅ | ✅ | ✅ | ✅ |
+| UTC getter 系列 (8): `getUTCFullYear/getUTCMonth/getUTCDate/getUTCDay/getUTCHours/getUTCMinutes/getUTCSeconds/getUTCMilliseconds` | — | — | — | ✅ | ✅ | ✅ | ✅ |
+| setter 系列 (7): `setFullYear/setMonth/setDate/setHours/setMinutes/setSeconds/setMilliseconds` | — | — | `i64` (新时间戳) | ✅ | ✅ | ✅ | ✅ |
+| UTC setter 系列 (8): `setUTCFullYear/setUTCMonth/setUTCDate/setUTCHours/setUTCMinutes/setUTCSeconds/setUTCMilliseconds` | — | — | `i64` (新时间戳) | ✅ | ✅ | ✅ | ✅ |
+| `.toISOString()` | `date.toISOString()` | — | `string` (ISO 8601) | ✅ | ✅ | ✅ | ✅ |
+| `.toJSON()` | `.toJSON()` | — | `string` (ISO 8601) | ✅ | ✅ | ✅ | ✅ |
+| `.valueOf()` | `.valueOf()` | — | `i64` (同 .getTime) | ✅ | ✅ | ✅ | ✅ |
+| `.toString()` / `.toDateString()` / `.toTimeString()` / `.toLocaleString()` | 格式化字符串 | — | `string` | ✅ | ✅ | ✅ | ✅ |
 | **— 已知缺失 (2) —** | | | | | | | |
 | `.setTime(ms)` | `date.setTime(timeValue)` | `ms: i64` | `i64` | 🔘 | 🔘 | 🔘 | 🔘 不实现（用 `date = new Date(ms)` 替代） |
 | `.toUTCString()` | `date.toUTCString()` | — | `string` | 🔘 | 🔘 | 🔘 | 🔘 不实现（用 `.toISOString()` 替代） |
@@ -766,20 +765,20 @@
 | `Number.isInteger(v)` | `Number.isInteger(value)` | `value` | `bool` | ✅ | ✅ | ✅ `js_number.isInteger` | ✅ |
 | `Number.parseInt(s,r)` | `Number.parseInt(string[, radix])` | `string, radix?` | `i64` \| NaN | ✅ | ✅ | ✅ `std.fmt.parseInt` | ✅ |
 | `Number.parseFloat(s)` | `Number.parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `@floatCast` | ✅ |
-| `Number.isSafeInteger(v)` | `Number.isSafeInteger(testValue)` | `value` | `bool` | ✅ | ✅ | ✅ | ✅ Phase 4 |
+| `Number.isSafeInteger(v)` | `Number.isSafeInteger(testValue)` | `value` | `bool` | ✅ | ✅ | ✅ | ✅ |
 | **— 静态常量 (8) —** | | | | | | | |
-| `Number.MAX_VALUE` | JS 最大正数 (`~1.79e308`) | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.MIN_VALUE` | JS 最小正数 (`~5e-324`) | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.NaN` | NaN 值 | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.NEGATIVE_INFINITY` | 负无穷 | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.POSITIVE_INFINITY` | 正无穷 | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.EPSILON` | 最小精度差 (`~2.22e-16`) | — | `f64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.MAX_SAFE_INTEGER` | `2^53 - 1` | — | `i64` | ✅ | ✅ | — | ✅ Phase 4 |
-| `Number.MIN_SAFE_INTEGER` | `-(2^53 - 1)` | — | `i64` | ✅ | ✅ | — | ✅ Phase 4 |
+| `Number.MAX_VALUE` | JS 最大正数 (`~1.79e308`) | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.MIN_VALUE` | JS 最小正数 (`~5e-324`) | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.NaN` | NaN 值 | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.NEGATIVE_INFINITY` | 负无穷 | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.POSITIVE_INFINITY` | 正无穷 | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.EPSILON` | 最小精度差 (`~2.22e-16`) | — | `f64` | ✅ | ✅ | — | ✅ |
+| `Number.MAX_SAFE_INTEGER` | `2^53 - 1` | — | `i64` | ✅ | ✅ | — | ✅ |
+| `Number.MIN_SAFE_INTEGER` | `-(2^53 - 1)` | — | `i64` | ✅ | ✅ | — | ✅ |
 | **— 实例方法 (3) —** | | | | | | | |
-| `.toFixed(d)` | `num.toFixed([digits])` | `digits?: 0-100` | `string` | ✅ | ✅ | ✅ | ✅ Phase 4 |
-| `.toExponential(d)` | `num.toExponential([fractionDigits])` | `digits?: 0-100` | `string` | ✅ | ✅ | ✅ | ✅ Phase 4 |
-| `.toPrecision(d)` | `num.toPrecision([precision])` | `precision?: 1-100` | `string` | ✅ | ✅ | ✅ | ✅ Phase 4 |
+| `.toFixed(d)` | `num.toFixed([digits])` | `digits?: 0-100` | `string` | ✅ | ✅ | ✅ | ✅ |
+| `.toExponential(d)` | `num.toExponential([fractionDigits])` | `digits?: 0-100` | `string` | ✅ | ✅ | ✅ | ✅ |
+| `.toPrecision(d)` | `num.toPrecision([precision])` | `precision?: 1-100` | `string` | ✅ | ✅ | ✅ | ✅ |
 
 > **注意**: `Number.isNaN` vs 全局 `isNaN`：前者仅对 `NaN` 返回 true，后者对非数字值也返回 true（会先做类型转换）。
 >
@@ -824,10 +823,10 @@
 | 特性 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
 | 正则字面量 `/pat/flags` | `/pattern/flags` | — | `RegExp` | ✅ | ✅ | 字符串提取 | ✅ 语法可用 |
-| `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | ✅ | ✅ | ✅ | ✅ P8 done |
-| `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ P8 done |
-| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | ✅ | ✅ | ✅ P1 done |
-| `/pat/g` 全局标志 | `String.match()` 全局匹配（`.matchStringGlobal()`） | — | `string[]` | ✅ | ✅ | ✅ | ✅ P2 done |
+| `new RegExp(pat[, flags])` | `new RegExp(pattern[, flags])` | `pattern, flags?` | `RegExp` | ✅ | ✅ | ✅ | ✅ |
+| `.test(str)` | `regexObj.test(str)` | `str: string` | `bool` | ✅ | ✅ | ✅ host | ✅ |
+| `.exec(str)` | `regexObj.exec(str)` | `str: string` | `string[] \| null` | ✅ | ✅ | ✅ | ✅ |
+| `/pat/g` 全局标志 | `String.match()` 全局匹配（`.matchStringGlobal()`） | — | `string[]` | ✅ | ✅ | ✅ | ✅ |
 | `.source` / `.flags` / `.global` 等属性 | 标志属性 | — | `string` / `bool` | 🔘 | 🔘 | 🔘 | 🔘 不实现（高级正则用法，很少用） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/regexp.js`):
@@ -898,7 +897,7 @@
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **~180** | **~177+6⚠️** | **~98%** | **~15** | 6⚠️: String ×4 + BigInt ×1；表格行数合计 |
+| **总计** | **217** | **199** | **~92%** | **18** | 5⚠️: String ×4 + BigInt ×1；13🔘 各行合计 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1150,7 +1149,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 363 个测试 (363 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 361 个测试 (361 pass + 0 ignore)
 
 | 测试模块 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
@@ -1163,7 +1162,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-363 个 Rust 测试全部通过（363 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+361 个 Rust 测试全部通过（361 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1184,11 +1183,4 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_112` | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | 已知限制 |
 | `test_builtins_frag_157` | `parseInt` 对无效输入返回 `NaN` vs `0` | 已知限制 |
 | `test_builtins_frag_202` | `decodeURIComponent` 错误处理方式不同 | 已知限制 |
-
-**emit_if 三重 bug 修复 + mdn-test-project 扩容 (2026-07-03)**:
-- 修复 emit_if 双花括号、else-if 缩进损坏、额外闭合 `}` 三个 codegen bug
-- emit_stmt_or_block 重构：不再对 BlockStatement 生成重复花括号
-- call_generated_catch 标志：解决 Zig 0.16 中 `_ = <err union> catch |_| { }` 非法语法
-- decodeURI/decodeURIComponent try-catch 上下文感知
-- mdn-test-project 从 159 fragment 扩容到 204 fragment，匹配率 97.4% → 98.0%
 

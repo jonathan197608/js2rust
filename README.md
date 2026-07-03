@@ -1,8 +1,22 @@
 # js2rust — JS 转 Zig 转译器（Rust FFI 集成）
 
-`js2rust` 是一个 JS 到 Zig 的转译器，可将 JavaScript 代码无缝集成到 Rust 项目中，通过自动生成 FFI 桥接代码实现 JS ↔ Rust 互调用。
+`js2rust` 是一个 JS 到 Zig 的源码级转译器，可将 JavaScript 代码无缝集成到 Rust 项目中，通过自动生成 FFI 桥接代码实现 JS ↔ Rust 互调用。
 
 > [English Version](README_EN.md)
+
+## 项目状态
+
+| 指标 | 数值 |
+|------|------|
+| Rust 测试 | 361 (361 pass, 0 ignore) |
+| Zig 测试 | 27 |
+| Clippy 警告 | 0 |
+| JS 表达式覆盖率 | 78/91 (~86%) |
+| JS 语句覆盖率 | 43/49 (~88%) |
+| JS 内置对象覆盖率 | 194/217 (~89%，含 5 个简化实现) |
+| Crate 版本 | [js2zig-core 0.7](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.8](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.8](https://crates.io/crates/js2rust-bridge-macro) |
+
+> 详细特性评估见 [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md)。
 
 ## 核心特性
 
@@ -16,7 +30,7 @@
 - **Source Map**：`// @src(file:line)` 行内注释 + `source_map.json`
 - **增量编译**：基于哈希的缓存，未修改文件跳过重建（`--force` 强制重建）
 - **WASM 目标**：`zig build wasm`（wasm32-wasi）支持
-- **多文件项目支持**：可转译整个 JS 项目目录
+- **多文件项目支持**：可转译整个 JS 项目目录，DFS 依赖排序
 - **类型推断**：自动 JS 类型推断（number → i64/f64，string → `[]u8` 等）
 - **零代码生成**：所有逻辑在 proc-macro 中完成，IDE 友好
 
@@ -26,10 +40,10 @@
 
 ```toml
 [dependencies]
-js2rust-bridge = "0.2"
+js2rust-bridge = "0.8"
 
 [build-dependencies]
-js2rust-bridge = "0.2"
+js2rust-bridge = "0.8"
 ```
 
 ### 2. 编写 JS 代码 `js_src/main.js`
@@ -161,10 +175,13 @@ js2rust/
 ├── js2zig-core/            # 核心转译库（解析、类型推断、代码生成）
 ├── js2rust-bridge/         # 外观 crate（重导出 proc-macro + link 辅助函数）
 ├── js2rust-bridge-macro/   # Proc-macro：转译 + 生成 FFI 绑定
-├── runtime/                # Zig 运行时（js_runtime.zig、分配器、内置对象）
+├── runtime/                # Zig 运行时（js_array/js_string/js_map/js_date/js_regexp 等）
+├── native_proto/           # 代码生成器（expr → Zig、stmt → Zig、内置对象调用）
 └── examples/
     ├── test-bin-project/   # 二进制项目（同步+异步 host 函数）
-    └── test-lib-project/   # 库项目
+    ├── test-lib-project/   # 库项目
+    ├── showcase-project/   # 多文件综合示例
+    └── mdn-test-project/   # MDN 语义一致性测试集（149+ cases）
 ```
 
 ### 工作原理
@@ -195,30 +212,7 @@ Rust: getUserInfo_main("alice")
 
 ## 文档
 
-- [JS 语言特性实现评估](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态评估
-- [项目路线图与任务规划](docs/JS_ROADMAP.md) — 优先级排序与进度跟踪
-
-## 版本日志
-
-### 0.2.0
-
-- **异步 Host 函数**：`async fn` 带 struct 返回类型，tokio `block_on` 桥接
-- **异步导出函数**：`export async function` 通过全局 `Io` 生成 C ABI 阻塞包装器
-- **字符串 Host 函数**：自动 C 字符串 ↔ Zig 字符串转换，堆分配返回值
-- **Source Map**：`// @src(file:line)` 行内注释 + `source_map.json`
-- **增量编译**：基于哈希的构建缓存，`--force` 强制重建
-- **WASM 目标**：`zig build wasm`（wasm32-wasi）支持
-- 全局 `js2rust_init()` / `js2rust_deinit()` 异步导出支持
-- Use-after-free 修复：异步 host 字符串返回值改为 `dupe(u8, ...)` 堆分配
-
-### 0.1.0
-
-- 初始版本
-- JS → Zig 转译 + proc-macro FFI 桥接
-- 同步 Host 函数（i64、f64、bool、string）
-- 多文件项目支持
-- 类型推断
-- 12 组 Zig 测试，90+ Rust 测试
+- [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态，覆盖 140 个语法特性 + 217 行内置对象方法
 
 ## 许可证
 
