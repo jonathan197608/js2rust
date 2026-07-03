@@ -25,18 +25,18 @@ var global_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0);
 /// 用法：
 ///   const config = try MultiArenaAllocator.readEnvConfig(allocator);
 ///   const da = try MultiArenaAllocator.init(backing, config.total_limit, config.min_cooling_time);
-pub fn readEnvConfig(allocator: Allocator) !struct { total_limit: ?usize, min_cooling_time: ?i64 } {
+pub fn readEnvConfig(backing: Allocator) !struct { total_limit: ?usize, min_cooling_time: ?i64 } {
     var result = struct { total_limit: ?usize = null, min_cooling_time: ?i64 = null };
 
     // 读取 JS_ZIG_TOTAL_LIMIT
-    if (std.process.getEnv("JS_ZIG_TOTAL_LIMIT", allocator)) |env_str| {
-        defer allocator.free(env_str);
+    if (std.process.getEnv("JS_ZIG_TOTAL_LIMIT", backing)) |env_str| {
+        defer backing.free(env_str);
         result.total_limit = std.fmt.parseInt(usize, env_str, 10) catch null;
     } else |_| {}
 
     // 读取 JS_ZIG_MIN_COOLING_TIME
-    if (std.process.getEnv("JS_ZIG_MIN_COOLING_TIME", allocator)) |env_str| {
-        defer allocator.free(env_str);
+    if (std.process.getEnv("JS_ZIG_MIN_COOLING_TIME", backing)) |env_str| {
+        defer backing.free(env_str);
         result.min_cooling_time = std.fmt.parseInt(i64, env_str, 10) catch null;
     } else |_| {}
 
@@ -512,50 +512,41 @@ test "MultiArenaAllocator thread safety: isReady is atomic" {
     }
 }
 
-// ── 向后兼容的旧 API（全局分配器包装器）────────────────────────
+// ── 全局分配器 API ───────────────────────────────────────────────
 
-var g_allocator: ?*MultiArenaAllocator = null;
-var g_backing: ?Allocator = null;
+var g_instance: ?*MultiArenaAllocator = null;
 
-/// 初始化全局分配器（旧 API 兼容）
-pub fn initGlobalAllocator() void {
-    if (g_allocator != null) return;
-    const backing = std.heap.page_allocator;
-    g_backing = backing;
-    g_allocator = MultiArenaAllocator.init(backing, null, null) catch @panic("initGlobalAllocator failed");
+/// 初始化全局分配器（幂等，多次调用安全）
+/// backing: 底层分配器，通常传 std.heap.page_allocator
+/// total_limit: 可选的总内存上限（字节），null 时使用 DEFAULT_TOTAL_LIMIT
+/// min_cooling_time: 可选的冷却时间（秒），null 时使用 MIN_COOLING_TIME_SECONDS
+pub fn init(backing: Allocator, total_limit: ?usize, min_cooling_time: ?i64) !void {
+    if (g_instance != null) return;
+    g_instance = try MultiArenaAllocator.init(backing, total_limit, min_cooling_time);
 }
 
-/// 释放全局分配器（旧 API 兼容）
-pub fn deinitGlobalAllocator() void {
-    if (g_allocator == null) return;
-    g_allocator.?.deinit();
-    g_allocator = null;
-    g_backing = null;
+/// 释放全局分配器（幂等，多次调用安全）
+pub fn deinit() void {
+    if (g_instance) |inst| {
+        inst.deinit();
+        g_instance = null;
+    }
 }
 
-/// 重置全局分配器（旧 API 兼容 — 轮换 Arena）
-pub fn resetGlobalAllocator() void {
-    if (g_allocator == null) return;
-    // MultiArenaAllocator 自动管理 Arena 轮换，无需手动重置
-    // 此函数保留是为了 API 兼容性
+/// 获取 Allocator 接口
+/// 调用前必须先 init()，否则行为未定义
+pub fn allocator() Allocator {
+    return g_instance.?.allocator();
 }
 
-/// 分配内存（旧 API 兼容 — 供 C ABI 调用）
-pub fn js_allocator_alloc(size: usize) []u8 {
-    if (g_allocator == null) initGlobalAllocator();
-    return g_allocator.?.allocBytes(size) catch @panic("js_allocator_alloc failed");
+/// 分配内存（返回 error 而非 panic）
+pub fn allocBytes(n: usize) ![]u8 {
+    return g_instance.?.allocBytes(n);
 }
 
-/// 复制字符串（旧 API 兼容 — 供 C ABI 调用）
-pub fn js_allocator_dupe(src: []const u8) []u8 {
-    if (g_allocator == null) initGlobalAllocator();
-    const buf = g_allocator.?.allocBytes(src.len) catch @panic("js_allocator_dupe failed");
+/// 复制字节到 Arena（返回 error 而非 panic）
+pub fn dupeBytes(src: []const u8) ![]u8 {
+    const buf = try g_instance.?.allocBytes(src.len);
     @memcpy(buf, src);
     return buf;
-}
-
-/// 获取全局分配器的 Allocator 接口（旧 API 兼容）
-pub fn getAllocator() Allocator {
-    if (g_allocator == null) initGlobalAllocator();
-    return g_allocator.?.allocator();
 }

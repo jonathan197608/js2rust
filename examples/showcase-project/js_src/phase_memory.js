@@ -1,10 +1,10 @@
-// phase_memory.js — Memory stress tests for dual-arena allocator
+// phase_memory.js — Memory stress tests for multi-arena allocator
 //
-// Verifies that the dual-arena hot-swap allocator correctly handles:
+// Verifies that the multi-arena allocator correctly handles:
 //  1. String operations under memory pressure
 //  2. Map/Set mass insert/delete (hash map memory pressure)
 //  3. Array built-in methods (sort/reverse/slice)
-//  4. Correctness after js2rust_reset (arena rotation)
+//  4. Correctness after automatic arena rotation (cooling + reset)
 //
 // Run with JS2RUST_MAX_ARENA_MB=1 to force rapid arena swaps.
 

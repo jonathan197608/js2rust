@@ -407,7 +407,7 @@ impl Codegen {
                 return false;
             }
             self.write(&format!(
-                "js_number.{method_name}(js_allocator.getAllocator(), ",
+                "js_number.{method_name}(js_allocator.allocator(), ",
             ));
             self.emit_expr(expr);
             if arguments.is_empty() {
@@ -437,7 +437,7 @@ impl Codegen {
         } else {
             let args_str = format!(".{{{}}}", args.join(", "));
             self.write(&format!(
-                "std.fmt.allocPrint(js_allocator.getAllocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
+                "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
                 fmt, args_str
             ));
         }

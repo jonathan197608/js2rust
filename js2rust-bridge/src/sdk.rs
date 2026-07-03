@@ -132,7 +132,8 @@ impl JsStr {
     /// Allocate a string in Zig Arena and return a `JsStr`.
     ///
     /// Uses `js_allocator_dupe` (single C ABI call: allocate + copy).
-    /// The memory lives in Zig's Arena and is freed on the next arena reset.
+    /// The memory lives in Zig's Arena and is freed when the allocator is deinitialized.
+    /// Panics on OOM (the Zig side returns null on allocation failure).
     #[inline]
     pub fn new(s: &str) -> Self {
         if s.is_empty() {
@@ -140,9 +141,10 @@ impl JsStr {
         }
         // Declared here to keep the extern block local (isolated from user code).
         unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
+            fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8>;
         }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
+        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) }
+            .expect("js_allocator_dupe returned null: Zig arena OOM");
         Self {
             ptr,
             len: s.len() as isize,
@@ -206,15 +208,17 @@ impl JsStrField {
     /// Allocate a string in Zig Arena and return a `JsStrField`.
     ///
     /// Uses `js_allocator_dupe` (single C ABI call: allocate + copy).
+    /// Panics on OOM (the Zig side returns null on allocation failure).
     #[inline]
     pub fn new(s: &str) -> Self {
         if s.is_empty() {
             return Self::empty();
         }
         unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
+            fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8>;
         }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
+        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) }
+            .expect("js_allocator_dupe returned null: Zig arena OOM");
         Self { ptr, len: s.len() }
     }
 
@@ -239,27 +243,35 @@ impl JsStrField {
 // is not available, so we provide stubs for `js_allocator_dupe` and
 // `js_allocator_alloc`. These stubs leak memory (like the old Box::leak),
 // but tests don't run long enough for this to matter.
+// Returns null on OOM to match the Zig-side C ABI contract.
 
 #[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
+pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8> {
     let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
-    if !ptr.is_null() && len > 0 {
+    if ptr.is_null() {
+        return None;
+    }
+    if len > 0 {
         unsafe {
             std::ptr::copy_nonoverlapping(src, ptr, len);
         }
     }
-    ptr
+    Some(ptr)
 }
 
 #[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
+pub extern "C" fn js_allocator_alloc(size: usize) -> Option<*mut u8> {
+    if size == 0 {
+        return None;
+    }
     let layout = std::alloc::Layout::from_size_align(size, 1).unwrap();
-    unsafe { std::alloc::alloc(layout) }
+    let ptr = unsafe { std::alloc::alloc(layout) };
+    if ptr.is_null() { None } else { Some(ptr) }
 }
 
 // ── StrRet helper (used by macro-generated safe wrappers) ──────────

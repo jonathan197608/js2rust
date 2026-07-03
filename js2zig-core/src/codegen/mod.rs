@@ -146,14 +146,12 @@ impl Codegen {
                 self.writeln(&format!("{}: {},", field.name, zig_ty));
             }
             // Generate toJson() method for serialization using std.json.fmt()
-            // Use the global arena allocator (js_allocator.getAllocator()).
+            // Use the global arena allocator (js_allocator.allocator()).
             self.writeln("");
             self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent += 1;
             // Use std.io.Writer.Allocating + std.json.fmt() for serialization
-            self.writeln(
-                "var string = std.io.Writer.Allocating.init(js_allocator.getAllocator());",
-            );
+            self.writeln("var string = std.io.Writer.Allocating.init(js_allocator.allocator());");
             self.writeln("errdefer string.deinit();");
             self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
             self.writeln("return string.toOwnedSlice();");

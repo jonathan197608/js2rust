@@ -45,7 +45,7 @@ pub fn parseInt(value: anytype, radix: ?i64) i64 {
         return parseIntStr(value, radix);
     }
     if (T == JsAny) {
-        const s = value.asString(js_allocator.getAllocator());
+        const s = value.asString(js_allocator.allocator());
         return parseIntStr(s, radix);
     }
     // For numeric/bool types, format to a buffer

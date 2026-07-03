@@ -421,7 +421,7 @@ impl Codegen {
                                 self.emit_expr(&mem.object);
                                 self.write(".getByKey(");
                                 self.emit_value_expr(&mem.expression);
-                                self.write(", js_allocator.getAllocator())");
+                                self.write(", js_allocator.allocator())");
                             }
                             Some(ZigType::NamedStruct(ref name)) if name == "Map" => {
                                 // Map: obj.get(key) returns JsAny (undefined if not found)
@@ -461,7 +461,7 @@ impl Codegen {
                                 self.emit_expr(&mem.object);
                                 self.write(".getByKey(");
                                 self.emit_value_expr(&mem.expression);
-                                self.write(", js_allocator.getAllocator())");
+                                self.write(", js_allocator.allocator())");
                             }
                             _ => {
                                 // Other non-indexable types → compile error
@@ -623,12 +623,12 @@ impl Codegen {
                     }
 
                     if obj_name == "Map" {
-                        // new Map() → js_collections.JsMap.init(js_allocator.getAllocator())
-                        self.write("js_collections.JsMap.init(js_allocator.getAllocator())");
+                        // new Map() → js_collections.JsMap.init(js_allocator.allocator())
+                        self.write("js_collections.JsMap.init(js_allocator.allocator())");
                         return;
                     } else if obj_name == "Set" {
-                        // new Set() → js_collections.JsSet.init(js_allocator.getAllocator())
-                        self.write("js_collections.JsSet.init(js_allocator.getAllocator())");
+                        // new Set() → js_collections.JsSet.init(js_allocator.allocator())
+                        self.write("js_collections.JsSet.init(js_allocator.allocator())");
                         return;
                     } else if obj_name == "Date" {
                         // new Date() → js_date.JsDate.init()
@@ -684,7 +684,7 @@ impl Codegen {
                         return;
                     } else if obj_name == "RegExp" {
                         // new RegExp(pattern) → try js_regexp.JsRegExp.init(alloc, pattern)
-                        self.write("try js_regexp.JsRegExp.init(js_allocator.getAllocator(), ");
+                        self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
                         if let Some(first_arg) = ne.arguments.first()
                             && let Some(expr) = first_arg.as_expression()
                         {
@@ -774,7 +774,7 @@ impl Codegen {
             }
             Expression::RegExpLiteral(re) => {
                 // JS regexp literal `/pattern/flags` → try js_regexp.JsRegExp.init(alloc, pattern)
-                self.write("try js_regexp.JsRegExp.init(js_allocator.getAllocator(), ");
+                self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
                 let pattern = re.regex.pattern.text.as_str();
                 let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
                 self.write(&format!("\"{}\"", escaped));
@@ -785,7 +785,7 @@ impl Codegen {
                 // bigint.value is the decimal string without trailing `n`
                 let s = bigint.value.as_str();
                 self.write(&format!(
-                    "js_bigint.JsBigInt.init(js_allocator.getAllocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
+                    "js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
                     s
                 ));
             }
@@ -986,7 +986,7 @@ impl Codegen {
             }
         }
 
-        // Generate: std.fmt.allocPrint(js_allocator.getAllocator(), "fmt", .{args}) catch @panic("OOM: template literal allocPrint")
+        // Generate: std.fmt.allocPrint(js_allocator.allocator(), "fmt", .{args}) catch @panic("OOM: template literal allocPrint")
         self.emit_format_string(&fmt, &args);
     }
 
@@ -996,7 +996,7 @@ impl Codegen {
     /// placeholder from the inferred type: Str→{s}, I64/F64→{d}, Bool→{},
     /// otherwise expr_is_string ? {s} : {}. Pure-text templates (no
     /// interpolation) degrade to a plain string literal (no allocation).
-    /// Allocates from the global arena via js_allocator.getAllocator().
+    /// Allocates from the global arena via js_allocator.allocator().
     fn emit_template_literal(&mut self, tpl: &TemplateLiteral) {
         let mut fmt = String::new();
         let mut args: Vec<String> = Vec::new();
@@ -1101,7 +1101,7 @@ impl Codegen {
                             fmt.push_str("{s}");
                             let bigint_code = self.emit_expr_to_string(side_expr);
                             concat_args.push(format!(
-                                "({}).toString(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt toString\")",
+                                "({}).toString(js_allocator.allocator()) catch @panic(\"OOM: BigInt toString\")",
                                 bigint_code
                             ));
                         } else if let Expression::StringLiteral(sl) = side_expr {
@@ -1503,7 +1503,7 @@ impl Codegen {
             self.emit_expr(&be.right);
             self.write(&format!(
                 "; break :{} {}.{}({}.toU64() catch @panic(\"BigInt shift count too large\"), \
-                js_allocator.getAllocator()) catch @panic(\"OOM: BigInt shift\"); }})",
+                js_allocator.allocator()) catch @panic(\"OOM: BigInt shift\"); }})",
                 blk, a_name, op, b_name
             ));
             return;
@@ -1527,19 +1527,19 @@ impl Codegen {
         match be.operator {
             BinaryOperator::Addition => {
                 self.write(&format!(
-                    "{}.add(&{}, js_allocator.getAllocator())",
+                    "{}.add(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::Subtraction => {
                 self.write(&format!(
-                    "{}.sub(&{}, js_allocator.getAllocator())",
+                    "{}.sub(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::Multiplication => {
                 self.write(&format!(
-                    "{}.mul(&{}, js_allocator.getAllocator())",
+                    "{}.mul(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
@@ -1549,7 +1549,7 @@ impl Codegen {
                 // Check for zero divisor first and return early (matching JS try/catch).
                 self.write(&format!(
                     "; if ({b}.isZero()) return; \
-                    const _dr = {a}.div(&{b}, js_allocator.getAllocator()) catch @panic(\"OOM: BigInt div\"); \
+                    const _dr = {a}.div(&{b}, js_allocator.allocator()) catch @panic(\"OOM: BigInt div\"); \
                     break :{blk} _dr; }})",
                     a = a_name,
                     b = b_name,
@@ -1565,31 +1565,31 @@ impl Codegen {
                 // uses catch, and try would propagate the error past the catch to
                 // the containing void function.
                 self.write(&format!(
-                    "{}.pow({}.toU64() catch @panic(\"OOM: BigInt toU64\"), js_allocator.getAllocator())",
+                    "{}.pow({}.toU64() catch @panic(\"OOM: BigInt toU64\"), js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::Remainder => {
                 self.write(&format!(
-                    "{}.rem(&{}, js_allocator.getAllocator())",
+                    "{}.rem(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::BitwiseAnd => {
                 self.write(&format!(
-                    "{}.bitwiseAnd(&{}, js_allocator.getAllocator())",
+                    "{}.bitwiseAnd(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::BitwiseOR => {
                 self.write(&format!(
-                    "{}.bitwiseOr(&{}, js_allocator.getAllocator())",
+                    "{}.bitwiseOr(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
             BinaryOperator::BitwiseXOR => {
                 self.write(&format!(
-                    "{}.bitwiseXor(&{}, js_allocator.getAllocator())",
+                    "{}.bitwiseXor(&{}, js_allocator.allocator())",
                     a_name, b_name
                 ));
             }
@@ -2649,7 +2649,7 @@ impl Codegen {
         }
         self.write(&format!("js_string.{}(", desc.method));
         if desc.needs_allocator {
-            self.write("js_allocator.getAllocator(), ");
+            self.write("js_allocator.allocator(), ");
         }
         self.write(&obj_repr);
 
@@ -2984,10 +2984,7 @@ impl Codegen {
             builtins::BuiltinCall::ArrayPush => {
                 // arr.push(x) → arr.append(alloc, x) catch @panic("OOM")
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
-                    self.write(&format!(
-                        "{}.append(js_allocator.getAllocator(), ",
-                        obj_name
-                    ));
+                    self.write(&format!("{}.append(js_allocator.allocator(), ", obj_name));
                     self.emit_comma_separated_args(&ce.arguments);
                     self.write(") catch @panic(\"OOM: Array.push\")");
                     return true;
@@ -3022,7 +3019,7 @@ impl Codegen {
                 // arr.unshift(x) → arr.insert(alloc, 0, x) catch @panic("OOM: Array.unshift insert")
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.insert(js_allocator.getAllocator(), 0, ",
+                        "{}.insert(js_allocator.allocator(), 0, ",
                         obj_name
                     ));
                     self.emit_comma_separated_args(&ce.arguments);
@@ -3169,7 +3166,7 @@ impl Codegen {
                     };
                     let blk = self.next_label();
                     self.write(&format!(
-                            "({blk}: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.getAllocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :{blk} \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :{blk} \"\"; }} break :{blk} __join_buf.toOwnedSlice() catch \"\"; }})",
+                            "({blk}: {{ var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator()); for ({obj}.items, 0..) |__item, __i| {{ if (__i > 0) __join_buf.writer().writeAll({sep}) catch break :{blk} \"\"; __join_buf.writer().print(\"{fmt}\", .{{__item}}) catch break :{blk} \"\"; }} break :{blk} __join_buf.toOwnedSlice() catch \"\"; }})",
                             blk = blk,
                             obj = obj_name,
                             sep = sep_expr,
@@ -3248,7 +3245,7 @@ impl Codegen {
                     };
                     let blk = self.next_label();
                     self.write(&format!(
-                        "({0}: {{ var __slice: std.ArrayList({1}) = .empty; __slice.appendSlice(js_allocator.getAllocator(), {2}) catch @panic(\"OOM: Array.slice appendSlice\"); break :{0} __slice; }})",
+                        "({0}: {{ var __slice: std.ArrayList({1}) = .empty; __slice.appendSlice(js_allocator.allocator(), {2}) catch @panic(\"OOM: Array.slice appendSlice\"); break :{0} __slice; }})",
                         blk, elem_type, slice_expr
                     ));
                     return true;
@@ -3316,14 +3313,14 @@ impl Codegen {
 
                     let blk = self.next_label();
                     self.write(&format!(
-                        "({0}: {{ var __spliced: std.ArrayList({1}) = .empty; const __start = @as(usize, @intCast(@max(0, {2}))); const __cnt = @as(usize, @intCast(@min(@max(0, {3}), {4}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.getAllocator(), {4}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
+                        "({0}: {{ var __spliced: std.ArrayList({1}) = .empty; const __start = @as(usize, @intCast(@max(0, {2}))); const __cnt = @as(usize, @intCast(@min(@max(0, {3}), {4}.items.len -| __start))); var __i: usize = 0; while (__i < __cnt) : (__i += 1) {{ __spliced.append(js_allocator.allocator(), {4}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }}", 
                         blk, elem_type, start_expr, count_expr, obj_name
                     ));
                     // Insert new items if any (args beyond index 1)
                     if ce.arguments.len() > 2 {
                         // Use insertSlice for better performance
                         self.write(&format!(
-                            " {0}.insertSlice(js_allocator.getAllocator(), __start, &[_]{1}{{",
+                            " {0}.insertSlice(js_allocator.allocator(), __start, &[_]{1}{{",
                             obj_name, elem_type
                         ));
                         for (i, arg) in ce.arguments.iter().enumerate() {
@@ -3368,7 +3365,7 @@ impl Codegen {
                     ));
                     // Append original array's items
                     self.write(&format!(
-                        "__concat.appendSlice(js_allocator.getAllocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
+                        "__concat.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
                         obj_name
                     ));
                     // Append each additional argument's items
@@ -3376,7 +3373,7 @@ impl Codegen {
                         if let Some(expr) = arg.as_expression() {
                             let arg_str = self.emit_expr_to_string(expr);
                             self.write(&format!(
-                                "__concat.appendSlice(js_allocator.getAllocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
+                                "__concat.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
                                 arg_str
                             ));
                         }
@@ -3389,10 +3386,10 @@ impl Codegen {
 
             // ── Array iterator methods ─────────────────────────────
             builtins::BuiltinCall::ArrayKeys => {
-                // arr.keys() → js_runtime.js_array.keys(js_allocator.getAllocator(), &arr) catch @panic(...)
+                // arr.keys() → js_runtime.js_array.keys(js_allocator.allocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.keys(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
+                        "js_runtime.js_array.keys(js_allocator.allocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3401,10 +3398,10 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayValues => {
-                // arr.values() → js_runtime.js_array.values(js_allocator.getAllocator(), &arr) catch @panic(...)
+                // arr.values() → js_runtime.js_array.values(js_allocator.allocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.values(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
+                        "js_runtime.js_array.values(js_allocator.allocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3413,10 +3410,10 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::ArrayEntries => {
-                // arr.entries() → js_runtime.js_array.entries(js_allocator.getAllocator(), &arr) catch @panic(...)
+                // arr.entries() → js_runtime.js_array.entries(js_allocator.allocator(), &arr) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_runtime.js_array.entries(js_allocator.getAllocator(), &{}) catch @panic(\"OOM: allocation\")",
+                        "js_runtime.js_array.entries(js_allocator.allocator(), &{}) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3545,10 +3542,10 @@ impl Codegen {
             }
             // ── Map iterator methods ──
             builtins::BuiltinCall::MapKeys => {
-                // map.keys() → map.keys(js_allocator.getAllocator()) catch @panic(...)
+                // map.keys() → map.keys(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.keys(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.keys(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3556,10 +3553,10 @@ impl Codegen {
                 false
             }
             builtins::BuiltinCall::MapValues => {
-                // map.values() → map.values(js_allocator.getAllocator()) catch @panic(...)
+                // map.values() → map.values(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.values(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.values(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3567,10 +3564,10 @@ impl Codegen {
                 false
             }
             builtins::BuiltinCall::MapEntries => {
-                // map.entries() → map.entries(js_allocator.getAllocator()) catch @panic(...)
+                // map.entries() → map.entries(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.entries(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.entries(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3641,10 +3638,10 @@ impl Codegen {
                 false
             }
             builtins::BuiltinCall::SetKeys => {
-                // set.keys() → set.keys(js_allocator.getAllocator()) catch @panic(...)
+                // set.keys() → set.keys(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.keys(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.keys(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3652,10 +3649,10 @@ impl Codegen {
                 false
             }
             builtins::BuiltinCall::SetValues => {
-                // set.values() → set.values(js_allocator.getAllocator()) catch @panic(...)
+                // set.values() → set.values(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.values(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.values(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3663,10 +3660,10 @@ impl Codegen {
                 false
             }
             builtins::BuiltinCall::SetEntries => {
-                // set.entries() → set.entries(js_allocator.getAllocator()) catch @panic(...)
+                // set.entries() → set.entries(js_allocator.allocator()) catch @panic(...)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "{}.entries(js_allocator.getAllocator()) catch @panic(\"OOM: allocation\")",
+                        "{}.entries(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
                         obj_name
                     ));
                     return true;
@@ -3841,7 +3838,7 @@ impl Codegen {
                                 if let Some(expr) = &ret.argument {
                                     self.write("if (");
                                     self.emit_expr(expr);
-                                    self.write(") { __filter.append(js_allocator.getAllocator(), ");
+                                    self.write(") { __filter.append(js_allocator.allocator(), ");
                                     self.write(&param_name);
                                     self.write(") catch @panic(\"OOM: Array.filter append\"); }");
                                 }
@@ -3849,7 +3846,7 @@ impl Codegen {
                                 // Concise body: x => predicate
                                 self.write("if (");
                                 self.emit_expr(&es.expression);
-                                self.write(") { __filter.append(js_allocator.getAllocator(), ");
+                                self.write(") { __filter.append(js_allocator.allocator(), ");
                                 self.write(&param_name);
                                 self.write(") catch @panic(\"OOM: Array.filter append\"); }");
                             }
@@ -4497,11 +4494,11 @@ impl Codegen {
                 self.emit_date_instance_method("getTimezoneOffset", ce)
             }
             builtins::BuiltinCall::DateToISOString => {
-                // date.toISOString() → try date.toISOString(js_allocator.getAllocator())
+                // date.toISOString() → try date.toISOString(js_allocator.allocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
                     self.write("try ");
                     self.emit_expr(&mem.object);
-                    self.write(".toISOString(js_allocator.getAllocator())");
+                    self.write(".toISOString(js_allocator.allocator())");
                     true
                 } else {
                     self.errors.push(
@@ -4513,11 +4510,11 @@ impl Codegen {
 
             // ── Date string methods ────────────────────────
             builtins::BuiltinCall::DateToString => {
-                // date.toString() → try date.toString(js_allocator.getAllocator())
+                // date.toString() → try date.toString(js_allocator.allocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
                     self.write("try ");
                     self.emit_expr(&mem.object);
-                    self.write(".toString(js_allocator.getAllocator())");
+                    self.write(".toString(js_allocator.allocator())");
                     true
                 } else {
                     self.errors
@@ -4527,11 +4524,11 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToDateString => {
-                // date.toDateString() → try date.toDateString(js_allocator.getAllocator())
+                // date.toDateString() → try date.toDateString(js_allocator.allocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
                     self.write("try ");
                     self.emit_expr(&mem.object);
-                    self.write(".toDateString(js_allocator.getAllocator())");
+                    self.write(".toDateString(js_allocator.allocator())");
                     true
                 } else {
                     self.errors.push(
@@ -4542,11 +4539,11 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToTimeString => {
-                // date.toTimeString() → try date.toTimeString(js_allocator.getAllocator())
+                // date.toTimeString() → try date.toTimeString(js_allocator.allocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
                     self.write("try ");
                     self.emit_expr(&mem.object);
-                    self.write(".toTimeString(js_allocator.getAllocator())");
+                    self.write(".toTimeString(js_allocator.allocator())");
                     true
                 } else {
                     self.errors.push(
@@ -4557,11 +4554,11 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::DateToLocaleString => {
-                // date.toLocaleString() → try date.toLocaleString(js_allocator.getAllocator())
+                // date.toLocaleString() → try date.toLocaleString(js_allocator.allocator())
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
                     self.write("try ");
                     self.emit_expr(&mem.object);
-                    self.write(".toLocaleString(js_allocator.getAllocator())");
+                    self.write(".toLocaleString(js_allocator.allocator())");
                     true
                 } else {
                     self.errors.push(
@@ -4602,7 +4599,7 @@ impl Codegen {
                     if let Expression::StaticMemberExpression(mem) = &ce.callee {
                         self.write("try ");
                         self.emit_expr(&mem.object);
-                        self.write(".toJSON(js_allocator.getAllocator())");
+                        self.write(".toJSON(js_allocator.allocator())");
                     } else {
                         self.compile_error(
                             ce.span,
@@ -4696,28 +4693,28 @@ impl Codegen {
                     }
                 }
                 // Default: pass to js_object.keys (for JsValueHashMap etc.)
-                self.write("js_object.keys(js_allocator.getAllocator(), ");
+                self.write("js_object.keys(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
             builtins::BuiltinCall::ObjectValues => {
                 // Object.values(obj) → js_object.values(alloc, obj)
-                self.write("js_object.values(js_allocator.getAllocator(), ");
+                self.write("js_object.values(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
             builtins::BuiltinCall::ObjectEntries => {
                 // Object.entries(obj) → js_object.entries(alloc, obj)
-                self.write("js_object.entries(js_allocator.getAllocator(), ");
+                self.write("js_object.entries(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
             }
             builtins::BuiltinCall::ObjectFromEntries => {
                 // Object.fromEntries(iterable) → js_object.fromEntries(alloc, iterable)
-                self.write("js_object.fromEntries(js_allocator.getAllocator(), ");
+                self.write("js_object.fromEntries(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(")");
                 true
@@ -4771,7 +4768,7 @@ impl Codegen {
                     self.compile_error(ce.span, "Object.create() requires at least 1 argument");
                     return true;
                 }
-                self.write("js_object.create(js_allocator.getAllocator(), ");
+                self.write("js_object.create(js_allocator.allocator(), ");
                 let first_arg = ce.arguments[0].as_expression();
                 if let Some(Expression::NullLiteral(_)) = first_arg {
                     self.write("null");
@@ -4831,7 +4828,7 @@ impl Codegen {
                     );
                     return true;
                 }
-                self.write("js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), ");
+                self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");
                 self.emit_expr_arg(&ce.arguments[0]);
                 self.write(", ");
                 self.emit_expr_arg(&ce.arguments[1]);
@@ -4909,8 +4906,8 @@ impl Codegen {
 
             // ── JSON methods ─────────────────────────────
             builtins::BuiltinCall::JsonStringify => {
-                // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.getAllocator(), value, replacer, space)
-                self.write("try js_json.stringify(js_allocator.getAllocator(), ");
+                // JSON.stringify(value, replacer?, space?) → try js_json.stringify(js_allocator.allocator(), value, replacer, space)
+                self.write("try js_json.stringify(js_allocator.allocator(), ");
                 if let Some(first_arg) = ce.arguments.first() {
                     self.emit_expr_arg(first_arg);
                 } else {
@@ -4935,8 +4932,8 @@ impl Codegen {
             }
 
             builtins::BuiltinCall::JsonParse => {
-                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.getAllocator(), text, reviver)
-                self.write("try js_json.parse(js_allocator.getAllocator(), ");
+                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.allocator(), text, reviver)
+                self.write("try js_json.parse(js_allocator.allocator(), ");
                 if let Some(first_arg) = ce.arguments.first() {
                     self.emit_expr_arg(first_arg);
                 } else {
@@ -5063,7 +5060,7 @@ impl Codegen {
                         .push("encodeURIComponent() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("js_uri.encodeURIComponent(js_allocator.getAllocator(), ");
+                self.write("js_uri.encodeURIComponent(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(") catch @panic(\"OOM: encodeURIComponent\")");
                 true
@@ -5076,7 +5073,7 @@ impl Codegen {
                         .push("encodeURI() requires exactly 1 argument".to_string());
                     return false;
                 }
-                self.write("js_uri.encodeURI(js_allocator.getAllocator(), ");
+                self.write("js_uri.encodeURI(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(") catch @panic(\"OOM: encodeURI\")");
                 true
@@ -5099,7 +5096,7 @@ impl Codegen {
                     // pattern `_ = <err union> catch |_| { }` (discard + catch is illegal).
                     let body_blk = body_blk.clone();
                     self.call_generated_catch = true;
-                    self.write("_ = js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                    self.write("_ = js_uri.decodeURIComponent(js_allocator.allocator(), ");
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch |_| { break :");
                     self.write(&body_blk);
@@ -5107,7 +5104,7 @@ impl Codegen {
                     return true;
                 } else {
                     // Outside try: swallow error to avoid unhandled error
-                    self.write("js_uri.decodeURIComponent(js_allocator.getAllocator(), ");
+                    self.write("js_uri.decodeURIComponent(js_allocator.allocator(), ");
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch \"\"");
                 }
@@ -5132,7 +5129,7 @@ impl Codegen {
                     let body_blk = body_blk.clone();
                     self.call_generated_catch = true;
                     self.write_indent();
-                    self.write("_ = js_uri.decodeURI(js_allocator.getAllocator(), ");
+                    self.write("_ = js_uri.decodeURI(js_allocator.allocator(), ");
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch |_| { break :");
                     self.write(&body_blk);
@@ -5140,7 +5137,7 @@ impl Codegen {
                     return true;
                 } else {
                     // Outside try: swallow error to avoid unhandled error
-                    self.write("js_uri.decodeURI(js_allocator.getAllocator(), ");
+                    self.write("js_uri.decodeURI(js_allocator.allocator(), ");
                     self.emit_first_arg(&ce.arguments);
                     self.write(") catch \"\"");
                 }
@@ -5237,7 +5234,7 @@ impl Codegen {
                 }
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_number.toFixed(js_allocator.getAllocator(), {}, ",
+                        "js_number.toFixed(js_allocator.allocator(), {}, ",
                         obj_name
                     ));
                     self.emit_first_arg(&ce.arguments);
@@ -5256,7 +5253,7 @@ impl Codegen {
                 // num.toExponential(fractionDigits) → js_number.toExponential(allocator, num, fractionDigits)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_number.toExponential(js_allocator.getAllocator(), {}, ",
+                        "js_number.toExponential(js_allocator.allocator(), {}, ",
                         obj_name
                     ));
                     if ce.arguments.is_empty() {
@@ -5278,7 +5275,7 @@ impl Codegen {
                 // num.toPrecision(precision) → js_number.toPrecision(allocator, num, precision)
                 if let Some(obj_name) = self.callee_object_name(&ce.callee) {
                     self.write(&format!(
-                        "js_number.toPrecision(js_allocator.getAllocator(), {}, ",
+                        "js_number.toPrecision(js_allocator.allocator(), {}, ",
                         obj_name
                     ));
                     if ce.arguments.is_empty() {
@@ -5523,12 +5520,12 @@ impl Codegen {
                                 .unwrap_or(false);
                             if has_global {
                                 self.write(&format!(
-                                    "js_string.matchStringGlobal(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                    "js_string.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                                     obj_repr, escaped
                                 ));
                             } else {
                                 self.write(&format!(
-                                    "js_string.matchString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                    "js_string.matchString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                                     obj_repr, escaped
                                 ));
                             }
@@ -5537,7 +5534,7 @@ impl Codegen {
                             if self.regexp_vars.contains(id.name.as_str()) =>
                         {
                             self.write(&format!(
-                                "js_string.matchString(js_allocator.getAllocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                                "js_string.matchString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
                                 obj_repr, id.name.as_str()
                             ));
                         }
@@ -5622,7 +5619,7 @@ impl Codegen {
                             let pattern = re.regex.pattern.text.as_str().to_string();
                             let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
                             self.write(&format!(
-                                "js_string.matchAllString(js_allocator.getAllocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                                "js_string.matchAllString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                                 obj_repr, escaped
                             ));
                         }
@@ -5630,7 +5627,7 @@ impl Codegen {
                             if self.regexp_vars.contains(id.name.as_str()) =>
                         {
                             self.write(&format!(
-                                "js_string.matchAllString(js_allocator.getAllocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                                "js_string.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
                                 obj_repr, id.name.as_str()
                             ));
                         }
@@ -5701,7 +5698,7 @@ impl Codegen {
             // ── String static methods ─────────────────────────────
             builtins::BuiltinCall::StringFromCharCode => {
                 // String.fromCharCode(...codes) → js_string.fromCharCode(alloc, codes)
-                self.write("js_string.fromCharCode(js_allocator.getAllocator()");
+                self.write("js_string.fromCharCode(js_allocator.allocator()");
                 if !ce.arguments.is_empty() {
                     self.write(", &[_]u16{");
                     for (i, arg) in ce.arguments.iter().enumerate() {
@@ -5720,7 +5717,7 @@ impl Codegen {
 
             builtins::BuiltinCall::StringFromCodePoint => {
                 // String.fromCodePoint(...codePoints) → js_string.fromCodePoint(alloc, codePoints)
-                self.write("js_string.fromCodePoint(js_allocator.getAllocator()");
+                self.write("js_string.fromCodePoint(js_allocator.allocator()");
                 if !ce.arguments.is_empty() {
                     self.write(", &[_]u32{");
                     for (i, arg) in ce.arguments.iter().enumerate() {
@@ -5740,7 +5737,7 @@ impl Codegen {
             // ── Array static methods ─────────────────────────────
             builtins::BuiltinCall::ArrayFrom => {
                 // Array.from(arrayLike[, mapFn[, thisArg]]) → js_array.from(alloc, arrayLike)
-                self.write("js_array.from(js_allocator.getAllocator()");
+                self.write("js_array.from(js_allocator.allocator()");
                 if !ce.arguments.is_empty() {
                     self.write(", ");
                     if let Some(first) = ce.arguments.first()
@@ -5755,7 +5752,7 @@ impl Codegen {
 
             builtins::BuiltinCall::ArrayOf => {
                 // Array.of(...items) → js_array.of(alloc, items)
-                self.write("js_array.of(js_allocator.getAllocator()");
+                self.write("js_array.of(js_allocator.allocator()");
                 if !ce.arguments.is_empty() {
                     self.write(", &[_]JsAny{");
                     for (i, arg) in ce.arguments.iter().enumerate() {
@@ -5796,7 +5793,7 @@ impl Codegen {
                     if let Expression::RegExpLiteral(re) = &mem.object {
                         let pattern = re.regex.pattern.text.as_str().to_string();
                         let escaped = pattern.replace("\\", "\\\\").replace("\"", "\\\"");
-                        self.write("js_regexp.execLiteral(js_allocator.getAllocator(), ");
+                        self.write("js_regexp.execLiteral(js_allocator.allocator(), ");
                         self.emit_first_arg(&ce.arguments);
                         self.write(&format!(
                             ", \"{}\") catch @panic(\"OOM: allocation\")",
@@ -5809,7 +5806,7 @@ impl Codegen {
                         && self.regexp_vars.contains(id.name.as_str())
                     {
                         self.emit_expr(&mem.object);
-                        self.write(".exec(js_allocator.getAllocator(), ");
+                        self.write(".exec(js_allocator.allocator(), ");
                         self.emit_first_arg(&ce.arguments);
                         self.write(")");
                         return true;
@@ -5932,7 +5929,7 @@ impl Codegen {
                 self.write(&format!("({}: {{ const _val = ", blk));
                 self.emit_first_arg(&ce.arguments);
                 self.write("; ");
-                self.write(&format!("break :{} std.fmt.allocPrint(js_allocator.getAllocator(), \"{{d}}\", .{{_val}}) catch @panic(\"OOM\"); }})", blk));
+                self.write(&format!("break :{} std.fmt.allocPrint(js_allocator.allocator(), \"{{d}}\", .{{_val}}) catch @panic(\"OOM\"); }})", blk));
                 true
             }
             builtins::BuiltinCall::BooleanConstructor => {
@@ -5996,7 +5993,7 @@ impl Codegen {
             builtins::BuiltinCall::BigIntConstructor => {
                 // BigInt(x) → (js_bigint.JsBigInt.fromI64(alloc, x) catch @panic(...))
                 // Parens are needed for correct parsing in if/else branches (Zig catch precedence).
-                self.write("(js_bigint.JsBigInt.fromI64(js_allocator.getAllocator(), ");
+                self.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
                 self.emit_first_arg(&ce.arguments);
                 self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
                 true
@@ -6094,7 +6091,7 @@ impl Codegen {
                             self.write(&format!(".setByKey(JsAny.from({}), ", idx));
                             self.emit_expr(&ae.right);
                             self.write(&format!(
-                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                ", js_allocator.allocator()) catch undefined; break :{} ",
                                 blk
                             ));
                             self.emit_expr(&ae.right);
@@ -6190,7 +6187,7 @@ impl Codegen {
                             self.write(", ");
                             self.emit_expr(&ae.right);
                             self.write(&format!(
-                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                ", js_allocator.allocator()) catch undefined; break :{} ",
                                 blk
                             ));
                             self.emit_expr(&ae.right);
@@ -6207,7 +6204,7 @@ impl Codegen {
                             self.write(", ");
                             self.emit_expr(&ae.right);
                             self.write(&format!(
-                                ", js_allocator.getAllocator()) catch undefined; break :{} ",
+                                ", js_allocator.allocator()) catch undefined; break :{} ",
                                 blk
                             ));
                             self.emit_expr(&ae.right);
@@ -6509,7 +6506,7 @@ impl Codegen {
                     let a_name = format!("_a{}", var_suffix);
                     self.write(&format!("({0}: {{ var {1} = ", blk, a_name));
                     self.emit_expr(&ue.argument);
-                    self.write(&format!("; break :{0} {1}.neg(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt neg\"); }})", blk, a_name));
+                    self.write(&format!("; break :{0} {1}.neg(js_allocator.allocator()) catch @panic(\"OOM: BigInt neg\"); }})", blk, a_name));
                     return;
                 }
                 UnaryOperator::BitwiseNot => {
@@ -6518,7 +6515,7 @@ impl Codegen {
                     let a_name = format!("_a{}", var_suffix);
                     self.write(&format!("({0}: {{ var {1} = ", blk, a_name));
                     self.emit_expr(&ue.argument);
-                    self.write(&format!("; break :{0} {1}.bitwiseNot(js_allocator.getAllocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); }})", blk, a_name));
+                    self.write(&format!("; break :{0} {1}.bitwiseNot(js_allocator.allocator()) catch @panic(\"OOM: BigInt bitwiseNot\"); }})", blk, a_name));
                     return;
                 }
                 _ => {}
@@ -6710,16 +6707,16 @@ impl Codegen {
             for elem in ae.elements.iter() {
                 match elem {
                     ArrayExpressionElement::SpreadElement(se) => {
-                        self.write("__arr.appendSlice(js_allocator.getAllocator(), ");
+                        self.write("__arr.appendSlice(js_allocator.allocator(), ");
                         self.emit_expr(&se.argument);
                         self.write(".items) catch @panic(\"OOM: Array.spread\"); ");
                     }
                     ArrayExpressionElement::Elision(_) => {
-                        self.write("__arr.append(js_allocator.getAllocator(), JsAny{ .undefined = {} }) catch @panic(\"OOM: Array.elision\"); ");
+                        self.write("__arr.append(js_allocator.allocator(), JsAny{ .undefined = {} }) catch @panic(\"OOM: Array.elision\"); ");
                     }
                     _ => {
                         if let Some(e) = elem.as_expression() {
-                            self.write("__arr.append(js_allocator.getAllocator(), ");
+                            self.write("__arr.append(js_allocator.allocator(), ");
                             self.emit_expr(e);
                             self.write(") catch @panic(\"OOM: Array.push append\"); ");
                         }
@@ -6734,8 +6731,8 @@ impl Codegen {
     /// Supports multi-spread: { ...a, ...b, c: 1 } → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
     fn emit_object(&mut self, oe: &ObjectExpression) {
         if oe.properties.is_empty() {
-            // Empty object → StringHashMap(JsAny).init(js_allocator.getAllocator())
-            self.write("std.StringHashMap(JsAny).init(js_allocator.getAllocator())");
+            // Empty object → StringHashMap(JsAny).init(js_allocator.allocator())
+            self.write("std.StringHashMap(JsAny).init(js_allocator.allocator())");
             return;
         }
 
@@ -7076,7 +7073,7 @@ struct MathOneArgDesc {
 struct StringRuntimeDesc {
     /// Zig function name (e.g. "trim", "toUpper").
     method: &'static str,
-    /// Whether the call needs `js_allocator.getAllocator()` as first arg.
+    /// Whether the call needs `js_allocator.allocator()` as first arg.
     needs_allocator: bool,
     /// Whether the Zig runtime function returns an error union (`!T`).
     /// If true, `try` is prepended to the call expression.

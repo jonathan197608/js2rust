@@ -1,8 +1,9 @@
 // src/main.rs -- MDN test project CLI
 // Usage:
-//   mdn-test-project <fragment_name>   Run a single fragment
-//   mdn-test-project --all             Run all fragments with Node.js comparison
-//   mdn-test-project --list            List all available fragments
+//   mdn-test-project                    Run all fragments with Node.js comparison (default)
+//   mdn-test-project --list             List all available fragments
+//   mdn-test-project <fragment_name>    Run a single fragment
+//   mdn-test-project --all              Same as default (run all fragments)
 use js2rust_bridge::js2rust_bridge;
 use std::env;
 use std::process::Command;
@@ -240,17 +241,9 @@ fn main() {
     let binary = args[0].clone();
 
     if args.len() < 2 {
-        eprintln!("Usage:");
-        eprintln!("  {} <fragment_name>   Run a single fragment", binary);
-        eprintln!(
-            "  {} --all             Run all fragments with Node.js comparison",
-            binary
-        );
-        eprintln!(
-            "  {} --list            List all available fragments",
-            binary
-        );
-        std::process::exit(1);
+        // Default: run all fragments with Node.js comparison
+        run_all(&binary);
+        return;
     }
 
     match args[1].as_str() {
@@ -278,7 +271,9 @@ fn main() {
 }
 
 /// Dispatch to a single bridge function. Returns false if fragment name is unknown.
-/// Uses `let _ =` universally to handle both `()` and `Result` return types.
+/// `let _ =` is intentionally used for all bridge calls to uniformly discard
+/// both `()` and `Result` return types.
+#[allow(clippy::let_unit_value)]
 fn run_fragment(frag: &str) -> bool {
     match frag {
         // === statements ===

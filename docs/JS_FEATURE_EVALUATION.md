@@ -923,37 +923,77 @@
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 
-**设计**：双 Arena 全局分配器（主备热切换），所有 Zig 侧内存分配通过全局 arena 进行，调用方无需手动释放内存。
+**设计**：多 Arena 全局分配器（环形拓扑 + 随机选取），所有 Zig 侧内存分配通过全局 arena 进行，调用方无需手动释放内存。
 
 #### 核心机制：`js_allocator.zig`
 
-**双 Arena 状态机**：
+**多 Arena 环形设计**：
 
 ```
-Arena A:  ready  --(成为 active)-->  active  --(容量超限)-->  cooling  --(冷却期结束)-->  ready
-Arena B:  ready  --(成为 active)-->  active  --(容量超限)-->  cooling  --(冷却期结束)-->  ready
+    ┌─────────────────────────────────────────────┐
+    │                                             │
+    ▼         Arena 0      Arena 1      Arena 2   │
+    random ──► [active] ──► [ready] ──► [ready] ──┘
+                │ 超限
+                ▼
+             [cooling] ── 倒计时 ──► [ready]
 ```
 
-- 任意时刻只有一个 arena 是 `active`（用于所有分配），另一个是非激活状态（`cooling` 或 `ready`）
-- 当 `active` arena 容量超过 `JS2RUST_MAX_ARENA_MB`（默认 100MB）且备用 arena 是 `ready` 时，两者交换
-- 退出的 arena 进入 `cooling` 状态，保持存活 `JS2RUST_ARENA_GRACE_MS`（默认 5000ms = 5 秒），确保已返回的指针在 FFI 消费窗口内保持有效
-- `cooling` 到期后，arena 被 `reset`（内存回收），状态回到 `ready`
+- 默认 3 个 arena，每个上限 128MB（总上限 384MB），可通过 `init()` 参数调整
+- 环形拓扑：所有 arena 逻辑上排列成环，当前 `active` 指向其中一个
+- 随机选取初始 active，通过 `total_limit` 和 `min_cooling_time` 参数控制容量和冷却
+- 当 active arena 超过容量上限时，切换到下一个 `ready` arena（环形遍历）
+- 退出的 arena 进入 `cooling` 状态，倒计时 `min_cooling_time`（默认 5s），确保已返回的指针在 FFI 消费窗口内保持有效
+- cooling 到期后，arena 被 `reset`（内存回收），状态回到 `ready`
 
 **关键设计**：
 
-1. **惰性回收**：冷却定时器检查在 `getAllocator()` 内部惰性执行，无需后台线程
-2. **线程安全**：使用原子自旋锁（`g_lock`）保护状态转换
-3. **环境配置**：
-   - `JS2RUST_MAX_ARENA_MB`（默认 100）：触发主备交换的容量阈值
-   - `JS2RUST_ARENA_GRACE_MS`（默认 5000）：冷却期毫秒数
+1. **惰性回收**：冷却倒计时检查在 `allocator()` 调用时惰性执行，无需后台线程
+2. **线程安全**：使用原子自旋锁保护状态转换
+3. **初始化参数**：
+   - `backing`: 底层 allocator（通常 `std.heap.page_allocator`）
+   - `total_limit`（默认 384MB / 3 * 128MB）：所有 arena 总容量上限（null 表示无限制）
+   - `min_cooling_time`（默认 5000ms）：arena 冷却最短毫秒数（null 表示永不回收）
+
+**Zig 侧公共 API**：
+
+| 函数 | 说明 |
+|------|------|
+| `js_allocator.init(backing, total_limit, min_cooling_time)` | 初始化 MultiArenaAllocator，返回 `!void` |
+| `js_allocator.deinit()` | 释放所有 arena 内存 |
+| `js_allocator.allocator()` | 获取当前 active arena 的 Allocator interface |
+| `js_allocator.allocBytes(n: usize) ![]u8` | 从 active arena 分配 n 字节，OOM 时返回 error |
+| `js_allocator.dupeBytes(src: []const u8) ![]u8` | 从 active arena 复制字符串，OOM 时返回 error |
 
 **C ABI 导出函数**：
 
 | 函数 | 说明 |
 |------|------|
-| `js2rust_init()` | 初始化全局分配器 + Io（在 Rust 侧调用） |
-| `js2rust_deinit()` | 释放全局分配器 + Io（在 Rust 侧调用） |
-| `js2rust_reset()` | 强制主备交换（将当前 active 送入冷却，备用变为 active） |
+| `js2rust_init()` | 调用 `js_allocator.init()` 初始化分配器 + `js_runtime.initIo()`（Rust 侧调用前执行） |
+| `js2rust_deinit()` | 调用 `js_allocator.deinit()` + `js_runtime.deinitIo()` |
+| `js_allocator_alloc(len) ?[*]u8` | C ABI 分配接口，null 表示 OOM |
+| `js_allocator_dupe(ptr, len) ?[*]u8` | C ABI 字符串复制接口，null 表示 OOM |
+
+**重要变更（v0.7→v0.8）**：
+- 旧 `initGlobalAllocator`/`deinitGlobalAllocator`/`resetGlobalAllocator`/`getAllocator`/`g_alloc()` 全部删除
+- `js2rust_reset()` 删除（环形冷却自动管理 arena 轮换，无需手动触发）
+- `init_js2rust()` 返回类型从 `void` 改为 `!void`（error union），Rust 端用 `.expect("Zig allocator init failed")`
+- `js_allocator_alloc`/`js_allocator_dupe` 从直接指针改为 `?[*]u8`，Rust 端 extern 用 `Option<*mut u8>`，`.expect("Zig arena OOM")` 处理 null
+
+#### oxc Allocator 优化
+
+Rust 端的 oxc 解析器每次调用 `parse()` 会创建新的 `Allocator` 并 leak。优化方案：
+
+- 使用 `AtomicPtr` 将单个 `Allocator` 实例共享为 `'static` 引用
+- oxc `Allocator` 内部用 bump-allocator，通过 `reset()` 重用（而非每次 leak）
+- 复杂度从 O(n) 降到 O(1) leak（只 leak 一个 Allocator）
+
+```rust
+let allocator: &'static Allocator = {
+    static ALLOC: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
+    // 首次创建 transmute 到 static ref，后续 reset 重用
+};
+```
 
 #### 字符串返回：`string.zig`
 
@@ -977,17 +1017,17 @@ pub const StrRet = extern struct {
 
 **字符串参数（Zig → Rust）**：
 
-1. Zig 侧调用 `js_allocator.g_alloc().dupeZ(u8, str)` 创建以 `\0` 结尾的 C 字符串
-2. 调用 `defer js_allocator.g_alloc().free(c_str)` 确保在函数返回后释放 C 字符串
+1. Zig 侧调用 `js_allocator.allocator().dupeZ(u8, str)` 创建以 `\0` 结尾的 C 字符串
+2. 调用 `defer js_allocator.allocator().free(c_str)` 确保在函数返回后释放 C 字符串
 3. 将 `c_str` 传递给 Rust（`[*:0]const u8`）
 
 **字符串返回（Rust → Zig）**：
 
 1. Rust 侧用 `CString::into_raw()` 分配内存并返回指针
 2. Zig 侧用 `std.mem.span(raw)` 获取切片长度
-3. Zig 侧用 `js_allocator.g_alloc().dupe(u8, span)` 复制到 arena
+3. Zig 侧用 `js_allocator.allocator().dupe(u8, span)` 复制到 arena
 4. Zig 侧调用 `host_free(@ptrCast(raw))` 释放 Rust 分配的内存
-5. 返回 arena 分配的副本（由双 Arena 自动管理生命周期）
+5. 返回 arena 分配的副本（由多 Arena 自动管理生命周期）
 
 **内存所有权**：
 
@@ -997,29 +1037,33 @@ pub const StrRet = extern struct {
 #### 示例：完整调用流程
 
 ```
-Rust: js2rust_init()  // 初始化 Arena A (active), Arena B (ready)
+Rust: js2rust_init()  // 初始化 3 个 Arena (均 128MB), 随机选择 Arena 1 为 active
 
 Rust: call greet("Alice")  // C ABI 调用
-  └─ Zig: 使用 getAllocator() (Arena A)
-  └─ Zig: 生成字符串 "Hello, Alice" (Arena A 分配)
+  └─ Zig: 使用 js_allocator.allocator() (Arena 1)
+  └─ Zig: 生成字符串 "Hello, Alice" (Arena 1 分配)
   └─ Zig: 返回 StrRet { .ptr = arena_ptr, .len = 13 }
-  └─ Rust: 使用字符串 (指针有效，因为 Arena A 仍 active)
-  └─ Rust: 下一次 FFI 调用前 / js2rust_reset() 后:
-       - 如果 Arena A 超过 100MB → 交换 → Arena A 进入 cooling (5 秒)
-       - Arena B 变为 active
-       - 5 秒后 Arena A 被 reset (指针失效，但 Rust 已消费完毕)
+  └─ Rust: 使用字符串 (指针有效，因为 Arena 1 仍 active)
 
-Rust: js2rust_deinit()  // 释放两个 arena
+Rust: 持续调用 (Arena 1 逐渐填满超过 128MB)
+  └─ Arena 1 → cooling (5 秒倒计时), Arena 2 → active (环形下一个)
+  └─ 所有 Arena 1 的指针在 5 秒冷却期内保持有效
+  └─ Rust 已消费完所有指针
+  └─ 5 秒后 Arena 1 自动 reset → ready
+
+Rust: js2rust_deinit()  // 释放所有 arena
 ```
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 双 Arena 分配器 | ✅ | 主备热切换 + 冷却期保证指针有效性 |
+| 多 Arena 分配器 | ✅ | 3×128MB 环形拓扑 + 随机选取 + 冷却期保证指针有效性 |
 | 自动内存释放 | ✅ | Arena 统一回收，调用方无需手动释放 |
 | 字符串返回 | ✅ | `StrRet` 结构体 + 符号位约定 |
 | Host 函数字符串参数 | ✅ | `dupeZ` + `defer free`（Zig → Rust） |
 | Host 函数字符串返回 | ✅ | `span` + `dupe` + `host_free`（Rust → Zig） |
 | 异步 Host 函数 | ✅ | `Io.Threaded` + `io.async()` 模式 |
+| C ABI OOM 处理 | ✅ | `js_allocator_alloc`/`js_allocator_dupe` 返回 nullable 指针，Rust 端 expect 处理 |
+| oxc Allocator 共享 | ✅ | `AtomicPtr` 单例复用，O(n)→O(1) leak |
 
 ---
 

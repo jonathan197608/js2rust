@@ -59,14 +59,13 @@ fn main() {
     let add_ok = testMemoryAdd_app(2, 3);
     println!("  testMemoryAdd(2,3) = {} (expected 5)", add_ok);
 
-    // Force arena rotation (swap active/backup)
-    js2rust_reset();
-    println!("  js2rust_reset() called — arena rotated");
+    // MultiArenaAllocator auto-manages arena rotation (cooling + reset)
+    // No manual reset needed — the old js2rust_reset() was a no-op.
 
-    // Verify correctness after reset
+    // Verify correctness after rotation
     let post_reduce = testArrayReduce_app();
     println!(
-        "  testArrayReduce (after reset) = {} (expected 0)",
+        "  testArrayReduce (after rotation) = {} (expected 0)",
         post_reduce
     );
 

@@ -1428,7 +1428,7 @@ function label() {
             zig
         );
         assert!(
-            zig.contains("js_allocator.getAllocator()"),
+            zig.contains("js_allocator.allocator()"),
             "Expected arena allocator, got:\n{}",
             zig
         );
@@ -1618,7 +1618,7 @@ export function getUserJson(user) {
 
         // Verify JSON.stringify() is converted to js_json.stringify()
         assert!(
-            zig.contains("try js_json.stringify(js_allocator.getAllocator(), user"),
+            zig.contains("try js_json.stringify(js_allocator.allocator(), user"),
             "Expected try js_json.stringify(), got:\n{}",
             zig
         );
@@ -4406,7 +4406,7 @@ function arraySpreadMixed(a, b) {
             zig
         );
         assert!(
-            zig.contains("append(js_allocator.getAllocator()"),
+            zig.contains("append(js_allocator.allocator()"),
             "Expected append in:\n{}",
             zig
         );
@@ -5231,7 +5231,7 @@ export function filterCount() {
         );
         assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
         assert!(
-            zig.contains(".append(js_allocator.getAllocator()"),
+            zig.contains(".append(js_allocator.allocator()"),
             "Expected append in:\n{}",
             zig
         );
@@ -5811,8 +5811,8 @@ export function matchRegex(str) {
         let zig = transpile_and_assert!(js, "test_native_proto_string_match_stub");
 
         assert!(
-            zig.contains("js_string.matchString(js_allocator.getAllocator(),"),
-            "Expected js_string.matchString(js_allocator.getAllocator(), for String.match() in:\n{}",
+            zig.contains("js_string.matchString(js_allocator.allocator(),"),
+            "Expected js_string.matchString(js_allocator.allocator(), for String.match() in:\n{}",
             zig
         );
         assert!(
@@ -6110,8 +6110,8 @@ export function formatPi() {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_number_tofixed");
         assert!(
-            zig.contains("js_number.toFixed(js_allocator.getAllocator(), pi"),
-            "Expected 'js_number.toFixed(js_allocator.getAllocator(), pi' in:\n{}",
+            zig.contains("js_number.toFixed(js_allocator.allocator(), pi"),
+            "Expected 'js_number.toFixed(js_allocator.allocator(), pi' in:\n{}",
             zig
         );
     }
@@ -6241,8 +6241,8 @@ export function repeatStr(str, n) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_repeat");
         assert!(
-            zig.contains("js_string.repeat(js_allocator.getAllocator()"),
-            "Expected 'js_string.repeat(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.repeat(js_allocator.allocator()"),
+            "Expected 'js_string.repeat(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6321,8 +6321,8 @@ export function normalizeStr(str) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_normalize");
         assert!(
-            zig.contains("js_string.normalize(js_allocator.getAllocator()"),
-            "Expected 'js_string.normalize(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.normalize(js_allocator.allocator()"),
+            "Expected 'js_string.normalize(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6341,8 +6341,8 @@ export function toUpper(str) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_to_upper_case");
         assert!(
-            zig.contains("js_string.toUpper(js_allocator.getAllocator()"),
-            "Expected 'js_string.toUpper(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.toUpper(js_allocator.allocator()"),
+            "Expected 'js_string.toUpper(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6361,8 +6361,8 @@ export function toLower(str) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_to_lower_case");
         assert!(
-            zig.contains("js_string.toLower(js_allocator.getAllocator()"),
-            "Expected 'js_string.toLower(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.toLower(js_allocator.allocator()"),
+            "Expected 'js_string.toLower(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6381,8 +6381,8 @@ export function splitStr(str) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_split");
         assert!(
-            zig.contains("js_string.split(js_allocator.getAllocator()"),
-            "Expected 'js_string.split(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.split(js_allocator.allocator()"),
+            "Expected 'js_string.split(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6401,8 +6401,8 @@ export function getChar(str) {
 "#;
         let zig = transpile_and_check!(js, "test_p6_string_char_at");
         assert!(
-            zig.contains("js_string.charAt(js_allocator.getAllocator()"),
-            "Expected 'js_string.charAt(js_allocator.getAllocator()' in:\n{}",
+            zig.contains("js_string.charAt(js_allocator.allocator()"),
+            "Expected 'js_string.charAt(js_allocator.allocator()' in:\n{}",
             zig
         );
     }
@@ -6771,8 +6771,8 @@ function getDesc(obj, key) {
 "#;
         let zig = transpile_and_check!(js, "test_p7_object_get_own_property_descriptor");
         assert!(
-            zig.contains("js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), "),
-            "Expected 'js_object.getOwnPropertyDescriptor(js_allocator.getAllocator(), ' in:\n{}",
+            zig.contains("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), "),
+            "Expected 'js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ' in:\n{}",
             zig
         );
     }
@@ -6864,8 +6864,8 @@ export function getMatch(s) {
         let result = parse_and_transpile(js, None).unwrap();
         let zig = result.zig_code;
         assert!(
-            zig.contains(r#"js_string.matchString(js_allocator.getAllocator(),"#),
-            "Expected 'js_string.matchString(js_allocator.getAllocator(),' for String.match() in:\n{}",
+            zig.contains(r#"js_string.matchString(js_allocator.allocator(),"#),
+            "Expected 'js_string.matchString(js_allocator.allocator(),' for String.match() in:\n{}",
             zig
         );
         assert!(
@@ -6889,7 +6889,7 @@ export function makePattern(s) {
         let result = parse_and_transpile(js, None).unwrap();
         let zig = result.zig_code;
         assert!(
-            zig.contains("js_regexp.JsRegExp.init(js_allocator.getAllocator(),"),
+            zig.contains("js_regexp.JsRegExp.init(js_allocator.allocator(),"),
             "Expected 'js_regexp.JsRegExp.init(...)' for new RegExp in:\n{}",
             zig
         );
@@ -6962,8 +6962,8 @@ export function getExecResult(s) {
         let result = parse_and_transpile(js, None).unwrap();
         let zig = result.zig_code;
         assert!(
-            zig.contains("js_regexp.execLiteral(js_allocator.getAllocator(),"),
-            "Expected 'js_regexp.execLiteral(js_allocator.getAllocator(),' in:\n{}",
+            zig.contains("js_regexp.execLiteral(js_allocator.allocator(),"),
+            "Expected 'js_regexp.execLiteral(js_allocator.allocator(),' in:\n{}",
             zig
         );
         assert!(
@@ -6985,8 +6985,8 @@ export function getVarExec(s) {
         let result = parse_and_transpile(js, None).unwrap();
         let zig = result.zig_code;
         assert!(
-            zig.contains(".exec(js_allocator.getAllocator(),"),
-            "Expected '.exec(js_allocator.getAllocator(),' for regexpVar.exec() in:\n{}",
+            zig.contains(".exec(js_allocator.allocator(),"),
+            "Expected '.exec(js_allocator.allocator(),' for regexpVar.exec() in:\n{}",
             zig
         );
     }
@@ -7000,8 +7000,8 @@ export function encode(url) {
 "#;
         let zig = transpile_and_check!(js, "test_p7_encode_uri");
         assert!(
-            zig.contains("js_uri.encodeURI(js_allocator.getAllocator(),"),
-            "Expected 'js_uri.encodeURI(js_allocator.getAllocator(),' in:\n{}",
+            zig.contains("js_uri.encodeURI(js_allocator.allocator(),"),
+            "Expected 'js_uri.encodeURI(js_allocator.allocator(),' in:\n{}",
             zig
         );
     }
@@ -7015,8 +7015,8 @@ export function decode(url) {
 "#;
         let zig = transpile_and_check!(js, "test_p7_decode_uri");
         assert!(
-            zig.contains("js_uri.decodeURI(js_allocator.getAllocator(),"),
-            "Expected 'js_uri.decodeURI(js_allocator.getAllocator(),' in:\n{}",
+            zig.contains("js_uri.decodeURI(js_allocator.allocator(),"),
+            "Expected 'js_uri.decodeURI(js_allocator.allocator(),' in:\n{}",
             zig
         );
     }
@@ -7030,8 +7030,8 @@ export function encodeComp(s) {
 "#;
         let zig = transpile_and_check!(js, "test_p7_encode_uri_component");
         assert!(
-            zig.contains("js_uri.encodeURIComponent(js_allocator.getAllocator(),"),
-            "Expected 'js_uri.encodeURIComponent(js_allocator.getAllocator(),' in:\n{}",
+            zig.contains("js_uri.encodeURIComponent(js_allocator.allocator(),"),
+            "Expected 'js_uri.encodeURIComponent(js_allocator.allocator(),' in:\n{}",
             zig
         );
     }
@@ -7045,8 +7045,8 @@ export function decodeComp(s) {
 "#;
         let zig = transpile_and_check!(js, "test_p7_decode_uri_component");
         assert!(
-            zig.contains("js_uri.decodeURIComponent(js_allocator.getAllocator(),"),
-            "Expected 'js_uri.decodeURIComponent(js_allocator.getAllocator(),' in:\n{}",
+            zig.contains("js_uri.decodeURIComponent(js_allocator.allocator(),"),
+            "Expected 'js_uri.decodeURIComponent(js_allocator.allocator(),' in:\n{}",
             zig
         );
     }
@@ -7241,9 +7241,9 @@ export function symbolToString(sym) {
 "#;
         let zig = transpile_and_check!(js, "test_native_proto_symbol_toString");
         println!("=== Symbol.toString() ===\n{}", zig);
-        // Should generate sym.toString(js_allocator.getAllocator())
+        // Should generate sym.toString(js_allocator.allocator())
         assert!(
-            zig.contains("sym.toString(js_allocator.getAllocator())"),
+            zig.contains("sym.toString(js_allocator.allocator())"),
             "Expected sym.toString(alloc) for Symbol.toString(): {}",
             zig
         );

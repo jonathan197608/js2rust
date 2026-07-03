@@ -402,6 +402,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
         /// Initialize the Zig runtime (allocator + Io for async functions).
         /// Call this before any async export function.
         /// Safe to call multiple times (uses Once internally).
+        /// Panics if the Zig-side allocator initialization fails (OOM).
         pub fn js2rust_init() {
             extern "C" {
                 #[link_name = "js2rust_init"]
@@ -425,19 +426,6 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
                 fn _js2rust_deinit();
             }
             unsafe { _js2rust_deinit() };
-        }
-
-        /// Reset the Zig arena allocator (free all allocated memory, keep allocator active).
-        /// Call this periodically to prevent excessive memory usage.
-        /// Thread-safe: uses atomic spinlock internally (in Zig code).
-        /// After reset, all previously returned pointers from Zig functions become invalid.
-        /// Make sure no Zig function is running when calling this.
-        pub fn js2rust_reset() {
-            extern "C" {
-                #[link_name = "js2rust_reset"]
-                fn _js2rust_reset();
-            }
-            unsafe { _js2rust_reset() };
         }
     };
     safe_wrappers.push(runtime_init);

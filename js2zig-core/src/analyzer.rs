@@ -135,9 +135,25 @@ pub fn analyze_single_group(
         let src = std::fs::read_to_string(in_path.join(&cur))
             .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
 
-        // Parse ONCE: leak allocator + source for 'static lifetime, so the
-        // Program can be stored in the HashMap and reused by codegen later.
-        let allocator: &'static Allocator = Box::leak(Box::new(Allocator::default()));
+        // Parse ONCE: leak source for 'static lifetime, so the Program can be
+        // stored in the HashMap and reused by codegen later.
+        // The oxc Allocator is shared across all files in this session (O(1) leak
+        // instead of O(n) — bumpalo arena is safe for concurrent AST storage,
+        // and the parse phase is single-threaded so the benign race on first
+        // init cannot actually occur in practice).
+        let allocator: &'static Allocator = {
+            use std::sync::atomic::{AtomicPtr, Ordering};
+            static ALLOC_PTR: AtomicPtr<Allocator> = AtomicPtr::new(std::ptr::null_mut());
+            let ptr = ALLOC_PTR.load(Ordering::Acquire);
+            if !ptr.is_null() {
+                // SAFETY: ptr points to a leaked Box<Allocator> that lives for 'static
+                unsafe { &*ptr }
+            } else {
+                let leaked: &'static mut Allocator = Box::leak(Box::new(Allocator::default()));
+                ALLOC_PTR.store(leaked as *mut Allocator, Ordering::Release);
+                leaked
+            }
+        };
         let src_static: &'static str = Box::leak(src.clone().into_boxed_str());
         let program: Program<'static> = crate::parser::parse_with_name(allocator, src_static, &cur);
 
