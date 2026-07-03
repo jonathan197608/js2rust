@@ -259,23 +259,12 @@ pub const MultiArenaAllocator = struct {
         return buf;
     }
 
-    /// 随机选取节点
-    /// 如果选中节点是 cooling且未过冷却时间，则继续下一个
-    /// 如果所有节点都未过冷却时间，返回 null
+    /// 选取可用节点（原子自增计数器 + 环形遍历）
+    /// 如果所有节点都处于 cooling 且未过冷却时间，返回 null
     fn selectNode(self: *MultiArenaAllocator) ?*ArenaNode {
-        // 第一轮：原子自增全局计数器，取模得到随机起点
         const start_val = global_counter.fetchAdd(1, .monotonic);
         const start_idx = @as(usize, @intCast(start_val)) % self.node_count;
 
-        // 先尝试找 ready 节点，最多遍历一圈
-        if (self.findReadyNode(start_idx)) |node| {
-            return node;
-        }
-        return null;
-    }
-
-    /// 从 start_idx 开始环形遍历，返回第一个 ready 节点（原子读取状态）
-    fn findReadyNode(self: *MultiArenaAllocator, start_idx: usize) ?*ArenaNode {
         var idx = start_idx;
         var count: usize = 0;
         while (count < self.node_count) : (count += 1) {
