@@ -140,11 +140,17 @@ impl JsStr {
             return Self::empty();
         }
         // Declared here to keep the extern block local (isolated from user code).
+        // NOTE: return type is *mut u8 (not Option<*mut u8>) because Rust does NOT
+        // guarantee null-pointer optimization for Option<*mut u8> — it would be
+        // 16 bytes instead of 8, causing an ABI mismatch with Zig's ?[*]u8.
         unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8>;
+            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
         }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) }
-            .expect("js_allocator_dupe returned null: Zig arena OOM");
+        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
+        assert!(
+            !ptr.is_null(),
+            "js_allocator_dupe returned null: Zig arena OOM"
+        );
         Self {
             ptr,
             len: s.len() as isize,
@@ -214,11 +220,15 @@ impl JsStrField {
         if s.is_empty() {
             return Self::empty();
         }
+        // NOTE: *mut u8 (not Option<*mut u8>) — see JsStr::new for ABI rationale.
         unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8>;
+            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
         }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) }
-            .expect("js_allocator_dupe returned null: Zig arena OOM");
+        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
+        assert!(
+            !ptr.is_null(),
+            "js_allocator_dupe returned null: Zig arena OOM"
+        );
         Self { ptr, len: s.len() }
     }
 
@@ -248,30 +258,34 @@ impl JsStrField {
 #[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> Option<*mut u8> {
+pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
     let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
     if ptr.is_null() {
-        return None;
+        return std::ptr::null_mut();
     }
     if len > 0 {
         unsafe {
             std::ptr::copy_nonoverlapping(src, ptr, len);
         }
     }
-    Some(ptr)
+    ptr
 }
 
 #[cfg(any(test, feature = "stub-allocator"))]
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn js_allocator_alloc(size: usize) -> Option<*mut u8> {
+pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
     if size == 0 {
-        return None;
+        return std::ptr::null_mut();
     }
     let layout = std::alloc::Layout::from_size_align(size, 1).unwrap();
     let ptr = unsafe { std::alloc::alloc(layout) };
-    if ptr.is_null() { None } else { Some(ptr) }
+    if ptr.is_null() {
+        std::ptr::null_mut()
+    } else {
+        ptr
+    }
 }
 
 // ── StrRet helper (used by macro-generated safe wrappers) ──────────
