@@ -461,7 +461,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     out.push_str("/// Initialize the global allocator used by all generated functions.\n");
     out.push_str("/// The allocator is created internally using ArenaAllocator (Zig 0.16.0: lock-free, thread-safe).\n");
     out.push_str("pub fn init_js2rust() !void {\n");
-    out.push_str("    try js_allocator.init(std.heap.page_allocator, null, null);\n");
+    out.push_str("    try js_allocator.init(null, null);\n");
     out.push_str("    js_runtime.initIo(js_allocator.allocator());\n");
     // Also call init_js2rust on each per-file module that defines its own
     for module in &opts.per_file_code {

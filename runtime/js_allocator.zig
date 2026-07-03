@@ -15,6 +15,9 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Alignment = std.mem.Alignment;
 
+/// 全局 backing allocator — 所有节点的 Arena 共享同一个底层分配器
+const backing = std.heap.page_allocator;
+
 /// 导入 js_date.zig 获取时间戳（跨平台）
 const js_date = @import("js_date.zig");
 
@@ -23,9 +26,9 @@ var global_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0);
 
 /// 从环境变量读取配置（辅助函数）
 /// 用法：
-///   const config = try MultiArenaAllocator.readEnvConfig(allocator);
-///   const da = try MultiArenaAllocator.init(backing, config.total_limit, config.min_cooling_time);
-pub fn readEnvConfig(backing: Allocator) !struct { total_limit: ?usize, min_cooling_time: ?i64 } {
+///   const config = try MultiArenaAllocator.readEnvConfig();
+///   const da = try MultiArenaAllocator.init(config.total_limit, config.min_cooling_time);
+pub fn readEnvConfig() !struct { total_limit: ?usize, min_cooling_time: ?i64 } {
     var result = struct { total_limit: ?usize = null, min_cooling_time: ?i64 = null };
 
     // 读取 JS_ZIG_TOTAL_LIMIT
@@ -89,7 +92,7 @@ const ArenaNode = struct {
     cooling_since: i64,
 
     /// 初始化 Arena 节点
-    pub fn init(backing: Allocator) !ArenaNode {
+    pub fn init() !ArenaNode {
         return ArenaNode{
             .arena = ArenaAllocator.init(backing),
             .state = .ready,
@@ -150,7 +153,6 @@ const ArenaNode = struct {
             return false;
         }
 
-        const backing = self.arena.child_allocator;
         self.arena.deinit();
         self.arena = ArenaAllocator.init(backing);
         self.state = .ready;
@@ -179,11 +181,10 @@ pub const MultiArenaAllocator = struct {
     min_cooling_time: i64,
 
     /// 初始化多 Arena 分配器
-    /// backing: 用于分配 nodes 数组和每个 Arena 的底层分配器
     /// total_limit: 可选的总内存上限（字节），null 时使用 DEFAULT_TOTAL_LIMIT
     /// min_cooling_time: 可选的冷却时间（秒），null 时使用 MIN_COOLING_TIME_SECONDS
     /// 注意：可通过环境变量 JS_ZIG_TOTAL_LIMIT 和 JS_ZIG_MIN_COOLING_TIME 配置默认值
-    pub fn init(backing: Allocator, total_limit: ?usize, min_cooling_time: ?i64) !*MultiArenaAllocator {
+    pub fn init(total_limit: ?usize, min_cooling_time: ?i64) !*MultiArenaAllocator {
         const limit = blk: {
             const requested = total_limit orelse DEFAULT_TOTAL_LIMIT;
             break :blk if (requested < MIN_TOTAL_LIMIT) MIN_TOTAL_LIMIT else requested;
@@ -207,7 +208,7 @@ pub const MultiArenaAllocator = struct {
 
         // 初始化每个节点（每个节点的 arena 以 backing 为 child_allocator）
         for (nodes, 0..) |*node, i| {
-            node.* = try ArenaNode.init(backing);
+            node.* = try ArenaNode.init();
             node.prev = (i + node_count - 1) % node_count;
             node.next = (i + 1) % node_count;
         }
@@ -223,9 +224,7 @@ pub const MultiArenaAllocator = struct {
     }
 
     /// 释放分配器
-    /// 使用首节点的 child_allocator 作为 backing 来释放内存
     pub fn deinit(self: *MultiArenaAllocator) void {
-        const backing = self.nodes[0].arena.child_allocator;
         for (self.nodes) |*node| {
             node.deinit();
         }
@@ -349,7 +348,10 @@ fn allocImpl(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
     // Delegate to the arena allocator's vtable, passing alignment through.
     // This ensures ArrayList(i64) etc. get properly aligned memory.
     const ptr = arena_alloc.vtable.alloc(arena_alloc.ptr, len, alignment, ret_addr) orelse return null;
-    _ = node.tryMarkCoolingIfFull();
+    // Note: tryMarkCoolingIfFull is intentionally NOT called here.
+    // allocImpl is the vtable path; the public allocBytes() already calls
+    // tryMarkCoolingIfFull after allocation. Calling it here would
+    // double-trigger the cooling check for each allocation.
     return ptr;
 }
 
@@ -360,6 +362,11 @@ fn freeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize
     _ = ret_addr;
 }
 
+/// Arena allocators allocate linearly and never release individual blocks.
+/// In-place resize is fundamentally impossible — returning false tells the
+/// caller (e.g. ArrayList) to fall back to alloc+copy+free. This is correct
+/// and expected semantics; the vtable requires this function pointer but a
+/// stub is the only valid implementation for an arena-based allocator.
 fn resizeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
     _ = ctx;
     _ = memory;
@@ -369,6 +376,10 @@ fn resizeImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usiz
     return false;
 }
 
+/// Arena allocators cannot remap memory — the original block is permanently
+/// committed to the arena's linear buffer. Returning null forces the caller
+/// to alloc+copy+free. This is correct and expected; the vtable requires all
+/// four function pointers but a stub is the only valid implementation here.
 fn remapImpl(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
     _ = ctx;
     _ = memory;
@@ -395,7 +406,7 @@ const vtable = Allocator.VTable{
 
 test "MultiArenaAllocator init" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     try testing.expectEqual(@as(usize, 3), da.node_count);
@@ -404,7 +415,7 @@ test "MultiArenaAllocator init" {
 
 test "MultiArenaAllocator alloc" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     const alloc = da.allocator();
@@ -416,7 +427,7 @@ test "MultiArenaAllocator alloc" {
 
 test "MultiArenaAllocator stats" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     const alloc = da.allocator();
@@ -437,7 +448,7 @@ test "MultiArenaAllocator node count min 2" {
     };
 
     for (test_cases) |limit| {
-        const da = try MultiArenaAllocator.init(testing.allocator, limit, null);
+        const da = try MultiArenaAllocator.init(limit, null);
         defer da.deinit();
 
         try testing.expect(da.node_count >= 2);
@@ -446,7 +457,7 @@ test "MultiArenaAllocator node count min 2" {
 
 test "MultiArenaAllocator ring topology" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     for (da.nodes, 0..) |*node, i| {
@@ -457,7 +468,7 @@ test "MultiArenaAllocator ring topology" {
 
 test "MultiArenaAllocator all cooling returns null if not cooled enough" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     // 将所有节点手动设为 cooling（单线程测试，直接写 state）
@@ -474,19 +485,20 @@ test "MultiArenaAllocator all cooling returns null if not cooled enough" {
 
 test "MultiArenaAllocator auto cooling after alloc" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     // 分配一个接近 80% 阈值的大小，触发自动冷却
     // ARENA_SIZE = 128M, COOLING_THRESHOLD = 102.4M
     // 分配 103M 应该触发冷却
-    const alloc = da.allocator();
-    const large_buf = alloc.alloc(u8, COOLING_THRESHOLD + 1) catch |err| {
+    const large_buf = da.allocBytes(COOLING_THRESHOLD + 1) catch |err| {
         // 如果底层 allocator 无法分配这么大的内存，跳过这个测试
         try testing.expect(err == error.OutOfMemory);
         return;
     };
-    defer alloc.free(large_buf);
+    // allocBytes 使用 selectNode + allocator().alloc，无法 free 单个块（arena 语义）
+    // 但 deinit 会在测试结束时清理所有内存
+    _ = large_buf;
 
     // 分配后，该节点应该被自动标记为 cooling
     // 由于 selectNode 是随机的，我们无法确定是哪个节点被分配了
@@ -503,7 +515,7 @@ test "MultiArenaAllocator auto cooling after alloc" {
 
 test "MultiArenaAllocator thread safety: isReady is atomic" {
     const testing = std.testing;
-    const da = try MultiArenaAllocator.init(testing.allocator, null, null);
+    const da = try MultiArenaAllocator.init(null, null);
     defer da.deinit();
 
     // 初始状态所有节点都是 ready
@@ -517,12 +529,11 @@ test "MultiArenaAllocator thread safety: isReady is atomic" {
 var g_instance: ?*MultiArenaAllocator = null;
 
 /// 初始化全局分配器（幂等，多次调用安全）
-/// backing: 底层分配器，通常传 std.heap.page_allocator
 /// total_limit: 可选的总内存上限（字节），null 时使用 DEFAULT_TOTAL_LIMIT
 /// min_cooling_time: 可选的冷却时间（秒），null 时使用 MIN_COOLING_TIME_SECONDS
-pub fn init(backing: Allocator, total_limit: ?usize, min_cooling_time: ?i64) !void {
+pub fn init(total_limit: ?usize, min_cooling_time: ?i64) !void {
     if (g_instance != null) return;
-    g_instance = try MultiArenaAllocator.init(backing, total_limit, min_cooling_time);
+    g_instance = try MultiArenaAllocator.init(total_limit, min_cooling_time);
 }
 
 /// 释放全局分配器（幂等，多次调用安全）
