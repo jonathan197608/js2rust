@@ -4235,10 +4235,19 @@ impl Lowerer {
                         is_unused: p.is_unused,
                     })
                     .collect();
+                let ret_struct_name =
+                    if let crate::types::ZigType::NamedStruct(ref s) = f.return_type {
+                        Some(s.clone())
+                    } else {
+                        None
+                    };
                 exports.push(IrCabiExport {
                     name: f.name.zig_name.clone(),
                     params,
                     return_type: f.return_type.clone(),
+                    is_async: f.is_async,
+                    can_throw: f.can_throw,
+                    ret_struct_name,
                 });
             }
         }

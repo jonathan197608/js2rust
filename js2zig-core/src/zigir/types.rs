@@ -89,6 +89,12 @@ pub struct IrCabiExport {
     pub name: String,
     pub params: Vec<IrParam>,
     pub return_type: ZigType,
+    /// Whether the exported function is async (uses io.async wrapper).
+    pub is_async: bool,
+    /// Whether the function can throw (error union return type).
+    pub can_throw: bool,
+    /// If return type is `ZigType::NamedStruct`, the struct name is extracted here.
+    pub ret_struct_name: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════
