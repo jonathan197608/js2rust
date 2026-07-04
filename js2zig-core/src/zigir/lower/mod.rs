@@ -957,7 +957,10 @@ impl Lowerer {
 
             // ── Expression statement ───────────────────────
             Statement::ExpressionStatement(es) => {
-                crate::zigir::types::IrStmt::Expr(self.lower_expr(&es.expression))
+                self.in_expr_stmt = true;
+                let expr = self.lower_expr(&es.expression);
+                self.in_expr_stmt = false;
+                crate::zigir::types::IrStmt::Expr(expr)
             }
 
             // ── Function declaration (nested) ──────────────
@@ -1129,7 +1132,7 @@ impl Lowerer {
             let span = self.span_to_source_span(fis.span);
             self.add_error(
                 span,
-                &format!("for-in: '{}' is not a dynamic object", obj_name),
+                format!("for-in: '{}' is not a dynamic object", obj_name),
             );
         }
 
@@ -1158,7 +1161,7 @@ impl Lowerer {
                             .iter()
                             .filter_map(|elem| {
                                 elem.as_ref().and_then(|pat| {
-                                    crate::infer::binding_name(pat).map(|n| IrIdent::new(n))
+                                    crate::infer::binding_name(pat).map(IrIdent::new)
                                 })
                             })
                             .collect();
@@ -1186,7 +1189,7 @@ impl Lowerer {
                 .declarations
                 .first()
                 .and_then(|decl| crate::infer::binding_name(&decl.id))
-                .map(|n| IrIdent::new(n))
+                .map(IrIdent::new)
                 .unwrap_or_else(|| IrIdent::new("key")),
             ForStatementLeft::AssignmentTargetIdentifier(id) => IrIdent::new(id.name.as_str()),
             _ => IrIdent::new("key"),
@@ -1197,11 +1200,11 @@ impl Lowerer {
     /// Note: `destructure_vars` is not used for kind detection (it's stored
     /// in the ForOf node for the Emitter to use), but kept for future use
     /// (e.g. distinguishing single-var vs destructure patterns).
-    #[allow(clippy::unused_variables)]
+    #[allow(unused_variables)]
     fn detect_for_of_kind(
         &self,
         right: &Expression,
-        destructure_vars: &[IrIdent],
+        _destructure_vars: &[IrIdent],
     ) -> (IrForOfKind, bool) {
         match right {
             Expression::Identifier(id) => {
@@ -1237,13 +1240,12 @@ impl Lowerer {
                         return IrForInKind::HashMapIter;
                     }
                     // Static struct with known fields → unroll
-                    if let ZigType::Struct(fields) = zig_type {
-                        if !fields.is_empty() {
+                    if let ZigType::Struct(fields) = zig_type
+                        && !fields.is_empty() {
                             return IrForInKind::StructUnroll {
                                 fields: fields.iter().map(|(n, _)| n.clone()).collect(),
                             };
                         }
-                    }
                 }
                 IrForInKind::Unsupported
             }
@@ -1287,7 +1289,7 @@ impl Lowerer {
             IrBlock::new(stmts)
         };
 
-        let (catch_var, catch_block) = if let Some(handler) = &ts.handler {
+        let (catch_var, catch_var_referenced, catch_block) = if let Some(handler) = &ts.handler {
             let var = handler
                 .param
                 .as_ref()
@@ -1299,9 +1301,16 @@ impl Lowerer {
                 .iter()
                 .map(|s| self.lower_stmt(s))
                 .collect();
-            (var, IrBlock::new(stmts))
+            // Check if catch variable is referenced in the catch body
+            let catch_var_referenced = if let Some(ref cv) = var {
+                let js_name = &cv.js_name;
+                handler.body.body.iter().any(|s| Self::stmt_references_name(s, js_name))
+            } else {
+                false
+            };
+            (var, catch_var_referenced, IrBlock::new(stmts))
         } else {
-            (None, IrBlock::new(vec![]))
+            (None, false, IrBlock::new(vec![]))
         };
 
         let finally = ts.finalizer.as_ref().map(|f| {
@@ -1312,10 +1321,80 @@ impl Lowerer {
         crate::zigir::types::IrStmt::Try {
             try_block,
             catch_var,
+            catch_var_referenced,
             catch_block,
             finally,
             has_throw,
             has_nested_try,
+        }
+    }
+
+    /// Check if a statement references a given identifier name.
+    /// Used to detect whether a catch variable is actually used in the catch body.
+    fn stmt_references_name(stmt: &Statement, name: &str) -> bool {
+        match stmt {
+            Statement::ExpressionStatement(es) => Self::expr_references_name(&es.expression, name),
+            Statement::ReturnStatement(rs) => rs
+                .argument
+                .as_ref()
+                .is_some_and(|a| Self::expr_references_name(a, name)),
+            Statement::VariableDeclaration(vd) => vd.declarations.iter().any(|d| {
+                d.init
+                    .as_ref()
+                    .is_some_and(|init| Self::expr_references_name(init, name))
+            }),
+            Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_references_name(s, name)),
+            Statement::ThrowStatement(ts) => Self::expr_references_name(&ts.argument, name),
+            Statement::IfStatement(ifs) => {
+                Self::stmt_references_name(&ifs.consequent, name)
+                    || ifs.alternate
+                        .as_ref()
+                        .is_some_and(|a| Self::stmt_references_name(a, name))
+            }
+            Statement::WhileStatement(ws) => Self::stmt_references_name(&ws.body, name),
+            Statement::ForStatement(fs) => {
+                Self::stmt_references_name(&fs.body, name)
+                    || fs.test
+                        .as_ref()
+                        .is_some_and(|e| Self::expr_references_name(e, name))
+            }
+            Statement::ForOfStatement(fos) => Self::stmt_references_name(&fos.body, name),
+            Statement::ForInStatement(fis) => Self::stmt_references_name(&fis.body, name),
+            Statement::SwitchStatement(ss) => ss
+                .cases
+                .iter()
+                .any(|c| c.consequent.iter().any(|s| Self::stmt_references_name(s, name))),
+            Statement::TryStatement(ts) => {
+                ts.block.body.iter().any(|s| Self::stmt_references_name(s, name))
+                    || ts.handler.as_ref().is_some_and(|h| {
+                        h.body.body.iter().any(|s| Self::stmt_references_name(s, name))
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    fn expr_references_name(expr: &Expression, name: &str) -> bool {
+        match expr {
+            Expression::Identifier(id) => id.name.as_str() == name,
+            Expression::BinaryExpression(be) => {
+                Self::expr_references_name(&be.left, name)
+                    || Self::expr_references_name(&be.right, name)
+            }
+            Expression::CallExpression(ce) => Self::expr_references_name(&ce.callee, name),
+            Expression::StaticMemberExpression(sme) => {
+                Self::expr_references_name(&sme.object, name)
+            }
+            Expression::UnaryExpression(ue) => Self::expr_references_name(&ue.argument, name),
+            Expression::ConditionalExpression(ce) => {
+                Self::expr_references_name(&ce.test, name)
+                    || Self::expr_references_name(&ce.consequent, name)
+                    || Self::expr_references_name(&ce.alternate, name)
+            }
+            Expression::AssignmentExpression(ae) => {
+                Self::expr_references_name(&ae.right, name)
+            }
+            _ => false,
         }
     }
 
@@ -1511,19 +1590,18 @@ impl Lowerer {
                         }
                     }
                 }
-                ClassElement::MethodDefinition(md) => {
-                    if Self::is_constructor_method(md) {
+                ClassElement::MethodDefinition(md)
+                    if Self::is_constructor_method(md) => {
                         has_constructor = true;
                         constructor_func = Some(&md.value);
                     }
-                }
                 _ => {}
             }
         }
 
         // ── Second pass: scan constructor body for implicit `this.x = ...` fields ──
-        if let Some(func) = constructor_func {
-            if let Some(body) = &func.body {
+        if let Some(func) = constructor_func
+            && let Some(body) = &func.body {
                 self.collect_implicit_class_fields(
                     &body.statements,
                     &class_name,
@@ -1531,7 +1609,6 @@ impl Lowerer {
                     &mut fields,
                 );
             }
-        }
 
         // ── Save/restore current_class ──
         let saved_class = self.current_class.take();
@@ -1539,11 +1616,7 @@ impl Lowerer {
 
         // ── Lower constructor ──
         let constructor = if has_constructor {
-            if let Some(func) = constructor_func {
-                Some(self.lower_class_method(&class_name, &field_names, "init", func, false))
-            } else {
-                None
-            }
+            constructor_func.map(|func| self.lower_class_method(&class_name, &field_names, "init", func, false))
         } else {
             None
         };
@@ -1551,8 +1624,8 @@ impl Lowerer {
         // ── Lower methods ──
         let mut methods: Vec<IrClassMethod> = Vec::new();
         for elem in &cd.body.body {
-            if let ClassElement::MethodDefinition(md) = elem {
-                if !Self::is_constructor_method(md) {
+            if let ClassElement::MethodDefinition(md) = elem
+                && !Self::is_constructor_method(md) {
                     let method_name =
                         Self::property_key_name(&md.key).unwrap_or_else(|| "anonymous".to_string());
                     let is_static = md.r#static;
@@ -1565,7 +1638,6 @@ impl Lowerer {
                     );
                     methods.push(method);
                 }
-            }
         }
 
         // ── Restore ──
@@ -2305,17 +2377,17 @@ impl Lowerer {
                 let bindings: Vec<crate::zigir::types::IrDestructureBinding> = ot
                     .properties
                     .iter()
-                    .filter_map(|prop| {
+                    .map(|prop| {
                         match prop {
                             AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ap) => {
                                 let pattern = IrIdent::new(ap.binding.name.as_str());
                                 let default = ap.init.as_ref().map(|e| self.lower_expr(e));
-                                Some(crate::zigir::types::IrDestructureBinding { pattern, default })
+                                crate::zigir::types::IrDestructureBinding { pattern, default }
                             }
                             AssignmentTargetProperty::AssignmentTargetPropertyProperty(ap) => {
                                 // e.g. { name: alias } — extract binding from value
                                 let (pattern, default) = self.lower_maybe_default(&ap.binding);
-                                Some(crate::zigir::types::IrDestructureBinding { pattern, default })
+                                crate::zigir::types::IrDestructureBinding { pattern, default }
                             }
                         }
                     })
@@ -2327,9 +2399,9 @@ impl Lowerer {
                     .elements
                     .iter()
                     .filter_map(|elem| {
-                        elem.as_ref().and_then(|target| {
+                        elem.as_ref().map(|target| {
                             let (pattern, default) = self.lower_maybe_default(target);
-                            Some(crate::zigir::types::IrDestructureBinding { pattern, default })
+                            crate::zigir::types::IrDestructureBinding { pattern, default }
                         })
                     })
                     .collect();
@@ -2517,8 +2589,6 @@ impl Lowerer {
         ZigType::JsAny
     }
 
-    /// Lower a new expression (implemented below as lower_new).
-
     /// Lower a static member expression (`obj.field`).
     ///
     /// Determines the FieldKind based on:
@@ -2562,26 +2632,23 @@ impl Lowerer {
             }
             // ── TypedArray properties ──
             if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
-                if matches!(zig_type, ZigType::NamedStruct(name) if name == "TypedArray") {
-                    if matches!(field_name, "buffer" | "byteLength" | "byteOffset") {
+                if matches!(zig_type, ZigType::NamedStruct(name) if name == "TypedArray")
+                    && matches!(field_name, "buffer" | "byteLength" | "byteOffset") {
                         return IrExpr::FieldAccess {
                             object: Box::new(self.lower_expr(&mem.object)),
                             field: field_name.to_string(),
                             field_kind: FieldKind::TypedArrayProp(field_name.to_string()),
                         };
                     }
-                }
                 // ── Map/Set .size ──
                 if matches!(zig_type, ZigType::NamedStruct(name) if name == "Map" || name == "Set")
-                {
-                    if field_name == "size" {
+                    && field_name == "size" {
                         return IrExpr::FieldAccess {
                             object: Box::new(self.lower_expr(&mem.object)),
                             field: field_name.to_string(),
                             field_kind: FieldKind::MapSetSize,
                         };
                     }
-                }
                 // ── ArrayList .length → .items.len ──
                 if matches!(zig_type, ZigType::ArrayList(_)) && field_name == "length" {
                     return IrExpr::FieldAccess {
@@ -2718,7 +2785,7 @@ impl Lowerer {
         match expr {
             Expression::StringLiteral(_) => true,
             Expression::TemplateLiteral(_) => true,
-            Expression::Identifier(id) => {
+            Expression::Identifier(_id) => {
                 // Use infer_expr_type which handles qualified name lookup
                 self.infer_expr_type(expr) == Some(ZigType::Str)
             }
@@ -3585,6 +3652,8 @@ impl Lowerer {
     }
 
     /// Best-effort type inference for arrow body expressions.
+    /// Delegates to `infer_arrow_expr_type_with_captures` with an empty capture list.
+    #[allow(dead_code)]
     fn infer_arrow_expr_type(&self, expr: &Expression) -> Option<ZigType> {
         self.infer_arrow_expr_type_with_captures(expr, &[])
     }
@@ -3784,6 +3853,7 @@ impl Lowerer {
     }
 
     /// Add a warning diagnostic.
+    #[allow(dead_code)]
     fn add_warning(&mut self, span: SourceSpan, msg: impl Into<String>) {
         self.diagnostics.push(IrDiagnostic {
             level: DiagnosticLevel::Warning,
@@ -3793,6 +3863,7 @@ impl Lowerer {
     }
 
     /// Resolve a JS identifier name through the NameMangler (keyword escaping + shadow).
+    #[allow(dead_code)]
     fn resolve_name(&self, name: &str) -> String {
         self.name_mangler.resolve_name(name)
     }
@@ -3828,6 +3899,7 @@ impl Lowerer {
     }
 
     /// Get a reference to the current function context.
+    #[allow(dead_code)]
     fn fn_ctx(&self) -> Option<&FnContext> {
         self.fn_ctx.as_ref()
     }

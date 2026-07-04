@@ -276,6 +276,7 @@ pub enum IrStmt {
     Try {
         try_block: IrBlock,
         catch_var: Option<IrIdent>,
+        catch_var_referenced: bool,
         catch_block: IrBlock,
         finally: Option<IrBlock>,
         /// Whether the try body contains a `throw` (directly, not inside
@@ -652,6 +653,7 @@ mod tests {
         let stmt = IrStmt::Try {
             try_block: IrBlock::new(vec![]),
             catch_var: Some(IrIdent::new("e")),
+            catch_var_referenced: false,
             catch_block: IrBlock::new(vec![]),
             finally: None,
             has_throw: false,

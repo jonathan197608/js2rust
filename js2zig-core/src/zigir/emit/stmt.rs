@@ -231,7 +231,7 @@ impl Emitter {
     }
 
     fn emit_class_init(&mut self, class_name: &str, ctor: &IrClassMethod, fields: &[IrClassField]) {
-        let mut sig = format!("pub fn init(");
+        let mut sig = "pub fn init(".to_string();
         for (i, param) in ctor.params.iter().enumerate() {
             if i > 0 {
                 sig.push_str(", ");
@@ -247,7 +247,7 @@ impl Emitter {
 
         // Return struct literal (from fields assigned in body)
         self.write_indent();
-        self.write(&format!("return .{{ "));
+        self.write("return .{ ");
         for (i, field) in fields.iter().enumerate() {
             if i > 0 {
                 self.write(", ");
@@ -388,6 +388,7 @@ impl Emitter {
             IrStmt::Try {
                 try_block,
                 catch_var,
+                catch_var_referenced,
                 catch_block,
                 finally,
                 has_throw,
@@ -396,6 +397,7 @@ impl Emitter {
                 self.emit_try_stmt(
                     try_block,
                     catch_var,
+                    *catch_var_referenced,
                     finally,
                     *has_throw,
                     *has_nested_try,
@@ -498,9 +500,27 @@ impl Emitter {
         value: &crate::zigir::types::IrExpr,
     ) {
         self.write_indent();
-        self.emit_assign_target(target);
-        self.write(&format!(" {} ", op.to_zig_str()));
-        self.emit_expr(value);
+        if op == AssignOp::Mod {
+            // Zig doesn't support % on signed integers; use x = @rem(x, y)
+            self.emit_assign_target(target);
+            self.write(" = @rem(");
+            self.emit_assign_target(target);
+            self.write(", ");
+            self.emit_expr(value);
+            self.write(")");
+        } else if op == AssignOp::Div {
+            // Zig division on signed integers requires @divTrunc
+            self.emit_assign_target(target);
+            self.write(" = @divTrunc(");
+            self.emit_assign_target(target);
+            self.write(", ");
+            self.emit_expr(value);
+            self.write(")");
+        } else {
+            self.emit_assign_target(target);
+            self.write(&format!(" {} ", op.to_zig_str()));
+            self.emit_expr(value);
+        }
         self.write(";\n");
     }
 
@@ -558,6 +578,54 @@ impl Emitter {
         self.emit_block_stmts(then);
         self.indent_pop();
         if let Some(else_block) = else_ {
+            // Check if the else block is a single if statement (else-if chain)
+            if else_block.stmts.len() == 1
+                && let IrStmt::If {
+                    cond: inner_cond,
+                    then: inner_then,
+                    else_: inner_else,
+                } = &else_block.stmts[0]
+                {
+                    self.write_indent();
+                    self.write("} else if (");
+                    self.emit_expr(inner_cond);
+                    self.write(") {\n");
+                    self.indent_push();
+                    self.emit_block_stmts(inner_then);
+                    self.indent_pop();
+                    // Recurse for the inner else
+                    self.emit_else_chain(inner_else);
+                    return;
+                }
+            self.writeln("} else {");
+            self.indent_push();
+            self.emit_block_stmts(else_block);
+            self.indent_pop();
+        }
+        self.writeln("}");
+    }
+
+    /// Recursively emit else / else-if chains.
+    fn emit_else_chain(&mut self, else_: &Option<IrBlock>) {
+        if let Some(else_block) = else_ {
+            // Check for else-if chain
+            if else_block.stmts.len() == 1
+                && let IrStmt::If {
+                    cond: inner_cond,
+                    then: inner_then,
+                    else_: inner_else,
+                } = &else_block.stmts[0]
+                {
+                    self.write_indent();
+                    self.write("} else if (");
+                    self.emit_expr(inner_cond);
+                    self.write(") {\n");
+                    self.indent_push();
+                    self.emit_block_stmts(inner_then);
+                    self.indent_pop();
+                    self.emit_else_chain(inner_else);
+                    return;
+                }
             self.writeln("} else {");
             self.indent_push();
             self.emit_block_stmts(else_block);
@@ -584,9 +652,9 @@ impl Emitter {
         self.indent_push();
         self.emit_block_stmts(body);
         self.write_indent();
-        self.write("if (!(");
+        self.write("if (");
         self.emit_expr(cond);
-        self.write(")) break;\n");
+        self.write(") {} else { break; }\n");
         self.indent_pop();
         self.writeln("}");
     }
@@ -798,10 +866,12 @@ impl Emitter {
         self.writeln("}");
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_try_stmt(
         &mut self,
         try_block: &IrBlock,
         catch_var: &Option<IrIdent>,
+        catch_var_referenced: bool,
         finally: &Option<IrBlock>,
         has_throw: bool,
         has_nested_try: bool,
@@ -871,9 +941,19 @@ impl Emitter {
 
         self.emit_block_stmts(try_block);
 
-        // Normal completion of try body (no throw)
-        self.write_indent();
-        self.write(&format!("break :{} {{}};\n", body_blk_label));
+        // Normal completion of try body (no throw).
+        // Skip if the try body ends with a return/break/continue/throw —
+        // execution never reaches this point.
+        let body_always_exits = try_block.stmts.last().is_some_and(|s| {
+            matches!(
+                s,
+                IrStmt::Return { .. } | IrStmt::Throw { .. } | IrStmt::Break { .. } | IrStmt::Continue { .. }
+            )
+        });
+        if !body_always_exits {
+            self.write_indent();
+            self.write(&format!("break :{} {{}};\n", body_blk_label));
+        }
 
         self.indent_pop();
         self.writeln("};");
@@ -885,7 +965,11 @@ impl Emitter {
             self.writeln("} else |err| {");
             self.indent_push();
             if let Some(var) = catch_var {
-                self.writeln(&format!("const {} = @errorName(err);", var.zig_name));
+                if catch_var_referenced {
+                    self.writeln(&format!("const {} = @errorName(err);", var.zig_name));
+                } else {
+                    self.writeln("_ = @errorName(err);");
+                }
             }
             // Set inside_try_block to outer label so re-throw in catch body
             // produces break :blk_label error.JsThrow

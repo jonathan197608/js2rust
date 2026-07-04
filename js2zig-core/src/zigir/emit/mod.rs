@@ -34,6 +34,8 @@ pub struct Emitter {
     inside_try_block: Option<String>,
     /// Counter for generating unique try-block labels (_js_try_blk_N).
     try_label_counter: u32,
+    /// Counter for generating unique block labels (for array literal labeled blocks).
+    label_counter: u32,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -53,6 +55,12 @@ impl EmitterHelpers for Emitter {
     }
 }
 
+impl Default for Emitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Emitter {
     pub fn new() -> Self {
         Self {
@@ -60,6 +68,7 @@ impl Emitter {
             indent: 0,
             inside_try_block: None,
             try_label_counter: 0,
+            label_counter: 0,
         }
     }
 
@@ -106,6 +115,13 @@ impl Emitter {
         let n = self.try_label_counter;
         self.try_label_counter += 1;
         n
+    }
+
+    /// Return the next block label (e.g., `blk_0`, `blk_1`) and advance the counter.
+    fn next_label(&mut self) -> String {
+        let n = self.label_counter;
+        self.label_counter += 1;
+        format!("blk_{}", n)
     }
 }
 

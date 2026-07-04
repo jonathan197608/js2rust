@@ -56,9 +56,18 @@ impl Emitter {
 
             // ── Arithmetic / comparison ─────────────
             crate::zigir::types::IrExpr::Binary { op, left, right } => {
-                self.emit_expr(left);
-                self.write(&format!(" {} ", bin_op_to_zig(*op)));
-                self.emit_expr(right);
+                if *op == crate::zigir::ops::BinOp::Mod {
+                    // Zig uses @rem() for integer remainder (not %)
+                    self.write("@rem(");
+                    self.emit_expr(left);
+                    self.write(", ");
+                    self.emit_expr(right);
+                    self.write(")");
+                } else {
+                    self.emit_expr(left);
+                    self.write(&format!(" {} ", bin_op_to_zig(*op)));
+                    self.emit_expr(right);
+                }
             }
 
             crate::zigir::types::IrExpr::Unary { op, operand } => {
@@ -107,22 +116,40 @@ impl Emitter {
                 is_expr_stmt,
             } => {
                 if *is_expr_stmt {
-                    // Statement context: `i += 1`
+                    // Statement context: `i += 1` (no parens, no _ = prefix)
                     self.emit_assign_target_inner(target);
-                    self.write(&format!(" {} ", update_op_to_zig(*op)));
+                    self.write(&format!(" {}", update_op_to_zig(*op)));
                 } else {
                     // Expression context: `({blk}: { ... break :blk old_val })`
                     self.write("(");
                     self.emit_assign_target_inner(target);
-                    self.write(&format!(" {} ", update_op_to_zig(*op)));
+                    self.write(&format!(" {}", update_op_to_zig(*op)));
                     self.write(")");
                 }
             }
 
             crate::zigir::types::IrExpr::Assign { op, target, value } => {
-                self.emit_assign_target_inner(target);
-                self.write(&format!(" {} ", assign_op_to_zig(*op)));
-                self.emit_expr(value);
+                if *op == crate::zigir::ops::AssignOp::Mod {
+                    // Zig doesn't support % on signed integers; use x = @rem(x, y)
+                    self.emit_assign_target_inner(target);
+                    self.write(" = @rem(");
+                    self.emit_assign_target_inner(target);
+                    self.write(", ");
+                    self.emit_expr(value);
+                    self.write(")");
+                } else if *op == crate::zigir::ops::AssignOp::Div {
+                    // Zig signed integer division requires @divTrunc
+                    self.emit_assign_target_inner(target);
+                    self.write(" = @divTrunc(");
+                    self.emit_assign_target_inner(target);
+                    self.write(", ");
+                    self.emit_expr(value);
+                    self.write(")");
+                } else {
+                    self.emit_assign_target_inner(target);
+                    self.write(&format!(" {} ", assign_op_to_zig(*op)));
+                    self.emit_expr(value);
+                }
             }
 
             // ── Calls ───────────────────────────────
@@ -195,11 +222,10 @@ impl Emitter {
                 if arrow.is_concise {
                     self.write_indent();
                     self.write("return ");
-                    if let Some(stmt) = arrow.body.stmts.first() {
-                        if let crate::zigir::types::IrStmt::Expr(e) = stmt {
+                    if let Some(stmt) = arrow.body.stmts.first()
+                        && let crate::zigir::types::IrStmt::Expr(e) = stmt {
                             self.emit_expr(e);
                         }
-                    }
                     self.write(";\n");
                 } else {
                     for stmt in &arrow.body.stmts {
@@ -556,63 +582,65 @@ impl Emitter {
     }
 
     fn emit_array_literal(&mut self, arr: &crate::zigir::types::IrArrayLiteral) {
-        if arr.spread_indices.is_empty() {
-            // Simple array literal
-            self.write(
-                "&.{
-",
-            );
-            for (i, elem) in arr.elements.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                self.emit_expr(elem);
-            }
-            self.write("}");
-        } else {
-            // Array with spread: need ArrayList init + appendSlice
-            // This is simplified — full impl would use ArrayList builder
-            self.write(
-                "&.{
-",
-            );
-            for (i, elem) in arr.elements.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                if arr.spread_indices.contains(&i) {
-                    // Spread element
-                } else {
-                    self.emit_expr(elem);
-                }
-            }
-            self.write("}");
+        if arr.elements.is_empty() {
+            self.write("std.ArrayList(JsAny).empty");
+            return;
         }
+
+        // Determine element type from first non-spread element
+        let elem_type = arr.elements.iter().find_map(|e| {
+            match e {
+                crate::zigir::types::IrExpr::IntLiteral(_) => Some("i64"),
+                crate::zigir::types::IrExpr::FloatLiteral(_) => Some("f64"),
+                crate::zigir::types::IrExpr::StringLiteral(_) => Some("[]const u8"),
+                crate::zigir::types::IrExpr::BoolLiteral(_) => Some("bool"),
+                crate::zigir::types::IrExpr::Spread(_) => None, // skip spread, find concrete type
+                _ => Some("i64"),
+            }
+        }).unwrap_or("i64");
+
+        // Emit as labeled block with ArrayList builder, matching Codegen pattern:
+        // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ var __arr: std.ArrayList({}) = .empty; ", blk, elem_type));
+        for (i, elem) in arr.elements.iter().enumerate() {
+            if arr.spread_indices.contains(&i) {
+                // Spread element: use appendSlice
+                if let crate::zigir::types::IrExpr::Spread(inner) = elem {
+                    self.write("__arr.appendSlice(js_allocator.allocator(), ");
+                    self.emit_expr(inner);
+                    self.write(".items) catch @panic(\"OOM: Array.spread\"); ");
+                }
+            } else {
+                self.write("__arr.append(js_allocator.allocator(), ");
+                self.emit_expr(elem);
+                self.write(") catch @panic(\"OOM: Array.push append\"); ");
+            }
+        }
+        self.write(&format!("break :{} __arr; }})", blk));
     }
 
     fn emit_object_literal(&mut self, obj: &crate::zigir::types::IrObjectLiteral) {
-        self.write(
-            ".{
-",
-        );
+        self.write(".{ ");
         for (i, field) in obj.fields.iter().enumerate() {
             if i > 0 {
                 self.write(", ");
             }
             if field.is_computed {
-                self.write(&format!("@\"{}\"", field.key)); // simplified
+                self.write(&format!("@\"{}\" = ", field.key)); // simplified
             } else {
                 self.write(&format!(".{} = ", field.key));
             }
             self.emit_expr(&field.value);
         }
+        // Spread elements in objects
         if !obj.spreads.is_empty() {
             for spread in &obj.spreads {
-                self.write(", ");
+                self.write(", ...");
                 self.emit_expr(spread);
             }
         }
-        self.write("}");
+        self.write(" }");
     }
 
     fn emit_template_literal(&mut self, parts: &[String], exprs: &[crate::zigir::types::IrExpr]) {

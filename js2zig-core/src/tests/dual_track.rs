@@ -560,3 +560,539 @@ function sqrtOf(x) {
         eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
     }
 }
+
+// ═══════════════════════════════════════════════════════
+//  Do-while loop
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_do_while() {
+    let js = r#"
+/**
+ * @param {number} n
+ * @returns {number}
+ */
+function countDown(n) {
+    let total = 0;
+    do {
+        total += 1;
+        n -= 1;
+    } while (n > 0);
+    return total;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] do_while: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Update expressions (i++, i--)
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_update_expr() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function inc(x) {
+    x += 1;
+    x++;
+    return x;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] update_expr: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Unary not
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_unary_not() {
+    let js = r#"
+/**
+ * @param {boolean} flag
+ * @returns {boolean}
+ */
+function negate(flag) {
+    return !flag;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] unary_not: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Unary negate
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_unary_negate() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function neg(x) {
+    return -x;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] unary_negate: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Nested if / else-if
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_nested_if() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function classify(x) {
+    if (x > 0) {
+        return 1;
+    } else if (x < 0) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] nested_if: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Break / continue in loops
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_break_continue() {
+    let js = r#"
+/**
+ * @param {number} n
+ * @returns {number}
+ */
+function sumOdds(n) {
+    let total = 0;
+    for (let i = 0; i < n; i += 1) {
+        if (i === 5) {
+            break;
+        }
+        if (i % 2 === 0) {
+            continue;
+        }
+        total += i;
+    }
+    return total;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] break_continue: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Switch with break
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_switch_break() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+function switchBreak(x) {
+    let result = 0;
+    switch (x) {
+        case 1:
+            result = 10;
+            break;
+        case 2:
+            result = 20;
+            break;
+        default:
+            result = 30;
+            break;
+    }
+    return result;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] switch_break: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Array literal
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_array_literal() {
+    let js = r#"
+/**
+ * @returns {number[]}
+ */
+function getNums() {
+    const nums = [1, 2, 3];
+    return nums;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] array_literal: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Object literal
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_object_literal() {
+    let js = r#"
+/**
+ * @typedef {Object} Point
+ * @property {number} x
+ * @property {number} y
+ */
+
+/**
+ * @returns {Point}
+ */
+function makePoint() {
+    const p = { x: 1, y: 2 };
+    return p;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] object_literal: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Try-catch with throw (Case A)
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_try_catch_throw() {
+    let js = r#"
+/**
+ * @param {boolean} shouldThrow
+ * @returns {number}
+ */
+function tryThrow(shouldThrow) {
+    try {
+        if (shouldThrow) {
+            throw "error";
+        }
+        return 1;
+    } catch (e) {
+        return -1;
+    }
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 15);
+    println!(
+        "[dual-track] try_catch_throw: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Try-finally (B1/B2)
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_try_finally() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+function tryFinally() {
+    let x = 0;
+    try {
+        x = 1;
+    } finally {
+        x = 2;
+    }
+    return x;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] try_finally: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Multi-param arrow
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_arrow_multi_param() {
+    let js = r#"
+/**
+ * @type {function(number, number): number}
+ */
+const add = (a, b) => a + b;
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] arrow_multi_param: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Strict equality / inequality
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_equality() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {boolean}
+ */
+function isEqual(x, y) {
+    if (x === y) {
+        return true;
+    }
+    if (x !== y) {
+        return false;
+    }
+    return false;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] equality: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Null literal
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_null() {
+    let js = r#"
+/**
+ * @returns {null}
+ */
+function getNull() {
+    return null;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] null: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Remainder operator
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_remainder() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+function mod(x, y) {
+    return x % y;
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] remainder: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Arrow block body
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_arrow_block_body() {
+    let js = r#"
+/**
+ * @param {number} x
+ * @type {function(number): number}
+ */
+const square = (x) => {
+    return x * x;
+};
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] arrow_block_body: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Multi-capture closure
+// ═══════════════════════════════════════════════════════
+
+#[test]
+fn test_dual_track_multi_capture_closure() {
+    let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @returns {function(): number}
+ */
+function makeAdder(a, b) {
+    return function() {
+        return a + b;
+    };
+}
+"#;
+    let (codegen, emitter) = dual_track(js);
+    let diffs = diff_outputs(&codegen, &emitter, 10);
+    println!(
+        "[dual-track] multi_capture_closure: codegen={} lines, emitter={} lines, {} diffs",
+        codegen.lines().count(),
+        emitter.lines().count(),
+        diffs.len()
+    );
+    for (line_no, c, e) in &diffs {
+        eprintln!("  line {}: codegen='{}' emitter='{}'", line_no, c, e);
+    }
+}
