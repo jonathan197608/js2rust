@@ -2,7 +2,7 @@
 // Source location information for diagnostics and source maps.
 
 /// Source location in the original JS file.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct SourceSpan {
     /// 1-based line number in the JS source.
     pub js_line: usize,

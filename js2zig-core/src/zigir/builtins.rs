@@ -2,7 +2,7 @@
 // Builtin module classification for IR.
 
 /// Runtime module that a builtin method belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BuiltinModule {
     JsArray,
     JsString,

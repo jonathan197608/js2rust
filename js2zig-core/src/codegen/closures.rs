@@ -551,7 +551,6 @@ impl Codegen {
         self.nested_fn_names.insert(fn_name.clone());
 
         // Struct definition
-        self.write_indent();
         self.writeln(&format!("const {} = struct {{", fn_name));
         self.indent += 1;
 
@@ -566,7 +565,6 @@ impl Codegen {
             }
         }
         sig.push_str(&format!(") {} {{", self.arrow_return_type_str(arrow)));
-        self.write_indent();
         self.writeln(&sig);
 
         // Generate function body
@@ -599,12 +597,10 @@ impl Codegen {
         }
 
         self.indent -= 1;
-        self.write_indent();
         self.writeln("}");
 
         // Close struct
         self.indent -= 1;
-        self.write_indent();
         self.writeln("};");
 
         fn_name

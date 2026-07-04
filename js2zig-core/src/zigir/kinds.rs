@@ -6,6 +6,8 @@
 pub enum FieldKind {
     /// Direct struct field: `obj.field`
     StructField,
+    /// Namespace/module access: `std.math.pi` (chained field access on import)
+    Namespace,
     /// ArrayList length: `arr.items.len`
     ArrayListLen,
     /// String length: `str.len`
@@ -20,6 +22,10 @@ pub enum FieldKind {
     SymbolWellKnown(String),
     /// TypedArray property: `.buffer`, `.byteLength`, `.byteOffset`
     TypedArrayProp(String),
+    /// Private class field: `self.field` (from #field syntax)
+    Private,
+    /// Pointer dereference field: `obj.field.*` (captured mutable closure var)
+    PointerDeref,
 }
 
 /// How an index access (`obj[idx]`) should be emitted in Zig.

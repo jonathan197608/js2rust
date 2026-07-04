@@ -13,6 +13,25 @@ use oxc_ast::ast::Program;
 
 pub use crate::infer::TypeCheckResult;
 
+// ── ZigIR dual-track flag ─────────────────────────────
+// When true, the ZigIR Lowerer is also invoked after the old Codegen,
+// and the IrModule is logged for comparison. This does NOT affect
+// the returned output (old Codegen output is always used for now).
+//
+// Enable with: set ZIGIR_DUAL_TRACK=1
+// Or change the default to true during active ZigIR development.
+const ZIGIR_DUAL_TRACK_DEFAULT: bool = false;
+
+fn zigir_dual_track_enabled() -> bool {
+    if ZIGIR_DUAL_TRACK_DEFAULT {
+        return true;
+    }
+    // Check environment variable at runtime
+    std::env::var("ZIGIR_DUAL_TRACK")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 /// Transpile JS source text to Zig (native type system).
 ///
 /// **New API** — accepts a pre-parsed `&Program` plus the original source text
@@ -73,6 +92,23 @@ fn transpile_js_inner(
     } else {
         std::collections::HashSet::new()
     };
+
+    // ── ZigIR dual-track: run Lowerer before Codegen (saves IrModule) ──
+    // Codegen takes ownership of type_info/jsdoc_data, so Lowerer must run first.
+    let ir_module = if zigir_dual_track_enabled() {
+        use crate::zigir::lower::Lowerer;
+        let mut lowerer = Lowerer::new(
+            type_info.clone(),
+            jsdoc_data.clone(),
+            exported_functions.clone(),
+            async_host_fns.clone(),
+            js_source.to_string(),
+        );
+        Some(lowerer.lower(program))
+    } else {
+        None
+    };
+
     let mut cg = Codegen::new(
         type_info,
         jsdoc_data,
@@ -81,6 +117,11 @@ fn transpile_js_inner(
         js_source.to_string(),
     );
     cg.generate(program);
+
+    // ── ZigIR dual-track: compare Emitter output with Codegen ──
+    if let Some(ref ir_mod) = ir_module {
+        run_zigir_dual_track_compare(ir_mod, &cg.output);
+    }
 
     // Merge TypeInferrer errors with Codegen errors.
     let mut combined_errors = infer_errors;
@@ -128,6 +169,86 @@ fn transpile_js_inner(
             })
             .collect(),
     })
+}
+
+/// Run the ZigIR Emitter on a pre-lowered IrModule and compare with Codegen output.
+///
+/// This function takes the IrModule (already lowered), emits Zig source via
+/// the Emitter, and logs summary statistics + diff with the old Codegen output.
+/// It does NOT affect the transpilation output — the old Codegen's
+/// string output is always used until the Lowerer+Emitter path is complete.
+fn run_zigir_dual_track_compare(ir_module: &crate::zigir::types::IrModule, codegen_output: &str) {
+    use crate::zigir::emit::Emitter;
+
+    // Log summary for debugging
+    let n_decls = ir_module.declarations.len();
+    let n_imports = ir_module.imports.len();
+    let n_typedefs = ir_module.typedefs.len();
+    let n_closures = ir_module.closure_structs.len();
+    let n_diagnostics = ir_module.diagnostics.len();
+    let n_cabi = ir_module.cabi_exports.len();
+
+    eprintln!(
+        "[ZigIR dual-track] module='{}' imports={} typedefs={} closures={} decls={} diagnostics={} cabi={}",
+        ir_module.name, n_imports, n_typedefs, n_closures, n_decls, n_diagnostics, n_cabi
+    );
+
+    // Log any diagnostics from the Lowerer
+    for diag in &ir_module.diagnostics {
+        eprintln!("[ZigIR dual-track]   {}", diag);
+    }
+
+    // Run the Emitter and compare with the old Codegen output
+    let emitter_output = Emitter::emit_module(ir_module);
+    let emitter_lines = emitter_output.lines().count();
+    let codegen_lines = codegen_output.lines().count();
+
+    if emitter_output == codegen_output {
+        eprintln!(
+            "[ZigIR dual-track] Emitter output MATCHES Codegen ({} lines)",
+            emitter_lines
+        );
+    } else {
+        eprintln!(
+            "[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter={} lines, codegen={} lines)",
+            emitter_lines, codegen_lines
+        );
+        // Log first few differing lines for debugging
+        let max_diff = 10;
+        let mut diff_count = 0;
+        for (i, (e_line, c_line)) in emitter_output
+            .lines()
+            .zip(codegen_output.lines())
+            .enumerate()
+        {
+            if e_line != c_line {
+                if diff_count < max_diff {
+                    eprintln!(
+                        "[ZigIR dual-track]   line {}: emitter='{}' codegen='{}'",
+                        i + 1,
+                        if e_line.len() > 80 {
+                            &e_line[..80]
+                        } else {
+                            e_line
+                        },
+                        if c_line.len() > 80 {
+                            &c_line[..80]
+                        } else {
+                            c_line
+                        }
+                    );
+                }
+                diff_count += 1;
+            }
+        }
+        if emitter_lines != codegen_lines {
+            eprintln!(
+                "[ZigIR dual-track]   line count differs: emitter={} codegen={}",
+                emitter_lines, codegen_lines
+            );
+        }
+        eprintln!("[ZigIR dual-track]   total differing lines: {}", diff_count);
+    }
 }
 
 /// Shared state for native-type codegen.

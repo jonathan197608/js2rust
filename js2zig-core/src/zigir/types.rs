@@ -60,12 +60,16 @@ pub struct IrTypedef {
     pub name: String,
     pub fields: Vec<IrTypedefField>,
     pub is_opaque: bool,
+    /// Whether to generate a `toJson()` method (always true for non-opaque
+    /// typedefs, matching old Codegen behavior).
+    pub has_to_json: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct IrTypedefField {
     pub name: String,
-    pub zig_type: ZigType,
+    /// Zig type string (from jsdoc_type_to_zig, not yet parsed into ZigType).
+    pub zig_type: String,
     pub optional: bool,
 }
 
@@ -74,7 +78,7 @@ pub struct IrTypedefField {
 pub struct IrClosureStruct {
     pub name: IrIdent,
     pub captured: Vec<IrCapture>,
-    pub fn_param: IrParam,
+    pub fn_params: Vec<IrParam>,
     pub return_type: ZigType,
     pub body: IrBlock,
 }
@@ -141,6 +145,28 @@ pub struct IrParam {
 pub struct IrBlock {
     pub stmts: Vec<IrStmt>,
     pub label: Option<String>,
+}
+
+/// Kind of for-in iteration.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IrForInKind {
+    /// HashMap/dynamic object: iterator-based (`var __it = obj.iterator(); while (...)`)
+    HashMapIter,
+    /// Static struct with known fields: unrolled loop (one iteration per field).
+    StructUnroll { fields: Vec<String> },
+    /// Unknown/unsupported type → compile error.
+    Unsupported,
+}
+
+/// Kind of for-of iteration.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IrForOfKind {
+    /// Array/ArrayList iteration: `for (iterable) |var| { ... }`
+    Array,
+    /// Map/Set iteration: `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { ... }`
+    MapSetIter { is_map: bool },
+    /// `for await...of` is not supported.
+    AsyncUnsupported,
 }
 
 impl IrBlock {
@@ -218,16 +244,27 @@ pub enum IrStmt {
         update: Option<Box<IrStmt>>,
         body: IrBlock,
     },
+    /// for-in: iterating over object keys.
+    /// - `HashMapIter`: `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
+    /// - `StructUnroll`: unrolled loop — one iteration per struct field with `const var = "fieldName"`
     ForIn {
         var: IrIdent,
         iterable: IrExpr,
         body: IrBlock,
-        is_struct: bool,
+        kind: IrForInKind,
     },
+    /// for-of: iterating over array, Map, Set values.
+    /// - `Array`: `for (iterable) |var| { ... }` (or `for (iterable.items) |var| { ... }` for ArrayList)
+    /// - `MapSetIter`: `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
     ForOf {
         var: IrIdent,
+        /// Destructured variable names for Map iteration (e.g. `[key, val]`).
+        destructure_vars: Vec<IrIdent>,
         iterable: IrExpr,
+        /// If the iterable is an ArrayList variable, append `.items`.
+        iterable_is_arraylist: bool,
         body: IrBlock,
+        kind: IrForOfKind,
         is_async: bool,
     },
     Switch {
@@ -241,6 +278,11 @@ pub enum IrStmt {
         catch_var: Option<IrIdent>,
         catch_block: IrBlock,
         finally: Option<IrBlock>,
+        /// Whether the try body contains a `throw` (directly, not inside
+        /// a nested try-catch). Drives B1/B2 optimization in Emitter.
+        has_throw: bool,
+        /// Whether the try body contains a nested TryStatement.
+        has_nested_try: bool,
     },
     Throw {
         value: IrExpr,
@@ -404,6 +446,16 @@ pub enum IrExpr {
         result: Box<IrExpr>,
     },
 
+    // ── String formatting ──────────────────────────
+    /// Runtime string concatenation via std.fmt.allocPrint.
+    /// Generated when `+` has a string operand (JS coercion semantics).
+    AllocPrint {
+        /// Zig format string (already escaped for std.fmt).
+        fmt: String,
+        /// Interpolation arguments (may be empty → plain string literal).
+        args: Vec<IrExpr>,
+    },
+
     // ── Special ─────────────────────────────────────
     Spread(Box<IrExpr>),
     Typeof(Box<IrExpr>),
@@ -458,7 +510,7 @@ pub struct IrAwaitExpr {
 pub struct IrClosure {
     pub struct_name: IrIdent,
     pub captured: Vec<IrCapture>,
-    pub fn_param: IrParam,
+    pub fn_params: Vec<IrParam>,
     pub return_type: ZigType,
     pub body: IrBlock,
     pub instance_name: IrIdent,
@@ -602,6 +654,8 @@ mod tests {
             catch_var: Some(IrIdent::new("e")),
             catch_block: IrBlock::new(vec![]),
             finally: None,
+            has_throw: false,
+            has_nested_try: false,
         };
         assert!(matches!(stmt, IrStmt::Try { .. }));
     }
@@ -636,10 +690,10 @@ mod tests {
                 zig_type: ZigType::I64,
                 is_mut: false,
             }],
-            fn_param: IrParam {
+            fn_params: vec![IrParam {
                 name: IrIdent::new("b"),
                 zig_type: ZigType::I64,
-            },
+            }],
             return_type: ZigType::I64,
             body: IrBlock::new(vec![]),
             instance_name: IrIdent::new("_cl_0"),
