@@ -194,6 +194,9 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             expr_has_side_effects(e)
         }
         IrExpr::Sequence(exprs) => exprs.iter().any(expr_has_side_effects),
+        IrExpr::ArrayCallbackInline(inline_data) => {
+            inline_data.body.iter().any(stmt_has_side_effects)
+        }
         IrExpr::CompileError { .. } => true,
     }
 }
@@ -527,6 +530,15 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
             changed
         }
         IrExpr::Update { .. } => false,
+        IrExpr::ArrayCallbackInline(inline_data) => {
+            let mut changed = false;
+            for stmt in &mut inline_data.body {
+                if eliminate_unreachable_in_stmt(stmt) {
+                    changed = true;
+                }
+            }
+            changed
+        }
         // Leaf expressions
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)
@@ -755,6 +767,11 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
         IrExpr::Sequence(exprs) => {
             for e in exprs {
                 collect_expr_refs(e, refs);
+            }
+        }
+        IrExpr::ArrayCallbackInline(inline_data) => {
+            for stmt in &inline_data.body {
+                collect_stmt_refs(stmt, refs);
             }
         }
         IrExpr::IntLiteral(_)

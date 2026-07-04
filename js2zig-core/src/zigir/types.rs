@@ -485,6 +485,14 @@ pub enum IrExpr {
         span: SourceSpan,
         msg: String,
     },
+
+    // ── Array callback inlining ─────────────────────
+    /// Inline expansion of array callback methods (forEach, some, every, filter,
+    /// find, findIndex, findLast, findLastIndex, map, reduce).
+    ///
+    /// Instead of emitting `js_array.method(callback)`, the Emitter expands
+    /// these into Zig for/while loops with the callback body unwrapped.
+    ArrayCallbackInline(Box<IrArrayCallbackInline>),
 }
 
 // ── Call types ─────────────────────────────────────────
@@ -592,6 +600,52 @@ pub struct IrNewExpr {
     pub constructor: NewConstructor,
     pub args: Vec<IrExpr>,
     pub result_type: ZigType,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Array callback inlining
+// ═══════════════════════════════════════════════════════
+
+/// Which array callback method is being inlined.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArrayCallbackKind {
+    ForEach,
+    Some,
+    Every,
+    Filter,
+    Find,
+    FindIndex,
+    FindLast,
+    FindLastIndex,
+    Map,
+    Reduce,
+}
+
+/// Data for inline expansion of array callback methods.
+///
+/// The Emitter uses this to generate a Zig loop instead of
+/// a runtime `js_array.method(callback)` call.
+#[derive(Debug, Clone)]
+pub struct IrArrayCallbackInline {
+    /// Which callback method (forEach, some, every, etc.)
+    pub kind: ArrayCallbackKind,
+    /// Name of the array object being iterated (e.g., "arr").
+    pub obj_name: String,
+    /// The Zig type of array elements (for filter's ArrayList type).
+    pub elem_type: ZigType,
+    /// The callback element parameter name (e.g., "x" from `(x) => ...`),
+    /// or "_" if unused by the callback body.
+    pub elem_param: String,
+    /// Whether the callback takes an index parameter (2nd param).
+    pub has_idx_param: bool,
+    /// The callback index parameter name (e.g., "i" from `(x, i) => ...`),
+    /// or "_" if present but unused, or "" if no index param.
+    pub idx_param: String,
+    /// The callback body statements (already lowered to IR).
+    /// For concise arrow bodies, this is a single ExpressionStatement.
+    pub body: Vec<IrStmt>,
+    /// For reduce: the initial accumulator value expression.
+    pub reduce_init: Option<IrExpr>,
 }
 
 // ═══════════════════════════════════════════════════════

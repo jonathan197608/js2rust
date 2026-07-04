@@ -379,6 +379,11 @@ impl ValidatePass {
             IrExpr::FnExpr(fe) => {
                 self.check_closure_refs_in_block(&fe.body);
             }
+            IrExpr::ArrayCallbackInline(inline_data) => {
+                for stmt in &inline_data.body {
+                    self.check_closure_refs_in_stmt(stmt);
+                }
+            }
             // Leaf expressions: no sub-expressions to check
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)
@@ -656,6 +661,11 @@ fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet
         IrExpr::Sequence(exprs) => {
             for e in exprs {
                 collect_idents_from_expr(e, names);
+            }
+        }
+        IrExpr::ArrayCallbackInline(inline_data) => {
+            for stmt in &inline_data.body {
+                collect_idents_from_stmt(stmt, names);
             }
         }
         IrExpr::IntLiteral(_)

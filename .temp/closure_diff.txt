@@ -1,0 +1,42 @@
+﻿cargo :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+所在位置 行:91 字符: 73
++ ... _TRACK="1"; cargo test -p js2zig-core test_dual_track_closure_capture ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.09s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+     Running unittests src\lib.rs (target\debug\deps\js2zig_core-e2ffaca3e705addb.exe)
+
+running 1 test
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=11 lines, codegen=11 lines)
+[ZigIR dual-track]   line 1: emitter='const _fn_expr_0 = struct {' codegen='pub fn makeCounter(x: i64) .{ .function() =
+ i64 } {'
+[ZigIR dual-track]   line 2: emitter='    count: *i64,' codegen='    const count = x;'
+[ZigIR dual-track]   line 3: emitter='    pub fn call(self: *@This()) i64 {' codegen='        const _fn_expr_0 = struct
+ {'
+[ZigIR dual-track]   line 4: emitter='        self.count.* += 1;' codegen='                count: i64,'
+[ZigIR dual-track]   line 5: emitter='        return self.count.*;' codegen='pub fn call(self: @This(),         ) void 
+{'
+[ZigIR dual-track]   line 6: emitter='    }' codegen='            self.count.* += 1;'
+[ZigIR dual-track]   line 7: emitter='};' codegen='            return self.count.*;'
+[ZigIR dual-track]   line 8: emitter='pub fn makeCounter(x: i64) .{ .function() = i64 } {' codegen='        }'
+[ZigIR dual-track]   line 9: emitter='    const count = x;' codegen='        .{{ .count = count }};'
+[ZigIR dual-track]   line 10: emitter='    return _fn_expr_0{ .count = &count };' codegen='    return _fn_expr_0;'
+[ZigIR dual-track]   total differing lines: 10
+[dual-track] closure_capture: 10 differing lines
+  line 1: codegen='pub fn makeCounter(x: i64) .{ .function() = i64 } {' emitter='const _fn_expr_0 = struct {'
+  line 2: codegen='    const count = x;' emitter='    count: *i64,'
+  line 3: codegen='        const _fn_expr_0 = struct {' emitter='    pub fn call(self: *@This()) i64 {'
+  line 4: codegen='                count: i64,' emitter='        self.count.* += 1;'
+  line 5: codegen='pub fn call(self: @This(),         ) void {' emitter='        return self.count.*;'
+  line 6: codegen='            self.count.* += 1;' emitter='    }'
+  line 7: codegen='            return self.count.*;' emitter='};'
+  line 8: codegen='        }' emitter='pub fn makeCounter(x: i64) .{ .function() = i64 } {'
+  line 9: codegen='        .{{ .count = count }};' emitter='    const count = x;'
+  line 10: codegen='    return _fn_expr_0;' emitter='    return _fn_expr_0{ .count = &count };'
+[dual-track] closure_capture: codegen=11 lines, emitter=11 lines
+test tests::dual_track::test_dual_track_closure_capture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 499 filtered out; finished in 0.00s
+

@@ -409,4 +409,437 @@ impl Emitter {
         }
         self.write(")");
     }
+
+    // ═══════════════════════════════════════════════════════
+    //  Array callback inlining
+    // ═══════════════════════════════════════════════════════
+
+    /// Emit an inlined array callback method (forEach, some, every, filter,
+    /// find, findIndex, findLast, findLastIndex, map, reduce) as a Zig loop.
+    ///
+    /// This mirrors the Codegen's callback inlining patterns from
+    /// `codegen/builtins.rs` lines 2318–2901, but operates on the IR
+    /// `IrArrayCallbackInline` data instead of raw AST.
+    pub(crate) fn emit_array_callback_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) {
+        use crate::zigir::types::ArrayCallbackKind as K;
+
+        match data.kind {
+            K::ForEach => self.emit_for_each_inline(data),
+            K::Some => self.emit_some_inline(data),
+            K::Every => self.emit_every_inline(data),
+            K::Filter => self.emit_filter_inline(data),
+            K::Find => self.emit_find_inline(data),
+            K::FindIndex => self.emit_find_index_inline(data),
+            K::FindLast => self.emit_find_last_inline(data),
+            K::FindLastIndex => self.emit_find_last_index_inline(data),
+            K::Map => self.emit_map_inline(data),
+            K::Reduce => self.emit_reduce_inline(data),
+        }
+    }
+
+    // ── forEach ────────────────────────────────────────
+    //
+    //  for (obj.items) |elem| {
+    //      <body stmts>
+    //  }
+    //
+    fn emit_for_each_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            data.obj_name, data.elem_param
+        ));
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            self.emit_stmt(stmt);
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+    }
+
+    // ── some ───────────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      for (obj.items[, 0..]) |elem[, idx]| {
+    //          if (<pred>) break :blk_N true;
+    //      }
+    //      break :blk_N false;
+    //  })
+    //
+    fn emit_some_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ ", blk));
+        if data.has_idx_param {
+            self.write(&format!(
+                "for ({}.items, 0..) |{}, {}| ",
+                data.obj_name, data.elem_param, data.idx_param
+            ));
+        } else {
+            self.write(&format!(
+                "for ({}.items) |{}| ",
+                data.obj_name, data.elem_param
+            ));
+        }
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} true;", blk));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} true;", blk));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} false; }})", blk));
+    }
+
+    // ── every ──────────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      for (obj.items[, 0..]) |elem[, idx]| {
+    //          if (!(<pred>)) break :blk_N false;
+    //      }
+    //      break :blk_N true;
+    //  })
+    //
+    fn emit_every_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ ", blk));
+        if data.has_idx_param {
+            self.write(&format!(
+                "for ({}.items, 0..) |{}, {}| ",
+                data.obj_name, data.elem_param, data.idx_param
+            ));
+        } else {
+            self.write(&format!(
+                "for ({}.items) |{}| ",
+                data.obj_name, data.elem_param
+            ));
+        }
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (!(");
+                    self.emit_expr(expr);
+                    self.write(&format!(")) break :{} false;", blk));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (!(");
+                    self.emit_expr(expr);
+                    self.write(&format!(")) break :{} false;", blk));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} true; }})", blk));
+    }
+
+    // ── filter ─────────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      var __filter: std.ArrayList(elem_type) = .empty;
+    //      for (obj.items) |elem| {
+    //          if (<pred>) __filter.append(js_allocator.allocator(), elem) catch @panic("OOM: Array.filter append");
+    //      }
+    //      break :blk_N __filter;
+    //  })
+    //
+    fn emit_filter_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __filter: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            data.obj_name, data.elem_param
+        ));
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(
+                        ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
+                        data.elem_param
+                    ));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(
+                        ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
+                        data.elem_param
+                    ));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} __filter; }})", blk));
+    }
+
+    // ── find ───────────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      for (obj.items) |elem| {
+    //          if (<pred>) break :blk_N elem;
+    //      }
+    //      break :blk_N undefined;
+    //  })
+    //
+    fn emit_find_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            data.obj_name, data.elem_param
+        ));
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, data.elem_param));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, data.elem_param));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} undefined; }})", blk));
+    }
+
+    // ── findIndex ──────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      for (obj.items, 0..) |elem, __i| {
+    //          const __idx: i64 = @intCast(__i);
+    //          if (<pred>) break :blk_N __idx;
+    //      }
+    //      break :blk_N -1;
+    //  })
+    //
+    fn emit_find_index_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        let index_name = format!("__{}_i", data.elem_param);
+        let idx_name = format!("__{}_idx", data.elem_param);
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "for ({}.items, 0..) |{}, {}| ",
+            data.obj_name, data.elem_param, index_name
+        ));
+        self.write("{\n");
+        self.indent_push();
+        self.writeln(&format!(
+            "const {}: i64 = @intCast({});",
+            idx_name, index_name
+        ));
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, idx_name));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, idx_name));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} -1; }})", blk));
+    }
+
+    // ── findLast ───────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      var __i: usize = obj.items.len;
+    //      while (__i > 0) {
+    //          __i -= 1;
+    //          const elem = obj.items[__i];
+    //          if (<pred>) break :blk_N elem;
+    //      }
+    //      break :blk_N undefined;
+    //  })
+    //
+    fn emit_find_last_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        self.write(&format!(
+            "({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
+            blk, data.obj_name, data.elem_param, data.obj_name
+        ));
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, data.elem_param));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, data.elem_param));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write(&format!("}} break :{} undefined; }})", blk));
+    }
+
+    // ── findLastIndex ──────────────────────────────────
+    //
+    //  (blk_N: {
+    //      var __i: usize = obj.items.len;
+    //      while (__i > 0) {
+    //          __i -= 1;
+    //          const elem = obj.items[__i];
+    //          const __idx: i64 = @intCast(__i);
+    //          if (<pred>) break :blk_N __idx;
+    //      }
+    //      break :blk_N -1;
+    //  })
+    //
+    fn emit_find_last_index_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        let idx_name = format!("__{}_idx", data.elem_param);
+        self.write(&format!(
+            "({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
+            blk, data.obj_name, data.elem_param, data.obj_name, idx_name
+        ));
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, idx_name));
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("if (");
+                    self.emit_expr(expr);
+                    self.write(&format!(") break :{} {};", blk, idx_name));
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write(&format!("}} break :{} -1; }})", blk));
+    }
+
+    // ── map (identity stub) ────────────────────────────
+    //
+    //  Codegen just returns the object name — map is not fully implemented.
+    //
+    fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.write(&data.obj_name);
+    }
+
+    // ── reduce ─────────────────────────────────────────
+    //
+    //  (blk_N: {
+    //      var acc: <type> = <init>;
+    //      for (obj.items) |elem| {
+    //          acc = <body_expr>;
+    //      }
+    //      break :blk_N acc;
+    //  })
+    //
+    fn emit_reduce_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        let blk = self.next_label();
+        // Determine init value and accumulator type
+        let init_expr_str = match &data.reduce_init {
+            Some(expr) => {
+                let saved = std::mem::take(self.output_mut());
+                self.emit_expr(expr);
+                let rendered = std::mem::take(self.output_mut());
+                *self.output_mut() = saved;
+                rendered
+            }
+            None => "0".to_string(),
+        };
+        let acc_type = if init_expr_str.contains('.') {
+            "f64"
+        } else {
+            "i64"
+        };
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!("var acc: {} = {}; ", acc_type, init_expr_str));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            data.obj_name, data.elem_param
+        ));
+        self.write("{\n");
+        self.indent_push();
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("acc = ");
+                    self.emit_expr(expr);
+                    self.write(";");
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("acc = ");
+                    self.emit_expr(expr);
+                    self.write(";");
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} acc; }})", blk));
+    }
 }

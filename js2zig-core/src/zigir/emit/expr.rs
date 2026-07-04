@@ -392,6 +392,10 @@ impl Emitter {
                 }
             }
 
+            crate::zigir::types::IrExpr::ArrayCallbackInline(inline_data) => {
+                self.emit_array_callback_inline(inline_data);
+            }
+
             crate::zigir::types::IrExpr::CompileError { span, msg } => {
                 let loc = format!("{}:{}", span.js_line, span.js_col);
                 self.write(&format!(

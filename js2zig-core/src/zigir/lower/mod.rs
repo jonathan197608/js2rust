@@ -2540,6 +2540,13 @@ impl Lowerer {
 
         // ── Step 1: Builtin detection ──
         if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
+            // ── Step 1a: Array callback inlining ──
+            // When the first argument is an ArrowFunctionExpression, inline the
+            // callback into a Zig loop instead of emitting js_array.method(callback).
+            if let Some(inlined) = self.try_inline_array_callback(ce, &builtin) {
+                return inlined;
+            }
+
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
             return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                 module,
@@ -3531,6 +3538,14 @@ impl Lowerer {
                     Self::collect_ir_idents_in_expr(a, idents);
                 }
             }
+            IrExpr::ArrayCallbackInline(inline_data) => {
+                for s in &inline_data.body {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                if let Some(ref init) = inline_data.reduce_init {
+                    Self::collect_ir_idents_in_expr(init, idents);
+                }
+            }
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)
             | IrExpr::StringLiteral(_)
@@ -4320,6 +4335,190 @@ impl Lowerer {
     /// Create an IrIdent for the given JS name, applying shadow renaming.
     fn make_ident(&self, js_name: &str) -> IrIdent {
         self.name_mangler.make_ident(js_name)
+    }
+
+    /// Try to inline an array callback method (forEach, some, every, filter, find,
+    /// findIndex, findLast, findLastIndex, map, reduce) when the first argument
+    /// is an ArrowFunctionExpression or FunctionExpression.
+    ///
+    /// Returns `IrExpr::ArrayCallbackInline` if inlinable, `None` otherwise.
+    fn try_inline_array_callback(
+        &mut self,
+        ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::{ArrayCallbackKind, IrArrayCallbackInline, IrExpr};
+
+        let kind = match builtin {
+            BC::ArrayForEach => ArrayCallbackKind::ForEach,
+            BC::ArraySome => ArrayCallbackKind::Some,
+            BC::ArrayEvery => ArrayCallbackKind::Every,
+            BC::ArrayFilter => ArrayCallbackKind::Filter,
+            BC::ArrayFind => ArrayCallbackKind::Find,
+            BC::ArrayFindIndex => ArrayCallbackKind::FindIndex,
+            BC::ArrayFindLast => ArrayCallbackKind::FindLast,
+            BC::ArrayFindLastIndex => ArrayCallbackKind::FindLastIndex,
+            BC::ArrayMap => ArrayCallbackKind::Map,
+            BC::ArrayReduce => ArrayCallbackKind::Reduce,
+            _ => return None,
+        };
+
+        let first_arg = ce.arguments.first()?.as_expression()?;
+
+        let (params, body) = match first_arg {
+            Expression::ArrowFunctionExpression(arrow) => (&arrow.params, &arrow.body),
+            Expression::FunctionExpression(f) => match &f.body {
+                Some(b) => (&f.params, b),
+                None => return None,
+            },
+            _ => return None,
+        };
+
+        let elem_param_raw = params
+            .items
+            .first()
+            .and_then(|p| crate::infer::binding_name(&p.pattern))
+            .unwrap_or("_")
+            .to_string();
+        let idx_param_raw = params
+            .items
+            .get(1)
+            .and_then(|p| crate::infer::binding_name(&p.pattern));
+        let has_idx_param = idx_param_raw.is_some();
+
+        // Check if parameters are actually used in the callback body.
+        // We use the same simple AST walk as Codegen's arrow_body_uses_ident().
+        let elem_used = body
+            .statements
+            .iter()
+            .any(|s| Self::ast_stmt_uses_ident(&elem_param_raw, s));
+        let elem_param = if elem_used {
+            elem_param_raw
+        } else {
+            "_".to_string()
+        };
+
+        let idx_param = if let Some(idx_name) = idx_param_raw {
+            if idx_name != "_"
+                && body
+                    .statements
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(idx_name, s))
+            {
+                idx_name.to_string()
+            } else {
+                "_".to_string()
+            }
+        } else {
+            String::new()
+        };
+
+        // Lower the callback body
+        let ir_body: Vec<crate::zigir::types::IrStmt> =
+            body.statements.iter().map(|s| self.lower_stmt(s)).collect();
+
+        // Extract object name
+        let obj_name = self.extract_callee_object_name(ce)?;
+
+        // Get element type
+        let elem_type = self
+            .type_info
+            .array_element_types
+            .get(obj_name.as_str())
+            .cloned()
+            .unwrap_or(ZigType::I64);
+
+        // Reduce init value
+        let reduce_init = if kind == ArrayCallbackKind::Reduce && ce.arguments.len() >= 2 {
+            ce.arguments
+                .get(1)
+                .and_then(|a| a.as_expression())
+                .map(|e| self.lower_expr(e))
+        } else {
+            None
+        };
+
+        Some(IrExpr::ArrayCallbackInline(Box::new(
+            IrArrayCallbackInline {
+                kind,
+                obj_name,
+                elem_type,
+                elem_param,
+                has_idx_param,
+                idx_param,
+                body: ir_body,
+                reduce_init,
+            },
+        )))
+    }
+
+    /// Extract the object variable name from a CallExpression's callee.
+    fn extract_callee_object_name(&self, ce: &CallExpression) -> Option<String> {
+        match &ce.callee {
+            Expression::StaticMemberExpression(mem) => match &mem.object {
+                Expression::Identifier(id) => Some(id.name.as_str().to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    // ── AST ident-usage helpers ─────────────────────
+    // These mirror Codegen's stmt_uses_ident / expr_uses_ident,
+    // used to check whether a callback parameter is actually referenced.
+
+    fn ast_stmt_uses_ident(ident: &str, stmt: &Statement) -> bool {
+        match stmt {
+            Statement::ReturnStatement(r) => r
+                .argument
+                .as_ref()
+                .is_some_and(|e| Self::ast_expr_uses_ident(ident, e)),
+            Statement::ExpressionStatement(e) => Self::ast_expr_uses_ident(ident, &e.expression),
+            Statement::BlockStatement(b) => {
+                b.body.iter().any(|s| Self::ast_stmt_uses_ident(ident, s))
+            }
+            _ => false,
+        }
+    }
+
+    fn ast_expr_uses_ident(ident: &str, expr: &Expression) -> bool {
+        match expr {
+            Expression::Identifier(id) => id.name.as_str() == ident,
+            Expression::BinaryExpression(b) => {
+                Self::ast_expr_uses_ident(ident, &b.left)
+                    || Self::ast_expr_uses_ident(ident, &b.right)
+            }
+            Expression::UnaryExpression(u) => Self::ast_expr_uses_ident(ident, &u.argument),
+            Expression::StaticMemberExpression(m) => Self::ast_expr_uses_ident(ident, &m.object),
+            Expression::ComputedMemberExpression(m) => {
+                Self::ast_expr_uses_ident(ident, &m.object)
+                    || Self::ast_expr_uses_ident(ident, &m.expression)
+            }
+            Expression::CallExpression(c) => {
+                Self::ast_expr_uses_ident(ident, &c.callee)
+                    || c.arguments.iter().any(|a| match a.as_expression() {
+                        Some(e) => Self::ast_expr_uses_ident(ident, e),
+                        None => false,
+                    })
+            }
+            Expression::ParenthesizedExpression(p) => {
+                Self::ast_expr_uses_ident(ident, &p.expression)
+            }
+            Expression::ConditionalExpression(c) => {
+                Self::ast_expr_uses_ident(ident, &c.test)
+                    || Self::ast_expr_uses_ident(ident, &c.consequent)
+                    || Self::ast_expr_uses_ident(ident, &c.alternate)
+            }
+            Expression::NumericLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_)
+            | Expression::BigIntLiteral(_)
+            | Expression::RegExpLiteral(_) => false,
+            // Conservative: assume identifier MAY appear in unhandled variants
+            _ => true,
+        }
     }
 }
 
