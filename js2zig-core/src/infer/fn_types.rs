@@ -342,8 +342,28 @@ impl TypeInferrer {
                         params.push((pname.to_string(), InferResult::Definite(ZigType::I64)));
                     }
                 } else {
-                    // Non-export: anytype
-                    params.push((pname.to_string(), InferResult::Indeterminate));
+                    // Non-export: try JSDoc @param first, fall back to anytype.
+                    // This ensures for-in and other type-dependent features work
+                    // correctly even for non-export functions.
+                    let mut found_jsdoc = false;
+                    if let Some(ref data) = self.jsdoc_data
+                        && let Some(param_list) = data.param_types.get(fn_name)
+                    {
+                        for (annot_name, type_name) in param_list {
+                            if annot_name == pname {
+                                let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
+                                params.push((
+                                    pname.to_string(),
+                                    InferResult::Definite(Self::zig_str_to_type(&zig_ty)),
+                                ));
+                                found_jsdoc = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_jsdoc {
+                        params.push((pname.to_string(), InferResult::Indeterminate));
+                    }
                 }
             }
         }

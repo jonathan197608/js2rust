@@ -10,9 +10,7 @@
 use crate::types::ZigType;
 use crate::zigir::passes::{IrPass, PassResult};
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
-use crate::zigir::types::{
-    IrAssignTarget, IrBlock, IrDecl, IrExpr, IrFnDecl, IrModule, IrStmt,
-};
+use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrFnDecl, IrModule, IrStmt};
 
 /// Validation pass: checks structural integrity of the IR.
 ///
@@ -85,9 +83,10 @@ impl ValidatePass {
     fn check_cabi_compatibility(&mut self, module: &IrModule) {
         for decl in &module.declarations {
             if let IrDecl::Fn(f) = decl
-                && f.is_cabi {
-                    self.check_cabi_fn(f);
-                }
+                && f.is_cabi
+            {
+                self.check_cabi_fn(f);
+            }
         }
         for export in &module.cabi_exports {
             if !is_c_safe_type(&export.return_type) {
@@ -189,15 +188,21 @@ impl ValidatePass {
                     self.check_closure_refs_in_block(e);
                 }
             }
-            IrStmt::While { cond, body } => {
+            IrStmt::While { cond, body, .. } => {
                 self.check_closure_refs_in_expr(cond);
                 self.check_closure_refs_in_block(body);
             }
-            IrStmt::DoWhile { body, cond } => {
+            IrStmt::DoWhile { body, cond, .. } => {
                 self.check_closure_refs_in_block(body);
                 self.check_closure_refs_in_expr(cond);
             }
-            IrStmt::For { init, cond, update, body } => {
+            IrStmt::For {
+                init,
+                cond,
+                update,
+                body,
+                ..
+            } => {
                 if let Some(i) = init {
                     self.check_closure_refs_in_stmt(i);
                 }
@@ -225,7 +230,12 @@ impl ValidatePass {
                     }
                 }
             }
-            IrStmt::Try { try_block, catch_block, finally, .. } => {
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
                 self.check_closure_refs_in_block(try_block);
                 self.check_closure_refs_in_block(catch_block);
                 if let Some(f) = finally {
@@ -465,15 +475,21 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
                 collect_idents_from_stmts(&e.stmts, names);
             }
         }
-        IrStmt::While { cond, body } => {
+        IrStmt::While { cond, body, .. } => {
             collect_idents_from_expr(cond, names);
             collect_idents_from_stmts(&body.stmts, names);
         }
-        IrStmt::DoWhile { body, cond } => {
+        IrStmt::DoWhile { body, cond, .. } => {
             collect_idents_from_stmts(&body.stmts, names);
             collect_idents_from_expr(cond, names);
         }
-        IrStmt::For { init, cond, update, body } => {
+        IrStmt::For {
+            init,
+            cond,
+            update,
+            body,
+            ..
+        } => {
             if let Some(i) = init {
                 collect_idents_from_stmt(i, names);
             }
@@ -499,7 +515,12 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
                 collect_idents_from_stmts(&case.body, names);
             }
         }
-        IrStmt::Try { try_block, catch_block, finally, .. } => {
+        IrStmt::Try {
+            try_block,
+            catch_block,
+            finally,
+            ..
+        } => {
             collect_idents_from_stmts(&try_block.stmts, names);
             collect_idents_from_stmts(&catch_block.stmts, names);
             if let Some(f) = finally {
@@ -520,7 +541,10 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
         IrStmt::Block(b) => {
             collect_idents_from_stmts(&b.stmts, names);
         }
-        IrStmt::Break { .. } | IrStmt::Continue { .. } | IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
+        IrStmt::Break { .. }
+        | IrStmt::Continue { .. }
+        | IrStmt::CompileError { .. }
+        | IrStmt::Comment(_) => {}
     }
 }
 
@@ -645,7 +669,10 @@ fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet
     }
 }
 
-fn collect_idents_from_target(target: &IrAssignTarget, names: &mut std::collections::HashSet<String>) {
+fn collect_idents_from_target(
+    target: &IrAssignTarget,
+    names: &mut std::collections::HashSet<String>,
+) {
     match target {
         IrAssignTarget::Ident(id) => {
             names.insert(id.zig_name.clone());
@@ -686,11 +713,8 @@ fn is_c_safe_type(ty: &ZigType) -> bool {
 mod tests {
     use super::*;
     use crate::zigir::ident::IrIdent;
-    use crate::zigir::kinds::CallKind;
     use crate::zigir::ops::BinOp;
-    use crate::zigir::types::{
-        IrBlock, IrCallExpr, IrCapture, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl,
-    };
+    use crate::zigir::types::{IrBlock, IrCapture, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl};
 
     #[test]
     fn test_validate_clean_module() {
@@ -698,19 +722,25 @@ mod tests {
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("add"),
             params: vec![
-                IrParam { name: IrIdent::new("a"), zig_type: ZigType::I64 },
-                IrParam { name: IrIdent::new("b"), zig_type: ZigType::I64 },
+                IrParam {
+                    name: IrIdent::new("a"),
+                    zig_type: ZigType::I64,
+                    is_unused: false,
+                },
+                IrParam {
+                    name: IrIdent::new("b"),
+                    zig_type: ZigType::I64,
+                    is_unused: false,
+                },
             ],
             return_type: ZigType::I64,
-            body: IrBlock::new(vec![
-                IrStmt::Return {
-                    value: Some(IrExpr::Binary {
-                        op: BinOp::Add,
-                        left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
-                        right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
-                    }),
-                },
-            ]),
+            body: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
+                    right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                }),
+            }]),
             is_export: true,
             is_async: false,
             can_throw: false,
@@ -719,7 +749,11 @@ mod tests {
 
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);
-        assert!(result.diagnostics.is_empty(), "clean module should have no diagnostics: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "clean module should have no diagnostics: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]
@@ -746,7 +780,10 @@ mod tests {
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);
         assert_eq!(result.diagnostics.len(), 1);
-        assert!(matches!(result.diagnostics[0].level, DiagnosticLevel::Error));
+        assert!(matches!(
+            result.diagnostics[0].level,
+            DiagnosticLevel::Error
+        ));
         assert!(result.diagnostics[0].message.contains("duplicate"));
     }
 
@@ -758,6 +795,7 @@ mod tests {
             params: vec![IrParam {
                 name: IrIdent::new("data"),
                 zig_type: ZigType::JsAny, // NOT C-safe
+                is_unused: false,
             }],
             return_type: ZigType::JsAny, // NOT C-safe
             body: IrBlock::new(vec![]),
@@ -769,38 +807,48 @@ mod tests {
 
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);
-        let errors: Vec<_> = result.diagnostics.iter()
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
             .filter(|d| matches!(d.level, DiagnosticLevel::Error))
             .collect();
-        assert_eq!(errors.len(), 2, "should have 2 C ABI errors (param + return), got: {:?}", result.diagnostics);
+        assert_eq!(
+            errors.len(),
+            2,
+            "should have 2 C ABI errors (param + return), got: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]
     fn test_validate_closure_capture_not_referenced() {
         let mut module = IrModule::new("test".to_string());
         // Add a closure struct with a captured var not referenced in body
-        module.closure_structs.push(crate::zigir::types::IrClosureStruct {
-            name: IrIdent::new("_closure_0"),
-            captured: vec![IrCapture {
-                name: IrIdent::new("unused_var"),
-                zig_type: ZigType::I64,
-                is_mut: false,
-            }],
-            fn_params: vec![IrParam {
-                name: IrIdent::new("x"),
-                zig_type: ZigType::I64,
-            }],
-            return_type: ZigType::I64,
-            body: IrBlock::new(vec![
-                IrStmt::Return {
+        module
+            .closure_structs
+            .push(crate::zigir::types::IrClosureStruct {
+                name: IrIdent::new("_closure_0"),
+                captured: vec![IrCapture {
+                    name: IrIdent::new("unused_var"),
+                    zig_type: ZigType::I64,
+                    is_mut: false,
+                }],
+                fn_params: vec![IrParam {
+                    name: IrIdent::new("x"),
+                    zig_type: ZigType::I64,
+                    is_unused: false,
+                }],
+                return_type: ZigType::I64,
+                body: IrBlock::new(vec![IrStmt::Return {
                     value: Some(IrExpr::Ident(IrIdent::new("x"))),
-                },
-            ]),
-        });
+                }]),
+            });
 
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);
-        let warnings: Vec<_> = result.diagnostics.iter()
+        let warnings: Vec<_> = result
+            .diagnostics
+            .iter()
             .filter(|d| matches!(d.level, DiagnosticLevel::Warning))
             .collect();
         assert_eq!(warnings.len(), 1, "should warn about unreferenced capture");

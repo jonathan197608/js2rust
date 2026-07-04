@@ -101,7 +101,10 @@ impl ConstantFoldPass {
             IrExpr::Paren(inner) => {
                 let mut changed = Self::try_fold(inner);
                 // Unwrap paren around a literal
-                if matches!(inner.as_ref(), IrExpr::IntLiteral(_) | IrExpr::FloatLiteral(_) | IrExpr::BoolLiteral(_)) {
+                if matches!(
+                    inner.as_ref(),
+                    IrExpr::IntLiteral(_) | IrExpr::FloatLiteral(_) | IrExpr::BoolLiteral(_)
+                ) {
                     *expr = (**inner).clone();
                     changed = true;
                 }
@@ -191,39 +194,49 @@ impl ConstantFoldPass {
                     changed = true;
                 }
                 if let Some(e) = else_
-                    && Self::fold_block(e) {
-                        changed = true;
-                    }
+                    && Self::fold_block(e)
+                {
+                    changed = true;
+                }
                 changed
             }
-            crate::zigir::types::IrStmt::While { cond, body } => {
+            crate::zigir::types::IrStmt::While { cond, body, .. } => {
                 let mut changed = Self::try_fold(cond);
                 if Self::fold_block(body) {
                     changed = true;
                 }
                 changed
             }
-            crate::zigir::types::IrStmt::DoWhile { body, cond } => {
+            crate::zigir::types::IrStmt::DoWhile { body, cond, .. } => {
                 let mut changed = Self::fold_block(body);
                 if Self::try_fold(cond) {
                     changed = true;
                 }
                 changed
             }
-            crate::zigir::types::IrStmt::For { init, cond, update, body } => {
+            crate::zigir::types::IrStmt::For {
+                init,
+                cond,
+                update,
+                body,
+                ..
+            } => {
                 let mut changed = false;
                 if let Some(i) = init
-                    && Self::fold_stmt(i) {
-                        changed = true;
-                    }
+                    && Self::fold_stmt(i)
+                {
+                    changed = true;
+                }
                 if let Some(c) = cond
-                    && Self::try_fold(c) {
-                        changed = true;
-                    }
+                    && Self::try_fold(c)
+                {
+                    changed = true;
+                }
                 if let Some(u) = update
-                    && Self::fold_stmt(u) {
-                        changed = true;
-                    }
+                    && Self::fold_stmt(u)
+                {
+                    changed = true;
+                }
                 if Self::fold_block(body) {
                     changed = true;
                 }
@@ -240,15 +253,21 @@ impl ConstantFoldPass {
                 }
                 changed
             }
-            crate::zigir::types::IrStmt::Try { try_block, catch_block, finally, .. } => {
+            crate::zigir::types::IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
                 let mut changed = Self::fold_block(try_block);
                 if Self::fold_block(catch_block) {
                     changed = true;
                 }
                 if let Some(f) = finally
-                    && Self::fold_block(f) {
-                        changed = true;
-                    }
+                    && Self::fold_block(f)
+                {
+                    changed = true;
+                }
                 changed
             }
             crate::zigir::types::IrStmt::Throw { value } => Self::try_fold(value),
@@ -315,15 +334,17 @@ impl IrPass for ConstantFoldPass {
                 }
                 crate::zigir::types::IrDecl::Var(v) => {
                     if let Some(e) = &mut v.init
-                        && Self::try_fold(e) {
-                            changed = true;
-                        }
+                        && Self::try_fold(e)
+                    {
+                        changed = true;
+                    }
                 }
                 crate::zigir::types::IrDecl::Class(c) => {
                     if let Some(ctor) = &mut c.constructor
-                        && Self::fold_block(&mut ctor.body) {
-                            changed = true;
-                        }
+                        && Self::fold_block(&mut ctor.body)
+                    {
+                        changed = true;
+                    }
                     for m in &mut c.methods {
                         if Self::fold_block(&mut m.body) {
                             changed = true;
@@ -493,7 +514,13 @@ fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
         (UnaOp::Not, IrExpr::BoolLiteral(b)) => Some(IrExpr::BoolLiteral(!b)),
         (UnaOp::BitNot, IrExpr::IntLiteral(n)) => Some(IrExpr::IntLiteral(!n)),
         // Double negation: !!x → x (when inner is already a bool)
-        (UnaOp::Not, IrExpr::Unary { op: UnaOp::Not, operand: inner }) => {
+        (
+            UnaOp::Not,
+            IrExpr::Unary {
+                op: UnaOp::Not,
+                operand: inner,
+            },
+        ) => {
             if matches!(inner.as_ref(), IrExpr::BoolLiteral(_)) {
                 // We can't take ownership from &, so clone
                 Some((**inner).clone())
@@ -544,26 +571,27 @@ fn typeof_literal(expr: &IrExpr) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zigir::ident::IrIdent;
-    use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl};
     use crate::types::ZigType;
+    use crate::zigir::ident::IrIdent;
+    use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrStmt};
 
     #[test]
     fn test_fold_int_add() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Add,
-                    left: Box::new(IrExpr::IntLiteral(1)),
-                    right: Box::new(IrExpr::IntLiteral(2)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Add,
+                left: Box::new(IrExpr::IntLiteral(1)),
+                right: Box::new(IrExpr::IntLiteral(2)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::IntLiteral(n)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::IntLiteral(n)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(*n, 3);
             } else {
                 panic!("expected IntLiteral(3)");
@@ -573,20 +601,21 @@ mod tests {
 
     #[test]
     fn test_fold_float_mul() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Mul,
-                    left: Box::new(IrExpr::FloatLiteral(1.5)),
-                    right: Box::new(IrExpr::FloatLiteral(2.0)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Mul,
+                left: Box::new(IrExpr::FloatLiteral(1.5)),
+                right: Box::new(IrExpr::FloatLiteral(2.0)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::FloatLiteral(n)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::FloatLiteral(n)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(*n, 3.0);
             } else {
                 panic!("expected FloatLiteral(3.0)");
@@ -596,20 +625,21 @@ mod tests {
 
     #[test]
     fn test_fold_string_concat() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Add,
-                    left: Box::new(IrExpr::StringLiteral("Hello, ".to_string())),
-                    right: Box::new(IrExpr::StringLiteral("world!".to_string())),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Add,
+                left: Box::new(IrExpr::StringLiteral("Hello, ".to_string())),
+                right: Box::new(IrExpr::StringLiteral("world!".to_string())),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::StringLiteral(s)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::StringLiteral(s)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(s, "Hello, world!");
             } else {
                 panic!("expected StringLiteral");
@@ -619,19 +649,20 @@ mod tests {
 
     #[test]
     fn test_fold_unary_negate() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Unary {
-                    op: UnaOp::Neg,
-                    operand: Box::new(IrExpr::IntLiteral(42)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Unary {
+                op: UnaOp::Neg,
+                operand: Box::new(IrExpr::IntLiteral(42)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::IntLiteral(n)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::IntLiteral(n)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(*n, -42);
             } else {
                 panic!("expected IntLiteral(-42)");
@@ -641,19 +672,20 @@ mod tests {
 
     #[test]
     fn test_fold_not_bool() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Unary {
-                    op: UnaOp::Not,
-                    operand: Box::new(IrExpr::BoolLiteral(true)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Unary {
+                op: UnaOp::Not,
+                operand: Box::new(IrExpr::BoolLiteral(true)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::BoolLiteral(b)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::BoolLiteral(b)),
+            } = &f.body.stmts[0]
+            {
                 assert!(!b);
             } else {
                 panic!("expected BoolLiteral(false)");
@@ -663,20 +695,21 @@ mod tests {
 
     #[test]
     fn test_fold_conditional_true() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Conditional {
-                    cond: Box::new(IrExpr::BoolLiteral(true)),
-                    then: Box::new(IrExpr::IntLiteral(1)),
-                    else_: Box::new(IrExpr::IntLiteral(2)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Conditional {
+                cond: Box::new(IrExpr::BoolLiteral(true)),
+                then: Box::new(IrExpr::IntLiteral(1)),
+                else_: Box::new(IrExpr::IntLiteral(2)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::IntLiteral(n)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::IntLiteral(n)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(*n, 1);
             } else {
                 panic!("expected IntLiteral(1)");
@@ -686,20 +719,21 @@ mod tests {
 
     #[test]
     fn test_fold_and_false() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Logical {
-                    op: LogicalOp::And,
-                    left: Box::new(IrExpr::BoolLiteral(false)),
-                    right: Box::new(IrExpr::Ident(IrIdent::new("x"))),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Logical {
+                op: LogicalOp::And,
+                left: Box::new(IrExpr::BoolLiteral(false)),
+                right: Box::new(IrExpr::Ident(IrIdent::new("x"))),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::BoolLiteral(b)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::BoolLiteral(b)),
+            } = &f.body.stmts[0]
+            {
                 assert!(!b);
             } else {
                 panic!("expected BoolLiteral(false)");
@@ -709,16 +743,17 @@ mod tests {
 
     #[test]
     fn test_fold_typeof_int() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Typeof(Box::new(IrExpr::IntLiteral(42)))),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Typeof(Box::new(IrExpr::IntLiteral(42)))),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::StringLiteral(s)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::StringLiteral(s)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(s, "number");
             } else {
                 panic!("expected StringLiteral(\"number\")");
@@ -728,15 +763,13 @@ mod tests {
 
     #[test]
     fn test_no_fold_dynamic() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Add,
-                    left: Box::new(IrExpr::Ident(IrIdent::new("x"))),
-                    right: Box::new(IrExpr::IntLiteral(1)),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Add,
+                left: Box::new(IrExpr::Ident(IrIdent::new("x"))),
+                right: Box::new(IrExpr::IntLiteral(1)),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(!result.changed); // can't fold: x is dynamic
@@ -745,28 +778,29 @@ mod tests {
     #[test]
     fn test_fold_nested() {
         // (1 + 2) + (3 + 4) → 10
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Add,
+                left: Box::new(IrExpr::Binary {
                     op: BinOp::Add,
-                    left: Box::new(IrExpr::Binary {
-                        op: BinOp::Add,
-                        left: Box::new(IrExpr::IntLiteral(1)),
-                        right: Box::new(IrExpr::IntLiteral(2)),
-                    }),
-                    right: Box::new(IrExpr::Binary {
-                        op: BinOp::Add,
-                        left: Box::new(IrExpr::IntLiteral(3)),
-                        right: Box::new(IrExpr::IntLiteral(4)),
-                    }),
+                    left: Box::new(IrExpr::IntLiteral(1)),
+                    right: Box::new(IrExpr::IntLiteral(2)),
                 }),
-            },
-        ]);
+                right: Box::new(IrExpr::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(IrExpr::IntLiteral(3)),
+                    right: Box::new(IrExpr::IntLiteral(4)),
+                }),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::IntLiteral(n)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::IntLiteral(n)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(*n, 10);
             } else {
                 panic!("expected IntLiteral(10)");
@@ -776,19 +810,20 @@ mod tests {
 
     #[test]
     fn test_fold_allocprint_no_args() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::AllocPrint {
-                    fmt: "hello".to_string(),
-                    args: vec![],
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::AllocPrint {
+                fmt: "hello".to_string(),
+                args: vec![],
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::StringLiteral(s)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::StringLiteral(s)),
+            } = &f.body.stmts[0]
+            {
                 assert_eq!(s, "hello");
             } else {
                 panic!("expected StringLiteral(\"hello\")");
@@ -798,20 +833,21 @@ mod tests {
 
     #[test]
     fn test_fold_null_equality() {
-        let mut module = make_module_with_body(vec![
-            IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Eq,
-                    left: Box::new(IrExpr::Null),
-                    right: Box::new(IrExpr::Null),
-                }),
-            },
-        ]);
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Eq,
+                left: Box::new(IrExpr::Null),
+                right: Box::new(IrExpr::Null),
+            }),
+        }]);
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
         if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return { value: Some(IrExpr::BoolLiteral(b)) } = &f.body.stmts[0] {
+            if let IrStmt::Return {
+                value: Some(IrExpr::BoolLiteral(b)),
+            } = &f.body.stmts[0]
+            {
                 assert!(b);
             } else {
                 panic!("expected BoolLiteral(true)");

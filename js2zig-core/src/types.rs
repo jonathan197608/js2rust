@@ -110,15 +110,13 @@ impl ZigType {
     /// Returns None for dynamic types (JsAny, Anytype) that need runtime dispatch.
     pub fn to_js_typeof(&self) -> Option<&'static str> {
         match self {
-            ZigType::I64 | ZigType::F64 => Some("\"number\""),
-            ZigType::Bool => Some("\"boolean\""),
-            ZigType::Str => Some("\"string\""),
-            ZigType::JsSymbol => Some("\"symbol\""),
-            ZigType::Void => Some("\"undefined\""),
-            ZigType::Struct(_) | ZigType::NamedStruct(_) | ZigType::ArrayList(_) => {
-                Some("\"object\"")
-            }
-            ZigType::BigInt => Some("\"bigint\""),
+            ZigType::I64 | ZigType::F64 => Some("number"),
+            ZigType::Bool => Some("boolean"),
+            ZigType::Str => Some("string"),
+            ZigType::JsSymbol => Some("symbol"),
+            ZigType::Void => Some("undefined"),
+            ZigType::Struct(_) | ZigType::NamedStruct(_) | ZigType::ArrayList(_) => Some("object"),
+            ZigType::BigInt => Some("bigint"),
             // Dynamic types — need runtime typeof helper
             ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn => None,
         }

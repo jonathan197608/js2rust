@@ -141,6 +141,10 @@ impl TypeInferrer {
                     self.walk_stmt_for_analysis(s);
                 }
             }
+            Statement::LabeledStatement(ls) => {
+                // Recurse into labeled statement body (e.g. `outer: for(...) {...}`)
+                self.walk_stmt_for_analysis(&ls.body);
+            }
             _ => {}
         }
     }
@@ -214,6 +218,13 @@ impl TypeInferrer {
                 // inside the arrow function affect the outer scope's variables.
                 for stmt in &arrow.body.statements {
                     self.walk_stmt_for_analysis(stmt);
+                }
+            }
+            Expression::UpdateExpression(ue) => {
+                // i++, i--, ++i, --i → mark the argument as mutated
+                let prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
+                    self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
                 }
             }
             _ => {}
@@ -369,6 +380,9 @@ impl TypeInferrer {
                         Self::collect_idents_from_expr(init, names);
                     }
                 }
+            }
+            Statement::LabeledStatement(ls) => {
+                Self::collect_idents_from_stmt(&ls.body, names);
             }
             _ => {}
         }
@@ -527,6 +541,10 @@ impl TypeInferrer {
                 for s in &bs.body {
                     self.walk_stmt_for_types(s);
                 }
+            }
+            Statement::LabeledStatement(ls) => {
+                // Recurse into labeled statement body (e.g. `outer: for(...) {...}`)
+                self.walk_stmt_for_types(&ls.body);
             }
             Statement::ClassDeclaration(cd) => {
                 // Register class name for type inference of `new ClassName()`

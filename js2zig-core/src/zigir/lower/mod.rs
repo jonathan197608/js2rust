@@ -669,15 +669,14 @@ impl Lowerer {
                         let struct_name = format!("_arrow_fn_{}", idx);
                         let struct_ident = IrIdent::new(&struct_name);
                         // Register as closure struct (with empty captures)
-                        self.pending_arrow_structs.push(
-                            crate::zigir::types::IrClosureStruct {
+                        self.pending_arrow_structs
+                            .push(crate::zigir::types::IrClosureStruct {
                                 name: struct_ident.clone(),
                                 captured: vec![],
                                 fn_params: arrow.params.clone(),
                                 return_type: arrow.return_type.clone(),
                                 body: arrow.body.clone(),
-                            },
-                        );
+                            });
                         Some(crate::zigir::types::IrExpr::Ident(struct_ident))
                     }
                     crate::zigir::types::IrExpr::Closure(ref closure) => {
@@ -736,7 +735,7 @@ impl Lowerer {
         let saved = self.enter_fn(name, is_export, Some(return_type.clone()));
 
         // Lower parameters
-        let params = self.lower_fn_params(fd, name);
+        let mut params = self.lower_fn_params(fd, name);
 
         // Lower function body
         let body = fd
@@ -745,8 +744,22 @@ impl Lowerer {
             .map(|b| self.lower_block(&b.statements))
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
+        // Mark unused parameters: collect all identifier references in the body,
+        // then check which params don't appear. Also include identifiers from
+        // compile-time-resolved expressions (e.g., typeof x → "number") that
+        // were optimized away but still semantically reference the parameter.
+        let mut used_idents = Self::collect_ir_idents_in_block(&body);
+        if let Some(ctx) = self.fn_ctx.as_ref() {
+            used_idents.extend(ctx.compile_time_referenced_idents.iter().cloned());
+        }
+        for param in &mut params {
+            if !used_idents.contains(&param.name.js_name) {
+                param.is_unused = true;
+            }
+        }
+
         // Exit function context
-        self.exit_fn(saved);
+        let _fn_ctx = self.exit_fn(saved);
 
         // Determine C ABI: export functions use `export fn` calling convention
         let is_cabi = is_export;
@@ -789,6 +802,7 @@ impl Lowerer {
                 params.push(IrParam {
                     name: self.make_ident(pname),
                     zig_type: ptype.clone(),
+                    is_unused: false, // set later in lower_fn_decl
                 });
             }
         } else {
@@ -798,6 +812,7 @@ impl Lowerer {
                     params.push(IrParam {
                         name: self.make_ident(pname),
                         zig_type: ZigType::Anytype,
+                        is_unused: false, // set later in lower_fn_decl
                     });
                 }
             }
@@ -813,6 +828,7 @@ impl Lowerer {
             params.push(IrParam {
                 name: self.make_ident(rname),
                 zig_type: ZigType::Anytype, // Will be rendered as []const JsAny by Emitter
+                is_unused: false,           // set later in lower_fn_decl
             });
         }
 
@@ -908,15 +924,17 @@ impl Lowerer {
                 let label = self.current_loop_label();
                 crate::zigir::types::IrStmt::While {
                     cond: self.lower_expr(&ws.test),
-                    body: self.lower_stmt_as_block(&ws.body, label),
+                    body: self.lower_stmt_as_block(&ws.body, None),
+                    label,
                 }
             }
 
             Statement::DoWhileStatement(dws) => {
                 let label = self.current_loop_label();
                 crate::zigir::types::IrStmt::DoWhile {
-                    body: self.lower_stmt_as_block(&dws.body, label),
+                    body: self.lower_stmt_as_block(&dws.body, None),
                     cond: self.lower_expr(&dws.test),
+                    label,
                 }
             }
 
@@ -987,10 +1005,13 @@ impl Lowerer {
             }
 
             // ── Unsupported / skippable ────────────────────
-            _ => crate::zigir::types::IrStmt::Comment(format!(
-                "// unsupported statement type: {}",
-                stmt_type_name(stmt)
-            )),
+            _ => {
+                let span = oxc_span::GetSpan::span(stmt);
+                crate::zigir::types::IrStmt::CompileError {
+                    span: self.span_to_source_span(span),
+                    msg: "Unsupported statement type".to_string(),
+                }
+            }
         }
     }
 
@@ -1052,13 +1073,14 @@ impl Lowerer {
             .update
             .as_ref()
             .map(|expr| Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr))));
-        let body = self.lower_stmt_as_block(&fs.body, label);
+        let body = self.lower_stmt_as_block(&fs.body, None);
 
         crate::zigir::types::IrStmt::For {
             init,
             cond,
             update,
             body,
+            label,
         }
     }
 
@@ -1097,7 +1119,7 @@ impl Lowerer {
         }
 
         let iterable = self.lower_expr(&fos.right);
-        let body = self.lower_stmt_as_block(&fos.body, label);
+        let body = self.lower_stmt_as_block(&fos.body, None);
 
         crate::zigir::types::IrStmt::ForOf {
             var,
@@ -1107,6 +1129,7 @@ impl Lowerer {
             body,
             kind,
             is_async: fos.r#await,
+            label,
         }
     }
 
@@ -1136,14 +1159,23 @@ impl Lowerer {
             );
         }
 
-        let iterable = self.lower_expr(&fis.right);
-        let body = self.lower_stmt_as_block(&fis.body, label);
+        // For StructUnroll, the iterable is not used at runtime (fields are
+        // hardcoded as string literals), so we use Null to avoid false
+        // "parameter used" detection. For HashMapIter, we need the actual
+        // iterable expression at runtime.
+        let iterable = if matches!(kind, IrForInKind::StructUnroll { .. }) {
+            crate::zigir::types::IrExpr::Null
+        } else {
+            self.lower_expr(&fis.right)
+        };
+        let body = self.lower_stmt_as_block(&fis.body, None);
 
         crate::zigir::types::IrStmt::ForIn {
             var,
             iterable,
             body,
             kind,
+            label,
         }
     }
 
@@ -1241,11 +1273,21 @@ impl Lowerer {
                     }
                     // Static struct with known fields → unroll
                     if let ZigType::Struct(fields) = zig_type
-                        && !fields.is_empty() {
-                            return IrForInKind::StructUnroll {
-                                fields: fields.iter().map(|(n, _)| n.clone()).collect(),
-                            };
-                        }
+                        && !fields.is_empty()
+                    {
+                        return IrForInKind::StructUnroll {
+                            fields: fields.iter().map(|(n, _)| n.clone()).collect(),
+                        };
+                    }
+                    // Named struct (e.g., JSDoc @typedef) → resolve to StructUnroll
+                    if let ZigType::NamedStruct(name) = zig_type
+                        && let Some(typedef) = self.jsdoc_data.typedefs.get(name)
+                        && !typedef.fields.is_empty()
+                    {
+                        let fields: Vec<String> =
+                            typedef.fields.iter().map(|f| f.name.clone()).collect();
+                        return IrForInKind::StructUnroll { fields };
+                    }
                 }
                 IrForInKind::Unsupported
             }
@@ -1304,7 +1346,11 @@ impl Lowerer {
             // Check if catch variable is referenced in the catch body
             let catch_var_referenced = if let Some(ref cv) = var {
                 let js_name = &cv.js_name;
-                handler.body.body.iter().any(|s| Self::stmt_references_name(s, js_name))
+                handler
+                    .body
+                    .body
+                    .iter()
+                    .any(|s| Self::stmt_references_name(s, js_name))
             } else {
                 false
             };
@@ -1343,31 +1389,42 @@ impl Lowerer {
                     .as_ref()
                     .is_some_and(|init| Self::expr_references_name(init, name))
             }),
-            Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_references_name(s, name)),
+            Statement::BlockStatement(bs) => {
+                bs.body.iter().any(|s| Self::stmt_references_name(s, name))
+            }
             Statement::ThrowStatement(ts) => Self::expr_references_name(&ts.argument, name),
             Statement::IfStatement(ifs) => {
                 Self::stmt_references_name(&ifs.consequent, name)
-                    || ifs.alternate
+                    || ifs
+                        .alternate
                         .as_ref()
                         .is_some_and(|a| Self::stmt_references_name(a, name))
             }
             Statement::WhileStatement(ws) => Self::stmt_references_name(&ws.body, name),
             Statement::ForStatement(fs) => {
                 Self::stmt_references_name(&fs.body, name)
-                    || fs.test
+                    || fs
+                        .test
                         .as_ref()
                         .is_some_and(|e| Self::expr_references_name(e, name))
             }
             Statement::ForOfStatement(fos) => Self::stmt_references_name(&fos.body, name),
             Statement::ForInStatement(fis) => Self::stmt_references_name(&fis.body, name),
-            Statement::SwitchStatement(ss) => ss
-                .cases
-                .iter()
-                .any(|c| c.consequent.iter().any(|s| Self::stmt_references_name(s, name))),
+            Statement::SwitchStatement(ss) => ss.cases.iter().any(|c| {
+                c.consequent
+                    .iter()
+                    .any(|s| Self::stmt_references_name(s, name))
+            }),
             Statement::TryStatement(ts) => {
-                ts.block.body.iter().any(|s| Self::stmt_references_name(s, name))
+                ts.block
+                    .body
+                    .iter()
+                    .any(|s| Self::stmt_references_name(s, name))
                     || ts.handler.as_ref().is_some_and(|h| {
-                        h.body.body.iter().any(|s| Self::stmt_references_name(s, name))
+                        h.body
+                            .body
+                            .iter()
+                            .any(|s| Self::stmt_references_name(s, name))
                     })
             }
             _ => false,
@@ -1391,9 +1448,7 @@ impl Lowerer {
                     || Self::expr_references_name(&ce.consequent, name)
                     || Self::expr_references_name(&ce.alternate, name)
             }
-            Expression::AssignmentExpression(ae) => {
-                Self::expr_references_name(&ae.right, name)
-            }
+            Expression::AssignmentExpression(ae) => Self::expr_references_name(&ae.right, name),
             _ => false,
         }
     }
@@ -1404,12 +1459,11 @@ impl Lowerer {
     fn stmt_has_throw_any(stmt: &Statement) -> bool {
         match stmt {
             Statement::ThrowStatement(_) => true,
-            Statement::BlockStatement(bs) => {
-                bs.body.iter().any(|s| Self::stmt_has_throw_any(s))
-            }
+            Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_has_throw_any(s)),
             Statement::IfStatement(is) => {
                 Self::stmt_has_throw_any(&is.consequent)
-                    || is.alternate
+                    || is
+                        .alternate
                         .as_ref()
                         .is_some_and(|a| Self::stmt_has_throw_any(a))
             }
@@ -1590,25 +1644,25 @@ impl Lowerer {
                         }
                     }
                 }
-                ClassElement::MethodDefinition(md)
-                    if Self::is_constructor_method(md) => {
-                        has_constructor = true;
-                        constructor_func = Some(&md.value);
-                    }
+                ClassElement::MethodDefinition(md) if Self::is_constructor_method(md) => {
+                    has_constructor = true;
+                    constructor_func = Some(&md.value);
+                }
                 _ => {}
             }
         }
 
         // ── Second pass: scan constructor body for implicit `this.x = ...` fields ──
         if let Some(func) = constructor_func
-            && let Some(body) = &func.body {
-                self.collect_implicit_class_fields(
-                    &body.statements,
-                    &class_name,
-                    &mut field_names,
-                    &mut fields,
-                );
-            }
+            && let Some(body) = &func.body
+        {
+            self.collect_implicit_class_fields(
+                &body.statements,
+                &class_name,
+                &mut field_names,
+                &mut fields,
+            );
+        }
 
         // ── Save/restore current_class ──
         let saved_class = self.current_class.take();
@@ -1616,7 +1670,8 @@ impl Lowerer {
 
         // ── Lower constructor ──
         let constructor = if has_constructor {
-            constructor_func.map(|func| self.lower_class_method(&class_name, &field_names, "init", func, false))
+            constructor_func
+                .map(|func| self.lower_class_method(&class_name, &field_names, "init", func, false))
         } else {
             None
         };
@@ -1625,19 +1680,20 @@ impl Lowerer {
         let mut methods: Vec<IrClassMethod> = Vec::new();
         for elem in &cd.body.body {
             if let ClassElement::MethodDefinition(md) = elem
-                && !Self::is_constructor_method(md) {
-                    let method_name =
-                        Self::property_key_name(&md.key).unwrap_or_else(|| "anonymous".to_string());
-                    let is_static = md.r#static;
-                    let method = self.lower_class_method(
-                        &class_name,
-                        &field_names,
-                        &method_name,
-                        &md.value,
-                        is_static,
-                    );
-                    methods.push(method);
-                }
+                && !Self::is_constructor_method(md)
+            {
+                let method_name =
+                    Self::property_key_name(&md.key).unwrap_or_else(|| "anonymous".to_string());
+                let is_static = md.r#static;
+                let method = self.lower_class_method(
+                    &class_name,
+                    &field_names,
+                    &method_name,
+                    &md.value,
+                    is_static,
+                );
+                methods.push(method);
+            }
         }
 
         // ── Restore ──
@@ -1775,6 +1831,7 @@ impl Lowerer {
                     params.push(IrParam {
                         name: self.make_ident(pname),
                         zig_type: ptype.clone(),
+                        is_unused: false,
                     });
                 }
                 params
@@ -2210,7 +2267,37 @@ impl Lowerer {
                 op: UnaOp::BitNot,
                 operand: Box::new(self.lower_expr(&ue.argument)),
             },
-            UnaryOperator::Typeof => IrExpr::Typeof(Box::new(self.lower_expr(&ue.argument))),
+            UnaryOperator::Typeof => {
+                // Use inferred Zig type to emit the JS typeof string at compile time.
+                // For dynamic types (JsAny/Anytype), call the runtime jsTypeof() helper.
+                if let Some(ty) = self.infer_expr_type(&ue.argument) {
+                    if let Some(js_typeof) = ty.to_js_typeof() {
+                        // Compile-time resolution: the argument is not included in the IR.
+                        // Track its identifiers so unused-param detection doesn't
+                        // falsely mark them as unused.
+                        let mut idents = HashSet::new();
+                        Self::collect_ast_expr_idents(&ue.argument, &mut idents);
+                        if let Some(ctx) = self.fn_ctx.as_mut() {
+                            ctx.compile_time_referenced_idents.extend(idents);
+                        }
+                        IrExpr::StringLiteral(js_typeof.to_string())
+                    } else {
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: crate::zigir::builtins::BuiltinModule::JsRuntime,
+                            method: "jsTypeof".to_string(),
+                            args: vec![self.lower_expr(&ue.argument)],
+                            return_type: crate::types::ZigType::Str,
+                        })
+                    }
+                } else {
+                    IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                        module: crate::zigir::builtins::BuiltinModule::JsRuntime,
+                        method: "jsTypeof".to_string(),
+                        args: vec![self.lower_expr(&ue.argument)],
+                        return_type: crate::types::ZigType::Str,
+                    })
+                }
+            }
             UnaryOperator::Void => IrExpr::Void(Box::new(self.lower_expr(&ue.argument))),
             UnaryOperator::Delete => IrExpr::Unary {
                 op: UnaOp::Delete,
@@ -2633,22 +2720,24 @@ impl Lowerer {
             // ── TypedArray properties ──
             if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
                 if matches!(zig_type, ZigType::NamedStruct(name) if name == "TypedArray")
-                    && matches!(field_name, "buffer" | "byteLength" | "byteOffset") {
-                        return IrExpr::FieldAccess {
-                            object: Box::new(self.lower_expr(&mem.object)),
-                            field: field_name.to_string(),
-                            field_kind: FieldKind::TypedArrayProp(field_name.to_string()),
-                        };
-                    }
+                    && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
+                {
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::TypedArrayProp(field_name.to_string()),
+                    };
+                }
                 // ── Map/Set .size ──
                 if matches!(zig_type, ZigType::NamedStruct(name) if name == "Map" || name == "Set")
-                    && field_name == "size" {
-                        return IrExpr::FieldAccess {
-                            object: Box::new(self.lower_expr(&mem.object)),
-                            field: field_name.to_string(),
-                            field_kind: FieldKind::MapSetSize,
-                        };
-                    }
+                    && field_name == "size"
+                {
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::MapSetSize,
+                    };
+                }
                 // ── ArrayList .length → .items.len ──
                 if matches!(zig_type, ZigType::ArrayList(_)) && field_name == "length" {
                     return IrExpr::FieldAccess {
@@ -2853,10 +2942,7 @@ impl Lowerer {
 
     /// Recursively collect all operands in a string concatenation chain.
     /// Only recurses into BinaryExpression(+); other nodes become leaves.
-    fn collect_concat_from_be<'a>(
-        be: &'a BinaryExpression<'a>,
-        out: &mut Vec<&'a Expression<'a>>,
-    ) {
+    fn collect_concat_from_be<'a>(be: &'a BinaryExpression<'a>, out: &mut Vec<&'a Expression<'a>>) {
         // Left side
         if let Expression::BinaryExpression(ref left_be) = be.left {
             if left_be.operator == BinaryOperator::Addition {
@@ -3141,12 +3227,342 @@ impl Lowerer {
         }
     }
 
+    /// Collect all identifier names (js_name) referenced in an IR block.
+    /// Used to determine which function parameters are unused.
+    fn collect_ir_idents_in_block(block: &IrBlock) -> std::collections::HashSet<String> {
+        let mut idents = std::collections::HashSet::new();
+        for stmt in &block.stmts {
+            Self::collect_ir_idents_in_stmt(stmt, &mut idents);
+        }
+        idents
+    }
+
+    fn collect_ir_idents_in_stmt(
+        stmt: &crate::zigir::types::IrStmt,
+        idents: &mut std::collections::HashSet<String>,
+    ) {
+        use crate::zigir::types::IrStmt;
+        match stmt {
+            IrStmt::VarDecl(vd) => {
+                if let Some(init) = &vd.init {
+                    Self::collect_ir_idents_in_expr(init, idents);
+                }
+            }
+            IrStmt::Assign { target, value, .. } => {
+                Self::collect_ir_idents_in_assign_target(target, idents);
+                Self::collect_ir_idents_in_expr(value, idents);
+            }
+            IrStmt::If { cond, then, else_ } => {
+                Self::collect_ir_idents_in_expr(cond, idents);
+                for s in &then.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                if let Some(e) = else_ {
+                    for s in &e.stmts {
+                        Self::collect_ir_idents_in_stmt(s, idents);
+                    }
+                }
+            }
+            IrStmt::While { cond, body, .. } | IrStmt::DoWhile { cond, body, .. } => {
+                Self::collect_ir_idents_in_expr(cond, idents);
+                for s in &body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrStmt::For {
+                init,
+                cond,
+                update,
+                body,
+                ..
+            } => {
+                if let Some(s) = init {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                if let Some(e) = cond {
+                    Self::collect_ir_idents_in_expr(e, idents);
+                }
+                if let Some(s) = update {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                for s in &body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrStmt::ForIn { iterable, body, .. } | IrStmt::ForOf { iterable, body, .. } => {
+                Self::collect_ir_idents_in_expr(iterable, idents);
+                for s in &body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrStmt::Switch { expr, cases } => {
+                Self::collect_ir_idents_in_expr(expr, idents);
+                for c in cases {
+                    if let Some(e) = &c.test {
+                        Self::collect_ir_idents_in_expr(e, idents);
+                    }
+                    for s in &c.body {
+                        Self::collect_ir_idents_in_stmt(s, idents);
+                    }
+                }
+            }
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                for s in &try_block.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                for s in &catch_block.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                if let Some(f) = finally {
+                    for s in &f.stmts {
+                        Self::collect_ir_idents_in_stmt(s, idents);
+                    }
+                }
+            }
+            IrStmt::Throw { value } => {
+                Self::collect_ir_idents_in_expr(value, idents);
+            }
+            IrStmt::Return { value } => {
+                if let Some(e) = value {
+                    Self::collect_ir_idents_in_expr(e, idents);
+                }
+            }
+            IrStmt::Break { .. } | IrStmt::Continue { .. } => {}
+            IrStmt::Expr(e) => {
+                Self::collect_ir_idents_in_expr(e, idents);
+            }
+            IrStmt::Block(b) => {
+                for s in &b.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
+        }
+    }
+
+    fn collect_ir_idents_in_assign_target(
+        target: &crate::zigir::types::IrAssignTarget,
+        idents: &mut std::collections::HashSet<String>,
+    ) {
+        use crate::zigir::types::IrAssignTarget;
+        match target {
+            IrAssignTarget::Ident(name) => {
+                idents.insert(name.js_name.clone());
+            }
+            IrAssignTarget::Member { object, .. } => {
+                Self::collect_ir_idents_in_expr(object, idents);
+            }
+            IrAssignTarget::Index { object, index } => {
+                Self::collect_ir_idents_in_expr(object, idents);
+                Self::collect_ir_idents_in_expr(index, idents);
+            }
+            IrAssignTarget::Destructure(bindings) => {
+                for b in bindings {
+                    if let Some(d) = &b.default {
+                        Self::collect_ir_idents_in_expr(d, idents);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Collect identifier names from an AST expression (used for tracking
+    /// references that are optimized away at compile time, e.g. typeof).
+    fn collect_ast_expr_idents(expr: &oxc_ast::ast::Expression, idents: &mut HashSet<String>) {
+        use oxc_ast::ast::Expression;
+        match expr {
+            Expression::Identifier(id) => {
+                idents.insert(id.name.to_string());
+            }
+            Expression::BinaryExpression(be) => {
+                Self::collect_ast_expr_idents(&be.left, idents);
+                Self::collect_ast_expr_idents(&be.right, idents);
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::collect_ast_expr_idents(&ue.argument, idents);
+            }
+            Expression::CallExpression(ce) => {
+                Self::collect_ast_expr_idents(&ce.callee, idents);
+            }
+            Expression::StaticMemberExpression(me) => {
+                Self::collect_ast_expr_idents(&me.object, idents);
+            }
+            Expression::ComputedMemberExpression(me) => {
+                Self::collect_ast_expr_idents(&me.object, idents);
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                Self::collect_ast_expr_idents(&pe.expression, idents);
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_ir_idents_in_expr(
+        expr: &crate::zigir::types::IrExpr,
+        idents: &mut std::collections::HashSet<String>,
+    ) {
+        use crate::zigir::types::IrExpr;
+        match expr {
+            IrExpr::Ident(name) => {
+                idents.insert(name.js_name.clone());
+            }
+            IrExpr::Binary { left, right, .. } | IrExpr::Logical { left, right, .. } => {
+                Self::collect_ir_idents_in_expr(left, idents);
+                Self::collect_ir_idents_in_expr(right, idents);
+            }
+            IrExpr::Unary { operand, .. }
+            | IrExpr::Typeof(operand)
+            | IrExpr::Void(operand)
+            | IrExpr::Paren(operand)
+            | IrExpr::Spread(operand) => {
+                Self::collect_ir_idents_in_expr(operand, idents);
+            }
+            IrExpr::Update { target, .. } => {
+                Self::collect_ir_idents_in_assign_target(target, idents);
+            }
+            IrExpr::Assign { target, value, .. } => {
+                Self::collect_ir_idents_in_assign_target(target, idents);
+                Self::collect_ir_idents_in_expr(value, idents);
+            }
+            IrExpr::Call(call) => {
+                Self::collect_ir_idents_in_expr(&call.callee, idents);
+                for a in &call.args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::BuiltinCall(bc) => {
+                for a in &bc.args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::HostCall(hc) => {
+                for a in &hc.args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::FieldAccess { object, .. }
+            | IrExpr::IndexAccess { object, .. }
+            | IrExpr::ComputedField { object, .. } => {
+                Self::collect_ir_idents_in_expr(object, idents);
+                if let IrExpr::IndexAccess { index, .. } = expr {
+                    Self::collect_ir_idents_in_expr(index, idents);
+                }
+                if let IrExpr::ComputedField { key, .. } = expr {
+                    Self::collect_ir_idents_in_expr(key, idents);
+                }
+            }
+            IrExpr::Conditional { cond, then, else_ } => {
+                Self::collect_ir_idents_in_expr(cond, idents);
+                Self::collect_ir_idents_in_expr(then, idents);
+                Self::collect_ir_idents_in_expr(else_, idents);
+            }
+            IrExpr::Closure(c) => {
+                for cap in &c.captured {
+                    idents.insert(cap.name.js_name.clone());
+                }
+                for s in &c.body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrExpr::ArrowFn(a) => {
+                for s in &a.body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrExpr::FnExpr(f) => {
+                for s in &f.body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+            }
+            IrExpr::ArrayLiteral(al) => {
+                for e in &al.elements {
+                    Self::collect_ir_idents_in_expr(e, idents);
+                }
+            }
+            IrExpr::ObjectLiteral(ol) => {
+                for f in &ol.fields {
+                    Self::collect_ir_idents_in_expr(&f.value, idents);
+                }
+            }
+            IrExpr::New(ne) => {
+                for a in &ne.args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::TemplateLiteral { exprs, .. } => {
+                for e in exprs {
+                    Self::collect_ir_idents_in_expr(e, idents);
+                }
+            }
+            IrExpr::AllocPrint { args, .. } => {
+                for a in args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::BlockExpr { body, result, .. } => {
+                for s in body {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                Self::collect_ir_idents_in_expr(result, idents);
+            }
+            IrExpr::Sequence(exprs) => {
+                for e in exprs {
+                    Self::collect_ir_idents_in_expr(e, idents);
+                }
+            }
+            IrExpr::Await(ae) => {
+                Self::collect_ir_idents_in_expr(&ae.callee, idents);
+                for a in &ae.args {
+                    Self::collect_ir_idents_in_expr(a, idents);
+                }
+            }
+            IrExpr::IntLiteral(_)
+            | IrExpr::FloatLiteral(_)
+            | IrExpr::StringLiteral(_)
+            | IrExpr::BoolLiteral(_)
+            | IrExpr::Null
+            | IrExpr::Undefined
+            | IrExpr::This
+            | IrExpr::CompileError { .. } => {}
+        }
+    }
+
     /// Lower a template literal.
     fn lower_template_literal(&mut self, tl: &TemplateLiteral) -> crate::zigir::types::IrExpr {
         let parts: Vec<String> = tl.quasis.iter().map(|q| q.value.raw.to_string()).collect();
         let exprs: Vec<crate::zigir::types::IrExpr> =
             tl.expressions.iter().map(|e| self.lower_expr(e)).collect();
-        crate::zigir::types::IrExpr::TemplateLiteral { parts, exprs }
+
+        // Determine the Zig format specifier for each interpolation expression.
+        // This must match Codegen's logic:
+        //   Str→{s}, I64/F64→{d}, Bool→{}, other→expr_is_string?{s}:{}
+        let format_specs: Vec<String> = tl
+            .expressions
+            .iter()
+            .map(|expr| match self.infer_expr_type(expr) {
+                Some(ZigType::Str) => "{s}".to_string(),
+                Some(ZigType::I64) | Some(ZigType::F64) => "{d}".to_string(),
+                Some(ZigType::Bool) => "{}".to_string(),
+                _ => {
+                    if self.expr_is_string(expr) {
+                        "{s}".to_string()
+                    } else {
+                        "{}".to_string()
+                    }
+                }
+            })
+            .collect();
+
+        crate::zigir::types::IrExpr::TemplateLiteral {
+            parts,
+            exprs,
+            format_specs,
+        }
     }
 
     /// Lower an await expression.
@@ -3196,9 +3612,21 @@ impl Lowerer {
                 "TypeError" => NewConstructor::Error("TypeError".to_string()),
                 "RangeError" => NewConstructor::Error("RangeError".to_string()),
                 name if self.class_names.contains(name) => NewConstructor::Class(name.to_string()),
-                other => NewConstructor::Unsupported(other.to_string()),
+                _ => {
+                    let span = oxc_span::GetSpan::span(ne);
+                    return crate::zigir::types::IrExpr::CompileError {
+                        span: self.span_to_source_span(span),
+                        msg: "Unsupported NewExpression".to_string(),
+                    };
+                }
             },
-            _ => NewConstructor::Unsupported("expression".to_string()),
+            _ => {
+                let span = oxc_span::GetSpan::span(ne);
+                return crate::zigir::types::IrExpr::CompileError {
+                    span: self.span_to_source_span(span),
+                    msg: "Unsupported NewExpression".to_string(),
+                };
+            }
         };
 
         let args: Vec<crate::zigir::types::IrExpr> = ne
@@ -3594,6 +4022,7 @@ impl Lowerer {
                 params.push(IrParam {
                     name: self.make_ident(pname),
                     zig_type: ptype,
+                    is_unused: false,
                 });
             }
         }
@@ -3793,6 +4222,7 @@ impl Lowerer {
                     .map(|p| IrParam {
                         name: p.name.clone(),
                         zig_type: p.zig_type.clone(),
+                        is_unused: p.is_unused,
                     })
                     .collect();
                 exports.push(IrCabiExport {
@@ -4416,6 +4846,7 @@ fn builtin_call_to_ir(
     }
 }
 
+#[allow(dead_code)]
 fn stmt_type_name(stmt: &Statement) -> &'static str {
     match stmt {
         Statement::BlockStatement(_) => "BlockStatement",

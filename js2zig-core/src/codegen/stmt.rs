@@ -2085,14 +2085,40 @@ impl Codegen {
                 {
                     self.write(&format!("{}: ", lbl));
                 }
-                self.writeln("{");
+                self.write("{\n");
                 self.indent += 1;
                 self.write_indent();
-                self.writeln(&format!("const {} = \"{}\";", var_name, field_name));
+                self.write(&format!("const {} = \"{}\";\n", var_name, field_name));
                 self.emit_stmt_or_block(&fis.body);
                 self.indent -= 1;
                 self.write_indent();
-                self.writeln("}");
+                self.write("}\n");
+            }
+            return;
+        }
+
+        // Case 2b: Named struct (@typedef) → resolve fields and unroll
+        if let Some(ZigType::NamedStruct(name)) = obj_type
+            && let Some(ref jsdoc) = self.jsdoc_data
+            && let Some(typedef) = jsdoc.typedefs.get(name)
+            && !typedef.fields.is_empty()
+        {
+            let fields: Vec<_> = typedef.fields.iter().map(|f| f.name.clone()).collect();
+            for (i, field_name) in fields.iter().enumerate() {
+                self.write_indent();
+                if i == 0
+                    && let Some(lbl) = label
+                {
+                    self.write(&format!("{}: ", lbl));
+                }
+                self.write("{\n");
+                self.indent += 1;
+                self.write_indent();
+                self.write(&format!("const {} = \"{}\";\n", var_name, field_name));
+                self.emit_stmt_or_block(&fis.body);
+                self.indent -= 1;
+                self.write_indent();
+                self.write("}\n");
             }
             return;
         }

@@ -223,9 +223,10 @@ impl Emitter {
                     self.write_indent();
                     self.write("return ");
                     if let Some(stmt) = arrow.body.stmts.first()
-                        && let crate::zigir::types::IrStmt::Expr(e) = stmt {
-                            self.emit_expr(e);
-                        }
+                        && let crate::zigir::types::IrStmt::Expr(e) = stmt
+                    {
+                        self.emit_expr(e);
+                    }
                     self.write(";\n");
                 } else {
                     for stmt in &arrow.body.stmts {
@@ -275,8 +276,12 @@ impl Emitter {
                 self.emit_expr(else_);
             }
 
-            crate::zigir::types::IrExpr::TemplateLiteral { parts, exprs } => {
-                self.emit_template_literal(parts, exprs);
+            crate::zigir::types::IrExpr::TemplateLiteral {
+                parts,
+                exprs,
+                format_specs,
+            } => {
+                self.emit_template_literal(parts, exprs, format_specs);
             }
 
             // ── Async ───────────────────────────────
@@ -355,13 +360,21 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::Typeof(inner) => {
-                self.write("(\"undefined\")"); // simplified
-                let _ = inner;
+                // typeof on identifiers with known types is resolved at lower time
+                // to StringLiteral. This branch handles any remaining typeof
+                // expressions (shouldn't occur with current lowerer, but as fallback).
+                self.write("js_runtime.jsTypeof(");
+                self.emit_expr(inner);
+                self.write(")");
             }
 
             crate::zigir::types::IrExpr::Void(inner) => {
-                self.write("void{}"); // simplified
-                let _ = inner;
+                // void expr: evaluate expr for side effects, return undefined.
+                // Output: blk_N: { _ = expr; break :blk_N JsAny.fromUndefined(); }
+                let label = self.next_label();
+                self.write(&format!("{}: {{ _ = ", label));
+                self.emit_expr(inner);
+                self.write(&format!("; break :{} JsAny.fromUndefined(); }}", label));
             }
 
             crate::zigir::types::IrExpr::Paren(inner) => {
@@ -379,8 +392,13 @@ impl Emitter {
                 }
             }
 
-            crate::zigir::types::IrExpr::CompileError { span: _, msg } => {
-                self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));
+            crate::zigir::types::IrExpr::CompileError { span, msg } => {
+                let loc = format!("{}:{}", span.js_line, span.js_col);
+                self.write(&format!(
+                    "@compileError(\"{} (at {})\")",
+                    escape_zig_string(msg),
+                    loc
+                ));
             }
         }
     }
@@ -588,21 +606,28 @@ impl Emitter {
         }
 
         // Determine element type from first non-spread element
-        let elem_type = arr.elements.iter().find_map(|e| {
-            match e {
-                crate::zigir::types::IrExpr::IntLiteral(_) => Some("i64"),
-                crate::zigir::types::IrExpr::FloatLiteral(_) => Some("f64"),
-                crate::zigir::types::IrExpr::StringLiteral(_) => Some("[]const u8"),
-                crate::zigir::types::IrExpr::BoolLiteral(_) => Some("bool"),
-                crate::zigir::types::IrExpr::Spread(_) => None, // skip spread, find concrete type
-                _ => Some("i64"),
-            }
-        }).unwrap_or("i64");
+        let elem_type = arr
+            .elements
+            .iter()
+            .find_map(|e| {
+                match e {
+                    crate::zigir::types::IrExpr::IntLiteral(_) => Some("i64"),
+                    crate::zigir::types::IrExpr::FloatLiteral(_) => Some("f64"),
+                    crate::zigir::types::IrExpr::StringLiteral(_) => Some("[]const u8"),
+                    crate::zigir::types::IrExpr::BoolLiteral(_) => Some("bool"),
+                    crate::zigir::types::IrExpr::Spread(_) => None, // skip spread, find concrete type
+                    _ => Some("i64"),
+                }
+            })
+            .unwrap_or("i64");
 
         // Emit as labeled block with ArrayList builder, matching Codegen pattern:
         // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
         let blk = self.next_label();
-        self.write(&format!("({}: {{ var __arr: std.ArrayList({}) = .empty; ", blk, elem_type));
+        self.write(&format!(
+            "({}: {{ var __arr: std.ArrayList({}) = .empty; ",
+            blk, elem_type
+        ));
         for (i, elem) in arr.elements.iter().enumerate() {
             if arr.spread_indices.contains(&i) {
                 // Spread element: use appendSlice
@@ -643,28 +668,41 @@ impl Emitter {
         self.write(" }");
     }
 
-    fn emit_template_literal(&mut self, parts: &[String], exprs: &[crate::zigir::types::IrExpr]) {
-        // Zig string concatenation or std.fmt.format
+    fn emit_template_literal(
+        &mut self,
+        parts: &[String],
+        exprs: &[crate::zigir::types::IrExpr],
+        format_specs: &[String],
+    ) {
+        // Zig template literal → std.fmt.allocPrint
         if exprs.is_empty() {
             // No expressions: just a string literal
             self.write(&format!("\"{}\"", escape_zig_string(&parts[0])));
         } else {
-            // Has expressions: use std.fmt.format
-            self.write("std.fmt.format(\"");
-            for part in parts {
-                self.write(&escape_zig_string(part));
-            }
-            self.write(
-                "\", .{
-",
-            );
-            for (i, expr) in exprs.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
+            // Build the format string: parts[0] + {spec0} + parts[1] + {spec1} + ...
+            let mut fmt = String::new();
+            for (i, part) in parts.iter().enumerate() {
+                if i > 0 && i - 1 < format_specs.len() {
+                    fmt.push_str(&format_specs[i - 1]);
                 }
-                self.emit_expr(expr);
+                fmt.push_str(&escape_zig_string(part));
             }
-            self.write("})");
+            // Emit args as a separate pass to get their string representations
+            let arg_strs: Vec<String> = exprs
+                .iter()
+                .map(|arg| {
+                    let saved = std::mem::take(self.output_mut());
+                    self.emit_expr(arg);
+                    let rendered = std::mem::take(self.output_mut());
+                    *self.output_mut() = saved;
+                    rendered
+                })
+                .collect();
+            let args_str = format!(".{{{}}}", arg_strs.join(", "));
+            self.write(&format!(
+                "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
+                fmt, args_str
+            ));
         }
     }
 
@@ -678,7 +716,7 @@ impl Emitter {
             }
             NewConstructor::Date(kind) => match kind {
                 DateConstructorKind::Now => {
-                    self.write("js_date.JsDate.now()");
+                    self.write("js_date.JsDate.init()");
                 }
                 DateConstructorKind::FromMillis => {
                     self.write("js_date.JsDate.fromMillis(");

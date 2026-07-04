@@ -138,6 +138,10 @@ pub struct IrFnDecl {
 pub struct IrParam {
     pub name: IrIdent,
     pub zig_type: ZigType,
+    /// Whether this parameter is unused in the function body.
+    /// If true, the Emitter will prefix the param name with `_` and add
+    /// a `_ = _param;` suppression statement at the start of the body.
+    pub is_unused: bool,
 }
 
 /// A sequence of statements with an optional label.
@@ -233,16 +237,19 @@ pub enum IrStmt {
     While {
         cond: IrExpr,
         body: IrBlock,
+        label: Option<String>,
     },
     DoWhile {
         body: IrBlock,
         cond: IrExpr,
+        label: Option<String>,
     },
     For {
         init: Option<Box<IrStmt>>,
         cond: Option<IrExpr>,
         update: Option<Box<IrStmt>>,
         body: IrBlock,
+        label: Option<String>,
     },
     /// for-in: iterating over object keys.
     /// - `HashMapIter`: `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
@@ -252,6 +259,7 @@ pub enum IrStmt {
         iterable: IrExpr,
         body: IrBlock,
         kind: IrForInKind,
+        label: Option<String>,
     },
     /// for-of: iterating over array, Map, Set values.
     /// - `Array`: `for (iterable) |var| { ... }` (or `for (iterable.items) |var| { ... }` for ArrayList)
@@ -266,6 +274,7 @@ pub enum IrStmt {
         body: IrBlock,
         kind: IrForOfKind,
         is_async: bool,
+        label: Option<String>,
     },
     Switch {
         expr: IrExpr,
@@ -432,6 +441,9 @@ pub enum IrExpr {
     TemplateLiteral {
         parts: Vec<String>,
         exprs: Vec<IrExpr>,
+        /// Zig format specifier for each interpolated expression.
+        /// E.g. ["{s}", "{d}"] means first expr is a string, second is numeric.
+        format_specs: Vec<String>,
     },
 
     // ── Async ───────────────────────────────────────
@@ -615,10 +627,12 @@ mod tests {
                 IrParam {
                     name: IrIdent::new("a"),
                     zig_type: ZigType::I64,
+                    is_unused: false,
                 },
                 IrParam {
                     name: IrIdent::new("b"),
                     zig_type: ZigType::I64,
+                    is_unused: false,
                 },
             ],
             return_type: ZigType::I64,
@@ -695,6 +709,7 @@ mod tests {
             fn_params: vec![IrParam {
                 name: IrIdent::new("b"),
                 zig_type: ZigType::I64,
+                is_unused: false,
             }],
             return_type: ZigType::I64,
             body: IrBlock::new(vec![]),
@@ -748,6 +763,7 @@ mod tests {
             params: vec![IrParam {
                 name: IrIdent::new("x"),
                 zig_type: ZigType::I64,
+                is_unused: false,
             }],
             return_type: ZigType::I64,
             body: IrBlock::new(vec![]),
@@ -769,6 +785,7 @@ mod tests {
     #[test]
     fn test_ir_for_loop() {
         let for_stmt = IrStmt::For {
+            label: None,
             init: Some(Box::new(IrStmt::VarDecl(IrVarDecl {
                 name: IrIdent::new("i"),
                 is_const: true,
@@ -821,6 +838,7 @@ mod tests {
         let tl = IrExpr::TemplateLiteral {
             parts: vec!["Hello, ".to_string(), "!".to_string()],
             exprs: vec![IrExpr::Ident(IrIdent::new("name"))],
+            format_specs: vec!["{s}".to_string()],
         };
         assert!(matches!(tl, IrExpr::TemplateLiteral { .. }));
     }

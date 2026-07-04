@@ -4,13 +4,13 @@
 // Each pass implements the `IrPass` trait and can be composed into a
 // `PassPipeline` that runs them in sequence on an `IrModule`.
 
-mod validate;
-mod dead_code;
 mod constant_fold;
+mod dead_code;
+mod validate;
 
-pub use validate::ValidatePass;
-pub use dead_code::DeadCodeElimPass;
 pub use constant_fold::ConstantFoldPass;
+pub use dead_code::DeadCodeElimPass;
+pub use validate::ValidatePass;
 
 use crate::zigir::source_span::IrDiagnostic;
 use crate::zigir::types::IrModule;
@@ -49,9 +49,9 @@ impl PassResult {
     /// is an error (errors typically indicate the IR was invalid and may
     /// have been repaired), false for pure warnings.
     pub fn with_diagnostics(diagnostics: Vec<IrDiagnostic>) -> Self {
-        let changed = diagnostics.iter().any(|d| {
-            matches!(d.level, crate::zigir::source_span::DiagnosticLevel::Error)
-        });
+        let changed = diagnostics
+            .iter()
+            .any(|d| matches!(d.level, crate::zigir::source_span::DiagnosticLevel::Error));
         Self {
             changed,
             diagnostics,
@@ -186,9 +186,9 @@ impl Default for PassPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
     use crate::zigir::types::{IrDecl, IrVarDecl};
-    use crate::types::ZigType;
 
     /// A no-op pass for testing the pipeline infrastructure.
     struct NoOpPass;

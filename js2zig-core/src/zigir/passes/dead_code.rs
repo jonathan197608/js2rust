@@ -136,7 +136,10 @@ impl Default for DeadCodeElimPass {
 fn is_terminator(stmt: &IrStmt) -> bool {
     matches!(
         stmt,
-        IrStmt::Return { .. } | IrStmt::Break { .. } | IrStmt::Continue { .. } | IrStmt::Throw { .. }
+        IrStmt::Return { .. }
+            | IrStmt::Break { .. }
+            | IrStmt::Continue { .. }
+            | IrStmt::Throw { .. }
     )
 }
 
@@ -187,10 +190,9 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             body.iter().any(stmt_has_side_effects) || expr_has_side_effects(result)
         }
         IrExpr::AllocPrint { args, .. } => args.iter().any(expr_has_side_effects),
-        IrExpr::Spread(e)
-        | IrExpr::Typeof(e)
-        | IrExpr::Void(e)
-        | IrExpr::Paren(e) => expr_has_side_effects(e),
+        IrExpr::Spread(e) | IrExpr::Typeof(e) | IrExpr::Void(e) | IrExpr::Paren(e) => {
+            expr_has_side_effects(e)
+        }
         IrExpr::Sequence(exprs) => exprs.iter().any(expr_has_side_effects),
         IrExpr::CompileError { .. } => true,
     }
@@ -205,15 +207,23 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         IrStmt::If { cond, then, else_ } => {
             expr_has_side_effects(cond)
                 || then.stmts.iter().any(stmt_has_side_effects)
-                || else_.as_ref().is_some_and(|e| e.stmts.iter().any(stmt_has_side_effects))
+                || else_
+                    .as_ref()
+                    .is_some_and(|e| e.stmts.iter().any(stmt_has_side_effects))
         }
-        IrStmt::While { cond, body } => {
+        IrStmt::While { cond, body, .. } => {
             expr_has_side_effects(cond) || body.stmts.iter().any(stmt_has_side_effects)
         }
-        IrStmt::DoWhile { body, cond } => {
+        IrStmt::DoWhile { body, cond, .. } => {
             body.stmts.iter().any(stmt_has_side_effects) || expr_has_side_effects(cond)
         }
-        IrStmt::For { init, cond, update, body } => {
+        IrStmt::For {
+            init,
+            cond,
+            update,
+            body,
+            ..
+        } => {
             init.as_ref().is_some_and(|s| stmt_has_side_effects(s))
                 || cond.as_ref().is_some_and(expr_has_side_effects)
                 || update.as_ref().is_some_and(|s| stmt_has_side_effects(s))
@@ -221,12 +231,21 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         }
         IrStmt::Switch { expr, cases } => {
             expr_has_side_effects(expr)
-                || cases.iter().any(|c| c.body.iter().any(stmt_has_side_effects))
+                || cases
+                    .iter()
+                    .any(|c| c.body.iter().any(stmt_has_side_effects))
         }
-        IrStmt::Try { try_block, catch_block, finally, .. } => {
+        IrStmt::Try {
+            try_block,
+            catch_block,
+            finally,
+            ..
+        } => {
             try_block.stmts.iter().any(stmt_has_side_effects)
                 || catch_block.stmts.iter().any(stmt_has_side_effects)
-                || finally.as_ref().is_some_and(|f| f.stmts.iter().any(stmt_has_side_effects))
+                || finally
+                    .as_ref()
+                    .is_some_and(|f| f.stmts.iter().any(stmt_has_side_effects))
         }
         IrStmt::Break { .. } | IrStmt::Continue { .. } => true,
         IrStmt::Block(b) => b.stmts.iter().any(stmt_has_side_effects),
@@ -253,9 +272,10 @@ fn eliminate_unreachable_in_decl(decl: &mut IrDecl) -> bool {
         IrDecl::Class(c) => {
             let mut changed = false;
             if let Some(ctor) = &mut c.constructor
-                && DeadCodeElimPass::eliminate_unreachable_in_block(&mut ctor.body) {
-                    changed = true;
-                }
+                && DeadCodeElimPass::eliminate_unreachable_in_block(&mut ctor.body)
+            {
+                changed = true;
+            }
             for m in &mut c.methods {
                 if DeadCodeElimPass::eliminate_unreachable_in_block(&mut m.body) {
                     changed = true;
@@ -282,23 +302,28 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
                 changed = true;
             }
             if let Some(e) = else_
-                && DeadCodeElimPass::eliminate_unreachable_in_block(e) {
-                    changed = true;
-                }
+                && DeadCodeElimPass::eliminate_unreachable_in_block(e)
+            {
+                changed = true;
+            }
             changed
         }
         IrStmt::While { body, .. } => DeadCodeElimPass::eliminate_unreachable_in_block(body),
         IrStmt::DoWhile { body, .. } => DeadCodeElimPass::eliminate_unreachable_in_block(body),
-        IrStmt::For { init, update, body, .. } => {
+        IrStmt::For {
+            init, update, body, ..
+        } => {
             let mut changed = false;
             if let Some(i) = init
-                && eliminate_unreachable_in_stmt(i) {
-                    changed = true;
-                }
+                && eliminate_unreachable_in_stmt(i)
+            {
+                changed = true;
+            }
             if let Some(u) = update
-                && eliminate_unreachable_in_stmt(u) {
-                    changed = true;
-                }
+                && eliminate_unreachable_in_stmt(u)
+            {
+                changed = true;
+            }
             if DeadCodeElimPass::eliminate_unreachable_in_block(body) {
                 changed = true;
             }
@@ -326,7 +351,12 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
             }
             changed
         }
-        IrStmt::Try { try_block, catch_block, finally, .. } => {
+        IrStmt::Try {
+            try_block,
+            catch_block,
+            finally,
+            ..
+        } => {
             let mut changed = false;
             if DeadCodeElimPass::eliminate_unreachable_in_block(try_block) {
                 changed = true;
@@ -335,9 +365,10 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
                 changed = true;
             }
             if let Some(f) = finally
-                && DeadCodeElimPass::eliminate_unreachable_in_block(f) {
-                    changed = true;
-                }
+                && DeadCodeElimPass::eliminate_unreachable_in_block(f)
+            {
+                changed = true;
+            }
             changed
         }
         IrStmt::Block(b) => DeadCodeElimPass::eliminate_unreachable_in_block(b),
@@ -351,7 +382,10 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
             }
         }
         IrStmt::Expr(e) => eliminate_unreachable_in_expr(e),
-        IrStmt::Break { .. } | IrStmt::Continue { .. } | IrStmt::CompileError { .. } | IrStmt::Comment(_) => false,
+        IrStmt::Break { .. }
+        | IrStmt::Continue { .. }
+        | IrStmt::CompileError { .. }
+        | IrStmt::Comment(_) => false,
     }
 }
 
@@ -554,15 +588,21 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
                 collect_block_refs(e, refs);
             }
         }
-        IrStmt::While { cond, body } => {
+        IrStmt::While { cond, body, .. } => {
             collect_expr_refs(cond, refs);
             collect_block_refs(body, refs);
         }
-        IrStmt::DoWhile { body, cond } => {
+        IrStmt::DoWhile { body, cond, .. } => {
             collect_block_refs(body, refs);
             collect_expr_refs(cond, refs);
         }
-        IrStmt::For { init, cond, update, body } => {
+        IrStmt::For {
+            init,
+            cond,
+            update,
+            body,
+            ..
+        } => {
             if let Some(i) = init {
                 collect_stmt_refs(i, refs);
             }
@@ -590,7 +630,12 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
                 }
             }
         }
-        IrStmt::Try { try_block, catch_block, finally, .. } => {
+        IrStmt::Try {
+            try_block,
+            catch_block,
+            finally,
+            ..
+        } => {
             collect_block_refs(try_block, refs);
             collect_block_refs(catch_block, refs);
             if let Some(f) = finally {
@@ -605,7 +650,10 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
         }
         IrStmt::Expr(e) => collect_expr_refs(e, refs),
         IrStmt::Block(b) => collect_block_refs(b, refs),
-        IrStmt::Break { .. } | IrStmt::Continue { .. } | IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
+        IrStmt::Break { .. }
+        | IrStmt::Continue { .. }
+        | IrStmt::CompileError { .. }
+        | IrStmt::Comment(_) => {}
     }
 }
 
@@ -720,7 +768,10 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
     }
 }
 
-fn collect_target_refs(target: &crate::zigir::types::IrAssignTarget, refs: &mut std::collections::HashSet<String>) {
+fn collect_target_refs(
+    target: &crate::zigir::types::IrAssignTarget,
+    refs: &mut std::collections::HashSet<String>,
+) {
     match target {
         crate::zigir::types::IrAssignTarget::Ident(id) => {
             refs.insert(id.zig_name.clone());
@@ -749,10 +800,10 @@ fn collect_target_refs(target: &crate::zigir::types::IrAssignTarget, refs: &mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
     use crate::zigir::ops::BinOp;
     use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl};
-    use crate::types::ZigType;
 
     #[test]
     fn test_remove_unreachable_after_return() {
@@ -827,11 +878,9 @@ mod tests {
             name: IrIdent::new("main"),
             params: vec![],
             return_type: ZigType::I64,
-            body: IrBlock::new(vec![
-                IrStmt::Return {
-                    value: Some(IrExpr::Ident(IrIdent::new("x"))),
-                },
-            ]),
+            body: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::Ident(IrIdent::new("x"))),
+            }]),
             is_export: true,
             is_async: false,
             can_throw: false,
@@ -871,19 +920,25 @@ mod tests {
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("add"),
             params: vec![
-                IrParam { name: IrIdent::new("a"), zig_type: ZigType::I64 },
-                IrParam { name: IrIdent::new("b"), zig_type: ZigType::I64 },
+                IrParam {
+                    name: IrIdent::new("a"),
+                    zig_type: ZigType::I64,
+                    is_unused: false,
+                },
+                IrParam {
+                    name: IrIdent::new("b"),
+                    zig_type: ZigType::I64,
+                    is_unused: false,
+                },
             ],
             return_type: ZigType::I64,
-            body: IrBlock::new(vec![
-                IrStmt::Return {
-                    value: Some(IrExpr::Binary {
-                        op: BinOp::Add,
-                        left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
-                        right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
-                    }),
-                },
-            ]),
+            body: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
+                    right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                }),
+            }]),
             is_export: true,
             is_async: false,
             can_throw: false,

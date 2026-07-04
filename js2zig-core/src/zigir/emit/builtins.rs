@@ -30,6 +30,7 @@ impl Emitter {
             BuiltinModule::JsUri => self.emit_uri_builtin(&bc.method, &bc.args),
             BuiltinModule::JsBigInt => self.emit_bigint_builtin(&bc.method, &bc.args),
             BuiltinModule::JsCollections => self.emit_collections_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsRuntime => self.emit_runtime_builtin(&bc.method, &bc.args),
         }
     }
 }
@@ -81,17 +82,25 @@ impl Emitter {
     fn emit_json_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         match method {
             "parse" => {
-                self.write("std.json.parse(");
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
+                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.allocator(), text, reviver) catch @panic("JSON.parse error")
+                self.write("try js_json.parse(js_allocator.allocator(), ");
+                if let Some(first_arg) = args.first() {
+                    self.emit_expr(first_arg);
+                } else {
+                    self.write("\"\"");
                 }
-                self.write(")");
+                // Pass reviver (default null)
+                if args.len() >= 2 {
+                    self.write(", ");
+                    self.emit_expr(&args[1]);
+                } else {
+                    self.write(", null");
+                }
+                self.write(") catch @panic(\"JSON.parse error\")");
             }
             "stringify" => {
-                self.write("std.json.stringify(");
+                // JSON.stringify(value, replacer?, space?) → js_json.stringify(...)
+                self.write("js_json.stringify(");
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");
@@ -247,16 +256,72 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
-            // min/max
+            // min/max — use Codegen's blk expansion pattern
             "min" => {
-                self.write("std.math.min(");
-                self.emit_inline_args(args);
-                self.write(")");
+                let blk = self.next_label();
+                match args.len() {
+                    0 => {
+                        self.write("@as(i64, 9223372036854775807)");
+                    }
+                    1 => {
+                        self.write("@as(i64, ");
+                        self.emit_expr(&args[0]);
+                        self.write(")");
+                    }
+                    _ => {
+                        // (blk_N: { var __min = @as(i64, a); if (@as(i64, b) < __min) __min = @as(i64, b);  break :blk_N __min; })
+                        self.write(&format!("({}: {{ var __min = @as(i64, ", blk));
+                        self.emit_expr(&args[0]);
+                        self.write("); ");
+                        for arg in &args[1..] {
+                            let arg_str = {
+                                let saved = std::mem::take(self.output_mut());
+                                self.emit_expr(arg);
+                                let rendered = std::mem::take(self.output_mut());
+                                *self.output_mut() = saved;
+                                rendered
+                            };
+                            self.write(&format!(
+                                "if (@as(i64, {}) < __min) __min = @as(i64, {}); ",
+                                arg_str, arg_str
+                            ));
+                        }
+                        self.write(&format!(" break :{} __min; }})", blk));
+                    }
+                }
             }
             "max" => {
-                self.write("std.math.max(");
-                self.emit_inline_args(args);
-                self.write(")");
+                let blk = self.next_label();
+                match args.len() {
+                    0 => {
+                        self.write("@as(i64, -9223372036854775808)");
+                    }
+                    1 => {
+                        self.write("@as(i64, ");
+                        self.emit_expr(&args[0]);
+                        self.write(")");
+                    }
+                    _ => {
+                        // (blk_N: { var __max = @as(i64, a); if (@as(i64, b) > __max) __max = @as(i64, b);  break :blk_N __max; })
+                        self.write(&format!("({}: {{ var __max = @as(i64, ", blk));
+                        self.emit_expr(&args[0]);
+                        self.write("); ");
+                        for arg in &args[1..] {
+                            let arg_str = {
+                                let saved = std::mem::take(self.output_mut());
+                                self.emit_expr(arg);
+                                let rendered = std::mem::take(self.output_mut());
+                                *self.output_mut() = saved;
+                                rendered
+                            };
+                            self.write(&format!(
+                                "if (@as(i64, {}) > __max) __max = @as(i64, {}); ",
+                                arg_str, arg_str
+                            ));
+                        }
+                        self.write(&format!(" break :{} __max; }})", blk));
+                    }
+                }
             }
             // random, sign, etc: fall through to js_math module
             _ => {
@@ -324,6 +389,18 @@ impl Emitter {
 
     fn emit_collections_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         self.write(&format!("js_collections.{}(", method));
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            self.emit_expr(arg);
+        }
+        self.write(")");
+    }
+
+    fn emit_runtime_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
+        // js_runtime helper methods like jsTypeof()
+        self.write(&format!("js_runtime.{}(", method));
         for (i, arg) in args.iter().enumerate() {
             if i > 0 {
                 self.write(", ");

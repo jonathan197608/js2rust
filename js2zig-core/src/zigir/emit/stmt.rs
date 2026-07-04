@@ -174,14 +174,30 @@ impl Emitter {
             if i > 0 {
                 self.write(", ");
             }
-            self.write(&format_param(&param.name, &param.zig_type));
+            if param.is_unused {
+                // Output `_name: Type` for unused params to suppress Zig's unused-variable warning
+                self.write(&format!(
+                    "_{}: {}",
+                    param.name.zig_name,
+                    param.zig_type.to_zig_type()
+                ));
+            } else {
+                self.write(&format_param(&param.name, &param.zig_type));
+            }
         }
 
         let ret_type = format_return_type(&fd.return_type, fd.is_async, fd.can_throw);
         self.write(&format!(") {} {{\n", ret_type));
 
-        // Function body
+        // Emit `_ = _param;` for unused params at the start of the body
         self.indent_push();
+        for param in &fd.params {
+            if param.is_unused {
+                self.writeln(&format!("_ = _{};", param.name.zig_name));
+            }
+        }
+
+        // Function body
         self.emit_block_stmts(&fd.body);
         self.indent_pop();
 
@@ -335,12 +351,12 @@ impl Emitter {
                 self.emit_if_stmt(cond, then, else_);
             }
 
-            IrStmt::While { cond, body } => {
-                self.emit_while_stmt(cond, body);
+            IrStmt::While { cond, body, label } => {
+                self.emit_while_stmt(cond, body, label);
             }
 
-            IrStmt::DoWhile { body, cond } => {
-                self.emit_do_while_stmt(body, cond);
+            IrStmt::DoWhile { body, cond, label } => {
+                self.emit_do_while_stmt(body, cond, label);
             }
 
             IrStmt::For {
@@ -348,8 +364,9 @@ impl Emitter {
                 cond,
                 update,
                 body,
+                label,
             } => {
-                self.emit_for_stmt(init, cond, update, body);
+                self.emit_for_stmt(init, cond, update, body, label);
             }
 
             IrStmt::ForIn {
@@ -357,8 +374,9 @@ impl Emitter {
                 iterable,
                 body,
                 kind,
+                label,
             } => {
-                self.emit_for_in_stmt(var, iterable, body, kind);
+                self.emit_for_in_stmt(var, iterable, body, kind, label);
             }
 
             IrStmt::ForOf {
@@ -369,6 +387,7 @@ impl Emitter {
                 body,
                 kind,
                 is_async,
+                label,
             } => {
                 self.emit_for_of_stmt(
                     var,
@@ -378,6 +397,7 @@ impl Emitter {
                     body,
                     kind,
                     *is_async,
+                    label,
                 );
             }
 
@@ -464,7 +484,10 @@ impl Emitter {
                 let needs_discard = !matches!(
                     expr,
                     crate::zigir::types::IrExpr::Assign { .. }
-                        | crate::zigir::types::IrExpr::Update { is_expr_stmt: true, .. }
+                        | crate::zigir::types::IrExpr::Update {
+                            is_expr_stmt: true,
+                            ..
+                        }
                 );
                 if needs_discard {
                     self.write("_ = ");
@@ -481,8 +504,13 @@ impl Emitter {
                 self.writeln("}");
             }
 
-            IrStmt::CompileError { span: _, msg } => {
-                self.writeln(&format!("@compileError(\"{}\");", escape_zig_string(msg)));
+            IrStmt::CompileError { span, msg } => {
+                let loc = format!("{}:{}", span.js_line, span.js_col);
+                self.writeln(&format!(
+                    "@compileError(\"{} (at {})\");",
+                    escape_zig_string(msg),
+                    loc
+                ));
             }
 
             IrStmt::Comment(text) => {
@@ -585,18 +613,18 @@ impl Emitter {
                     then: inner_then,
                     else_: inner_else,
                 } = &else_block.stmts[0]
-                {
-                    self.write_indent();
-                    self.write("} else if (");
-                    self.emit_expr(inner_cond);
-                    self.write(") {\n");
-                    self.indent_push();
-                    self.emit_block_stmts(inner_then);
-                    self.indent_pop();
-                    // Recurse for the inner else
-                    self.emit_else_chain(inner_else);
-                    return;
-                }
+            {
+                self.write_indent();
+                self.write("} else if (");
+                self.emit_expr(inner_cond);
+                self.write(") {\n");
+                self.indent_push();
+                self.emit_block_stmts(inner_then);
+                self.indent_pop();
+                // Recurse for the inner else
+                self.emit_else_chain(inner_else);
+                return;
+            }
             self.writeln("} else {");
             self.indent_push();
             self.emit_block_stmts(else_block);
@@ -615,17 +643,17 @@ impl Emitter {
                     then: inner_then,
                     else_: inner_else,
                 } = &else_block.stmts[0]
-                {
-                    self.write_indent();
-                    self.write("} else if (");
-                    self.emit_expr(inner_cond);
-                    self.write(") {\n");
-                    self.indent_push();
-                    self.emit_block_stmts(inner_then);
-                    self.indent_pop();
-                    self.emit_else_chain(inner_else);
-                    return;
-                }
+            {
+                self.write_indent();
+                self.write("} else if (");
+                self.emit_expr(inner_cond);
+                self.write(") {\n");
+                self.indent_push();
+                self.emit_block_stmts(inner_then);
+                self.indent_pop();
+                self.emit_else_chain(inner_else);
+                return;
+            }
             self.writeln("} else {");
             self.indent_push();
             self.emit_block_stmts(else_block);
@@ -634,8 +662,16 @@ impl Emitter {
         self.writeln("}");
     }
 
-    fn emit_while_stmt(&mut self, cond: &crate::zigir::types::IrExpr, body: &IrBlock) {
+    fn emit_while_stmt(
+        &mut self,
+        cond: &crate::zigir::types::IrExpr,
+        body: &IrBlock,
+        label: &Option<String>,
+    ) {
         self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         self.write("while (");
         self.emit_expr(cond);
         self.write(") {\n");
@@ -645,10 +681,18 @@ impl Emitter {
         self.writeln("}");
     }
 
-    fn emit_do_while_stmt(&mut self, body: &IrBlock, cond: &crate::zigir::types::IrExpr) {
+    fn emit_do_while_stmt(
+        &mut self,
+        body: &IrBlock,
+        cond: &crate::zigir::types::IrExpr,
+        label: &Option<String>,
+    ) {
         self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
         // Zig doesn't have do-while; use `while (true)` with break at end
-        self.writeln("while (true) {");
+        self.write("while (true) {\n");
         self.indent_push();
         self.emit_block_stmts(body);
         self.write_indent();
@@ -665,9 +709,14 @@ impl Emitter {
         cond: &Option<crate::zigir::types::IrExpr>,
         update: &Option<Box<IrStmt>>,
         body: &IrBlock,
+        label: &Option<String>,
     ) {
         // Codegen wraps the entire for loop in a block scope: { init; while (cond) : ({ update; }) { body } }
-        self.writeln("{");
+        self.write_indent();
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
+        self.write("{\n");
         self.indent_push();
 
         // Emit init statement
@@ -725,17 +774,25 @@ impl Emitter {
         iterable: &crate::zigir::types::IrExpr,
         body: &IrBlock,
         kind: &IrForInKind,
+        label: &Option<String>,
     ) {
         match kind {
             IrForInKind::HashMapIter => {
                 // `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
                 self.write_indent();
-                let it_name = "__it";
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.write("var ");
+                let it_name = "__it";
                 self.write(it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
                 self.write(".iterator();\n");
+                // The while loop is NOT labeled separately — the label is on
+                // the outer `var __it` statement for HashMapIter. In Codegen,
+                // the label wraps `{ var __it = ... while ... }` as a single block.
+                // We match that by emitting the while at the same level.
                 self.write_indent();
                 self.write("while (");
                 self.write(it_name);
@@ -747,9 +804,15 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForInKind::StructUnroll { fields } => {
-                // Unrolled: one iteration per field
-                for field_name in fields {
-                    self.writeln("{");
+                // Unrolled: one iteration per field; label on first iteration only
+                for (i, field_name) in fields.iter().enumerate() {
+                    self.write_indent();
+                    if i == 0
+                        && let Some(lbl) = label
+                    {
+                        self.write(&format!("{}: ", lbl));
+                    }
+                    self.write("{\n");
                     self.indent_push();
                     self.writeln(&format!("const {} = \"{}\";", var.zig_name, field_name));
                     self.emit_block_stmts(body);
@@ -758,6 +821,10 @@ impl Emitter {
                 }
             }
             IrForInKind::Unsupported => {
+                self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.writeln("@compileError(\"for-in on this type is not supported\");");
             }
         }
@@ -773,6 +840,7 @@ impl Emitter {
         body: &IrBlock,
         kind: &IrForOfKind,
         is_async: bool,
+        label: &Option<String>,
     ) {
         if is_async {
             self.writeln("@compileError(\"for-await-of is not supported\");");
@@ -782,6 +850,9 @@ impl Emitter {
         match kind {
             IrForOfKind::Array => {
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.write("for (");
                 self.emit_expr(iterable);
                 if iterable_is_arraylist {
@@ -797,6 +868,9 @@ impl Emitter {
             }
             IrForOfKind::MapSetIter { is_map } => {
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 let it_name = "__it";
                 self.write("var ");
                 self.write(it_name);
@@ -947,7 +1021,10 @@ impl Emitter {
         let body_always_exits = try_block.stmts.last().is_some_and(|s| {
             matches!(
                 s,
-                IrStmt::Return { .. } | IrStmt::Throw { .. } | IrStmt::Break { .. } | IrStmt::Continue { .. }
+                IrStmt::Return { .. }
+                    | IrStmt::Throw { .. }
+                    | IrStmt::Break { .. }
+                    | IrStmt::Continue { .. }
             )
         });
         if !body_always_exits {

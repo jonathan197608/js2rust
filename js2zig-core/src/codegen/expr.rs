@@ -2986,7 +2986,7 @@ impl Codegen {
                 // For dynamic types (JsAny/Anytype), call the runtime jsTypeof() helper.
                 if let Some(ty) = self.infer_expr_type(&ue.argument) {
                     if let Some(js_typeof) = ty.to_js_typeof() {
-                        self.write(js_typeof);
+                        self.write(&format!("\"{}\"", js_typeof));
                     } else {
                         self.write("js_runtime.jsTypeof(");
                         self.emit_expr(&ue.argument);

@@ -62,6 +62,10 @@ pub struct FnContext {
     pub typedarray_vars: HashMap<String, String>,
     /// Variables holding RegExp instances.
     pub regexp_vars: HashSet<String>,
+    /// Identifiers referenced in expressions that were resolved at compile time
+    /// (e.g., typeof x → "number" when x's type is known). These references
+    /// must be tracked to avoid falsely marking parameters as unused.
+    pub compile_time_referenced_idents: HashSet<String>,
 }
 
 impl FnContext {
@@ -83,6 +87,7 @@ impl FnContext {
             fn_scope_vars: HashSet::new(),
             typedarray_vars: HashMap::new(),
             regexp_vars: HashSet::new(),
+            compile_time_referenced_idents: HashSet::new(),
         }
     }
 
