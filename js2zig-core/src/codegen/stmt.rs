@@ -1239,12 +1239,10 @@ impl Codegen {
                         // Skip the label if no break statement targets it (e.g. MDN
                         // documentation labels like "Before: <expr>").
                         if has_break_to_label(&ls.body, ls.label.name.as_str()) {
-                            self.write_indent();
                             self.writeln(&format!("{}: {{", label_name));
                             self.indent += 1;
                             self.emit_fn_stmt(&ls.body);
                             self.indent -= 1;
-                            self.write_indent();
                             self.writeln("}");
                         } else {
                             self.emit_fn_stmt(&ls.body);
@@ -1479,7 +1477,6 @@ impl Codegen {
                 // Nested function declaration: hoist as inline struct with .call() method.
                 let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
                 let Some(fn_name) = fn_name else {
-                    self.write_indent();
                     self.writeln("// error: nested function must have a name");
                     return;
                 };
@@ -1495,14 +1492,12 @@ impl Codegen {
                     // Zig 0.16 does not support `struct { .. }.{ .. }` inline syntax.
                     // Use a separate type declaration to avoid `} .{` on same line.
                     let type_name = format!("_{safe_fn_name}_type");
-                    self.write_indent();
                     self.writeln(&format!("const {type_name} = struct {{"));
                     self.indent += 1;
 
                     // Add capture fields to struct
                     for (cap_name, cap_type, _is_mut) in &captures {
                         let zig_type = cap_type.to_zig_type();
-                        self.write_indent();
                         self.writeln(&format!("{}: {},", self.zig_safe_name(cap_name), zig_type));
                     }
 
@@ -1533,7 +1528,6 @@ impl Codegen {
                     self.closures.restore_captured(saved_captured);
 
                     self.indent -= 1;
-                    self.write_indent();
                     self.writeln("};");
 
                     // Create instance with captured values (named type syntax)
@@ -1545,7 +1539,6 @@ impl Codegen {
                         let safe_cap = self.zig_safe_name(cap_name);
                         init_fields.push_str(&format!(".{} = {}", safe_cap, safe_cap));
                     }
-                    self.write_indent();
                     self.writeln(&format!(
                         "const {safe_fn_name} = {type_name}{{ {init_fields} }};"
                     ));
@@ -1553,7 +1546,6 @@ impl Codegen {
                     // No captures: generate inline struct with static call method
                     self.nested_fn_names.insert(fn_name.to_string());
 
-                    self.write_indent();
                     self.writeln(&format!("const {} = struct {{", safe_fn_name));
                     self.indent += 1;
 
@@ -1576,7 +1568,6 @@ impl Codegen {
                     self.current_fn = old_current_fn;
 
                     self.indent -= 1;
-                    self.write_indent();
                     self.writeln("};");
                 }
             }
@@ -2051,7 +2042,6 @@ impl Codegen {
             self.indent += 1;
             self.emit_stmt_or_block(&fis.body);
             self.indent -= 1;
-            self.write_indent();
             self.writeln(&format!("}}}} // for-in {}", obj_name));
             return;
         }
@@ -2155,7 +2145,6 @@ impl Codegen {
 
         // Zig switch must be exhaustive; add empty else if no default
         if !has_default {
-            self.write_indent();
             self.writeln("else => {},");
         }
 

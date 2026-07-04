@@ -819,11 +819,15 @@ impl Emitter {
                 }
             }
             IrForInKind::Unsupported => {
-                self.write_indent();
                 if let Some(lbl) = label {
-                    self.write(&format!("{}: ", lbl));
+                    self.write_indent();
+                    self.write(&format!(
+                        "{}: @compileError(\"for-in on this type is not supported\");\n",
+                        lbl
+                    ));
+                } else {
+                    self.writeln("@compileError(\"for-in on this type is not supported\");");
                 }
-                self.writeln("@compileError(\"for-in on this type is not supported\");");
             }
         }
     }
