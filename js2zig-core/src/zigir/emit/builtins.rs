@@ -15,9 +15,10 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 impl Emitter {
     pub(crate) fn emit_builtin_call(&mut self, bc: &crate::zigir::types::IrBuiltinCall) {
+        let obj = bc.obj_name.as_deref();
         match bc.module {
-            BuiltinModule::JsArray => self.emit_array_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsString => self.emit_string_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsArray => self.emit_array_builtin(&bc.method, obj, &bc.args),
+            BuiltinModule::JsString => self.emit_string_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsDate => self.emit_date_builtin(&bc.method, &bc.args),
             BuiltinModule::JsJson => self.emit_json_builtin(&bc.method, &bc.args),
             BuiltinModule::JsObject => self.emit_object_builtin(&bc.method, &bc.args),
@@ -27,7 +28,7 @@ impl Emitter {
             BuiltinModule::JsMath => self.emit_math_builtin(&bc.method, &bc.args),
             BuiltinModule::JsRegExp => self.emit_regexp_builtin(&bc.method, &bc.args),
             BuiltinModule::JsTypedArray => self.emit_typedarray_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsUri => self.emit_uri_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsUri => self.emit_uri_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsBigInt => self.emit_bigint_builtin(&bc.method, &bc.args),
             BuiltinModule::JsCollections => self.emit_collections_builtin(&bc.method, &bc.args),
             BuiltinModule::JsRuntime => self.emit_runtime_builtin(&bc.method, &bc.args),
@@ -46,24 +47,122 @@ macro_rules! _builtin_stub {
 }
 
 impl Emitter {
-    fn emit_array_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_array.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_array_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        // Some array methods are direct ArrayList operations when we have the object name.
+        match method {
+            "pop" => {
+                // arr.pop() — direct ArrayList method, not js_array.pop()
+                if let Some(name) = obj {
+                    self.write(&format!("{}.pop()", name));
+                } else {
+                    self.write(&format!("js_array.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
             }
-            self.emit_expr(arg);
+            _ => {
+                // Fallback: js_array.method(args)
+                self.write(&format!("js_array.{}(", method));
+                self.emit_inline_args(args);
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
-    fn emit_string_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_string.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_string_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        // Method dispatch: JS name → Zig runtime name + allocator + fallible.
+        // Mirrors Codegen's StringRuntimeDesc table (tables.rs).
+        let (zig_method, needs_allocator, is_fallible, min_args, max_args, opt_defaults): (
+            &str,
+            bool,
+            bool,
+            usize,
+            usize,
+            &[&str],
+        ) = match method {
+            // ── No allocator, 0 args, non-fallible ──
+            "trim" => ("trim", false, false, 0, 0, &[]),
+            "trimStart" => ("trimStart", false, false, 0, 0, &[]),
+            "trimEnd" => ("trimEnd", false, false, 0, 0, &[]),
+            // ── No allocator, 1 arg, non-fallible ──
+            "indexOf" => ("indexOf", false, false, 1, 1, &[]),
+            "includes" => ("includes", false, false, 1, 1, &[]),
+            "startsWith" => ("startsWith", false, false, 1, 1, &[]),
+            "endsWith" => ("endsWith", false, false, 1, 1, &[]),
+            "lastIndexOf" => ("lastIndexOf", false, false, 1, 1, &[]),
+            "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[]),
+            "codePointAt" => ("codePointAt", false, false, 1, 1, &[]),
+            // ── No allocator, 1-2 args, non-fallible ──
+            "slice" => ("slice", false, false, 1, 2, &["std.math.maxInt(i64)"]),
+            "substring" => ("substring", false, false, 1, 2, &["std.math.maxInt(i64)"]),
+            // ── No allocator, 0-1 arg, non-fallible ──
+            "localeCompare" => ("localeCompare", false, false, 0, 1, &[]),
+            // ── With allocator, 0 args, fallible ──
+            "toUpperCase" => ("toUpper", true, true, 0, 0, &[]),
+            "toLocaleUpperCase" => ("toLocaleUpper", true, true, 0, 0, &[]),
+            "toLowerCase" => ("toLower", true, true, 0, 0, &[]),
+            "toLocaleLowerCase" => ("toLocaleLower", true, true, 0, 0, &[]),
+            // ── With allocator, 1 arg, fallible ──
+            "charAt" => ("charAt", true, true, 1, 1, &[]),
+            "at" => ("at", true, true, 1, 1, &[]),
+            "concat" => ("concat", true, true, 1, 1, &[]),
+            "repeat" => ("repeat", true, true, 1, 1, &[]),
+            // ── With allocator, 1 arg, fallible (returns ![][]const u8) ──
+            "split" => ("split", true, true, 1, 1, &[]),
+            // ── With allocator, 2 args, fallible ──
+            "padStart" => ("padStart", true, true, 2, 2, &[]),
+            "padEnd" => ("padEnd", true, true, 2, 2, &[]),
+            "replace" => ("replace", true, true, 2, 2, &[]),
+            "replaceAll" => ("replaceAll", true, true, 2, 2, &[]),
+            // ── With allocator, 0-1 arg, fallible ──
+            "normalize" => ("normalize", true, true, 0, 1, &["\"NFC\""]),
+            // ── Fallback ──
+            _ => {
+                // Unknown string method — naive emission
+                self.write(&format!("js_string.{}(", method));
+                self.emit_inline_args(args);
+                self.write(")");
+                return;
             }
-            self.emit_expr(arg);
+        };
+
+        // Emit: [try ]js_string.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])
+        if is_fallible {
+            self.write("try ");
+        }
+        self.write(&format!("js_string.{}(", zig_method));
+        if needs_allocator {
+            self.write("js_allocator.allocator(), ");
+        }
+        // Receiver object
+        if let Some(name) = obj {
+            self.write(name);
+        }
+        // Arguments (fill to max_args with opt_defaults for missing slots)
+        let n_args = args.len();
+        let total_slots = max_args;
+        for slot in 0..total_slots {
+            if slot < n_args {
+                self.write(", ");
+                self.emit_expr(&args[slot]);
+            } else {
+                let opt_idx = slot - min_args;
+                if let Some(default) = opt_defaults.get(opt_idx)
+                    && !default.is_empty()
+                {
+                    self.write(&format!(", {}", default));
+                }
+            }
         }
         self.write(")");
     }
@@ -134,14 +233,19 @@ impl Emitter {
     }
 
     fn emit_number_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_number.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+        match method {
+            "toFixed" => {
+                // js_number.toFixed(js_allocator.allocator(), obj, digits)
+                self.write("js_number.toFixed(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(")");
             }
-            self.emit_expr(arg);
+            _ => {
+                self.write(&format!("js_number.{}(", method));
+                self.emit_inline_args(args);
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
     fn emit_symbol_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
@@ -323,6 +427,89 @@ impl Emitter {
                     }
                 }
             }
+            // random: inline expression using std.crypto.random
+            "random" => {
+                self.write(
+                    "(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967295.0))",
+                );
+            }
+            // hypot: inline @sqrt(a*a + b*b + ...) expression
+            "hypot" => match args.len() {
+                0 => {
+                    self.write("0");
+                }
+                1 => {
+                    self.write("@abs(@as(f64, @floatFromInt(");
+                    self.emit_expr(&args[0]);
+                    self.write(")))");
+                }
+                _ => {
+                    self.write("@sqrt(");
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            self.write(" + ");
+                        }
+                        // @as(f64, @floatFromInt(arg)) * @as(f64, @floatFromInt(arg))
+                        self.write("@as(f64, @floatFromInt(");
+                        self.emit_expr(arg);
+                        self.write("))*@as(f64, @floatFromInt(");
+                        self.emit_expr(arg);
+                        self.write("))");
+                    }
+                    self.write(")");
+                }
+            },
+            // std.math one-arg functions: expm1, sinh, cosh, tanh, asinh, acosh, atanh
+            "expm1" => {
+                self.write("std.math.expm1(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "sinh" => {
+                self.write("std.math.sinh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "cosh" => {
+                self.write("std.math.cosh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "tanh" => {
+                self.write("std.math.tanh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "asinh" => {
+                self.write("std.math.asinh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "acosh" => {
+                self.write("std.math.acosh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "atanh" => {
+                self.write("std.math.atanh(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "imul" => {
+                self.write("@mulWithOverflow(i32, ");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "clz32" => {
+                self.write("@clz(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "sign" => {
+                self.write("js_math.sign(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
             // random, sign, etc: fall through to js_math module
             _ => {
                 self.write(&format!("js_math.{}(", method));
@@ -365,15 +552,42 @@ impl Emitter {
         self.write(")");
     }
 
-    fn emit_uri_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_uri.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_uri_builtin(
+        &mut self,
+        method: &str,
+        _obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        // URI methods: all need js_allocator.allocator() and specific catch patterns.
+        // encodeURI/encodeURIComponent: catch @panic("OOM: ...")
+        // decodeURI/decodeURIComponent: catch "" (outside try block)
+        match method {
+            "encodeURI" => {
+                self.write("js_uri.encodeURI(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: encodeURI\")");
             }
-            self.emit_expr(arg);
+            "encodeURIComponent" => {
+                self.write("js_uri.encodeURIComponent(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: encodeURIComponent\")");
+            }
+            "decodeURI" => {
+                self.write("js_uri.decodeURI(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch \"\"");
+            }
+            "decodeURIComponent" => {
+                self.write("js_uri.decodeURIComponent(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch \"\"");
+            }
+            _ => {
+                self.write(&format!("js_uri.{}(", method));
+                self.emit_inline_args(args);
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
     fn emit_bigint_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {

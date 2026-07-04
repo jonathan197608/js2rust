@@ -508,6 +508,9 @@ pub struct IrCallExpr {
 pub struct IrBuiltinCall {
     pub module: BuiltinModule,
     pub method: String,
+    /// The receiver object variable name (e.g., "str" in `str.toUpperCase()`).
+    /// Used by the Emitter to insert as the first runtime argument after allocator.
+    pub obj_name: Option<String>,
     pub args: Vec<IrExpr>,
     pub return_type: ZigType,
 }
@@ -751,6 +754,7 @@ mod tests {
         let bc = IrBuiltinCall {
             module: BuiltinModule::JsArray,
             method: "push".to_string(),
+            obj_name: None,
             args: vec![IrExpr::Ident(IrIdent::new("x"))],
             return_type: ZigType::Void,
         };

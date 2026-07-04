@@ -2295,6 +2295,7 @@ impl Lowerer {
                         IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                             module: crate::zigir::builtins::BuiltinModule::JsRuntime,
                             method: "jsTypeof".to_string(),
+                            obj_name: None,
                             args: vec![self.lower_expr(&ue.argument)],
                             return_type: crate::types::ZigType::Str,
                         })
@@ -2303,6 +2304,7 @@ impl Lowerer {
                     IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                         module: crate::zigir::builtins::BuiltinModule::JsRuntime,
                         method: "jsTypeof".to_string(),
+                        obj_name: None,
                         args: vec![self.lower_expr(&ue.argument)],
                         return_type: crate::types::ZigType::Str,
                     })
@@ -2548,9 +2550,11 @@ impl Lowerer {
             }
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
+            let obj_name = Self::extract_callee_object_name_static(&ce.callee);
             return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                 module,
                 method,
+                obj_name,
                 args,
                 return_type,
             });
@@ -4455,7 +4459,12 @@ impl Lowerer {
 
     /// Extract the object variable name from a CallExpression's callee.
     fn extract_callee_object_name(&self, ce: &CallExpression) -> Option<String> {
-        match &ce.callee {
+        Self::extract_callee_object_name_static(&ce.callee)
+    }
+
+    /// Extract the object variable name from a callee Expression.
+    fn extract_callee_object_name_static(callee: &Expression) -> Option<String> {
+        match callee {
             Expression::StaticMemberExpression(mem) => match &mem.object {
                 Expression::Identifier(id) => Some(id.name.as_str().to_string()),
                 _ => None,
