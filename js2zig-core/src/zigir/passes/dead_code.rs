@@ -197,6 +197,11 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
         IrExpr::ArrayCallbackInline(inline_data) => {
             inline_data.body.iter().any(stmt_has_side_effects)
         }
+        IrExpr::ArrayMethodInline(inline_data) => {
+            // All array method inlines have side effects (loops, allocs, mutations)
+            let _ = inline_data;
+            true
+        }
         IrExpr::CompileError { .. } => true,
     }
 }
@@ -539,6 +544,7 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
             }
             changed
         }
+        IrExpr::ArrayMethodInline(_) => false,
         // Leaf expressions
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)
@@ -772,6 +778,11 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
         IrExpr::ArrayCallbackInline(inline_data) => {
             for stmt in &inline_data.body {
                 collect_stmt_refs(stmt, refs);
+            }
+        }
+        IrExpr::ArrayMethodInline(inline_data) => {
+            for arg in &inline_data.args {
+                collect_expr_refs(arg, refs);
             }
         }
         IrExpr::IntLiteral(_)

@@ -493,6 +493,13 @@ pub enum IrExpr {
     /// Instead of emitting `js_array.method(callback)`, the Emitter expands
     /// these into Zig for/while loops with the callback body unwrapped.
     ArrayCallbackInline(Box<IrArrayCallbackInline>),
+
+    /// Inline expansion of array non-callback methods (includes, indexOf,
+    /// lastIndexOf, join, slice, splice, at, concat, copyWithin, fill).
+    ///
+    /// Instead of emitting `js_array.method(args)`, the Emitter expands
+    /// these into Zig block expressions or statements.
+    ArrayMethodInline(Box<IrArrayMethodInline>),
 }
 
 // ── Call types ─────────────────────────────────────────
@@ -649,6 +656,44 @@ pub struct IrArrayCallbackInline {
     pub body: Vec<IrStmt>,
     /// For reduce: the initial accumulator value expression.
     pub reduce_init: Option<IrExpr>,
+}
+
+/// Which array non-callback method is being inlined.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArrayMethodKind {
+    /// `arr.includes(target)` → for loop with == check
+    Includes,
+    /// `arr.indexOf(target)` → for loop with break on match
+    IndexOf,
+    /// `arr.lastIndexOf(target)` → backward while loop
+    LastIndexOf,
+    /// `arr.join(sep)` → std.io.Writer.Allocating
+    Join,
+    /// `arr.slice([start[, end]])` → ArrayList appendSlice
+    Slice,
+    /// `arr.splice(start, count[, ...items])` → orderedRemove loop
+    Splice,
+    /// `arr.at(idx)` → __at_idx with negative index support
+    At,
+    /// `arr.concat(...arrays)` → ArrayList append
+    Concat,
+    /// `arr.copyWithin(target, start, end)` → indexed copy loop
+    CopyWithin,
+    /// `arr.fill(val[, start[, end]])` → for loop elem.* assignment
+    Fill,
+}
+
+/// Data for inline expansion of array non-callback methods.
+#[derive(Debug, Clone)]
+pub struct IrArrayMethodInline {
+    /// Which method (includes, indexOf, etc.)
+    pub kind: ArrayMethodKind,
+    /// Name of the array object being operated on (e.g., "arr").
+    pub obj_name: String,
+    /// The Zig type of array elements (for ArrayList type in slice/concat/splice).
+    pub elem_type: ZigType,
+    /// Method arguments (already lowered to IR).
+    pub args: Vec<IrExpr>,
 }
 
 // ═══════════════════════════════════════════════════════

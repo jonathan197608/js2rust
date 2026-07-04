@@ -2543,9 +2543,12 @@ impl Lowerer {
         // ── Step 1: Builtin detection ──
         if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
             // ── Step 1a: Array callback inlining ──
-            // When the first argument is an ArrowFunctionExpression, inline the
-            // callback into a Zig loop instead of emitting js_array.method(callback).
             if let Some(inlined) = self.try_inline_array_callback(ce, &builtin) {
+                return inlined;
+            }
+
+            // ── Step 1b: Array non-callback method inlining ──
+            if let Some(inlined) = self.try_inline_array_method(ce, &builtin, &args) {
                 return inlined;
             }
 
@@ -3550,6 +3553,11 @@ impl Lowerer {
                     Self::collect_ir_idents_in_expr(init, idents);
                 }
             }
+            IrExpr::ArrayMethodInline(inline_data) => {
+                for arg in &inline_data.args {
+                    Self::collect_ir_idents_in_expr(arg, idents);
+                }
+            }
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)
             | IrExpr::StringLiteral(_)
@@ -4339,6 +4347,49 @@ impl Lowerer {
     /// Create an IrIdent for the given JS name, applying shadow renaming.
     fn make_ident(&self, js_name: &str) -> IrIdent {
         self.name_mangler.make_ident(js_name)
+    }
+
+    /// Try to inline an array non-callback method (includes, indexOf, lastIndexOf,
+    /// join, slice, splice, at, concat, copyWithin, fill) when we have the
+    /// object variable name. Returns `IrExpr::ArrayMethodInline` if inlinable.
+    fn try_inline_array_method(
+        &self,
+        ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+        args: &[crate::zigir::types::IrExpr],
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::{ArrayMethodKind, IrArrayMethodInline, IrExpr};
+
+        let kind = match builtin {
+            BC::ArrayIncludes => ArrayMethodKind::Includes,
+            BC::ArrayIndexOf => ArrayMethodKind::IndexOf,
+            BC::ArrayLastIndexOf => ArrayMethodKind::LastIndexOf,
+            BC::ArrayJoin => ArrayMethodKind::Join,
+            BC::ArraySlice => ArrayMethodKind::Slice,
+            BC::ArraySplice => ArrayMethodKind::Splice,
+            BC::ArrayAt => ArrayMethodKind::At,
+            BC::ArrayConcat => ArrayMethodKind::Concat,
+            BC::ArrayCopyWithin => ArrayMethodKind::CopyWithin,
+            BC::ArrayFill => ArrayMethodKind::Fill,
+            _ => return None,
+        };
+
+        let obj_name = Self::extract_callee_object_name_static(&ce.callee)?;
+
+        let elem_type = self
+            .type_info
+            .array_element_types
+            .get(obj_name.as_str())
+            .cloned()
+            .unwrap_or(ZigType::I64);
+
+        Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
+            kind,
+            obj_name,
+            elem_type,
+            args: args.to_vec(),
+        })))
     }
 
     /// Try to inline an array callback method (forEach, some, every, filter, find,
