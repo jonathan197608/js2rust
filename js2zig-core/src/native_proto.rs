@@ -104,7 +104,13 @@ fn transpile_js_inner(
             async_host_fns.clone(),
             js_source.to_string(),
         );
-        Some(lowerer.lower(program))
+        let mut ir = lowerer.lower(program);
+
+        // Run optimization passes
+        let mut pipeline = crate::zigir::passes::PassPipeline::default_pipeline();
+        let _pipeline_result = pipeline.run(&mut ir);
+
+        Some(ir)
     } else {
         None
     };
