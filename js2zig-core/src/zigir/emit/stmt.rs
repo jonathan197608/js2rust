@@ -435,14 +435,12 @@ impl Emitter {
                 let try_label = self.inside_try_block.clone();
                 if let Some(label) = try_label {
                     // Inside try block: break to the labeled block with error
-                    self.write_indent();
                     self.writeln(&format!(
                         "break :{} @as(anyerror!void, error.JsThrow);",
                         label,
                     ));
                 } else {
                     // Outside try block: return error from function
-                    self.write_indent();
                     self.writeln("return error.JsThrow;");
                 }
             }
@@ -933,7 +931,6 @@ impl Emitter {
         }
         // Zig switch must be exhaustive; add empty else if no default
         if !has_default {
-            self.write_indent();
             self.writeln("else => {},");
         }
         self.indent_pop();

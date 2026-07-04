@@ -800,8 +800,27 @@ impl Codegen {
                 let fn_def = std::mem::take(&mut self.output);
                 self.output = saved_output;
                 self.indent = saved_indent;
-                self.pending_expr_fns.push(fn_def);
-                self.write(&fn_name);
+                if !fn_def.is_empty() {
+                    self.pending_expr_fns.push(fn_def);
+                }
+                // If this is a closure with captured vars, generate struct instantiation
+                if let Some(captured) = self.closures.closure_vars.get(&fn_name).cloned() {
+                    self.write(&format!("{}{{ ", fn_name));
+                    for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        let safe_cap = self.zig_safe_name(cap_name);
+                        if *is_mut {
+                            self.write(&format!(".{} = &{}", safe_cap, safe_cap));
+                        } else {
+                            self.write(&format!(".{} = {}", safe_cap, safe_cap));
+                        }
+                    }
+                    self.write(" }");
+                } else {
+                    self.write(&fn_name);
+                }
             }
             Expression::FunctionExpression(func) => {
                 // Function expression as value — similar to arrow, defer definition.
@@ -811,8 +830,29 @@ impl Codegen {
                 let fn_def = std::mem::take(&mut self.output);
                 self.output = saved_output;
                 self.indent = saved_indent;
-                self.pending_expr_fns.push(fn_def);
-                self.write(&fn_name);
+                // Closure structs with captures are stored in closure_defs by emit_fn_expr,
+                // so fn_def may be empty in that case.
+                if !fn_def.is_empty() {
+                    self.pending_expr_fns.push(fn_def);
+                }
+                // If this is a closure with captured vars, generate struct instantiation
+                if let Some(captured) = self.closures.closure_vars.get(&fn_name).cloned() {
+                    self.write(&format!("{}{{ ", fn_name));
+                    for (i, (cap_name, _, is_mut)) in captured.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        let safe_cap = self.zig_safe_name(cap_name);
+                        if *is_mut {
+                            self.write(&format!(".{} = &{}", safe_cap, safe_cap));
+                        } else {
+                            self.write(&format!(".{} = {}", safe_cap, safe_cap));
+                        }
+                    }
+                    self.write(" }");
+                } else {
+                    self.write(&fn_name);
+                }
             }
             Expression::TaggedTemplateExpression(tte) => {
                 // Tagged template literals (e.g. tag`str`) are not supported.

@@ -1163,7 +1163,17 @@ impl Lowerer {
         // hardcoded as string literals), so we use Null to avoid false
         // "parameter used" detection. For HashMapIter, we need the actual
         // iterable expression at runtime.
+        //
+        // However, for unused-param detection, we still need to track that
+        // the iterable expression references identifiers (e.g., the param `cfg`
+        // in `for (const key in cfg)`), even though it's replaced by Null.
         let iterable = if matches!(kind, IrForInKind::StructUnroll { .. }) {
+            // Track identifiers from the iterable for unused-param detection
+            let mut idents = HashSet::new();
+            Self::collect_ast_expr_idents(&fis.right, &mut idents);
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.compile_time_referenced_idents.extend(idents);
+            }
             crate::zigir::types::IrExpr::Null
         } else {
             self.lower_expr(&fis.right)

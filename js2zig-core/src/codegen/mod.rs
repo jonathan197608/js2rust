@@ -174,7 +174,10 @@ impl Codegen {
             let mut prefix = String::new();
             for def in self.closures.closure_defs.iter() {
                 prefix.push_str(def);
-                prefix.push('\n');
+                // Only add separator newline if the definition doesn't already end with one
+                if !def.ends_with('\n') {
+                    prefix.push('\n');
+                }
             }
             self.output = prefix + &self.output;
         }

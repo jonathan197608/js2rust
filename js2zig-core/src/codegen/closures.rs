@@ -457,16 +457,7 @@ impl Codegen {
         // Value capture (is_mut=false):  T
         // Reference capture (is_mut=true): *T  (the closure holds a pointer)
         for (name, ztype, is_mut) in &captured {
-            let tstr = match ztype {
-                ZigType::I64 => "i64".to_string(),
-                ZigType::F64 => "f64".to_string(),
-                ZigType::Bool => "bool".to_string(),
-                ZigType::Str => "[]const u8".to_string(),
-                ZigType::Void => "void".to_string(),
-                ZigType::NamedStruct(s) => s.clone(),
-                ZigType::ArrayList(_) => "std.ArrayList(JsAny)".to_string(),
-                _ => "i64".to_string(),
-            };
+            let tstr = ztype.to_zig_type();
             if *is_mut {
                 // Reference capture: store a pointer so the closure can mutate the outer variable
                 self.writeln(&format!("{}: *{},", name, tstr));
@@ -477,7 +468,7 @@ impl Codegen {
         }
 
         // ── call method (single-line signature) ──
-        let mut sig = String::from("fn call(self: *@This()");
+        let mut sig = String::from("pub fn call(self: *@This()");
         for param in &arrow.params.items {
             sig.push_str(", ");
             if let Some(pname) = crate::infer::binding_name(&param.pattern) {
@@ -610,6 +601,33 @@ impl Codegen {
 /// Emit a FunctionExpression as a struct+instance inline.
 /// Returns the instance name for use as an expression value.
 impl Codegen {
+    /// Infer return type string for a FunctionExpression.
+    fn infer_fn_expr_return_type(&self, func: &Function) -> String {
+        // Try pre-computed return type first (for named function expressions)
+        if let Some(ref id) = func.id
+            && let Some(zt) = self.type_info.fn_return_types.get(id.name.as_str())
+        {
+            return zt.to_zig_type();
+        }
+        // Fallback: analyze the body for return statements
+        if let Some(body) = &func.body {
+            for stmt in &body.statements {
+                if let Statement::ReturnStatement(rs) = stmt
+                    && let Some(ref arg) = rs.argument
+                    && let Some(zt) = self.infer_arrow_expr_type(arg)
+                {
+                    return zt.to_zig_type();
+                }
+                if let Statement::ReturnStatement(rs) = stmt
+                    && rs.argument.is_none()
+                {
+                    return "void".to_string(); // bare `return;`
+                }
+            }
+        }
+        "void".to_string() // no return → void
+    }
+
     pub(crate) fn emit_fn_expr(&mut self, func: &Function) -> String {
         // Determine name: use function's own id if present, else generate unique name
         let name = func
@@ -646,48 +664,90 @@ impl Codegen {
         self.current_fn_return_type = ret_ty.clone();
 
         if !captures.is_empty() {
-            // Has captures: generate struct with capture fields + instance
+            // Has captures: generate struct with capture fields
+            // Use deferred struct pattern (like emit_closure_struct) to place
+            // the struct definition at module level, matching the Emitter output.
             self.nested_fn_names.insert(name.clone());
 
-            self.write_indent();
+            // Store capture info for instantiation at the call site
+            self.closures
+                .closure_vars
+                .insert(safe_name.clone(), captures.clone());
+
+            // ── Temporarily redirect output to build the struct definition ──
+            let old_output = std::mem::take(&mut self.output);
+            let old_indent = self.indent;
+            self.output = String::new();
+            self.indent = 0;
+
+            // ── Struct definition ──
             self.writeln(&format!("const {} = struct {{", safe_name));
-            self.indent += 1;
+            self.indent = 1;
 
             // Add capture fields
-            for (cap_name, cap_type, _is_mut) in &captures {
+            // Reference capture (is_mut=true): *T  (the closure holds a pointer)
+            // Value capture (is_mut=false):  T
+            for (cap_name, cap_type, is_mut) in &captures {
                 let zig_type = cap_type.to_zig_type();
-                self.write_indent();
-                self.writeln(&format!("{}: {},", self.zig_safe_name(cap_name), zig_type));
+                let safe_cap = self.zig_safe_name(cap_name);
+                if *is_mut {
+                    self.writeln(&format!("{}: *{},", safe_cap, zig_type));
+                } else {
+                    self.writeln(&format!("{}: {},", safe_cap, zig_type));
+                }
             }
 
             self.closures.current_captured = captures.clone();
 
-            // Generate call method
-            let old_nested = self.current_nested_fn_name.take();
-            self.current_nested_fn_name = Some(name.clone());
-            self.emit_fn(func);
-            self.current_nested_fn_name = old_nested;
+            // ── call method signature ──
+            let mut sig = String::from("pub fn call(self: *@This()");
+            for param in &func.params.items {
+                sig.push_str(", ");
+                if let Some(pname) = crate::infer::binding_name(&param.pattern) {
+                    sig.push_str(&format!("{}: anytype", pname));
+                }
+            }
+            // Infer return type from type_info or body analysis
+            let ret_str = match &ret_ty {
+                Some(zt) => zt.to_zig_type(),
+                None => self.infer_fn_expr_return_type(func),
+            };
+            sig.push_str(&format!(") {} {{", ret_str));
+            self.writeln(&sig);
+            self.indent += 1;
+
+            // ── Generate method body ──
+            // Set current_captured so emit_expr rewrites identifiers to self.xxx
+            let saved_captured = self.closures.take_captured();
+            self.closures.current_captured = captures.clone();
+
+            if let Some(body) = &func.body {
+                for stmt in &body.statements {
+                    self.emit_fn_stmt(stmt);
+                }
+            }
+
+            // Restore
+            self.closures.restore_captured(saved_captured);
             self.closures.current_captured.clear();
 
-            self.indent -= 1;
-            self.write_indent();
+            self.indent = 1;
+            self.writeln("}");
 
-            // Create instance
-            let mut init = String::from(".{{ ");
-            for (i, (cap_name, _, _)) in captures.iter().enumerate() {
-                if i > 0 {
-                    init.push_str(", ");
-                }
-                let safe_cap = self.zig_safe_name(cap_name);
-                init.push_str(&format!(".{} = {}", safe_cap, safe_cap));
-            }
-            init.push_str(" }};");
-            self.writeln(&init);
+            self.indent = 0;
+            self.writeln("};");
+
+            // ── Get the generated struct definition and restore output ──
+            let struct_def = std::mem::take(&mut self.output);
+            self.output = old_output;
+            self.indent = old_indent;
+
+            // Store in closure_defs (will be prepended to output at module level)
+            self.closures.closure_defs.push(struct_def);
         } else {
             // No captures: generate inline struct with static call method
             self.nested_fn_names.insert(name.clone());
 
-            self.write_indent();
             self.writeln(&format!("const {} = struct {{", safe_name));
             self.indent += 1;
 
@@ -697,7 +757,6 @@ impl Codegen {
             self.current_nested_fn_name = old_nested;
 
             self.indent -= 1;
-            self.write_indent();
             self.writeln("};");
         }
 

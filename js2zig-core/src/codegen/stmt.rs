@@ -1268,14 +1268,12 @@ impl Codegen {
 
                 if let Some(ref label) = self.inside_try_block.clone() {
                     // Inside try-catch: break the try block with error
-                    self.write_indent();
                     self.writeln(&format!(
                         "break :{} @as(anyerror!void, error.JsThrow);",
                         label
                     ));
                 } else {
                     // Bare throw: propagate to function return
-                    self.write_indent();
                     self.writeln("return error.JsThrow;");
                 }
                 self.seen_return = true;
@@ -1341,7 +1339,6 @@ impl Codegen {
                 // overwrites it. Used later to propagate re-throw errors upward.
                 let saved_inside = self.inside_try_block.clone();
                 self.start_try_block(&blk_label);
-                self.write_indent();
                 self.writeln(&format!(
                     "const {}: anyerror!void = {blk}: {{",
                     result_var,
@@ -1351,14 +1348,12 @@ impl Codegen {
 
                 // ── Finally as defer (always runs, inside labeled block) ──
                 if let Some(ref finalizer) = ts.finalizer {
-                    self.write_indent();
                     self.writeln("defer {");
                     self.indent += 1;
                     for stmt in &finalizer.body {
                         self.emit_fn_stmt(stmt);
                     }
                     self.indent -= 1;
-                    self.write_indent();
                     self.writeln("}");
                 }
 
@@ -1368,7 +1363,6 @@ impl Codegen {
                 // body throws or not.
                 let body_label = format!("_js_try_body_{}", label_id);
                 let body_blk_label = format!("_js_try_body_blk_{}", label_id);
-                self.write_indent();
                 self.writeln(&format!(
                     "const {}: anyerror!void = {}: {{",
                     body_label, body_blk_label,
@@ -1387,21 +1381,17 @@ impl Codegen {
                 self.seen_return = seen_before;
 
                 if !body_exited {
-                    self.write_indent();
                     self.writeln(&format!("break :{} {{}};", body_blk_label));
                 }
 
                 self.indent -= 1;
-                self.write_indent();
                 self.writeln("};");
 
                 // ── Catch handler as if-else (in scope of blk_label) ──
-                self.write_indent();
                 self.writeln(&format!("if ({}) |_| {{", body_label));
                 self.indent += 1;
                 // Success: no error, fall through
                 self.indent -= 1;
-                self.write_indent();
                 self.writeln("} else |err| {");
                 self.indent += 1;
 
@@ -1417,7 +1407,6 @@ impl Codegen {
                     {
                         let name = id.name.as_str();
                         let is_referenced = stmt_list_references_name(&handler.body.body, name);
-                        self.write_indent();
                         if is_referenced {
                             self.writeln(&format!(
                                 "const {} = @errorName(err);",
@@ -1446,22 +1435,18 @@ impl Codegen {
                     }
                 } else {
                     // No handler: discard the error (try-finally with throw)
-                    self.write_indent();
                     self.writeln("_ = err;");
                 }
 
                 self.pop_shadow_scope();
 
                 self.indent -= 1;
-                self.write_indent();
                 self.writeln("}");
 
                 // ── Normal completion (no re-throw from catch) ──
-                self.write_indent();
                 self.writeln(&format!("break :{blk} {{}};", blk = blk_label));
 
                 self.indent -= 1;
-                self.write_indent();
                 self.writeln("};");
 
                 // ── Propagate unhandled error from re-throw ──
@@ -1470,7 +1455,6 @@ impl Codegen {
                 // When inside a parent try body, break to parent (outer catch
                 // intercepts it). Otherwise, return from the function.
                 if ts.handler.is_some() {
-                    self.write_indent();
                     if let Some(ref parent_body_label) = saved_inside {
                         self.writeln(&format!(
                             "if ({0}) |_| {{}} else |_| break :{1} @as(anyerror!void, error.JsThrow);",
@@ -1483,7 +1467,6 @@ impl Codegen {
                         ));
                     }
                 } else {
-                    self.write_indent();
                     self.writeln(&format!("_ = {};", result_var));
                 }
 
@@ -1746,7 +1729,7 @@ impl Codegen {
         if let Some(lbl) = label {
             self.write(&format!("{}: ", lbl));
         }
-        self.writeln("while (true) {");
+        self.write("while (true) {\n");
 
         self.indent += 1;
         self.emit_stmt_or_block(&dws.body);
@@ -2208,6 +2191,22 @@ impl Codegen {
                 Self::collect_expr_idents(&dws.test, names);
             }
             Statement::ForStatement(fs) => {
+                if let Some(init) = &fs.init {
+                    match init {
+                        ForStatementInit::VariableDeclaration(vd) => {
+                            for decl in &vd.declarations {
+                                if let Some(init_expr) = &decl.init {
+                                    Self::collect_expr_idents(init_expr, names);
+                                }
+                            }
+                        }
+                        other => {
+                            if let Some(expr) = other.as_expression() {
+                                Self::collect_expr_idents(expr, names);
+                            }
+                        }
+                    }
+                }
                 if let Some(test) = &fs.test {
                     Self::collect_expr_idents(test, names);
                 }
@@ -2253,6 +2252,17 @@ impl Codegen {
                     }
                 }
             }
+            Statement::LabeledStatement(ls) => {
+                Self::collect_stmt_idents(&ls.body, names);
+            }
+            Statement::ForInStatement(fis) => {
+                Self::collect_expr_idents(&fis.right, names);
+                Self::collect_stmt_idents(&fis.body, names);
+            }
+            Statement::ThrowStatement(ts) => {
+                Self::collect_expr_idents(&ts.argument, names);
+            }
+            Statement::ContinueStatement(_) | Statement::BreakStatement(_) => {}
             _ => {}
         }
     }
@@ -2329,6 +2339,20 @@ impl Codegen {
             Expression::TemplateLiteral(tl) => {
                 for e in &tl.expressions {
                     Self::collect_expr_idents(e, names);
+                }
+            }
+            Expression::FunctionExpression(func) => {
+                // Scan function body for identifiers (captured vars from enclosing scope)
+                if let Some(body) = &func.body {
+                    for s in &body.statements {
+                        Self::collect_stmt_idents(s, names);
+                    }
+                }
+            }
+            Expression::ArrowFunctionExpression(arrow) => {
+                // Scan arrow body for identifiers (captured vars from enclosing scope)
+                for s in &arrow.body.statements {
+                    Self::collect_stmt_idents(s, names);
                 }
             }
             _ => {}
