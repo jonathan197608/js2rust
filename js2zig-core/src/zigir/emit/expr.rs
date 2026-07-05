@@ -70,6 +70,26 @@ impl Emitter {
                 }
             }
 
+            crate::zigir::types::IrExpr::PowExpr {
+                base,
+                exp,
+                base_type,
+                exp_type,
+            } => {
+                // JS `**` always returns f64. Use std.math.pow(f64, ...) with
+                // temporary f64 variables in a labeled block.
+                let pow_id = self.peek_label_id();
+                let blk = self.next_label();
+                self.write(&format!("({blk}: {{ "));
+                self.write(&format!("const _base_f64_{pow_id}: f64 = "));
+                self.emit_float_conversion(base, base_type);
+                self.write(&format!("; const _exp_f64_{pow_id}: f64 = "));
+                self.emit_float_conversion(exp, exp_type);
+                self.write(&format!(
+                    "; break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
+                ));
+            }
+
             crate::zigir::types::IrExpr::Unary { op, operand } => {
                 match op {
                     crate::zigir::ops::UnaOp::Neg => {
@@ -830,4 +850,37 @@ fn typed_array_init(kind: &TypedArrayKind) -> (&'static str, &'static str) {
 
 fn arrow_name_placeholder() -> String {
     "_arrow_fn".to_string()
+}
+
+// ═══════════════════════════════════════════════════════
+//  Float conversion helpers for PowExpr
+// ═══════════════════════════════════════════════════════
+
+impl Emitter {
+    /// Emit a float conversion for a `PowExpr` operand.
+    /// - F64: emit directly
+    /// - I64/BigInt: wrap in `@as(f64, @floatFromInt(...))`
+    /// - Other: wrap in `@as(f64, ...)` (comptime_int, bool, etc.)
+    fn emit_float_conversion(
+        &mut self,
+        expr: &crate::zigir::types::IrExpr,
+        ty: &crate::types::ZigType,
+    ) {
+        match ty {
+            crate::types::ZigType::F64 => {
+                self.emit_expr(expr);
+            }
+            crate::types::ZigType::I64 | crate::types::ZigType::BigInt => {
+                self.write("@as(f64, @floatFromInt(");
+                self.emit_expr(expr);
+                self.write("))");
+            }
+            _ => {
+                // comptime_int, bool, or unknown — @as(f64, expr) works for comptime_int
+                self.write("@as(f64, ");
+                self.emit_expr(expr);
+                self.write(")");
+            }
+        }
+    }
 }

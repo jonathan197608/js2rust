@@ -123,6 +123,11 @@ impl Emitter {
         self.label_counter += 1;
         format!("blk_{}", n)
     }
+
+    /// Peek at the current label counter without advancing (for generating unique temp var names).
+    fn peek_label_id(&self) -> u32 {
+        self.label_counter
+    }
 }
 
 // ═══════════════════════════════════════════════════════

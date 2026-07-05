@@ -1,0 +1,9 @@
+﻿feat(zigir): P1-G exponentiation (**) operator (Lowerer+Emitter)
+
+- IrExpr::PowExpr variant with base, exp, base_type, exp_type fields
+- Lowerer: Exponential → IrExpr::PowExpr with inferred type info
+- Emitter: generates labeled block with temp f64 vars + std.math.pow()
+- Emitter: emit_float_conversion handles i64/@floatFromInt, f64, comptime_int
+- Added PowExpr match arms to dead_code, validate, collect_ir_idents_in_expr
+- Fixed duplicate match arms in dead_code.rs from previous edit
+- 4 exponential tests pass, 500 total tests pass, clippy clean

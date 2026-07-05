@@ -2773,7 +2773,18 @@ impl Lowerer {
             BinaryOperator::Multiplication => BinOp::Mul,
             BinaryOperator::Division => BinOp::Div,
             BinaryOperator::Remainder => BinOp::Mod,
-            BinaryOperator::Exponential => BinOp::Pow,
+            BinaryOperator::Exponential => {
+                // JS `**` always returns f64. Emit a PowExpr with type info
+                // so the Emitter can generate the correct f64 coercion.
+                let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::F64);
+                let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::F64);
+                return IrExpr::PowExpr {
+                    base: Box::new(self.lower_expr(&be.left)),
+                    exp: Box::new(self.lower_expr(&be.right)),
+                    base_type: left_type,
+                    exp_type: right_type,
+                };
+            }
             BinaryOperator::LessThan => BinOp::Lt,
             BinaryOperator::GreaterThan => BinOp::Gt,
             BinaryOperator::LessEqualThan => BinOp::Le,
@@ -4121,6 +4132,10 @@ impl Lowerer {
             IrExpr::OptionalChain { object, body, .. } => {
                 Self::collect_ir_idents_in_expr(object, idents);
                 Self::collect_ir_idents_in_expr(body, idents);
+            }
+            IrExpr::PowExpr { base, exp, .. } => {
+                Self::collect_ir_idents_in_expr(base, idents);
+                Self::collect_ir_idents_in_expr(exp, idents);
             }
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)

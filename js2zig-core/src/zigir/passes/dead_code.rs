@@ -208,6 +208,9 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             needs_null_check,
             ..
         } => expr_has_side_effects(object) || (*needs_null_check || expr_has_side_effects(body)),
+        IrExpr::PowExpr { base, exp, .. } => {
+            expr_has_side_effects(base) || expr_has_side_effects(exp)
+        }
         IrExpr::CompileError { .. } => true,
     }
 }
@@ -556,6 +559,9 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
         IrExpr::OptionalChain { object, body, .. } => {
             eliminate_unreachable_in_expr(object) | eliminate_unreachable_in_expr(body)
         }
+        IrExpr::PowExpr { base, exp, .. } => {
+            eliminate_unreachable_in_expr(base) | eliminate_unreachable_in_expr(exp)
+        }
         // Leaf expressions
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)
@@ -807,6 +813,10 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
         IrExpr::OptionalChain { object, body, .. } => {
             collect_expr_refs(object, refs);
             collect_expr_refs(body, refs);
+        }
+        IrExpr::PowExpr { base, exp, .. } => {
+            collect_expr_refs(base, refs);
+            collect_expr_refs(exp, refs);
         }
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)

@@ -575,6 +575,18 @@ pub enum IrExpr {
     Void(Box<IrExpr>),
     Paren(Box<IrExpr>),
     Sequence(Vec<IrExpr>),
+
+    // ── Exponentiation ───────────────────────────────
+    /// JS `**` operator.  Always emits `std.math.pow(f64, base, exp)`
+    /// inside a labeled block with temp f64 variables to avoid
+    /// double-evaluation and to handle i64→f64 coercion.
+    PowExpr {
+        base: Box<IrExpr>,
+        exp: Box<IrExpr>,
+        base_type: crate::types::ZigType,
+        exp_type: crate::types::ZigType,
+    },
+
     CompileError {
         span: SourceSpan,
         msg: String,
