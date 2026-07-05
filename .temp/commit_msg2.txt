@@ -1,8 +1,0 @@
-﻿fix(zigir): P2 emitter bugs and lowerer regressions
-
-- EmptyStatement: skip instead of CompileError
-- BinOp::Div: emit @divTrunc for integer, / for float
-- BinOp::UrShr: emit correct unsigned right shift via bitcast
-- DateConstructor: determine kind from arguments (Now/FromMillis/FromString/FromComponents)
-- RegExpLiteral: generate runtime init instead of CompileError
-- 500 tests pass

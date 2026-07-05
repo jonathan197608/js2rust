@@ -1,2 +1,0 @@
-// codegen/builtins.rs — placeholder for full content
-// This file is being generated incrementally by the Task 8 refactoring.
