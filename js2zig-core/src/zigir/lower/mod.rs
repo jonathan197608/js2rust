@@ -1343,6 +1343,30 @@ impl Lowerer {
 
             // ── Skippable ──────────────────────────────────
             Statement::EmptyStatement(_) => crate::zigir::types::IrStmt::Comment("".to_string()),
+            Statement::DebuggerStatement(_) => {
+                crate::zigir::types::IrStmt::Comment("debugger".to_string())
+            }
+
+            // ── Descriptive unsupported ───────────────────
+            Statement::ClassDeclaration(cd) => {
+                let name = cd
+                    .id
+                    .as_ref()
+                    .map(|id| id.name.as_str())
+                    .unwrap_or("<anonymous>");
+                crate::zigir::types::IrStmt::CompileError {
+                    span: self.span_to_source_span(oxc_span::GetSpan::span(stmt)),
+                    msg: format!("nested class declaration '{}' is not supported", name),
+                }
+            }
+            Statement::ExportDefaultDeclaration(_) => crate::zigir::types::IrStmt::CompileError {
+                span: self.span_to_source_span(oxc_span::GetSpan::span(stmt)),
+                msg: "export default is not supported".to_string(),
+            },
+            Statement::ImportDeclaration(_) => crate::zigir::types::IrStmt::CompileError {
+                span: self.span_to_source_span(oxc_span::GetSpan::span(stmt)),
+                msg: "import declaration is not supported".to_string(),
+            },
 
             // ── Unsupported ────────────────────────────────
             _ => {
@@ -2483,6 +2507,19 @@ impl Lowerer {
 
             // ── Optional chaining (?.) ────────────────────
             Expression::ChainExpression(ce) => self.lower_optional_chain(ce),
+
+            // ── Class expression (anonymous class as value) ──
+            Expression::ClassExpression(ce) => {
+                let name = ce
+                    .id
+                    .as_ref()
+                    .map(|id| id.name.as_str())
+                    .unwrap_or("<anonymous>");
+                IrExpr::CompileError {
+                    span: SourceSpan::default(),
+                    msg: format!("class expression '{}' is not supported", name),
+                }
+            }
 
             // ── Fallback ───────────────────────────────
             _ => IrExpr::CompileError {
@@ -4520,11 +4557,16 @@ impl Lowerer {
                     }
                 }
                 name if self.class_names.contains(name) => NewConstructor::Class(name.to_string()),
-                _ => {
+                // Known-unsupported constructors → structured Unsupported (Emitter generates proper @compileError)
+                "ArrayBuffer" | "SharedArrayBuffer" | "Function" | "Promise" | "WeakMap"
+                | "WeakSet" | "DataView" => {
+                    NewConstructor::Unsupported(id.name.as_str().to_string())
+                }
+                other => {
                     let span = oxc_span::GetSpan::span(ne);
                     return crate::zigir::types::IrExpr::CompileError {
                         span: self.span_to_source_span(span),
-                        msg: "Unsupported NewExpression".to_string(),
+                        msg: format!("Unsupported NewExpression: new {}()", other),
                     };
                 }
             },
