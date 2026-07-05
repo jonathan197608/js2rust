@@ -8,20 +8,16 @@ pub mod sourcemap;
 pub mod testgen;
 pub mod types;
 
-/// Prototype: native-type system (anytype + @TypeOf).
-/// Work in progress, not integrated into pipeline yet.
+/// Native-type system transpilation (anytype + @TypeOf).
 pub mod native_proto;
 
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
 /// ZigIR — structured intermediate representation between AST and Zig source.
-/// Work in progress, not integrated into pipeline yet.
 pub mod zigir;
 
 // ── Submodules ──
-// Declared at crate level for direct access (e.g. crate::codegen, crate::infer).
-pub(crate) mod codegen;
 pub(crate) mod infer;
 pub(crate) mod jsdoc;
 pub(crate) mod native_builtins;

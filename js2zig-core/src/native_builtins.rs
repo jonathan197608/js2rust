@@ -8,6 +8,7 @@ use crate::types::ZigType;
 
 /// Built-in call type
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // Some variants not yet produced by Lowerer; will be used as features are implemented
 pub enum BuiltinCall {
     // Math methods
     MathAbs,    // Math.abs(x)

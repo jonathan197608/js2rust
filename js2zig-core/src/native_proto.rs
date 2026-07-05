@@ -1,8 +1,7 @@
 // js2zig-core/src/native_proto.rs
 //
 // Native-type system transpilation module.
-// Production pipeline: AST → Lowerer → ZigIR → PassPipeline → Emitter → Zig source.
-// Legacy Codegen is available via ZIGIR_DUAL_TRACK=1 for parity comparison.
+// Pipeline: AST → Lowerer → ZigIR → PassPipeline → Emitter → Zig source.
 
 // Re-export types from the dedicated types module.
 pub use crate::types::{
@@ -15,24 +14,6 @@ use oxc_ast::ast::Program;
 use crate::zigir::types::IrDecl;
 
 pub use crate::infer::TypeCheckResult;
-
-// ── ZigIR dual-track flag ─────────────────────────────
-// When true, the old Codegen is also invoked after the ZigIR pipeline
-// and the two outputs are compared for parity checking.
-// The ZigIR (Lowerer+Emitter) output is always used as the result.
-//
-// Enable with: set ZIGIR_DUAL_TRACK=1
-const ZIGIR_DUAL_TRACK_DEFAULT: bool = false;
-
-fn zigir_dual_track_enabled() -> bool {
-    if ZIGIR_DUAL_TRACK_DEFAULT {
-        return true;
-    }
-    // Check environment variable at runtime
-    std::env::var("ZIGIR_DUAL_TRACK")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
 
 /// Transpile JS source text to Zig (native type system).
 ///
@@ -171,34 +152,6 @@ fn transpile_js_inner(
         })
         .collect();
 
-    // ── ZigIR dual-track: optionally run Codegen and compare ──
-    if zigir_dual_track_enabled() {
-        // Re-run type inference for Codegen (Lowerer consumed the original type_info)
-        let (td, ta, rt, pt) = crate::jsdoc::extract_all_jsdoc(js_source);
-        let jd = JSDocData {
-            typedefs: td,
-            type_annotations: ta,
-            return_types: rt,
-            param_types: pt,
-        };
-        let mut inf2 = crate::infer::TypeInferrer::new();
-        inf2.set_jsdoc_data(jd.clone());
-        if let Some(hf) = host_fns {
-            inf2.set_host_fn_types(hf);
-        }
-        let ti2 = inf2.infer_all(program, exported_functions.clone());
-
-        let mut cg = Codegen::new(
-            ti2,
-            jd,
-            exported_functions,
-            async_host_fns,
-            js_source.to_string(),
-        );
-        cg.generate(program);
-        run_zigir_dual_track_compare(&ir_module, &cg.output);
-    }
-
     Ok(TranspileResult {
         zig_code,
         errors,
@@ -207,175 +160,4 @@ fn transpile_js_inner(
         var_types,
         cabi_exports,
     })
-}
-
-/// Run the Codegen output and compare with the ZigIR Emitter output.
-///
-/// When dual-track is enabled, this function emits Zig source from the IrModule
-/// via the Emitter and compares it with the old Codegen output, logging summary
-/// statistics + diff. This is purely for parity checking — it does NOT affect
-/// the transpilation result (Emitter output is always used).
-fn run_zigir_dual_track_compare(ir_module: &crate::zigir::types::IrModule, codegen_output: &str) {
-    use crate::zigir::emit::Emitter;
-
-    // Log summary for debugging
-    let n_decls = ir_module.declarations.len();
-    let n_imports = ir_module.imports.len();
-    let n_typedefs = ir_module.typedefs.len();
-    let n_closures = ir_module.closure_structs.len();
-    let n_diagnostics = ir_module.diagnostics.len();
-    let n_cabi = ir_module.cabi_exports.len();
-
-    eprintln!(
-        "[ZigIR dual-track] module='{}' imports={} typedefs={} closures={} decls={} diagnostics={} cabi={}",
-        ir_module.name, n_imports, n_typedefs, n_closures, n_decls, n_diagnostics, n_cabi
-    );
-
-    // Log any diagnostics from the Lowerer
-    for diag in &ir_module.diagnostics {
-        eprintln!("[ZigIR dual-track]   {}", diag);
-    }
-
-    // Run the Emitter and compare with the old Codegen output
-    let emitter_output = Emitter::emit_module(ir_module);
-    let emitter_lines = emitter_output.lines().count();
-    let codegen_lines = codegen_output.lines().count();
-
-    if emitter_output == codegen_output {
-        eprintln!(
-            "[ZigIR dual-track] Emitter output MATCHES Codegen ({} lines)",
-            emitter_lines
-        );
-    } else {
-        eprintln!(
-            "[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter={} lines, codegen={} lines)",
-            emitter_lines, codegen_lines
-        );
-        // Log first few differing lines for debugging
-        let max_diff = 10;
-        let mut diff_count = 0;
-        for (i, (e_line, c_line)) in emitter_output
-            .lines()
-            .zip(codegen_output.lines())
-            .enumerate()
-        {
-            if e_line != c_line {
-                if diff_count < max_diff {
-                    eprintln!(
-                        "[ZigIR dual-track]   line {}: emitter='{}' codegen='{}'",
-                        i + 1,
-                        if e_line.len() > 80 {
-                            &e_line[..80]
-                        } else {
-                            e_line
-                        },
-                        if c_line.len() > 80 {
-                            &c_line[..80]
-                        } else {
-                            c_line
-                        }
-                    );
-                }
-                diff_count += 1;
-            }
-        }
-        if emitter_lines != codegen_lines {
-            eprintln!(
-                "[ZigIR dual-track]   line count differs: emitter={} codegen={}",
-                emitter_lines, codegen_lines
-            );
-        }
-        eprintln!("[ZigIR dual-track]   total differing lines: {}", diff_count);
-    }
-}
-
-/// Shared state for native-type codegen.
-///
-/// Phase A: Codegen is now purely generative — all type inference runs in
-/// `TypeInferrer::infer_all()` before codegen.  `type_info` holds the
-/// pre-computed type snapshot.
-pub struct Codegen {
-    pub output: String,
-    pub indent: usize,
-    /// Compile errors collected during codegen.
-    pub errors: Vec<String>,
-    /// Non-fatal warnings (try-catch limitations, etc.) — do NOT block file generation.
-    pub warnings: Vec<String>,
-    /// Pre-computed type information (read-only during codegen).
-    pub type_info: TypeCheckResult,
-    /// JSDoc data for typedef generation.
-    pub jsdoc_data: Option<JSDocData>,
-    /// Whether the current function being emitted is an export function.
-    pub current_fn_is_export: bool,
-    /// The return type of the current function (derived from type_info).
-    pub current_fn_return_type: Option<ZigType>,
-    /// Exported functions metadata (for pipeline C ABI wrapper generation).
-    pub exported_fns: Vec<ExportedFunction>,
-    /// Task counter for generating unique task variable names in async/await code.
-    /// (Moved into NameGen — keep this doc for context.)
-    pub names: crate::types::NameGen,
-    /// Exported function names (from pipeline).
-    pub exported_functions: Option<std::collections::HashSet<String>>,
-    /// Whether a return/throw statement was seen in the current function body.
-    pub seen_return: bool,
-    /// Whether the current function contains `throw` or `try-catch` statements.
-    /// Determined by pre-scan before signature generation. When true, the function
-    /// return type is `!T` (error union) instead of plain `T`.
-    pub fn_has_throw: bool,
-    /// Whether we are currently emitting the return value expression.
-    /// When true, array methods that normally discard with `_ = ` should skip the prefix.
-    pub in_return_expr: bool,
-    /// Whether we are currently emitting the top-level expression of an ExpressionStatement.
-    /// When true, builtins that return non-void values should discard with `_ = `.
-    pub in_expr_stmt: bool,
-    /// Whether the current call expression generated a `catch |_| { ... }` block.
-    /// Used to suppress the `_ = ` discard prefix in emit_fn_stmt when a catch
-    /// block is already present (Zig 0.16 rejects `_ = <err union> catch |_| { }`).
-    pub call_generated_catch: bool,
-    /// When inside a try block, the label name for `break :label`.
-    /// throw statements inside the try block emit `break :label error.JsThrow`
-    /// instead of `return error.JsThrow`.
-    pub inside_try_block: Option<String>,
-    /// Current function name being generated (for function-scoped mutated_vars).
-    pub current_fn: Option<String>,
-    /// Closure state: captures, instances, struct definitions.
-    pub closures: crate::types::ClosureManager,
-    /// Function definitions deferred from expression context (Arrow/FunctionExpression in emit_expr).
-    /// These need to be emitted before the current statement at the current indent level.
-    pub pending_expr_fns: Vec<String>,
-    /// Variables initialized with TypedArray constructors (Int32Array, Uint8Array, Float64Array).
-    /// Maps variable name → element Zig type suffix (e.g. "I32", "U8", "F64").
-    /// Used to route method calls and property accesses correctly.
-    pub typedarray_vars: std::collections::HashMap<String, String>,
-    /// Variables initialized with `new RegExp(expr)` — dynamic RegExp objects.
-    /// Used to route .test()/.exec() calls on RegExp variables, and
-    /// str.match(regexpVar) / str.search(regexpVar) calls.
-    pub regexp_vars: std::collections::HashSet<String>,
-    /// Async host function names (for io.async() codegen).
-    /// When await calls an async host function, use `{name}_async` wrapper.
-    pub async_host_fns: std::collections::HashSet<String>,
-    /// Names of nested function declarations (inside another function body).
-    /// Used to rewrite `nestedFn(args)` to `nestedFn.call(args)` in emit_call.
-    pub nested_fn_names: std::collections::HashSet<String>,
-    /// When generating a nested function declaration's body via emit_fn(),
-    /// this holds the outer JS function name so emit_fn can override the
-    /// generated function signature to use `pub fn call(...)` instead of
-    /// `pub fn <js_name>(...)`.
-    pub current_nested_fn_name: Option<String>,
-    /// When inside a class method body, this holds the class name.
-    /// Used to rewrite `this.x` → `self.x`.
-    pub current_class: Option<String>,
-    /// Set of class names known at the module level.
-    /// Used to route `new ClassName()` → `ClassName.init()` in emit_expr.
-    pub class_names: std::collections::HashSet<String>,
-    /// Original JS source text, used to convert byte offsets → line:col for diagnostics.
-    pub source: String,
-    /// Set of variable names declared in the current function scope.
-    /// Used to detect shadowing in nested blocks (Zig 0.16.0 forbids it).
-    pub fn_scope_vars: std::collections::HashSet<String>,
-    /// Stack of shadowing rename maps: one HashMap per block scope depth.
-    /// When a shadowed variable is declared, its original name → renamed name
-    /// mapping is stored in the topmost HashMap. `zig_safe_name()` checks this
-    /// stack to rewrite references to the renamed variable.
-    pub shadow_renames: Vec<std::collections::HashMap<String, String>>,
 }
