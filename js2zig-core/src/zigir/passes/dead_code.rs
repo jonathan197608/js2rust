@@ -202,6 +202,12 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             let _ = inline_data;
             true
         }
+        IrExpr::OptionalChain {
+            object,
+            body,
+            needs_null_check,
+            ..
+        } => expr_has_side_effects(object) || (*needs_null_check || expr_has_side_effects(body)),
         IrExpr::CompileError { .. } => true,
     }
 }
@@ -547,6 +553,9 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
             changed
         }
         IrExpr::ArrayMethodInline(_) => false,
+        IrExpr::OptionalChain { object, body, .. } => {
+            eliminate_unreachable_in_expr(object) | eliminate_unreachable_in_expr(body)
+        }
         // Leaf expressions
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)
@@ -794,6 +803,10 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
             for arg in &inline_data.args {
                 collect_expr_refs(arg, refs);
             }
+        }
+        IrExpr::OptionalChain { object, body, .. } => {
+            collect_expr_refs(object, refs);
+            collect_expr_refs(body, refs);
         }
         IrExpr::IntLiteral(_)
         | IrExpr::FloatLiteral(_)

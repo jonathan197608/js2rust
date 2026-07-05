@@ -400,6 +400,25 @@ impl Emitter {
                 self.emit_array_method_inline(inline_data);
             }
 
+            crate::zigir::types::IrExpr::OptionalChain {
+                object,
+                capture_var,
+                body,
+                needs_null_check,
+            } => {
+                if *needs_null_check {
+                    self.write("(if (");
+                    self.emit_expr(object);
+                    self.write(") |");
+                    self.write(capture_var);
+                    self.write("| ");
+                    self.emit_expr(body);
+                    self.write(" else JsAny.fromNull())");
+                } else {
+                    self.emit_expr(body);
+                }
+            }
+
             crate::zigir::types::IrExpr::CompileError { span, msg } => {
                 let loc = format!("{}:{}", span.js_line, span.js_col);
                 self.write(&format!(

@@ -1,0 +1,11 @@
+﻿feat(zigir): P1-E optional chaining support (Lowerer+Emitter)
+
+- IrExpr::OptionalChain variant with object, capture_var, body, needs_null_check
+- Lowerer: lower_optional_chain() handles StaticMember/ComputedMember/Call chains
+- Lowerer: expr_might_be_null() determines if null-check wrapper is needed
+- Emitter: emits (if (obj) |_ocN| body else JsAny.fromNull()) pattern
+- Added OptionalChain arms to dead_code, validate, collect_ir_idents_in_expr
+- Fixed MethodObjectKind::Struct -> Unknown (variant didn't exist)
+- Fixed suspicious match pattern in expr_might_be_null()
+- Fixed clippy unnecessary_map_or -> is_none_or
+- 5 optional chain dual-track tests pass, 49 dual-track tests pass, 500 total tests pass

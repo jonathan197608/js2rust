@@ -1,0 +1,18 @@
+feat(zigir): P1-B array non-callback method inlining (Lowerer+Emitter)
+
+Add IrExpr::ArrayMethodInline variant with ArrayMethodKind enum covering
+10 non-callback array methods: includes, indexOf, lastIndexOf, join, slice,
+splice, at, concat, copyWithin, fill.
+
+Lowerer: try_inline_array_method() intercepts non-callback array builtins
+and extracts method kind, object name, element type, and arguments into
+IrArrayMethodInline struct.
+
+Emitter: emit_array_method_inline() dispatches to 10 per-method emit
+functions that generate Zig block expressions matching Codegen output
+pattern — ArrayList operations, for loops, indexed access, etc.
+
+All match arms added in: emit/expr.rs, passes/dead_code.rs (3 matches),
+passes/validate.rs (2 matches), lower/mod.rs (collect_ir_idents_in_expr).
+
+500 lib tests pass, clippy clean, fmt clean.

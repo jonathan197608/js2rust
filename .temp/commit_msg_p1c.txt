@@ -1,0 +1,19 @@
+feat(zigir): P1-C destructuring support (Lowerer+Emitter)
+
+Add IrStmt::DestructureDecl variant with IrDestructureDecl, IrDestructureKind,
+IrDestructureBindingDecl, and IrDestructureAccess types to represent object and
+array destructuring declarations (const {a, b} = obj / const [a, b] = arr).
+
+Lowerer: lower_destructure_decl() handles ObjectPattern and ArrayPattern,
+extracting binding names, default expressions, and source type info (struct vs
+HashMap, ArrayList vs slice). Uses two-phase approach to avoid borrow conflicts
+with oxc's non-Clone AST types.
+
+Emitter: emit_destructure_decl() generates:
+- Temp variable (_js_dest) when init may have side effects or multiple bindings
+- Struct: dot field access (obj.field) or default for missing fields
+- HashMap: .get("key") with type-aware conversion (.asI64(), .asBool(), .value.string)
+- ArrayList: bounds-safe .items[i] with if/else for defaults
+- Slice: direct [i] with orelse for defaults
+
+All 8 destructuring tests now pass. 500 lib tests pass, clippy clean, fmt clean.

@@ -504,6 +504,20 @@ pub enum IrExpr {
         key_kind: ComputedKeyKind,
     },
 
+    // ── Optional chaining ────────────────────────────
+    /// Optional chain: `(if (object) |_ocN| BODY else null)`
+    /// When `needs_null_check` is false, emits just the body directly.
+    OptionalChain {
+        /// The expression being null-checked.
+        object: Box<IrExpr>,
+        /// Temp variable name for the captured non-null value (e.g., "_oc0").
+        capture_var: String,
+        /// The body expression using the capture var (field access, method call, nested chain).
+        body: Box<IrExpr>,
+        /// Whether the object might be null (if false, emit direct access without if-wrapper).
+        needs_null_check: bool,
+    },
+
     // ── Object / Array ──────────────────────────────
     ArrayLiteral(IrArrayLiteral),
     ObjectLiteral(IrObjectLiteral),

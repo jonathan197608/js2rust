@@ -2462,11 +2462,196 @@ impl Lowerer {
                 }
             }
 
+            // ── Optional chaining (?.) ────────────────────
+            Expression::ChainExpression(ce) => self.lower_optional_chain(ce),
+
             // ── Fallback ───────────────────────────────
             _ => IrExpr::CompileError {
                 span: SourceSpan::default(),
                 msg: format!("unsupported expression type: {}", expr_type_name(expr)),
             },
+        }
+    }
+
+    /// Lower an optional chain expression (`obj?.prop`, `obj?.method()`, `obj?.[key]`).
+    fn lower_optional_chain(&mut self, ce: &ChainExpression) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        let capture_var = self.name_mangler.next_name("_oc");
+
+        match &ce.expression {
+            ChainElement::StaticMemberExpression(sme) => {
+                let object = self.lower_expr(&sme.object);
+                let needs_null_check = self.expr_might_be_null(&sme.object);
+                let body = IrExpr::FieldAccess {
+                    object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
+                    field: sme.property.name.to_string(),
+                    field_kind: FieldKind::StructField,
+                };
+                IrExpr::OptionalChain {
+                    object: Box::new(object),
+                    capture_var,
+                    body: Box::new(body),
+                    needs_null_check,
+                }
+            }
+            ChainElement::ComputedMemberExpression(cme) => {
+                let object = self.lower_expr(&cme.object);
+                let needs_null_check = self.expr_might_be_null(&cme.object);
+                let index = self.lower_expr(&cme.expression);
+                let body = IrExpr::IndexAccess {
+                    object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
+                    index: Box::new(index),
+                    index_kind: IndexKind::SliceIndex,
+                };
+                IrExpr::OptionalChain {
+                    object: Box::new(object),
+                    capture_var,
+                    body: Box::new(body),
+                    needs_null_check,
+                }
+            }
+            ChainElement::CallExpression(call_ce) => {
+                // Extract receiver from the callee (which is a member expression)
+                // e.g., obj?.greet("World") → callee is StaticMemberExpression(obj, "greet")
+                let (receiver_name, method_name) = self.extract_optional_call_info(call_ce);
+                let needs_null_check = receiver_name
+                    .as_ref()
+                    .map(|name| {
+                        self.type_info
+                            .var_types
+                            .get(name.as_str())
+                            .is_none_or(|ty| {
+                                !matches!(
+                                    ty,
+                                    ZigType::Struct(_)
+                                        | ZigType::I64
+                                        | ZigType::F64
+                                        | ZigType::Bool
+                                        | ZigType::Str
+                                        | ZigType::ArrayList(_)
+                                        | ZigType::NamedStruct(_)
+                                )
+                            })
+                    })
+                    .unwrap_or(true);
+
+                let args: Vec<IrExpr> = call_ce
+                    .arguments
+                    .iter()
+                    .map(|arg| {
+                        let expr = arg.as_expression().unwrap();
+                        self.lower_expr(expr)
+                    })
+                    .collect();
+
+                let body = if let Some(name) = method_name {
+                    // Method call: capture_var.method(args)
+                    IrExpr::Call(crate::zigir::types::IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
+                            field: name,
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args,
+                        call_kind: CallKind::Method {
+                            object_type: crate::zigir::kinds::MethodObjectKind::Unknown,
+                        },
+                    })
+                } else {
+                    // Fallback: just evaluate the call directly
+                    self.lower_call(call_ce)
+                };
+
+                let object = if let Some(name) = &receiver_name {
+                    IrExpr::Ident(IrIdent::new(name))
+                } else {
+                    // For complex receiver expressions, lower the callee's object directly
+                    match &call_ce.callee {
+                        Expression::StaticMemberExpression(sme) => self.lower_expr(&sme.object),
+                        Expression::ComputedMemberExpression(cme) => self.lower_expr(&cme.object),
+                        _ => IrExpr::Null,
+                    }
+                };
+
+                IrExpr::OptionalChain {
+                    object: Box::new(object),
+                    capture_var,
+                    body: Box::new(body),
+                    needs_null_check,
+                }
+            }
+            _ => IrExpr::CompileError {
+                span: SourceSpan::default(),
+                msg: "unsupported optional chain element".to_string(),
+            },
+        }
+    }
+
+    /// Extract receiver expression and method name from an optional call expression.
+    /// For `obj?.greet("World")`, returns (Some(obj_ident_or_expr), Some("greet"), ...).
+    /// Returns owned data since we need to release the borrow before calling lower_expr.
+    fn extract_optional_call_info(&self, ce: &CallExpression) -> (Option<String>, Option<String>) {
+        match &ce.callee {
+            Expression::StaticMemberExpression(sme) => {
+                // Extract receiver identifier name if it's a simple identifier
+                let receiver_name = match &sme.object {
+                    Expression::Identifier(id) => Some(id.name.to_string()),
+                    _ => None,
+                };
+                (receiver_name, Some(sme.property.name.to_string()))
+            }
+            Expression::ComputedMemberExpression(cme) => {
+                let receiver_name = match &cme.object {
+                    Expression::Identifier(id) => Some(id.name.to_string()),
+                    _ => None,
+                };
+                (receiver_name, None)
+            }
+            _ => (None, None),
+        }
+    }
+
+    /// Check if an expression might be null at runtime.
+    /// Returns false for known non-null types (structs, i64, f64, bool, str, ArrayList, etc.)
+    fn expr_might_be_null(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::NumericLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::ArrayExpression(_)
+            | Expression::ObjectExpression(_) => false,
+
+            Expression::NullLiteral(_) => true,
+
+            Expression::Identifier(id) => {
+                let ty = self.type_info.var_types.get(id.name.as_str());
+                match ty {
+                    Some(
+                        ZigType::Struct(_)
+                        | ZigType::I64
+                        | ZigType::F64
+                        | ZigType::Bool
+                        | ZigType::Str
+                        | ZigType::ArrayList(_)
+                        | ZigType::NamedStruct(_),
+                    ) => false,
+                    _ => true, // Void, JsAny, Anytype, unknown → might be null
+                }
+            }
+
+            // ChainExpression result is always nullable (the else branch is null)
+            Expression::ChainExpression(_) => true,
+
+            // Call expressions might return null
+            Expression::CallExpression(_) => true,
+
+            // Member access: check recursively
+            Expression::StaticMemberExpression(sme) => self.expr_might_be_null(&sme.object),
+            Expression::ComputedMemberExpression(cme) => self.expr_might_be_null(&cme.object),
+
+            // Conservative: assume everything else might be null
+            _ => true,
         }
     }
 
@@ -3923,6 +4108,10 @@ impl Lowerer {
                 for arg in &inline_data.args {
                     Self::collect_ir_idents_in_expr(arg, idents);
                 }
+            }
+            IrExpr::OptionalChain { object, body, .. } => {
+                Self::collect_ir_idents_in_expr(object, idents);
+                Self::collect_ir_idents_in_expr(body, idents);
             }
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)

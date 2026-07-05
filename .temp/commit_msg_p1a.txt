@@ -1,0 +1,12 @@
+feat(zigir): P1-A builtin method routing for String/URI/Math/Number/Array.pop
+
+- Add obj_name field to IrBuiltinCall for receiver object variable name
+- String methods: full StringRuntimeDesc table with method name remapping
+  (toUpperCase to toUpper, etc.), allocator injection, try for fallible,
+  optional argument defaults (slice, substring, normalize)
+- URI methods: encodeURI/encodeURIComponent with catch at panic,
+  decodeURI/decodeURIComponent with catch empty string
+- Math methods: add hypot, random, expm1, sinh, cosh, tanh, asinh, acosh, atanh
+- Number.toFixed: with allocator argument
+- Array.pop: use obj.pop() instead of js_array.pop()
+- Extract callee object name in Lowerer via extract_callee_object_name_static
