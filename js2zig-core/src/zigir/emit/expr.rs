@@ -3,7 +3,7 @@
 
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
-    EmitterHelpers, assign_op_to_zig, bin_op_to_zig, escape_zig_string, format_param,
+    EmitterHelpers, assign_op_to_zig, bin_op_to_zig, escape_zig_string, format_param_with_rest,
     logical_op_to_zig, update_op_to_zig,
 };
 use crate::zigir::kinds::{
@@ -233,7 +233,11 @@ impl Emitter {
                     if i > 0 {
                         sig.push_str(", ");
                     }
-                    sig.push_str(&format_param(&param.name, &param.zig_type));
+                    sig.push_str(&format_param_with_rest(
+                        &param.name,
+                        &param.zig_type,
+                        param.is_rest,
+                    ));
                 }
                 sig.push_str(&format!(") {} {{", ret));
                 self.writeln(&sig);
@@ -506,7 +510,13 @@ impl Emitter {
             if i > 0 {
                 self.write(", ");
             }
-            self.emit_expr(arg);
+            // foo(...args) → foo(args.items)
+            if let crate::zigir::types::IrExpr::Spread(inner) = arg {
+                self.emit_expr(inner);
+                self.write(".items");
+            } else {
+                self.emit_expr(arg);
+            }
         }
         self.write(")");
     }
@@ -652,21 +662,22 @@ impl Emitter {
             return;
         }
 
-        // Determine element type from first non-spread element
-        let elem_type = arr
-            .elements
-            .iter()
-            .find_map(|e| {
-                match e {
+        // Determine element type: if any spread is present, force JsAny (mixed types guaranteed).
+        // Otherwise, infer from first element.
+        let elem_type = if !arr.spread_indices.is_empty() {
+            "JsAny"
+        } else {
+            arr.elements
+                .iter()
+                .find_map(|e| match e {
                     crate::zigir::types::IrExpr::IntLiteral(_) => Some("i64"),
                     crate::zigir::types::IrExpr::FloatLiteral(_) => Some("f64"),
                     crate::zigir::types::IrExpr::StringLiteral(_) => Some("[]const u8"),
                     crate::zigir::types::IrExpr::BoolLiteral(_) => Some("bool"),
-                    crate::zigir::types::IrExpr::Spread(_) => None, // skip spread, find concrete type
                     _ => Some("i64"),
-                }
-            })
-            .unwrap_or("i64");
+                })
+                .unwrap_or("i64")
+        };
 
         // Emit as labeled block with ArrayList builder, matching Codegen pattern:
         // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
@@ -693,26 +704,106 @@ impl Emitter {
     }
 
     fn emit_object_literal(&mut self, obj: &crate::zigir::types::IrObjectLiteral) {
-        self.write(".{ ");
-        for (i, field) in obj.fields.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+        use crate::zigir::types::IrObjectItem;
+
+        // Check if any spread items exist
+        let has_spread = obj
+            .items
+            .iter()
+            .any(|item| matches!(item, IrObjectItem::Spread(_)));
+
+        if !has_spread {
+            // Pure inline properties — emit directly as .{ ... }
+            self.write(".{ ");
+            let mut first = true;
+            for item in &obj.items {
+                if let IrObjectItem::Field(field) = item {
+                    if !first {
+                        self.write(", ");
+                    }
+                    first = false;
+                    if field.is_computed {
+                        self.write(&format!("@\"{}\" = ", field.key)); // simplified
+                    } else {
+                        self.write(&format!(".{} = ", field.key));
+                    }
+                    self.emit_expr(&field.value);
+                }
             }
-            if field.is_computed {
-                self.write(&format!("@\"{}\" = ", field.key)); // simplified
-            } else {
-                self.write(&format!(".{} = ", field.key));
-            }
-            self.emit_expr(&field.value);
+            self.write(" }");
+            return;
         }
-        // Spread elements in objects
-        if !obj.spreads.is_empty() {
-            for spread in &obj.spreads {
-                self.write(", ...");
-                self.emit_expr(spread);
+
+        // Has spread: build a left-fold spreadMerge(...) chain.
+        // Strategy (same as Codegen):
+        //   { ...a }                       → a
+        //   { ...a, ...b }                 → js_runtime.spreadMerge(a, b)
+        //   { ...a, b: 1 }                 → js_runtime.spreadMerge(a, .{ .b = 1 })
+        //   { ...a, ...b, c: 1 }           → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
+
+        // Collect spread expression texts
+        let mut spread_texts: Vec<String> = Vec::new();
+        for item in &obj.items {
+            if let IrObjectItem::Spread(expr) = item {
+                spread_texts.push(self.expr_to_string(expr));
             }
         }
-        self.write(" }");
+
+        // Collect inline fields as .{ .key = val } string
+        let inline_fields: Vec<_> = obj
+            .items
+            .iter()
+            .filter_map(|item| {
+                if let IrObjectItem::Field(f) = item {
+                    Some(f)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let inline_text = if inline_fields.is_empty() {
+            None
+        } else {
+            let saved_output = std::mem::take(&mut self.output);
+            self.write(".{ ");
+            let mut first = true;
+            for field in &inline_fields {
+                if !first {
+                    self.write(", ");
+                }
+                first = false;
+                if field.is_computed {
+                    self.write(&format!("@\"{}\" = ", field.key));
+                } else {
+                    self.write(&format!(".{} = ", field.key));
+                }
+                self.emit_expr(&field.value);
+            }
+            self.write(" }");
+            let text = std::mem::take(&mut self.output);
+            self.output = saved_output;
+            Some(text)
+        };
+
+        match (spread_texts.len(), &inline_text) {
+            (0, _) => unreachable!(), // has_spread is true, so spread_texts is non-empty
+            (1, None) => {
+                // Single spread, no inline → identity
+                self.write(&spread_texts[0]);
+            }
+            _ => {
+                // Multi-spread or spread + inline → build spreadMerge chain
+                let mut result = spread_texts[0].clone();
+                for text in &spread_texts[1..] {
+                    result = format!("js_runtime.spreadMerge({}, {})", result, text);
+                }
+                if let Some(ref inline) = inline_text {
+                    result = format!("js_runtime.spreadMerge({}, {})", result, inline);
+                }
+                self.write(&result);
+            }
+        }
     }
 
     fn emit_template_literal(

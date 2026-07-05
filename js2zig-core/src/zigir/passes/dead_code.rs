@@ -181,8 +181,11 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
         }
         IrExpr::ArrayLiteral(arr) => arr.elements.iter().any(expr_has_side_effects),
         IrExpr::ObjectLiteral(obj) => {
-            obj.fields.iter().any(|f| expr_has_side_effects(&f.value))
-                || obj.spreads.iter().any(expr_has_side_effects)
+            use crate::zigir::types::IrObjectItem;
+            obj.items.iter().any(|item| match item {
+                IrObjectItem::Field(f) => expr_has_side_effects(&f.value),
+                IrObjectItem::Spread(e) => expr_has_side_effects(e),
+            })
         }
         IrExpr::TemplateLiteral { exprs, .. } => exprs.iter().any(expr_has_side_effects),
         IrExpr::Closure(_) | IrExpr::ArrowFn(_) | IrExpr::FnExpr(_) => false,
@@ -481,10 +484,20 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
             changed
         }
         IrExpr::ObjectLiteral(obj) => {
+            use crate::zigir::types::IrObjectItem;
             let mut changed = false;
-            for f in &mut obj.fields {
-                if eliminate_unreachable_in_expr(&mut f.value) {
-                    changed = true;
+            for item in &mut obj.items {
+                match item {
+                    IrObjectItem::Field(f) => {
+                        if eliminate_unreachable_in_expr(&mut f.value) {
+                            changed = true;
+                        }
+                    }
+                    IrObjectItem::Spread(e) => {
+                        if eliminate_unreachable_in_expr(e) {
+                            changed = true;
+                        }
+                    }
                 }
             }
             changed
@@ -755,11 +768,16 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
             }
         }
         IrExpr::ObjectLiteral(obj) => {
-            for f in &obj.fields {
-                collect_expr_refs(&f.value, refs);
-            }
-            for s in &obj.spreads {
-                collect_expr_refs(s, refs);
+            use crate::zigir::types::IrObjectItem;
+            for item in &obj.items {
+                match item {
+                    IrObjectItem::Field(f) => {
+                        collect_expr_refs(&f.value, refs);
+                    }
+                    IrObjectItem::Spread(e) => {
+                        collect_expr_refs(e, refs);
+                    }
+                }
             }
         }
         IrExpr::Assign { target, value, .. } => {
@@ -988,11 +1006,13 @@ mod tests {
                     name: IrIdent::new("a"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
                 IrParam {
                     name: IrIdent::new("b"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
             ],
             return_type: ZigType::I64,

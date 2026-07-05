@@ -153,6 +153,10 @@ pub struct IrParam {
     /// If true, the Emitter will prefix the param name with `_` and add
     /// a `_ = _param;` suppression statement at the start of the body.
     pub is_unused: bool,
+    /// Whether this is a rest parameter (`...args`).
+    /// If true, Emitter renders the type as `[]const JsAny` instead of
+    /// the stored `zig_type` (which is `ZigType::Anytype` from the Lowerer).
+    pub is_rest: bool,
 }
 
 /// A sequence of statements with an optional label.
@@ -696,10 +700,20 @@ pub struct IrArrayLiteral {
 
 // ── Object literal ─────────────────────────────────────
 
+/// An item in an object literal — preserves interleaving order of fields and spreads.
+#[derive(Debug, Clone)]
+pub enum IrObjectItem {
+    /// Regular field: `{ key: value }`
+    Field(IrObjectField),
+    /// Spread expression: `{ ...obj }`
+    Spread(IrExpr),
+}
+
 #[derive(Debug, Clone)]
 pub struct IrObjectLiteral {
-    pub fields: Vec<IrObjectField>,
-    pub spreads: Vec<IrExpr>,
+    /// Ordered list of fields and spreads, preserving the original JS source order.
+    /// This is critical for correct `spreadMerge` chain generation.
+    pub items: Vec<IrObjectItem>,
 }
 
 #[derive(Debug, Clone)]
@@ -842,11 +856,13 @@ mod tests {
                     name: IrIdent::new("a"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
                 IrParam {
                     name: IrIdent::new("b"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
             ],
             return_type: ZigType::I64,
@@ -926,6 +942,7 @@ mod tests {
                 name: IrIdent::new("b"),
                 zig_type: ZigType::I64,
                 is_unused: false,
+                is_rest: false,
             }],
             return_type: ZigType::I64,
             body: IrBlock::new(vec![]),
@@ -963,14 +980,13 @@ mod tests {
     #[test]
     fn test_ir_object_literal() {
         let obj = IrObjectLiteral {
-            fields: vec![IrObjectField {
+            items: vec![IrObjectItem::Field(IrObjectField {
                 key: "name".to_string(),
                 value: IrExpr::StringLiteral("foo".to_string()),
                 is_computed: false,
-            }],
-            spreads: vec![],
+            })],
         };
-        assert_eq!(obj.fields.len(), 1);
+        assert_eq!(obj.items.len(), 1);
     }
 
     #[test]
@@ -980,6 +996,7 @@ mod tests {
                 name: IrIdent::new("x"),
                 zig_type: ZigType::I64,
                 is_unused: false,
+                is_rest: false,
             }],
             return_type: ZigType::I64,
             body: IrBlock::new(vec![]),

@@ -155,10 +155,20 @@ impl ConstantFoldPass {
                 changed
             }
             IrExpr::ObjectLiteral(obj) => {
+                use crate::zigir::types::IrObjectItem;
                 let mut changed = false;
-                for f in &mut obj.fields {
-                    if Self::try_fold(&mut f.value) {
-                        changed = true;
+                for item in &mut obj.items {
+                    match item {
+                        IrObjectItem::Field(f) => {
+                            if Self::try_fold(&mut f.value) {
+                                changed = true;
+                            }
+                        }
+                        IrObjectItem::Spread(e) => {
+                            if Self::try_fold(e) {
+                                changed = true;
+                            }
+                        }
                     }
                 }
                 changed

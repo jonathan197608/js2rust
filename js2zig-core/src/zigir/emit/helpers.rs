@@ -149,6 +149,17 @@ pub fn format_param(name: &IrIdent, ty: &ZigType) -> String {
     format!("{}: {}", name.zig_name, ty.to_zig_type())
 }
 
+/// Format a parameter with rest awareness.
+/// If `is_rest` is true, the type is rendered as `[]const JsAny` regardless of `ty`.
+pub fn format_param_with_rest(name: &IrIdent, ty: &ZigType, is_rest: bool) -> String {
+    let type_str = if is_rest {
+        "[]const JsAny".to_string()
+    } else {
+        ty.to_zig_type()
+    };
+    format!("{}: {}", name.zig_name, type_str)
+}
+
 /// Escape a string for use in a Zig string literal.
 pub fn escape_zig_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len() + 16);

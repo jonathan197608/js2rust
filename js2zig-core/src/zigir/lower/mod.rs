@@ -1119,6 +1119,7 @@ impl Lowerer {
                     name: self.make_ident(pname),
                     zig_type: ptype.clone(),
                     is_unused: false, // set later in lower_fn_decl
+                    is_rest: false,
                 });
             }
         } else {
@@ -1129,6 +1130,7 @@ impl Lowerer {
                         name: self.make_ident(pname),
                         zig_type: ZigType::Anytype,
                         is_unused: false, // set later in lower_fn_decl
+                        is_rest: false,
                     });
                 }
             }
@@ -1145,6 +1147,7 @@ impl Lowerer {
                 name: self.make_ident(rname),
                 zig_type: ZigType::Anytype, // Will be rendered as []const JsAny by Emitter
                 is_unused: false,           // set later in lower_fn_decl
+                is_rest: true,
             });
         }
 
@@ -2183,6 +2186,7 @@ impl Lowerer {
                         name: self.make_ident(pname),
                         zig_type: ptype.clone(),
                         is_unused: false,
+                        is_rest: false,
                     });
                 }
                 params
@@ -3585,8 +3589,9 @@ impl Lowerer {
 
     /// Lower an object expression.
     fn lower_object_expr(&mut self, oe: &ObjectExpression) -> crate::zigir::types::IrExpr {
-        let mut fields = Vec::new();
-        let mut spreads = Vec::new();
+        use crate::zigir::types::IrObjectItem;
+
+        let mut items = Vec::new();
 
         for prop in oe.properties.iter() {
             match prop {
@@ -3598,22 +3603,19 @@ impl Lowerer {
                         _ => ("__computed__".to_string(), true),
                     };
                     let value = self.lower_expr(&op.value);
-                    fields.push(crate::zigir::types::IrObjectField {
+                    items.push(IrObjectItem::Field(crate::zigir::types::IrObjectField {
                         key,
                         value,
                         is_computed,
-                    });
+                    }));
                 }
                 ObjectPropertyKind::SpreadProperty(sp) => {
-                    spreads.push(self.lower_expr(&sp.argument));
+                    items.push(IrObjectItem::Spread(self.lower_expr(&sp.argument)));
                 }
             }
         }
 
-        crate::zigir::types::IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral {
-            fields,
-            spreads,
-        })
+        crate::zigir::types::IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral { items })
     }
 
     /// Lower an arrow function expression.
@@ -4080,8 +4082,16 @@ impl Lowerer {
                 }
             }
             IrExpr::ObjectLiteral(ol) => {
-                for f in &ol.fields {
-                    Self::collect_ir_idents_in_expr(&f.value, idents);
+                use crate::zigir::types::IrObjectItem;
+                for item in &ol.items {
+                    match item {
+                        IrObjectItem::Field(f) => {
+                            Self::collect_ir_idents_in_expr(&f.value, idents);
+                        }
+                        IrObjectItem::Spread(e) => {
+                            Self::collect_ir_idents_in_expr(e, idents);
+                        }
+                    }
                 }
             }
             IrExpr::New(ne) => {
@@ -4639,6 +4649,7 @@ impl Lowerer {
                     name: self.make_ident(pname),
                     zig_type: ptype,
                     is_unused: false,
+                    is_rest: false,
                 });
             }
         }
@@ -4867,6 +4878,7 @@ impl Lowerer {
                         name: p.name.clone(),
                         zig_type: p.zig_type.clone(),
                         is_unused: p.is_unused,
+                        is_rest: false,
                     })
                     .collect();
                 let ret_struct_name =

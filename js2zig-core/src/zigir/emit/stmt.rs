@@ -4,7 +4,7 @@
 use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
-    EmitterHelpers, escape_zig_string, format_param, format_return_type,
+    EmitterHelpers, escape_zig_string, format_param_with_rest, format_return_type,
 };
 use crate::zigir::ident::IrIdent;
 use crate::zigir::ops::AssignOp;
@@ -81,7 +81,11 @@ impl Emitter {
             if need_comma {
                 sig.push_str(", ");
             }
-            sig.push_str(&format_param(&param.name, &param.zig_type));
+            sig.push_str(&format_param_with_rest(
+                &param.name,
+                &param.zig_type,
+                param.is_rest,
+            ));
             need_comma = true;
         }
         sig.push_str(&format!(") {} {{", cs.return_type.to_zig_type()));
@@ -175,15 +179,16 @@ impl Emitter {
             if i > 0 {
                 self.write(", ");
             }
+            let type_str = if param.is_rest {
+                "[]const JsAny".to_string()
+            } else {
+                param.zig_type.to_zig_type()
+            };
             if param.is_unused {
                 // Output `_name: Type` for unused params to suppress Zig's unused-variable warning
-                self.write(&format!(
-                    "_{}: {}",
-                    param.name.zig_name,
-                    param.zig_type.to_zig_type()
-                ));
+                self.write(&format!("_{}: {}", param.name.zig_name, type_str));
             } else {
-                self.write(&format_param(&param.name, &param.zig_type));
+                self.write(&format!("{}: {}", param.name.zig_name, type_str));
             }
         }
 
@@ -275,7 +280,11 @@ impl Emitter {
             if i > 0 {
                 sig.push_str(", ");
             }
-            sig.push_str(&format_param(&param.name, &param.zig_type));
+            sig.push_str(&format_param_with_rest(
+                &param.name,
+                &param.zig_type,
+                param.is_rest,
+            ));
         }
         sig.push_str(&format!(") {} {{", class_name));
         self.writeln(&sig);
@@ -331,7 +340,10 @@ impl Emitter {
         };
 
         for param in &method.params {
-            sig.push_str(&format!(", {}", format_param(&param.name, &param.zig_type)));
+            sig.push_str(&format!(
+                ", {}",
+                format_param_with_rest(&param.name, &param.zig_type, param.is_rest)
+            ));
         }
         sig.push_str(&format!(") {} {{", method.return_type.to_zig_type()));
         self.writeln(&sig);

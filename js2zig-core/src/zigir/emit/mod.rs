@@ -202,11 +202,13 @@ mod tests {
                     name: IrIdent::new("a"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
                 IrParam {
                     name: IrIdent::new("b"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
             ],
             return_type: ZigType::I64,

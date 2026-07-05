@@ -337,11 +337,16 @@ impl ValidatePass {
                 }
             }
             IrExpr::ObjectLiteral(obj) => {
-                for f in &obj.fields {
-                    self.check_closure_refs_in_expr(&f.value);
-                }
-                for s in &obj.spreads {
-                    self.check_closure_refs_in_expr(s);
+                use crate::zigir::types::IrObjectItem;
+                for item in &obj.items {
+                    match item {
+                        IrObjectItem::Field(f) => {
+                            self.check_closure_refs_in_expr(&f.value);
+                        }
+                        IrObjectItem::Spread(e) => {
+                            self.check_closure_refs_in_expr(e);
+                        }
+                    }
                 }
             }
             IrExpr::Assign { target, value, .. } => {
@@ -641,11 +646,16 @@ fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet
             }
         }
         IrExpr::ObjectLiteral(obj) => {
-            for f in &obj.fields {
-                collect_idents_from_expr(&f.value, names);
-            }
-            for s in &obj.spreads {
-                collect_idents_from_expr(s, names);
+            use crate::zigir::types::IrObjectItem;
+            for item in &obj.items {
+                match item {
+                    IrObjectItem::Field(f) => {
+                        collect_idents_from_expr(&f.value, names);
+                    }
+                    IrObjectItem::Spread(e) => {
+                        collect_idents_from_expr(e, names);
+                    }
+                }
             }
         }
         IrExpr::Assign { target, value, .. } => {
@@ -778,11 +788,13 @@ mod tests {
                     name: IrIdent::new("a"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
                 IrParam {
                     name: IrIdent::new("b"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 },
             ],
             return_type: ZigType::I64,
@@ -849,6 +861,7 @@ mod tests {
                 name: IrIdent::new("data"),
                 zig_type: ZigType::JsAny, // NOT C-safe
                 is_unused: false,
+                is_rest: false,
             }],
             return_type: ZigType::JsAny, // NOT C-safe
             body: IrBlock::new(vec![]),
@@ -891,6 +904,7 @@ mod tests {
                     name: IrIdent::new("x"),
                     zig_type: ZigType::I64,
                     is_unused: false,
+                    is_rest: false,
                 }],
                 return_type: ZigType::I64,
                 body: IrBlock::new(vec![IrStmt::Return {
