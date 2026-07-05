@@ -63,6 +63,30 @@ impl Emitter {
                     self.write(", ");
                     self.emit_expr(right);
                     self.write(")");
+                } else if *op == crate::zigir::ops::BinOp::Div {
+                    // Integer division requires @divTrunc; float uses /
+                    let is_float = expr_is_float(left) || expr_is_float(right);
+                    if is_float {
+                        self.write("(");
+                        self.emit_expr(left);
+                        self.write(" / ");
+                        self.emit_expr(right);
+                        self.write(")");
+                    } else {
+                        self.write("@divTrunc(");
+                        self.emit_expr(left);
+                        self.write(", ");
+                        self.emit_expr(right);
+                        self.write(")");
+                    }
+                } else if *op == crate::zigir::ops::BinOp::UrShr {
+                    // JS >>> (unsigned right shift): treat left as u32, shift right with zero fill.
+                    // JS semantics: ToUint32(left) >>> (ToUint32(right) & 31)
+                    self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
+                    self.emit_expr(left);
+                    self.write(")))) >> @intCast(");
+                    self.emit_expr(right);
+                    self.write(" & 31)))");
                 } else {
                     self.emit_expr(left);
                     self.write(&format!(" {} ", bin_op_to_zig(*op)));
@@ -974,4 +998,16 @@ impl Emitter {
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Helpers for type-aware operator emission
+// ═══════════════════════════════════════════════════════
+
+/// Check if an IrExpr is a float-like expression (for division routing).
+/// This is a lightweight heuristic: FloatLiteral → always float;
+/// IntLiteral → never float; anything else → assume integer (safe default
+/// since @divTrunc works for comptime_int too).
+fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
+    matches!(expr, crate::zigir::types::IrExpr::FloatLiteral(_))
 }

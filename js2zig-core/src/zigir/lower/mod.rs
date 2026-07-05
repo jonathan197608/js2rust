@@ -1341,7 +1341,10 @@ impl Lowerer {
                 }
             }
 
-            // ── Unsupported / skippable ────────────────────
+            // ── Skippable ──────────────────────────────────
+            Statement::EmptyStatement(_) => crate::zigir::types::IrStmt::Comment("".to_string()),
+
+            // ── Unsupported ────────────────────────────────
             _ => {
                 let span = oxc_span::GetSpan::span(stmt);
                 crate::zigir::types::IrStmt::CompileError {
@@ -2309,12 +2312,15 @@ impl Lowerer {
             Expression::BooleanLiteral(b) => IrExpr::BoolLiteral(b.value),
             Expression::NullLiteral(_) => IrExpr::Null,
             Expression::RegExpLiteral(rl) => {
-                let span = self.span_to_source_span(rl.span);
-                self.add_error(span, "RegExp literals are not directly supported");
-                IrExpr::CompileError {
-                    span: SourceSpan::default(),
-                    msg: "RegExp literal not supported".to_string(),
-                }
+                // JS regexp literal `/pattern/flags` → new RegExp(pattern)
+                // Produce an IrNewExpr equivalent to `new RegExp("pattern")`
+                let pattern = rl.regex.pattern.text.as_str();
+                let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
+                crate::zigir::types::IrExpr::New(crate::zigir::types::IrNewExpr {
+                    constructor: crate::zigir::kinds::NewConstructor::RegExp,
+                    args: vec![crate::zigir::types::IrExpr::StringLiteral(escaped)],
+                    result_type: crate::types::ZigType::JsAny,
+                })
             }
             Expression::BigIntLiteral(bi) => {
                 // BigInt is emitted as a string in Zig; store as StringLiteral
@@ -4214,7 +4220,27 @@ impl Lowerer {
             Expression::Identifier(id) => match id.name.as_str() {
                 "Map" => NewConstructor::Map,
                 "Set" => NewConstructor::Set,
-                "Date" => NewConstructor::Date(crate::zigir::kinds::DateConstructorKind::Now),
+                "Date" => {
+                    // Determine DateConstructorKind from arguments
+                    let kind = if ne.arguments.is_empty() {
+                        crate::zigir::kinds::DateConstructorKind::Now
+                    } else if ne.arguments.len() >= 2 {
+                        crate::zigir::kinds::DateConstructorKind::FromComponents
+                    } else if let Some(first_arg) = ne.arguments.first()
+                        && let Some(expr) = first_arg.as_expression()
+                    {
+                        // Detect if argument is a string literal
+                        let is_string = matches!(expr, Expression::StringLiteral(_));
+                        if is_string {
+                            crate::zigir::kinds::DateConstructorKind::FromString
+                        } else {
+                            crate::zigir::kinds::DateConstructorKind::FromMillis
+                        }
+                    } else {
+                        crate::zigir::kinds::DateConstructorKind::Now
+                    };
+                    NewConstructor::Date(kind)
+                }
                 "RegExp" => NewConstructor::RegExp,
                 "Int8Array" | "Uint8Array" | "Uint8ClampedArray" | "Int16Array" | "Uint16Array"
                 | "Int32Array" | "Uint32Array" | "Float32Array" | "Float64Array" => {
