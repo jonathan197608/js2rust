@@ -163,10 +163,16 @@ pub struct IrParam {
 }
 
 /// A sequence of statements with an optional label.
+///
+/// When `transparent` is true, the block is not a scope boundary — the Emitter
+/// emits its child statements flat at the parent's indent level without `{}` braces.
+/// Used for multi-declarator variable declarations (`const a = 1, b = 2;`) that
+/// must not create a new block scope in Zig.
 #[derive(Debug, Clone)]
 pub struct IrBlock {
     pub stmts: Vec<IrStmt>,
     pub label: Option<String>,
+    pub transparent: bool,
 }
 
 /// Kind of for-in iteration.
@@ -193,13 +199,29 @@ pub enum IrForOfKind {
 
 impl IrBlock {
     pub fn new(stmts: Vec<IrStmt>) -> Self {
-        Self { stmts, label: None }
+        Self {
+            stmts,
+            label: None,
+            transparent: false,
+        }
     }
 
     pub fn with_label(stmts: Vec<IrStmt>, label: String) -> Self {
         Self {
             stmts,
             label: Some(label),
+            transparent: false,
+        }
+    }
+
+    /// Create a transparent block — emitted flat without `{}` braces.
+    /// Used for multi-declarator variable declarations that must not
+    /// introduce a new scope boundary in the generated Zig code.
+    pub fn new_transparent(stmts: Vec<IrStmt>) -> Self {
+        Self {
+            stmts,
+            label: None,
+            transparent: true,
         }
     }
 }

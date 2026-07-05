@@ -1447,7 +1447,9 @@ impl Lowerer {
                     if stmts.len() == 1 {
                         stmts.into_iter().next().unwrap()
                     } else {
-                        crate::zigir::types::IrStmt::Block(IrBlock::new(stmts))
+                        // Transparent block: emits flat without {} braces so that
+                        // `const a = 1, b = 2;` doesn't create a new Zig scope.
+                        crate::zigir::types::IrStmt::Block(IrBlock::new_transparent(stmts))
                     }
                 }
             }
@@ -1589,7 +1591,11 @@ impl Lowerer {
             }
             _ => vec![self.lower_stmt(stmt)],
         };
-        IrBlock { stmts, label }
+        IrBlock {
+            stmts,
+            label,
+            transparent: false,
+        }
     }
 
     /// Lower an if statement (including else-if chains).
@@ -4643,6 +4649,20 @@ impl Lowerer {
             })
         } else {
             // No captures → IrFnExpr
+            // Still register a closure struct so the Emitter emits the
+            // `const _fn_expr_N = struct { pub fn call() ... }` definition
+            // at module scope (the FnExpr reference only emits the name).
+            let struct_name = self.make_ident(&name);
+            self.pending_arrow_structs
+                .push(crate::zigir::types::IrClosureStruct {
+                    name: struct_name.clone(),
+                    captured: vec![],
+                    fn_params: params.clone(),
+                    return_type: return_type.clone(),
+                    typeof_return_body: None,
+                    body: body.clone(),
+                });
+
             IrExpr::FnExpr(IrFnExpr {
                 name: Some(self.make_ident(&name)),
                 params,

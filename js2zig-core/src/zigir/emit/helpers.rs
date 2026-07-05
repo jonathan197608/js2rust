@@ -133,8 +133,14 @@ pub fn zig_type_annotation(ty: Option<&ZigType>) -> Option<String> {
 }
 
 /// Format a function return type, considering async/throw modifiers.
+///
+/// For async functions returning a `NamedStruct`, the `host.` prefix is added
+/// because the struct type is defined in the host module (e.g., `host.FetchUserResult`).
 pub fn format_return_type(ret_type: &ZigType, is_async: bool, can_throw: bool) -> String {
-    let base = ret_type.to_zig_type();
+    let base = match ret_type {
+        ZigType::NamedStruct(name) if is_async => format!("host.{}", name),
+        _ => ret_type.to_zig_type(),
+    };
     if (is_async || can_throw) && base != "void" {
         format!("!{}", base)
     } else if can_throw && base == "void" {
@@ -195,6 +201,20 @@ mod tests {
         assert_eq!(format_return_type(&ZigType::Void, false, true), "!void");
         assert_eq!(format_return_type(&ZigType::Void, false, false), "void");
         assert_eq!(format_return_type(&ZigType::F64, true, true), "!f64");
+        // Async NamedStruct should get host. prefix
+        assert_eq!(
+            format_return_type(
+                &ZigType::NamedStruct("FetchUserResult".to_string()),
+                true,
+                false
+            ),
+            "!host.FetchUserResult"
+        );
+        // Non-async NamedStruct should NOT get host. prefix
+        assert_eq!(
+            format_return_type(&ZigType::NamedStruct("MyStruct".to_string()), false, false),
+            "MyStruct"
+        );
     }
 
     #[test]

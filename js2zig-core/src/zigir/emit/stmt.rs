@@ -547,16 +547,25 @@ impl Emitter {
             }
 
             IrStmt::Block(block) => {
-                // Emit label before opening brace if present (Zig requires `label: { ... }`)
-                if let Some(label) = &block.label {
-                    self.writeln(&format!("{}: {{", label));
+                if block.transparent {
+                    // Transparent block: emit children flat at current indent
+                    // without {} braces (used for multi-declarator variable
+                    // declarations that must not introduce a new scope).
+                    for stmt in &block.stmts {
+                        self.emit_stmt(stmt);
+                    }
                 } else {
-                    self.writeln("{");
+                    // Emit label before opening brace if present (Zig requires `label: { ... }`)
+                    if let Some(label) = &block.label {
+                        self.writeln(&format!("{}: {{", label));
+                    } else {
+                        self.writeln("{");
+                    }
+                    self.indent_push();
+                    self.emit_block_stmts_unlabeled(block);
+                    self.indent_pop();
+                    self.writeln("}");
                 }
-                self.indent_push();
-                self.emit_block_stmts_unlabeled(block);
-                self.indent_pop();
-                self.writeln("}");
             }
 
             IrStmt::CompileError { span, msg } => {
