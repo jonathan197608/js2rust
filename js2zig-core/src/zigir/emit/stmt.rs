@@ -747,7 +747,7 @@ impl Emitter {
     ) {
         self.write_indent();
         self.write("if (");
-        self.emit_expr(cond);
+        self.emit_expr_as_bool(cond);
         self.write(") {\n");
         self.indent_push();
         self.emit_block_stmts(then);
@@ -763,7 +763,7 @@ impl Emitter {
             {
                 self.write_indent();
                 self.write("} else if (");
-                self.emit_expr(inner_cond);
+                self.emit_expr_as_bool(inner_cond);
                 self.write(") {\n");
                 self.indent_push();
                 self.emit_block_stmts(inner_then);
@@ -793,7 +793,7 @@ impl Emitter {
             {
                 self.write_indent();
                 self.write("} else if (");
-                self.emit_expr(inner_cond);
+                self.emit_expr_as_bool(inner_cond);
                 self.write(") {\n");
                 self.indent_push();
                 self.emit_block_stmts(inner_then);
@@ -820,7 +820,7 @@ impl Emitter {
             self.write(&format!("{}: ", lbl));
         }
         self.write("while (");
-        self.emit_expr(cond);
+        self.emit_expr_as_bool(cond);
         self.write(") {\n");
         self.indent_push();
         self.emit_block_stmts(body);
@@ -844,7 +844,7 @@ impl Emitter {
         self.emit_block_stmts(body);
         self.write_indent();
         self.write("if (");
-        self.emit_expr(cond);
+        self.emit_expr_as_bool(cond);
         self.write(") {} else { break; }\n");
         self.indent_pop();
         self.writeln("}");
@@ -875,7 +875,7 @@ impl Emitter {
         self.write_indent();
         self.write("while (");
         if let Some(c) = cond {
-            self.emit_expr(c);
+            self.emit_expr_as_bool(c);
         } else {
             self.write("true");
         }

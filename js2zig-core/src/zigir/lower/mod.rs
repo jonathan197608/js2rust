@@ -2769,9 +2769,15 @@ impl Lowerer {
                 };
             }
             BinaryOperator::In => {
-                return IrExpr::CompileError {
-                    span: self.span_to_source_span(be.span),
-                    msg: "in operator is not supported in Zig".to_string(),
+                // `key in obj` → obj.contains(key)
+                let right_expr = self.lower_expr(&be.right);
+                let left_expr = self.lower_expr(&be.left);
+                return IrExpr::Binary {
+                    op: BinOp::In,
+                    left: Box::new(left_expr),
+                    right: Box::new(right_expr),
+                    left_type: Some(ZigType::Str),
+                    right_type: None,
                 };
             }
             _ => {}
@@ -2809,8 +2815,8 @@ impl Lowerer {
             BinaryOperator::ShiftLeft => BinOp::Shl,
             BinaryOperator::ShiftRight => BinOp::Shr,
             BinaryOperator::ShiftRightZeroFill => BinOp::UrShr,
-            // Instanceof and In are handled above — these arms are unreachable
-            // but kept for exhaustiveness.
+            // Instanceof is handled above (CompileError). In is also handled above (BinOp::In).
+            // These arms are unreachable but kept for exhaustiveness.
             BinaryOperator::Instanceof | BinaryOperator::In => unreachable!(),
         };
 
@@ -3613,7 +3619,8 @@ impl Lowerer {
             | BinaryOperator::LessThan
             | BinaryOperator::GreaterThan
             | BinaryOperator::LessEqualThan
-            | BinaryOperator::GreaterEqualThan => Some(ZigType::Bool),
+            | BinaryOperator::GreaterEqualThan
+            | BinaryOperator::In => Some(ZigType::Bool),
 
             // Addition: string if either operand is string, otherwise numeric
             BinaryOperator::Addition => match (left_ty.as_ref(), right_ty.as_ref()) {

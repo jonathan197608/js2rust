@@ -141,6 +141,14 @@ impl Emitter {
                     self.emit_expr(right);
                     self.write(" & 31)))");
                 }
+                // ── `in` operator: key in obj → obj.contains(key) ──
+                else if *op == BinOp::In {
+                    // Right side is the object, left side is the key (operands swapped for .contains())
+                    self.emit_expr(right);
+                    self.write(".contains(");
+                    self.emit_expr(left);
+                    self.write(")");
+                }
                 // ── Default: direct operator ──
                 else {
                     self.emit_expr(left);
@@ -200,12 +208,12 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::Logical { op, left, right } => {
-                // Zig `and`/`or` require bool operands. Codegen always wraps
-                // logical expressions in parentheses.
+                // Zig `and`/`or` require bool operands. Coerce operands with
+                // truthiness if they are not already bool.
                 self.write("(");
-                self.emit_expr(left);
+                self.emit_expr_as_bool(left);
                 self.write(&format!(" {} ", logical_op_to_zig(*op)));
-                self.emit_expr(right);
+                self.emit_expr_as_bool(right);
                 self.write(")");
             }
 
@@ -372,7 +380,7 @@ impl Emitter {
             // ── Conditional / template ───────────────
             crate::zigir::types::IrExpr::Conditional { cond, then, else_ } => {
                 self.write("if (");
-                self.emit_expr(cond);
+                self.emit_expr_as_bool(cond);
                 self.write(") ");
                 self.emit_expr(then);
                 self.write(" else ");
@@ -1346,6 +1354,64 @@ impl Emitter {
                 self.write(&format!(" {} ", bin_op_to_zig(op)));
                 self.emit_expr(right);
             }
+        }
+    }
+
+    /// Check if an IrExpr is definitely of type `bool`.
+    fn ir_expr_is_bool(expr: &crate::zigir::types::IrExpr) -> bool {
+        use crate::zigir::ops::BinOp;
+        use crate::zigir::types::IrExpr;
+
+        match expr {
+            IrExpr::BoolLiteral(_) => true,
+            IrExpr::Logical { .. } => true,
+            IrExpr::Unary {
+                op: crate::zigir::ops::UnaOp::Not | crate::zigir::ops::UnaOp::Delete,
+                ..
+            } => true,
+            IrExpr::Binary { op, .. } => matches!(
+                op,
+                BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::StrictEq
+                    | BinOp::StrictNe
+                    | BinOp::Lt
+                    | BinOp::Le
+                    | BinOp::Gt
+                    | BinOp::Ge
+                    | BinOp::In
+                    | BinOp::InstanceOf
+            ),
+            _ => false,
+        }
+    }
+
+    /// Check if an IrExpr produces a string type.
+    fn ir_expr_is_string(expr: &crate::zigir::types::IrExpr) -> bool {
+        use crate::zigir::types::IrExpr;
+        matches!(expr, IrExpr::StringLiteral(_) | IrExpr::TemplateLiteral { .. })
+    }
+
+    /// Emit an expression with truthiness coercion for Zig `bool` context.
+    ///
+    /// When a non-bool expression appears in a position that Zig requires `bool`
+    /// (e.g. `if` condition, `while` condition), we coerce it via JS truthiness:
+    /// - `bool` expressions → emitted directly (no coercion needed)
+    /// - `Str` expressions → `.len != 0` (empty string is falsy in JS)
+    /// - numeric/other → `((expr) != 0)` (0 is falsy in JS)
+    pub(crate) fn emit_expr_as_bool(&mut self, expr: &crate::zigir::types::IrExpr) {
+        if Self::ir_expr_is_bool(expr) {
+            self.emit_expr(expr);
+        } else if Self::ir_expr_is_string(expr) {
+            // String truthiness: non-empty → true, empty → false
+            self.write("(");
+            self.emit_expr(expr);
+            self.write(".len != 0)");
+        } else {
+            // Default numeric truthiness: 0 → false, non-zero → true
+            self.write("((");
+            self.emit_expr(expr);
+            self.write(") != 0)");
         }
     }
 }

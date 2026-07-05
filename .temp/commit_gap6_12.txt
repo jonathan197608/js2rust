@@ -1,0 +1,5 @@
+﻿feat(zigir): GAP-6 in operator and GAP-12 truthiness coercion
+
+GAP-6: Lower BinaryOperator::In into IrExpr::Binary with BinOp::In instead of CompileError. Emitter emits right.contains(left) for In operator.
+
+GAP-12: Add emit_expr_as_bool to Emitter for JS truthiness coercion. Bool expressions pass through, strings get .len != 0, others get != 0. Applied to if/while/do-while/for conditions and logical and/or operands.
