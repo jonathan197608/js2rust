@@ -1,0 +1,5 @@
+﻿feat(zigir): GAP-8 wrapper constructors, GAP-10 await host-async, GAP-15 BigIntLiteral
+
+GAP-8: new String/Number/Boolean now emit argument value directly instead of CompileError.
+GAP-10: lower_await now detects async_host_fns and sets is_host_async. Emitter generates full io.async/Task.await pattern.
+GAP-15: Add IrExpr::BigIntLiteral variant. Lowerer stores decimal value string. Emitter generates JsBigInt.init() call.

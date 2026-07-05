@@ -38,6 +38,13 @@ impl Emitter {
                 self.write(if *b { "true" } else { "false" });
             }
 
+            crate::zigir::types::IrExpr::BigIntLiteral(s) => {
+                self.write(&format!(
+                    "js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
+                    s
+                ));
+            }
+
             crate::zigir::types::IrExpr::Null => {
                 self.write("JsAny.fromNull()");
             }
@@ -397,24 +404,46 @@ impl Emitter {
 
             // ── Async ───────────────────────────────
             crate::zigir::types::IrExpr::Await(await_expr) => {
-                // Simplified await emission
-                self.write("(try ");
+                // Emit: (blk: { var _tN = io.async(callee, .{ io, args... }); defer _ = _tN.cancel(io) catch undefined; break :blk try _tN.await(io); })
+                self.write(&format!("({}: {{\n", await_expr.block_label));
+                self.indent_push();
+                self.write_indent();
+                self.write(&format!("var {} = io.async(", await_expr.task_var.zig_name));
+
                 if await_expr.is_host_async {
-                    self.write("host.");
-                    self.emit_expr(&await_expr.callee);
-                    self.write("_async(");
-                    // NOTE: await_expr.args contains the args, but for now we emit simplified
-                    for (i, arg) in await_expr.args.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        self.emit_expr(arg);
+                    // For host async, callee is an Ident holding the host fn name
+                    if let crate::zigir::types::IrExpr::Ident(id) = &*await_expr.callee {
+                        self.write(&format!("host.{}_async", id.zig_name));
+                    } else {
+                        // Fallback
+                        self.emit_expr(&await_expr.callee);
                     }
-                    self.write(")");
                 } else {
                     self.emit_expr(&await_expr.callee);
                 }
-                self.write(")");
+
+                self.write(", .{ io");
+                for arg in &await_expr.args {
+                    self.write(", ");
+                    self.emit_expr(arg);
+                }
+                self.write(" });\n");
+
+                self.write_indent();
+                self.write(&format!(
+                    "defer _ = {}.cancel(io) catch undefined;\n",
+                    await_expr.task_var.zig_name
+                ));
+
+                self.write_indent();
+                self.write(&format!(
+                    "break :{} try {}.await(io);\n",
+                    await_expr.block_label, await_expr.task_var.zig_name
+                ));
+
+                self.indent_pop();
+                self.write_indent();
+                self.write("})");
             }
 
             // ── Construction ────────────────────────
@@ -1389,7 +1418,10 @@ impl Emitter {
     /// Check if an IrExpr produces a string type.
     fn ir_expr_is_string(expr: &crate::zigir::types::IrExpr) -> bool {
         use crate::zigir::types::IrExpr;
-        matches!(expr, IrExpr::StringLiteral(_) | IrExpr::TemplateLiteral { .. })
+        matches!(
+            expr,
+            IrExpr::StringLiteral(_) | IrExpr::TemplateLiteral { .. }
+        )
     }
 
     /// Emit an expression with truthiness coercion for Zig `bool` context.

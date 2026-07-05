@@ -458,6 +458,7 @@ pub enum IrExpr {
     FloatLiteral(f64),
     StringLiteral(String),
     BoolLiteral(bool),
+    BigIntLiteral(String), // decimal string value (e.g. "9", "12345678901234567890")
     Null,
     Undefined,
 

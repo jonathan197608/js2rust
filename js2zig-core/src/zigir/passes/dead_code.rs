@@ -150,6 +150,7 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
         | IrExpr::FloatLiteral(_)
         | IrExpr::StringLiteral(_)
         | IrExpr::BoolLiteral(_)
+        | IrExpr::BigIntLiteral(_)
         | IrExpr::Null
         | IrExpr::Undefined
         | IrExpr::Ident(_)
@@ -580,6 +581,7 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
         | IrExpr::FloatLiteral(_)
         | IrExpr::StringLiteral(_)
         | IrExpr::BoolLiteral(_)
+        | IrExpr::BigIntLiteral(_)
         | IrExpr::Null
         | IrExpr::Undefined
         | IrExpr::Ident(_)
@@ -840,6 +842,7 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
         | IrExpr::FloatLiteral(_)
         | IrExpr::StringLiteral(_)
         | IrExpr::BoolLiteral(_)
+        | IrExpr::BigIntLiteral(_)
         | IrExpr::Null
         | IrExpr::Undefined
         | IrExpr::This

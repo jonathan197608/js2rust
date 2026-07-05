@@ -415,6 +415,7 @@ impl ValidatePass {
             | IrExpr::FloatLiteral(_)
             | IrExpr::StringLiteral(_)
             | IrExpr::BoolLiteral(_)
+            | IrExpr::BigIntLiteral(_)
             | IrExpr::Null
             | IrExpr::Undefined
             | IrExpr::Ident(_)
@@ -724,6 +725,7 @@ fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet
         | IrExpr::FloatLiteral(_)
         | IrExpr::StringLiteral(_)
         | IrExpr::BoolLiteral(_)
+        | IrExpr::BigIntLiteral(_)
         | IrExpr::Null
         | IrExpr::Undefined
         | IrExpr::This

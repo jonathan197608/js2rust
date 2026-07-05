@@ -2323,9 +2323,9 @@ impl Lowerer {
                 })
             }
             Expression::BigIntLiteral(bi) => {
-                // BigInt is emitted as a string in Zig; store as StringLiteral
-                let raw = bi.raw.as_ref().map(|s| s.to_string()).unwrap_or_default();
-                IrExpr::StringLiteral(raw)
+                // BigInt literal: store the decimal value string (without trailing 'n')
+                let s = bi.value.as_str().to_string();
+                crate::zigir::types::IrExpr::BigIntLiteral(s)
             }
 
             // ── Identifier ──────────────────────────────
@@ -4346,6 +4346,7 @@ impl Lowerer {
             | IrExpr::FloatLiteral(_)
             | IrExpr::StringLiteral(_)
             | IrExpr::BoolLiteral(_)
+            | IrExpr::BigIntLiteral(_)
             | IrExpr::Null
             | IrExpr::Undefined
             | IrExpr::This
@@ -4388,15 +4389,53 @@ impl Lowerer {
 
     /// Lower an await expression.
     fn lower_await(&mut self, ae: &AwaitExpression) -> crate::zigir::types::IrExpr {
-        // Simplified: wrap in IrAwaitExpr
-        // Full implementation (Task 1.14) needs async frame + block label
+        let task_var = IrIdent::new(&self.name_mangler.next_name("_t"));
+        let block_label = format!("blk_{}", self.name_mangler.peek_count("_t"));
+
+        // Check if this is an async host function call
+        if let Expression::CallExpression(call) = &ae.argument {
+            if let Expression::Identifier(id) = &call.callee {
+                let name = id.name.as_str();
+                if self.async_host_fns.contains(name) {
+                    // Host async function: emit as host.{name}_async
+                    let args: Vec<_> = call
+                        .arguments
+                        .iter()
+                        .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
+                        .collect();
+                    return crate::zigir::types::IrExpr::Await(crate::zigir::types::IrAwaitExpr {
+                        task_var,
+                        callee: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new(name))),
+                        args,
+                        is_host_async: true,
+                        block_label,
+                    });
+                }
+            }
+            // Regular async call (non-host)
+            let callee = self.lower_expr(&call.callee);
+            let args: Vec<_> = call
+                .arguments
+                .iter()
+                .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
+                .collect();
+            return crate::zigir::types::IrExpr::Await(crate::zigir::types::IrAwaitExpr {
+                task_var,
+                callee: Box::new(callee),
+                args,
+                is_host_async: false,
+                block_label,
+            });
+        }
+
+        // Non-call await (unusual but valid JS)
         let argument = self.lower_expr(&ae.argument);
         crate::zigir::types::IrExpr::Await(crate::zigir::types::IrAwaitExpr {
-            task_var: IrIdent::new("__task"),
+            task_var,
             callee: Box::new(argument),
             args: vec![],
             is_host_async: false,
-            block_label: "__await_blk".to_string(),
+            block_label,
         })
     }
 
@@ -4452,6 +4491,34 @@ impl Lowerer {
                 "Error" => NewConstructor::Error("Error".to_string()),
                 "TypeError" => NewConstructor::Error("TypeError".to_string()),
                 "RangeError" => NewConstructor::Error("RangeError".to_string()),
+                // Wrapper constructors — emit argument value directly (no wrapper object in Zig)
+                "String" => {
+                    if let Some(first_arg) = ne.arguments.first()
+                        && let Some(expr) = first_arg.as_expression()
+                    {
+                        return self.lower_expr(expr);
+                    } else {
+                        return crate::zigir::types::IrExpr::StringLiteral("".to_string());
+                    }
+                }
+                "Number" => {
+                    if let Some(first_arg) = ne.arguments.first()
+                        && let Some(expr) = first_arg.as_expression()
+                    {
+                        return self.lower_expr(expr);
+                    } else {
+                        return crate::zigir::types::IrExpr::IntLiteral(0);
+                    }
+                }
+                "Boolean" => {
+                    if let Some(first_arg) = ne.arguments.first()
+                        && let Some(expr) = first_arg.as_expression()
+                    {
+                        return self.lower_expr(expr);
+                    } else {
+                        return crate::zigir::types::IrExpr::BoolLiteral(false);
+                    }
+                }
                 name if self.class_names.contains(name) => NewConstructor::Class(name.to_string()),
                 _ => {
                     let span = oxc_span::GetSpan::span(ne);

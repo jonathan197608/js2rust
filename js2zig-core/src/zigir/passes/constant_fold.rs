@@ -105,7 +105,10 @@ impl ConstantFoldPass {
                 // Unwrap paren around a literal
                 if matches!(
                     inner.as_ref(),
-                    IrExpr::IntLiteral(_) | IrExpr::FloatLiteral(_) | IrExpr::BoolLiteral(_)
+                    IrExpr::IntLiteral(_)
+                        | IrExpr::FloatLiteral(_)
+                        | IrExpr::BoolLiteral(_)
+                        | IrExpr::BigIntLiteral(_)
                 ) {
                     *expr = (**inner).clone();
                     changed = true;
