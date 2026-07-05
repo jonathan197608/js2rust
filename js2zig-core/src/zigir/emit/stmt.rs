@@ -187,7 +187,29 @@ impl Emitter {
             }
         }
 
-        let ret_type = format_return_type(&fd.return_type, fd.is_async, fd.can_throw);
+        let ret_type = if matches!(fd.return_type, ZigType::AnytypeReturn) {
+            // Generate @TypeOf(first_return_expr) instead of literal "anytype"
+            if let Some(ref body_expr) = fd.typeof_return_body {
+                let captured = self.expr_to_string(body_expr);
+                // Strip 'try ' prefixes — try is not valid in @TypeOf (comptime type expression)
+                let stripped = captured.replace("try ", "");
+                let base = format!("@TypeOf({})", stripped);
+                if fd.is_async || fd.can_throw {
+                    format!("!{}", base)
+                } else {
+                    base
+                }
+            } else {
+                // Fallback: no return expression found, use void
+                if fd.can_throw {
+                    "!void".to_string()
+                } else {
+                    "void".to_string()
+                }
+            }
+        } else {
+            format_return_type(&fd.return_type, fd.is_async, fd.can_throw)
+        };
         self.write(&format!(") {} {{\n", ret_type));
 
         // Emit `_ = _param;` for unused params at the start of the body

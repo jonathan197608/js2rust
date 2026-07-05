@@ -868,6 +868,7 @@ mod tests {
             is_async: false,
             can_throw: false,
             is_cabi: false,
+            typeof_return_body: None,
         }));
         module
     }

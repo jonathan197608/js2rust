@@ -1,0 +1,9 @@
+﻿feat(zigir): P1-F AnytypeReturn → @TypeOf(return_expr) in Emitter
+
+- IrFnDecl: add 	ypeof_return_body: Option<Box<IrExpr>> field
+- Lowerer: when return_type==AnytypeReturn, extract first return expr from body
+- Lowerer: add find_first_return_expr_in_block/find_first_return_expr_in_stmt helpers
+- Emitter: generate @TypeOf(expr) instead of nytype for AnytypeReturn functions
+- Emitter: strip 	ry  prefixes from captured expression (not valid in comptime)
+- Updated all 10 test IrFnDecl constructions with typeof_return_body: None
+- 500 tests pass, 49 dual-track tests pass, clippy clean

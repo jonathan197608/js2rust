@@ -1071,10 +1071,19 @@ impl Lowerer {
         // Determine C ABI: export functions use `export fn` calling convention
         let is_cabi = is_export;
 
+        // For AnytypeReturn: capture the first return expression so the Emitter
+        // can emit `@TypeOf(expr)` instead of the literal `anytype` keyword.
+        let typeof_return_body = if matches!(return_type, ZigType::AnytypeReturn) {
+            Self::find_first_return_expr_in_block(&body).map(|e| Box::new(e.clone()))
+        } else {
+            None
+        };
+
         Some(crate::zigir::types::IrFnDecl {
             name: self.make_ident(name),
             params,
             return_type,
+            typeof_return_body,
             body,
             is_export,
             is_async,
@@ -4619,6 +4628,34 @@ impl Lowerer {
             }
         }
         params
+    }
+
+    /// Find the first `IrExpr` returned from a block of IR statements.
+    /// Used for `@TypeOf(return_expr)` when the return type is `AnytypeReturn`.
+    fn find_first_return_expr_in_block(block: &IrBlock) -> Option<&crate::zigir::types::IrExpr> {
+        for stmt in &block.stmts {
+            if let Some(expr) = Self::find_first_return_expr_in_stmt(stmt) {
+                return Some(expr);
+            }
+        }
+        None
+    }
+
+    fn find_first_return_expr_in_stmt(
+        stmt: &crate::zigir::types::IrStmt,
+    ) -> Option<&crate::zigir::types::IrExpr> {
+        match stmt {
+            crate::zigir::types::IrStmt::Return { value, .. } => value.as_ref(),
+            crate::zigir::types::IrStmt::If { then, else_, .. } => {
+                Self::find_first_return_expr_in_block(then).or_else(|| {
+                    else_
+                        .as_ref()
+                        .and_then(Self::find_first_return_expr_in_block)
+                })
+            }
+            crate::zigir::types::IrStmt::Block(b) => Self::find_first_return_expr_in_block(b),
+            _ => None,
+        }
     }
 
     /// Infer the return type of an arrow function.

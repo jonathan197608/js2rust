@@ -789,6 +789,7 @@ mod tests {
             is_async: false,
             can_throw: false,
             is_cabi: false,
+            typeof_return_body: None,
         }));
 
         let mut pass = ValidatePass::new();
@@ -847,6 +848,7 @@ mod tests {
             is_async: false,
             can_throw: false,
             is_cabi: true,
+            typeof_return_body: None,
         }));
 
         let mut pass = ValidatePass::new();

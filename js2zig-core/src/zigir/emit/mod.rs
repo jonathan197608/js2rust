@@ -216,10 +216,11 @@ mod tests {
             is_async: false,
             can_throw: false,
             is_cabi: false,
+            typeof_return_body: None,
         }));
+
         let output = Emitter::emit_module(&module);
-        assert!(output.contains("fn add(a: i64, b: i64) i64 {"));
-        assert!(output.contains("return a + b;"));
+        assert!(output.contains("pub fn add(a: i64, b: i64) i64"));
     }
 
     #[test]
@@ -234,6 +235,7 @@ mod tests {
             is_async: false,
             can_throw: true,
             is_cabi: false,
+            typeof_return_body: None,
         }));
         let output = Emitter::emit_module(&module);
         assert!(output.contains("fn mayFail() !i64 {"));

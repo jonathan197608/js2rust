@@ -133,6 +133,11 @@ pub struct IrFnDecl {
     pub name: IrIdent,
     pub params: Vec<IrParam>,
     pub return_type: ZigType,
+    /// For `AnytypeReturn` functions, this holds the first return expression
+    /// so the Emitter can generate `@TypeOf(expr)` instead of `anytype`.
+    /// The expression is captured _before_ the body is emitted, so it should
+    /// not contain `try` prefixes (those are stripped by the Emitter).
+    pub typeof_return_body: Option<Box<IrExpr>>,
     pub body: IrBlock,
     pub is_export: bool,
     pub is_async: bool,
@@ -844,6 +849,7 @@ mod tests {
             is_async: false,
             can_throw: false,
             is_cabi: false,
+            typeof_return_body: None,
         };
         assert_eq!(f.params.len(), 2);
         assert!(f.is_export);
