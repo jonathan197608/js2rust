@@ -2814,10 +2814,15 @@ impl Lowerer {
             BinaryOperator::Instanceof | BinaryOperator::In => unreachable!(),
         };
 
+        let left_type = self.infer_expr_type(&be.left);
+        let right_type = self.infer_expr_type(&be.right);
+
         IrExpr::Binary {
             op,
             left: Box::new(self.lower_expr(&be.left)),
             right: Box::new(self.lower_expr(&be.right)),
+            left_type,
+            right_type,
         }
     }
 
@@ -3435,11 +3440,17 @@ impl Lowerer {
     }
 
     /// Infer the ZigType of an expression based on type_info and expression structure.
-    /// This is a simplified version compared to Codegen's full inference.
+    /// Enhanced version that covers literal types, member access, calls, and more.
     fn infer_expr_type(&self, expr: &Expression) -> Option<ZigType> {
         match expr {
             Expression::Identifier(id) => {
-                // Try exact match, then qualified, then suffix-based (same as infer_arrow_expr_type)
+                // Special globals
+                match id.name.as_str() {
+                    "Infinity" | "NaN" => return Some(ZigType::F64),
+                    "undefined" => return Some(ZigType::JsAny),
+                    _ => {}
+                }
+                // Try exact match, then qualified, then suffix-based
                 if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
                     return Some(ty.clone());
                 }
@@ -3457,11 +3468,182 @@ impl Lowerer {
                 }
                 None
             }
-            Expression::NumericLiteral(_) => Some(ZigType::F64),
+            Expression::NumericLiteral(nl) => {
+                // Distinguish I64 vs F64 based on presence of decimal point / exponent
+                let s = nl.value.to_string();
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    Some(ZigType::F64)
+                } else {
+                    Some(ZigType::I64)
+                }
+            }
             Expression::StringLiteral(_) => Some(ZigType::Str),
+            Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
+            Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
             Expression::NullLiteral(_) => Some(ZigType::JsAny),
+            Expression::UnaryExpression(ue) => match ue.operator {
+                UnaryOperator::LogicalNot => Some(ZigType::Bool),
+                UnaryOperator::Void => Some(ZigType::JsAny),
+                UnaryOperator::Typeof => Some(ZigType::Str),
+                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
+                    self.infer_expr_type(&ue.argument)
+                }
+                _ => None,
+            },
+            Expression::BinaryExpression(be) => {
+                let left_ty = self.infer_expr_type(&be.left);
+                let right_ty = self.infer_expr_type(&be.right);
+                Self::infer_binary_result_type(&be.operator, left_ty, right_ty)
+            }
+            Expression::ConditionalExpression(ce) => {
+                let then_ty = self.infer_expr_type(&ce.consequent);
+                let else_ty = self.infer_expr_type(&ce.alternate);
+                match (then_ty, else_ty) {
+                    (Some(a), Some(b)) if a == b => Some(a),
+                    (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
+                    _ => None,
+                }
+            }
+            Expression::ParenthesizedExpression(pe) => self.infer_expr_type(&pe.expression),
+            Expression::StaticMemberExpression(mem) => {
+                // Known constants
+                if let Expression::Identifier(id) = &mem.object {
+                    match id.name.as_str() {
+                        "Math" => {
+                            return match mem.property.name.as_str() {
+                                "PI" | "E" | "LN2" | "LN10" | "LOG2E" | "LOG10E" | "SQRT1_2"
+                                | "SQRT2" => Some(ZigType::F64),
+                                _ => None,
+                            };
+                        }
+                        "Number" => {
+                            return match mem.property.name.as_str() {
+                                "MAX_SAFE_INTEGER" | "MIN_SAFE_INTEGER" | "MAX_VALUE"
+                                | "MIN_VALUE" => Some(ZigType::F64),
+                                "POSITIVE_INFINITY" | "NEGATIVE_INFINITY" | "NaN" => {
+                                    Some(ZigType::F64)
+                                }
+                                "EPSILON" => Some(ZigType::F64),
+                                _ => None,
+                            };
+                        }
+                        _ => {}
+                    }
+                }
+                // Try struct field inference
+                let obj_ty = self.infer_expr_type(&mem.object);
+                match obj_ty {
+                    Some(ZigType::NamedStruct(name)) => {
+                        if let Some(fields) = self.type_info.class_field_types.get(&name)
+                            && let Some(ty) = fields.get(mem.property.name.as_str())
+                        {
+                            return Some(ty.clone());
+                        }
+                        None
+                    }
+                    _ => None,
+                }
+            }
+            Expression::CallExpression(ce) => {
+                // Try to infer from known method calls
+                if let Expression::StaticMemberExpression(mem) = &ce.callee {
+                    if let Expression::Identifier(id) = &mem.object {
+                        match id.name.as_str() {
+                            "parseInt" | "Number" => return Some(ZigType::I64),
+                            "parseFloat" => return Some(ZigType::F64),
+                            _ => {}
+                        }
+                    }
+                    // Method return type from object type
+                    let obj_ty = self.infer_expr_type(&mem.object);
+                    if let Some(ZigType::NamedStruct(name)) = &obj_ty {
+                        match name.as_str() {
+                            "Map" => match mem.property.name.as_str() {
+                                "get" => return Some(ZigType::JsAny),
+                                "has" | "delete" => return Some(ZigType::Bool),
+                                _ => {}
+                            },
+                            "Set" => match mem.property.name.as_str() {
+                                "has" | "delete" => return Some(ZigType::Bool),
+                                _ => {}
+                            },
+                            _ => {}
+                        }
+                    }
+                    // String method returns
+                    if obj_ty == Some(ZigType::Str) {
+                        match mem.property.name.as_str() {
+                            "charAt" | "substring" | "slice" | "toLowerCase" | "toUpperCase"
+                            | "trim" | "repeat" | "replace" | "replaceAll" | "padStart"
+                            | "padEnd" => return Some(ZigType::Str),
+                            "indexOf" | "lastIndexOf" | "charCodeAt" | "codePointAt" => {
+                                return Some(ZigType::I64);
+                            }
+                            "includes" | "startsWith" | "endsWith" => return Some(ZigType::Bool),
+                            _ => {}
+                        }
+                    }
+                }
+                // Try function return type lookup
+                if let Expression::Identifier(id) = &ce.callee
+                    && let Some(ty) = self.type_info.fn_return_types.get(id.name.as_str())
+                {
+                    return Some(ty.clone());
+                }
+                None
+            }
             // Could add more patterns here from Codegen's infer_expr_type
+            _ => None,
+        }
+    }
+
+    /// Infer the result type of a binary operation from operand types.
+    fn infer_binary_result_type(
+        op: &BinaryOperator,
+        left_ty: Option<ZigType>,
+        right_ty: Option<ZigType>,
+    ) -> Option<ZigType> {
+        match op {
+            // Comparison operators always produce bool
+            BinaryOperator::Equality
+            | BinaryOperator::Inequality
+            | BinaryOperator::StrictEquality
+            | BinaryOperator::StrictInequality
+            | BinaryOperator::LessThan
+            | BinaryOperator::GreaterThan
+            | BinaryOperator::LessEqualThan
+            | BinaryOperator::GreaterEqualThan => Some(ZigType::Bool),
+
+            // Addition: string if either operand is string, otherwise numeric
+            BinaryOperator::Addition => match (left_ty.as_ref(), right_ty.as_ref()) {
+                (Some(ZigType::Str), _) | (_, Some(ZigType::Str)) => Some(ZigType::Str),
+                (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
+                (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
+                _ => None,
+            },
+
+            // Arithmetic: F64 if either F64, else I64
+            BinaryOperator::Subtraction
+            | BinaryOperator::Multiplication
+            | BinaryOperator::Division
+            | BinaryOperator::Remainder => match (left_ty.as_ref(), right_ty.as_ref()) {
+                (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
+                (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
+                _ => None,
+            },
+
+            // Exponential always produces f64
+            BinaryOperator::Exponential => Some(ZigType::F64),
+
+            // Bitwise: always I64
+            BinaryOperator::BitwiseAnd
+            | BinaryOperator::BitwiseOR
+            | BinaryOperator::BitwiseXOR
+            | BinaryOperator::ShiftLeft
+            | BinaryOperator::ShiftRight
+            | BinaryOperator::ShiftRightZeroFill => Some(ZigType::I64),
+
             _ => None,
         }
     }

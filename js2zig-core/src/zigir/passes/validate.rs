@@ -803,6 +803,8 @@ mod tests {
                     op: BinOp::Add,
                     left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
                     right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                    left_type: None,
+                    right_type: None,
                 }),
             }]),
             is_export: true,

@@ -1,11 +1,3 @@
-﻿feat(zigir): P1-E optional chaining support (Lowerer+Emitter)
+﻿feat(zigir): P2-F~I type-aware operator routing for Binary expressions
 
-- IrExpr::OptionalChain variant with object, capture_var, body, needs_null_check
-- Lowerer: lower_optional_chain() handles StaticMember/ComputedMember/Call chains
-- Lowerer: expr_might_be_null() determines if null-check wrapper is needed
-- Emitter: emits (if (obj) |_ocN| body else JsAny.fromNull()) pattern
-- Added OptionalChain arms to dead_code, validate, collect_ir_idents_in_expr
-- Fixed MethodObjectKind::Struct -> Unknown (variant didn't exist)
-- Fixed suspicious match pattern in expr_might_be_null()
-- Fixed clippy unnecessary_map_or -> is_none_or
-- 5 optional chain dual-track tests pass, 49 dual-track tests pass, 500 total tests pass
+Add left_type and right_type optional fields to IrExpr::Binary, enabling the Emitter to route binary operations based on operand types: BigInt arithmetic, BigInt equality, string comparison, JsAny comparison. Enhance Lowerer infer_expr_type(). Fix BinaryOperator variant names. Use class_field_types. Remove _unused(). Fix all IrExpr::Binary construction sites and pattern matches.

@@ -470,6 +470,11 @@ pub enum IrExpr {
         op: BinOp,
         left: Box<IrExpr>,
         right: Box<IrExpr>,
+        /// Inferred type of the left operand, used for type-aware emission
+        /// (e.g., BigInt arithmetic, JsAny comparison, string comparison).
+        left_type: Option<crate::types::ZigType>,
+        /// Inferred type of the right operand.
+        right_type: Option<crate::types::ZigType>,
     },
     Unary {
         op: UnaOp,
@@ -871,6 +876,8 @@ mod tests {
                     op: BinOp::Add,
                     left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
                     right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                    left_type: None,
+                    right_type: None,
                 }),
             }]),
             is_export: true,
@@ -1031,6 +1038,8 @@ mod tests {
                 op: BinOp::Lt,
                 left: Box::new(IrExpr::Ident(IrIdent::new("i"))),
                 right: Box::new(IrExpr::IntLiteral(10)),
+                left_type: None,
+                right_type: None,
             }),
             update: Some(Box::new(IrStmt::Expr(IrExpr::Update {
                 op: UpdateOp::Increment,

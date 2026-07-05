@@ -55,18 +55,55 @@ impl Emitter {
             }
 
             // ── Arithmetic / comparison ─────────────
-            crate::zigir::types::IrExpr::Binary { op, left, right } => {
-                if *op == crate::zigir::ops::BinOp::Mod {
-                    // Zig uses @rem() for integer remainder (not %)
-                    self.write("@rem(");
-                    self.emit_expr(left);
-                    self.write(", ");
-                    self.emit_expr(right);
-                    self.write(")");
-                } else if *op == crate::zigir::ops::BinOp::Div {
-                    // Integer division requires @divTrunc; float uses /
-                    let is_float = expr_is_float(left) || expr_is_float(right);
-                    if is_float {
+            crate::zigir::types::IrExpr::Binary {
+                op,
+                left,
+                right,
+                left_type,
+                right_type,
+            } => {
+                use crate::types::ZigType;
+                use crate::zigir::ops::BinOp;
+
+                // Determine if operands are BigInt, JsAny, String, or other
+                let lt = left_type.as_ref();
+                let rt = right_type.as_ref();
+                let left_is_bigint = lt == Some(&ZigType::BigInt);
+                let right_is_bigint = rt == Some(&ZigType::BigInt);
+                let left_is_str = lt == Some(&ZigType::Str);
+                let right_is_str = rt == Some(&ZigType::Str);
+                let left_is_jsany = lt == Some(&ZigType::JsAny);
+                let right_is_jsany = rt == Some(&ZigType::JsAny);
+                let left_is_float = lt == Some(&ZigType::F64);
+                let right_is_float = rt == Some(&ZigType::F64);
+
+                // ── BigInt arithmetic/comparison ──
+                if left_is_bigint && right_is_bigint {
+                    self.emit_bigint_binary(*op, left, right);
+                }
+                // ── String equality/comparison ──
+                else if left_is_str && right_is_str {
+                    self.emit_string_comparison(*op, left, right);
+                }
+                // ── JsAny comparison ──
+                else if (left_is_jsany || right_is_jsany)
+                    && matches!(
+                        op,
+                        BinOp::Eq
+                            | BinOp::Ne
+                            | BinOp::StrictEq
+                            | BinOp::StrictNe
+                            | BinOp::Lt
+                            | BinOp::Le
+                            | BinOp::Gt
+                            | BinOp::Ge
+                    )
+                {
+                    self.emit_jsany_comparison(*op, left, right, left_is_jsany, right_is_jsany);
+                }
+                // ── Division ──
+                else if *op == BinOp::Div {
+                    if left_is_float || right_is_float {
                         self.write("(");
                         self.emit_expr(left);
                         self.write(" / ");
@@ -79,15 +116,33 @@ impl Emitter {
                         self.emit_expr(right);
                         self.write(")");
                     }
-                } else if *op == crate::zigir::ops::BinOp::UrShr {
-                    // JS >>> (unsigned right shift): treat left as u32, shift right with zero fill.
-                    // JS semantics: ToUint32(left) >>> (ToUint32(right) & 31)
+                }
+                // ── Remainder ──
+                else if *op == BinOp::Mod {
+                    if left_is_float || right_is_float {
+                        self.write("(");
+                        self.emit_expr(left);
+                        self.write(" % ");
+                        self.emit_expr(right);
+                        self.write(")");
+                    } else {
+                        self.write("@rem(");
+                        self.emit_expr(left);
+                        self.write(", ");
+                        self.emit_expr(right);
+                        self.write(")");
+                    }
+                }
+                // ── Unsigned right shift ──
+                else if *op == BinOp::UrShr {
                     self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
                     self.emit_expr(left);
                     self.write(")))) >> @intCast(");
                     self.emit_expr(right);
                     self.write(" & 31)))");
-                } else {
+                }
+                // ── Default: direct operator ──
+                else {
                     self.emit_expr(left);
                     self.write(&format!(" {} ", bin_op_to_zig(*op)));
                     self.emit_expr(right);
@@ -692,13 +747,13 @@ impl Emitter {
             "JsAny"
         } else {
             arr.elements
-                .iter()
-                .find_map(|e| match e {
-                    crate::zigir::types::IrExpr::IntLiteral(_) => Some("i64"),
-                    crate::zigir::types::IrExpr::FloatLiteral(_) => Some("f64"),
-                    crate::zigir::types::IrExpr::StringLiteral(_) => Some("[]const u8"),
-                    crate::zigir::types::IrExpr::BoolLiteral(_) => Some("bool"),
-                    _ => Some("i64"),
+                .first()
+                .map(|e| match e {
+                    crate::zigir::types::IrExpr::IntLiteral(_) => "i64",
+                    crate::zigir::types::IrExpr::FloatLiteral(_) => "f64",
+                    crate::zigir::types::IrExpr::StringLiteral(_) => "[]const u8",
+                    crate::zigir::types::IrExpr::BoolLiteral(_) => "bool",
+                    _ => "i64",
                 })
                 .unwrap_or("i64")
         };
@@ -998,16 +1053,303 @@ impl Emitter {
             }
         }
     }
+
+    /// Emit a BigInt binary operation.
+    /// BigInt arithmetic uses method calls like `_a.add(&_b, alloc)`.
+    fn emit_bigint_binary(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+    ) {
+        use crate::zigir::ops::BinOp;
+
+        match op {
+            // Arithmetic: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
+            BinOp::Add => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".add(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt add OOM\"))");
+            }
+            BinOp::Sub => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".sub(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt sub OOM\"))");
+            }
+            BinOp::Mul => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".mul(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt mul OOM\"))");
+            }
+            BinOp::Div => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".div(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt div OOM\"))");
+            }
+            BinOp::Mod => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".rem(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt rem OOM\"))");
+            }
+            BinOp::Pow => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".pow(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+            }
+            BinOp::BitAnd => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".bitwiseAnd(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt and OOM\"))");
+            }
+            BinOp::BitOr => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".bitwiseOr(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt or OOM\"))");
+            }
+            BinOp::BitXor => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".bitwiseXor(&");
+                self.emit_expr(right);
+                self.write(", js_allocator.allocator()) catch @panic(\"BigInt xor OOM\"))");
+            }
+            BinOp::Shl => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".shiftLeft(");
+                self.emit_expr(right);
+                self.write(".toU64(), js_allocator.allocator()) catch @panic(\"BigInt shl OOM\"))");
+            }
+            BinOp::Shr => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".shiftRight(");
+                self.emit_expr(right);
+                self.write(".toU64(), js_allocator.allocator()) catch @panic(\"BigInt shr OOM\"))");
+            }
+            // Equality
+            BinOp::Eq | BinOp::StrictEq => {
+                self.emit_expr(left);
+                self.write(".eq(&");
+                self.emit_expr(right);
+                self.write(")");
+            }
+            BinOp::Ne | BinOp::StrictNe => {
+                self.write("!");
+                self.emit_expr(left);
+                self.write(".eq(&");
+                self.emit_expr(right);
+                self.write(")");
+            }
+            // Ordering
+            BinOp::Lt => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".order(&");
+                self.emit_expr(right);
+                self.write(") == .lt)");
+            }
+            BinOp::Le => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".order(&");
+                self.emit_expr(right);
+                self.write(") != .gt)");
+            }
+            BinOp::Gt => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".order(&");
+                self.emit_expr(right);
+                self.write(") == .gt)");
+            }
+            BinOp::Ge => {
+                self.write("(");
+                self.emit_expr(left);
+                self.write(".order(&");
+                self.emit_expr(right);
+                self.write(") != .lt)");
+            }
+            // >>> is not supported for BigInt (JS throws TypeError)
+            BinOp::UrShr => {
+                self.write("@compileError(\"BigInt does not support unsigned right shift\")");
+            }
+            _ => {
+                // Fallback: try direct operator
+                self.emit_expr(left);
+                self.write(&format!(" {} ", bin_op_to_zig(op)));
+                self.emit_expr(right);
+            }
+        }
+    }
+
+    /// Emit a string comparison.
+    /// String equality uses std.mem.eql, ordering uses std.mem.order.
+    fn emit_string_comparison(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+    ) {
+        use crate::zigir::ops::BinOp;
+
+        match op {
+            BinOp::Eq | BinOp::StrictEq => {
+                self.write("std.mem.eql(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write(")");
+            }
+            BinOp::Ne | BinOp::StrictNe => {
+                self.write("(!std.mem.eql(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write("))");
+            }
+            BinOp::Lt => {
+                self.write("(std.mem.order(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write(") == .lt)");
+            }
+            BinOp::Le => {
+                self.write("(std.mem.order(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write(") != .gt)");
+            }
+            BinOp::Gt => {
+                self.write("(std.mem.order(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write(") == .gt)");
+            }
+            BinOp::Ge => {
+                self.write("(std.mem.order(u8, ");
+                self.emit_expr(left);
+                self.write(", ");
+                self.emit_expr(right);
+                self.write(") != .lt)");
+            }
+            _ => {
+                // Other string operators (not expected)
+                self.emit_expr(left);
+                self.write(&format!(" {} ", bin_op_to_zig(op)));
+                self.emit_expr(right);
+            }
+        }
+    }
+
+    /// Emit a JsAny comparison operation.
+    /// JsAny equality uses .eq()/.strictEq(), ordering uses .asI64().
+    fn emit_jsany_comparison(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+        left_is_jsany: bool,
+        right_is_jsany: bool,
+    ) {
+        use crate::zigir::ops::BinOp;
+
+        // Wrap non-JsAny operand with JsAny.from() if needed
+        let emit_left_as_jsany = |emitter: &mut Emitter| {
+            if left_is_jsany {
+                emitter.emit_expr(left);
+            } else {
+                emitter.write("JsAny.from(");
+                emitter.emit_expr(left);
+                emitter.write(")");
+            }
+        };
+        let emit_right_as_jsany = |emitter: &mut Emitter| {
+            if right_is_jsany {
+                emitter.emit_expr(right);
+            } else {
+                emitter.write("JsAny.from(");
+                emitter.emit_expr(right);
+                emitter.write(")");
+            }
+        };
+
+        match op {
+            BinOp::Eq => {
+                emit_left_as_jsany(self);
+                self.write(".eq(");
+                emit_right_as_jsany(self);
+                self.write(")");
+            }
+            BinOp::StrictEq => {
+                emit_left_as_jsany(self);
+                self.write(".strictEq(");
+                emit_right_as_jsany(self);
+                self.write(")");
+            }
+            BinOp::Ne => {
+                self.write("!(");
+                emit_left_as_jsany(self);
+                self.write(".eq(");
+                emit_right_as_jsany(self);
+                self.write("))");
+            }
+            BinOp::StrictNe => {
+                self.write("!(");
+                emit_left_as_jsany(self);
+                self.write(".strictEq(");
+                emit_right_as_jsany(self);
+                self.write("))");
+            }
+            // Ordering: convert JsAny to i64 for numeric comparison
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let zig_op = bin_op_to_zig(op);
+                // Use .asI64() on JsAny sides for numeric comparison
+                if left_is_jsany {
+                    self.write("(");
+                    self.emit_expr(left);
+                    self.write(".asI64())");
+                } else {
+                    self.emit_expr(left);
+                }
+                self.write(&format!(" {} ", zig_op));
+                if right_is_jsany {
+                    self.write("(");
+                    self.emit_expr(right);
+                    self.write(".asI64())");
+                } else {
+                    self.emit_expr(right);
+                }
+            }
+            _ => {
+                // Fallback
+                self.emit_expr(left);
+                self.write(&format!(" {} ", bin_op_to_zig(op)));
+                self.emit_expr(right);
+            }
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════
-//  Helpers for type-aware operator emission
+//  BigInt, JsAny, and String comparison helpers
 // ═══════════════════════════════════════════════════════
-
-/// Check if an IrExpr is a float-like expression (for division routing).
-/// This is a lightweight heuristic: FloatLiteral → always float;
-/// IntLiteral → never float; anything else → assume integer (safe default
-/// since @divTrunc works for comptime_int too).
-fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
-    matches!(expr, crate::zigir::types::IrExpr::FloatLiteral(_))
-}

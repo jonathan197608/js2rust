@@ -28,7 +28,9 @@ impl ConstantFoldPass {
     /// Returns Some(folded_expr) if a fold was possible, None otherwise.
     fn try_fold(expr: &mut IrExpr) -> bool {
         match expr {
-            IrExpr::Binary { op, left, right } => {
+            IrExpr::Binary {
+                op, left, right, ..
+            } => {
                 // First, recursively fold children
                 let mut changed = false;
                 if Self::try_fold(left) {
@@ -593,6 +595,8 @@ mod tests {
                 op: BinOp::Add,
                 left: Box::new(IrExpr::IntLiteral(1)),
                 right: Box::new(IrExpr::IntLiteral(2)),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -617,6 +621,8 @@ mod tests {
                 op: BinOp::Mul,
                 left: Box::new(IrExpr::FloatLiteral(1.5)),
                 right: Box::new(IrExpr::FloatLiteral(2.0)),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -641,6 +647,8 @@ mod tests {
                 op: BinOp::Add,
                 left: Box::new(IrExpr::StringLiteral("Hello, ".to_string())),
                 right: Box::new(IrExpr::StringLiteral("world!".to_string())),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -779,6 +787,8 @@ mod tests {
                 op: BinOp::Add,
                 left: Box::new(IrExpr::Ident(IrIdent::new("x"))),
                 right: Box::new(IrExpr::IntLiteral(1)),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -796,12 +806,18 @@ mod tests {
                     op: BinOp::Add,
                     left: Box::new(IrExpr::IntLiteral(1)),
                     right: Box::new(IrExpr::IntLiteral(2)),
+                    left_type: None,
+                    right_type: None,
                 }),
                 right: Box::new(IrExpr::Binary {
                     op: BinOp::Add,
                     left: Box::new(IrExpr::IntLiteral(3)),
                     right: Box::new(IrExpr::IntLiteral(4)),
+                    left_type: None,
+                    right_type: None,
                 }),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -849,6 +865,8 @@ mod tests {
                 op: BinOp::Eq,
                 left: Box::new(IrExpr::Null),
                 right: Box::new(IrExpr::Null),
+                left_type: None,
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();

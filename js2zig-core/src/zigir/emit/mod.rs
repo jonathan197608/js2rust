@@ -217,6 +217,8 @@ mod tests {
                     op: crate::zigir::ops::BinOp::Add,
                     left: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("a"))),
                     right: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("b"))),
+                    left_type: None,
+                    right_type: None,
                 }),
             }]),
             is_export: true,
