@@ -21,7 +21,12 @@ pub enum FieldKind {
     /// Well-known Symbol: `js_symbol.symbolIterator()`, etc.
     SymbolWellKnown(String),
     /// TypedArray property: `.buffer`, `.byteLength`, `.byteOffset`
-    TypedArrayProp(String),
+    /// `type_suffix` carries the element type suffix (e.g., "I32" for Int32Array)
+    /// to emit `js_runtime.js_typedarray.bufferI32(arr)`.
+    TypedArrayProp {
+        prop: String,
+        type_suffix: Option<String>,
+    },
     /// Private class field: `self.field` (from #field syntax)
     Private,
     /// Pointer dereference field: `obj.field.*` (captured mutable closure var)
@@ -136,7 +141,10 @@ mod tests {
             FieldKind::MathConstant("pi".to_string()),
             FieldKind::NumberConstant("floatMax".to_string()),
             FieldKind::SymbolWellKnown("iterator".to_string()),
-            FieldKind::TypedArrayProp("buffer".to_string()),
+            FieldKind::TypedArrayProp {
+                prop: "buffer".to_string(),
+                type_suffix: None,
+            },
         ];
         assert_eq!(kinds.len(), 8);
     }

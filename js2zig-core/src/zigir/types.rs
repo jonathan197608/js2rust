@@ -80,6 +80,9 @@ pub struct IrClosureStruct {
     pub captured: Vec<IrCapture>,
     pub fn_params: Vec<IrParam>,
     pub return_type: ZigType,
+    /// For AnytypeReturn: captured first return expression so Emitter
+    /// can emit `@TypeOf(expr)` instead of `anytype`.
+    pub typeof_return_body: Option<Box<IrExpr>>,
     pub body: IrBlock,
 }
 
@@ -334,6 +337,15 @@ pub enum IrStmt {
     /// Object or array destructuring: `const {a, b} = obj` / `const [a, b] = arr`
     /// Expanded into temp variable + individual binding declarations by the Emitter.
     DestructureDecl(IrDestructureDecl),
+
+    /// Nested function declaration: `const inner = struct { pub fn call(...) ... };`
+    /// For functions with captures, also includes an instance:
+    /// `const _inner_type = struct { x: i64, pub fn call(self: *@This(), ...) ... };`
+    /// `const inner = _inner_type{ .x = x };`
+    NestedFnDecl {
+        struct_def: IrClosureStruct,
+        instance: Option<IrClosure>,
+    },
 
     // ── Debug / diagnostics ─────────────────────────
     CompileError {
@@ -627,6 +639,21 @@ pub struct IrCallExpr {
     pub call_kind: CallKind,
 }
 
+/// Extra metadata for string/regexp builtin calls that need regex information
+/// (match, matchAll, search) — not available after normal AST lowering.
+#[derive(Debug, Clone)]
+pub struct IrRegexInfo {
+    /// The regex pattern as an escaped string literal (e.g., `world` or `(\\d)(\\d)`).
+    /// `None` when `is_var_ref` is true (pattern comes from `var.pattern`).
+    pub pattern: Option<String>,
+    /// Whether the regex literal has the global (`g`) flag.
+    pub has_global: bool,
+    /// Whether the argument is a reference to a RegExp variable.
+    pub is_var_ref: bool,
+    /// The variable name when `is_var_ref` is true (e.g., `re` → emit `re.pattern`).
+    pub var_name: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct IrBuiltinCall {
     pub module: BuiltinModule,
@@ -634,8 +661,18 @@ pub struct IrBuiltinCall {
     /// The receiver object variable name (e.g., "str" in `str.toUpperCase()`).
     /// Used by the Emitter to insert as the first runtime argument after allocator.
     pub obj_name: Option<String>,
+    /// The receiver object as an inline expression (for method chaining where the
+    /// receiver is itself a call expression, e.g., `encodeURIComponent(str).replace(...)`).
+    /// When set, the Emitter inlines this expression instead of using `obj_name`.
+    pub obj_expr: Option<Box<IrExpr>>,
     pub args: Vec<IrExpr>,
     pub return_type: ZigType,
+    /// Extra regex metadata for match/matchAll/search.
+    /// `None` for all other builtin calls.
+    pub regex_info: Option<IrRegexInfo>,
+    /// Type suffix for TypedArray methods (e.g., "I32" for `bufferI32`, `setI32`).
+    /// `None` for all other builtin calls.
+    pub ta_type_suffix: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -761,10 +798,25 @@ pub enum ArrayCallbackKind {
 ///
 /// The Emitter uses this to generate a Zig loop instead of
 /// a runtime `js_array.method(callback)` call.
+
+/// Whether the forEach callback iteration target is an Array, Map, or Set.
+/// Affects the iteration pattern (for-loop vs while-iterator).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CollectionKind {
+    /// Array: `for (arr.items) |elem| { ... }`
+    Array,
+    /// Map: `var iter = m.inner.iterator(); while (iter.next()) |entry| { const val = entry.value_ptr.*; const key = entry.key_ptr.*; ... }`
+    Map,
+    /// Set: `for (s.items.items) |val| { ... }`
+    Set,
+}
+
 #[derive(Debug, Clone)]
 pub struct IrArrayCallbackInline {
     /// Which callback method (forEach, some, every, etc.)
     pub kind: ArrayCallbackKind,
+    /// Whether the iterable is an Array, Map, or Set.
+    pub collection_kind: CollectionKind,
     /// Name of the array object being iterated (e.g., "arr").
     pub obj_name: String,
     /// The Zig type of array elements (for filter's ArrayList type).
@@ -931,10 +983,28 @@ mod tests {
             module: BuiltinModule::JsArray,
             method: "push".to_string(),
             obj_name: None,
+            obj_expr: None,
             args: vec![IrExpr::Ident(IrIdent::new("x"))],
             return_type: ZigType::Void,
+            regex_info: None,
+            ta_type_suffix: None,
         };
         assert_eq!(bc.module.module_path(), "js_array");
+
+        let ta_bc = IrBuiltinCall {
+            module: BuiltinModule::JsTypedArray,
+            method: "set".to_string(),
+            obj_name: Some("arr".to_string()),
+            obj_expr: None,
+            args: vec![
+                IrExpr::Ident(IrIdent::new("idx")),
+                IrExpr::Ident(IrIdent::new("val")),
+            ],
+            return_type: ZigType::Void,
+            regex_info: None,
+            ta_type_suffix: Some("I32".to_string()),
+        };
+        assert_eq!(ta_bc.ta_type_suffix.as_deref(), Some("I32"));
     }
 
     #[test]

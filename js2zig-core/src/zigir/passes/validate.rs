@@ -28,17 +28,17 @@ impl ValidatePass {
         }
     }
 
-    fn warn(&mut self, msg: String) {
+    fn error(&mut self, msg: String) {
         self.diagnostics.push(IrDiagnostic {
-            level: DiagnosticLevel::Warning,
+            level: DiagnosticLevel::Error,
             span: None,
             message: msg,
         });
     }
 
-    fn error(&mut self, msg: String) {
+    fn warn(&mut self, msg: String) {
         self.diagnostics.push(IrDiagnostic {
-            level: DiagnosticLevel::Error,
+            level: DiagnosticLevel::Warning,
             span: None,
             message: msg,
         });
@@ -266,6 +266,19 @@ impl ValidatePass {
                     }
                 }
             }
+            IrStmt::NestedFnDecl {
+                struct_def,
+                instance,
+            } => {
+                self.check_closure_refs_in_block(&struct_def.body);
+                if let Some(closure) = instance {
+                    for cap in &closure.captured {
+                        self.check_closure_refs_in_expr(&crate::zigir::types::IrExpr::Ident(
+                            cap.name.clone(),
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -483,6 +496,10 @@ fn collect_ident_names(block: &IrBlock) -> std::collections::HashSet<String> {
     names
 }
 
+fn collect_idents_from_block(block: &IrBlock, names: &mut std::collections::HashSet<String>) {
+    collect_idents_from_stmts(&block.stmts, names);
+}
+
 fn collect_idents_from_stmts(stmts: &[IrStmt], names: &mut std::collections::HashSet<String>) {
     for stmt in stmts {
         collect_idents_from_stmt(stmt, names);
@@ -582,6 +599,17 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
             for binding in &data.bindings {
                 if let Some(d) = &binding.default {
                     collect_idents_from_expr(d, names);
+                }
+            }
+        }
+        IrStmt::NestedFnDecl {
+            struct_def,
+            instance,
+        } => {
+            collect_idents_from_block(&struct_def.body, names);
+            if let Some(closure) = instance {
+                for cap in &closure.captured {
+                    names.insert(cap.name.js_name.clone());
                 }
             }
         }
@@ -911,6 +939,7 @@ mod tests {
                     is_rest: false,
                 }],
                 return_type: ZigType::I64,
+                typeof_return_body: None,
                 body: IrBlock::new(vec![IrStmt::Return {
                     value: Some(IrExpr::Ident(IrIdent::new("x"))),
                 }]),

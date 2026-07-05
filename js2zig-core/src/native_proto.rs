@@ -1,7 +1,8 @@
 // js2zig-core/src/native_proto.rs
 //
-// Native-type system codegen module.
-// Codegen impl methods are in codegen/; type inference in infer/.
+// Native-type system transpilation module.
+// Production pipeline: AST → Lowerer → ZigIR → PassPipeline → Emitter → Zig source.
+// Legacy Codegen is available via ZIGIR_DUAL_TRACK=1 for parity comparison.
 
 // Re-export types from the dedicated types module.
 pub use crate::types::{
@@ -11,15 +12,16 @@ pub use crate::types::{
 
 use oxc_ast::ast::Program;
 
+use crate::zigir::types::IrDecl;
+
 pub use crate::infer::TypeCheckResult;
 
 // ── ZigIR dual-track flag ─────────────────────────────
-// When true, the ZigIR Lowerer is also invoked after the old Codegen,
-// and the IrModule is logged for comparison. This does NOT affect
-// the returned output (old Codegen output is always used for now).
+// When true, the old Codegen is also invoked after the ZigIR pipeline
+// and the two outputs are compared for parity checking.
+// The ZigIR (Lowerer+Emitter) output is always used as the result.
 //
 // Enable with: set ZIGIR_DUAL_TRACK=1
-// Or change the default to true during active ZigIR development.
 const ZIGIR_DUAL_TRACK_DEFAULT: bool = false;
 
 fn zigir_dual_track_enabled() -> bool {
@@ -55,9 +57,11 @@ pub fn transpile_js(
 
 /// Internal helper: transpile JS AST to Zig, returning TranspileResult.
 ///
-/// Two-pass flow (Phase A):
-///   1. TypeInferrer::infer_all() — walk AST once, collect all type info
-///   2. Codegen::generate() — read pre-computed type info, emit Zig code
+/// Production pipeline (ZigIR):
+///   1. TypeInferrer::infer_all() — walk AST, collect type info
+///   2. Lowerer::lower() — convert AST to ZigIR (IrModule)
+///   3. PassPipeline — optimize IrModule (dead code, constant fold, validate)
+///   4. Emitter::emit_module() — emit Zig source from IrModule
 fn transpile_js_inner(
     program: &Program<'_>,
     js_source: &str,
@@ -74,7 +78,7 @@ fn transpile_js_inner(
         param_types,
     };
 
-    // ── Pass 1: Type inference ──
+    // ── Step 1: Type inference ──
     let mut inferrer = crate::infer::TypeInferrer::new();
     inferrer.set_jsdoc_data(jsdoc_data.clone());
     if let Some(hf) = host_fns {
@@ -82,10 +86,9 @@ fn transpile_js_inner(
     }
     let type_info = inferrer.infer_all(program, exported_functions.clone());
 
-    // Extract TypeInferrer errors before type_info is moved to Codegen.
     let infer_errors = type_info.errors.clone();
+    let var_types = type_info.var_types.clone();
 
-    // ── Pass 2: Code generation ──
     // Extract async host function names for io.async() codegen.
     let async_host_fns: std::collections::HashSet<String> = if let Some(hf) = host_fns {
         hf.async_fn_names().into_iter().collect()
@@ -93,96 +96,125 @@ fn transpile_js_inner(
         std::collections::HashSet::new()
     };
 
-    // ── ZigIR dual-track: run Lowerer before Codegen (saves IrModule) ──
-    // Codegen takes ownership of type_info/jsdoc_data, so Lowerer must run first.
-    let ir_module = if zigir_dual_track_enabled() {
-        use crate::zigir::lower::Lowerer;
-        let mut lowerer = Lowerer::new(
-            type_info.clone(),
-            jsdoc_data.clone(),
-            exported_functions.clone(),
-            async_host_fns.clone(),
-            js_source.to_string(),
-        );
-        let mut ir = lowerer.lower(program);
-
-        // Run optimization passes
-        let mut pipeline = crate::zigir::passes::PassPipeline::default_pipeline();
-        let _pipeline_result = pipeline.run(&mut ir);
-
-        Some(ir)
-    } else {
-        None
-    };
-
-    let mut cg = Codegen::new(
+    // ── Step 2: Lower AST → ZigIR ──
+    use crate::zigir::lower::Lowerer;
+    let mut lowerer = Lowerer::new(
         type_info,
         jsdoc_data,
-        exported_functions,
-        async_host_fns,
+        exported_functions.clone(),
+        async_host_fns.clone(),
         js_source.to_string(),
     );
-    cg.generate(program);
+    let mut ir_module = lowerer.lower(program);
 
-    // ── ZigIR dual-track: compare Emitter output with Codegen ──
-    if let Some(ref ir_mod) = ir_module {
-        run_zigir_dual_track_compare(ir_mod, &cg.output);
+    // ── Step 3: Optimization passes ──
+    let mut pipeline = crate::zigir::passes::PassPipeline::default_pipeline();
+    let _pipeline_result = pipeline.run(&mut ir_module);
+
+    // ── Step 4: Emit Zig source ──
+    use crate::zigir::emit::Emitter;
+    let zig_code = Emitter::emit_module(&ir_module);
+
+    // ── Extract TranspileResult fields from IrModule ──
+
+    // Errors / warnings from Lowerer diagnostics
+    let mut errors: Vec<String> = infer_errors;
+    let mut warnings: Vec<String> = Vec::new();
+    for diag in &ir_module.diagnostics {
+        match diag.level {
+            crate::zigir::source_span::DiagnosticLevel::Error => {
+                errors.push(diag.message.clone());
+            }
+            crate::zigir::source_span::DiagnosticLevel::Warning => {
+                warnings.push(diag.message.clone());
+            }
+        }
     }
 
-    // Merge TypeInferrer errors with Codegen errors.
-    let mut combined_errors = infer_errors;
-    combined_errors.append(&mut cg.errors.clone());
-    let warnings = cg.warnings.clone();
+    // Exported functions from IrDecl::Fn where is_export
+    let exports: Vec<ExportedFunction> = ir_module
+        .declarations
+        .iter()
+        .filter_map(|decl| {
+            if let IrDecl::Fn(f) = decl
+                && f.is_export
+            {
+                Some(ExportedFunction {
+                    name: f.name.zig_name.clone(),
+                    params: f.params.iter().map(|p| p.zig_type.clone()).collect(),
+                    return_type: f.return_type.clone(),
+                    can_throw: f.can_throw,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // C ABI exports from IrModule
+    let cabi_exports: Vec<NativeCabiExport> = ir_module
+        .cabi_exports
+        .iter()
+        .map(|ce| NativeCabiExport {
+            name: ce.name.clone(),
+            params: ce
+                .params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (format!("arg{}", i), p.zig_type.clone()))
+                .collect(),
+            ret_type: ce.return_type.clone(),
+            is_async: ce.is_async,
+            can_throw: ce.can_throw,
+            ret_struct_name: ce.ret_struct_name.clone(),
+            ret_struct_fields: None, // populated from host_fns in pipeline.rs
+        })
+        .collect();
+
+    // ── ZigIR dual-track: optionally run Codegen and compare ──
+    if zigir_dual_track_enabled() {
+        // Re-run type inference for Codegen (Lowerer consumed the original type_info)
+        let (td, ta, rt, pt) = crate::jsdoc::extract_all_jsdoc(js_source);
+        let jd = JSDocData {
+            typedefs: td,
+            type_annotations: ta,
+            return_types: rt,
+            param_types: pt,
+        };
+        let mut inf2 = crate::infer::TypeInferrer::new();
+        inf2.set_jsdoc_data(jd.clone());
+        if let Some(hf) = host_fns {
+            inf2.set_host_fn_types(hf);
+        }
+        let ti2 = inf2.infer_all(program, exported_functions.clone());
+
+        let mut cg = Codegen::new(
+            ti2,
+            jd,
+            exported_functions,
+            async_host_fns,
+            js_source.to_string(),
+        );
+        cg.generate(program);
+        run_zigir_dual_track_compare(&ir_module, &cg.output);
+    }
 
     Ok(TranspileResult {
-        zig_code: cg.output,
-        errors: combined_errors,
+        zig_code,
+        errors,
         warnings,
-        exports: cg.exported_fns.clone(),
-        var_types: cg.type_info.var_types.clone(),
-        cabi_exports: cg
-            .exported_fns
-            .into_iter()
-            .map(|ef| {
-                let params: Vec<(String, ZigType)> = ef
-                    .params
-                    .iter()
-                    .enumerate()
-                    .map(|(i, p)| (format!("arg{}", i), p.clone()))
-                    .collect();
-                let is_async = cg
-                    .type_info
-                    .is_async
-                    .get(&ef.name)
-                    .copied()
-                    .unwrap_or(false);
-                // Extract struct name if return type is NamedStruct
-                let ret_struct_name =
-                    if let crate::types::ZigType::NamedStruct(ref s) = ef.return_type {
-                        Some(s.clone())
-                    } else {
-                        None
-                    };
-                NativeCabiExport {
-                    name: ef.name,
-                    params,
-                    ret_type: ef.return_type,
-                    is_async,
-                    can_throw: ef.can_throw,
-                    ret_struct_name,
-                    ret_struct_fields: None, // populated from host_fns in pipeline.rs
-                }
-            })
-            .collect(),
+        exports,
+        var_types,
+        cabi_exports,
     })
 }
 
-/// Run the ZigIR Emitter on a pre-lowered IrModule and compare with Codegen output.
+/// Run the Codegen output and compare with the ZigIR Emitter output.
 ///
-/// This function takes the IrModule (already lowered), emits Zig source via
-/// the Emitter, and logs summary statistics + diff with the old Codegen output.
-/// It does NOT affect the transpilation output — the old Codegen's
-/// string output is always used until the Lowerer+Emitter path is complete.
+/// When dual-track is enabled, this function emits Zig source from the IrModule
+/// via the Emitter and compares it with the old Codegen output, logging summary
+/// statistics + diff. This is purely for parity checking — it does NOT affect
+/// the transpilation result (Emitter output is always used).
 fn run_zigir_dual_track_compare(ir_module: &crate::zigir::types::IrModule, codegen_output: &str) {
     use crate::zigir::emit::Emitter;
 

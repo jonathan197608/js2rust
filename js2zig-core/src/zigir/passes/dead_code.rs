@@ -278,6 +278,7 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         }
         IrStmt::CompileError { .. } | IrStmt::Comment(_) => false,
         IrStmt::DestructureDecl(data) => expr_has_side_effects(&data.init),
+        IrStmt::NestedFnDecl { .. } => true,
     }
 }
 
@@ -409,6 +410,7 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         | IrStmt::CompileError { .. }
         | IrStmt::Comment(_) => false,
         IrStmt::DestructureDecl(_) => false,
+        IrStmt::NestedFnDecl { .. } => false,
     }
 }
 
@@ -709,6 +711,17 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
             for binding in &data.bindings {
                 if let Some(d) = &binding.default {
                     collect_expr_refs(d, refs);
+                }
+            }
+        }
+        IrStmt::NestedFnDecl {
+            struct_def,
+            instance,
+        } => {
+            collect_block_refs(&struct_def.body, refs);
+            if let Some(closure) = instance {
+                for cap in &closure.captured {
+                    refs.insert(cap.name.js_name.clone());
                 }
             }
         }

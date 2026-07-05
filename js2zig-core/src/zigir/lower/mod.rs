@@ -580,7 +580,7 @@ impl Lowerer {
     /// Shadow renaming is NOT done here — it's a scope-level concern handled
     /// by the NameMangler during identifier resolution.
     fn lower_var_decl(&mut self, decl: &VariableDeclarator, _vd_is_const: bool) -> IrDecl {
-        let name = match crate::infer::binding_name(&decl.id) {
+        let js_name = match crate::infer::binding_name(&decl.id) {
             Some(n) => n,
             None => {
                 return IrDecl::CompileError {
@@ -590,7 +590,35 @@ impl Lowerer {
             }
         };
 
-        let ident = self.make_ident(name);
+        // ── Shadow renaming: detect duplicate variable names ──
+        // If the name already exists in fn_scope_vars, rename it to avoid
+        // Zig's "redeclaration" error. This handles cases like:
+        //   let x = 10; { let x = 20; }  →  const x = 10; { const x_shadow_1 = 20; }
+        // Also handles: function f(data) { let data = 100; }  →  fn f(data: i64) { const data_shadow_1 = 100; }
+        let ident = if let Some(ctx) = self.fn_ctx.as_ref() {
+            if ctx.fn_scope_vars.contains(js_name) {
+                // Name is already declared in this function — generate a shadow name
+                let shadow_zig_name = format!(
+                    "{}_shadow_{}",
+                    js_name,
+                    self.name_mangler.next_name("shadow")
+                );
+                self.name_mangler.record_shadow(js_name, shadow_zig_name);
+                // Also register the shadow name in fn_scope_vars to prevent further collisions
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.add_scope_var(js_name);
+                }
+                IrIdent::with_zig_name(js_name, self.name_mangler.resolve_name(js_name))
+            } else {
+                // First occurrence — register and use normal name resolution
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.add_scope_var(js_name);
+                }
+                self.make_ident(js_name)
+            }
+        } else {
+            self.make_ident(js_name)
+        };
 
         // Determine const vs var based on mutation analysis (not JS keyword).
         // Zig 'const' for never-mutated, 'var' for actually reassigned.
@@ -602,18 +630,18 @@ impl Lowerer {
         let is_const = !self
             .type_info
             .mutated_vars
-            .contains(&format!("{}::{}", fn_prefix, name));
+            .contains(&format!("{}::{}", fn_prefix, js_name));
 
         // Skip unused toplevel constants (same logic as Codegen)
-        let has_type_annotation = self.jsdoc_data.type_annotations.contains_key(name);
+        let has_type_annotation = self.jsdoc_data.type_annotations.contains_key(js_name);
         if self.fn_ctx.is_none()
             && is_const
-            && !self.type_info.used_names.contains(name)
+            && !self.type_info.used_names.contains(js_name)
             && !has_type_annotation
         {
             return IrDecl::CompileError {
                 span: SourceSpan::default(),
-                msg: format!("skipped unused toplevel const: {}", name),
+                msg: format!("skipped unused toplevel const: {}", js_name),
             };
         }
 
@@ -621,12 +649,12 @@ impl Lowerer {
         if self.fn_ctx.is_none() && !is_const {
             return IrDecl::CompileError {
                 span: SourceSpan::default(),
-                msg: format!("toplevel only allows 'const', not '{}'", name),
+                msg: format!("toplevel only allows 'const', not '{}'", js_name),
             };
         }
 
         // Force 'var' for Map/Set/ArrayList types (mutated via methods)
-        let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(name) {
+        let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(js_name) {
             match inferred_ty {
                 ZigType::ArrayList(_) => false,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
@@ -637,10 +665,10 @@ impl Lowerer {
         };
 
         // Type from inference
-        let zig_type = self.type_info.var_types.get(name).cloned();
+        let zig_type = self.type_info.var_types.get(js_name).cloned();
 
         // JSON.parse special case
-        let is_json_parse = self.type_info.has_json_parse_types.contains(name);
+        let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
 
         // Needs var suppression (ArrayList/Map/Set method calls need `_= &var;`)
         let needs_var_suppression = !is_const
@@ -675,6 +703,7 @@ impl Lowerer {
                                 captured: vec![],
                                 fn_params: arrow.params.clone(),
                                 return_type: arrow.return_type.clone(),
+                                typeof_return_body: None,
                                 body: arrow.body.clone(),
                             });
                         Some(crate::zigir::types::IrExpr::Ident(struct_ident))
@@ -689,6 +718,24 @@ impl Lowerer {
             }
             None => None,
         };
+
+        // Register TypedArray variables (for suffix lookup in lower_call)
+        if let Some(ZigType::NamedStruct(n)) = &zig_type {
+            if let Some(suffix) = Self::typedarray_type_suffix(n) {
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.add_typedarray_var(&ident.zig_name, suffix);
+                }
+            }
+        }
+
+        // Register RegExp variables (for .test()/.exec() method dispatch in lower_call)
+        if let Some(expr) = decl.init.as_ref() {
+            if Self::is_regexp_expr(expr) {
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.add_regexp_var(&ident.zig_name);
+                }
+            }
+        }
 
         IrDecl::Var(IrVarDecl {
             name: ident,
@@ -1041,8 +1088,18 @@ impl Lowerer {
         // Enter function context
         let saved = self.enter_fn(name, is_export, Some(return_type.clone()));
 
+        // Push shadow scope for function body (param renames live here)
+        self.name_mangler.push_shadow_scope();
+
         // Lower parameters
         let mut params = self.lower_fn_params(fd, name);
+
+        // Register parameter names in fn_scope_vars (for shadow detection)
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            for param in &params {
+                ctx.add_scope_var(&param.name.js_name);
+            }
+        }
 
         // Lower function body
         let body = fd
@@ -1059,13 +1116,18 @@ impl Lowerer {
         if let Some(ctx) = self.fn_ctx.as_ref() {
             used_idents.extend(ctx.compile_time_referenced_idents.iter().cloned());
         }
+        // For async functions, `io` is always used by await/async emission
+        if is_async {
+            used_idents.insert("io".to_string());
+        }
         for param in &mut params {
             if !used_idents.contains(&param.name.js_name) {
                 param.is_unused = true;
             }
         }
 
-        // Exit function context
+        // Exit function context and shadow scope
+        self.name_mangler.pop_shadow_scope();
         let _fn_ctx = self.exit_fn(saved);
 
         // Determine C ABI: export functions use `export fn` calling convention
@@ -1092,27 +1154,163 @@ impl Lowerer {
         })
     }
 
+    /// Lower a nested function declaration into struct+call() pattern.
+    ///
+    /// Zig doesn't allow nested function declarations with return statements,
+    /// so we emit `const name = struct { pub fn call(...) ... };` and rewrite
+    /// call sites to `name.call(args)`.
+    ///
+    /// For functions that capture variables from the enclosing scope:
+    /// `const _name_type = struct { x: i64, pub fn call(self: *@This(), ...) ... };`
+    /// `const name = _name_type{ .x = x };`
+    fn lower_nested_fn_decl(&mut self, fd: &Function) -> crate::zigir::types::IrStmt {
+        use crate::zigir::types::{IrCapture, IrClosure, IrClosureStruct, IrStmt};
+
+        let fn_name = fd
+            .id
+            .as_ref()
+            .map(|id| id.name.as_str())
+            .unwrap_or("_anon_fn");
+
+        // Detect captures from enclosing scope
+        let captures = self.detect_fn_body_captures(fd);
+
+        // Enter a sub-function context to lower the body
+        let return_type = self
+            .type_info
+            .fn_return_types
+            .get(fn_name)
+            .cloned()
+            .unwrap_or(ZigType::Void);
+
+        let saved = self.enter_fn(fn_name, false, Some(return_type.clone()));
+        self.name_mangler.push_shadow_scope();
+
+        let params = self.lower_fn_params(fd, fn_name);
+
+        // Register param names in fn_scope_vars
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            for param in &params {
+                ctx.add_scope_var(&param.name.js_name);
+            }
+        }
+
+        let body = fd
+            .body
+            .as_ref()
+            .map(|b| self.lower_block(&b.statements))
+            .unwrap_or_else(|| IrBlock::new(vec![]));
+
+        self.name_mangler.pop_shadow_scope();
+        let _fn_ctx = self.exit_fn(saved);
+
+        // For AnytypeReturn: capture the first return expression so the Emitter
+        // can emit `@TypeOf(expr)` instead of `anytype`.
+        let typeof_return_body = if matches!(return_type, ZigType::AnytypeReturn) {
+            Self::find_first_return_expr_in_block(&body).map(|e| Box::new(e.clone()))
+        } else {
+            None
+        };
+
+        // Register as a nested function name (for call-site rewriting)
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            ctx.add_nested_fn(fn_name);
+        }
+
+        let fn_ident = self.make_ident(fn_name);
+
+        if !captures.is_empty() {
+            // ── Has captures: named type struct + instance ──
+            // Generates:
+            //   const _inner_type = struct { x: i64, pub fn call(self: *@This(), y: anytype) ... { ... } };
+            //   const inner = _inner_type{ .x = x };
+            let type_name = format!("_{}_type", fn_ident.zig_name);
+            let type_ident = IrIdent::with_zig_name(fn_name, type_name.clone());
+            let instance_ident = fn_ident;
+
+            let ir_captures: Vec<IrCapture> = captures
+                .into_iter()
+                .map(|(name, zig_type, is_mut)| IrCapture {
+                    name: self.make_ident(&name),
+                    zig_type,
+                    is_mut,
+                })
+                .collect();
+
+            // Create the struct definition (emitted inline in function body)
+            let closure_struct = IrClosureStruct {
+                name: type_ident.clone(),
+                captured: ir_captures.clone(),
+                fn_params: params,
+                return_type: return_type.clone(),
+                typeof_return_body: typeof_return_body.clone(),
+                body,
+            };
+
+            // Create the instance: TypeName { .x = x, ... }
+            let instance = IrClosure {
+                struct_name: type_ident,
+                captured: ir_captures,
+                fn_params: vec![], // already in struct def
+                return_type: return_type.clone(),
+                body: IrBlock::new(vec![]), // body already in struct def
+                instance_name: instance_ident,
+            };
+
+            IrStmt::NestedFnDecl {
+                struct_def: closure_struct,
+                instance: Some(instance),
+            }
+        } else {
+            // ── No captures: inline struct with static call method ──
+            // Generates:
+            //   const inner = struct { pub fn call(y: anytype) ... { ... } };
+            let closure_struct = IrClosureStruct {
+                name: fn_ident,
+                captured: vec![],
+                fn_params: params,
+                return_type,
+                typeof_return_body,
+                body,
+            };
+
+            IrStmt::NestedFnDecl {
+                struct_def: closure_struct,
+                instance: None,
+            }
+        }
+    }
+
     /// Lower function parameters into IrParam list.
     ///
     /// Reads parameter types from type_info when available, falls back to
     /// anytype for untyped parameters.
     fn lower_fn_params(&mut self, fd: &Function, fn_name: &str) -> Vec<IrParam> {
         let mut params = Vec::new();
+        let is_async = self
+            .type_info
+            .is_async
+            .get(fn_name)
+            .copied()
+            .unwrap_or(false);
+
+        // Async functions get `io: anytype` as the first parameter
+        if is_async {
+            params.push(IrParam {
+                name: self.make_ident("io"),
+                zig_type: ZigType::Anytype,
+                is_unused: false,
+                is_rest: false,
+            });
+        }
 
         // Try to get param types from type_info
         let param_types = self.type_info.fn_param_types.get(fn_name).cloned();
 
         if let Some(ptypes) = param_types {
             for (pname, ptype) in &ptypes {
-                // Skip 'io' param for async functions (it's injected by the runtime)
-                if self
-                    .type_info
-                    .is_async
-                    .get(fn_name)
-                    .copied()
-                    .unwrap_or(false)
-                    && pname == "io"
-                {
+                // Skip 'io' param for async functions (it's already injected above)
+                if is_async && pname == "io" {
                     continue;
                 }
                 params.push(IrParam {
@@ -1304,8 +1502,10 @@ impl Lowerer {
 
             // ── Block ──────────────────────────────────────
             Statement::BlockStatement(bs) => {
+                self.name_mangler.push_shadow_scope();
                 let stmts: Vec<crate::zigir::types::IrStmt> =
                     bs.body.iter().map(|s| self.lower_stmt(s)).collect();
+                self.name_mangler.pop_shadow_scope();
                 crate::zigir::types::IrStmt::Block(IrBlock::new(stmts))
             }
             Statement::LabeledStatement(ls) => self.lower_labeled(ls),
@@ -1320,15 +1520,7 @@ impl Lowerer {
 
             // ── Function declaration (nested) ──────────────
             Statement::FunctionDeclaration(fd) => {
-                // Nested function: generate as a pending_expr_fn
-                let fn_name = fd.id.as_ref().map(|id| id.name.as_str());
-                let is_export = self.is_export_fn(fn_name);
-                if let Some(ir_fn) = self.lower_fn_decl(fd, is_export) {
-                    self.pending_expr_fns.push(IrDecl::Fn(ir_fn));
-                }
-                crate::zigir::types::IrStmt::Comment(
-                    "// nested function declaration hoisted".to_string(),
-                )
+                self.lower_nested_fn_decl(fd)
             }
 
             // ── With statement (unsupported) ───────────────
@@ -1343,8 +1535,11 @@ impl Lowerer {
 
             // ── Skippable ──────────────────────────────────
             Statement::EmptyStatement(_) => crate::zigir::types::IrStmt::Comment("".to_string()),
-            Statement::DebuggerStatement(_) => {
-                crate::zigir::types::IrStmt::Comment("debugger".to_string())
+            Statement::DebuggerStatement(ds) => {
+                crate::zigir::types::IrStmt::CompileError {
+                    span: self.span_to_source_span(ds.span),
+                    msg: "debugger statement is not supported (debugging is not available in compiled Zig)".to_string(),
+                }
             }
 
             // ── Descriptive unsupported ───────────────────
@@ -1385,7 +1580,13 @@ impl Lowerer {
     /// For single statements, wraps in a single-element block.
     fn lower_stmt_as_block(&mut self, stmt: &Statement, label: Option<String>) -> IrBlock {
         let stmts = match stmt {
-            Statement::BlockStatement(bs) => bs.body.iter().map(|s| self.lower_stmt(s)).collect(),
+            Statement::BlockStatement(bs) => {
+                self.name_mangler.push_shadow_scope();
+                let stmts: Vec<crate::zigir::types::IrStmt> =
+                    bs.body.iter().map(|s| self.lower_stmt(s)).collect();
+                self.name_mangler.pop_shadow_scope();
+                stmts
+            }
             _ => vec![self.lower_stmt(stmt)],
         };
         IrBlock { stmts, label }
@@ -2533,114 +2734,176 @@ impl Lowerer {
     fn lower_optional_chain(&mut self, ce: &ChainExpression) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
 
-        let capture_var = self.name_mangler.next_name("_oc");
-
         match &ce.expression {
-            ChainElement::StaticMemberExpression(sme) => {
-                let object = self.lower_expr(&sme.object);
-                let needs_null_check = self.expr_might_be_null(&sme.object);
-                let body = IrExpr::FieldAccess {
-                    object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
-                    field: sme.property.name.to_string(),
-                    field_kind: FieldKind::StructField,
-                };
-                IrExpr::OptionalChain {
-                    object: Box::new(object),
-                    capture_var,
-                    body: Box::new(body),
-                    needs_null_check,
-                }
-            }
-            ChainElement::ComputedMemberExpression(cme) => {
-                let object = self.lower_expr(&cme.object);
-                let needs_null_check = self.expr_might_be_null(&cme.object);
-                let index = self.lower_expr(&cme.expression);
-                let body = IrExpr::IndexAccess {
-                    object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
-                    index: Box::new(index),
-                    index_kind: IndexKind::SliceIndex,
-                };
-                IrExpr::OptionalChain {
-                    object: Box::new(object),
-                    capture_var,
-                    body: Box::new(body),
-                    needs_null_check,
-                }
-            }
-            ChainElement::CallExpression(call_ce) => {
-                // Extract receiver from the callee (which is a member expression)
-                // e.g., obj?.greet("World") → callee is StaticMemberExpression(obj, "greet")
-                let (receiver_name, method_name) = self.extract_optional_call_info(call_ce);
-                let needs_null_check = receiver_name
-                    .as_ref()
-                    .map(|name| {
-                        self.type_info
-                            .var_types
-                            .get(name.as_str())
-                            .is_none_or(|ty| {
-                                !matches!(
-                                    ty,
-                                    ZigType::Struct(_)
-                                        | ZigType::I64
-                                        | ZigType::F64
-                                        | ZigType::Bool
-                                        | ZigType::Str
-                                        | ZigType::ArrayList(_)
-                                        | ZigType::NamedStruct(_)
-                                )
-                            })
-                    })
-                    .unwrap_or(true);
-
-                let args: Vec<IrExpr> = call_ce
-                    .arguments
-                    .iter()
-                    .map(|arg| {
-                        let expr = arg.as_expression().unwrap();
-                        self.lower_expr(expr)
-                    })
-                    .collect();
-
-                let body = if let Some(name) = method_name {
-                    // Method call: capture_var.method(args)
-                    IrExpr::Call(crate::zigir::types::IrCallExpr {
-                        callee: Box::new(IrExpr::FieldAccess {
-                            object: Box::new(IrExpr::Ident(IrIdent::new(&capture_var))),
-                            field: name,
-                            field_kind: FieldKind::StructField,
-                        }),
-                        args,
-                        call_kind: CallKind::Method {
-                            object_type: crate::zigir::kinds::MethodObjectKind::Unknown,
-                        },
-                    })
-                } else {
-                    // Fallback: just evaluate the call directly
-                    self.lower_call(call_ce)
-                };
-
-                let object = if let Some(name) = &receiver_name {
-                    IrExpr::Ident(IrIdent::new(name))
-                } else {
-                    // For complex receiver expressions, lower the callee's object directly
-                    match &call_ce.callee {
-                        Expression::StaticMemberExpression(sme) => self.lower_expr(&sme.object),
-                        Expression::ComputedMemberExpression(cme) => self.lower_expr(&cme.object),
-                        _ => IrExpr::Null,
-                    }
-                };
-
-                IrExpr::OptionalChain {
-                    object: Box::new(object),
-                    capture_var,
-                    body: Box::new(body),
-                    needs_null_check,
-                }
-            }
+            ChainElement::StaticMemberExpression(sme) => self.lower_optional_sme_chain(sme),
+            ChainElement::ComputedMemberExpression(cme) => self.lower_optional_cme_chain(cme),
+            ChainElement::CallExpression(call_ce) => self.lower_optional_call_chain(call_ce),
             _ => IrExpr::CompileError {
                 span: SourceSpan::default(),
                 msg: "unsupported optional chain element".to_string(),
             },
+        }
+    }
+
+    fn lower_optional_sme_chain(
+        &mut self,
+        sme: &StaticMemberExpression,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        let inner = self.lower_optional_chain_object(&sme.object);
+
+        let capture_var = self.name_mangler.next_name("_oc");
+        let needs_null_check = self.expr_might_be_null(&sme.object);
+        let access_target = if needs_null_check {
+            IrExpr::Ident(IrIdent::new(&capture_var))
+        } else {
+            inner.clone()
+        };
+        let body = IrExpr::FieldAccess {
+            object: Box::new(access_target),
+            field: sme.property.name.to_string(),
+            field_kind: FieldKind::StructField,
+        };
+
+        if !needs_null_check {
+            return body;
+        }
+
+        IrExpr::OptionalChain {
+            object: Box::new(inner),
+            capture_var,
+            body: Box::new(body),
+            needs_null_check: true,
+        }
+    }
+
+    fn lower_optional_cme_chain(
+        &mut self,
+        cme: &ComputedMemberExpression,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        let inner = self.lower_optional_chain_object(&cme.object);
+        let index = self.lower_expr(&cme.expression);
+
+        let capture_var = self.name_mangler.next_name("_oc");
+        let needs_null_check = self.expr_might_be_null(&cme.object);
+        let access_target = if needs_null_check {
+            IrExpr::Ident(IrIdent::new(&capture_var))
+        } else {
+            inner.clone()
+        };
+        let body = IrExpr::IndexAccess {
+            object: Box::new(access_target),
+            index: Box::new(index),
+            index_kind: IndexKind::SliceIndex,
+        };
+
+        if !needs_null_check {
+            return body;
+        }
+
+        IrExpr::OptionalChain {
+            object: Box::new(inner),
+            capture_var,
+            body: Box::new(body),
+            needs_null_check: true,
+        }
+    }
+
+    fn lower_optional_call_chain(
+        &mut self,
+        call_ce: &CallExpression,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        let (receiver_name, method_name) = self.extract_optional_call_info(call_ce);
+        let needs_null_check = receiver_name
+            .as_ref()
+            .map(|name| {
+                self.type_info
+                    .var_types
+                    .get(name.as_str())
+                    .is_none_or(|ty| {
+                        !matches!(
+                            ty,
+                            ZigType::Struct(_)
+                                | ZigType::I64
+                                | ZigType::F64
+                                | ZigType::Bool
+                                | ZigType::Str
+                                | ZigType::ArrayList(_)
+                                | ZigType::NamedStruct(_)
+                        )
+                    })
+            })
+            .unwrap_or(true);
+
+        let object = match &call_ce.callee {
+            Expression::StaticMemberExpression(sme) => {
+                self.lower_optional_chain_object(&sme.object)
+            }
+            Expression::ComputedMemberExpression(cme) => {
+                self.lower_optional_chain_object(&cme.object)
+            }
+            _ => self.lower_expr(call_ce.callee.get_inner_expression()),
+        };
+
+        let capture_var = self.name_mangler.next_name("_oc");
+        let access_target = if needs_null_check {
+            IrExpr::Ident(IrIdent::new(&capture_var))
+        } else {
+            object.clone()
+        };
+
+        let args: Vec<IrExpr> = call_ce
+            .arguments
+            .iter()
+            .map(|arg| {
+                let expr = arg.as_expression().unwrap();
+                self.lower_expr(expr)
+            })
+            .collect();
+
+        let body = if let Some(name) = method_name {
+            IrExpr::Call(crate::zigir::types::IrCallExpr {
+                callee: Box::new(IrExpr::FieldAccess {
+                    object: Box::new(access_target),
+                    field: name,
+                    field_kind: FieldKind::StructField,
+                }),
+                args,
+                call_kind: CallKind::Method {
+                    object_type: crate::zigir::kinds::MethodObjectKind::Unknown,
+                },
+            })
+        } else {
+            self.lower_call(call_ce)
+        };
+
+        if !needs_null_check {
+            return body;
+        }
+
+        IrExpr::OptionalChain {
+            object: Box::new(object),
+            capture_var,
+            body: Box::new(body),
+            needs_null_check: true,
+        }
+    }
+
+    fn lower_optional_chain_object(&mut self, expr: &Expression) -> crate::zigir::types::IrExpr {
+        match expr {
+            Expression::StaticMemberExpression(sme) if sme.optional => {
+                self.lower_optional_sme_chain(sme)
+            }
+            Expression::ComputedMemberExpression(cme) if cme.optional => {
+                self.lower_optional_cme_chain(cme)
+            }
+            Expression::ChainExpression(ce) => self.lower_optional_chain(ce),
+            _ => self.lower_expr(expr),
         }
     }
 
@@ -2779,7 +3042,7 @@ impl Lowerer {
             }
         }
 
-        IrExpr::Ident(IrIdent::new(var_name))
+        IrExpr::Ident(self.make_ident(var_name))
     }
 
     /// Lower a binary expression.
@@ -2909,8 +3172,11 @@ impl Lowerer {
                             module: crate::zigir::builtins::BuiltinModule::JsRuntime,
                             method: "jsTypeof".to_string(),
                             obj_name: None,
+                            obj_expr: None,
                             args: vec![self.lower_expr(&ue.argument)],
                             return_type: crate::types::ZigType::Str,
+                            regex_info: None,
+                            ta_type_suffix: None,
                         })
                     }
                 } else {
@@ -2918,16 +3184,63 @@ impl Lowerer {
                         module: crate::zigir::builtins::BuiltinModule::JsRuntime,
                         method: "jsTypeof".to_string(),
                         obj_name: None,
+                        obj_expr: None,
                         args: vec![self.lower_expr(&ue.argument)],
                         return_type: crate::types::ZigType::Str,
+                        regex_info: None,
+                        ta_type_suffix: None,
                     })
                 }
             }
             UnaryOperator::Void => IrExpr::Void(Box::new(self.lower_expr(&ue.argument))),
-            UnaryOperator::Delete => IrExpr::Unary {
-                op: UnaOp::Delete,
-                operand: Box::new(self.lower_expr(&ue.argument)),
-            },
+            UnaryOperator::Delete => {
+                // delete obj.prop → IrBuiltinCall { JsRuntime, "deleteKey", obj, [prop] }
+                // delete obj[expr] → IrBuiltinCall { JsRuntime, "deleteByKey", obj, [expr] }
+                match &ue.argument {
+                    Expression::StaticMemberExpression(mem) => {
+                        let obj_name = match &mem.object {
+                            Expression::Identifier(id) => Some(id.name.as_str().to_string()),
+                            _ => None,
+                        };
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: crate::zigir::builtins::BuiltinModule::JsRuntime,
+                            method: "deleteKey".to_string(),
+                            obj_name,
+                            obj_expr: None,
+                            args: vec![IrExpr::StringLiteral(
+                                mem.property.name.as_str().to_string(),
+                            )],
+                            return_type: crate::types::ZigType::Bool,
+                            regex_info: None,
+                            ta_type_suffix: None,
+                        })
+                    }
+                    Expression::ComputedMemberExpression(mem) => {
+                        let obj_name = if let Expression::Identifier(id) = &mem.object {
+                            Some(id.name.as_str().to_string())
+                        } else {
+                            None
+                        };
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: crate::zigir::builtins::BuiltinModule::JsRuntime,
+                            method: "deleteByKey".to_string(),
+                            obj_name,
+                            obj_expr: None,
+                            args: vec![self.lower_expr(&mem.expression)],
+                            return_type: crate::types::ZigType::Bool,
+                            regex_info: None,
+                            ta_type_suffix: None,
+                        })
+                    }
+                    _ => {
+                        // Unsupported delete target — emit compile error
+                        IrExpr::CompileError {
+                            span: self.span_to_source_span(ue.span),
+                            msg: "delete operator requires property access".to_string(),
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2948,6 +3261,34 @@ impl Lowerer {
 
     /// Lower an assignment expression.
     fn lower_assignment(&mut self, ae: &AssignmentExpression) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        // ── Special-case compound assignments that need expansion ──
+        match ae.operator {
+            // **= → a = std.math.pow(a, b) via PowExpr
+            AssignmentOperator::Exponential => {
+                let target = self.lower_assign_target(&ae.left);
+                let value = Box::new(self.lower_expr(&ae.right));
+                // Read target as expression for the PowExpr base
+                let base_ident = match &target {
+                    crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
+                    _ => IrExpr::Ident(IrIdent::new("__target")),
+                };
+                return IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::PowExpr {
+                        base: Box::new(base_ident),
+                        exp: value,
+                        base_type: crate::types::ZigType::F64,
+                        exp_type: crate::types::ZigType::F64,
+                    }),
+                };
+            }
+            // &&= / ||= / ??= → use AssignOp, Emitter will expand
+            _ => {}
+        }
+
         let op = match ae.operator {
             AssignmentOperator::Assign => AssignOp::Assign,
             AssignmentOperator::Addition => AssignOp::Add,
@@ -2955,11 +3296,6 @@ impl Lowerer {
             AssignmentOperator::Multiplication => AssignOp::Mul,
             AssignmentOperator::Division => AssignOp::Div,
             AssignmentOperator::Remainder => AssignOp::Mod,
-            AssignmentOperator::Exponential => {
-                // **= is not a direct AssignOp; emit as pow call
-                // For now, store as AssignOp::Assign and note in a comment
-                AssignOp::Assign
-            }
             AssignmentOperator::ShiftLeft => AssignOp::Shl,
             AssignmentOperator::ShiftRight => AssignOp::Shr,
             AssignmentOperator::ShiftRightZeroFill => AssignOp::Shr,
@@ -2969,10 +3305,12 @@ impl Lowerer {
             AssignmentOperator::LogicalAnd => AssignOp::LogicAnd,
             AssignmentOperator::LogicalOr => AssignOp::LogicOr,
             AssignmentOperator::LogicalNullish => AssignOp::Nullish,
+            // Exponential handled above
+            _ => AssignOp::Assign,
         };
         let target = Box::new(self.lower_assign_target(&ae.left));
         let value = Box::new(self.lower_expr(&ae.right));
-        crate::zigir::types::IrExpr::Assign { op, target, value }
+        IrExpr::Assign { op, target, value }
     }
 
     /// Lower a simple assignment target (from UpdateExpression).
@@ -3123,6 +3461,52 @@ impl Lowerer {
         }
     }
 
+    /// Check for unsupported global object calls (Atomics, Reflect, etc.)
+    /// that should produce compile errors instead of silent code generation.
+    fn check_unsupported_call(&self, ce: &CallExpression) -> Option<String> {
+        // Match patterns: Atomics.load(), Reflect.apply(), Map.groupBy(), etc.
+        match &ce.callee {
+            Expression::StaticMemberExpression(mem) => {
+                if let Expression::Identifier(id) = &mem.object {
+                    let obj_name = id.name.as_str();
+                    let method_name = mem.property.name.as_str();
+                    match obj_name {
+                        "Atomics" => Some(format!(
+                            "Atomics.{}() is not supported (shared memory atomics are not available in Zig)",
+                            method_name
+                        )),
+                        "Reflect" => Some(format!(
+                            "Reflect.{}() is not supported (meta-programming API is not available)",
+                            method_name
+                        )),
+                        "Object" => match method_name {
+                            "getOwnPropertySymbols" => Some(
+                                "Object.getOwnPropertySymbols() is not supported (Symbol keys are not available in js2zig)".to_string(),
+                            ),
+                            "getOwnPropertyNames" => Some(
+                                "Object.getOwnPropertyNames() is not yet implemented in js2zig".to_string(),
+                            ),
+                            _ => None,
+                        },
+                        "Map" if method_name == "groupBy" => Some(
+                            "Map.groupBy() is not supported (requires iterable grouping)".to_string(),
+                        ),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            Expression::Identifier(id) => match id.name.as_str() {
+                name @ "Atomics" | name @ "Reflect" => {
+                    Some(format!("{} is not supported in js2zig", name))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Lower a call expression.
     ///
     /// Routing priority (mirrors Codegen's `emit_call`):
@@ -3134,6 +3518,14 @@ impl Lowerer {
     /// 6. IIFE / expression callee → `IrCall { call_kind: Closure }`
     fn lower_call(&mut self, ce: &CallExpression) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
+
+        // ── Step 0: Check for unsupported global objects ──
+        if let Some(err_msg) = self.check_unsupported_call(ce) {
+            return IrExpr::CompileError {
+                span: self.span_to_source_span(ce.span),
+                msg: err_msg,
+            };
+        }
 
         let args: Vec<IrExpr> = ce
             .arguments
@@ -3175,13 +3567,169 @@ impl Lowerer {
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
             let obj_name = Self::extract_callee_object_name_static(&ce.callee);
+
+            // ── Fix string-variable methods misidentified as array ──
+            // detect_builtin_call only checks if the callee object is a StringLiteral,
+            // not if it's a variable of type string. Fix up the module/method here.
+            let (module, method, return_type) = if let Some(name) = &obj_name {
+                if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
+                    if matches!(var_type, ZigType::Str)
+                        && module == crate::zigir::builtins::BuiltinModule::JsArray
+                    {
+                        match method.as_str() {
+                            "at" => (
+                                crate::zigir::builtins::BuiltinModule::JsString,
+                                "at".into(),
+                                ZigType::Str,
+                            ),
+                            "indexOf" => (
+                                crate::zigir::builtins::BuiltinModule::JsString,
+                                "indexOf".into(),
+                                ZigType::I64,
+                            ),
+                            "includes" => (
+                                crate::zigir::builtins::BuiltinModule::JsString,
+                                "includes".into(),
+                                ZigType::Bool,
+                            ),
+                            "lastIndexOf" => (
+                                crate::zigir::builtins::BuiltinModule::JsString,
+                                "lastIndexOf".into(),
+                                ZigType::I64,
+                            ),
+                            "slice" => (
+                                crate::zigir::builtins::BuiltinModule::JsString,
+                                "slice".into(),
+                                ZigType::Str,
+                            ),
+                            _ => (module, method, return_type),
+                        }
+                    } else if let ZigType::NamedStruct(n) = var_type {
+                        if Self::is_typedarray_type(n) {
+                            let ta_mod = BuiltinModule::JsTypedArray;
+                            match method.as_str() {
+                                "set" => (ta_mod, "set".into(), ZigType::Void),
+                                "get" => (ta_mod, "get".into(), ZigType::I64),
+                                "fill" => (ta_mod, "fill".into(), ZigType::Void),
+                                "slice" => {
+                                    (ta_mod, "slice".into(), ZigType::NamedStruct(n.clone()))
+                                }
+                                "copyWithin" => (ta_mod, "copyWithin".into(), ZigType::Void),
+                                _ => (module, method, return_type),
+                            }
+                        } else {
+                            (module, method, return_type)
+                        }
+                    } else {
+                        (module, method, return_type)
+                    }
+                } else {
+                    (module, method, return_type)
+                }
+            } else {
+                (module, method, return_type)
+            };
+            let obj_name = Self::extract_callee_object_name_static(&ce.callee);
+
+            // ── Extract regex metadata for match/matchAll/search ──
+            let regex_info = Self::extract_regex_info(ce, &builtin);
+
+            // ── Derive TypedArray type suffix for JsTypedArray calls ──
+            let ta_type_suffix = if module == BuiltinModule::JsTypedArray {
+                obj_name.as_ref().and_then(|name| {
+                    self.type_info.var_types.get(name.as_str()).and_then(|zt| {
+                        if let ZigType::NamedStruct(n) = zt {
+                            Self::typedarray_type_suffix(n).map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                })
+            } else {
+                None
+            };
+
+            // ── Handle complex receiver expressions (method chaining) ──
+            // When the receiver is a CallExpression (e.g., encodeURIComponent(str).replace(...)),
+            // extract_callee_object_name_static returns None. We lower the receiver expression
+            // and store it in obj_expr so the Emitter can inline it.
+            let obj_expr = if obj_name.is_none() {
+                if let Expression::StaticMemberExpression(sme) = &ce.callee {
+                    match &sme.object {
+                        Expression::CallExpression(_) => {
+                            Some(Box::new(self.lower_expr(&sme.object)))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                 module,
                 method,
                 obj_name,
+                obj_expr,
                 args,
                 return_type,
+                regex_info,
+                ta_type_suffix,
             });
+        }
+
+        // ── Step 1.5: RegExp variable method interception ──
+        // `r.test(s)` or `r.exec(s)` where `r` is a known RegExp variable.
+        // detect_builtin_call only identifies RegExpTest/RegExpExec for RegExpLiteral receivers.
+        // For variable receivers, we intercept here using regexp_vars tracking.
+        if let Expression::StaticMemberExpression(sme) = &ce.callee {
+            if let Expression::Identifier(id) = &sme.object {
+                let var_name = id.name.as_str();
+                if let Some(ctx) = &self.fn_ctx {
+                    if ctx.regexp_vars.contains(var_name) {
+                        let method = sme.property.name.as_str();
+                        match method {
+                            "test" => {
+                                return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                                    module: BuiltinModule::JsRegExp,
+                                    method: "test".into(),
+                                    obj_name: Some(var_name.to_string()),
+                                    obj_expr: None,
+                                    args,
+                                    return_type: ZigType::Bool,
+                                    regex_info: Some(crate::zigir::types::IrRegexInfo {
+                                        pattern: None,
+                                        has_global: false,
+                                        is_var_ref: true,
+                                        var_name: Some(var_name.to_string()),
+                                    }),
+                                    ta_type_suffix: None,
+                                });
+                            }
+                            "exec" => {
+                                return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                                    module: BuiltinModule::JsRegExp,
+                                    method: "exec".into(),
+                                    obj_name: Some(var_name.to_string()),
+                                    obj_expr: None,
+                                    args,
+                                    return_type: ZigType::JsAny,
+                                    regex_info: Some(crate::zigir::types::IrRegexInfo {
+                                        pattern: None,
+                                        has_global: false,
+                                        is_var_ref: true,
+                                        var_name: Some(var_name.to_string()),
+                                    }),
+                                    ta_type_suffix: None,
+                                });
+                            }
+                            _ => {} // other methods fall through
+                        }
+                    }
+                }
+            }
         }
 
         // ── Step 2: Identify callee pattern ──
@@ -3215,6 +3763,18 @@ impl Lowerer {
                         args,
                         call_kind: CallKind::Closure,
                     });
+                }
+
+                // Nested function call: rewrite to name.call(args)
+                if let Some(ctx) = &self.fn_ctx {
+                    if ctx.is_nested_fn(name) {
+                        let callee_ident = self.make_ident(name);
+                        return IrExpr::Call(crate::zigir::types::IrCallExpr {
+                            callee: Box::new(IrExpr::Ident(callee_ident)),
+                            args,
+                            call_kind: CallKind::Closure,
+                        });
+                    }
                 }
 
                 // Direct user function call
@@ -3364,24 +3924,29 @@ impl Lowerer {
             }
             // ── TypedArray properties ──
             if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
-                if matches!(zig_type, ZigType::NamedStruct(name) if name == "TypedArray")
-                    && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
-                {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::TypedArrayProp(field_name.to_string()),
-                    };
-                }
-                // ── Map/Set .size ──
-                if matches!(zig_type, ZigType::NamedStruct(name) if name == "Map" || name == "Set")
-                    && field_name == "size"
-                {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::MapSetSize,
-                    };
+                if let ZigType::NamedStruct(name) = zig_type {
+                    // ── TypedArray properties (buffer, byteLength, byteOffset) ──
+                    if Self::is_typedarray_type(name)
+                        && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
+                    {
+                        let type_suffix = Self::typedarray_type_suffix(name).map(|s| s.to_string());
+                        return IrExpr::FieldAccess {
+                            object: Box::new(self.lower_expr(&mem.object)),
+                            field: field_name.to_string(),
+                            field_kind: FieldKind::TypedArrayProp {
+                                prop: field_name.to_string(),
+                                type_suffix,
+                            },
+                        };
+                    }
+                    // ── Map/Set .size ──
+                    if matches!(name.as_str(), "Map" | "Set") && field_name == "size" {
+                        return IrExpr::FieldAccess {
+                            object: Box::new(self.lower_expr(&mem.object)),
+                            field: field_name.to_string(),
+                            field_kind: FieldKind::MapSetSize,
+                        };
+                    }
                 }
                 // ── ArrayList .length → .items.len ──
                 if matches!(zig_type, ZigType::ArrayList(_)) && field_name == "length" {
@@ -3834,12 +4399,38 @@ impl Lowerer {
                         PropertyKey::NumericLiteral(nl) => (nl.value.to_string(), false),
                         _ => ("__computed__".to_string(), true),
                     };
-                    let value = self.lower_expr(&op.value);
-                    items.push(IrObjectItem::Field(crate::zigir::types::IrObjectField {
-                        key,
-                        value,
-                        is_computed,
-                    }));
+
+                    match op.kind {
+                        PropertyKind::Init => {
+                            let value = self.lower_expr(&op.value);
+                            items.push(IrObjectItem::Field(crate::zigir::types::IrObjectField {
+                                key,
+                                value,
+                                is_computed,
+                            }));
+                        }
+                        PropertyKind::Get => {
+                            // Getter: extract return expression from function body
+                            // { get x() { return expr; } } → .x = expr
+                            if let Expression::FunctionExpression(func) = &op.value
+                                && let Some(body) = &func.body
+                                && let Some(return_expr) = Self::extract_return_expr_from_body(body)
+                            {
+                                let value = self.lower_expr(return_expr);
+                                items.push(IrObjectItem::Field(
+                                    crate::zigir::types::IrObjectField {
+                                        key,
+                                        value,
+                                        is_computed,
+                                    },
+                                ));
+                            }
+                            // If getter body is more complex, skip it (can't inline)
+                        }
+                        PropertyKind::Set => {
+                            // Setter: skip entirely, doesn't contribute a field
+                        }
+                    }
                 }
                 ObjectPropertyKind::SpreadProperty(sp) => {
                     items.push(IrObjectItem::Spread(self.lower_expr(&sp.argument)));
@@ -3848,6 +4439,17 @@ impl Lowerer {
         }
 
         crate::zigir::types::IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral { items })
+    }
+
+    /// Extract the return expression from a function body with a single return statement.
+    /// Used by getter property lowering: `{ get x() { return expr; } }` → `.x = expr`.
+    fn extract_return_expr_from_body<'a>(body: &'a FunctionBody<'a>) -> Option<&'a Expression<'a>> {
+        if body.statements.len() == 1
+            && let Statement::ReturnStatement(ret) = &body.statements[0]
+        {
+            return ret.argument.as_ref();
+        }
+        None
     }
 
     /// Lower an arrow function expression.
@@ -3925,6 +4527,7 @@ impl Lowerer {
                     captured: ir_captures.clone(),
                     fn_params: params.clone(),
                     return_type: return_type.clone(),
+                    typeof_return_body: None,
                     body: body.clone(),
                 });
 
@@ -4026,6 +4629,7 @@ impl Lowerer {
                     captured: ir_captures.clone(),
                     fn_params: params.clone(),
                     return_type: return_type.clone(),
+                    typeof_return_body: None,
                     body: body.clone(),
                 });
 
@@ -4171,6 +4775,19 @@ impl Lowerer {
                     }
                 }
             }
+            IrStmt::NestedFnDecl {
+                struct_def,
+                instance,
+            } => {
+                for s in &struct_def.body.stmts {
+                    Self::collect_ir_idents_in_stmt(s, idents);
+                }
+                if let Some(closure) = instance {
+                    for cap in &closure.captured {
+                        idents.insert(cap.name.js_name.clone());
+                    }
+                }
+            }
         }
     }
 
@@ -4265,6 +4882,9 @@ impl Lowerer {
                 }
             }
             IrExpr::BuiltinCall(bc) => {
+                if let Some(ref obj) = bc.obj_name {
+                    idents.insert(obj.clone());
+                }
                 for a in &bc.args {
                     Self::collect_ir_idents_in_expr(a, idents);
                 }
@@ -4644,6 +5264,7 @@ impl Lowerer {
                     captured: ir_captures,
                     fn_params: vec![], // Will be filled by the Emitter from the IrClosure
                     return_type: ZigType::Void,
+                    typeof_return_body: None,
                     body: IrBlock::new(vec![]),
                 }
             })
@@ -5304,6 +5925,23 @@ impl Lowerer {
         use crate::native_builtins::BuiltinCall as BC;
         use crate::zigir::types::{ArrayMethodKind, IrArrayMethodInline, IrExpr};
 
+        // Never inline array methods for string variables — these should go through
+        // BuiltinCall (JsString) instead. Check variable type from TypeInfo.
+        let obj_name_raw = Self::extract_callee_object_name_static(&ce.callee);
+        if let Some(name) = &obj_name_raw {
+            if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
+                if matches!(var_type, ZigType::Str) {
+                    return None;
+                }
+                if let ZigType::NamedStruct(n) = var_type {
+                    if Self::is_typedarray_type(n) {
+                        return None;
+                    }
+                }
+            }
+        }
+        let obj_name = obj_name_raw?;
+
         let kind = match builtin {
             BC::ArrayIncludes => ArrayMethodKind::Includes,
             BC::ArrayIndexOf => ArrayMethodKind::IndexOf,
@@ -5317,8 +5955,6 @@ impl Lowerer {
             BC::ArrayFill => ArrayMethodKind::Fill,
             _ => return None,
         };
-
-        let obj_name = Self::extract_callee_object_name_static(&ce.callee)?;
 
         let elem_type = self
             .type_info
@@ -5437,9 +6073,26 @@ impl Lowerer {
             None
         };
 
+        // Determine collection kind based on variable type
+        let collection_kind = self
+            .type_info
+            .var_types
+            .get(obj_name.as_str())
+            .map(|t| {
+                if matches!(t, ZigType::NamedStruct(s) if s == "Map") {
+                    crate::zigir::types::CollectionKind::Map
+                } else if matches!(t, ZigType::NamedStruct(s) if s == "Set") {
+                    crate::zigir::types::CollectionKind::Set
+                } else {
+                    crate::zigir::types::CollectionKind::Array
+                }
+            })
+            .unwrap_or(crate::zigir::types::CollectionKind::Array);
+
         Some(IrExpr::ArrayCallbackInline(Box::new(
             IrArrayCallbackInline {
                 kind,
+                collection_kind,
                 obj_name,
                 elem_type,
                 elem_param,
@@ -5461,9 +6114,155 @@ impl Lowerer {
         match callee {
             Expression::StaticMemberExpression(mem) => match &mem.object {
                 Expression::Identifier(id) => Some(id.name.as_str().to_string()),
+                Expression::StringLiteral(sl) => {
+                    // "hello".method() → format as Zig string literal
+                    let s = sl.value.to_string();
+                    let escaped = s
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\t', "\\t")
+                        .replace('\r', "\\r");
+                    Some(format!("\"{}\"", escaped))
+                }
+                Expression::TemplateLiteral(tl)
+                    if tl.quasis.len() == 1 && tl.expressions.is_empty() =>
+                {
+                    // `hello`.method() → same as StringLiteral
+                    let raw = &tl.quasis[0].value.raw;
+                    let escaped = raw
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\t', "\\t");
+                    Some(format!("\"{}\"", escaped))
+                }
                 _ => None,
             },
             _ => None,
+        }
+    }
+
+    fn is_typedarray_type(name: &str) -> bool {
+        matches!(
+            name,
+            "Int8Array"
+                | "Uint8Array"
+                | "Uint8ClampedArray"
+                | "Int16Array"
+                | "Uint16Array"
+                | "Int32Array"
+                | "Uint32Array"
+                | "Float32Array"
+                | "Float64Array"
+                | "BigInt64Array"
+                | "BigUint64Array"
+        )
+    }
+
+    /// Check if an expression is a RegExp: either a literal `/pattern/` or `new RegExp(...)`.
+    fn is_regexp_expr(expr: &Expression) -> bool {
+        match expr {
+            Expression::RegExpLiteral(_) => true,
+            Expression::NewExpression(ne) => {
+                if let Expression::Identifier(id) = &ne.callee {
+                    id.name.as_str() == "RegExp"
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn typedarray_type_suffix(name: &str) -> Option<&'static str> {
+        match name {
+            "Int8Array" => Some("I8"),
+            "Uint8Array" | "Uint8ClampedArray" => Some("U8"),
+            "Int16Array" => Some("I16"),
+            "Uint16Array" => Some("U16"),
+            "Int32Array" => Some("I32"),
+            "Uint32Array" => Some("U32"),
+            "Float32Array" => Some("F32"),
+            "Float64Array" => Some("F64"),
+            "BigInt64Array" => Some("I64"),
+            "BigUint64Array" => Some("U64"),
+            _ => None,
+        }
+    }
+
+    /// Extract regex metadata from the first argument of a String.match/matchAll/search call,
+    /// or from the receiver of a RegExpTest/RegExpExec call.
+    /// Returns `None` for all other builtin calls.
+    fn extract_regex_info(
+        ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+    ) -> Option<crate::zigir::types::IrRegexInfo> {
+        use crate::native_builtins::BuiltinCall;
+        use oxc_ast::ast::Expression;
+
+        match builtin {
+            BuiltinCall::StringMatch | BuiltinCall::StringMatchAll | BuiltinCall::StringSearch => {}
+            // RegExpTest/RegExpExec: extract pattern from the *receiver* (callee object)
+            BuiltinCall::RegExpTest | BuiltinCall::RegExpExec => {
+                return if let Expression::StaticMemberExpression(sme) = &ce.callee {
+                    match &sme.object {
+                        Expression::RegExpLiteral(re) => {
+                            let pattern = re.regex.pattern.text.as_str();
+                            let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
+                            Some(crate::zigir::types::IrRegexInfo {
+                                pattern: Some(escaped),
+                                has_global: false,
+                                is_var_ref: false,
+                                var_name: None,
+                            })
+                        }
+                        Expression::Identifier(id) => Some(crate::zigir::types::IrRegexInfo {
+                            pattern: None,
+                            has_global: false,
+                            is_var_ref: true,
+                            var_name: Some(id.name.to_string()),
+                        }),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+            }
+            _ => return None,
+        }
+
+        if let Some(first_arg) = ce.arguments.first()
+            && let Some(expr) = first_arg.as_expression()
+        {
+            match expr {
+                Expression::RegExpLiteral(re) => {
+                    let pattern = re.regex.pattern.text.as_str();
+                    let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
+                    let has_global = re.raw.as_ref().is_some_and(|raw| {
+                        let raw_str = raw.as_str();
+                        raw_str.rfind('/').is_some_and(|idx| {
+                            let flags_part = &raw_str[idx + 1..];
+                            flags_part.contains('g')
+                        })
+                    });
+                    Some(crate::zigir::types::IrRegexInfo {
+                        pattern: Some(escaped),
+                        has_global,
+                        is_var_ref: false,
+                        var_name: None,
+                    })
+                }
+                Expression::Identifier(id) => Some(crate::zigir::types::IrRegexInfo {
+                    pattern: None,
+                    has_global: false,
+                    is_var_ref: true,
+                    var_name: Some(id.name.as_str().to_string()),
+                }),
+                _ => None,
+            }
+        } else {
+            None
         }
     }
 
@@ -5649,11 +6448,9 @@ fn builtin_call_to_ir(
             "booleanConstructor".into(),
             ZigType::Bool,
         ),
-        BuiltinCall::BigIntConstructor => (
-            BuiltinModule::JsNumber,
-            "bigIntConstructor".into(),
-            ZigType::BigInt,
-        ),
+        BuiltinCall::BigIntConstructor => {
+            (BuiltinModule::JsBigInt, "fromI64".into(), ZigType::BigInt)
+        }
         BuiltinCall::ObjectConstructor => (
             BuiltinModule::JsObject,
             "constructor".into(),
@@ -6058,7 +6855,7 @@ fn builtin_call_to_ir(
         ),
 
         // Symbol
-        BuiltinCall::SymbolFor => (BuiltinModule::JsSymbol, "for".into(), ZigType::JsSymbol),
+        BuiltinCall::SymbolFor => (BuiltinModule::JsSymbol, "for".into(), ZigType::JsSymbol), // Emitter renames "for" → "symbolFor" to avoid Zig keyword
         BuiltinCall::SymbolKeyFor => (BuiltinModule::JsSymbol, "keyFor".into(), ZigType::Str),
 
         // RegExp

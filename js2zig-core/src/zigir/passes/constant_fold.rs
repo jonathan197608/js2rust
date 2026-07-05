@@ -313,7 +313,8 @@ impl ConstantFoldPass {
             | crate::zigir::types::IrStmt::Continue { .. }
             | crate::zigir::types::IrStmt::CompileError { .. }
             | crate::zigir::types::IrStmt::Comment(_)
-            | crate::zigir::types::IrStmt::DestructureDecl(_) => false,
+            | crate::zigir::types::IrStmt::DestructureDecl(_)
+            | crate::zigir::types::IrStmt::NestedFnDecl { .. } => false,
         }
     }
 

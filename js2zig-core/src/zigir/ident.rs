@@ -117,14 +117,11 @@ impl NameMangler {
     }
 
     /// Generate the next unique name for a given prefix.
-    /// First call: `"{prefix}"`, second: `"{prefix}_1"`, third: `"{prefix}_2"`, etc.
+    /// Always includes a counter: `"{prefix}_0"`, `"{prefix}_1"`, `"{prefix}_2"`, etc.
+    /// This matches Codegen's naming convention (e.g., `_js_dest_0`, `_js_dest_1`).
     pub fn next_name(&mut self, prefix: &str) -> String {
         let count = self.counters.entry(prefix.to_string()).or_insert(0);
-        let name = if *count == 0 {
-            prefix.to_string()
-        } else {
-            format!("{}_{}", prefix, count)
-        };
+        let name = format!("{}_{}", prefix, count);
         *count += 1;
         name
     }
@@ -208,11 +205,11 @@ mod tests {
     #[test]
     fn test_name_mangler_sequence() {
         let mut m = NameMangler::new();
-        assert_eq!(m.next_name("closure"), "closure");
+        assert_eq!(m.next_name("closure"), "closure_0");
         assert_eq!(m.next_name("closure"), "closure_1");
         assert_eq!(m.next_name("closure"), "closure_2");
         // Different prefix starts fresh
-        assert_eq!(m.next_name("blk"), "blk");
+        assert_eq!(m.next_name("blk"), "blk_0");
     }
 
     #[test]

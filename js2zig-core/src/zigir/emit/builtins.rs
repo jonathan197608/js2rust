@@ -1,4 +1,4 @@
-﻿// zigir/emit/builtins.rs
+// zigir/emit/builtins.rs
 // Builtin method emission: routes BuiltinModule + method name to Zig code.
 //
 // This module handles `IrBuiltinCall` — calls to JS runtime library methods
@@ -9,6 +9,7 @@ use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::types::IrExpr;
 
 // ═══════════════════════════════════════════════════════
 //  Builtin call dispatch
@@ -16,23 +17,48 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 impl Emitter {
     pub(crate) fn emit_builtin_call(&mut self, bc: &crate::zigir::types::IrBuiltinCall) {
-        let obj = bc.obj_name.as_deref();
+        // When obj_name is None but obj_expr is set (method chaining), render the
+        // receiver expression to a string and use it as the inline object reference.
+        let obj_inline = if bc.obj_name.is_none() {
+            bc.obj_expr
+                .as_ref()
+                .map(|obj_expr| Self::emit_expr_inline(obj_expr))
+        } else {
+            None
+        };
+        let obj = bc.obj_name.as_deref().or_else(|| obj_inline.as_deref());
         match bc.module {
             BuiltinModule::JsArray => self.emit_array_builtin(&bc.method, obj, &bc.args),
-            BuiltinModule::JsString => self.emit_string_builtin(&bc.method, obj, &bc.args),
-            BuiltinModule::JsDate => self.emit_date_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsString => {
+                self.emit_string_builtin(&bc.method, obj, &bc.args, bc.regex_info.as_ref())
+            }
+            BuiltinModule::JsDate => self.emit_date_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsJson => self.emit_json_builtin(&bc.method, &bc.args),
             BuiltinModule::JsObject => self.emit_object_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsNumber => self.emit_number_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsSymbol => self.emit_symbol_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsNumber => self.emit_number_builtin(&bc.method, obj, &bc.args),
+            BuiltinModule::JsSymbol => self.emit_symbol_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsConsole => self.emit_console_builtin(&bc.method, &bc.args),
             BuiltinModule::JsMath => self.emit_math_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsRegExp => self.emit_regexp_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsTypedArray => self.emit_typedarray_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsRegExp => self.emit_regexp_builtin(
+                &bc.method,
+                bc.obj_name.as_deref(),
+                &bc.args,
+                bc.regex_info.as_ref(),
+            ),
+            BuiltinModule::JsTypedArray => self.emit_typedarray_builtin(
+                &bc.method,
+                bc.obj_name.as_deref(),
+                &bc.args,
+                bc.ta_type_suffix.as_deref(),
+            ),
             BuiltinModule::JsUri => self.emit_uri_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsBigInt => self.emit_bigint_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsCollections => self.emit_collections_builtin(&bc.method, &bc.args),
-            BuiltinModule::JsRuntime => self.emit_runtime_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsCollections => {
+                self.emit_collections_builtin(&bc.method, bc.obj_name.as_deref(), &bc.args)
+            }
+            BuiltinModule::JsRuntime => {
+                self.emit_runtime_builtin(&bc.method, bc.obj_name.as_deref(), &bc.args)
+            }
         }
     }
 }
@@ -80,7 +106,25 @@ impl Emitter {
         method: &str,
         obj: Option<&str>,
         args: &[crate::zigir::types::IrExpr],
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
     ) {
+        // ── Regex-dependent methods: match / matchAll / search ──
+        match method {
+            "match" => {
+                self.emit_string_match(obj, regex_info);
+                return;
+            }
+            "matchAll" => {
+                self.emit_string_match_all(obj, regex_info);
+                return;
+            }
+            "search" => {
+                self.emit_string_search(obj, regex_info);
+                return;
+            }
+            _ => {}
+        }
+
         // Method dispatch: JS name → Zig runtime name + allocator + fallible.
         // Mirrors Codegen's StringRuntimeDesc table (tables.rs).
         let (zig_method, needs_allocator, is_fallible, min_args, max_args, opt_defaults): (
@@ -168,22 +212,182 @@ impl Emitter {
         self.write(")");
     }
 
-    fn emit_date_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_date.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    // ── String.match() ──────────────────────────────────
+    fn emit_string_match(
+        &mut self,
+        obj: Option<&str>,
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!(
+                        "js_string.matchString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                        receiver, var
+                    ));
+                }
             }
-            self.emit_expr(arg);
+            Some(ri) => {
+                if let Some(pattern) = &ri.pattern {
+                    if ri.has_global {
+                        self.write(&format!(
+                            "js_string.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                            receiver, pattern
+                        ));
+                    } else {
+                        self.write(&format!(
+                            "js_string.matchString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                            receiver, pattern
+                        ));
+                    }
+                }
+            }
+            None => {
+                // Fallback: no regex info available — emit as js_string.match()
+                self.write(&format!("js_string.match({})", receiver));
+            }
         }
-        self.write(")");
+    }
+
+    // ── String.matchAll() ───────────────────────────────
+    fn emit_string_match_all(
+        &mut self,
+        obj: Option<&str>,
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!(
+                        "js_string.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                        receiver, var
+                    ));
+                }
+            }
+            Some(ri) => {
+                if let Some(pattern) = &ri.pattern {
+                    self.write(&format!(
+                        "js_string.matchAllString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                        receiver, pattern
+                    ));
+                }
+            }
+            None => {
+                // Fallback
+                self.write(&format!("js_string.matchAll({})", receiver));
+            }
+        }
+    }
+
+    // ── String.search() ─────────────────────────────────
+    fn emit_string_search(
+        &mut self,
+        obj: Option<&str>,
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!("host.regex_search({}.pattern, {})", var, receiver));
+                }
+            }
+            Some(ri) => {
+                if let Some(pattern) = &ri.pattern {
+                    self.write(&format!("host.regex_search(\"{}\", {})", pattern, receiver));
+                }
+            }
+            None => {
+                self.write(&format!("host.regex_search(, {})", receiver));
+            }
+        }
+    }
+
+    fn emit_date_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        match method {
+            // Instance methods: receiver.method() — not js_date.method()
+            "getTime" | "getFullYear" | "getMonth" | "getDate" | "getDay" | "getHours"
+            | "getMinutes" | "getSeconds" | "getMilliseconds" | "getTimezoneOffset"
+            | "getUTCFullYear" | "getUTCMonth" | "getUTCDate" | "getUTCDay" | "getUTCHours"
+            | "getUTCMinutes" | "getUTCSeconds" | "getUTCMilliseconds" | "setFullYear"
+            | "setMonth" | "setDate" | "setHours" | "setMinutes" | "setSeconds"
+            | "setMilliseconds" | "setUTCFullYear" | "setUTCMonth" | "setUTCDate"
+            | "setUTCHours" | "setUTCMinutes" | "setUTCSeconds" | "setUTCMilliseconds"
+            | "valueOf" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
+            // Instance methods that need allocator
+            "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
+            | "toLocaleString" => {
+                if let Some(name) = obj {
+                    self.write(&format!(
+                        "try {}.{}(js_allocator.allocator())",
+                        name, method
+                    ));
+                } else {
+                    self.write(&format!("try js_date.{}(js_allocator.allocator())", method));
+                }
+            }
+            // UTC with default argument filling:
+            // Date.UTC(y) → js_date.utc(y, 0, 1, 0, 0, 0, 0)
+            // Date.UTC(y, m) → js_date.utc(y, m, 1, 0, 0, 0, 0)
+            // etc.
+            "utc" => {
+                self.write("js_date.utc(");
+                let n_args = args.len();
+                // Defaults: [y=1970, m=0, d=1, h=0, min=0, s=0, ms=0]
+                let defaults = ["1970", "0", "1", "0", "0", "0", "0"];
+                for (i, default) in defaults.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    if i < n_args {
+                        self.emit_expr(&args[i]);
+                    } else {
+                        self.write(default);
+                    }
+                }
+                self.write(")");
+            }
+            _ => {
+                // Static methods: js_date.method(args)
+                self.write(&format!("js_date.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
+        }
     }
 
     fn emit_json_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         match method {
             "parse" => {
-                // JSON.parse(text, reviver?) → try js_json.parse(js_allocator.allocator(), text, reviver) catch @panic("JSON.parse error")
-                self.write("try js_json.parse(js_allocator.allocator(), ");
+                // JSON.parse(text, reviver?) → js_json.parse(js_allocator.allocator(), text, reviver) catch @panic("JSON.parse error")
+                // NOTE: no `try` prefix — the catch @panic already handles errors,
+                // and `try` is invalid outside function scope (e.g., toplevel const).
+                self.write("js_json.parse(js_allocator.allocator(), ");
                 if let Some(first_arg) = args.first() {
                     self.emit_expr(first_arg);
                 } else {
@@ -199,15 +403,29 @@ impl Emitter {
                 self.write(") catch @panic(\"JSON.parse error\")");
             }
             "stringify" => {
-                // JSON.stringify(value, replacer?, space?) → js_json.stringify(...)
-                self.write("js_json.stringify(");
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
+                // JSON.stringify(value, replacer?, space?)
+                // → try js_json.stringify(js_allocator.allocator(), value, replacer, space) catch @panic("OOM: JSON.stringify")
+                self.write("try js_json.stringify(js_allocator.allocator(), ");
+                if let Some(first_arg) = args.first() {
+                    self.emit_expr(first_arg);
+                } else {
+                    self.write("JsAny.fromUndefined()");
                 }
-                self.write(")");
+                // Pass replacer (default null)
+                if args.len() >= 2 {
+                    self.write(", ");
+                    self.emit_expr(&args[1]);
+                } else {
+                    self.write(", null");
+                }
+                // Pass space (default null)
+                if args.len() >= 3 {
+                    self.write(", ");
+                    self.emit_expr(&args[2]);
+                } else {
+                    self.write(", null");
+                }
+                self.write(") catch @panic(\"OOM: JSON.stringify\")");
             }
             _ => {
                 self.write(&format!("js_json.{}(", method));
@@ -223,22 +441,107 @@ impl Emitter {
     }
 
     fn emit_object_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_object.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+        match method {
+            // ── No-op methods (Zig is immutable by default) ──
+            "freeze" | "seal" | "preventExtensions" => {
+                // Object.freeze(obj) → obj (no-op, Zig structs are immutable)
+                // Emit the first argument directly
+                if let Some(arg) = args.first() {
+                    self.emit_expr(arg);
+                } else {
+                    self.write(&format!("js_object.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
             }
-            self.emit_expr(arg);
+            // ── Always-true / Always-false (Zig is sealed/frozen by default) ──
+            "isSealed" | "isFrozen" => {
+                // Object.isSealed(obj) → true (Zig structs are always sealed)
+                self.write("true");
+            }
+            "isExtensible" => {
+                // Object.isExtensible(obj) → false (Zig structs cannot be extended)
+                self.write("false");
+            }
+            // ── Object.is — NaN-safe SameValue comparison ──
+            "is" => {
+                // Object.is(a, b) → (std.math.isNan(a) and std.math.isNan(b)) or (a == b)
+                self.write("((std.math.isNan(");
+                if let Some(a) = args.first() {
+                    self.emit_expr(a);
+                }
+                self.write(") and std.math.isNan(");
+                if args.len() >= 2 {
+                    self.emit_expr(&args[1]);
+                }
+                self.write(")) or (");
+                if let Some(a) = args.first() {
+                    self.emit_expr(a);
+                }
+                self.write(" == ");
+                if args.len() >= 2 {
+                    self.emit_expr(&args[1]);
+                }
+                self.write("))");
+            }
+            // ── Object.hasOwn — comptime @hasField for struct+string, else runtime ──
+            "hasOwn" => {
+                // If args are (Ident, StringLiteral), emit comptime @hasField
+                if args.len() == 2 {
+                    if let (IrExpr::Ident(ident), IrExpr::StringLiteral(key)) = (&args[0], &args[1])
+                    {
+                        self.write(&format!(
+                            "@hasField(@TypeOf({}), \"{}\")",
+                            ident.zig_name, key
+                        ));
+                    } else {
+                        self.write("js_object.hasOwn(");
+                        self.emit_inline_args(args);
+                        self.write(")");
+                    }
+                } else {
+                    self.write("js_object.hasOwn(");
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
+            }
+            // ── Object.getOwnPropertyDescriptor — needs allocator prefix ──
+            "getOwnPropertyDescriptor" => {
+                self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            // ── Default: js_object.method(args) ──
+            _ => {
+                self.write(&format!("js_object.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
-    fn emit_number_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
+    fn emit_number_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
         match method {
-            "toFixed" => {
+            "toFixed" | "toExponential" | "toPrecision" => {
                 // js_number.toFixed(js_allocator.allocator(), obj, digits)
-                self.write("js_number.toFixed(js_allocator.allocator(), ");
-                self.emit_inline_args(args);
+                self.write(&format!("js_number.{}(js_allocator.allocator(), ", method));
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                for (_i, arg) in args.iter().enumerate() {
+                    self.write(", ");
+                    self.emit_expr(arg);
+                }
                 self.write(")");
             }
             _ => {
@@ -249,15 +552,62 @@ impl Emitter {
         }
     }
 
-    fn emit_symbol_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_symbol.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_symbol_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        // Avoid Zig keyword conflicts: Symbol.for → symbolFor, Symbol.keyFor → symbolKeyFor
+        let zig_method = match method {
+            "for" => "symbolFor",
+            "keyFor" => "symbolKeyFor",
+            other => other,
+        };
+
+        match method {
+            // Symbol() / Symbol(desc) — constructor
+            "constructor" => {
+                if args.is_empty() {
+                    // Symbol() → js_symbol.JsSymbol.initAnonymous()
+                    self.write("js_symbol.JsSymbol.initAnonymous()");
+                } else {
+                    // Symbol("desc") → js_symbol.JsSymbol.init("desc")
+                    self.write("js_symbol.JsSymbol.init(");
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
             }
-            self.emit_expr(arg);
+            // Instance methods that use the receiver: sym.toString(), sym.description, etc.
+            "toString" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.toString(js_allocator.allocator())", name));
+                } else {
+                    self.write(&format!(
+                        "js_symbol.{}(js_allocator.allocator())",
+                        zig_method
+                    ));
+                }
+            }
+            "description" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.description", name));
+                } else {
+                    self.write(&format!("js_symbol.{}", zig_method));
+                }
+            }
+            // Static methods: js_symbol.symbolFor(key), js_symbol.symbolKeyFor(sym), etc.
+            _ => {
+                self.write(&format!("js_symbol.{}(", zig_method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
     fn emit_console_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
@@ -355,9 +705,9 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
-            // pow: @pow(a, b)
+            // pow: std.math.pow(f64, a, b)
             "pow" => {
-                self.write("@pow(");
+                self.write("std.math.pow(f64, ");
                 self.emit_inline_args(args);
                 self.write(")");
             }
@@ -446,8 +796,8 @@ impl Emitter {
                 }
                 _ => {
                     self.write("@sqrt(");
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
+                    for (_i, arg) in args.iter().enumerate() {
+                        if _i > 0 {
                             self.write(" + ");
                         }
                         // @as(f64, @floatFromInt(arg)) * @as(f64, @floatFromInt(arg))
@@ -496,10 +846,42 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
-            "imul" => {
-                self.write("@mulWithOverflow(i32, ");
+            "log1p" => {
+                self.write("std.math.log1p(");
                 self.emit_inline_args(args);
                 self.write(")");
+            }
+            "asin" => {
+                self.write("std.math.asin(@as(f64, @floatFromInt(");
+                self.emit_inline_args(args);
+                self.write(")))");
+            }
+            "acos" => {
+                self.write("std.math.acos(@as(f64, @floatFromInt(");
+                self.emit_inline_args(args);
+                self.write(")))");
+            }
+            "cbrt" => {
+                self.write("std.math.cbrt(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "fround" => {
+                self.write("@as(f32, @floatFromInt(");
+                self.emit_inline_args(args);
+                self.write("))");
+            }
+            "imul" => {
+                // Math.imul(a, b) → @as(i32, @intCast(@as(u32, @bitCast(@as(i32, a))) *% @as(u32, @bitCast(@as(i32, b)))))
+                self.write("@as(i32, @intCast(@as(u32, @bitCast(@as(i32, ");
+                if let Some(a) = args.first() {
+                    self.emit_expr(a);
+                }
+                self.write("))) *% @as(u32, @bitCast(@as(i32, ");
+                if let Some(b) = args.get(1) {
+                    self.emit_expr(b);
+                }
+                self.write("))))");
             }
             "clz32" => {
                 self.write("@clz(");
@@ -531,26 +913,128 @@ impl Emitter {
         }
     }
 
-    fn emit_regexp_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_regexp.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_regexp_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        match method {
+            // regexp.test(str) — instance method on a variable
+            "test" => {
+                if let Some(info) = regex_info {
+                    if !info.is_var_ref {
+                        // Literal regex: /pattern/.test(str) → host.regex_test("pattern", str)
+                        if let Some(pattern) = &info.pattern {
+                            self.write(&format!("host.regex_test(\"{}\", ", pattern));
+                            self.emit_inline_args(args);
+                            self.write(")");
+                            return;
+                        }
+                    } else {
+                        // Variable regex: r.test(str) → r.isMatch(str)
+                        if let Some(name) = &info.var_name {
+                            self.write(&format!("{}.isMatch(", name));
+                            self.emit_inline_args(args);
+                            self.write(")");
+                            return;
+                        }
+                    }
+                }
+                // Fallback: use obj_name as variable (shouldn't normally reach here)
+                if let Some(name) = obj {
+                    self.write(&format!("{}.isMatch(", name));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                } else {
+                    self.write(&format!("js_regexp.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
             }
-            self.emit_expr(arg);
+            // regexp.exec(str) — instance method on a variable
+            "exec" => {
+                if let Some(info) = regex_info {
+                    if !info.is_var_ref {
+                        // Literal regex: /pattern/.exec(str) → js_regexp.execLiteral(alloc, str, "pattern") catch @panic(...)
+                        if let Some(pattern) = &info.pattern {
+                            self.write("js_regexp.execLiteral(js_allocator.allocator(), ");
+                            self.emit_inline_args(args);
+                            self.write(&format!(
+                                ", \"{}\") catch @panic(\"OOM: allocation\")",
+                                pattern
+                            ));
+                            return;
+                        }
+                    } else {
+                        // Variable regex: r.exec(str) → r.exec(allocator, str)
+                        if let Some(name) = &info.var_name {
+                            self.write(&format!("{}.exec(js_allocator.allocator(), ", name));
+                            self.emit_inline_args(args);
+                            self.write(")");
+                            return;
+                        }
+                    }
+                }
+                // Fallback
+                if let Some(name) = obj {
+                    self.write(&format!("{}.exec(js_allocator.allocator(), ", name));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                } else {
+                    self.write(&format!("js_regexp.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
+            }
+            _ => {
+                self.write(&format!("js_regexp.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
-    fn emit_typedarray_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_typedarray.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_typedarray_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+        ta_type_suffix: Option<&str>,
+    ) {
+        if let Some(suffix) = ta_type_suffix {
+            self.write(&format!("js_runtime.js_typedarray.{}{}(", method, suffix));
+            if let Some(name) = obj {
+                self.write(name);
+                for (_i, arg) in args.iter().enumerate() {
+                    self.write(", ");
+                    self.emit_expr(arg);
+                }
+            } else {
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
             }
-            self.emit_expr(arg);
+            self.write(")");
+        } else {
+            self.write(&format!("js_typedarray.{}(", method));
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    self.write(", ");
+                }
+                self.emit_expr(arg);
+            }
+            self.write(")");
         }
-        self.write(")");
     }
 
     fn emit_uri_builtin(
@@ -592,37 +1076,197 @@ impl Emitter {
     }
 
     fn emit_bigint_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_bigint.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+        match method {
+            // BigInt(x) → js_bigint.JsBigInt.fromI64(allocator, x) catch @panic("OOM: BigInt fromI64")
+            "bigIntConstructor" => {
+                self.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
             }
-            self.emit_expr(arg);
+            _ => {
+                self.write(&format!("js_bigint.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
-    fn emit_collections_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        self.write(&format!("js_collections.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_collections_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        match method {
+            // ── Map instance methods (use receiver) ──
+            "set" => {
+                // map.set(key, val) → map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation")
+                if let Some(name) = obj {
+                    self.write(&format!("{}.set(", name));
+                } else {
+                    self.write("js_collections.set(");
+                }
+                if let Some(key) = args.first() {
+                    self.write("JsAny.from(");
+                    self.emit_expr(key);
+                    self.write(")");
+                }
+                if args.len() >= 2 {
+                    self.write(", JsAny.from(");
+                    self.emit_expr(&args[1]);
+                    self.write(")");
+                }
+                self.write(") catch @panic(\"OOM: allocation\")");
             }
-            self.emit_expr(arg);
+            "get" => {
+                // map.get(key) → map.get(JsAny.from(key))
+                if let Some(name) = obj {
+                    self.write(&format!("{}.get(", name));
+                } else {
+                    self.write("js_collections.get(");
+                }
+                if let Some(key) = args.first() {
+                    self.write("JsAny.from(");
+                    self.emit_expr(key);
+                    self.write(")");
+                }
+                self.write(")");
+            }
+            "has" => {
+                // map.has(key) → map.has(JsAny.from(key))
+                if let Some(name) = obj {
+                    self.write(&format!("{}.has(", name));
+                } else {
+                    self.write("js_collections.has(");
+                }
+                if let Some(key) = args.first() {
+                    self.write("JsAny.from(");
+                    self.emit_expr(key);
+                    self.write(")");
+                }
+                self.write(")");
+            }
+            "delete" => {
+                // map.delete(key) → map.delete(JsAny.from(key))
+                if let Some(name) = obj {
+                    self.write(&format!("{}.delete(", name));
+                } else {
+                    self.write("js_collections.delete(");
+                }
+                if let Some(key) = args.first() {
+                    self.write("JsAny.from(");
+                    self.emit_expr(key);
+                    self.write(")");
+                }
+                self.write(")");
+            }
+            "clear" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.clear()", name));
+                } else {
+                    self.write("js_collections.clear()");
+                }
+            }
+            "keys" | "values" | "entries" => {
+                // map.keys() etc. — need allocator
+                if let Some(name) = obj {
+                    self.write(&format!(
+                        "{}.{}(js_allocator.allocator()) catch @panic(\"OOM: allocation\")",
+                        name, method
+                    ));
+                } else {
+                    self.write(&format!("js_collections.{}(js_allocator.allocator()) catch @panic(\"OOM: allocation\")", method));
+                }
+            }
+            // ── Set instance methods ──
+            "add" => {
+                // set.add(val) → set.add(JsAny.from(val)) catch @panic("OOM: allocation")
+                if let Some(name) = obj {
+                    self.write(&format!("{}.add(", name));
+                } else {
+                    self.write("js_collections.add(");
+                }
+                if let Some(val) = args.first() {
+                    self.write("JsAny.from(");
+                    self.emit_expr(val);
+                    self.write(")");
+                }
+                self.write(") catch @panic(\"OOM: allocation\")");
+            }
+            // ── forEach — handled by IrArrayCallbackInline, not here ──
+            "forEach" => {
+                // Fallback: should be handled by callback inline, not here
+                self.write(&format!("js_collections.{}(", method));
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            // ── Default ──
+            _ => {
+                self.write(&format!("js_collections.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
-    fn emit_runtime_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        // js_runtime helper methods like jsTypeof()
-        self.write(&format!("js_runtime.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+    fn emit_runtime_builtin(
+        &mut self,
+        method: &str,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        match method {
+            "deleteKey" => {
+                // obj.deleteKey("prop") → true
+                let blk = self.next_label();
+                self.write(&format!("{blk}: {{ _ = "));
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                self.write(".deleteKey(");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(&format!("); break :{blk} true; }}"));
             }
-            self.emit_expr(arg);
+            "deleteByKey" => {
+                // obj.deleteByKey(expr, alloc) → true
+                let blk = self.next_label();
+                self.write(&format!("{blk}: {{ const _dk = "));
+                if let Some(arg) = args.first() {
+                    self.emit_expr(arg);
+                }
+                self.write("; _ = ");
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                self.write(&format!(".deleteByKey(_dk, alloc); break :{blk} true; }}"));
+            }
+            _ => {
+                // Default: js_runtime.method(args)
+                self.write(&format!("js_runtime.{}(", method));
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(")");
+            }
         }
-        self.write(")");
     }
 
     // ═══════════════════════════════════════════════════════
@@ -657,24 +1301,76 @@ impl Emitter {
 
     // ── forEach ────────────────────────────────────────
     //
-    //  for (obj.items) |elem| {
-    //      <body stmts>
-    //  }
+    //  Array: for (obj.items) |elem| { <body stmts> }
+    //  Map:   var iter = m.inner.iterator(); while (iter.next()) |entry| { const val = entry.value_ptr.*; const key = entry.key_ptr.*; <body stmts> }
+    //  Set:   for (s.items.items) |val| { <body stmts> }
     //
     fn emit_for_each_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        self.write(&format!(
-            "for ({}.items) |{}| ",
-            data.obj_name, data.elem_param
-        ));
-        self.write("{\n");
-        self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            self.emit_stmt(stmt);
+        use crate::zigir::types::CollectionKind;
+
+        match data.collection_kind {
+            CollectionKind::Array => {
+                self.write(&format!(
+                    "for ({}.items) |{}| ",
+                    data.obj_name, data.elem_param
+                ));
+                self.write("{\n");
+                self.indent_push();
+                for stmt in &data.body {
+                    self.writeln("");
+                    self.emit_stmt(stmt);
+                }
+                self.indent_pop();
+                self.writeln("");
+                self.write("}");
+            }
+            CollectionKind::Map => {
+                // Map.forEach → while-iterator over inner HashMap
+                self.writeln(&format!("var iter = {}.inner.iterator();", data.obj_name));
+                self.writeln("while (iter.next()) |entry| {");
+                self.indent_push();
+                // Bind val and key parameters
+                if data.elem_param != "_" {
+                    self.writeln(&format!("const {} = entry.value_ptr.*;", data.elem_param));
+                }
+                // idx_param serves as the key parameter for Map forEach
+                if !data.idx_param.is_empty() && data.idx_param != "_" {
+                    self.writeln(&format!("const {} = entry.key_ptr.*;", data.idx_param));
+                }
+                for stmt in &data.body {
+                    self.emit_stmt(stmt);
+                }
+                // Suppress unused variable warnings
+                if data.elem_param != "_" {
+                    self.writeln(&format!("_ = &{};", data.elem_param));
+                }
+                if !data.idx_param.is_empty() && data.idx_param != "_" {
+                    self.writeln(&format!("_ = &{};", data.idx_param));
+                }
+                self.indent_pop();
+                self.write("}");
+            }
+            CollectionKind::Set => {
+                // Set.forEach → for-loop over set.items.items
+                self.write(&format!(
+                    "for ({}.items.items) |{}| ",
+                    data.obj_name, data.elem_param
+                ));
+                self.write("{\n");
+                self.indent_push();
+                for stmt in &data.body {
+                    self.writeln("");
+                    self.emit_stmt(stmt);
+                }
+                self.indent_pop();
+                self.writeln("");
+                self.write("}");
+                // Suppress unused variable warning
+                if data.elem_param != "_" {
+                    // The _ = &val; is emitted inside the loop by the lower_stmt
+                }
+            }
         }
-        self.indent_pop();
-        self.writeln("");
-        self.write("}");
     }
 
     // ── some ───────────────────────────────────────────
@@ -1166,10 +1862,18 @@ impl Emitter {
     // ── join ───────────────────────────────────────────
     // (blk: { var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator());
     //   for (obj.items, 0..) |__item, __i| { if (__i > 0) __join_buf.writer().writeAll(sep) catch break :blk "";
-    //     __join_buf.writer().print("{fmt}", .{__item}) catch break :blk ""; }
+    //     __join_buf.writer().print("{d}", .{__item}) catch break :blk ""; }
     //   break :blk __join_buf.toOwnedSlice() catch ""; })
     fn emit_join_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let blk = self.next_label();
+        // Format specifier based on element type:
+        // I64/F64 → {d}, Bool → {}, Str → {s}, other → {any}
+        let fmt_spec = match data.elem_type {
+            ZigType::I64 | ZigType::F64 => "{d}",
+            ZigType::Bool => "{}",
+            ZigType::Str => "{s}",
+            _ => "{any}",
+        };
         self.write(&format!("({}: {{ ", blk));
         self.write("var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator()); ");
         self.write(&format!(
@@ -1193,8 +1897,8 @@ impl Emitter {
             blk
         ));
         self.writeln(&format!(
-            "__join_buf.writer().print(\"{{fmt}}\", .{{__item}}) catch break :{} \"\";",
-            blk
+            "__join_buf.writer().print(\"{}\", .{{__item}}) catch break :{} \"\";",
+            fmt_spec, blk
         ));
         self.indent_pop();
         self.writeln("");
@@ -1276,10 +1980,22 @@ impl Emitter {
             data.obj_name
         ));
         // Insert items if provided (args beyond start and count)
-        for item_arg in data.args.iter().skip(2) {
-            self.write(&format!("{}.insert(__start, ", data.obj_name));
-            self.emit_expr(item_arg);
-            self.write(") catch @panic(\"OOM: Array.splice insert\"); ");
+        // Use insertSlice for batch insertion, matching Codegen pattern
+        if data.args.len() > 2 {
+            let insert_items: Vec<String> = data.args[2..]
+                .iter()
+                .map(|arg| {
+                    let saved = std::mem::take(self.output_mut());
+                    self.emit_expr(arg);
+                    let rendered = std::mem::take(self.output_mut());
+                    *self.output_mut() = saved;
+                    rendered
+                })
+                .collect();
+            self.write(&format!(
+                "{}.insertSlice(js_allocator.allocator(), __start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.splice insert\"); ",
+                data.obj_name, elem_type_str, insert_items.join(", ")
+            ));
         }
         self.write(&format!("break :{} __spliced; }})", blk));
     }

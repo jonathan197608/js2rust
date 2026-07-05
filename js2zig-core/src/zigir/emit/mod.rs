@@ -72,6 +72,14 @@ impl Emitter {
         }
     }
 
+    /// Emit an IrExpr to a separate string (for inline embedding in templates).
+    /// Temporarily swaps the output buffer so the expression is captured alone.
+    pub(crate) fn emit_expr_inline(expr: &crate::zigir::types::IrExpr) -> String {
+        let mut sub_emitter = Self::new();
+        sub_emitter.emit_expr(expr);
+        sub_emitter.output.trim().to_string()
+    }
+
     /// Emit a complete IrModule to a Zig source string.
     pub fn emit_module(module: &IrModule) -> String {
         let mut emitter = Self::new();
@@ -105,7 +113,13 @@ impl Emitter {
             IrDecl::Fn(fn_decl) => self.emit_fn_decl(fn_decl),
             IrDecl::Class(class_decl) => self.emit_class_decl(class_decl),
             IrDecl::CompileError { span: _, msg } => {
-                self.writeln(&format!("@compileError(\"{}\");", msg));
+                // Toplevel "errors" are emitted as comments (soft diagnostics),
+                // not @compileError — matching Codegen behavior.
+                if msg.starts_with("toplevel") || msg.starts_with("skipped unused") {
+                    self.writeln(&format!("// error: {}", msg));
+                } else {
+                    self.writeln(&format!("@compileError(\"{}\");", msg));
+                }
             }
         }
     }

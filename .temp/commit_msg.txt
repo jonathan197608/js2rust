@@ -1,3 +1,10 @@
-﻿feat(zigir): P2-F~I type-aware operator routing for Binary expressions
+feat(zigir): descriptive CompileErrors for unsupported statements/expressions
 
-Add left_type and right_type optional fields to IrExpr::Binary, enabling the Emitter to route binary operations based on operand types: BigInt arithmetic, BigInt equality, string comparison, JsAny comparison. Enhance Lowerer infer_expr_type(). Fix BinaryOperator variant names. Use class_field_types. Remove _unused(). Fix all IrExpr::Binary construction sites and pattern matches.
+- Known-unsupported constructors (ArrayBuffer, SharedArrayBuffer, Function,
+  Promise, WeakMap, WeakSet, DataView) now produce NewConstructor::Unsupported
+  which the Emitter renders as a proper @compileError
+- Nested ClassDeclaration produces descriptive CompileError with class name
+- ClassExpression produces descriptive CompileError with class name
+- DebuggerStatement produces IrStmt::Comment("debugger")
+- ImportDeclaration / ExportDefaultDeclaration produce descriptive CompileErrors
+- Generic unknown NewExpression catch-all now includes the constructor name

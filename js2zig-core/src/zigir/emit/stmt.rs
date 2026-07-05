@@ -23,12 +23,9 @@ impl Emitter {
         self.writeln(&format!("const {} = struct {{", typedef.name));
         self.indent_push();
         for field in &typedef.fields {
-            let ty = if field.optional {
-                format!("?{}", field.zig_type)
-            } else {
-                field.zig_type.clone()
-            };
-            self.writeln(&format!("{}: {},", field.name, ty));
+            // Note: zig_type already includes the '?' prefix for optional fields
+            // (set in lower/mod.rs), so we must NOT add another '?' here.
+            self.writeln(&format!("{}: {},", field.name, field.zig_type));
         }
         // Generate toJson() method for non-opaque typedefs
         if typedef.has_to_json {
@@ -88,11 +85,22 @@ impl Emitter {
             ));
             need_comma = true;
         }
-        sig.push_str(&format!(") {} {{", cs.return_type.to_zig_type()));
+        // Return type: use @TypeOf(expr) for AnytypeReturn, else normal type
+        let ret_type_str = if matches!(cs.return_type, ZigType::AnytypeReturn) {
+            if let Some(ref body_expr) = cs.typeof_return_body {
+                let inline = Self::emit_expr_inline(body_expr);
+                format!("@TypeOf({})", inline.replace("try ", ""))
+            } else {
+                cs.return_type.to_zig_type()
+            }
+        } else {
+            cs.return_type.to_zig_type()
+        };
+        sig.push_str(&format!(") {} {{", ret_type_str));
         self.writeln(&sig);
 
         self.indent_push();
-        self.emit_block_stmts(&cs.body);
+        self.emit_block_stmts_unlabeled(&cs.body);
         self.indent_pop();
 
         self.writeln("}");
@@ -226,7 +234,7 @@ impl Emitter {
         }
 
         // Function body
-        self.emit_block_stmts(&fd.body);
+        self.emit_block_stmts_unlabeled(&fd.body);
         self.indent_pop();
 
         self.writeln("}");
@@ -291,7 +299,7 @@ impl Emitter {
         self.indent_push();
 
         // Constructor body
-        self.emit_block_stmts(&ctor.body);
+        self.emit_block_stmts_unlabeled(&ctor.body);
 
         // Return struct literal (from fields assigned in body)
         self.write_indent();
@@ -349,7 +357,7 @@ impl Emitter {
         self.writeln(&sig);
 
         self.indent_push();
-        self.emit_block_stmts(&method.body);
+        self.emit_block_stmts_unlabeled(&method.body);
         self.indent_pop();
 
         self.writeln("}");
@@ -361,13 +369,8 @@ impl Emitter {
 // ═══════════════════════════════════════════════════════
 
 impl Emitter {
-    /// Emit all statements in a block.
-    fn emit_block_stmts(&mut self, block: &IrBlock) {
-        // Emit optional label
-        if let Some(label) = &block.label {
-            self.write_indent();
-            self.write(&format!("{}: ", label));
-        }
+    /// Emit all statements in a block (without the label — label is emitted by the caller).
+    fn emit_block_stmts_unlabeled(&mut self, block: &IrBlock) {
         for stmt in &block.stmts {
             self.emit_stmt(stmt);
         }
@@ -510,29 +513,48 @@ impl Emitter {
             }
 
             IrStmt::Expr(expr) => {
-                self.write_indent();
-                // Assignment and Update (is_expr_stmt=true) don't need `_ = ` prefix
-                // — they are statements in Zig. Other expressions need `_ = ` to
-                // discard non-void return values.
-                let needs_discard = !matches!(
+                // ArrayCallbackInline with forEach/Map/Set generates its own
+                // statement-level output — no _ = prefix or ; suffix needed.
+                let is_self_contained = matches!(
                     expr,
-                    crate::zigir::types::IrExpr::Assign { .. }
-                        | crate::zigir::types::IrExpr::Update {
-                            is_expr_stmt: true,
-                            ..
-                        }
+                    crate::zigir::types::IrExpr::ArrayCallbackInline(inline_data)
+                        if matches!(inline_data.kind, crate::zigir::types::ArrayCallbackKind::ForEach)
                 );
-                if needs_discard {
-                    self.write("_ = ");
+
+                if is_self_contained {
+                    self.write_indent();
+                    self.emit_expr(expr);
+                    self.write("\n");
+                } else {
+                    self.write_indent();
+                    // Assignment and Update (is_expr_stmt=true) don't need `_ = ` prefix
+                    // — they are statements in Zig. Other expressions need `_ = ` to
+                    // discard non-void return values.
+                    let needs_discard = !matches!(
+                        expr,
+                        crate::zigir::types::IrExpr::Assign { .. }
+                            | crate::zigir::types::IrExpr::Update {
+                                is_expr_stmt: true,
+                                ..
+                            }
+                    );
+                    if needs_discard {
+                        self.write("_ = ");
+                    }
+                    self.emit_expr(expr);
+                    self.write(";\n");
                 }
-                self.emit_expr(expr);
-                self.write(";\n");
             }
 
             IrStmt::Block(block) => {
-                self.writeln("{");
+                // Emit label before opening brace if present (Zig requires `label: { ... }`)
+                if let Some(label) = &block.label {
+                    self.writeln(&format!("{}: {{", label));
+                } else {
+                    self.writeln("{");
+                }
                 self.indent_push();
-                self.emit_block_stmts(block);
+                self.emit_block_stmts_unlabeled(block);
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -552,6 +574,19 @@ impl Emitter {
 
             IrStmt::DestructureDecl(data) => {
                 self.emit_destructure_decl(data);
+            }
+
+            IrStmt::NestedFnDecl {
+                struct_def,
+                instance,
+            } => {
+                self.emit_closure_struct(struct_def);
+                if let Some(closure) = instance {
+                    self.write_indent();
+                    self.write(&format!("const {} = ", closure.instance_name.zig_name));
+                    self.emit_expr(&crate::zigir::types::IrExpr::Closure(closure.clone()));
+                    self.write(";\n");
+                }
             }
         }
     }
@@ -674,6 +709,7 @@ impl Emitter {
         op: AssignOp,
         value: &crate::zigir::types::IrExpr,
     ) {
+        use crate::zigir::ops::AssignOp;
         self.write_indent();
         if op == AssignOp::Mod {
             // Zig doesn't support % on signed integers; use x = @rem(x, y)
@@ -691,6 +727,33 @@ impl Emitter {
             self.write(", ");
             self.emit_expr(value);
             self.write(")");
+        } else if op == AssignOp::LogicAnd {
+            // a &&= b → a = if (a.toBool()) b else a
+            self.emit_assign_target(target);
+            self.write(" = if (");
+            self.emit_assign_target(target);
+            self.write(".toBool()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target(target);
+        } else if op == AssignOp::LogicOr {
+            // a ||= b → a = if (!a.toBool()) b else a
+            self.emit_assign_target(target);
+            self.write(" = if (!");
+            self.emit_assign_target(target);
+            self.write(".toBool()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target(target);
+        } else if op == AssignOp::Nullish {
+            // a ??= b → a = if (a.isNullish()) b else a
+            self.emit_assign_target(target);
+            self.write(" = if (");
+            self.emit_assign_target(target);
+            self.write(".isNullish()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target(target);
         } else {
             self.emit_assign_target(target);
             self.write(&format!(" {} ", op.to_zig_str()));
@@ -750,7 +813,7 @@ impl Emitter {
         self.emit_expr_as_bool(cond);
         self.write(") {\n");
         self.indent_push();
-        self.emit_block_stmts(then);
+        self.emit_block_stmts_unlabeled(then);
         self.indent_pop();
         if let Some(else_block) = else_ {
             // Check if the else block is a single if statement (else-if chain)
@@ -766,7 +829,7 @@ impl Emitter {
                 self.emit_expr_as_bool(inner_cond);
                 self.write(") {\n");
                 self.indent_push();
-                self.emit_block_stmts(inner_then);
+                self.emit_block_stmts_unlabeled(inner_then);
                 self.indent_pop();
                 // Recurse for the inner else
                 self.emit_else_chain(inner_else);
@@ -774,7 +837,7 @@ impl Emitter {
             }
             self.writeln("} else {");
             self.indent_push();
-            self.emit_block_stmts(else_block);
+            self.emit_block_stmts_unlabeled(else_block);
             self.indent_pop();
         }
         self.writeln("}");
@@ -796,14 +859,14 @@ impl Emitter {
                 self.emit_expr_as_bool(inner_cond);
                 self.write(") {\n");
                 self.indent_push();
-                self.emit_block_stmts(inner_then);
+                self.emit_block_stmts_unlabeled(inner_then);
                 self.indent_pop();
                 self.emit_else_chain(inner_else);
                 return;
             }
             self.writeln("} else {");
             self.indent_push();
-            self.emit_block_stmts(else_block);
+            self.emit_block_stmts_unlabeled(else_block);
             self.indent_pop();
         }
         self.writeln("}");
@@ -823,7 +886,7 @@ impl Emitter {
         self.emit_expr_as_bool(cond);
         self.write(") {\n");
         self.indent_push();
-        self.emit_block_stmts(body);
+        self.emit_block_stmts_unlabeled(body);
         self.indent_pop();
         self.writeln("}");
     }
@@ -841,7 +904,7 @@ impl Emitter {
         // Zig doesn't have do-while; use `while (true)` with break at end
         self.write("while (true) {\n");
         self.indent_push();
-        self.emit_block_stmts(body);
+        self.emit_block_stmts_unlabeled(body);
         self.write_indent();
         self.write("if (");
         self.emit_expr_as_bool(cond);
@@ -904,7 +967,7 @@ impl Emitter {
 
         self.write(" {\n");
         self.indent_push();
-        self.emit_block_stmts(body);
+        self.emit_block_stmts_unlabeled(body);
         self.indent_pop();
 
         self.write_indent();
@@ -946,7 +1009,7 @@ impl Emitter {
                 self.write(".next()) |__kv| {\n");
                 self.indent_push();
                 self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
-                self.emit_block_stmts(body);
+                self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -962,7 +1025,7 @@ impl Emitter {
                     self.write("{\n");
                     self.indent_push();
                     self.writeln(&format!("const {} = \"{}\";", var.zig_name, field_name));
-                    self.emit_block_stmts(body);
+                    self.emit_block_stmts_unlabeled(body);
                     self.indent_pop();
                     self.writeln("}");
                 }
@@ -1013,7 +1076,7 @@ impl Emitter {
                 self.write(&var.zig_name);
                 self.write("| {\n");
                 self.indent_push();
-                self.emit_block_stmts(body);
+                self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -1048,7 +1111,7 @@ impl Emitter {
                 } else {
                     self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
                 }
-                self.emit_block_stmts(body);
+                self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -1105,18 +1168,18 @@ impl Emitter {
 
         // ── B1: No throw, no catch, no nested try → inline body + finally ──
         if !has_throw && !needs_catch && !has_nested_try {
-            self.emit_block_stmts(try_block);
+            self.emit_block_stmts_unlabeled(try_block);
             if let Some(finally_block) = finally {
-                self.emit_block_stmts(finally_block);
+                self.emit_block_stmts_unlabeled(finally_block);
             }
             return;
         }
 
         // ── B2: Catch present but no throw, no nested try → inline body + finally, drop catch ──
         if !has_throw && !has_nested_try {
-            self.emit_block_stmts(try_block);
+            self.emit_block_stmts_unlabeled(try_block);
             if let Some(finally_block) = finally {
-                self.emit_block_stmts(finally_block);
+                self.emit_block_stmts_unlabeled(finally_block);
             }
             return;
         }
@@ -1146,7 +1209,7 @@ impl Emitter {
         if let Some(finally_block) = finally {
             self.writeln("defer {");
             self.indent_push();
-            self.emit_block_stmts(finally_block);
+            self.emit_block_stmts_unlabeled(finally_block);
             self.indent_pop();
             self.writeln("}");
         }
@@ -1163,7 +1226,7 @@ impl Emitter {
         // break :body_blk_label error.JsThrow
         self.inside_try_block = Some(body_blk_label.clone());
 
-        self.emit_block_stmts(try_block);
+        self.emit_block_stmts_unlabeled(try_block);
 
         // Normal completion of try body (no throw).
         // Skip if the try body ends with a return/break/continue/throw —
@@ -1201,7 +1264,7 @@ impl Emitter {
             // Set inside_try_block to outer label so re-throw in catch body
             // produces break :blk_label error.JsThrow
             self.inside_try_block = Some(blk_label.clone());
-            self.emit_block_stmts(catch_block);
+            self.emit_block_stmts_unlabeled(catch_block);
             self.indent_pop();
             self.writeln("}");
         }

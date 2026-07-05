@@ -1,0 +1,231 @@
+﻿cargo :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+所在位置 行:91 字符: 73
++ ... _TRACK="1"; cargo test -p js2zig-core --lib "test_dual_track" -- --no ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.09s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+     Running unittests src\lib.rs (target\debug\deps\js2zig_core-e2ffaca3e705addb.exe)
+
+running 49 tests
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (16 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+[dual-track] break_continue: codegen=16 lines, emitter=16 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[dual-track] do_while: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+[ZigIR dual-track]   total differing lines: 0
+test tests::dual_track::test_dual_track_break_continue ... ok
+[dual-track] bitwise_ops: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_do_while ... [dual-track] arrow_block_body: codegen=6 lines, emitter=6 lines
+ok
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=17 lines, codegen=17 lines)
+test tests::dual_track::test_dual_track_bitwise_ops ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+test tests::dual_track::test_dual_track_arrow_block_body ... ok
+[dual-track] for_of: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track] module='main' imports=1 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_for_of ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (11 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+[dual-track] assignment_ops: codegen=7 lines, emitter=7 lines
+[dual-track] closure_capture: codegen=11 lines, emitter=11 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (24 lines)
+test tests::dual_track::test_dual_track_assignment_ops ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (10 lines)
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+[ZigIR dual-track]   total differing lines: 0
+[dual-track] if_else: codegen=7 lines, emitter=7 lines
+test tests::dual_track::test_dual_track_closure_capture ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (4 lines)
+[dual-track] arrow_closure_capture: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] arrow_simple: codegen=6 lines, emitter=6 lines
+[dual-track] for_in: codegen=24 lines, emitter=24 lines
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track]   line 13: emitter='    @compileError("nested class declaration 'Counter' is not supported (at 11:5)
+' codegen='    @compileError("Unsupported statement type (at 11:5)");'
+test tests::dual_track::test_dual_track_if_else ... ok
+[dual-track] console_log: codegen=4 lines, emitter=4 lines
+[ZigIR dual-track]   line 14: emitter='    const c = @compileError("Unsupported NewExpression: new Counter() (at 19:15)
+' codegen='    const c = @compileError("Unsupported NewExpression (at 19:15)");'
+[ZigIR dual-track]   total differing lines: 2
+[dual-track] for_loop: codegen=10 lines, emitter=10 lines
+test tests::dual_track::test_dual_track_arrow_closure_capture ... ok
+test tests::dual_track::test_dual_track_arrow_simple ... ok
+[dual-track] equality: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (18 lines)
+test tests::dual_track::test_dual_track_for_in ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+test tests::dual_track::test_dual_track_console_log ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] labeled_break: codegen=18 lines, emitter=18 lines
+[dual-track] array_literal: codegen=5 lines, emitter=5 lines
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[dual-track] math_builtin: codegen=3 lines, emitter=3 lines
+[dual-track] class_this: 2 differing lines
+test tests::dual_track::test_dual_track_for_loop ... [dual-track] logical_ops: codegen=9 lines, emitter=9 lines
+  line 13: codegen='    @compileError("Unsupported statement type (at 11:5)");' emitter='    @compileError("nested clas
+s declaration 'Counter' is not supported (at 11:5)");'
+[dual-track] null: codegen=3 lines, emitter=3 lines
+ok
+  line 14: codegen='    const c = @compileError("Unsupported NewExpression (at 19:15)");' emitter='    const c = @compi
+leError("Unsupported NewExpression: new Counter() (at 19:15)");'
+[dual-track] class_this: codegen=17 lines, emitter=17 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_equality ... ok
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+test tests::dual_track::test_dual_track_labeled_break ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+test tests::dual_track::test_dual_track_array_literal ... ok
+test tests::dual_track::test_dual_track_math_builtin ... ok
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+test tests::dual_track::test_dual_track_logical_ops ... ok
+[dual-track] nested_if: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track]   total differing lines: 0
+[dual-track] math_floor_ceil: codegen=6 lines, emitter=6 lines
+[dual-track] computed_member: codegen=15 lines, emitter=15 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=2 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (10 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+test tests::dual_track::test_dual_track_null ... ok
+test tests::dual_track::test_dual_track_class_this ... ok
+[dual-track] arrow_multi_param: codegen=6 lines, emitter=6 lines
+[dual-track] multi_capture_closure: codegen=10 lines, emitter=10 lines
+[dual-track] new_date: codegen=3 lines, emitter=3 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_nested_if ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+test tests::dual_track::test_dual_track_math_floor_ceil ... ok
+[dual-track] simple_function: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_computed_member ... ok
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_arrow_multi_param ... ok
+test tests::dual_track::test_dual_track_multi_capture_closure ... ok
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_new_date ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+test tests::dual_track::test_dual_track_simple_function ... ok
+[dual-track] multiple_functions: codegen=6 lines, emitter=6 lines
+test tests::dual_track::test_dual_track_multiple_functions ... ok
+[dual-track] math_min_max: codegen=5 lines, emitter=5 lines
+[dual-track] remainder: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_math_min_max ... ok
+test tests::dual_track::test_dual_track_remainder ... ok
+[dual-track] object_literal: codegen=16 lines, emitter=16 lines
+[dual-track] ternary: codegen=3 lines, emitter=3 lines
+[dual-track] json_parse: codegen=4 lines, emitter=4 lines
+test tests::dual_track::test_dual_track_object_literal ... ok
+[dual-track] try_finally: codegen=6 lines, emitter=6 lines
+test tests::dual_track::test_dual_track_ternary ... ok
+[dual-track] string_methods: codegen=3 lines, emitter=3 lines
+[dual-track] string_concat: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_json_parse ... ok[dual-track] switch: codegen=13 lines, emitter=13 lines
+
+test tests::dual_track::test_dual_track_try_finally ... ok
+test tests::dual_track::test_dual_track_string_methods ... ok
+test tests::dual_track::test_dual_track_string_concat ... ok
+test tests::dual_track::test_dual_track_switch ... ok
+[dual-track] template_literal: codegen=3 lines, emitter=3 lines
+[dual-track] switch_break: codegen=15 lines, emitter=15 lines
+test tests::dual_track::test_dual_track_template_literal ... ok
+test tests::dual_track::test_dual_track_switch_break ... ok
+[dual-track] unary_not: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_unary_not ... ok
+[dual-track] typeof: codegen=3 lines, emitter=3 lines
+[dual-track] unary_negate: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_typeof ... ok
+test tests::dual_track::test_dual_track_unary_negate ... ok
+[dual-track] try_catch: codegen=3 lines, emitter=3 lines
+[dual-track] typedef: codegen=15 lines, emitter=15 lines
+[dual-track] variable_declarations: codegen=2 lines, emitter=2 lines
+test tests::dual_track::test_dual_track_try_catch ... ok
+test tests::dual_track::test_dual_track_typedef ... ok
+test tests::dual_track::test_dual_track_variable_declarations ... ok
+[dual-track] update_expr: codegen=5 lines, emitter=5 lines
+[dual-track] void: codegen=3 lines, emitter=3 lines
+[dual-track] while_loop: codegen=9 lines, emitter=9 lines
+[dual-track] try_catch_throw: codegen=18 lines, emitter=18 lines
+test tests::dual_track::test_dual_track_update_expr ... ok
+test tests::dual_track::test_dual_track_void ... ok
+test tests::dual_track::test_dual_track_while_loop ... ok
+test tests::dual_track::test_dual_track_try_catch_throw ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 451 filtered out; finished in 0.01s
+
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (16 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (4 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (13 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=0 lines, codegen=2 lines)
+[ZigIR dual-track]   line count differs: emitter=0 codegen=2
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=18 lines, codegen=18 lines)
+[ZigIR dual-track]   line 4: emitter='            if (((shouldThrow) != 0)) {' codegen='            if (shouldThrow) {'
+[ZigIR dual-track]   total differing lines: 0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track]   total differing lines: 1
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[dual-track] try_catch_throw: 1 differing lines
+  line 4: codegen='            if (shouldThrow) {' emitter='            if (((shouldThrow) != 0)) {'

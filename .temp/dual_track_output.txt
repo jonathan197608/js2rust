@@ -1,513 +1,231 @@
 ﻿cargo :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
 所在位置 行:91 字符: 73
-+ ... nv:ZIGIR_DUAL_TRACK="1"; cargo test -p js2zig-core --lib 2>&1 | Out-F ...
-+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++ ... _TRACK="1"; cargo test -p js2zig-core --lib "dual_track" -- --nocaptu ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.08s:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
      Running unittests src\lib.rs (target\debug\deps\js2zig_core-e2ffaca3e705addb.exe)
 
-running 500 tests
-test jsdoc::tests::test_parse_anonymous_object_type ... ok
-test jsdoc::tests::test_parse_anonymous_object_array ... ok
-test jsdoc::tests::test_parse_nested_anonymous_object ... ok
-test jsdoc::tests::test_parse_param ... ok
-test jsdoc::tests::test_extract_all_jsdoc_with_param ... ok
-test jsdoc::tests::test_extract_all_jsdoc ... ok
-test jsdoc::tests::test_parse_type_annotation ... ok
-test jsdoc::tests::test_parse_returns ... ok
-test jsdoc::tests::test_extract_all_jsdoc_single_line ... ok
-test jsdoc::tests::test_jsdoc_type_to_zig ... ok
-test parser::tests::parse_async_function ... ok
-test parser::tests::parse_arrow_function ... ok
-test jsdoc::tests::test_parse_returns_anonymous_object ... ok
-test parser::tests::parse_empty_program ... ok
-test jsdoc::tests::test_parse_returns_single_line ... ok
-test parser::tests::parse_class_declaration ... ok
-test jsdoc::tests::test_parse_typedef ... ok
-test parser::tests::parse_function_declaration ... ok
-test parser::tests::parse_simple_expression ... ok
-test parser::tests::parse_module_with_import_export ... ok
-test sourcemap::tests::test_source_map_json ... ok
-test sourcemap::tests::test_count_lines ... ok
-test sourcemap::tests::test_line_index_multi_line ... ok
-test testgen::tests::test_rewrite_closure_calls ... ok
-test testgen::tests::test_find_matching_paren ... ok
-test sourcemap::tests::test_line_index_single_line ... ok
-test testgen::tests::test_sanitize_name ... ok
-test tests::advanced_builtins::test_native_proto_symbol_well_known_multiple ... ok
-test tests::advanced_builtins::test_native_proto_number_constants ... ok
-test tests::advanced_builtins::test_native_proto_map_get_eq_cmp ... ok
-test tests::advanced_builtins::test_native_proto_symbol_description ... ok
-test tests::advanced_builtins::test_native_proto_number_issafeinteger ... ok
-test tests::advanced_builtins::test_native_proto_symbol_basic ... ok
-test tests::advanced_builtins::test_native_proto_number_tofixed ... ok
-test tests::advanced_builtins::test_native_proto_map_foreach ... ok
-test tests::advanced_builtins::test_native_proto_symbol_equality ... ok
-test tests::advanced_builtins::test_native_proto_symbol_for_keyfor ... ok
-test tests::advanced_builtins::test_native_proto_symbol_well_known_iterator ... ok
-test tests::advanced_builtins::test_native_proto_symbol_type_inference ... ok
-test tests::advanced_builtins::test_p6_string_char_at ... ok
-test tests::advanced_builtins::test_p3_string_match_all_ast_check ... ok
-test tests::advanced_builtins::test_native_proto_symbol_to_string ... ok
-test tests::advanced_builtins::test_native_proto_symbol_well_known_to_string_tag ... ok
-test tests::advanced_builtins::test_native_proto_symbol_well_known_async_iterator ... ok
-test tests::advanced_builtins::test_p6_string_char_code_at ... ok
-test tests::advanced_builtins::test_p3_string_match_all_regexp_var_ast_check ... ok
-test tests::advanced_builtins::test_p6_string_code_point_at ... ok
-test tests::advanced_builtins::test_p6_string_concat ... ok
-test tests::advanced_builtins::test_p6_string_from_char_code ... ok
-test tests::advanced_builtins::test_p6_string_ends_with ... ok
-test tests::advanced_builtins::test_p6_string_from_code_point ... ok
-test tests::advanced_builtins::test_p6_string_includes ... ok
-test tests::advanced_builtins::test_p6_string_index_of ... ok
-test tests::advanced_builtins::test_p6_string_locale_compare ... ok
-test tests::advanced_builtins::test_p6_string_normalize ... ok
-test tests::advanced_builtins::test_p6_string_pad_end ... ok
-test tests::advanced_builtins::test_p6_string_pad_start ... ok
-test tests::advanced_builtins::test_p6_string_repeat ... ok
-test tests::advanced_builtins::test_p6_string_replace ... ok
-test tests::advanced_builtins::test_p6_string_replace_all ... ok
-test tests::advanced_builtins::test_p6_string_slice ... ok
-test tests::advanced_builtins::test_p6_string_split ... ok
-test tests::advanced_builtins::test_p8_new_regexp ... ok
-test tests::advanced_builtins::test_p6_string_starts_with ... ok
-test tests::advanced_builtins::test_p8_regex_test ... ok
-test tests::advanced_builtins::test_p8_regexp_exec_literal ... ok
-test tests::advanced_builtins::test_p8_regexp_var_exec ... ok
-test tests::advanced_builtins::test_p8_regexp_var_test ... ok
-test tests::advanced_builtins::test_p6_string_substring ... ok
-test tests::advanced_builtins::test_p6_string_to_locale_lower_case ... ok
-test tests::advanced_builtins::test_p8_string_match_compile_error ... ok
-test tests::advanced_builtins::test_p6_string_to_locale_upper_case ... ok
-test tests::advanced_builtins::test_p6_string_to_lower_case ... ok
-test tests::advanced_builtins::test_p6_string_to_upper_case ... ok
-test tests::advanced_builtins::test_p7_decode_uri ... ok
-test tests::advanced_builtins::test_p8_string_match_regexp_var ... ok
-test tests::advanced_builtins::test_p7_decode_uri_component ... ok
-test tests::advanced_builtins::test_p8_string_search ... ok
-test tests::advanced_builtins::test_p8_string_search_regexp_var ... ok
-test tests::basic::test_native_proto_basic ... ok
-test tests::basic::test_native_proto_complex ... ok
-test tests::basic::test_native_proto_compound_assignment ... ok
-test tests::basic::test_native_proto_delete_operator ... ok
-test tests::basic::test_native_proto_do_while ... ok
-test tests::advanced_builtins::test_p7_encode_uri ... ok
-test tests::basic::test_native_proto_elseif ... ok
-test tests::basic::test_native_proto_f64_inference ... ok
-test tests::basic::test_native_proto_for_in ... ok
-test tests::basic::test_native_proto_for_in_static ... ok
-test tests::advanced_builtins::test_p7_encode_uri_component ... ok
-test tests::basic::test_native_proto_function_call ... ok
-test tests::basic::test_native_proto_if_else ... ok
-test tests::basic::test_native_proto_logical ... ok
-test tests::basic::test_native_proto_no_return_void ... ok
-test tests::basic::test_native_proto_operators ... ok
-test tests::basic::test_native_proto_switch ... ok
-test tests::basic::test_native_proto_toplevel_var_error ... ok
-test tests::basic::test_native_proto_typeof ... ok
-test tests::basic::test_native_proto_typeof_dynamic ... ok
-test tests::basic::test_native_proto_typeof_literal ... ok
-test tests::basic::test_native_proto_typeof_object ... ok
-test tests::basic::test_native_proto_unary ... ok
-test tests::basic::test_native_proto_var_decl ... ok
-test tests::basic::test_native_proto_void_operator ... ok
-test tests::basic::test_native_proto_while ... ok
-test tests::basic::test_p2_for_in_static_codegen ... ok
-test tests::basic::test_p2_nested_function_no_capture ... ok
-test tests::basic::test_p2_nested_function_with_capture ... ok
-test tests::advanced_builtins::test_p7_object_define_properties ... ok
-test tests::advanced_builtins::test_p7_object_get_own_property_descriptor ... ok
-test tests::advanced_builtins::test_p7_object_set_prototype_of ... ok
-test tests::advanced_builtins::test_p7_set_add_has ... ok
-test tests::advanced_builtins::test_p7_set_delete_clear ... ok
-test tests::advanced_builtins::test_p7_set_foreach ... ok
-test tests::advanced_builtins::test_p7_set_iterators ... ok
-test tests::advanced_builtins::test_p8_object_is_sealed_frozen_extensible ... ok
-test tests::builtins_basic::test_native_proto_float64array ... ok
-test tests::builtins_basic::test_native_proto_json_parse_escaped_quotes ... ok
-test tests::builtins_basic::test_native_proto_json_parse_unicode ... ok
-test tests::advanced_builtins::test_p8_string_match_ast_check ... ok
-test tests::builtins_basic::test_native_proto_math_new_methods ... ok
-test tests::builtins_basic::test_native_proto_math_phase4 ... ok
-test tests::advanced_builtins::test_p8_string_match_capture_groups_ast_check ... ok
-test tests::builtins_basic::test_native_proto_string_escape_backslash ... ok
-test tests::builtins_basic::test_native_proto_string_escape_newline ... ok
-test tests::builtins_basic::test_native_proto_string_escape_quote ... ok
-test tests::builtins_basic::test_native_proto_string_escape_tab ... ok
-test tests::builtins_basic::test_native_proto_typedarray_basic ... ok
-test tests::builtins_basic::test_native_proto_typedarray_buffer ... ok
-test tests::builtins_basic::test_native_proto_typedarray_bytelength ... ok
-test tests::builtins_basic::test_native_proto_typedarray_byteoffset ... ok
-test tests::builtins_basic::test_native_proto_typedarray_copywithin ... ok
-test tests::builtins_basic::test_native_proto_typedarray_fill ... ok
-test tests::builtins_basic::test_native_proto_typedarray_length_as_param ... ok
-test tests::builtins_basic::test_native_proto_typedarray_length_in_expr ... ok
-test tests::builtins_basic::test_native_proto_typedarray_set ... ok
-test tests::builtins_basic::test_native_proto_typedarray_slice ... ok
-test tests::builtins_basic::test_native_proto_typedarray_subarray ... ok
-test tests::builtins_basic::test_native_proto_typedarray_uint8 ... ok
-test tests::advanced_builtins::test_p8_string_match_empty_pattern_ast_check ... ok
-test tests::advanced_builtins::test_p8_string_match_empty_string_ast_check ... ok
-test tests::advanced_builtins::test_p8_string_match_global_ast_check ... ok
-test tests::advanced_builtins::test_p8_string_match_global_empty_match_ast_check ... ok
-test tests::advanced_builtins::test_p8_string_match_regexp_var_ast_check ... ok
-test tests::basic::test_native_proto_for_of ... ok
-test tests::builtins_basic::test_native_proto_array_includes ... ok
-test tests::builtins_basic::test_native_proto_array_indexof ... ok
-test tests::builtins_basic::test_native_proto_array_join ... ok
-test tests::builtins_basic::test_native_proto_array_pop ... ok
-test tests::builtins_basic::test_native_proto_array_slice ... ok
-test tests::builtins_basic::test_native_proto_array_splice ... ok
-test tests::builtins_basic::test_native_proto_array_splice_insert ... ok
-test tests::builtins_basic::test_native_proto_await ... ok
-test tests::builtins_basic::test_native_proto_math_methods ... ok
-test tests::builtins_basic::test_native_proto_optional_property ... ok
-test tests::destructure_class_arrays::test_native_proto_array_flat ... ok
-test tests::destructure_class_arrays::test_native_proto_array_flat_map ... ok
-test tests::destructure_class_arrays::test_native_proto_anon_obj_type_returns ... ok
-test tests::destructure_class_arrays::test_native_proto_anon_obj_type_variable_access ... ok
-test tests::destructure_class_arrays::test_native_proto_array_at ... ok
-test tests::destructure_class_arrays::test_native_proto_class_basic ... ok
-test tests::destructure_class_arrays::test_native_proto_class_implicit_fields ... ok
-test tests::destructure_class_arrays::test_native_proto_class_mixed_fields ... ok
-test tests::destructure_class_arrays::test_native_proto_json_parse_no_jsdoc ... ok
-test tests::destructure_class_arrays::test_native_proto_object_getownpropertynames_stub ... ok
-test tests::destructure_class_arrays::test_native_proto_array_concat ... ok
-test tests::destructure_class_arrays::test_native_proto_array_copywithin ... ok
-test tests::destructure_class_arrays::test_native_proto_array_every ... ok
-test tests::destructure_class_arrays::test_native_proto_string_at ... ok
-test tests::destructure_class_arrays::test_native_proto_string_code_point_at ... ok
-test tests::destructure_class_arrays::test_native_proto_array_every_block_body ... ok
-test tests::destructure_class_arrays::test_native_proto_string_match_stub ... ok
-test tests::destructure_class_arrays::test_native_proto_string_pad_end ... ok
-test tests::destructure_class_arrays::test_native_proto_string_pad_start ... ok
-test tests::destructure_class_arrays::test_native_proto_string_search_stub ... ok
-test tests::destructure_class_arrays::test_native_proto_string_substring ... ok
-test tests::destructure_class_arrays::test_native_proto_string_substring_swap ... ok
-test tests::destructure_class_arrays::test_native_proto_array_fill ... ok
-test tests::destructure_class_arrays::test_native_proto_array_fill_range ... ok
-test tests::destructure_class_arrays::test_p2_destructure_array_basic ... ok
-test tests::destructure_class_arrays::test_p2_destructure_array_hole ... ok
-test tests::destructure_class_arrays::test_native_proto_array_filter ... ok
-test tests::destructure_class_arrays::test_p2_destructure_function_call_init ... ok
-test tests::destructure_class_arrays::test_p2_destructure_object_basic ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find ... ok
-test tests::destructure_class_arrays::test_p2_destructure_object_rename ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find_block_body ... ok
-test tests::destructure_class_arrays::test_p2_nested_function_anytype_return ... ok
-test tests::destructure_class_arrays::test_p2_nested_function_basic ... ok
-test tests::destructure_class_arrays::test_p2_nested_function_capture_error ... ok
-test tests::dual_track::test_dual_track_array_literal ... ok
-test tests::dual_track::test_dual_track_arrow_block_body ... ok
-test tests::dual_track::test_dual_track_arrow_closure_capture ... ok
-test tests::dual_track::test_dual_track_arrow_multi_param ... ok
-test tests::dual_track::test_dual_track_arrow_simple ... ok
-test tests::dual_track::test_dual_track_assignment_ops ... ok
-test tests::dual_track::test_dual_track_bitwise_ops ... ok
-test tests::dual_track::test_dual_track_break_continue ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find_index ... ok
-test tests::dual_track::test_dual_track_class_this ... ok
-test tests::dual_track::test_dual_track_closure_capture ... ok
-test tests::dual_track::test_dual_track_computed_member ... ok
-test tests::dual_track::test_dual_track_console_log ... ok
+running 49 tests
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] if_else: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+[dual-track] do_while: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+[ZigIR dual-track]   total differing lines: 0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_if_else ... [dual-track] arrow_block_body: codegen=6 lines, emitter=6 lines
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
 test tests::dual_track::test_dual_track_do_while ... ok
-test tests::dual_track::test_dual_track_equality ... ok
-test tests::dual_track::test_dual_track_for_in ... ok
-test tests::dual_track::test_dual_track_for_loop ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_arrow_block_body ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (4 lines)
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=1 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] bitwise_ops: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_bitwise_ops ... ok
+[dual-track] console_log: codegen=4 lines, emitter=4 lines
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (16 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+[dual-track] assignment_ops: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track] Emitter output MATCHES Codegen (11 lines)
+test tests::dual_track::test_dual_track_console_log ... ok
+[dual-track] break_continue: codegen=16 lines, emitter=16 lines
+[dual-track] arrow_closure_capture: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (7 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (18 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+test tests::dual_track::test_dual_track_assignment_ops ... ok
+[dual-track] closure_capture: codegen=11 lines, emitter=11 lines
+test tests::dual_track::test_dual_track_break_continue ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (24 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+test tests::dual_track::test_dual_track_arrow_closure_capture ... ok
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+[dual-track] for_of: codegen=7 lines, emitter=7 lines
+[ZigIR dual-track]   total differing lines: 0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=17 lines, codegen=17 lines)
+test tests::dual_track::test_dual_track_closure_capture ... [dual-track] computed_member: codegen=15 lines, emitter=15 lines
+ok
+[dual-track] arrow_multi_param: codegen=6 lines, emitter=6 lines
+[ZigIR dual-track]   line 13: emitter='    @compileError("nested class declaration 'Counter' is not supported (at 11:5)
+' codegen='    @compileError("Unsupported statement type (at 11:5)");'
+[dual-track] labeled_break: codegen=18 lines, emitter=18 lines
+[ZigIR dual-track]   line 14: emitter='    const c = @compileError("Unsupported NewExpression: new Counter() (at 19:15)
+' codegen='    const c = @compileError("Unsupported NewExpression (at 19:15)");'
 test tests::dual_track::test_dual_track_for_of ... ok
-test tests::dual_track::test_dual_track_if_else ... ok
-test tests::dual_track::test_dual_track_json_parse ... ok
+[dual-track] for_in: codegen=24 lines, emitter=24 lines
+[ZigIR dual-track]   total differing lines: 2
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_computed_member ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_arrow_multi_param ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
 test tests::dual_track::test_dual_track_labeled_break ... ok
-test tests::dual_track::test_dual_track_logical_ops ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (10 lines)
+test tests::dual_track::test_dual_track_for_in ... ok
+[dual-track] math_builtin: codegen=3 lines, emitter=3 lines
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[dual-track] equality: codegen=9 lines, emitter=9 lines
 test tests::dual_track::test_dual_track_math_builtin ... ok
-test tests::dual_track::test_dual_track_math_floor_ceil ... ok
-test tests::dual_track::test_dual_track_math_min_max ... ok
-test tests::dual_track::test_dual_track_multi_capture_closure ... ok
-test tests::dual_track::test_dual_track_multiple_functions ... ok
-test tests::dual_track::test_dual_track_nested_if ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (4 lines)
+test tests::dual_track::test_dual_track_equality ... ok
+[dual-track] array_literal: codegen=5 lines, emitter=5 lines
+[dual-track] for_loop: codegen=10 lines, emitter=10 lines
+[dual-track] logical_ops: codegen=9 lines, emitter=9 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] json_parse: codegen=4 lines, emitter=4 lines
+test tests::dual_track::test_dual_track_array_literal ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=1 decls=0 diagnostics=0 cabi=0
+[dual-track] class_this: 2 differing lines
+test tests::dual_track::test_dual_track_for_loop ... ok
+test tests::dual_track::test_dual_track_logical_ops ... ok
+test tests::dual_track::test_dual_track_json_parse ... ok
+  line 13: codegen='    @compileError("Unsupported statement type (at 11:5)");' emitter='    @compileError("nested clas
+s declaration 'Counter' is not supported (at 11:5)");'
+  line 14: codegen='    const c = @compileError("Unsupported NewExpression (at 19:15)");' emitter='    const c = @compi
+leError("Unsupported NewExpression: new Counter() (at 19:15)");'
+[dual-track] class_this: codegen=17 lines, emitter=17 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=2 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_class_this ... ok
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[dual-track] new_date: codegen=3 lines, emitter=3 lines
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=5 lines, codegen=6 lines)
+[ZigIR dual-track]   line count differs: emitter=5 codegen=6
+[ZigIR dual-track]   total differing lines: 0
 test tests::dual_track::test_dual_track_new_date ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find_index_block_body ... ok
+[dual-track] remainder: codegen=3 lines, emitter=3 lines
+[dual-track] math_floor_ceil: codegen=6 lines, emitter=6 lines
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_remainder ... ok[dual-track] arrow_simple: codegen=6 lines, emitter=6 lines
+
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_math_floor_ceil ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+test tests::dual_track::test_dual_track_arrow_simple ... ok
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (13 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[dual-track] null: codegen=3 lines, emitter=3 lines
+[dual-track] multiple_functions: codegen=6 lines, emitter=6 lines
 test tests::dual_track::test_dual_track_null ... ok
-test tests::dual_track::test_dual_track_object_literal ... ok
+[dual-track] switch: codegen=13 lines, emitter=13 lines
+test tests::dual_track::test_dual_track_multiple_functions ... ok
+[dual-track] simple_function: codegen=3 lines, emitter=3 lines
+[dual-track] nested_if: codegen=9 lines, emitter=9 lines
+test tests::dual_track::test_dual_track_switch ... ok[dual-track] multi_capture_closure: codegen=10 lines, emitter=10 lines
+
+[dual-track] object_literal: codegen=16 lines, emitter=16 lines
 test tests::dual_track::test_dual_track_simple_function ... ok
-test tests::dual_track::test_dual_track_remainder ... ok
-test tests::dual_track::test_dual_track_string_concat ... ok
-test tests::dual_track::test_dual_track_string_methods ... ok
-test tests::dual_track::test_dual_track_switch ... ok
-test tests::dual_track::test_dual_track_template_literal ... ok
-test tests::dual_track::test_dual_track_switch_break ... ok
+[dual-track] ternary: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_nested_if ... ok
+test tests::dual_track::test_dual_track_multi_capture_closure ... ok
+[dual-track] switch_break: codegen=15 lines, emitter=15 lines
+test tests::dual_track::test_dual_track_object_literal ... ok
 test tests::dual_track::test_dual_track_ternary ... ok
-test tests::dual_track::test_dual_track_try_catch ... ok
-test tests::dual_track::test_dual_track_try_catch_throw ... ok
+test tests::dual_track::test_dual_track_switch_break ... ok
+[dual-track] math_min_max: codegen=5 lines, emitter=5 lines
+test tests::dual_track::test_dual_track_math_min_max ... ok
+[dual-track] try_finally: codegen=6 lines, emitter=6 lines
 test tests::dual_track::test_dual_track_try_finally ... ok
-test tests::dual_track::test_dual_track_typedef ... ok
+[dual-track] string_methods: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_string_methods ... ok
+[dual-track] typeof: codegen=3 lines, emitter=3 lines
+[dual-track] try_catch: codegen=3 lines, emitter=3 lines
 test tests::dual_track::test_dual_track_typeof ... ok
-test tests::dual_track::test_dual_track_unary_negate ... ok
+[dual-track] template_literal: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_try_catch ... ok
+test tests::dual_track::test_dual_track_template_literal ... [dual-track] unary_not: codegen=3 lines, emitter=3 lines
+ok
 test tests::dual_track::test_dual_track_unary_not ... ok
+[dual-track] void: codegen=3 lines, emitter=3 lines
+[dual-track] string_concat: codegen=3 lines, emitter=3 lines
+test tests::dual_track::test_dual_track_void ... [dual-track] unary_negate: codegen=3 lines, emitter=3 lines
+ok
+test tests::dual_track::test_dual_track_string_concat ... ok
+[dual-track] typedef: codegen=15 lines, emitter=15 lines
+[dual-track] update_expr: codegen=5 lines, emitter=5 lines
+test tests::dual_track::test_dual_track_unary_negate ... ok
+test tests::dual_track::test_dual_track_typedef ... [dual-track] variable_declarations: codegen=2 lines, emitter=2 lines
+ok
+[dual-track] try_catch_throw: codegen=18 lines, emitter=18 lines
 test tests::dual_track::test_dual_track_update_expr ... ok
 test tests::dual_track::test_dual_track_variable_declarations ... ok
-test tests::dual_track::test_dual_track_void ... ok
-test tests::not_implemented_and_fixes::test_bigint_add ... ok
+test tests::dual_track::test_dual_track_try_catch_throw ... ok
+[dual-track] while_loop: codegen=9 lines, emitter=9 lines
 test tests::dual_track::test_dual_track_while_loop ... ok
-test tests::not_implemented_and_fixes::test_bigint_constructor ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find_last ... ok
-test tests::not_implemented_and_fixes::test_dynamic_array_access_index ... ok
-test tests::not_implemented_and_fixes::test_dynamic_array_assignment_index ... ok
-test tests::not_implemented_and_fixes::test_for_loop_nonzero_init ... ok
-test tests::not_implemented_and_fixes::test_method_chaining_array_join_after_map ... ok
-test tests::not_implemented_and_fixes::test_method_chaining_new_date_get_time ... ok
-test tests::not_implemented_and_fixes::test_method_chaining_string_literal_method ... ok
-test tests::not_implemented_and_fixes::test_method_chaining_encodeuri_replace ... ok
-test tests::not_implemented_and_fixes::test_native_proto_comparison_complex_bool ... ok
-test tests::not_implemented_and_fixes::test_native_proto_comparison_neq_bool ... ok
-test tests::not_implemented_and_fixes::test_native_proto_comparison_lt_bool ... ok
-test tests::not_implemented_and_fixes::test_native_proto_comparison_strict_eq_bool ... ok
-test tests::not_implemented_and_fixes::test_native_proto_private_field_multiple ... ok
-test tests::not_implemented_and_fixes::test_native_proto_private_field_basic ... ok
-test tests::not_implemented_and_fixes::test_native_proto_private_field_mixed_with_public ... ok
-test tests::not_implemented_and_fixes::test_native_proto_private_field_no_default ... ok
-test tests::not_implemented_and_fixes::test_native_proto_private_field_string_default ... ok
-test tests::not_implemented_and_fixes::test_native_proto_ternary_concat_no_parens ... ok
-test tests::not_implemented_and_fixes::test_native_proto_ternary_concat_parens ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_array_to_reversed ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_arguments_object ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_array_to_sorted ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_array_with ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_array_to_spliced ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_async_generator ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_atomics ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_class_expression ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_date_set_time ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_date_to_utc_string ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_dynamic_import ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_debugger_statement ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_eval_with_annotation ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_eval ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_for_await_of ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_generator_function ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_import_meta ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_instanceof ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_instanceof_with_annotation ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_new_target ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_intl ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_map_group_by ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_object_get_own_property_symbols ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_object_group_by ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_promise ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_regexp_flags ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_reflect ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_regexp_global ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_regexp_source ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_static_block ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_set_operations ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_string_raw ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_tagged_template ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_weakmap ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_weakset ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_with_statement ... ok
-test tests::not_implemented_and_fixes::test_not_implemented_yield_expression ... ok
-test tests::not_implemented_and_fixes::test_p3_mixed_decl_expr_unused_var ... ok
-test tests::not_implemented_and_fixes::test_shadowing_multiple_levels ... ok
-test tests::destructure_class_arrays::test_native_proto_array_find_last_index ... ok
-test tests::not_implemented_and_fixes::test_shadowing_nested_block ... ok
-test tests::not_implemented_and_fixes::test_shadowing_param_name ... ok
-test tests::not_implemented_and_fixes::test_update_expr_in_index ... ok
-test tests::objects_and_types::test_native_proto_export_fn_signature ... ok
-test tests::objects_and_types::test_native_proto_export_requires_returns ... ok
-test tests::objects_and_types::test_native_proto_export_returns_string ... ok
-test tests::objects_and_types::test_native_proto_field_type_mismatch ... ok
-test tests::objects_and_types::test_native_proto_jsdoc_json_parse ... ok
-test tests::objects_and_types::test_native_proto_jsdoc_typedef ... ok
-test tests::destructure_class_arrays::test_native_proto_array_lastindexof ... ok
-test tests::objects_and_types::test_native_proto_object_map ... ok
-test tests::objects_and_types::test_native_proto_object_map_mutation ... ok
-test tests::objects_and_types::test_native_proto_object_struct ... ok
-test tests::objects_and_types::test_native_proto_object_struct_mutation ... ok
-test tests::destructure_class_arrays::test_native_proto_array_some ... ok
-test tests::destructure_class_arrays::test_p2_destructure_object_mixed ... ok
-test tests::objects_and_types::test_native_proto_string_concat ... ok
-test tests::objects_and_types::test_native_proto_string_concat_multi ... ok
-test tests::objects_and_types::test_native_proto_template_literal_basic ... ok
-test tests::objects_and_types::test_native_proto_template_literal_multiline ... ok
-test tests::objects_and_types::test_native_proto_template_literal_text_only ... ok
-test tests::destructure_class_arrays::test_p2_destructure_array_with_defaults ... ok
-test tests::phase1::test_p1_array_spread_elision ... ok
-test tests::phase1::test_p1_array_spread_mixed ... ok
-test tests::phase1::test_p1_array_spread_simple ... ok
-test tests::phase1::test_p1_array_spread_single ... ok
-test tests::phase1::test_p1_call_spread ... ok
-test tests::destructure_class_arrays::test_p2_destructure_object_with_defaults ... ok
-test tests::phase1::test_p1_date_new_empty ... ok
-test tests::phase1::test_p1_date_new_millis ... ok
-test tests::phase1::test_p1_date_new_multi_2args ... ok
-test tests::phase1::test_p1_date_new_multi_3args ... ok
-test tests::phase1::test_p1_date_new_multi_5args ... ok
-test tests::phase1::test_p1_date_new_multi_7args ... ok
-test tests::phase1::test_p1_date_new_multi_variable_args ... ok
-test tests::phase1::test_p1_date_new_string ... ok
-test tests::destructure_class_arrays::test_native_proto_string_trimstart ... ok
-test tests::destructure_class_arrays::test_native_proto_string_trimend ... ok
-test tests::destructure_class_arrays::test_native_proto_string_lastindexof ... ok
-test tests::destructure_class_arrays::test_native_proto_object_is ... ok
-test tests::phase1::test_p1_instanceof_operator ... ok
-test tests::phase1::test_p1_labeled_block ... ok
-test tests::phase1::test_p1_labeled_do_while ... ok
-test tests::phase1::test_p1_labeled_for ... ok
-test tests::phase1::test_p1_labeled_for_of ... ok
-test tests::phase1::test_p1_labeled_while ... ok
-test tests::destructure_class_arrays::test_native_proto_object_has_own_struct ... ok
-test tests::destructure_class_arrays::test_native_proto_object_has_own_missing ... ok
-test tests::destructure_class_arrays::test_native_proto_array_some_block_body ... ok
-test tests::not_implemented_and_fixes::test_p3_mixed_decl_expr_call ... ok
-test tests::not_implemented_and_fixes::test_p3_mixed_decl_expr_return_unused ... ok
-test tests::not_implemented_and_fixes::test_p3_mixed_decl_expr_basic ... ok
-test tests::phase1::test_p1_rest_param_and_call_spread ... ok
-test tests::objects_and_types::test_native_proto_json_parse_nested ... ok
-test tests::phase1::test_p1_spread_multi ... ok
-test tests::phase1::test_p1_spread_multi_with_inline ... ok
-test tests::phase1::test_p1_spread_single ... ok
-test tests::phase1::test_p1_spread_with_inline ... ok
-test tests::phase1::test_p2_for_of_map_destructure ... ok
-test tests::phase1::test_p2_for_of_map_single_var ... ok
-test tests::phase1::test_p2_for_of_set ... ok
-test tests::phase1::test_p2_for_of_string ... ok
-test tests::try_catch_and_closures::test_native_proto_arrow_block_body ... ok
-test tests::try_catch_and_closures::test_native_proto_arrow_function ... ok
-test tests::try_catch_and_closures::test_native_proto_arrow_single_param ... ok
-test tests::try_catch_and_closures::test_native_proto_closure_basic ... ok
-test tests::try_catch_and_closures::test_native_proto_closure_mutable ... ok
-test tests::objects_and_types::test_native_proto_param_e2e ... ok
-test tests::objects_and_types::test_native_proto_param_annotation ... ok
-test tests::objects_and_types::test_native_proto_typedef_tojson ... ok
-test tests::phase1::test_p1_date_instance_methods ... ok
-test tests::try_catch_and_closures::test_native_proto_getter ... ok
-test tests::try_catch_and_closures::test_native_proto_getter_setter_combined ... ok
-test tests::try_catch_and_closures::test_native_proto_optional_chain_call ... ok
-test tests::try_catch_and_closures::test_native_proto_optional_chain_known_struct ... ok
-test tests::try_catch_and_closures::test_native_proto_optional_chain_nested ... ok
-test tests::try_catch_and_closures::test_native_proto_optional_chain_null_literal ... ok
-test tests::try_catch_and_closures::test_native_proto_optional_chain_unknown ... ok
-test tests::try_catch_and_closures::test_native_proto_setter_skipped ... ok
-test tests::phase1::test_p1_date_now ... ok
-test tests::phase1::test_p1_date_parse ... ok
-test tests::phase1::test_p1_date_utc ... ok
-test tests::phase1::test_p1_in_operator ... ok
-test tests::phase1::test_p1_object_assign ... ok
-test tests::phase1::test_p1_object_entries ... ok
-test tests::phase1::test_p1_object_freeze ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_nested_no_throw ... ok
-test tests::phase1::test_p1_object_from_entries ... ok
-test tests::phase1::test_p1_object_keys ... ok
-test tests::phase1::test_p1_object_values ... ok
-test tests::phase1::test_p1_spread_empty ... ok
-test zigir::builtins::tests::test_all_modules ... ok
-test zigir::emit::helpers::tests::test_assign_op_to_zig ... ok
-test zigir::emit::helpers::tests::test_bin_op_to_zig ... ok
-test zigir::emit::helpers::tests::test_escape_zig_string ... ok
-test zigir::emit::helpers::tests::test_format_param ... ok
-test zigir::emit::helpers::tests::test_format_return_type ... ok
-test zigir::emit::helpers::tests::test_logical_op_to_zig ... ok
-test zigir::emit::helpers::tests::test_update_op_to_zig ... ok
-test zigir::emit::tests::test_emit_empty_module ... ok
-test zigir::emit::tests::test_emit_fn_decl ... ok
-test zigir::emit::tests::test_emit_fn_decl_with_throw ... ok
-test zigir::emit::tests::test_emit_typedef ... ok
-test zigir::emit::tests::test_emit_var_decl ... ok
-test zigir::ident::tests::test_ir_ident_keyword ... ok
-test zigir::ident::tests::test_ir_ident_new ... ok
-test zigir::ident::tests::test_make_ident_with_shadow ... ok
-test zigir::ident::tests::test_name_mangler_nested_shadow ... ok
-test zigir::ident::tests::test_name_mangler_sequence ... ok
-test zigir::ident::tests::test_name_mangler_shadow ... ok
-test zigir::ident::tests::test_zig_safe_name_keyword ... ok
-test zigir::ident::tests::test_zig_safe_name_normal ... ok
-test zigir::kinds::tests::test_call_kind ... ok
-test zigir::kinds::tests::test_field_kind_variants ... ok
-test zigir::kinds::tests::test_new_constructor ... ok
-test zigir::kinds::tests::test_typed_array_kinds ... ok
-test zigir::lower::helpers::tests::test_fn_context_new ... ok
-test zigir::lower::helpers::tests::test_fn_context_register_vars ... ok
-test zigir::lower::helpers::tests::test_set_flag_guard ... ok
-test zigir::lower::tests::test_fn_context_enter_exit ... ok
-test zigir::lower::tests::test_fn_context_nesting ... ok
-test zigir::lower::tests::test_infer_imports_date_and_map ... ok
-test zigir::lower::tests::test_infer_imports_deduplication ... ok
-test zigir::lower::tests::test_infer_imports_empty ... ok
-test zigir::lower::tests::test_infer_imports_jsany ... ok
-test zigir::lower::tests::test_infer_imports_typedef ... ok
-test zigir::lower::tests::test_is_export_fn ... ok
-test zigir::lower::tests::test_lowerer_empty_program ... ok
-test zigir::lower::tests::test_lowerer_new ... ok
-test zigir::ops::tests::test_assign_op_zig_str ... ok
-test zigir::ops::tests::test_bin_op_coverage ... ok
-test zigir::passes::constant_fold::tests::test_fold_allocprint_no_args ... ok
-test tests::try_catch_and_closures::test_native_proto_exponential_edge ... ok
-test zigir::passes::constant_fold::tests::test_fold_and_false ... ok
-test zigir::passes::constant_fold::tests::test_fold_conditional_true ... ok
-test zigir::passes::constant_fold::tests::test_fold_float_mul ... ok
-test zigir::passes::constant_fold::tests::test_fold_int_add ... ok
-test zigir::passes::constant_fold::tests::test_fold_nested ... ok
-test zigir::passes::constant_fold::tests::test_fold_not_bool ... ok
-test zigir::passes::constant_fold::tests::test_fold_null_equality ... ok
-test zigir::passes::constant_fold::tests::test_fold_string_concat ... ok
-test zigir::passes::constant_fold::tests::test_fold_typeof_int ... ok
-test zigir::passes::constant_fold::tests::test_fold_unary_negate ... ok
-test zigir::passes::constant_fold::tests::test_no_fold_dynamic ... ok
-test zigir::passes::dead_code::tests::test_keep_const_with_side_effects ... ok
-test zigir::passes::dead_code::tests::test_keep_used_const ... ok
-test zigir::passes::dead_code::tests::test_no_change_on_clean_code ... ok
-test zigir::passes::dead_code::tests::test_remove_unreachable_after_return ... ok
-test zigir::passes::dead_code::tests::test_remove_unused_const ... ok
-test zigir::passes::tests::test_change_detection ... ok
-test zigir::passes::tests::test_default_pipeline_runs ... ok
-test zigir::passes::tests::test_empty_pipeline ... ok
-test zigir::passes::tests::test_multi_pass_pipeline ... ok
-test zigir::passes::tests::test_noop_pass ... ok
-test zigir::passes::tests::test_pass_result_merge ... ok
-test zigir::passes::tests::test_warn_pass ... ok
-test zigir::passes::validate::tests::test_validate_cabi_unsafe_type ... ok
-test zigir::passes::validate::tests::test_validate_clean_module ... ok
-test zigir::passes::validate::tests::test_validate_duplicate_names ... ok
-test zigir::passes::validate::tests::test_validate_closure_capture_not_referenced ... ok
-test zigir::source_span::tests::test_diagnostic_error_with_span ... ok
-test zigir::source_span::tests::test_diagnostic_warning ... ok
-test zigir::source_span::tests::test_source_span_display ... ok
-test zigir::source_span::tests::test_source_span_with_file ... ok
-test zigir::types::tests::test_ir_array_literal_with_spread ... ok
-test zigir::types::tests::test_ir_arrow_fn_concise ... ok
-test zigir::types::tests::test_ir_assign_target_destructure ... ok
-test zigir::types::tests::test_ir_await_expr ... ok
-test zigir::types::tests::test_ir_builtin_call ... ok
-test zigir::types::tests::test_ir_call_expr ... ok
-test zigir::types::tests::test_ir_class_decl ... ok
-test zigir::types::tests::test_ir_closure ... ok
-test zigir::types::tests::test_ir_fn_decl ... ok
-test zigir::types::tests::test_ir_for_loop ... ok
-test zigir::types::tests::test_ir_if_stmt ... ok
-test zigir::types::tests::test_ir_module_construction ... ok
-test zigir::types::tests::test_ir_new_expr_date ... ok
-test zigir::types::tests::test_ir_object_literal ... ok
-test zigir::types::tests::test_ir_switch_case ... ok
-test zigir::types::tests::test_ir_template_literal ... ok
-test zigir::types::tests::test_ir_try_catch ... ok
-test zigir::types::tests::test_ir_var_decl ... ok
-test tests::try_catch_and_closures::test_native_proto_exponential_float ... ok
-test tests::try_catch_and_closures::test_native_proto_exponential_operator ... ok
-test tests::try_catch_and_closures::test_native_proto_exponential_mixed ... ok
-test tests::try_catch_and_closures::test_native_proto_template_literal_complex ... ok
-test tests::try_catch_and_closures::test_native_proto_throw_bare ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_basic ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_e_binding_unused ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_e_binding_used ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_finally ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_nested_inner_catch ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_nested_rethrow ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_no_throw ... ok
-test tests::objects_and_types::test_native_proto_e2e_json ... ok
-test tests::try_catch_and_closures::test_native_proto_try_catch_throw_break ... ok
-test tests::try_catch_and_closures::test_native_proto_try_finally ... ok
-test tests::basic::test_native_proto_e2e_compile_and_run ... ok
 
-test result: ok. 500 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.66s
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 451 filtered out; finished in 0.01s
 
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (16 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=2 typedefs=1 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (10 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (6 lines)
+[ZigIR dual-track] module='main' imports=2 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=18 lines, codegen=18 lines)
+[ZigIR dual-track]   line 4: emitter='            if (((shouldThrow) != 0)) {' codegen='            if (shouldThrow) {'
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=0 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (15 lines)
+[ZigIR dual-track]   total differing lines: 1
+[ZigIR dual-track] Emitter output MATCHES Codegen (3 lines)
+[ZigIR dual-track] module='main' imports=0 typedefs=0 closures=0 decls=1 diagnostics=0 cabi=0
+[ZigIR dual-track] Emitter output MATCHES Codegen (5 lines)
+[ZigIR dual-track] Emitter output MATCHES Codegen (9 lines)
+[ZigIR dual-track] Emitter output DIFFERS from Codegen (emitter=0 lines, codegen=2 lines)
+[ZigIR dual-track]   line count differs: emitter=0 codegen=2
+[ZigIR dual-track]   total differing lines: 0
+[dual-track] try_catch_throw: 1 differing lines
+  line 4: codegen='            if (shouldThrow) {' emitter='            if (((shouldThrow) != 0)) {'

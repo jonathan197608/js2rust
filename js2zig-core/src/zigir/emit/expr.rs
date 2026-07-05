@@ -243,7 +243,8 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::Assign { op, target, value } => {
-                if *op == crate::zigir::ops::AssignOp::Mod {
+                use crate::zigir::ops::AssignOp;
+                if *op == AssignOp::Mod {
                     // Zig doesn't support % on signed integers; use x = @rem(x, y)
                     self.emit_assign_target_inner(target);
                     self.write(" = @rem(");
@@ -251,7 +252,7 @@ impl Emitter {
                     self.write(", ");
                     self.emit_expr(value);
                     self.write(")");
-                } else if *op == crate::zigir::ops::AssignOp::Div {
+                } else if *op == AssignOp::Div {
                     // Zig signed integer division requires @divTrunc
                     self.emit_assign_target_inner(target);
                     self.write(" = @divTrunc(");
@@ -259,6 +260,33 @@ impl Emitter {
                     self.write(", ");
                     self.emit_expr(value);
                     self.write(")");
+                } else if *op == AssignOp::LogicAnd {
+                    // a &&= b → a = if (a.toBool()) b else a
+                    self.emit_assign_target_inner(target);
+                    self.write(" = if (");
+                    self.emit_assign_target_inner(target);
+                    self.write(".toBool()) ");
+                    self.emit_expr(value);
+                    self.write(" else ");
+                    self.emit_assign_target_inner(target);
+                } else if *op == AssignOp::LogicOr {
+                    // a ||= b → a = if (!a.toBool()) b else a
+                    self.emit_assign_target_inner(target);
+                    self.write(" = if (!");
+                    self.emit_assign_target_inner(target);
+                    self.write(".toBool()) ");
+                    self.emit_expr(value);
+                    self.write(" else ");
+                    self.emit_assign_target_inner(target);
+                } else if *op == AssignOp::Nullish {
+                    // a ??= b → a = if (a.isNullish()) b else a
+                    self.emit_assign_target_inner(target);
+                    self.write(" = if (");
+                    self.emit_assign_target_inner(target);
+                    self.write(".isNullish()) ");
+                    self.emit_expr(value);
+                    self.write(" else ");
+                    self.emit_assign_target_inner(target);
                 } else {
                     self.emit_assign_target_inner(target);
                     self.write(&format!(" {} ", assign_op_to_zig(*op)));
@@ -553,7 +581,7 @@ impl Emitter {
                     self.write(capture_var);
                     self.write("| ");
                     self.emit_expr(body);
-                    self.write(" else JsAny.fromNull())");
+                    self.write(" else null)");
                 } else {
                     self.emit_expr(body);
                 }
@@ -692,14 +720,57 @@ impl Emitter {
                 self.write(&format!("std.math.{}", val));
             }
             FieldKind::NumberConstant(val) => {
-                self.write(&format!("std.math.{}", val));
+                // Map JS Number constants to Zig std.math equivalents
+                match val.as_str() {
+                    "MAX_VALUE" => self.write("std.math.floatMax(f64)"),
+                    "MIN_VALUE" => self.write("std.math.floatMin(f64)"),
+                    "NaN" => self.write("std.math.nan(f64)"),
+                    "NEGATIVE_INFINITY" => self.write("-std.math.inf(f64)"),
+                    "POSITIVE_INFINITY" => self.write("std.math.inf(f64)"),
+                    "EPSILON" => self.write("std.math.floatEps(f64)"),
+                    "MAX_SAFE_INTEGER" => self.write("9007199254740991"),
+                    "MIN_SAFE_INTEGER" => self.write("-9007199254740991"),
+                    _ => self.write(&format!("std.math.{}", val)),
+                }
             }
             FieldKind::SymbolWellKnown(val) => {
-                self.write(&format!("js_symbol.{}()", val));
+                // Symbol well-known properties: Symbol.iterator → js_symbol.symbolIterator()
+                // All well-known symbol accessors are prefixed with "symbol" in the runtime
+                let zig_name = match val.as_str() {
+                    "iterator" => "symbolIterator".to_string(),
+                    "asyncIterator" => "symbolAsyncIterator".to_string(),
+                    "hasInstance" => "symbolHasInstance".to_string(),
+                    "isConcatSpreadable" => "symbolIsConcatSpreadable".to_string(),
+                    "species" => "symbolSpecies".to_string(),
+                    "toPrimitive" => "symbolToPrimitive".to_string(),
+                    "toStringTag" => "symbolToStringTag".to_string(),
+                    "unscopables" => "symbolUnscopables".to_string(),
+                    "match" => "symbolMatch".to_string(),
+                    "matchAll" => "symbolMatchAll".to_string(),
+                    "replace" => "symbolReplace".to_string(),
+                    "search" => "symbolSearch".to_string(),
+                    "split" => "symbolSplit".to_string(),
+                    "dispose" => "symbolDispose".to_string(),
+                    other => {
+                        // Fallback: capitalize first letter and prepend "symbol"
+                        let mut chars = other.chars();
+                        match chars.next() {
+                            None => "symbol".to_string(),
+                            Some(c) => format!("symbol{}{}", c.to_uppercase(), chars.as_str()),
+                        }
+                    }
+                };
+                self.write(&format!("js_symbol.{}()", zig_name));
             }
-            FieldKind::TypedArrayProp(prop) => {
-                self.emit_expr(object);
-                self.write(&format!(".{}", prop));
+            FieldKind::TypedArrayProp { prop, type_suffix } => {
+                if let Some(suffix) = type_suffix {
+                    self.write(&format!("js_runtime.js_typedarray.{}{}(", prop, suffix));
+                    self.emit_expr(object);
+                    self.write(")");
+                } else {
+                    self.emit_expr(object);
+                    self.write(&format!(".{}", prop));
+                }
             }
             FieldKind::Private => {
                 self.emit_expr(object);
@@ -821,6 +892,12 @@ impl Emitter {
 
     fn emit_object_literal(&mut self, obj: &crate::zigir::types::IrObjectLiteral) {
         use crate::zigir::types::IrObjectItem;
+
+        // Empty object → StringHashMap(JsAny).init(allocator)
+        if obj.items.is_empty() {
+            self.write("std.StringHashMap(JsAny).init(js_allocator.allocator())");
+            return;
+        }
 
         // Check if any spread items exist
         let has_spread = obj
@@ -963,10 +1040,10 @@ impl Emitter {
     fn emit_new_expr(&mut self, new_expr: &crate::zigir::types::IrNewExpr) {
         match &new_expr.constructor {
             NewConstructor::Map => {
-                self.write("js_collections.JsMap.init()");
+                self.write("js_collections.JsMap.init(js_allocator.allocator())");
             }
             NewConstructor::Set => {
-                self.write("js_collections.JsSet.init()");
+                self.write("js_collections.JsSet.init(js_allocator.allocator())");
             }
             NewConstructor::Date(kind) => match kind {
                 DateConstructorKind::Now => {
@@ -980,25 +1057,36 @@ impl Emitter {
                     self.write(")");
                 }
                 DateConstructorKind::FromString => {
-                    self.write("js_date.JsDate.fromString(");
+                    // new Date("2024-01-01") → js_date.JsDate.fromMillis(js_date.parse("2024-01-01"))
+                    self.write("js_date.JsDate.fromMillis(js_date.parse(");
                     if let Some(arg) = new_expr.args.first() {
                         self.emit_expr(arg);
                     }
-                    self.write(")");
+                    self.write("))");
                 }
                 DateConstructorKind::FromComponents => {
+                    // new Date(y, m, d, h, min, s, ms)
+                    // Defaults for missing args: d=1, h=0, min=0, s=0, ms=0
                     self.write("js_date.JsDate.fromComponents(");
+                    let n_args = new_expr.args.len();
+                    let defaults = ["1", "0", "0", "0", "0"]; // d, h, min, s, ms
+                    // First two args (y, m) are always required
                     for (i, arg) in new_expr.args.iter().enumerate() {
                         if i > 0 {
                             self.write(", ");
                         }
                         self.emit_expr(arg);
                     }
+                    // Fill remaining with defaults
+                    for i in n_args..7 {
+                        self.write(&format!(", {}", defaults[i - 2]));
+                    }
                     self.write(")");
                 }
             },
             NewConstructor::RegExp => {
-                self.write("js_regexp.JsRegExp.init(");
+                // new RegExp(pat) → try js_regexp.JsRegExp.init(js_allocator.allocator(), pat)
+                self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
                 for (i, arg) in new_expr.args.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");
@@ -1009,11 +1097,18 @@ impl Emitter {
             }
             NewConstructor::TypedArray(kind) => {
                 let (module, init_fn) = typed_array_init(kind);
-                self.write(&format!("{}.{}(", module, init_fn));
+                let is_float = matches!(
+                    kind,
+                    TypedArrayKind::Float32Array | TypedArrayKind::Float64Array
+                );
+                let elem_type = if is_float { "f64" } else { "i64" };
+                self.write(&format!("{}.{}(&[_]{}{{", module, init_fn, elem_type));
+                // Emit array elements
                 if let Some(arg) = new_expr.args.first() {
+                    // The arg is typically an IrExpr::ArrayLiteral or similar
                     self.emit_expr(arg);
                 }
-                self.write(")");
+                self.write("})");
             }
             NewConstructor::Class(class_name) => {
                 self.write(&format!("{}.init(", class_name));
@@ -1039,19 +1134,20 @@ impl Emitter {
 }
 
 /// Map TypedArrayKind to (module, init_fn) for construction.
+/// Codegen uses fromI64AsI8/fromI64AsU8/.../fromF64 series instead of direct .init().
 fn typed_array_init(kind: &TypedArrayKind) -> (&'static str, &'static str) {
     match kind {
-        TypedArrayKind::Int8Array => ("js_typedarray", "JsInt8Array.init"),
-        TypedArrayKind::Uint8Array => ("js_typedarray", "JsUint8Array.init"),
-        TypedArrayKind::Uint8ClampedArray => ("js_typedarray", "JsUint8ClampedArray.init"),
-        TypedArrayKind::Int16Array => ("js_typedarray", "JsInt16Array.init"),
-        TypedArrayKind::Uint16Array => ("js_typedarray", "JsUint16Array.init"),
-        TypedArrayKind::Int32Array => ("js_typedarray", "JsInt32Array.init"),
-        TypedArrayKind::Uint32Array => ("js_typedarray", "JsUint32Array.init"),
-        TypedArrayKind::Float32Array => ("js_typedarray", "JsFloat32Array.init"),
-        TypedArrayKind::Float64Array => ("js_typedarray", "JsFloat64Array.init"),
-        TypedArrayKind::BigInt64Array => ("js_typedarray", "JsBigInt64Array.init"),
-        TypedArrayKind::BigUint64Array => ("js_typedarray", "JsBigUint64Array.init"),
+        TypedArrayKind::Int8Array => ("js_runtime.js_typedarray", "fromI64AsI8"),
+        TypedArrayKind::Uint8Array => ("js_runtime.js_typedarray", "fromI64AsU8"),
+        TypedArrayKind::Uint8ClampedArray => ("js_runtime.js_typedarray", "fromI64AsU8"),
+        TypedArrayKind::Int16Array => ("js_runtime.js_typedarray", "fromI64AsI16"),
+        TypedArrayKind::Uint16Array => ("js_runtime.js_typedarray", "fromI64AsU16"),
+        TypedArrayKind::Int32Array => ("js_runtime.js_typedarray", "fromI64AsI32"),
+        TypedArrayKind::Uint32Array => ("js_runtime.js_typedarray", "fromI64AsU32"),
+        TypedArrayKind::Float32Array => ("js_runtime.js_typedarray", "fromF64AsF32"),
+        TypedArrayKind::Float64Array => ("js_runtime.js_typedarray", "fromF64"),
+        TypedArrayKind::BigInt64Array => ("js_runtime.js_typedarray", "fromI64AsI64"),
+        TypedArrayKind::BigUint64Array => ("js_runtime.js_typedarray", "fromI64AsU64"),
     }
 }
 
