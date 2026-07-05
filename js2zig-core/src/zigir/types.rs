@@ -60,8 +60,7 @@ pub struct IrTypedef {
     pub name: String,
     pub fields: Vec<IrTypedefField>,
     pub is_opaque: bool,
-    /// Whether to generate a `toJson()` method (always true for non-opaque
-    /// typedefs, matching old Codegen behavior).
+    /// Whether to generate a `toJson()` method (always true for non-opaque typedefs).
     pub has_to_json: bool,
 }
 
@@ -820,7 +819,7 @@ pub enum ArrayCallbackKind {
 ///
 /// The Emitter uses this to generate a Zig loop instead of
 /// a runtime `js_array.method(callback)` call.
-
+///
 /// Whether the forEach callback iteration target is an Array, Map, or Set.
 /// Affects the iteration pattern (for-loop vs while-iterator).
 #[derive(Debug, Clone, PartialEq)]

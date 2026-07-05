@@ -238,7 +238,7 @@ impl Emitter {
         self.indent_pop();
 
         self.writeln("}");
-        // NOTE: No trailing blank line — Codegen's emit_fn doesn't add one either.
+        // NOTE: No trailing blank line.
         // Inter-declaration spacing is handled at the module level if needed.
     }
 }
@@ -930,7 +930,7 @@ impl Emitter {
         body: &IrBlock,
         label: &Option<String>,
     ) {
-        // Codegen wraps the entire for loop in a block scope: { init; while (cond) : ({ update; }) { body } }
+        // Wrap the entire for loop in a block scope: { init; while (cond) : ({ update; }) { body } }
         self.write_indent();
         if let Some(lbl) = label {
             self.write(&format!("{}: ", lbl));
@@ -1009,8 +1009,8 @@ impl Emitter {
                 self.emit_expr(iterable);
                 self.write(".iterator();\n");
                 // The while loop is NOT labeled separately — the label is on
-                // the outer `var __it` statement for HashMapIter. In Codegen,
-                // the label wraps `{ var __it = ... while ... }` as a single block.
+                // the outer `var __it` statement for HashMapIter.
+                // The label wraps `{ var __it = ... while ... }` as a single block.
                 // We match that by emitting the while at the same level.
                 self.write_indent();
                 self.write("while (");
@@ -1194,7 +1194,7 @@ impl Emitter {
         }
 
         // ── Case A: Has throw or nested try → full labeled block pattern ──
-        // Mirrors Codegen's double labeled-block pattern:
+        // Double labeled-block pattern:
         //   outer blk (_js_try_blk_N): scope for defer (finally) + catch dispatch
         //   inner body blk (_js_try_body_blk_N): scope for throw → break to catch
         let label_id = self.next_try_label();

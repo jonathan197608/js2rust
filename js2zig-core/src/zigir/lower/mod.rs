@@ -41,10 +41,10 @@ use helpers::FnContext;
 
 /// AST → ZigIR lowering engine.
 ///
-/// Composes 3 sub-structures instead of the old Codegen's 30+ flat fields:
-/// - `name_mangler`: counter-per-prefix + shadow-scope stack  (replaces 9 counters + shadow_renames)
-/// - `fn_ctx`:       per-function context                      (replaces 6+ flags + per-fn sets)
-/// - `closure_mgr`:  closure struct collection                 (replaces 4 closure fields)
+/// Composes 3 sub-structures:
+/// - `name_mangler`: counter-per-prefix + shadow-scope stack
+/// - `fn_ctx`:       per-function context
+/// - `closure_mgr`:  closure struct collection
 pub struct Lowerer {
     // ── Read-only inputs ──────────────────────────────
     /// Pre-computed type-inference results (read-only during lowering).

@@ -26,7 +26,7 @@ impl Emitter {
         } else {
             None
         };
-        let obj = bc.obj_name.as_deref().or_else(|| obj_inline.as_deref());
+        let obj = bc.obj_name.as_deref().or(obj_inline.as_deref());
         match bc.module {
             BuiltinModule::JsArray => self.emit_array_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsString => {
@@ -126,7 +126,6 @@ impl Emitter {
         }
 
         // Method dispatch: JS name → Zig runtime name + allocator + fallible.
-        // Mirrors Codegen's StringRuntimeDesc table (tables.rs).
         let (zig_method, needs_allocator, is_fallible, min_args, max_args, opt_defaults): (
             &str,
             bool,
@@ -538,7 +537,7 @@ impl Emitter {
                 if let Some(name) = obj {
                     self.write(name);
                 }
-                for (_i, arg) in args.iter().enumerate() {
+                for arg in args.iter() {
                     self.write(", ");
                     self.emit_expr(arg);
                 }
@@ -623,7 +622,7 @@ impl Emitter {
 
     fn emit_math_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         // Many Math methods map to Zig builtin functions (@sqrt, @floor, etc.)
-        // rather than std.math.*(). This mirrors Codegen's tables.rs mapping.
+        // rather than std.math.*().
         // NOTE: We emit args manually (without emit_args which adds parens).
         match method {
             // Direct Zig builtins
@@ -711,7 +710,7 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
-            // min/max — use Codegen's blk expansion pattern
+            // min/max — use blk expansion pattern
             "min" => {
                 let blk = self.next_label();
                 match args.len() {
@@ -1012,7 +1011,7 @@ impl Emitter {
             self.write(&format!("js_runtime.js_typedarray.{}{}(", method, suffix));
             if let Some(name) = obj {
                 self.write(name);
-                for (_i, arg) in args.iter().enumerate() {
+                for arg in args.iter() {
                     self.write(", ");
                     self.emit_expr(arg);
                 }
@@ -1276,8 +1275,7 @@ impl Emitter {
     /// Emit an inlined array callback method (forEach, some, every, filter,
     /// find, findIndex, findLast, findLastIndex, map, reduce) as a Zig loop.
     ///
-    /// This mirrors the Codegen's callback inlining patterns from
-    /// `codegen/builtins.rs` lines 2318–2901, but operates on the IR
+    /// Inline callback methods operate on IR nodes rather than AST.
     /// `IrArrayCallbackInline` data instead of raw AST.
     pub(crate) fn emit_array_callback_inline(
         &mut self,
@@ -1690,7 +1688,7 @@ impl Emitter {
 
     // ── map (identity stub) ────────────────────────────
     //
-    //  Codegen just returns the object name — map is not fully implemented.
+    //  The Emitter just returns the object name — map is not fully implemented.
     //
     fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
         self.write(&data.obj_name);
@@ -1759,7 +1757,7 @@ impl Emitter {
     // ═══════════════════════════════════════════════════════
 
     /// Emit an inlined array non-callback method as a Zig block expression or
-    /// statement. This mirrors the Codegen's inline patterns for includes,
+    /// statement. This handles inline patterns for includes,
     /// indexOf, lastIndexOf, join, slice, splice, at, concat, copyWithin, fill.
     pub(crate) fn emit_array_method_inline(
         &mut self,
@@ -1980,7 +1978,7 @@ impl Emitter {
             data.obj_name
         ));
         // Insert items if provided (args beyond start and count)
-        // Use insertSlice for batch insertion, matching Codegen pattern
+        // Use insertSlice for batch insertion
         if data.args.len() > 2 {
             let insert_items: Vec<String> = data.args[2..]
                 .iter()
@@ -2049,7 +2047,7 @@ impl Emitter {
 
     // ── copyWithin ─────────────────────────────────────
     // Simplified: for (obj.items[@intCast(start)..@intCast(end)]) |*elem, i| { elem.* = obj.items[@intCast(target) + i]; }
-    // Full Codegen version has reverse copy logic when target > start.
+    // Full version has reverse copy logic when target > start.
     // For now, emit a simpler forward-only version.
     fn emit_copy_within_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let blk = self.next_label();

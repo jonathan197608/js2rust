@@ -118,7 +118,7 @@ impl NameMangler {
 
     /// Generate the next unique name for a given prefix.
     /// Always includes a counter: `"{prefix}_0"`, `"{prefix}_1"`, `"{prefix}_2"`, etc.
-    /// This matches Codegen's naming convention (e.g., `_js_dest_0`, `_js_dest_1`).
+    /// This uses the standard naming convention (e.g., `_js_dest_0`, `_js_dest_1`).
     pub fn next_name(&mut self, prefix: &str) -> String {
         let count = self.counters.entry(prefix.to_string()).or_insert(0);
         let name = format!("{}_{}", prefix, count);

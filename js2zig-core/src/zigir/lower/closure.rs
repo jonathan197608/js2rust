@@ -16,8 +16,7 @@ impl Lowerer {
     /// Convert collected closure definitions from ClosureManager
     /// into IrClosureStruct nodes.
     ///
-    /// In the old Codegen these were string snippets prepended to output.
-    /// In ZigIR they become structured IrClosureStruct nodes.
+    /// In ZigIR these are structured IrClosureStruct nodes.
     ///
     /// After lowering, `closure_mgr.closure_vars` contains the mapping from
     /// struct name ¡ú captured vars that was built during `lower_arrow_fn` /

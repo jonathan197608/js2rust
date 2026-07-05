@@ -11,26 +11,25 @@ use crate::types::ZigType;
 
 /// Per-function context for the Lowerer.
 ///
-/// Groups the 6+ flags and per-function sets that were previously
-/// scattered across the Codegen "god struct" as flat fields:
+/// Groups the 6+ flags and per-function sets:
 ///
-/// | Old Codegen fields            | FnContext field         |
-/// |-------------------------------|-------------------------|
-/// | current_fn                    | name                    |
-/// | current_fn_is_export          | is_export               |
-/// | current_fn_return_type        | return_type             |
-/// | seen_return                   | seen_return             |
-/// | fn_has_throw                  | fn_has_throw            |
-/// | in_return_expr                | in_return_expr          |
-/// | in_expr_stmt                  | in_expr_stmt            |
-/// | call_generated_catch          | call_generated_catch    |
-/// | inside_try_block              | inside_try_block        |
-/// | current_class                 | current_class           |
-/// | nested_fn_names               | nested_fn_names         |
-/// | current_nested_fn_name        | current_nested_fn_name  |
-/// | fn_scope_vars                 | fn_scope_vars           |
-/// | typedarray_vars               | typedarray_vars         |
-/// | regexp_vars                   | regexp_vars             |
+/// | Field                         | Purpose                |
+/// |-------------------------------|------------------------|
+/// | name                          | current fn name        |
+/// | is_export                     | C ABI export flag      |
+/// | return_type                   | fn return type         |
+/// | seen_return                   | has return expr        |
+/// | fn_has_throw                  | contains throw/try     |
+/// | in_return_expr                | inside return expr     |
+/// | in_expr_stmt                  | inside expr statement  |
+/// | call_generated_catch          | catch dispatch needed  |
+/// | inside_try_block              | inside try block       |
+/// | current_class                 | current class name     |
+/// | nested_fn_names               | nested fn name set     |
+/// | current_nested_fn_name        | current nested fn      |
+/// | fn_scope_vars                 | fn-local var types     |
+/// | typedarray_vars               | typedarray var set     |
+/// | regexp_vars                   | regexp var set         |
 pub struct FnContext {
     /// Current function name.
     pub name: String,

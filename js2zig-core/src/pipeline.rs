@@ -302,7 +302,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut has_error = false;
             let mut file_diagnostics: Vec<String> = Vec::new();
 
-            // --- Codegen pass (all metadata from group AST, no source scanning) ---
+            // --- Transpile pass (all metadata from group AST, no source scanning) ---
             let core_exports = group
                 .exported_names
                 .get(&group.core_file)
@@ -352,7 +352,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // For normal groups: core file's JS exports → C ABI;
                 //                    additional core files → C ABI (full exports);
                 //                    dependency file: only re-exported names → C ABI.
-                let codegen_exports: HashSet<String> = if is_test_group {
+                let transpile_exports: HashSet<String> = if is_test_group {
                     group.all_fn_names.get(member).cloned().unwrap_or_default()
                 } else if *member == group.core_file || additional_core_set.contains(member) {
                     group
@@ -387,7 +387,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 // Use native_proto (strict static type system) — pre-parsed AST
                 // from analyze_single_group, no re-parsing of source text.
-                let exports_for_all_modules = codegen_exports.clone();
+                let exports_for_all_modules = transpile_exports.clone();
 
                 let program = match group.parsed_programs.get(member) {
                     Some(p) => p,
@@ -400,7 +400,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let transpile_result = crate::native_proto::transpile_js(
                     program,
                     &src,
-                    Some(codegen_exports),
+                    Some(transpile_exports),
                     Some(&host_fns),
                 );
 
@@ -479,7 +479,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     .partition(|d| !d.message.contains("(Rule 8)"));
                 if !hard_errors.is_empty() {
                     let err_count = hard_errors.len();
-                    eprintln!("  skip '{}': {} codegen error(s)", member, err_count);
+                    eprintln!("  skip '{}': {} transpile error(s)", member, err_count);
                     for diag in &hard_errors {
                         eprintln!("    {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
@@ -560,20 +560,20 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
-            // Only skip the group if NO files succeeded codegen.
+            // Only skip the group if NO files succeeded transpilation.
             // Individual file errors are logged above; successful files still get compiled.
             if per_file_modules.is_empty() {
                 if has_error {
-                    eprintln!("  skip: all files failed codegen");
+                    eprintln!("  skip: all files failed transpilation");
                 } else {
-                    eprintln!("  skip: no valid modules after codegen");
+                    eprintln!("  skip: no valid modules after transpilation");
                 }
                 continue;
             }
 
             if has_error {
                 eprintln!(
-                    "  warning: {} file(s) had codegen errors, continuing with {} successful file(s)",
+                    "  warning: {} file(s) had transpile errors, continuing with {} successful file(s)",
                     group.members.len() - per_file_modules.len(),
                     per_file_modules.len()
                 );

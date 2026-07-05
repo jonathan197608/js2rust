@@ -122,7 +122,7 @@ pub struct ProjectConfig {
     pub host_config: Option<HostConfig>,
     /// Force rebuild (skip incremental cache).
     pub force_rebuild: bool,
-    /// Whether to run `zig build` after codegen.
+    /// Whether to run `zig build` after transpilation.
     pub run_zig_build: bool,
 }
 

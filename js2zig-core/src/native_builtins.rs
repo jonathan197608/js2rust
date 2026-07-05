@@ -2,7 +2,7 @@
 // Built-in object methods (Math, Array, String, etc.)
 //
 // This module only defines the BuiltinCall enum and detection function.
-// The emission logic is in codegen.rs (since it needs to call private methods).
+// The emission logic is in zigir::emit::builtins (since it needs to call private methods).
 
 use crate::types::ZigType;
 
@@ -94,7 +94,7 @@ pub enum BuiltinCall {
     ArrayOf,      // Array.of(...items)
     ArrayIsArray, // Array.isArray(obj)
 
-    // TypedArray methods (.get/.set routed through MapGet/MapSet in codegen,
+    // TypedArray methods (.get/.set routed through MapGet/MapSet in the Emitter,
     // .slice routed through ArraySlice + typedarray_vars check)
     TypedArraySubarray, // arr.subarray(start, end)
 
@@ -629,7 +629,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
 
             // TypedArray-specific methods (non-overlapping with Array)
             "subarray" => Some(BuiltinCall::TypedArraySubarray),
-            // copyWithin routes to ArrayCopyWithin (codegen dispatches to TypedArray)
+            // copyWithin routes to ArrayCopyWithin (Emitter dispatches to TypedArray)
 
             // Date instance methods (called on a JsDate struct)
             "getTime" => Some(BuiltinCall::DateGetTime),
@@ -686,12 +686,12 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "get" => Some(BuiltinCall::MapGet),
             "has" => {
                 // Could be Map.has() or Set.has()
-                // Default to Map.has(), will be resolved in codegen
+                // Default to Map.has(), will be resolved in the Emitter
                 Some(BuiltinCall::MapHas)
             }
             "delete" => {
                 // Could be Map.delete() or Set.delete()
-                // Default to Map.delete(), will be resolved in codegen
+                // Default to Map.delete(), will be resolved in the Emitter
                 Some(BuiltinCall::MapDelete)
             }
             "clear" => {

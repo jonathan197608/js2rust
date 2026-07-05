@@ -139,16 +139,16 @@ impl Lowerer {
         // Never inline array methods for string variables ï¿½ï¿½ these should go through
         // BuiltinCall (JsString) instead. Check variable type from TypeInfo.
         let obj_name_raw = Self::extract_callee_object_name_static(&ce.callee);
-        if let Some(name) = &obj_name_raw {
-            if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
-                if matches!(var_type, ZigType::Str) {
-                    return None;
-                }
-                if let ZigType::NamedStruct(n) = var_type {
-                    if Self::is_typedarray_type(n) {
-                        return None;
-                    }
-                }
+        if let Some(name) = &obj_name_raw
+            && let Some(var_type) = self.type_info.var_types.get(name.as_str())
+        {
+            if matches!(var_type, ZigType::Str) {
+                return None;
+            }
+            if let ZigType::NamedStruct(n) = var_type
+                && Self::is_typedarray_type(n)
+            {
+                return None;
             }
         }
         let obj_name = obj_name_raw?;
@@ -233,7 +233,6 @@ impl Lowerer {
         let has_idx_param = idx_param_raw.is_some();
 
         // Check if parameters are actually used in the callback body.
-        // We use the same simple AST walk as Codegen's arrow_body_uses_ident().
         let elem_used = body
             .statements
             .iter()
@@ -478,8 +477,7 @@ impl Lowerer {
     }
 
     // ï¿½ï¿½ï¿½ï¿½ AST ident-usage helpers ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
-    // These mirror Codegen's stmt_uses_ident / expr_uses_ident,
-    // used to check whether a callback parameter is actually referenced.
+    // AST ident-usage helpers — used to check whether a callback parameter is actually referenced.
 
     pub(super) fn ast_stmt_uses_ident(ident: &str, stmt: &Statement) -> bool {
         match stmt {

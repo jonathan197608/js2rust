@@ -866,7 +866,7 @@ impl Emitter {
                 .unwrap_or("i64")
         };
 
-        // Emit as labeled block with ArrayList builder, matching Codegen pattern:
+        // Emit as labeled block with ArrayList builder:
         // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
         let blk = self.next_label();
         self.write(&format!(
@@ -928,7 +928,7 @@ impl Emitter {
         }
 
         // Has spread: build a left-fold spreadMerge(...) chain.
-        // Strategy (same as Codegen):
+        // Strategy:
         //   { ...a }                       → a
         //   { ...a, ...b }                 → js_runtime.spreadMerge(a, b)
         //   { ...a, b: 1 }                 → js_runtime.spreadMerge(a, .{ .b = 1 })
@@ -1134,7 +1134,7 @@ impl Emitter {
 }
 
 /// Map TypedArrayKind to (module, init_fn) for construction.
-/// Codegen uses fromI64AsI8/fromI64AsU8/.../fromF64 series instead of direct .init().
+/// Uses fromI64AsI8/fromI64AsU8/.../fromF64 series instead of direct .init().
 fn typed_array_init(kind: &TypedArrayKind) -> (&'static str, &'static str) {
     match kind {
         TypedArrayKind::Int8Array => ("js_runtime.js_typedarray", "fromI64AsI8"),

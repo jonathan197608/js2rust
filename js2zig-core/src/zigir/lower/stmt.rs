@@ -665,8 +665,7 @@ impl Lowerer {
     }
 
     /// Check if a statement contains a `throw` (directly, not inside a
-    /// nested try-catch ¡ª those throws are caught by the inner catch).
-    /// Mirrors Codegen's `stmt_has_throw_any`.
+    /// nested try-catch — those throws are caught by the inner catch).
     pub(super) fn stmt_has_throw_any(stmt: &Statement) -> bool {
         match stmt {
             Statement::ThrowStatement(_) => true,

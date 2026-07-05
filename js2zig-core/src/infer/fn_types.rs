@@ -153,7 +153,7 @@ impl TypeInferrer {
         match ty {
             Some(definite_ty) => {
                 // When the return type is Anytype and all return expressions depend on
-                // anytype parameters, use AnytypeReturn so codegen emits @TypeOf(...).
+                // anytype parameters, use AnytypeReturn so the Emitter emits @TypeOf(...).
                 // This lets Zig resolve the concrete type at the call site.
                 if definite_ty == ZigType::Anytype
                     && Self::all_return_exprs_depend_on_anytype_params(

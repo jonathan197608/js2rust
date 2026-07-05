@@ -41,7 +41,7 @@ pub enum ZigType {
     /// Wraps `std.math.big.int.Managed`.
     BigInt,
     /// Return type depends on anytype parameters (non-export functions only).
-    /// Codegen emits `@TypeOf(return_expr)` instead of a concrete Zig type.
+    /// The Emitter emits `@TypeOf(return_expr)` instead of a concrete Zig type.
     /// This allows Zig to infer the return type at compile time from the
     /// actual concrete types of anytype parameters.
     AnytypeReturn,
@@ -51,7 +51,7 @@ impl ZigType {
     /// Get the Zig type string for code generation.
     /// NOTE: This method does NOT add "host." prefix for NamedStruct.
     /// If the type refers to a host-defined struct, the caller must add "host."
-    /// prefix manually (e.g., in codegen when generating non-host module code).
+    /// prefix manually (e.g., in the Emitter when generating non-host module code).
     pub fn to_zig_type(&self) -> String {
         match self {
             ZigType::Void => "void".to_string(),
@@ -83,7 +83,7 @@ impl ZigType {
             ZigType::JsAny => "JsAny".to_string(),
             ZigType::JsSymbol => "JsSymbol".to_string(),
             ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
-            ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Codegen replaces with @TypeOf
+            ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Emitter replaces with @TypeOf
         }
     }
 
@@ -206,13 +206,13 @@ pub struct TranspileResult {
     /// Inferred variable types (for cross-file type propagation, future use).
     pub var_types: std::collections::HashMap<String, ZigType>,
     /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).
-    /// Uses `codegen::CabiExport` for compatibility with the pipeline.
+    /// Uses `NativeCabiExport` for compatibility with the pipeline.
     pub cabi_exports: Vec<NativeCabiExport>,
 }
 
 // ── JSDoc data ───────────────────────────────────────────
 
-/// JSDoc 解析结果，传递给 Codegen
+/// JSDoc 解析结果，传递给 Lowerer
 #[derive(Debug, Clone)]
 pub struct JSDocData {
     /// @typedef 定义：类型名 → TypedefDef
@@ -227,7 +227,7 @@ pub struct JSDocData {
 
 // ── Name generator ───────────────────────────────────────
 
-/// Unique-name generation counters, extracted from the Codegen "god struct".
+/// Unique-name generation counters.
 ///
 /// Each `next_*` method atomically reads and increments its counter,
 /// replacing the manual read-then-increment pattern that was previously
@@ -321,7 +321,7 @@ impl NameGen {
     }
 
     /// Return the id of the most recently generated label (since the last `next_label` call).
-    /// Equivalent to the old `self.label_counter - 1` idiom used for temp var suffixes.
+    /// Equivalent to the old `self.label_counter - 1` idiom for temp var suffixes.
     pub fn last_label_id(&self) -> u32 {
         self.label_counter - 1
     }
@@ -344,7 +344,7 @@ impl NameGen {
 
 // ── Closure manager ──────────────────────────────────────
 
-/// Closure-related state, extracted from the Codegen "god struct".
+/// Closure-related state.
 ///
 /// Groups the four fields that track closure (arrow function) capture
 /// semantics: what variables are captured, which runtime instances are

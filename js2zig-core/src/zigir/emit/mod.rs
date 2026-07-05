@@ -20,8 +20,7 @@ use helpers::EmitterHelpers;
 
 /// ZigIR → Zig source code emitter.
 ///
-/// Mirrors the old Codegen's output format but works from structured IR
-/// instead of AST + inline type lookups. The Emitter is stateless with
+/// Generates Zig source code from structured IR instead of AST + inline type lookups. The Emitter is stateless with
 /// respect to semantics — all meaning is encoded in the IR nodes.
 ///
 /// Internal state:
@@ -89,7 +88,7 @@ impl Emitter {
 
     fn emit_module_inner(&mut self, module: &IrModule) {
         // 1. Emit closure struct definitions (prepended before declarations).
-        //    Old Codegen prepends these via prefix swap; Emitter emits in order.
+        //    Closure struct definitions are emitted before declarations.
         for closure_struct in &module.closure_structs {
             self.emit_closure_struct(closure_struct);
         }
@@ -114,7 +113,7 @@ impl Emitter {
             IrDecl::Class(class_decl) => self.emit_class_decl(class_decl),
             IrDecl::CompileError { span: _, msg } => {
                 // Toplevel "errors" are emitted as comments (soft diagnostics),
-                // not @compileError — matching Codegen behavior.
+                // not @compileError — soft diagnostics.
                 if msg.starts_with("toplevel") || msg.starts_with("skipped unused") {
                     self.writeln(&format!("// error: {}", msg));
                 } else {

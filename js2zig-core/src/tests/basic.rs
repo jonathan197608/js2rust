@@ -1,4 +1,4 @@
-// Basic codegen: operators, control flow, loops, switch, e2e
+// Basic transpilation: operators, control flow, loops, switch, e2e
 
 use super::common::*;
 
@@ -610,7 +610,7 @@ return gatherKeys(obj);
 
 #[test]
 fn test_p2_for_in_static_codegen() {
-    // Codegen verification: for-in with static struct → unrolled loop
+    // Transpilation verification: for-in with static struct → unrolled loop
     // This is the "showcase integration" test for P2 #6.
     let js = r#"
 function gatherKeys(obj) {

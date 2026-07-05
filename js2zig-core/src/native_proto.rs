@@ -70,7 +70,7 @@ fn transpile_js_inner(
     let infer_errors = type_info.errors.clone();
     let var_types = type_info.var_types.clone();
 
-    // Extract async host function names for io.async() codegen.
+    // Extract async host function names for io.async() emission.
     let async_host_fns: std::collections::HashSet<String> = if let Some(hf) = host_fns {
         hf.async_fn_names().into_iter().collect()
     } else {

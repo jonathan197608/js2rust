@@ -615,7 +615,7 @@ impl TypeInferrer {
                 }
             }
             // Exponential: JS `**` always returns number (f64).
-            // Codegen generates std.math.pow(f64, ...) for all non-BigInt cases.
+            // The Emitter generates std.math.pow(f64, ...) for all non-BigInt cases.
             BinaryOperator::Exponential => {
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;

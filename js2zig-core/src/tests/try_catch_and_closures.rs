@@ -350,7 +350,7 @@ try {
     // NOTE: assert_zig_ast_check skipped due to known limitation:
     // When nested try-catch has no throw in inner body, the outer body
     // block label (_js_try_body_blk_0) is generated but never referenced.
-    // This is tracked as a minor codegen optimization issue.
+    // This is tracked as a minor emission optimization issue.
 }
 
 // ── Test: ** operator (exponentiation) ─────────────

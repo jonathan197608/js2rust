@@ -777,31 +777,28 @@ impl Lowerer {
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
 
-        // ©¤©¤ Special-case compound assignments that need expansion ©¤©¤
-        match ae.operator {
-            // **= ¡ú a = std.math.pow(a, b) via PowExpr
-            AssignmentOperator::Exponential => {
-                let target = self.lower_assign_target(&ae.left);
-                let value = Box::new(self.lower_expr(&ae.right));
-                // Read target as expression for the PowExpr base
-                let base_ident = match &target {
-                    crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
-                    _ => IrExpr::Ident(IrIdent::new("__target")),
-                };
-                return IrExpr::Assign {
-                    op: AssignOp::Assign,
-                    target: Box::new(target),
-                    value: Box::new(IrExpr::PowExpr {
-                        base: Box::new(base_ident),
-                        exp: value,
-                        base_type: crate::types::ZigType::F64,
-                        exp_type: crate::types::ZigType::F64,
-                    }),
-                };
-            }
-            // &&= / ||= / ??= ¡ú use AssignOp, Emitter will expand
-            _ => {}
+        // ── Special-case compound assignments that need expansion ──
+        // **= → a = std.math.pow(a, b) via PowExpr
+        if ae.operator == AssignmentOperator::Exponential {
+            let target = self.lower_assign_target(&ae.left);
+            let value = Box::new(self.lower_expr(&ae.right));
+            // Read target as expression for the PowExpr base
+            let base_ident = match &target {
+                crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
+                _ => IrExpr::Ident(IrIdent::new("__target")),
+            };
+            return IrExpr::Assign {
+                op: AssignOp::Assign,
+                target: Box::new(target),
+                value: Box::new(IrExpr::PowExpr {
+                    base: Box::new(base_ident),
+                    exp: value,
+                    base_type: crate::types::ZigType::F64,
+                    exp_type: crate::types::ZigType::F64,
+                }),
+            };
         }
+        // &&= / ||= / ??= → use AssignOp, Emitter will expand
 
         let op = match ae.operator {
             AssignmentOperator::Assign => AssignOp::Assign,
@@ -1023,7 +1020,7 @@ impl Lowerer {
 
     /// Lower a call expression.
     ///
-    /// Routing priority (mirrors Codegen's `emit_call`):
+    /// Routing priority:
     /// 1. Builtin detection ¡ú `IrBuiltinCall`
     /// 2. Closure / nested function call ¡ú `IrCall { call_kind: Closure }`
     /// 3. Host function call ¡ú `IrHostCall`
@@ -1198,50 +1195,50 @@ impl Lowerer {
         // `r.test(s)` or `r.exec(s)` where `r` is a known RegExp variable.
         // detect_builtin_call only identifies RegExpTest/RegExpExec for RegExpLiteral receivers.
         // For variable receivers, we intercept here using regexp_vars tracking.
-        if let Expression::StaticMemberExpression(sme) = &ce.callee {
-            if let Expression::Identifier(id) = &sme.object {
-                let var_name = id.name.as_str();
-                if let Some(ctx) = &self.fn_ctx {
-                    if ctx.regexp_vars.contains(var_name) {
-                        let method = sme.property.name.as_str();
-                        match method {
-                            "test" => {
-                                return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                                    module: BuiltinModule::JsRegExp,
-                                    method: "test".into(),
-                                    obj_name: Some(var_name.to_string()),
-                                    obj_expr: None,
-                                    args,
-                                    return_type: ZigType::Bool,
-                                    regex_info: Some(crate::zigir::types::IrRegexInfo {
-                                        pattern: None,
-                                        has_global: false,
-                                        is_var_ref: true,
-                                        var_name: Some(var_name.to_string()),
-                                    }),
-                                    ta_type_suffix: None,
-                                });
-                            }
-                            "exec" => {
-                                return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                                    module: BuiltinModule::JsRegExp,
-                                    method: "exec".into(),
-                                    obj_name: Some(var_name.to_string()),
-                                    obj_expr: None,
-                                    args,
-                                    return_type: ZigType::JsAny,
-                                    regex_info: Some(crate::zigir::types::IrRegexInfo {
-                                        pattern: None,
-                                        has_global: false,
-                                        is_var_ref: true,
-                                        var_name: Some(var_name.to_string()),
-                                    }),
-                                    ta_type_suffix: None,
-                                });
-                            }
-                            _ => {} // other methods fall through
-                        }
+        if let Expression::StaticMemberExpression(sme) = &ce.callee
+            && let Expression::Identifier(id) = &sme.object
+        {
+            let var_name = id.name.as_str();
+            if let Some(ctx) = &self.fn_ctx
+                && ctx.regexp_vars.contains(var_name)
+            {
+                let method = sme.property.name.as_str();
+                match method {
+                    "test" => {
+                        return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: BuiltinModule::JsRegExp,
+                            method: "test".into(),
+                            obj_name: Some(var_name.to_string()),
+                            obj_expr: None,
+                            args,
+                            return_type: ZigType::Bool,
+                            regex_info: Some(crate::zigir::types::IrRegexInfo {
+                                pattern: None,
+                                has_global: false,
+                                is_var_ref: true,
+                                var_name: Some(var_name.to_string()),
+                            }),
+                            ta_type_suffix: None,
+                        });
                     }
+                    "exec" => {
+                        return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: BuiltinModule::JsRegExp,
+                            method: "exec".into(),
+                            obj_name: Some(var_name.to_string()),
+                            obj_expr: None,
+                            args,
+                            return_type: ZigType::JsAny,
+                            regex_info: Some(crate::zigir::types::IrRegexInfo {
+                                pattern: None,
+                                has_global: false,
+                                is_var_ref: true,
+                                var_name: Some(var_name.to_string()),
+                            }),
+                            ta_type_suffix: None,
+                        });
+                    }
+                    _ => {} // other methods fall through
                 }
             }
         }
@@ -1280,15 +1277,15 @@ impl Lowerer {
                 }
 
                 // Nested function call: rewrite to name.call(args)
-                if let Some(ctx) = &self.fn_ctx {
-                    if ctx.is_nested_fn(name) {
-                        let callee_ident = self.make_ident(name);
-                        return IrExpr::Call(crate::zigir::types::IrCallExpr {
-                            callee: Box::new(IrExpr::Ident(callee_ident)),
-                            args,
-                            call_kind: CallKind::Closure,
-                        });
-                    }
+                if let Some(ctx) = &self.fn_ctx
+                    && ctx.is_nested_fn(name)
+                {
+                    let callee_ident = self.make_ident(name);
+                    return IrExpr::Call(crate::zigir::types::IrCallExpr {
+                        callee: Box::new(IrExpr::Ident(callee_ident)),
+                        args,
+                        call_kind: CallKind::Closure,
+                    });
                 }
 
                 // Direct user function call
@@ -1721,7 +1718,7 @@ impl Lowerer {
                 }
                 None
             }
-            // Could add more patterns here from Codegen's infer_expr_type
+            // Could add more patterns here
             _ => None,
         }
     }
@@ -2572,7 +2569,7 @@ impl Lowerer {
             tl.expressions.iter().map(|e| self.lower_expr(e)).collect();
 
         // Determine the Zig format specifier for each interpolation expression.
-        // This must match Codegen's logic:
+        // This must match the Emitter's logic:
         //   Str¡ú{s}, I64/F64¡ú{d}, Bool¡ú{}, other¡úexpr_is_string?{s}:{}
         let format_specs: Vec<String> = tl
             .expressions

@@ -77,7 +77,7 @@ impl Lowerer {
             .mutated_vars
             .contains(&format!("{}::{}", fn_prefix, js_name));
 
-        // Skip unused toplevel constants (same logic as Codegen)
+        // Skip unused toplevel constants
         let has_type_annotation = self.jsdoc_data.type_annotations.contains_key(js_name);
         if self.fn_ctx.is_none()
             && is_const
@@ -129,7 +129,7 @@ impl Lowerer {
                 // Instead of returning IrExpr::ArrowFn as init, we:
                 // 1. Register the struct definition in module.closure_structs
                 // 2. Return IrExpr::Ident pointing to the struct name
-                // This matches Codegen's output pattern:
+                // This produces the output pattern:
                 //   const _arrow_fn_0 = struct { ... };
                 //   const double = _arrow_fn_0;
                 let ir = self.lower_expr(expr);
@@ -165,21 +165,19 @@ impl Lowerer {
         };
 
         // Register TypedArray variables (for suffix lookup in lower_call)
-        if let Some(ZigType::NamedStruct(n)) = &zig_type {
-            if let Some(suffix) = Self::typedarray_type_suffix(n) {
-                if let Some(ctx) = self.fn_ctx.as_mut() {
-                    ctx.add_typedarray_var(&ident.zig_name, suffix);
-                }
-            }
+        if let Some(ZigType::NamedStruct(n)) = &zig_type
+            && let Some(suffix) = Self::typedarray_type_suffix(n)
+            && let Some(ctx) = self.fn_ctx.as_mut()
+        {
+            ctx.add_typedarray_var(&ident.zig_name, suffix);
         }
 
         // Register RegExp variables (for .test()/.exec() method dispatch in lower_call)
-        if let Some(expr) = decl.init.as_ref() {
-            if Self::is_regexp_expr(expr) {
-                if let Some(ctx) = self.fn_ctx.as_mut() {
-                    ctx.add_regexp_var(&ident.zig_name);
-                }
-            }
+        if let Some(expr) = decl.init.as_ref()
+            && Self::is_regexp_expr(expr)
+            && let Some(ctx) = self.fn_ctx.as_mut()
+        {
+            ctx.add_regexp_var(&ident.zig_name);
         }
 
         IrDecl::Var(IrVarDecl {
@@ -803,7 +801,7 @@ impl Lowerer {
     /// Pre-scan: check if a function body contains `throw` or `try-catch`.
     ///
     /// This is needed to determine whether the return type should be an
-    /// error union (`!T` vs `T`). Ported from Codegen's `has_throw_in_body()`.
+    /// error union (`!T` vs `T`).
     pub(super) fn has_throw_in_body(body: &FunctionBody) -> bool {
         body.statements.iter().any(|s| Self::stmt_has_throw(s))
     }

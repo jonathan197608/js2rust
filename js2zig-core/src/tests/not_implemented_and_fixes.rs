@@ -1108,7 +1108,7 @@ fn test_method_chaining_array_join_after_map() {
     // ArrayMap is a stub (returns original array), so join should work on it
     assert!(
         zig.contains("__join_buf") || zig.contains("join"),
-        "Expected array join codegen"
+        "Expected array join emission"
     );
 }
 
