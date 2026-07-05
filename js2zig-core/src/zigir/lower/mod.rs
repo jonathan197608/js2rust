@@ -1983,6 +1983,13 @@ impl Lowerer {
                     has_constructor = true;
                     constructor_func = Some(&md.value);
                 }
+                ClassElement::StaticBlock(sb) => {
+                    self.diagnostics.push(IrDiagnostic {
+                        level: DiagnosticLevel::Error,
+                        span: Some(self.span_to_source_span(sb.span)),
+                        message: "static {} blocks are not supported. Use static field initializers instead.".to_string(),
+                    });
+                }
                 _ => {}
             }
         }
@@ -2549,6 +2556,23 @@ impl Lowerer {
             }
         }
 
+        // ── Unsupported operators → compile error ──
+        match be.operator {
+            BinaryOperator::Instanceof => {
+                return IrExpr::CompileError {
+                    span: self.span_to_source_span(be.span),
+                    msg: "instanceof operator is not supported in Zig".to_string(),
+                };
+            }
+            BinaryOperator::In => {
+                return IrExpr::CompileError {
+                    span: self.span_to_source_span(be.span),
+                    msg: "in operator is not supported in Zig".to_string(),
+                };
+            }
+            _ => {}
+        }
+
         let op = match be.operator {
             BinaryOperator::Addition => BinOp::Add,
             BinaryOperator::Subtraction => BinOp::Sub,
@@ -2570,8 +2594,9 @@ impl Lowerer {
             BinaryOperator::ShiftLeft => BinOp::Shl,
             BinaryOperator::ShiftRight => BinOp::Shr,
             BinaryOperator::ShiftRightZeroFill => BinOp::UrShr,
-            BinaryOperator::In => BinOp::In,
-            BinaryOperator::Instanceof => BinOp::InstanceOf,
+            // Instanceof and In are handled above — these arms are unreachable
+            // but kept for exhaustiveness.
+            BinaryOperator::Instanceof | BinaryOperator::In => unreachable!(),
         };
 
         IrExpr::Binary {
@@ -2875,6 +2900,14 @@ impl Lowerer {
             // ── Step 1b: Array non-callback method inlining ──
             if let Some(inlined) = self.try_inline_array_method(ce, &builtin, &args) {
                 return inlined;
+            }
+
+            // ── Step 1c: eval() → compile error ──
+            if matches!(builtin, crate::native_builtins::BuiltinCall::Eval) {
+                return IrExpr::CompileError {
+                    span: self.span_to_source_span(ce.span),
+                    msg: "eval() is not supported (security risk, cannot dynamically execute at compile time)".to_string(),
+                };
             }
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
