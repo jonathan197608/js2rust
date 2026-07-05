@@ -700,6 +700,313 @@ impl Lowerer {
         })
     }
 
+    /// Lower a destructuring variable declaration.
+    ///
+    /// Handles `const {a, b} = expr` and `const [a, b] = expr` by constructing
+    /// an `IrStmt::DestructureDecl` that the Emitter expands into temp variable
+    /// + individual const/var declarations.
+    fn lower_destructure_decl(&mut self, decl: &VariableDeclarator) -> crate::zigir::types::IrStmt {
+        use crate::zigir::types::{
+            IrDestructureAccess, IrDestructureBindingDecl, IrDestructureDecl, IrDestructureKind,
+        };
+
+        let Some(init_expr) = &decl.init else {
+            return crate::zigir::types::IrStmt::CompileError {
+                span: SourceSpan::default(),
+                msg: "destructuring requires an initializer".to_string(),
+            };
+        };
+
+        let init_ir = self.lower_expr(init_expr);
+
+        match &decl.id {
+            BindingPattern::ObjectPattern(op) => {
+                // ── Object destructuring ──
+                let init_type = if let Expression::Identifier(id) = init_expr {
+                    self.type_info.var_types.get(id.name.as_str()).cloned()
+                } else {
+                    None
+                };
+
+                let struct_field_names: Option<Vec<String>> = match &init_type {
+                    Some(ZigType::Struct(fields)) if !fields.is_empty() => {
+                        Some(fields.iter().map(|(n, _)| n.clone()).collect())
+                    }
+                    _ => None,
+                };
+                let is_struct = struct_field_names.is_some();
+
+                // Decide if we need a temp variable
+                let needs_temp = init_may_have_side_effects(init_expr) || op.properties.len() > 1;
+                let temp_name = if needs_temp {
+                    Some(self.name_mangler.next_name("_js_dest"))
+                } else {
+                    None
+                };
+
+                // Source for access patterns: temp var name or inline the init expr
+                let source = if needs_temp {
+                    temp_name.clone().unwrap()
+                } else if let Expression::Identifier(id) = init_expr {
+                    id.name.to_string()
+                } else {
+                    self.name_mangler.next_name("_js_dest")
+                };
+
+                let fn_prefix = self
+                    .fn_ctx
+                    .as_ref()
+                    .map(|ctx| ctx.name.as_str())
+                    .unwrap_or("__toplevel__");
+
+                // Phase 1: Collect binding metadata (no lower_expr calls yet)
+                struct RawObjBinding {
+                    key_name: String,
+                    bind_name: String,
+                    has_default: bool,
+                    default_index: usize, // index into op.properties if has_default
+                    is_struct_field: bool,
+                    is_const: bool,
+                }
+                let mut raw_bindings: Vec<RawObjBinding> = Vec::new();
+                let mut default_counter: usize = 0;
+                for prop in &op.properties {
+                    let key_name = match property_key_name(&prop.key) {
+                        Some(k) => k,
+                        None => continue,
+                    };
+
+                    let (bind_name, has_default) = match &prop.value {
+                        BindingPattern::BindingIdentifier(id) => (id.name.as_str(), false),
+                        BindingPattern::AssignmentPattern(ap) => {
+                            let Some(name) = crate::infer::binding_name(&ap.left) else {
+                                continue;
+                            };
+                            (name, true)
+                        }
+                        _ => continue,
+                    };
+
+                    let is_const = !self
+                        .type_info
+                        .mutated_vars
+                        .contains(&format!("{}::{}", fn_prefix, bind_name));
+
+                    // Skip unused toplevel constants
+                    if self.fn_ctx.is_none()
+                        && is_const
+                        && !self.type_info.used_names.contains(bind_name)
+                    {
+                        default_counter += if has_default { 1 } else { 0 };
+                        continue;
+                    }
+                    if self.fn_ctx.is_none() && !is_const {
+                        default_counter += if has_default { 1 } else { 0 };
+                        continue;
+                    }
+
+                    let is_struct_field = struct_field_names
+                        .as_ref()
+                        .is_some_and(|names| names.contains(&key_name));
+
+                    let di = default_counter;
+                    default_counter += if has_default { 1 } else { 0 };
+
+                    raw_bindings.push(RawObjBinding {
+                        key_name,
+                        bind_name: bind_name.to_string(),
+                        has_default,
+                        default_index: di,
+                        is_struct_field,
+                        is_const,
+                    });
+                }
+
+                // Collect default expression references from AST
+                let default_exprs: Vec<&Expression> = op
+                    .properties
+                    .iter()
+                    .filter_map(|prop| match &prop.value {
+                        BindingPattern::AssignmentPattern(ap) => Some(&ap.right),
+                        _ => None,
+                    })
+                    .collect();
+
+                // Phase 2: Build IrDestructureBindingDecl (can call self.lower_expr now)
+                let mut bindings = Vec::new();
+                for rb in raw_bindings {
+                    let default_ir = if rb.has_default {
+                        default_exprs
+                            .get(rb.default_index)
+                            .map(|e| self.lower_expr(e))
+                    } else {
+                        None
+                    };
+                    bindings.push(IrDestructureBindingDecl {
+                        name: self.make_ident(&rb.bind_name),
+                        is_const: rb.is_const,
+                        access: IrDestructureAccess::ObjectField {
+                            source: if needs_temp {
+                                temp_name.clone().unwrap()
+                            } else {
+                                source.clone()
+                            },
+                            key: rb.key_name,
+                            is_struct_field: rb.is_struct_field,
+                        },
+                        default: default_ir,
+                    });
+                }
+
+                crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
+                    temp_name: if needs_temp { temp_name } else { None },
+                    init: init_ir,
+                    kind: IrDestructureKind::Object {
+                        is_struct,
+                        struct_field_names,
+                    },
+                    bindings,
+                })
+            }
+
+            BindingPattern::ArrayPattern(ap) => {
+                // ── Array destructuring ──
+                let init_type = if let Expression::Identifier(id) = init_expr {
+                    self.type_info.var_types.get(id.name.as_str()).cloned()
+                } else {
+                    None
+                };
+                let is_arraylist = matches!(init_type, Some(ZigType::ArrayList(_)));
+
+                // Decide if we need a temp variable
+                let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
+                let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
+                let temp_name = if needs_temp {
+                    Some(self.name_mangler.next_name("_js_dest"))
+                } else {
+                    None
+                };
+
+                let source = if needs_temp {
+                    temp_name.clone().unwrap()
+                } else if let Expression::Identifier(id) = init_expr {
+                    id.name.to_string()
+                } else {
+                    self.name_mangler.next_name("_js_dest")
+                };
+
+                let fn_prefix = self
+                    .fn_ctx
+                    .as_ref()
+                    .map(|ctx| ctx.name.as_str())
+                    .unwrap_or("__toplevel__");
+
+                // Phase 1: Collect binding metadata
+                struct RawArrBinding {
+                    bind_name: String,
+                    index: usize,
+                    has_default: bool,
+                    default_index: usize,
+                    is_const: bool,
+                }
+                let mut raw_bindings: Vec<RawArrBinding> = Vec::new();
+                let mut default_counter: usize = 0;
+                for (i, elem) in ap.elements.iter().enumerate() {
+                    let Some(pattern) = elem else {
+                        continue; // skip holes
+                    };
+
+                    let (bind_name, has_default) = match pattern {
+                        BindingPattern::BindingIdentifier(id) => (id.name.as_str(), false),
+                        BindingPattern::AssignmentPattern(ap_inner) => {
+                            let Some(name) = crate::infer::binding_name(&ap_inner.left) else {
+                                continue;
+                            };
+                            (name, true)
+                        }
+                        _ => continue,
+                    };
+
+                    let is_const = !self
+                        .type_info
+                        .mutated_vars
+                        .contains(&format!("{}::{}", fn_prefix, bind_name));
+
+                    if self.fn_ctx.is_none()
+                        && is_const
+                        && !self.type_info.used_names.contains(bind_name)
+                    {
+                        default_counter += if has_default { 1 } else { 0 };
+                        continue;
+                    }
+                    if self.fn_ctx.is_none() && !is_const {
+                        default_counter += if has_default { 1 } else { 0 };
+                        continue;
+                    }
+
+                    let di = default_counter;
+                    default_counter += if has_default { 1 } else { 0 };
+
+                    raw_bindings.push(RawArrBinding {
+                        bind_name: bind_name.to_string(),
+                        index: i,
+                        has_default,
+                        default_index: di,
+                        is_const,
+                    });
+                }
+
+                // Collect default expression references from AST
+                let default_exprs: Vec<&Expression> = ap
+                    .elements
+                    .iter()
+                    .flatten()
+                    .filter_map(|pattern| match pattern {
+                        BindingPattern::AssignmentPattern(ap_inner) => Some(&ap_inner.right),
+                        _ => None,
+                    })
+                    .collect();
+
+                // Phase 2: Build IrDestructureBindingDecl
+                let mut bindings = Vec::new();
+                for rb in raw_bindings {
+                    let default_ir = if rb.has_default {
+                        default_exprs
+                            .get(rb.default_index)
+                            .map(|e| self.lower_expr(e))
+                    } else {
+                        None
+                    };
+                    bindings.push(IrDestructureBindingDecl {
+                        name: self.make_ident(&rb.bind_name),
+                        is_const: rb.is_const,
+                        access: IrDestructureAccess::ArrayIndex {
+                            source: if needs_temp {
+                                temp_name.clone().unwrap()
+                            } else {
+                                source.clone()
+                            },
+                            index: rb.index,
+                        },
+                        default: default_ir,
+                    });
+                }
+
+                crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
+                    temp_name: if needs_temp { temp_name } else { None },
+                    init: init_ir,
+                    kind: IrDestructureKind::Array { is_arraylist },
+                    bindings,
+                })
+            }
+
+            _ => crate::zigir::types::IrStmt::CompileError {
+                span: SourceSpan::default(),
+                msg: "unsupported binding pattern in variable declaration".to_string(),
+            },
+        }
+    }
+
     /// Lower a function declaration.
     ///
     /// Translates JS `function foo(a, b) { ... }` into `IrDecl::Fn`.
@@ -884,28 +1191,46 @@ impl Lowerer {
         match stmt {
             // ── Variable declarations ──────────────────────
             Statement::VariableDeclaration(vd) => {
-                // Multi-declarator: emit as a block of VarDecl statements
+                // Multi-declarator: emit as a block of statements
                 if vd.declarations.len() == 1 {
                     let decl = &vd.declarations[0];
-                    let ir_decl = self.lower_var_decl(decl, vd.kind.is_const());
-                    match ir_decl {
-                        IrDecl::Var(v) => crate::zigir::types::IrStmt::VarDecl(v),
-                        IrDecl::CompileError { span, msg } => {
-                            crate::zigir::types::IrStmt::CompileError { span, msg }
+                    match &decl.id {
+                        BindingPattern::ObjectPattern(_) | BindingPattern::ArrayPattern(_) => {
+                            self.lower_destructure_decl(decl)
                         }
-                        _ => crate::zigir::types::IrStmt::Comment(
-                            "// unexpected decl type in statement context".to_string(),
-                        ),
+                        _ => {
+                            let ir_decl = self.lower_var_decl(decl, vd.kind.is_const());
+                            match ir_decl {
+                                IrDecl::Var(v) => crate::zigir::types::IrStmt::VarDecl(v),
+                                IrDecl::CompileError { span, msg } => {
+                                    crate::zigir::types::IrStmt::CompileError { span, msg }
+                                }
+                                _ => crate::zigir::types::IrStmt::Comment(
+                                    "// unexpected decl type in statement context".to_string(),
+                                ),
+                            }
+                        }
                     }
                 } else {
                     let stmts: Vec<crate::zigir::types::IrStmt> = vd
                         .declarations
                         .iter()
-                        .filter_map(|decl| {
-                            let ir_decl = self.lower_var_decl(decl, vd.kind.is_const());
-                            match ir_decl {
-                                IrDecl::Var(v) => Some(crate::zigir::types::IrStmt::VarDecl(v)),
-                                _ => None, // skip unused/error decls
+                        .flat_map(|decl| match &decl.id {
+                            BindingPattern::ObjectPattern(_) | BindingPattern::ArrayPattern(_) => {
+                                vec![self.lower_destructure_decl(decl)]
+                            }
+                            _ => {
+                                let ir_decl = self.lower_var_decl(decl, vd.kind.is_const());
+                                match ir_decl {
+                                    IrDecl::Var(v) => vec![crate::zigir::types::IrStmt::VarDecl(v)],
+                                    IrDecl::CompileError { span, msg } => {
+                                        vec![crate::zigir::types::IrStmt::CompileError {
+                                            span,
+                                            msg,
+                                        }]
+                                    }
+                                    _ => vec![],
+                                }
                             }
                         })
                         .collect();
@@ -3366,6 +3691,14 @@ impl Lowerer {
                 }
             }
             IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
+            IrStmt::DestructureDecl(data) => {
+                Self::collect_ir_idents_in_expr(&data.init, idents);
+                for binding in &data.bindings {
+                    if let Some(d) = &binding.default {
+                        Self::collect_ir_idents_in_expr(d, idents);
+                    }
+                }
+            }
         }
     }
 
@@ -5185,6 +5518,31 @@ fn expr_type_name(expr: &Expression) -> &'static str {
         Expression::AwaitExpression(_) => "AwaitExpression",
         Expression::PrivateFieldExpression(_) => "PrivateFieldExpression",
         _ => "Unknown",
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Free helper functions for destructuring
+// ═══════════════════════════════════════════════════════
+
+/// Check if an init expression may have side effects (needs temp variable in destructure).
+fn init_may_have_side_effects(init: &Expression) -> bool {
+    matches!(
+        init,
+        Expression::CallExpression(_)
+            | Expression::NewExpression(_)
+            | Expression::AssignmentExpression(_)
+            | Expression::UpdateExpression(_)
+    )
+}
+
+/// Extract the string name of a property key (static identifier, string literal, private id).
+fn property_key_name(key: &PropertyKey) -> Option<String> {
+    match key {
+        PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
+        PropertyKey::StringLiteral(sl) => Some(sl.value.to_string()),
+        PropertyKey::PrivateIdentifier(id) => Some(id.name.to_string()),
+        _ => None,
     }
 }
 

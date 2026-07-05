@@ -264,6 +264,7 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
             expr_has_side_effects(iterable) || body.stmts.iter().any(stmt_has_side_effects)
         }
         IrStmt::CompileError { .. } | IrStmt::Comment(_) => false,
+        IrStmt::DestructureDecl(data) => expr_has_side_effects(&data.init),
     }
 }
 
@@ -394,6 +395,7 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         | IrStmt::Continue { .. }
         | IrStmt::CompileError { .. }
         | IrStmt::Comment(_) => false,
+        IrStmt::DestructureDecl(_) => false,
     }
 }
 
@@ -672,6 +674,14 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
         | IrStmt::Continue { .. }
         | IrStmt::CompileError { .. }
         | IrStmt::Comment(_) => {}
+        IrStmt::DestructureDecl(data) => {
+            collect_expr_refs(&data.init, refs);
+            for binding in &data.bindings {
+                if let Some(d) = &binding.default {
+                    collect_expr_refs(d, refs);
+                }
+            }
+        }
     }
 }
 

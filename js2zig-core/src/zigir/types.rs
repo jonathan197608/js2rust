@@ -321,6 +321,11 @@ pub enum IrStmt {
     // ── Block ───────────────────────────────────────
     Block(IrBlock),
 
+    // ── Destructuring declaration ───────────────────
+    /// Object or array destructuring: `const {a, b} = obj` / `const [a, b] = arr`
+    /// Expanded into temp variable + individual binding declarations by the Emitter.
+    DestructureDecl(IrDestructureDecl),
+
     // ── Debug / diagnostics ─────────────────────────
     CompileError {
         span: SourceSpan,
@@ -353,6 +358,76 @@ pub enum IrAssignTarget {
 pub struct IrDestructureBinding {
     pub pattern: IrIdent,
     pub default: Option<IrExpr>,
+}
+
+/// Destructuring declaration: `const {a, b} = expr` or `const [a, b] = expr`.
+///
+/// The Lowerer extracts all binding information; the Emitter expands this into
+/// a temp variable assignment followed by individual `const/var` declarations
+/// for each binding.
+#[derive(Debug, Clone)]
+pub struct IrDestructureDecl {
+    /// Temp variable name (e.g. `_js_dest_0`) if the init expression needs
+    /// to be evaluated only once. `None` means inline the init expression.
+    pub temp_name: Option<String>,
+    /// The init expression (RHS of the destructuring).
+    pub init: IrExpr,
+    /// Kind of destructuring (object vs array) with source type info.
+    pub kind: IrDestructureKind,
+    /// Individual binding declarations.
+    pub bindings: Vec<IrDestructureBindingDecl>,
+}
+
+/// Whether the destructure source is a struct (direct field access),
+/// a HashMap (.get("key")), or an ArrayList (.items[i]).
+#[derive(Debug, Clone)]
+pub enum IrDestructureKind {
+    Object {
+        /// True if the source is a struct with known fields → use `.field` access.
+        /// False if HashMap or unknown → use `.get("key")` access.
+        is_struct: bool,
+        /// If struct, the set of field names that exist. Used to determine
+        /// whether a key maps to a real field or needs a default.
+        struct_field_names: Option<Vec<String>>,
+    },
+    Array {
+        /// True if the source is an ArrayList → use `.items[i]` access.
+        is_arraylist: bool,
+    },
+}
+
+/// A single binding in a destructuring declaration.
+#[derive(Debug, Clone)]
+pub struct IrDestructureBindingDecl {
+    /// The variable name being bound.
+    pub name: IrIdent,
+    /// Whether this binding is `const` (never mutated) or `var`.
+    pub is_const: bool,
+    /// The access pattern for extracting the value.
+    pub access: IrDestructureAccess,
+    /// Optional default value expression.
+    pub default: Option<IrExpr>,
+}
+
+/// How to access the value for a destructuring binding.
+#[derive(Debug, Clone)]
+pub enum IrDestructureAccess {
+    /// Object field: `source.field` (struct) or `source.get("key")` (HashMap)
+    ObjectField {
+        /// Variable name of the source (temp var or inline init expr string).
+        source: String,
+        /// The property key name.
+        key: String,
+        /// Whether the key exists as a struct field (determines .field vs .get()).
+        is_struct_field: bool,
+    },
+    /// Array index: `source[i]` (slice) or `source.items[i]` (ArrayList)
+    ArrayIndex {
+        /// Variable name of the source.
+        source: String,
+        /// The index position.
+        index: usize,
+    },
 }
 
 /// A single switch case.

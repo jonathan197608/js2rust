@@ -258,6 +258,14 @@ impl ValidatePass {
                 self.check_closure_refs_in_block(b);
             }
             IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
+            IrStmt::DestructureDecl(data) => {
+                self.check_closure_refs_in_expr(&data.init);
+                for binding in &data.bindings {
+                    if let Some(d) = &binding.default {
+                        self.check_closure_refs_in_expr(d);
+                    }
+                }
+            }
         }
     }
 
@@ -555,6 +563,14 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
         | IrStmt::Continue { .. }
         | IrStmt::CompileError { .. }
         | IrStmt::Comment(_) => {}
+        IrStmt::DestructureDecl(data) => {
+            collect_idents_from_expr(&data.init, names);
+            for binding in &data.bindings {
+                if let Some(d) = &binding.default {
+                    collect_idents_from_expr(d, names);
+                }
+            }
+        }
     }
 }
 
