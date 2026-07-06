@@ -125,7 +125,8 @@ impl Emitter {
         // Format specifier based on element type:
         // I64/F64 → {d}, Bool → {}, Str → {s}, other → {any}
         let fmt_spec = match data.elem_type {
-            ZigType::I64 | ZigType::F64 => "{d}",
+            ZigType::I64 => "{d}",
+            ZigType::F64 => "{d:.15}",
             ZigType::Bool => "{}",
             ZigType::Str => "{s}",
             _ => "{any}",

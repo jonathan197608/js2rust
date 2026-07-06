@@ -609,7 +609,8 @@ impl Lowerer {
                     } else {
                         match self.infer_expr_type(op) {
                             Some(ZigType::Str) => "{s}",
-                            Some(ZigType::I64) | Some(ZigType::F64) => "{d}",
+                            Some(ZigType::I64) => "{d}",
+                            Some(ZigType::F64) => "{d:.15}",
                             Some(ZigType::Bool) => "{}",
                             _ => "{}",
                         }

@@ -25,7 +25,7 @@ fn printValue(msg: anytype) void {
     } else {
         switch (@typeInfo(T)) {
             .int, .comptime_int => std.debug.print("{d}", .{msg}),
-            .float, .comptime_float => std.debug.print("{d}", .{msg}),
+            .float, .comptime_float => std.debug.print("{d}", .{@as(f64, msg)}),
             .bool => std.debug.print("{}", .{msg}),
             else => std.debug.print("{any}", .{msg}),
         }

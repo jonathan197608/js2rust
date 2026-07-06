@@ -53,6 +53,8 @@ pub const JsBigInt = struct {
     }
 
     pub fn div(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        // BigInt division by zero is an error (matches JS RangeError behavior)
+        if (other.value.eqlZero()) return error.DivisionByZero;
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         var remainder = try std.math.big.int.Managed.init(alloc);

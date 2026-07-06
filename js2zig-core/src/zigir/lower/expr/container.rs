@@ -128,7 +128,8 @@ impl Lowerer {
             .iter()
             .map(|expr| match self.infer_expr_type(expr) {
                 Some(ZigType::Str) => "{s}".to_string(),
-                Some(ZigType::I64) | Some(ZigType::F64) => "{d}".to_string(),
+                Some(ZigType::I64) => "{d}".to_string(),
+                Some(ZigType::F64) => "{d:.15}".to_string(),
                 Some(ZigType::Bool) => "{}".to_string(),
                 _ => {
                     if self.expr_is_string(expr) {

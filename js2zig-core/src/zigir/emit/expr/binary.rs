@@ -74,7 +74,7 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(".div(&");
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt div OOM\"))");
+                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => @panic(\"RangeError: BigInt division by zero\"), else => @panic(\"BigInt div OOM\") })");
             }
             BinOp::Mod => {
                 self.write("(");
