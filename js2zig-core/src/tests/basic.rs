@@ -179,7 +179,8 @@ return !x;
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_unary");
     assert!(zig.contains("-x"));
-    assert!(zig.contains("!x"));
+    // Logical NOT now uses isTruthy for type-safe coercion
+    assert!(zig.contains("!js_runtime.isTruthy(x)"));
 }
 
 #[test]

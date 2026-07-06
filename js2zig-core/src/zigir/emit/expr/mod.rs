@@ -80,12 +80,30 @@ impl Emitter {
                 let rt = right_type.as_ref();
                 let left_is_bigint = lt == Some(&ZigType::BigInt);
                 let right_is_bigint = rt == Some(&ZigType::BigInt);
-                let left_is_str = lt == Some(&ZigType::Str);
-                let right_is_str = rt == Some(&ZigType::Str);
+                // Check both type inference AND the expression node itself.
+                // String literals like "5" often have `left_type = None` since they
+                // lack a JSDoc annotation, but `IrExpr::StringLiteral` is unambiguous.
+                let left_is_str = lt == Some(&ZigType::Str)
+                    || matches!(&**left, crate::zigir::types::IrExpr::StringLiteral(_));
+                let right_is_str = rt == Some(&ZigType::Str)
+                    || matches!(&**right, crate::zigir::types::IrExpr::StringLiteral(_));
                 let left_is_jsany = lt == Some(&ZigType::JsAny);
                 let right_is_jsany = rt == Some(&ZigType::JsAny);
                 let left_is_float = lt == Some(&ZigType::F64);
                 let right_is_float = rt == Some(&ZigType::F64);
+                // Pre-compute cross-type flags (needed for the if/else-if chain below)
+                // Anytype should not count as a distinct type — Zig resolves it at comptime.
+                let left_is_anytype = lt == Some(&ZigType::Anytype);
+                let right_is_anytype = rt == Some(&ZigType::Anytype);
+                let cross_type_known = lt.is_some()
+                    && rt.is_some()
+                    && lt != rt
+                    && !left_is_bigint
+                    && !right_is_bigint
+                    && !left_is_anytype
+                    && !right_is_anytype;
+                let str_vs_numeric = (left_is_str && !right_is_str && !right_is_bigint)
+                    || (right_is_str && !left_is_str && !left_is_bigint);
 
                 // ── BigInt arithmetic/comparison ──
                 if left_is_bigint && right_is_bigint {
@@ -111,16 +129,38 @@ impl Emitter {
                 else if left_is_str && right_is_str {
                     self.emit_string_comparison(*op, left, right);
                 }
+                // ── BigInt cross-type comparison (e.g. 0n === 0, bigint == 5) ──
+                // Convert the non-BigInt operand to JsBigInt and use .eq() / .order()
+                else if (left_is_bigint || right_is_bigint)
+                    && matches!(
+                        op,
+                        BinOp::Eq
+                            | BinOp::Ne
+                            | BinOp::StrictEq
+                            | BinOp::StrictNe
+                            | BinOp::Lt
+                            | BinOp::Le
+                            | BinOp::Gt
+                            | BinOp::Ge
+                    )
+                {
+                    self.emit_bigint_cross_comparison(
+                        *op,
+                        left,
+                        right,
+                        left_is_bigint,
+                        right_is_bigint,
+                    );
+                }
                 // ── Cross-type comparison (e.g. String vs Number, Bool vs I64) ──
                 // When both types are known but different, Zig's == / != / < etc.
                 // are type-mismatch errors. Route through JsAny comparison instead.
                 // EXCEPTION: exclude BigInt — JsAny.from() does not support BigInt,
                 // and BigInt cross-type comparisons need a different strategy.
-                else if lt.is_some()
-                    && rt.is_some()
-                    && lt != rt
-                    && !left_is_bigint
-                    && !right_is_bigint
+                //
+                // Also handle String vs numeric (even when numeric side type is unknown,
+                // e.g. "5" > 3 where 3 is a comptime_int literal).
+                else if (cross_type_known || str_vs_numeric)
                     && matches!(
                         op,
                         BinOp::Eq
@@ -214,11 +254,16 @@ impl Emitter {
                 exp,
                 base_type,
                 exp_type,
+                result_type,
             } => {
                 // JS `**` always returns f64. Use std.math.pow(f64, ...) with
                 // temporary f64 variables in a labeled block.
                 let pow_id = self.peek_label_id();
                 let blk = self.next_label();
+                // If result_type is i64, wrap the entire block in @as(i64, @intFromFloat(...))
+                if let Some(crate::types::ZigType::I64) = result_type {
+                    self.write("@as(i64, @intFromFloat(");
+                }
                 self.write(&format!("({blk}: {{ "));
                 self.write(&format!("const _base_f64_{pow_id}: f64 = "));
                 self.emit_float_conversion(base, base_type);
@@ -227,6 +272,9 @@ impl Emitter {
                 self.write(&format!(
                     "; break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
                 ));
+                if let Some(crate::types::ZigType::I64) = result_type {
+                    self.write("))");
+                }
             }
 
             crate::zigir::types::IrExpr::Unary { op, operand } => {
@@ -237,11 +285,16 @@ impl Emitter {
                     }
                     crate::zigir::ops::UnaOp::Not => {
                         self.write("!");
-                        self.emit_expr(operand);
+                        // Coerce operand to bool first — JS `!x` works on any type,
+                        // but Zig `!` requires a bool operand.
+                        self.emit_expr_as_bool(operand);
                     }
                     crate::zigir::ops::UnaOp::BitNot => {
-                        self.write("~");
+                        // JS `~x` operates on 32-bit integer. Wrap in @as(i32, @intCast(..))
+                        // to handle comptime_int and ensure correct 32-bit semantics.
+                        self.write("~@as(i32, @intCast(");
                         self.emit_expr(operand);
+                        self.write("))");
                     }
                     crate::zigir::ops::UnaOp::TypeOf => {
                         // typeof expr → simplified; real impl depends on type
@@ -742,35 +795,18 @@ impl Emitter {
         }
     }
 
-    /// Check if an IrExpr produces a string type.
-    pub(super) fn ir_expr_is_string(expr: &crate::zigir::types::IrExpr) -> bool {
-        use crate::zigir::types::IrExpr;
-        matches!(
-            expr,
-            IrExpr::StringLiteral(_) | IrExpr::TemplateLiteral { .. }
-        )
-    }
-
     /// Emit an expression with truthiness coercion for Zig `bool` context.
     ///
     /// When a non-bool expression appears in a position that Zig requires `bool`
-    /// (e.g. `if` condition, `while` condition), we coerce it via JS truthiness:
-    /// - `bool` expressions → emitted directly (no coercion needed)
-    /// - `Str` expressions → `.len != 0` (empty string is falsy in JS)
-    /// - numeric/other → `((expr) != 0)` (0 is falsy in JS)
+    /// (e.g. `if` condition, `while` condition), we coerce via `js_runtime.isTruthy()`
+    /// which handles all JS types correctly (bool, i64, f64, string, comptime_int, etc.).
     pub(crate) fn emit_expr_as_bool(&mut self, expr: &crate::zigir::types::IrExpr) {
         if Self::ir_expr_is_bool(expr) {
             self.emit_expr(expr);
-        } else if Self::ir_expr_is_string(expr) {
-            // String truthiness: non-empty → true, empty → false
-            self.write("(");
-            self.emit_expr(expr);
-            self.write(".len != 0)");
         } else {
-            // Default numeric truthiness: 0 → false, non-zero → true
-            self.write("((");
+            self.write("js_runtime.isTruthy(");
             self.emit_expr(expr);
-            self.write(") != 0)");
+            self.write(")");
         }
     }
 }

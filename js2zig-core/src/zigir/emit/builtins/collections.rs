@@ -146,6 +146,29 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(") catch \"\"");
             }
+            "parseInt" => {
+                self.write("js_uri.parseInt(");
+                self.emit_inline_args(args);
+                if args.len() < 2 {
+                    self.write(", null");
+                }
+                self.write(")");
+            }
+            "parseFloat" => {
+                self.write("js_uri.parseFloat(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "isNaN" => {
+                self.write("js_uri.isNaN(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
+            "isFinite" => {
+                self.write("js_uri.isFinite(");
+                self.emit_inline_args(args);
+                self.write(")");
+            }
             _ => {
                 self.write(&format!("js_uri.{}(", method));
                 self.emit_inline_args(args);
@@ -156,6 +179,7 @@ impl Emitter {
     pub(super) fn emit_bigint_builtin(
         &mut self,
         method: &str,
+        obj: Option<&str>,
         args: &[crate::zigir::types::IrExpr],
     ) {
         match method {
@@ -164,6 +188,22 @@ impl Emitter {
                 self.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
                 self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
+            }
+            // -bigintExpr → (expr).neg(allocator) catch @panic("OOM: BigInt neg")
+            "bigIntNeg" => {
+                self.write("(");
+                if let Some(o) = obj {
+                    self.write(o);
+                }
+                self.write(".neg(js_allocator.allocator()) catch @panic(\"BigInt neg OOM\"))");
+            }
+            // ~bigintExpr → (expr).bitwiseNot(allocator) catch @panic("OOM: BigInt bitwiseNot")
+            "bigIntBitwiseNot" => {
+                self.write("(");
+                if let Some(o) = obj {
+                    self.write(o);
+                }
+                self.write(".bitwiseNot(js_allocator.allocator()) catch @panic(\"BigInt bitwiseNot OOM\"))");
             }
             _ => {
                 self.write(&format!("js_bigint.{}(", method));

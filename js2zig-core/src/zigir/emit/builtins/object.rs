@@ -166,6 +166,23 @@ impl Emitter {
                 }
                 self.write(")");
             }
+            "parseInt" => {
+                self.write("js_number.parseInt(");
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 || obj.is_some() {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                // parseInt requires (value, radix) — add null if only value provided
+                if args.len() < 2 {
+                    self.write(", null");
+                }
+                self.write(")");
+            }
             _ => {
                 self.write(&format!("js_number.{}(", method));
                 self.emit_inline_args(args);

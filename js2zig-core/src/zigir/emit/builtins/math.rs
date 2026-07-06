@@ -278,6 +278,14 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
+            // Global NaN constant → std.math.nan(f64)
+            "nan_f64" => {
+                self.write("std.math.nan(f64)");
+            }
+            // Global Infinity constant → std.math.inf(f64)
+            "inf_f64" => {
+                self.write("std.math.inf(f64)");
+            }
             // random, sign, etc: fall through to js_math module
             _ => {
                 self.write(&format!("js_math.{}(", method));

@@ -628,6 +628,9 @@ pub enum IrExpr {
         exp: Box<IrExpr>,
         base_type: crate::types::ZigType,
         exp_type: crate::types::ZigType,
+        /// If the result needs to be converted from f64 (pow always returns f64)
+        /// to a different type (e.g. i64), this is set. None means keep as f64.
+        result_type: Option<crate::types::ZigType>,
     },
 
     CompileError {

@@ -58,7 +58,18 @@ impl Emitter {
                 self.write(".size()");
             }
             FieldKind::MathConstant(val) => {
-                self.write(&format!("std.math.{}", val));
+                // Zig 0.16.0: math constants are lowercase (pi, e, tau, etc.)
+                match val.as_str() {
+                    "PI" => self.write("std.math.pi"),
+                    "E" => self.write("std.math.e"),
+                    "LN2" => self.write("std.math.ln2"),
+                    "LN10" => self.write("std.math.ln10"),
+                    "LOG2E" => self.write("std.math.log2e"),
+                    "LOG10E" => self.write("std.math.log10e"),
+                    "SQRT1_2" => self.write("std.math.sqrt1_2"),
+                    "SQRT2" => self.write("std.math.sqrt2"),
+                    _ => self.write(&format!("std.math.{}", val.to_lowercase())),
+                }
             }
             FieldKind::NumberConstant(val) => {
                 // Map JS Number constants to Zig std.math equivalents
@@ -133,9 +144,9 @@ impl Emitter {
         match kind {
             IndexKind::ArrayListItem => {
                 self.emit_expr(object);
-                self.write(".items[");
+                self.write(".items[@as(usize, @intCast(");
                 self.emit_expr(index);
-                self.write("]");
+                self.write("))]");
             }
             IndexKind::SliceIndex => {
                 self.emit_expr(object);
@@ -175,9 +186,9 @@ impl Emitter {
             }
             ComputedKeyKind::ArrayListItem => {
                 self.emit_expr(object);
-                self.write(".items[");
+                self.write(".items[@as(usize, @intCast(");
                 self.emit_expr(key);
-                self.write("]");
+                self.write("))]");
             }
             ComputedKeyKind::CompileError(msg) => {
                 self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));

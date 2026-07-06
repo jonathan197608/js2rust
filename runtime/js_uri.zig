@@ -120,6 +120,109 @@ fn hexDigit(c: u8) ?u4 {
     };
 }
 
+/// parseInt stub: parse an integer from a string.
+/// Simplified implementation — handles base-10 and optional radix.
+/// Accepts anytype to support string, f64, i64, JsAny inputs.
+pub fn parseInt(value: anytype, radix: ?i64) i64 {
+    const T = @TypeOf(value);
+    // Fast path: already a string slice
+    if (T == []const u8) return parseIntStr(value, radix);
+    // String literals: *const [N:0]u8 → coerce to []const u8
+    if (switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => switch (@typeInfo(p.child)) {
+                .array => |a| a.child == u8,
+                else => false,
+            },
+            else => false,
+        },
+        else => false,
+    }) return parseIntStr(value, radix);
+    // Float: format to buffer, then parse
+    if (T == f64 or T == comptime_float) {
+        var buf: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, "{d}", .{value}) catch return 0;
+        return parseIntStr(s, radix);
+    }
+    // Int: format to buffer, then parse
+    if (T == i64 or T == comptime_int) {
+        var buf: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, "{d}", .{value}) catch return 0;
+        return parseIntStr(s, radix);
+    }
+    return 0;
+}
+
+fn parseIntStr(s: []const u8, radix: ?i64) i64 {
+    var result: i64 = 0;
+    var neg = false;
+    var i: usize = 0;
+    _ = radix;
+    // Skip whitespace
+    while (i < s.len and s[i] == ' ') : (i += 1) {}
+    if (i < s.len and s[i] == '-') {
+        neg = true;
+        i += 1;
+    } else if (i < s.len and s[i] == '+') {
+        i += 1;
+    }
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c >= '0' and c <= '9') {
+            result = result * 10 + @as(i64, c - '0');
+        } else {
+            break;
+        }
+    }
+    return if (neg) -result else result;
+}
+
+/// parseFloat stub: parse a float from a string.
+/// Simplified implementation — handles basic decimal notation.
+pub fn parseFloat(s: []const u8) f64 {
+    var result: f64 = 0.0;
+    var frac: f64 = 0.0;
+    var div: f64 = 10.0;
+    var neg = false;
+    var in_frac = false;
+    var i: usize = 0;
+    // Skip whitespace
+    while (i < s.len and s[i] == ' ') : (i += 1) {}
+    if (i < s.len and s[i] == '-') {
+        neg = true;
+        i += 1;
+    } else if (i < s.len and s[i] == '+') {
+        i += 1;
+    }
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '.' and !in_frac) {
+            in_frac = true;
+        } else if (c >= '0' and c <= '9') {
+            if (in_frac) {
+                frac += @as(f64, @floatFromInt(c - '0')) / div;
+                div *= 10.0;
+            } else {
+                result = result * 10.0 + @as(f64, @floatFromInt(c - '0'));
+            }
+        } else {
+            break;
+        }
+    }
+    result += frac;
+    return if (neg) -result else result;
+}
+
+/// isNaN stub: check if a float is NaN.
+pub fn isNaN(v: f64) bool {
+    return v != v;
+}
+
+/// isFinite stub: check if a float is finite (not Inf or NaN).
+pub fn isFinite(v: f64) bool {
+    return !isNaN(v) and v != std.math.inf(f64) and v != -std.math.inf(f64);
+}
+
 // ── Tests ──
 
 test "encodeURIComponent basic" {

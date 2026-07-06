@@ -77,6 +77,7 @@ impl Lowerer {
                     exp: Box::new(self.lower_expr(&be.right)),
                     base_type: left_type,
                     exp_type: right_type,
+                    result_type: None, // standalone `**` always returns f64
                 };
             }
             BinaryOperator::LessThan => BinOp::Lt,
@@ -115,10 +116,25 @@ impl Lowerer {
         use crate::zigir::types::IrExpr;
 
         match ue.operator {
-            UnaryOperator::UnaryNegation => IrExpr::Unary {
-                op: UnaOp::Neg,
-                operand: Box::new(self.lower_expr(&ue.argument)),
-            },
+            UnaryOperator::UnaryNegation => {
+                // BigInt cannot use Zig's `-` operator — expand to .neg() method call
+                if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
+                    return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                        module: BuiltinModule::JsBigInt,
+                        method: "bigIntNeg".to_string(),
+                        obj_name: None,
+                        obj_expr: Some(Box::new(self.lower_expr(&ue.argument))),
+                        args: vec![],
+                        return_type: ZigType::BigInt,
+                        ta_type_suffix: None,
+                        regex_info: None,
+                    });
+                }
+                IrExpr::Unary {
+                    op: UnaOp::Neg,
+                    operand: Box::new(self.lower_expr(&ue.argument)),
+                }
+            }
             UnaryOperator::UnaryPlus => {
                 // Unary plus is a no-op in terms of IR; just lower the argument
                 self.lower_expr(&ue.argument)
@@ -127,10 +143,25 @@ impl Lowerer {
                 op: UnaOp::Not,
                 operand: Box::new(self.lower_expr(&ue.argument)),
             },
-            UnaryOperator::BitwiseNot => IrExpr::Unary {
-                op: UnaOp::BitNot,
-                operand: Box::new(self.lower_expr(&ue.argument)),
-            },
+            UnaryOperator::BitwiseNot => {
+                // BigInt cannot use Zig's `~` operator — expand to .bitwiseNot() method call
+                if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
+                    return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                        module: BuiltinModule::JsBigInt,
+                        method: "bigIntBitwiseNot".to_string(),
+                        obj_name: None,
+                        obj_expr: Some(Box::new(self.lower_expr(&ue.argument))),
+                        args: vec![],
+                        return_type: ZigType::BigInt,
+                        ta_type_suffix: None,
+                        regex_info: None,
+                    });
+                }
+                IrExpr::Unary {
+                    op: UnaOp::BitNot,
+                    operand: Box::new(self.lower_expr(&ue.argument)),
+                }
+            }
             UnaryOperator::Typeof => {
                 // Use inferred Zig type to emit the JS typeof string at compile time.
                 // For dynamic types (JsAny/Anytype), call the runtime jsTypeof() helper.
@@ -275,14 +306,26 @@ impl Lowerer {
                 };
             }
             // Non-BigInt: a = std.math.pow(a, b) via PowExpr
+            let base_type = target_type.unwrap_or(crate::types::ZigType::F64);
+            let exp_type = self
+                .infer_expr_type(&ae.right)
+                .unwrap_or(crate::types::ZigType::F64);
+            // When assigning pow result to an i64 variable, set result_type so
+            // the emit layer wraps in @as(i64, @intFromFloat(...))
+            let result_type = if base_type == crate::types::ZigType::I64 {
+                Some(crate::types::ZigType::I64)
+            } else {
+                None
+            };
             return IrExpr::Assign {
                 op: AssignOp::Assign,
                 target: Box::new(target),
                 value: Box::new(IrExpr::PowExpr {
                     base: Box::new(base_ident),
                     exp: value,
-                    base_type: crate::types::ZigType::F64,
-                    exp_type: crate::types::ZigType::F64,
+                    base_type,
+                    exp_type,
+                    result_type,
                 }),
             };
         }

@@ -305,16 +305,20 @@ impl Emitter {
                 emit_right_as_jsany(self);
                 self.write("))");
             }
-            // Ordering: convert JsAny to i64 for numeric comparison
+            // Ordering: use JsAny.from().asI64() for numeric comparison
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let zig_op = bin_op_to_zig(op);
-                // Use .asI64() on JsAny sides for numeric comparison
+                // Both sides need to go through JsAny for consistent comparison.
+                // For already-JsAny sides, call .asI64() directly.
+                // For non-JsAny sides, wrap with JsAny.from() then .asI64().
                 if left_is_jsany {
                     self.write("(");
                     self.emit_expr(left);
                     self.write(".asI64())");
                 } else {
+                    self.write("(JsAny.from(");
                     self.emit_expr(left);
+                    self.write(").asI64())");
                 }
                 self.write(&format!(" {} ", zig_op));
                 if right_is_jsany {
@@ -322,7 +326,9 @@ impl Emitter {
                     self.emit_expr(right);
                     self.write(".asI64())");
                 } else {
+                    self.write("(JsAny.from(");
                     self.emit_expr(right);
+                    self.write(").asI64())");
                 }
             }
             _ => {
@@ -331,6 +337,93 @@ impl Emitter {
                 self.write(&format!(" {} ", bin_op_to_zig(op)));
                 self.emit_expr(right);
             }
+        }
+    }
+
+    /// Emit a comparison where one operand is BigInt and the other is a numeric type
+    /// (I64, F64, Bool) or StringLiteral. Convert the non-BigInt operand to JsBigInt
+    /// via fromI64 (for numeric) or JsBigInt.init (for string), then use .eq() / .order().
+    pub(super) fn emit_bigint_cross_comparison(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+        left_is_bigint: bool,
+        right_is_bigint: bool,
+    ) {
+        use crate::zigir::ops::BinOp;
+
+        // Emit a non-BigInt operand as JsBigInt.
+        // For StringLiteral: use JsBigInt.init(allocator, "value")
+        // For other types: use JsBigInt.fromI64(allocator, value)
+        let emit_as_bigint = |s: &mut Self, expr: &crate::zigir::types::IrExpr| {
+            if let crate::zigir::types::IrExpr::StringLiteral(val) = expr {
+                s.write("(js_bigint.JsBigInt.init(js_allocator.allocator(), \"");
+                s.write(&crate::zigir::emit::helpers::escape_zig_string(val));
+                s.write("\") catch @panic(\"OOM: BigInt init\"))");
+            } else {
+                s.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
+                s.emit_expr(expr);
+                s.write(") catch @panic(\"BigInt fromI64 OOM\"))");
+            }
+        };
+
+        match op {
+            BinOp::Eq | BinOp::StrictEq => {
+                if left_is_bigint {
+                    self.emit_expr(left);
+                } else {
+                    emit_as_bigint(self, left);
+                }
+                self.write(".eq(&");
+                if right_is_bigint {
+                    self.emit_expr(right);
+                } else {
+                    emit_as_bigint(self, right);
+                }
+                self.write(")");
+            }
+            BinOp::Ne | BinOp::StrictNe => {
+                self.write("!");
+                if left_is_bigint {
+                    self.emit_expr(left);
+                } else {
+                    emit_as_bigint(self, left);
+                }
+                self.write(".eq(&");
+                if right_is_bigint {
+                    self.emit_expr(right);
+                } else {
+                    emit_as_bigint(self, right);
+                }
+                self.write(")");
+            }
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                // Use .order() which returns std.math.Order (.lt, .eq, .gt)
+                let cmp_expr =
+                    |s: &mut Self, is_bigint: bool, expr: &crate::zigir::types::IrExpr| {
+                        if is_bigint {
+                            s.emit_expr(expr);
+                        } else {
+                            emit_as_bigint(s, expr);
+                        }
+                    };
+                // lhs.order(&rhs) compare to expected Order value
+                self.write("(");
+                cmp_expr(self, left_is_bigint, left);
+                self.write(".order(&");
+                cmp_expr(self, right_is_bigint, right);
+                self.write(") ");
+                match op {
+                    BinOp::Lt => self.write("== .lt"),
+                    BinOp::Le => self.write("!= .gt"),
+                    BinOp::Gt => self.write("== .gt"),
+                    BinOp::Ge => self.write("!= .lt"),
+                    _ => unreachable!(),
+                }
+                self.write(")");
+            }
+            _ => unreachable!(),
         }
     }
 }

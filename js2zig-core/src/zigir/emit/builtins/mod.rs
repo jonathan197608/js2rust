@@ -54,7 +54,7 @@ impl Emitter {
                 bc.ta_type_suffix.as_deref(),
             ),
             BuiltinModule::JsUri => self.emit_uri_builtin(&bc.method, obj, &bc.args),
-            BuiltinModule::JsBigInt => self.emit_bigint_builtin(&bc.method, &bc.args),
+            BuiltinModule::JsBigInt => self.emit_bigint_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsCollections => {
                 self.emit_collections_builtin(&bc.method, bc.obj_name.as_deref(), &bc.args)
             }

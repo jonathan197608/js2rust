@@ -69,6 +69,40 @@ pub fn deinitIo() void {
     g_io_allocator = null;
 }
 
+// ── JS truthiness coercion ──────────────────────────────────────
+// Used by generated code for `if`, `while`, logical AND/OR, and `!x` contexts.
+// Zig's `and`/`or`/`!` require `bool`, but JS allows any type in boolean context.
+
+/// Coerce any value to `bool` following JS truthiness rules.
+/// - `bool` → as-is
+/// - `i64` / `comptime_int` → `!= 0`
+/// - `f64` → not zero and not NaN
+/// - `[]const u8` → non-empty (`.len > 0`)
+/// - string literals (`*const [N:0]u8`) → non-empty
+/// - null / optional null → `false`
+/// - everything else → `true` (objects are truthy)
+pub fn isTruthy(value: anytype) bool {
+    const T = @TypeOf(value);
+    if (T == bool) return value;
+    if (T == i64) return value != 0;
+    if (T == f64) return value != 0.0 and !std.math.isNan(value);
+    if (T == comptime_int) return value != 0;
+    if (T == []const u8) return value.len > 0;
+    if (T == @TypeOf(null)) return false;
+    // String literal: *const [N:0]u8 → check length via comptime type info
+    switch (@typeInfo(T)) {
+        .pointer => |p| if (p.size == .one) {
+            switch (@typeInfo(p.child)) {
+                .array => |a| if (a.child == u8) return a.len > 0,
+                else => {},
+            }
+        },
+        .optional => return value != null,
+        else => {},
+    }
+    return true; // fallback: objects, struct instances are truthy
+}
+
 // ── Object spread/merge helpers ─────────────────────────────────
 // These provide compile-time merging of anonymous structs,
 // used by the codegen for { ...a, ...b, c: 1 } syntax.

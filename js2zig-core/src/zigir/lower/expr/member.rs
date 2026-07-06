@@ -331,10 +331,19 @@ impl Lowerer {
                     return Some(ty.clone());
                 }
                 // Try built-in constructor / function calls
-                if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce)
-                    && let Some(ret_ty) = crate::native_builtins::builtin_return_type(&builtin)
-                {
-                    return Some(ret_ty);
+                if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
+                    // Object(x) → passthrough: inherits argument type
+                    if builtin == crate::native_builtins::BuiltinCall::ObjectConstructor
+                        && ce.arguments.len() == 1
+                        && let Some(arg) = ce.arguments.first()
+                        && let Some(e) = arg.as_expression()
+                        && let Some(arg_ty) = self.infer_expr_type(e)
+                    {
+                        return Some(arg_ty);
+                    }
+                    if let Some(ret_ty) = crate::native_builtins::builtin_return_type(&builtin) {
+                        return Some(ret_ty);
+                    }
                 }
                 None
             }

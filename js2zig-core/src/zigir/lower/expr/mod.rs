@@ -258,18 +258,28 @@ impl Lowerer {
 
         // JS global constants
         if var_name == "NaN" {
-            return IrExpr::FieldAccess {
-                object: Box::new(IrExpr::Ident(IrIdent::new("std"))),
-                field: "nan".to_string(),
-                field_kind: FieldKind::Namespace,
-            };
+            return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                module: crate::zigir::builtins::BuiltinModule::JsMath,
+                method: "nan_f64".to_string(),
+                obj_name: None,
+                obj_expr: None,
+                args: vec![],
+                return_type: crate::types::ZigType::F64,
+                ta_type_suffix: None,
+                regex_info: None,
+            });
         }
         if var_name == "Infinity" {
-            return IrExpr::FieldAccess {
-                object: Box::new(IrExpr::Ident(IrIdent::new("std"))),
-                field: "inf".to_string(),
-                field_kind: FieldKind::Namespace,
-            };
+            return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                module: crate::zigir::builtins::BuiltinModule::JsMath,
+                method: "inf_f64".to_string(),
+                obj_name: None,
+                obj_expr: None,
+                args: vec![],
+                return_type: crate::types::ZigType::F64,
+                ta_type_suffix: None,
+                regex_info: None,
+            });
         }
         // undefined → JsAny.fromUndefined()
         // (Stored as Ident with special name; Emitter will handle)
