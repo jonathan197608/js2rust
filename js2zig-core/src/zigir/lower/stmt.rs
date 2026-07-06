@@ -548,6 +548,13 @@ impl Lowerer {
                 .as_ref()
                 .and_then(|p| crate::infer::binding_name(&p.pattern))
                 .map(|name| self.make_ident(name));
+            // Register catch variable type as JsError so member access
+            // (e.name, e.message, e.stack) works correctly.
+            if let Some(ref v) = var {
+                self.type_info
+                    .var_types
+                    .insert(v.zig_name.clone(), ZigType::JsError);
+            }
             let stmts = handler
                 .body
                 .body
@@ -649,7 +656,13 @@ impl Lowerer {
                 Self::expr_references_name(&be.left, name)
                     || Self::expr_references_name(&be.right, name)
             }
-            Expression::CallExpression(ce) => Self::expr_references_name(&ce.callee, name),
+            Expression::CallExpression(ce) => {
+                Self::expr_references_name(&ce.callee, name)
+                    || ce
+                        .arguments
+                        .iter()
+                        .any(|a| Self::arg_references_name(a, name))
+            }
             Expression::StaticMemberExpression(sme) => {
                 Self::expr_references_name(&sme.object, name)
             }
@@ -661,6 +674,21 @@ impl Lowerer {
             }
             Expression::AssignmentExpression(ae) => Self::expr_references_name(&ae.right, name),
             _ => false,
+        }
+    }
+
+    /// Check if a call argument references a given identifier name.
+    fn arg_references_name(arg: &Argument, name: &str) -> bool {
+        match arg {
+            Argument::SpreadElement(se) => Self::expr_references_name(&se.argument, name),
+            // All other variants are inherited from Expression — use as_expression()
+            other => {
+                if let Some(expr) = other.as_expression() {
+                    Self::expr_references_name(expr, name)
+                } else {
+                    false
+                }
+            }
         }
     }
 

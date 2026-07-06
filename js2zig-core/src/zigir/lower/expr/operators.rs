@@ -28,9 +28,37 @@ impl Lowerer {
             }
         }
 
-        // ── Unsupported operators → compile error ──
+        // ── Unsupported operators → compile error (or special handling) ──
         match be.operator {
             BinaryOperator::Instanceof => {
+                // Special case: `e instanceof SomeError` → compare e.name
+                // with the error constructor name at runtime.
+                if let Expression::Identifier(ident) = &be.right {
+                    let name = ident.name.as_str();
+                    if matches!(
+                        name,
+                        "Error"
+                            | "URIError"
+                            | "TypeError"
+                            | "RangeError"
+                            | "SyntaxError"
+                            | "ReferenceError"
+                            | "EvalError"
+                    ) {
+                        let left_expr = self.lower_expr(&be.left);
+                        return IrExpr::Binary {
+                            op: BinOp::Eq,
+                            left: Box::new(IrExpr::FieldAccess {
+                                object: Box::new(left_expr),
+                                field: "name".to_string(),
+                                field_kind: crate::zigir::kinds::FieldKind::StructField,
+                            }),
+                            right: Box::new(IrExpr::StringLiteral(name.to_string())),
+                            left_type: Some(ZigType::Str),
+                            right_type: Some(ZigType::Str),
+                        };
+                    }
+                }
                 return IrExpr::CompileError {
                     span: self.span_to_source_span(be.span),
                     msg: "instanceof operator is not supported in Zig".to_string(),

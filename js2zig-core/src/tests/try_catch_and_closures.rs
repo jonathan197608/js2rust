@@ -25,14 +25,14 @@ try {
     );
     // Should generate if-else with error capture for the handler
     assert!(
-        zig.contains("else |err|"),
-        "Expected else |err| for catch handler:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected '}} else |_| {{' for catch handler when e is unused:\n{}",
         zig
     );
-    // Should bind catch(e) → _ = @errorName(err) (e is unused in body)
+    // e is unused in catch body (just return -1), so no JsError binding
     assert!(
-        zig.contains("_ = @errorName(err);"),
-        "Expected '_ = @errorName(err);':\n{}",
+        !zig.contains("const e ="),
+        "Should NOT have 'const e =' when e is unused:\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_basic");
@@ -53,10 +53,10 @@ try {
 "##;
     let zig = transpile_and_assert(js, "test_native_proto_try_catch_e_binding_used");
     println!("=== Try-catch e binding (used) ===\n{}", zig);
-    // Should generate `const e = @errorName(err);` in catch handler
+    // Should generate `const e = js_error.JsError.fromError(__catch_err, ...)` in catch handler
     assert!(
-        zig.contains("const e = @errorName(err);"),
-        "Expected 'const e = @errorName(err);' when e is used in catch body:\n{}",
+        zig.contains("js_error.JsError.fromError(__catch_err,"),
+        "Expected 'js_error.JsError.fromError(__catch_err, ...)' when e is used in catch body:\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_e_binding_used");
@@ -77,15 +77,16 @@ try {
 "##;
     let zig = transpile_and_assert(js, "test_native_proto_try_catch_e_binding_unused");
     println!("=== Try-catch e binding (unused) ===\n{}", zig);
-    // Should generate `_ = @errorName(err);` (not const e)
+    // Should NOT generate JsError binding when e is unused
     assert!(
-        zig.contains("_ = @errorName(err);"),
-        "Expected '_ = @errorName(err);' when e is unused:\n{}",
+        !zig.contains("js_error.JsError.fromError(__catch_err,"),
+        "Should NOT have 'JsError.fromError' when e is unused:\n{}",
         zig
     );
+    // Should use |_| instead of |__catch_err| when e is unused
     assert!(
-        !zig.contains("const e = @errorName(err);"),
-        "Should NOT have 'const e' when e is unused:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected '}} else |_| {{' when e is unused:\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_e_binding_unused");
@@ -112,10 +113,10 @@ try {
         "Expected break :label for throw inside try:\n{}",
         zig
     );
-    // Should have catch handler via if-else
+    // Should have catch handler via if-else (e unused, so |_|)
     assert!(
-        zig.contains("else |err|"),
-        "Expected catch handler via if-else:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected catch handler with |_| (e unused):\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_throw_break");
@@ -172,10 +173,10 @@ return result;
         "Expected finally as defer:\n{}",
         zig
     );
-    // Should have catch handler via if-else
+    // Should have catch handler via if-else (e unused, so |_|)
     assert!(
-        zig.contains("else |err|"),
-        "Expected catch handler via if-else:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected catch handler with |_| (e unused):\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_finally");
@@ -183,7 +184,8 @@ return result;
 
 #[test]
 fn test_native_proto_try_catch_no_throw() {
-    // try-catch without throw statement: body emitted inline, handler skipped.
+    // try-catch without throw statement where body always exits:
+    // catch handler is unreachable, so the entire try-catch is inlined.
     let js = r#"
 function safeOp(x) {
 try {
@@ -197,10 +199,12 @@ try {
     println!("=== Try-catch no throw ===\n{}", zig);
     // Body should be emitted (return x + 1)
     assert!(zig.contains("return x + 1"), "Expected body:\n{}", zig);
-    // Catch handler is unreachable — not generated
+    // When body always exits and there's no throw, the catch handler
+    // is unreachable and the entire try-catch is inlined.
+    // No catch handler should be generated in this case.
     assert!(
-        !zig.contains("else |err|"),
-        "Should not have catch handler for throw-free try:\n{}",
+        !zig.contains("else |__catch_err|") && !zig.contains("} else |_| {"),
+        "Should not have catch handler when body always exits:\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_try_catch_no_throw");
@@ -263,10 +267,10 @@ try {
         result_count,
         zig
     );
-    // Inner catch handler generates `_ = @errorName(err)` (e unused, body just returns -1)
+    // Inner catch handler: e unused in body, so |_| not |__catch_err|
     assert!(
-        zig.contains("_ = @errorName(err);"),
-        "Expected '_ = @errorName' in inner catch:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected '}} else |_| {{' in inner catch when e unused:\n{}",
         zig
     );
     // Error propagation: `if (_js_try_1) |_| {} else |_| break :_js_try_body_blk_0`
@@ -341,10 +345,10 @@ try {
         "Expected body for no-throw inner try:\n{}",
         zig
     );
-    // Has catch handler with const e
+    // Has catch handler — outer catch with unused e, so |_| not JsError
     assert!(
-        zig.contains("const e = @errorName(err);") || zig.contains("_ = @errorName(err);"),
-        "Expected catch handler for inner try:\n{}",
+        zig.contains("} else |_| {"),
+        "Expected '}} else |_| {{' for outer catch (e unused):\n{}",
         zig
     );
     // NOTE: assert_zig_ast_check skipped due to known limitation:

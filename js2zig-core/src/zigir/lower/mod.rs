@@ -376,6 +376,10 @@ impl Lowerer {
                 runtime_modules.insert(BuiltinModule::JsBigInt);
                 *needs_js_allocator = true;
             }
+            ZigType::JsError => {
+                runtime_modules.insert(BuiltinModule::JsError);
+                *needs_js_allocator = true;
+            }
             ZigType::NamedStruct(name) => match name.as_str() {
                 "Map" | "Set" => {
                     runtime_modules.insert(BuiltinModule::JsCollections);

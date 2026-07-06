@@ -387,7 +387,20 @@ impl Emitter {
         let needs_catch = catch_var.is_some();
 
         // ── B1: No throw, no catch, no nested try → inline body + finally ──
-        if !has_throw && !needs_catch && !has_nested_try {
+        // Also applies when: no throw AND body always exits (catch is unreachable)
+        if !has_throw
+            && (!needs_catch
+                || try_block.stmts.last().is_some_and(|s| {
+                    matches!(
+                        s,
+                        IrStmt::Return { .. }
+                            | IrStmt::Throw { .. }
+                            | IrStmt::Break { .. }
+                            | IrStmt::Continue { .. }
+                    )
+                }))
+            && !has_nested_try
+        {
             self.emit_block_stmts_unlabeled(try_block);
             if let Some(finally_block) = finally {
                 self.emit_block_stmts_unlabeled(finally_block);
@@ -395,16 +408,8 @@ impl Emitter {
             return;
         }
 
-        // ── B2: Catch present but no throw, no nested try → inline body + finally, drop catch ──
-        if !has_throw && !has_nested_try {
-            self.emit_block_stmts_unlabeled(try_block);
-            if let Some(finally_block) = finally {
-                self.emit_block_stmts_unlabeled(finally_block);
-            }
-            return;
-        }
-
-        // ── Case A: Has throw or nested try → full labeled block pattern ──
+        // ── Case A: Has catch (and catch may be reached), throw, or nested try
+        // → full labeled block pattern ──
         // Double labeled-block pattern:
         //   outer blk (_js_try_blk_N): scope for defer (finally) + catch dispatch
         //   inner body blk (_js_try_body_blk_N): scope for throw → break to catch
@@ -442,8 +447,8 @@ impl Emitter {
         ));
         self.indent_push();
 
-        // Set inside_try_block so that throw statements emit
-        // break :body_blk_label error.JsThrow
+        // Set inside_try_block so that throw/break statements emit
+        // break :body_blk_label or break :blk_label
         self.inside_try_block = Some(body_blk_label.clone());
 
         self.emit_block_stmts_unlabeled(try_block);
@@ -472,15 +477,21 @@ impl Emitter {
         if needs_catch {
             self.writeln(&format!("if ({}) |_| {{", body_result_var));
             // success path: nothing to do
-            self.writeln("} else |err| {");
-            self.indent_push();
-            if let Some(var) = catch_var {
-                if catch_var_referenced {
-                    self.writeln(&format!("const {} = @errorName(err);", var.zig_name));
-                } else {
-                    self.writeln("_ = @errorName(err);");
-                }
+            if catch_var_referenced {
+                self.writeln("} else |__catch_err| {");
+            } else {
+                self.writeln("} else |_| {");
             }
+            self.indent_push();
+            if let Some(var) = catch_var
+                && catch_var_referenced
+            {
+                self.writeln(&format!(
+                    "const {} = js_error.JsError.fromError(__catch_err, js_allocator.allocator()) catch @panic(\"OOM: JsError\");",
+                    var.zig_name
+                ));
+            }
+            // When !catch_var_referenced: catch capture is |_| (discarded).
             // Set inside_try_block to outer label so re-throw in catch body
             // produces break :blk_label error.JsThrow
             self.inside_try_block = Some(blk_label.clone());

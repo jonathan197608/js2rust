@@ -139,12 +139,34 @@ impl Emitter {
             "decodeURI" => {
                 self.write("js_uri.decodeURI(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
-                self.write(") catch \"\"");
+                self.write(")");
+                if let Some(label) = &self.inside_try_block {
+                    // Inside a try block: propagate the original error so
+                    // the catch dispatch can map it to the correct JsError name
+                    self.write(&format!(
+                        " catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else {
+                    // Not inside a try block: swallow error
+                    self.write(" catch \"\"");
+                }
             }
             "decodeURIComponent" => {
                 self.write("js_uri.decodeURIComponent(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
-                self.write(") catch \"\"");
+                self.write(")");
+                if let Some(label) = &self.inside_try_block {
+                    // Inside a try block: propagate the original error so
+                    // the catch dispatch can map it to the correct JsError name
+                    self.write(&format!(
+                        " catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else {
+                    // Not inside a try block: swallow error
+                    self.write(" catch \"\"");
+                }
             }
             "parseInt" => {
                 self.write("js_uri.parseInt(");

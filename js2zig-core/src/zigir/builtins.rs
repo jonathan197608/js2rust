@@ -18,6 +18,7 @@ pub enum BuiltinModule {
     JsUri,
     JsBigInt,
     JsCollections,
+    JsError,
     JsRuntime,
 }
 
@@ -39,6 +40,7 @@ impl BuiltinModule {
             BuiltinModule::JsUri => "js_uri",
             BuiltinModule::JsBigInt => "js_bigint",
             BuiltinModule::JsCollections => "js_collections",
+            BuiltinModule::JsError => "js_error",
             BuiltinModule::JsRuntime => "js_runtime",
         }
     }
@@ -65,9 +67,10 @@ mod tests {
             BuiltinModule::JsUri,
             BuiltinModule::JsBigInt,
             BuiltinModule::JsCollections,
+            BuiltinModule::JsError,
             BuiltinModule::JsRuntime,
         ];
-        assert_eq!(modules.len(), 15);
+        assert_eq!(modules.len(), 16);
         // Verify each module path is non-empty
         for m in &modules {
             assert!(!m.module_path().is_empty());

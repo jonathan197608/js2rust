@@ -37,6 +37,8 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
     let needs_js_uri = zig_code.contains("js_uri.");
     let needs_js_regexp = zig_code.contains("js_regexp.");
     let needs_js_symbol = zig_code.contains("js_symbol.") || zig_code.contains("JsSymbol");
+    let needs_js_bigint = zig_code.contains("js_bigint.");
+    let needs_js_error = zig_code.contains("js_error.");
     let any_runtime = needs_js_date
         || needs_js_object
         || needs_js_number
@@ -49,7 +51,9 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         || needs_js_collections
         || needs_js_uri
         || needs_js_regexp
-        || needs_js_symbol;
+        || needs_js_symbol
+        || needs_js_bigint
+        || needs_js_error;
 
     let wrapped = if needs_std || any_runtime {
         let mut w = String::new();
@@ -95,6 +99,12 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
             w.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
             // Also import the JsSymbol type for function signatures
             w.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
+        }
+        if needs_js_bigint {
+            w.push_str("const js_bigint = @import(\"js_runtime/js_bigint.zig\");\n");
+        }
+        if needs_js_error {
+            w.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
         }
         if needs_string_hashmap {
             w.push_str("const StringHashMap = std.StringHashMap;\n");
