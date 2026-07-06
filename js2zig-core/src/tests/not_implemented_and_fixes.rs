@@ -958,6 +958,85 @@ return x !== x ? "NaN" : "ok";
     );
 }
 
+// ── Gap 1: BigInt compound assignment in for-loop update ──────────
+
+/// Gap 1 diagnostic: BigInt += in for-loop update should emit valid Zig.
+/// Currently the continuation syntax `while (cond) : ({ bigVar += ... })` is
+/// invalid because BigInt has no Zig `+=` and the expansion contains `catch`.
+#[test]
+fn test_bigint_for_loop_compound_assign() {
+    let js = r#"
+/**
+ * @param {bigint} sum
+ * @returns {bigint}
+ */
+export function test(sum) {
+    for (var i = 0; i < 3; i++) {
+        sum += BigInt(i);
+    }
+    return sum;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_bigint_for_loop_compound");
+    println!("=== BigInt for-loop compound assign ===\n{}", zig);
+
+    // The update should NOT use += for BigInt; it should use .add() method
+    // and handle catch correctly (not in while continuation).
+    assert!(
+        !zig.contains("sum +="),
+        "BigInt compound assignment should not use Zig +=:\n{}",
+        zig
+    );
+}
+
+// ── Cross-type comparison: String vs Number, Bool vs Number, etc. ────
+
+/// Gap 3 fix: comparing a @type-annotated string with a number literal
+/// must route through JsAny comparison instead of emitting invalid Zig `==`.
+#[test]
+fn test_cross_type_str_vs_number_strict_eq() {
+    let js = r#"
+/**
+ * @param {string} s
+ * @param {number} n
+ */
+export function strEqNum(s, n) {
+    return s === n;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_cross_type_str_vs_num_strict_eq");
+    println!("=== Cross-type str === num ===\n{}", zig);
+
+    // Should use JsAny.from(...).strictEq(JsAny.from(...)) or .eq()
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for cross-type comparison:\n{}",
+        zig
+    );
+}
+
+/// Gap 3 fix: comparing a boolean with a number uses JsAny comparison.
+#[test]
+fn test_cross_type_bool_vs_number_eq() {
+    let js = r#"
+/**
+ * @param {boolean} b
+ * @param {number} n
+ */
+export function boolEqNum(b, n) {
+    return b == n;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_cross_type_bool_vs_num_eq");
+    println!("=== Cross-type bool == num ===\n{}", zig);
+
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for bool vs number comparison:\n{}",
+        zig
+    );
+}
+
 // ── Shadowing infrastructure tests (#946, #947) ─────────────────────
 
 /// Test #946: Variable shadowing in nested blocks.

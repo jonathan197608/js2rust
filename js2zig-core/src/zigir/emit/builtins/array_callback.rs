@@ -456,6 +456,7 @@ impl Emitter {
     //
     pub(super) fn emit_reduce_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
         let blk = self.next_label();
+        let acc_name = format!("_acc_{}", self.peek_label_id());
         // Determine init value and accumulator type
         let init_expr_str = match &data.reduce_init {
             Some(expr) => {
@@ -473,7 +474,10 @@ impl Emitter {
             "i64"
         };
         self.write(&format!("({}: {{ ", blk));
-        self.write(&format!("var acc: {} = {}; ", acc_type, init_expr_str));
+        self.write(&format!(
+            "var {}: {} = {}; ",
+            acc_name, acc_type, init_expr_str
+        ));
         self.write(&format!(
             "for ({}.items) |{}| ",
             data.obj_name, data.elem_param
@@ -484,12 +488,12 @@ impl Emitter {
             self.writeln("");
             match stmt {
                 crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("acc = ");
+                    self.write(&format!("{} = ", acc_name));
                     self.emit_expr(expr);
                     self.write(";");
                 }
                 crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("acc = ");
+                    self.write(&format!("{} = ", acc_name));
                     self.emit_expr(expr);
                     self.write(";");
                 }
@@ -499,6 +503,6 @@ impl Emitter {
         self.indent_pop();
         self.writeln("");
         self.write("}");
-        self.write(&format!(" break :{} acc; }})", blk));
+        self.write(&format!(" break :{} {}; }})", blk, acc_name));
     }
 }

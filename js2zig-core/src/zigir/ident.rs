@@ -57,8 +57,11 @@ const ZIG_RESERVED_KEYWORDS: &[&str] = &[
 
 /// Convert a JS identifier to a Zig-safe identifier.
 /// Pre-pends `_` to avoid collisions with Zig reserved keywords.
+/// Also escapes `_` (Zig discard identifier) to `__js_underscore`.
 pub fn zig_safe_name(name: &str) -> String {
-    if ZIG_RESERVED_KEYWORDS.contains(&name) {
+    if name == "_" {
+        "__js_underscore".to_string()
+    } else if ZIG_RESERVED_KEYWORDS.contains(&name) {
         format!("_{}", name)
     } else {
         name.to_string()
@@ -200,6 +203,14 @@ mod tests {
         let id = IrIdent::new("error");
         assert_eq!(id.js_name, "error");
         assert_eq!(id.zig_name, "_error");
+    }
+
+    #[test]
+    fn test_zig_safe_name_underscore() {
+        assert_eq!(zig_safe_name("_"), "__js_underscore");
+        let id = IrIdent::new("_");
+        assert_eq!(id.js_name, "_");
+        assert_eq!(id.zig_name, "__js_underscore");
     }
 
     #[test]

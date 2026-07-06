@@ -257,6 +257,57 @@ impl Lowerer {
         }
         // &&= / ||= / ??= → use AssignOp, Emitter will expand
 
+        // ── BigInt compound assignment expansion ──
+        // BigInt has no Zig +=, -=, etc. Expand `bigVar += expr` into
+        // `bigVar = bigVar + expr` (using IrExpr::Binary with BigInt type info
+        // so the Emitter generates .add() / .sub() / etc. method calls).
+        let is_compound = ae.operator != AssignmentOperator::Assign
+            && ae.operator != AssignmentOperator::LogicalAnd
+            && ae.operator != AssignmentOperator::LogicalOr
+            && ae.operator != AssignmentOperator::LogicalNullish;
+
+        if is_compound {
+            // Infer target type from the left-hand side
+            let target_type = self.infer_assign_target_type(&ae.left);
+            if target_type == Some(ZigType::BigInt) {
+                let target = self.lower_assign_target(&ae.left);
+                let value = Box::new(self.lower_expr(&ae.right));
+                // Build the read-side expression for the target.
+                // Only Ident targets are supported for now; other targets
+                // (member, index) fall through to the default path.
+                if let crate::zigir::types::IrAssignTarget::Ident(name) = &target {
+                    let bin_op = match ae.operator {
+                        AssignmentOperator::Addition => BinOp::Add,
+                        AssignmentOperator::Subtraction => BinOp::Sub,
+                        AssignmentOperator::Multiplication => BinOp::Mul,
+                        AssignmentOperator::Division => BinOp::Div,
+                        AssignmentOperator::Remainder => BinOp::Mod,
+                        AssignmentOperator::ShiftLeft => BinOp::Shl,
+                        AssignmentOperator::ShiftRight => BinOp::Shr,
+                        AssignmentOperator::ShiftRightZeroFill => BinOp::UrShr,
+                        AssignmentOperator::BitwiseAnd => BinOp::BitAnd,
+                        AssignmentOperator::BitwiseOR => BinOp::BitOr,
+                        AssignmentOperator::BitwiseXOR => BinOp::BitXor,
+                        _ => BinOp::Add, // fallback, shouldn't reach here
+                    };
+                    let name_clone = name.clone();
+                    return IrExpr::Assign {
+                        op: AssignOp::Assign,
+                        target: Box::new(target),
+                        value: Box::new(IrExpr::Binary {
+                            op: bin_op,
+                            left: Box::new(IrExpr::Ident(name_clone)),
+                            right: value,
+                            left_type: Some(ZigType::BigInt),
+                            right_type: Some(ZigType::BigInt),
+                        }),
+                    };
+                }
+                // For non-Ident BigInt targets, fall through to default path
+                // (may produce invalid Zig but handles the common case first)
+            }
+        }
+
         let op = match ae.operator {
             AssignmentOperator::Assign => AssignOp::Assign,
             AssignmentOperator::Addition => AssignOp::Add,

@@ -564,6 +564,7 @@ impl TypeInferrer {
             "bool" => ZigType::Bool,
             "[]const u8" => ZigType::Str,
             "void" => ZigType::Void,
+            "bigint" => ZigType::BigInt,
             // Named struct (fallback for types not in typedefs)
             _ if !s.contains(' ') && !s.contains('[') => ZigType::NamedStruct(s.to_string()),
             _ => ZigType::I64, // default

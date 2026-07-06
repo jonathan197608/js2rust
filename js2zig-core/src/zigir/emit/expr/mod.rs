@@ -40,8 +40,10 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::BigIntLiteral(s) => {
+                // Wrap in parentheses: `catch` has lower precedence than `+`/`-`,
+                // so `BigInt.init(...) catch @panic(...) + x` would parse incorrectly.
                 self.write(&format!(
-                    "js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\")",
+                    "(js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\"))",
                     s
                 ));
             }
@@ -92,6 +94,28 @@ impl Emitter {
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
                     self.emit_string_comparison(*op, left, right);
+                }
+                // ── Cross-type comparison (e.g. String vs Number, Bool vs I64) ──
+                // When both types are known but different, Zig's == / != / < etc.
+                // are type-mismatch errors. Route through JsAny comparison instead.
+                else if lt.is_some()
+                    && rt.is_some()
+                    && lt != rt
+                    && matches!(
+                        op,
+                        BinOp::Eq
+                            | BinOp::Ne
+                            | BinOp::StrictEq
+                            | BinOp::StrictNe
+                            | BinOp::Lt
+                            | BinOp::Le
+                            | BinOp::Gt
+                            | BinOp::Ge
+                    )
+                {
+                    // Neither side is JsAny here (that branch is above),
+                    // but emit_jsany_comparison will wrap both in JsAny.from().
+                    self.emit_jsany_comparison(*op, left, right, false, false);
                 }
                 // ── JsAny comparison ──
                 else if (left_is_jsany || right_is_jsany)
