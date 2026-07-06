@@ -17,3 +17,6 @@ examples/mdn-test-project/js2rust_backup.toml
 examples/mdn-test-project/js2rust_filtered.toml
 examples/failing*.txt
 failing*.txt
+
+# Agent temp directory
+.temp/

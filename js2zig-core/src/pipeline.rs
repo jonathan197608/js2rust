@@ -180,11 +180,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     if let Some(ref host_config) = config.host_config {
         // Convert HostFunction to HostFnDef and register
         for f in &host_config.functions {
-            let params: Vec<(String, crate::native_proto::ZigType)> = f
+            let params: Vec<(String, crate::types::ZigType)> = f
                 .params
                 .iter()
                 .enumerate()
-                .map(|(i, t)| (format!("arg{}", i), crate::native_proto::ZigType::from(*t)))
+                .map(|(i, t)| (format!("arg{}", i), crate::types::ZigType::from(*t)))
                 .collect();
 
             if f.is_async {
@@ -192,8 +192,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     // Async with simple return type
                     let return_type = f
                         .return_type
-                        .map(crate::native_proto::ZigType::from)
-                        .unwrap_or(crate::native_proto::ZigType::Void);
+                        .map(crate::types::ZigType::from)
+                        .unwrap_or(crate::types::ZigType::Void);
                     host_fns.register_async_simple(&f.name, &f.name, params, return_type);
                 } else {
                     // Async with struct return type
@@ -216,11 +216,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     host_fns.register_async(&f.name, &f.name, params, struct_def);
                 }
             } else {
-                let return_type = f.return_type.map(crate::native_proto::ZigType::from);
+                let return_type = f.return_type.map(crate::types::ZigType::from);
                 host_fns.register(
                     &f.name,
                     params,
-                    return_type.unwrap_or(crate::native_proto::ZigType::Void),
+                    return_type.unwrap_or(crate::types::ZigType::Void),
                 );
             }
         }
@@ -297,12 +297,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut all_module_exports: Vec<(String, String)> = Vec::new();
             let mut all_test_code = String::new();
             let mut combined_zig = String::new();
-            let mut all_cabi_exports: Vec<crate::native_proto::NativeCabiExport> = Vec::new();
+            let mut all_cabi_exports: Vec<crate::types::NativeCabiExport> = Vec::new();
             let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
             let mut has_error = false;
             let mut file_diagnostics: Vec<String> = Vec::new();
 
-            // --- Codegen pass (all metadata from group AST, no source scanning) ---
+            // --- Transpile pass (all metadata from group AST, no source scanning) ---
             let core_exports = group
                 .exported_names
                 .get(&group.core_file)
@@ -352,7 +352,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // For normal groups: core file's JS exports → C ABI;
                 //                    additional core files → C ABI (full exports);
                 //                    dependency file: only re-exported names → C ABI.
-                let codegen_exports: HashSet<String> = if is_test_group {
+                let transpile_exports: HashSet<String> = if is_test_group {
                     group.all_fn_names.get(member).cloned().unwrap_or_default()
                 } else if *member == group.core_file || additional_core_set.contains(member) {
                     group
@@ -367,11 +367,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // Collect host function return types and param types for type inference
                 let mut host_return_types: std::collections::HashMap<
                     String,
-                    crate::native_proto::ZigType,
+                    crate::types::ZigType,
                 > = std::collections::HashMap::new();
                 let mut host_param_types: std::collections::HashMap<
                     String,
-                    Vec<crate::native_proto::ZigType>,
+                    Vec<crate::types::ZigType>,
                 > = std::collections::HashMap::new();
                 for def in host_fns.iter() {
                     host_return_types.insert(def.name.clone(), def.ret_type.clone());
@@ -387,7 +387,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 // Use native_proto (strict static type system) — pre-parsed AST
                 // from analyze_single_group, no re-parsing of source text.
-                let exports_for_all_modules = codegen_exports.clone();
+                let exports_for_all_modules = transpile_exports.clone();
 
                 let program = match group.parsed_programs.get(member) {
                     Some(p) => p,
@@ -400,7 +400,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let transpile_result = crate::native_proto::transpile_js(
                     program,
                     &src,
-                    Some(codegen_exports),
+                    Some(transpile_exports),
                     Some(&host_fns),
                 );
 
@@ -408,19 +408,19 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     match transpile_result {
                         Ok(result) => {
                             // Convert errors to diagnostics
-                            let mut diagnostics: Vec<crate::native_proto::Diagnostic> = result
+                            let mut diagnostics: Vec<crate::types::Diagnostic> = result
                                 .errors
                                 .iter()
-                                .map(|err| crate::native_proto::Diagnostic {
-                                    kind: crate::native_proto::DiagnosticKind::Error,
+                                .map(|err| crate::types::Diagnostic {
+                                    kind: crate::types::DiagnosticKind::Error,
                                     span: None,
                                     message: err.clone(),
                                 })
                                 .collect();
                             // Convert warnings to diagnostics (non-fatal)
                             diagnostics.extend(result.warnings.iter().map(|w| {
-                                crate::native_proto::Diagnostic {
-                                    kind: crate::native_proto::DiagnosticKind::Warning,
+                                crate::types::Diagnostic {
+                                    kind: crate::types::DiagnosticKind::Warning,
                                     span: None,
                                     message: w.clone(),
                                 }
@@ -436,7 +436,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             // fn_return_types: use var_types (native_proto::ZigType)
                             let fn_return_types: std::collections::HashMap<
                                 String,
-                                crate::native_proto::ZigType,
+                                crate::types::ZigType,
                             > = result
                                 .var_types
                                 .iter()
@@ -457,8 +457,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         }
                         Err(e) => {
                             // Return error as diagnostic
-                            let diagnostics = vec![crate::native_proto::Diagnostic {
-                                kind: crate::native_proto::DiagnosticKind::Error,
+                            let diagnostics = vec![crate::types::Diagnostic {
+                                kind: crate::types::DiagnosticKind::Error,
                                 span: None,
                                 message: e,
                             }];
@@ -467,7 +467,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                                 diagnostics,
                                 HashSet::new(),
                                 HashMap::new(),
-                                Vec::<crate::native_proto::NativeCabiExport>::new(),
+                                Vec::<crate::types::NativeCabiExport>::new(),
                                 crate::sourcemap::SourceMap::new(""),
                             )
                         }
@@ -475,11 +475,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
                 let (hard_errors, soft_errors): (Vec<_>, Vec<_>) = diagnostics
                     .iter()
-                    .filter(|d| d.kind == crate::native_proto::DiagnosticKind::Error)
+                    .filter(|d| d.kind == crate::types::DiagnosticKind::Error)
                     .partition(|d| !d.message.contains("(Rule 8)"));
                 if !hard_errors.is_empty() {
                     let err_count = hard_errors.len();
-                    eprintln!("  skip '{}': {} codegen error(s)", member, err_count);
+                    eprintln!("  skip '{}': {} transpile error(s)", member, err_count);
                     for diag in &hard_errors {
                         eprintln!("    {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
@@ -560,20 +560,20 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
-            // Only skip the group if NO files succeeded codegen.
+            // Only skip the group if NO files succeeded transpilation.
             // Individual file errors are logged above; successful files still get compiled.
             if per_file_modules.is_empty() {
                 if has_error {
-                    eprintln!("  skip: all files failed codegen");
+                    eprintln!("  skip: all files failed transpilation");
                 } else {
-                    eprintln!("  skip: no valid modules after codegen");
+                    eprintln!("  skip: no valid modules after transpilation");
                 }
                 continue;
             }
 
             if has_error {
                 eprintln!(
-                    "  warning: {} file(s) had codegen errors, continuing with {} successful file(s)",
+                    "  warning: {} file(s) had transpile errors, continuing with {} successful file(s)",
                     group.members.len() - per_file_modules.len(),
                     per_file_modules.len()
                 );
@@ -584,8 +584,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             for (exp_name, mod_name) in &all_module_exports {
                 name_to_module.entry(exp_name).or_insert(mod_name);
             }
-            let mut name_to_cabi: HashMap<&str, &crate::native_proto::NativeCabiExport> =
-                HashMap::new();
+            let mut name_to_cabi: HashMap<&str, &crate::types::NativeCabiExport> = HashMap::new();
             for exp in &all_cabi_exports {
                 name_to_cabi.entry(&exp.name).or_insert(exp);
             }
@@ -765,7 +764,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 /// the function with idiomatic Zig string types.
 pub fn gen_cabi_wrappers(
     name_to_module: &HashMap<&str, &str>,
-    name_to_cabi: &HashMap<&str, &crate::native_proto::NativeCabiExport>,
+    name_to_cabi: &HashMap<&str, &crate::types::NativeCabiExport>,
 ) -> String {
     use std::collections::HashSet;
 
@@ -782,9 +781,9 @@ pub fn gen_cabi_wrappers(
         // Prefix module name with _ to match orchestrator import (const _mod = @import(...))
         let module = format!("_{}", module);
 
-        let returns_string = exp.ret_type == crate::native_proto::ZigType::Str;
-        let ret_is_js_any = exp.ret_type == crate::native_proto::ZigType::Anytype;
-        let ret_is_arraylist = matches!(exp.ret_type, crate::native_proto::ZigType::ArrayList(_));
+        let returns_string = exp.ret_type == crate::types::ZigType::Str;
+        let ret_is_js_any = exp.ret_type == crate::types::ZigType::Anytype;
+        let ret_is_arraylist = matches!(exp.ret_type, crate::types::ZigType::ArrayList(_));
 
         // JsAny/ArrayList returns: re-export as const alias (no CABI export).
         // This lets Zig test code call the function, but no C ABI symbol is emitted.
@@ -799,8 +798,7 @@ pub fn gen_cabi_wrappers(
 
         // Skip functions with JsValue/JsAny parameters (C ABI doesn't support unions)
         let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
-            *ty == crate::native_proto::ZigType::Void
-                || *ty == crate::native_proto::ZigType::Anytype
+            *ty == crate::types::ZigType::Void || *ty == crate::types::ZigType::Anytype
         });
         if has_js_obj_param {
             // Re-export as const alias (no C ABI export)
@@ -820,7 +818,7 @@ pub fn gen_cabi_wrappers(
 
         for (pname, ptype) in &exp.params {
             arg_names.push(pname.clone());
-            if *ptype == crate::native_proto::ZigType::Str {
+            if *ptype == crate::types::ZigType::Str {
                 cabi_params.push(format!("{}: [*:0]const u8", pname));
                 zig_params.push(format!("{}: []const u8", pname));
                 cabi_to_zig_conversions.push(format!(
@@ -840,7 +838,7 @@ pub fn gen_cabi_wrappers(
             .params
             .iter()
             .map(|(pname, ptype)| {
-                if *ptype == crate::native_proto::ZigType::Str {
+                if *ptype == crate::types::ZigType::Str {
                     format!("{}_slice", pname)
                 } else {
                     pname.clone()
@@ -889,7 +887,7 @@ pub fn gen_cabi_wrappers(
                     "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
                     name = name,
                 ));
-            } else if let crate::native_proto::ZigType::NamedStruct(ref sn) = exp.ret_type {
+            } else if let crate::types::ZigType::NamedStruct(ref sn) = exp.ret_type {
                 // Async struct return: use out-pointer C ABI wrapper
                 let struct_name = format!("host.{}", sn);
                 let conversions = if cabi_to_zig_conversions.is_empty() {
@@ -1034,7 +1032,7 @@ pub fn gen_cabi_wrappers(
             ));
         } else {
             let ret_zig = exp.ret_type.to_cabi_str();
-            let exp_ret_is_js_value = exp.ret_type == crate::native_proto::ZigType::Void;
+            let exp_ret_is_js_value = exp.ret_type == crate::types::ZigType::Void;
 
             // Build C ABI param list: add _err out-param for can_throw non-string exports
             let mut cabi_params_with_err = cabi_params.clone();
@@ -1166,7 +1164,7 @@ pub fn gen_cabi_wrappers(
 pub fn write_cabi_metadata(
     out_dir: &Path,
     group_name: &str,
-    cabi_exports: &[crate::native_proto::NativeCabiExport],
+    cabi_exports: &[crate::types::NativeCabiExport],
     host_fns: &crate::host::HostFnRegistry,
     include_init: bool,
 ) {
@@ -1176,7 +1174,7 @@ pub fn write_cabi_metadata(
     let exports_path = project_dir.join("cabi_exports.json");
     let mut exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
-        .filter(|exp| exp.ret_type != crate::native_proto::ZigType::Anytype)
+        .filter(|exp| exp.ret_type != crate::types::ZigType::Anytype)
         .map(|exp| {
             // Build params list
             let params: Vec<serde_json::Value> = exp
@@ -1195,7 +1193,7 @@ pub fn write_cabi_metadata(
 
             // For NamedStruct returns, look up struct fields from host_fns
             let (ret_struct_name, ret_struct_fields) =
-                if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = exp.ret_type {
+                if let crate::types::ZigType::NamedStruct(ref struct_name) = exp.ret_type {
                     // Look up the struct definition from host_fns
                     let struct_fields: Option<Vec<serde_json::Value>> = host_fns
                         .structs

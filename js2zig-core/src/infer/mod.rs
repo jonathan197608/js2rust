@@ -1,4 +1,4 @@
-// native_proto/infer/mod.rs
+﻿// native_proto/infer/mod.rs
 // Type inference for native_proto mode.
 // Follows the 8-rule simplification plan:
 // 1. Literal expressions → definite type (use JSDoc if available)
@@ -10,15 +10,15 @@
 // 7. Non-export function params → indeterminate → anytype
 // 8. Indeterminate → report compile error
 //
-// Phase A: All type inference runs BEFORE codegen.
+// Phase A: All type inference runs BEFORE lowering/emission.
 // TypeInferrer walks the full AST once and produces a TypeCheckResult
-// that Codegen reads (purely generative after that).
+// that the Lowerer/Emitter reads (purely generative after that).
 
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::native_proto::JSDocData;
-use crate::native_proto::ZigType;
+use crate::types::JSDocData;
+use crate::types::ZigType;
 
 pub mod expr;
 pub mod fn_types;
@@ -26,7 +26,7 @@ pub mod helpers;
 pub mod passes;
 
 // Re-export public utilities for backward compatibility
-// (codegen uses crate::native_proto::infer::binding_name)
+// (the Lowerer uses crate::infer::binding_name)
 pub use helpers::binding_name;
 
 /// Result of type inference: either a definite type or indeterminate.
@@ -38,10 +38,10 @@ pub enum InferResult {
     Indeterminate,
 }
 
-// ── TypeInferResult: read-only snapshot passed to Codegen ──
+// ── TypeInferResult: read-only snapshot passed to the Lowerer ──
 
 /// Complete type-checking result computed by TypeInferrer.
-/// Codegen reads from this during the code-generation pass — no writes.
+/// The Lowerer reads from this during lowering — no writes.
 #[derive(Debug, Clone)]
 pub struct TypeCheckResult {
     /// Variable → inferred type (toplevel + function-local, keyed by name only)
@@ -150,7 +150,7 @@ impl TypeInferrer {
             self.host_return_types
                 .insert(def.name.clone(), def.ret_type.clone());
             // Populate struct field types for async return structs
-            if let crate::native_proto::ZigType::NamedStruct(ref struct_name) = def.ret_type
+            if let crate::types::ZigType::NamedStruct(ref struct_name) = def.ret_type
                 && let Some(fields) = host_fns.struct_fields_map().get(struct_name)
             {
                 let field_map: std::collections::HashMap<String, ZigType> =
@@ -166,7 +166,7 @@ impl TypeInferrer {
     // ============================================================
 
     /// Run all type-inference passes on a program and return the result.
-    /// After this, Codegen can generate code without doing any inference.
+    /// After this, the Lowerer can lower without doing any inference.
     pub fn infer_all(
         &mut self,
         program: &Program,

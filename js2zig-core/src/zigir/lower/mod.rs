@@ -1,0 +1,867 @@
+// zigir/lower/mod.rs
+// AST → ZigIR lowering: transforms JS AST + type info into structured IR.
+//
+// The Lowerer transforms JS AST + type-inference results into structured
+// ZigIR. All semantic decisions (type resolution, name mangling, closure
+// lowering) happen in sub-modules; the Emitter phase is pure formatting.
+//
+// Sub-module layout:
+//   decl.rs    — variable / function / destructure declaration lowering
+//   stmt.rs    — statement lowering (if/for/switch/try/loop/etc.)
+//   class.rs   — class declaration + method lowering
+//   expr.rs    — expression lowering (literals, operators, calls, etc.)
+//   closure.rs — closure struct generation + capture analysis
+//   cabi.rs    — C ABI export metadata + utility/query methods + free helpers
+//   helpers.rs — FnContext struct + SetFlagGuard
+
+pub mod cabi;
+pub mod class;
+pub mod closure;
+pub mod decl;
+pub mod expr;
+pub mod helpers;
+pub mod stmt;
+
+use std::collections::HashSet;
+
+use oxc_ast::ast::*;
+
+use crate::infer::TypeCheckResult;
+use crate::types::{ClosureManager, JSDocData, ZigType};
+use crate::zigir::builtins::BuiltinModule;
+use crate::zigir::ident::NameMangler;
+use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
+use crate::zigir::types::{IrDecl, IrImport, IrModule, IrTypedef, IrTypedefField};
+
+use helpers::FnContext;
+
+// ═══════════════════════════════════════════════════════
+//  Lowerer struct
+// ═══════════════════════════════════════════════════════
+
+/// AST → ZigIR lowering engine.
+///
+/// Composes 3 sub-structures:
+/// - `name_mangler`: counter-per-prefix + shadow-scope stack
+/// - `fn_ctx`:       per-function context
+/// - `closure_mgr`:  closure struct collection
+pub struct Lowerer {
+    // ── Read-only inputs ──────────────────────────────
+    /// Pre-computed type-inference results (read-only during lowering).
+    pub(super) type_info: TypeCheckResult,
+    /// JSDoc annotations (typedefs, type/return/param annotations).
+    pub(super) jsdoc_data: JSDocData,
+    /// Async host function names (for await lowering).
+    pub(super) async_host_fns: HashSet<String>,
+    /// Exported function names from pipeline.
+    pub(super) exported_functions: Option<HashSet<String>>,
+    /// Original JS source text (for diagnostics line:col).
+    pub(super) source: String,
+
+    // ── Name management ───────────────────────────────
+    pub(super) name_mangler: NameMangler,
+
+    // ── Function context stack ────────────────────────
+    pub(super) fn_ctx: Option<FnContext>,
+
+    // ── Closure management ────────────────────────────
+    pub(super) closure_mgr: ClosureManager,
+
+    // ── Module-level tracking ─────────────────────────
+    /// Known class names (used to route `new ClassName()` correctly).
+    pub(super) class_names: HashSet<String>,
+
+    // ── Deferred declarations ─────────────────────────
+    /// Function definitions deferred from expression context (def-before-use).
+    /// These are inserted before the statement that triggered them.
+    pub(super) pending_expr_fns: Vec<IrDecl>,
+
+    /// Arrow function / closure struct definitions collected during var decl lowering.
+    /// These are moved to IrModule.closure_structs at the end of lowering.
+    pub(super) pending_arrow_structs: Vec<crate::zigir::types::IrClosureStruct>,
+
+    /// Pending loop label from a LabeledStatement parent.
+    /// Consumed by the next loop statement (while/for/do-while/for-of/for-in).
+    pub(super) pending_label: Option<String>,
+
+    /// Currently inside a class (affects `this` lowering).
+    pub(super) current_class: Option<String>,
+
+    /// Whether we're lowering inside an ExpressionStatement.
+    /// Affects UpdateExpression lowering (e.g., `i++` → `i += 1` vs block expr).
+    pub(super) in_expr_stmt: bool,
+
+    // ── Diagnostics ───────────────────────────────────
+    pub(super) diagnostics: Vec<IrDiagnostic>,
+}
+
+// ═══════════════════════════════════════════════════════
+//  Constructor
+// ═══════════════════════════════════════════════════════
+
+impl Lowerer {
+    /// Create a new Lowerer.
+    pub fn new(
+        type_info: TypeCheckResult,
+        jsdoc_data: JSDocData,
+        exported_functions: Option<HashSet<String>>,
+        async_host_fns: HashSet<String>,
+        source: String,
+    ) -> Self {
+        Self {
+            type_info,
+            jsdoc_data,
+            async_host_fns,
+            exported_functions,
+            source,
+            name_mangler: NameMangler::new(),
+            fn_ctx: None,
+            closure_mgr: ClosureManager::new(),
+            class_names: HashSet::new(),
+            pending_expr_fns: Vec::new(),
+            pending_arrow_structs: Vec::new(),
+            pending_label: None,
+            current_class: None,
+            in_expr_stmt: false,
+            diagnostics: Vec::new(),
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Main entry point
+// ═══════════════════════════════════════════════════════
+
+impl Lowerer {
+    /// Lower a complete JS `Program` into an `IrModule`.
+    pub fn lower(&mut self, program: &Program) -> IrModule {
+        let module_name = String::from("main"); // TODO: derive from filename
+
+        // 1. Infer required imports from type info
+        let imports = self.infer_imports();
+
+        // 2. Lower JSDoc @typedef definitions
+        let typedefs = self.lower_typedefs();
+
+        // 3. Lower top-level declarations
+        //    (Also collects class names, closure structs, etc.)
+        let mut declarations = Vec::new();
+        for stmt in &program.body {
+            let mut stmt_decls = self.lower_toplevel(stmt);
+            declarations.append(&mut stmt_decls);
+        }
+
+        // 4. Collect deferred closure structs
+        let mut closure_structs = self.lower_closure_structs();
+        // Also add arrow function struct definitions from var decl lowering
+        closure_structs.append(&mut self.pending_arrow_structs);
+
+        // 5. Build CABI exports metadata
+        let cabi_exports = self.build_cabi_exports(&declarations);
+
+        IrModule {
+            name: module_name,
+            imports,
+            typedefs,
+            closure_structs,
+            declarations,
+            diagnostics: std::mem::take(&mut self.diagnostics),
+            cabi_exports,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Import inference
+// ═══════════════════════════════════════════════════════
+
+impl Lowerer {
+    /// Infer required Zig imports from type-info and source analysis.
+    fn infer_imports(&self) -> Vec<IrImport> {
+        let mut imports = Vec::new();
+
+        // ── Track which runtime modules are needed ─────────
+        let mut needs_std = false;
+        let mut needs_js_allocator = false;
+        let mut needs_js_runtime = false;
+        let mut needs_jsany = false;
+        let mut runtime_modules: std::collections::BTreeSet<BuiltinModule> =
+            std::collections::BTreeSet::new();
+
+        // ── Heuristic: typedefs always need std (toJson) + js_allocator ──
+        if !self.jsdoc_data.typedefs.is_empty() {
+            needs_std = true;
+            needs_js_allocator = true;
+        }
+
+        // ── Heuristic: has_json_parse_types → std.json + js_json ────────
+        if !self.type_info.has_json_parse_types.is_empty() {
+            needs_std = true;
+            runtime_modules.insert(BuiltinModule::JsJson);
+        }
+
+        // ── Heuristic: async host functions → host import ───────────────
+        if !self.async_host_fns.is_empty() {
+            needs_js_allocator = true;
+        }
+
+        // ── Walk all ZigType values to detect runtime needs ─────────────
+        let mut all_types: Vec<&ZigType> = Vec::new();
+
+        for ty in self.type_info.var_types.values() {
+            all_types.push(ty);
+        }
+        for ty in self.type_info.fn_return_types.values() {
+            all_types.push(ty);
+        }
+        for params in self.type_info.fn_param_types.values() {
+            for (_name, ty) in params {
+                all_types.push(ty);
+            }
+        }
+        for fields in self.type_info.class_field_types.values() {
+            for ty in fields.values() {
+                all_types.push(ty);
+            }
+        }
+        for inner in self.type_info.array_element_types.values() {
+            all_types.push(inner);
+        }
+
+        for ty in &all_types {
+            self.zigtype_needs_imports(
+                ty,
+                &mut needs_std,
+                &mut needs_js_allocator,
+                &mut needs_js_runtime,
+                &mut needs_jsany,
+                &mut runtime_modules,
+            );
+        }
+
+        // ── Construct IrImport nodes ────────────────────────────────────
+
+        // 1. std import
+        if needs_std {
+            let mut std_items: Vec<(String, String)> = Vec::new();
+
+            if self
+                .type_info
+                .var_types
+                .values()
+                .any(|t| matches!(t, ZigType::ArrayList(_)))
+            {
+                std_items.push(("ArrayList".to_string(), "ArrayList".to_string()));
+            }
+
+            imports.push(IrImport {
+                module_name: "std".to_string(),
+                items: std_items,
+            });
+        }
+
+        // 2. js_allocator
+        if needs_js_allocator {
+            imports.push(IrImport {
+                module_name: "js_runtime/js_allocator.zig".to_string(),
+                items: vec![("js_allocator".to_string(), "js_allocator".to_string())],
+            });
+        }
+
+        // 3. js_runtime umbrella
+        if needs_js_runtime {
+            imports.push(IrImport {
+                module_name: "js_runtime/js_runtime.zig".to_string(),
+                items: vec![("js_runtime".to_string(), "js_runtime".to_string())],
+            });
+        }
+
+        // 4. Per-module runtime imports
+        for module in &runtime_modules {
+            let module_path = module.module_path().to_string();
+
+            match module {
+                BuiltinModule::JsMath => {
+                    // std.math is accessed via `std` import, not a separate import
+                }
+                BuiltinModule::JsConsole => {
+                    imports.push(IrImport {
+                        module_name: format!("js_runtime/{}.zig", module_path),
+                        items: vec![(module_path.clone(), module_path.clone())],
+                    });
+                }
+                BuiltinModule::JsSymbol => {
+                    imports.push(IrImport {
+                        module_name: format!("js_runtime/{}.zig", module_path),
+                        items: vec![
+                            (module_path.clone(), module_path.clone()),
+                            ("JsSymbol".to_string(), "JsSymbol".to_string()),
+                        ],
+                    });
+                }
+                BuiltinModule::JsBigInt => {
+                    imports.push(IrImport {
+                        module_name: format!("js_runtime/{}.zig", module_path),
+                        items: vec![(module_path.clone(), module_path.clone())],
+                    });
+                }
+                BuiltinModule::JsTypedArray => {
+                    imports.push(IrImport {
+                        module_name: "js_runtime/js_runtime.zig".to_string(),
+                        items: vec![("js_runtime".to_string(), "js_runtime".to_string())],
+                    });
+                }
+                _ => {
+                    imports.push(IrImport {
+                        module_name: format!("js_runtime/{}.zig", module_path),
+                        items: vec![(module_path.clone(), module_path.clone())],
+                    });
+                }
+            }
+        }
+
+        // 5. JsAny import
+        if needs_jsany {
+            imports.push(IrImport {
+                module_name: "js_runtime/jsany.zig".to_string(),
+                items: vec![("JsAny".to_string(), "JsAny".to_string())],
+            });
+        }
+
+        // ── Deduplicate ─────────────────────────────────────────────────
+        imports = Self::deduplicate_imports(imports);
+
+        imports
+    }
+
+    /// Merge imports with the same module_name, deduplicating their items.
+    fn deduplicate_imports(imports: Vec<IrImport>) -> Vec<IrImport> {
+        let mut map: std::collections::BTreeMap<String, Vec<(String, String)>> =
+            std::collections::BTreeMap::new();
+        for imp in imports {
+            let entry = map.entry(imp.module_name).or_default();
+            for item in imp.items {
+                if !entry.contains(&item) {
+                    entry.push(item);
+                }
+            }
+        }
+        map.into_iter()
+            .map(|(module_name, items)| IrImport { module_name, items })
+            .collect()
+    }
+
+    /// Recursively inspect a ZigType to determine which runtime imports it needs.
+    fn zigtype_needs_imports(
+        &self,
+        ty: &ZigType,
+        needs_std: &mut bool,
+        needs_js_allocator: &mut bool,
+        needs_js_runtime: &mut bool,
+        needs_jsany: &mut bool,
+        runtime_modules: &mut std::collections::BTreeSet<BuiltinModule>,
+    ) {
+        match ty {
+            ZigType::ArrayList(_) => {
+                *needs_std = true;
+            }
+            ZigType::JsAny => {
+                *needs_jsany = true;
+                *needs_js_runtime = true;
+            }
+            ZigType::JsSymbol => {
+                runtime_modules.insert(BuiltinModule::JsSymbol);
+            }
+            ZigType::BigInt => {
+                runtime_modules.insert(BuiltinModule::JsBigInt);
+                *needs_js_allocator = true;
+            }
+            ZigType::JsError => {
+                runtime_modules.insert(BuiltinModule::JsError);
+                *needs_js_allocator = true;
+            }
+            ZigType::NamedStruct(name) => match name.as_str() {
+                "Map" | "Set" => {
+                    runtime_modules.insert(BuiltinModule::JsCollections);
+                    *needs_js_allocator = true;
+                }
+                "Date" | "JsDate" => {
+                    runtime_modules.insert(BuiltinModule::JsDate);
+                    *needs_js_allocator = true;
+                }
+                _ => {}
+            },
+            ZigType::Struct(fields) => {
+                for (_, field_ty) in fields {
+                    self.zigtype_needs_imports(
+                        field_ty,
+                        needs_std,
+                        needs_js_allocator,
+                        needs_js_runtime,
+                        needs_jsany,
+                        runtime_modules,
+                    );
+                }
+            }
+            ZigType::Void
+            | ZigType::I64
+            | ZigType::F64
+            | ZigType::Bool
+            | ZigType::Str
+            | ZigType::Anytype
+            | ZigType::AnytypeReturn => {}
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Typedef lowering
+// ═══════════════════════════════════════════════════════
+
+impl Lowerer {
+    /// Lower JSDoc @typedef definitions into IrTypedef nodes.
+    fn lower_typedefs(&self) -> Vec<IrTypedef> {
+        let mut typedefs = Vec::new();
+        for (name, td) in &self.jsdoc_data.typedefs {
+            let fields: Vec<IrTypedefField> = td
+                .fields
+                .iter()
+                .map(|f| {
+                    let zig_type_str =
+                        crate::jsdoc::jsdoc_type_to_zig(&f.ty, &self.jsdoc_data.typedefs);
+                    IrTypedefField {
+                        name: f.name.clone(),
+                        zig_type: if f.optional {
+                            format!("?{}", zig_type_str)
+                        } else {
+                            zig_type_str
+                        },
+                        optional: f.optional,
+                    }
+                })
+                .collect();
+
+            let is_opaque = fields.is_empty();
+            typedefs.push(IrTypedef {
+                name: name.clone(),
+                fields,
+                is_opaque,
+                has_to_json: !is_opaque,
+            });
+        }
+        typedefs
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Top-level dispatch
+// ═══════════════════════════════════════════════════════
+
+impl Lowerer {
+    /// Lower a top-level statement into zero or more IrDecl nodes.
+    fn lower_toplevel(&mut self, stmt: &Statement) -> Vec<IrDecl> {
+        // Flush pending expression functions (def-before-use ordering)
+        let mut decls = std::mem::take(&mut self.pending_expr_fns);
+
+        match stmt {
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    decls.push(self.lower_var_decl(decl, vd.kind.is_const()));
+                }
+            }
+            Statement::ClassDeclaration(cd) => {
+                if let Some(ir_class) = self.lower_class_decl(cd) {
+                    self.class_names.insert(ir_class.name.js_name.clone());
+                    decls.push(IrDecl::Class(ir_class));
+                }
+            }
+            Statement::FunctionDeclaration(fd) => {
+                let is_export = self.is_export_fn(fd.id.as_ref().map(|id| id.name.as_str()));
+                if let Some(ir_fn) = self.lower_fn_decl(fd, is_export) {
+                    decls.push(IrDecl::Fn(ir_fn));
+                }
+            }
+            Statement::ExportNamedDeclaration(export_decl) => {
+                if let Some(decl) = &export_decl.declaration {
+                    match decl {
+                        Declaration::FunctionDeclaration(fd) => {
+                            let is_export =
+                                self.is_export_fn(fd.id.as_ref().map(|id| id.name.as_str()));
+                            if let Some(ir_fn) = self.lower_fn_decl(fd, is_export) {
+                                decls.push(IrDecl::Fn(ir_fn));
+                            }
+                        }
+                        Declaration::VariableDeclaration(vd) => {
+                            for decl in &vd.declarations {
+                                decls.push(self.lower_var_decl(decl, vd.kind.is_const()));
+                            }
+                        }
+                        _ => { /* skip unsupported */ }
+                    }
+                }
+            }
+            Statement::WithStatement(ws) => {
+                let span = self.span_to_source_span(ws.span);
+                self.diagnostics.push(IrDiagnostic {
+                    level: DiagnosticLevel::Error,
+                    span: Some(span),
+                    message: "with statement is not supported and deprecated in strict mode. Use explicit property access instead.".to_string(),
+                });
+            }
+            _ => { /* skip */ }
+        }
+
+        // Any new pending_expr_fns generated during this statement
+        // should be inserted before the NEXT statement's output.
+        let pending = std::mem::take(&mut self.pending_expr_fns);
+        decls.extend(pending);
+
+        decls
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Tests
+// ═══════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::JSDocData;
+    use std::collections::HashMap;
+
+    fn empty_type_info() -> TypeCheckResult {
+        TypeCheckResult {
+            var_types: HashMap::new(),
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            set_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_lowerer_new() {
+        let type_info = empty_type_info();
+        let jsdoc_data = JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let lowerer = Lowerer::new(
+            type_info,
+            jsdoc_data,
+            None,
+            HashSet::new(),
+            "let x = 1;".to_string(),
+        );
+        assert!(lowerer.fn_ctx.is_none());
+        assert!(lowerer.class_names.is_empty());
+        assert!(lowerer.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_lowerer_empty_program() {
+        let type_info = empty_type_info();
+        let jsdoc_data = JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+
+        // Parse an empty program
+        let js = "";
+        let allocator = oxc_allocator::Allocator::default();
+        let source_type = oxc_span::SourceType::default();
+        let parser = oxc_parser::Parser::new(&allocator, js, source_type);
+        let result = parser.parse();
+        let module = lowerer.lower(&result.program);
+
+        assert_eq!(module.name, "main");
+        assert!(module.declarations.is_empty());
+        assert!(module.closure_structs.is_empty());
+        assert!(module.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_fn_context_enter_exit() {
+        let type_info = empty_type_info();
+        let jsdoc_data = JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+
+        // Enter a function
+        let saved = lowerer.enter_fn("foo", true, Some(ZigType::I64));
+        assert!(saved.is_none()); // No previous context
+        assert!(lowerer.fn_ctx.is_some());
+
+        let ctx = lowerer.fn_ctx().unwrap();
+        assert_eq!(ctx.name, "foo");
+        assert!(ctx.is_export);
+
+        // Exit and check returned context
+        let returned = lowerer.exit_fn(None);
+        assert_eq!(returned.name, "foo");
+        assert!(lowerer.fn_ctx.is_none());
+    }
+
+    #[test]
+    fn test_fn_context_nesting() {
+        let type_info = empty_type_info();
+        let jsdoc_data = JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+
+        // Enter outer function
+        let saved_outer = lowerer.enter_fn("outer", true, Some(ZigType::Void));
+        assert!(saved_outer.is_none());
+
+        // Enter inner function (nested)
+        let saved_inner = lowerer.enter_fn("inner", false, Some(ZigType::I64));
+        assert!(saved_inner.is_some()); // Previous context saved
+        assert_eq!(saved_inner.as_ref().unwrap().name, "outer");
+
+        // Exit inner
+        let inner_ctx = lowerer.exit_fn(saved_inner);
+        assert_eq!(inner_ctx.name, "inner");
+
+        // Outer context restored
+        assert!(lowerer.fn_ctx.is_some());
+        assert_eq!(lowerer.fn_ctx().unwrap().name, "outer");
+
+        // Exit outer
+        let outer_ctx = lowerer.exit_fn(saved_outer);
+        assert_eq!(outer_ctx.name, "outer");
+        assert!(lowerer.fn_ctx.is_none());
+    }
+
+    #[test]
+    fn test_is_export_fn() {
+        let type_info = empty_type_info();
+        let jsdoc_data = JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let mut exported = HashSet::new();
+        exported.insert("greet".to_string());
+
+        let lowerer = Lowerer::new(
+            type_info,
+            jsdoc_data,
+            Some(exported),
+            HashSet::new(),
+            String::new(),
+        );
+
+        assert!(lowerer.is_export_fn(Some("greet")));
+        assert!(!lowerer.is_export_fn(Some("helper")));
+        assert!(!lowerer.is_export_fn(None));
+    }
+
+    // ── infer_imports tests ─────────────────────────────────
+
+    fn make_jsdoc_data() -> JSDocData {
+        JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_infer_imports_empty() {
+        let lowerer = Lowerer::new(
+            empty_type_info(),
+            make_jsdoc_data(),
+            None,
+            HashSet::new(),
+            String::new(),
+        );
+        let imports = lowerer.infer_imports();
+        assert!(
+            imports.is_empty(),
+            "empty program should have no imports, got {:?}",
+            imports
+        );
+    }
+
+    #[test]
+    fn test_infer_imports_typedef() {
+        let mut td = HashMap::new();
+        td.insert(
+            "User".to_string(),
+            crate::jsdoc::TypedefDef {
+                name: "User".to_string(),
+                fields: vec![crate::jsdoc::TypedefField {
+                    name: "name".to_string(),
+                    ty: "string".to_string(),
+                    optional: false,
+                }],
+            },
+        );
+        let jsdoc_data = JSDocData {
+            typedefs: td,
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        };
+        let lowerer = Lowerer::new(
+            empty_type_info(),
+            jsdoc_data,
+            None,
+            HashSet::new(),
+            String::new(),
+        );
+        let imports = lowerer.infer_imports();
+        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
+        assert!(
+            module_names.contains(&"std"),
+            "typedef should require std import, got {:?}",
+            module_names
+        );
+        assert!(
+            module_names.contains(&"js_runtime/js_allocator.zig"),
+            "typedef should require js_allocator, got {:?}",
+            module_names
+        );
+    }
+
+    #[test]
+    fn test_infer_imports_jsany() {
+        let mut var_types = HashMap::new();
+        var_types.insert("data".to_string(), ZigType::JsAny);
+        let type_info = TypeCheckResult {
+            var_types,
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            set_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+        };
+        let lowerer = Lowerer::new(
+            type_info,
+            make_jsdoc_data(),
+            None,
+            HashSet::new(),
+            String::new(),
+        );
+        let imports = lowerer.infer_imports();
+        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
+        assert!(
+            module_names.contains(&"js_runtime/jsany.zig"),
+            "JsAny should require jsany.zig, got {:?}",
+            module_names
+        );
+        assert!(
+            module_names.contains(&"js_runtime/js_runtime.zig"),
+            "JsAny should require js_runtime, got {:?}",
+            module_names
+        );
+    }
+
+    #[test]
+    fn test_infer_imports_date_and_map() {
+        let mut var_types = HashMap::new();
+        var_types.insert("d".to_string(), ZigType::NamedStruct("Date".to_string()));
+        var_types.insert("m".to_string(), ZigType::NamedStruct("Map".to_string()));
+        let type_info = TypeCheckResult {
+            var_types,
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            set_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+        };
+        let lowerer = Lowerer::new(
+            type_info,
+            make_jsdoc_data(),
+            None,
+            HashSet::new(),
+            String::new(),
+        );
+        let imports = lowerer.infer_imports();
+        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
+        assert!(
+            module_names.contains(&"js_runtime/js_date.zig"),
+            "Date should require js_date, got {:?}",
+            module_names
+        );
+        assert!(
+            module_names.contains(&"js_runtime/js_collections.zig"),
+            "Map should require js_collections, got {:?}",
+            module_names
+        );
+        assert!(
+            module_names.contains(&"js_runtime/js_allocator.zig"),
+            "Date/Map should require js_allocator, got {:?}",
+            module_names
+        );
+    }
+
+    #[test]
+    fn test_infer_imports_deduplication() {
+        let mut var_types = HashMap::new();
+        var_types.insert("a".to_string(), ZigType::JsAny);
+        var_types.insert("b".to_string(), ZigType::JsSymbol);
+        let type_info = TypeCheckResult {
+            var_types,
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            set_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+        };
+        let lowerer = Lowerer::new(
+            type_info,
+            make_jsdoc_data(),
+            None,
+            HashSet::new(),
+            String::new(),
+        );
+        let imports = lowerer.infer_imports();
+        let js_runtime_count = imports
+            .iter()
+            .filter(|i| i.module_name == "js_runtime/js_runtime.zig")
+            .count();
+        assert_eq!(
+            js_runtime_count, 1,
+            "js_runtime should appear exactly once, got {} times",
+            js_runtime_count
+        );
+    }
+}

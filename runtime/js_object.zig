@@ -8,6 +8,13 @@ const JsValue = @import("jsvalue.zig").JsValue;
 
 const JsValueHashMap = std.StringHashMap(JsValue);
 
+/// Object(x) — convert a primitive to an object wrapper.
+/// Simplified: in native_proto mode we don't have real wrapper objects,
+/// so this just returns the value as-is (passthrough).
+pub fn constructor(value: anytype) @TypeOf(value) {
+    return value;
+}
+
 /// Object.keys — return array of string keys from a HashMap.
 pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     var kiter = obj.iterator();
@@ -18,6 +25,17 @@ pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
         try list.append(alloc, key_copy);
     }
     return list.toOwnedSlice(alloc);
+}
+
+/// Object.keys for struct types — returns field names as a comptime-known array.
+/// Usage: js_object.keysStruct(@TypeOf(obj))
+pub fn keysStruct(comptime T: type) [std.meta.fields(T).len][]const u8 {
+    const fields = comptime std.meta.fields(T);
+    var result: [fields.len][]const u8 = undefined;
+    inline for (fields, 0..) |field, i| {
+        result[i] = field.name;
+    }
+    return result;
 }
 
 /// Object.values — return array of JsValue values from a HashMap.

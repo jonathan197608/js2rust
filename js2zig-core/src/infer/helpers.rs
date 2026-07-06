@@ -1,5 +1,5 @@
 // native_proto/infer/helpers.rs
-// Public utility functions used by Codegen and TypeInferrer.
+// Public utility functions used by TypeInferrer and ZigIR Lowerer.
 
 use oxc_ast::ast::*;
 use std::collections::HashSet;
@@ -85,37 +85,5 @@ pub fn expr_depends_on_anytype(expr: &Expression, anytype_params: &HashSet<Strin
         | Expression::ArrowFunctionExpression(_) => false,
         // Conservative: assume no dependency for unhandled expression types
         _ => false,
-    }
-}
-
-/// Find the first return expression in a function body (depth-first).
-/// Used by Codegen to generate `@TypeOf(first_return_expr)` for AnytypeReturn.
-pub fn find_first_return_expr<'a>(fd: &'a Function<'a>) -> Option<&'a Expression<'a>> {
-    let body = fd.body.as_ref()?;
-    for stmt in &body.statements {
-        if let Some(expr) = find_first_return_in_stmt(stmt) {
-            return Some(expr);
-        }
-    }
-    None
-}
-
-fn find_first_return_in_stmt<'a>(stmt: &'a Statement<'a>) -> Option<&'a Expression<'a>> {
-    match stmt {
-        Statement::ReturnStatement(rs) => rs.argument.as_ref(),
-        Statement::BlockStatement(bs) => {
-            for s in &bs.body {
-                if let Some(e) = find_first_return_in_stmt(s) {
-                    return Some(e);
-                }
-            }
-            None
-        }
-        Statement::IfStatement(is) => find_first_return_in_stmt(&is.consequent).or_else(|| {
-            is.alternate
-                .as_ref()
-                .and_then(|a| find_first_return_in_stmt(a))
-        }),
-        _ => None,
     }
 }

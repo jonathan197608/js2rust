@@ -6,7 +6,7 @@ use oxc_span::SourceType;
 /// Parse JS source text.
 /// Always parses in module mode: oxc handles plain scripts (no import/export)
 /// correctly in module mode too — `program.body` simply contains no
-/// import/export statements. This lets codegen read import/export directly
+/// import/export statements. This lets the Lowerer read import/export directly
 /// from the AST instead of pre-scanning the raw source text.
 pub fn parse<'a>(allocator: &'a Allocator, source: &'a str) -> Program<'a> {
     parse_with_name(allocator, source, "<unknown>")

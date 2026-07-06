@@ -60,11 +60,11 @@ pub struct FileGroup {
     pub exported_names: HashMap<String, HashSet<String>>,
     /// Map: original filename → ALL toplevel function names (from AST, for test groups).
     pub all_fn_names: HashMap<String, HashSet<String>>,
-    /// Cached source text per file (eliminates repeated I/O in the codegen pass).
+    /// Cached source text per file (eliminates repeated I/O in the transpiler pipeline).
     pub file_sources: HashMap<String, String>,
     /// Parsed AST programs (one per file).  Allocators are leaked via Box::leak
     /// so programs carry 'static lifetime — safe for a CLI transpiler where the
-    /// process exits shortly after.  Stored here so codegen can reuse the AST
+    /// process exits shortly after.  Stored here so the Lowerer can reuse the AST
     /// without re-parsing the source text.
     pub parsed_programs: HashMap<String, Program<'static>>,
 }
@@ -110,7 +110,7 @@ pub fn analyze_single_group(
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
     // metadata straight from the AST, and cache both the source text and the
-    // parsed Program for codegen reuse (eliminates double-parsing).
+    // parsed Program for Lowerer reuse (eliminates double-parsing).
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = vec![core_file.to_string()];
     for addl_file in additional_core_files {
@@ -136,7 +136,7 @@ pub fn analyze_single_group(
             .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
 
         // Parse ONCE: leak source for 'static lifetime, so the Program can be
-        // stored in the HashMap and reused by codegen later.
+        // stored in the HashMap and reused by the Lowerer later.
         // The oxc Allocator is shared across all files in this session (O(1) leak
         // instead of O(n) — bumpalo arena is safe for concurrent AST storage,
         // and the parse phase is single-threaded so the benign race on first

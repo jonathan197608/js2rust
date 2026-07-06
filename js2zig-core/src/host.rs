@@ -7,9 +7,9 @@
 //! # Usage
 //!
 //! In `main.rs`, create a `HostFnRegistry`, register Rust functions, and pass it
-//! to `project.rs` for metadata generation and to the native_proto codegen for translation.
+//! to `project.rs` for metadata generation and to the transpiler pipeline for translation.
 
-use crate::native_proto::ZigType;
+use crate::types::ZigType;
 use std::path::Path;
 
 // ── Struct definitions ──
@@ -414,8 +414,8 @@ impl HostFnRegistry {
             }
         }
 
-        // ── Aliases for native_proto codegen ──
-        // The native_proto codegen strips the `host_` prefix from host function
+        // ── Aliases for native_proto emission ──
+        // The Emitter strips the `host_` prefix from host function
         // calls (e.g. host_add → host.add). Add short-name aliases so that
         // `host.add(...)` resolves to the correct extern/wrapper function.
         let has_aliases = self
@@ -423,7 +423,7 @@ impl HostFnRegistry {
             .iter()
             .any(|f| !f.is_async && f.name.starts_with("host_"));
         if has_aliases {
-            out.push_str("\n// Aliases for native_proto codegen (strips host_ prefix)\n");
+            out.push_str("\n// Aliases for native_proto emission (strips host_ prefix)\n");
             for def in &self.fns {
                 if def.is_async {
                     continue; // async aliases are generated in lib.zig

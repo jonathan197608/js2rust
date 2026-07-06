@@ -6,17 +6,18 @@ pub mod parser;
 pub mod project;
 pub mod sourcemap;
 pub mod testgen;
+pub mod types;
 
-/// Prototype: native-type system (anytype + @TypeOf).
-/// Work in progress, not integrated into pipeline yet.
+/// Native-type system transpilation (anytype + @TypeOf).
 pub mod native_proto;
 
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
-// ── native_proto submodules (flattened from native_proto/ directory) ──
-// Declared here so native_proto.rs can re-export them.
-pub(crate) mod codegen;
+/// ZigIR — structured intermediate representation between AST and Zig source.
+pub mod zigir;
+
+// ── Submodules ──
 pub(crate) mod infer;
 pub(crate) mod jsdoc;
 pub(crate) mod native_builtins;
@@ -121,7 +122,7 @@ pub struct ProjectConfig {
     pub host_config: Option<HostConfig>,
     /// Force rebuild (skip incremental cache).
     pub force_rebuild: bool,
-    /// Whether to run `zig build` after codegen.
+    /// Whether to run `zig build` after transpilation.
     pub run_zig_build: bool,
 }
 

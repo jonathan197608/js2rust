@@ -120,6 +120,142 @@ fn hexDigit(c: u8) ?u4 {
     };
 }
 
+/// parseInt: parse an integer from a string, returning f64 to support NaN.
+/// Implements JS parseInt semantics: radix 2–36, "0x" prefix detection,
+/// stops at first invalid char, returns NaN if no valid digits found.
+/// Accepts anytype to support string, f64, i64, JsAny inputs.
+pub fn parseInt(value: anytype, radix: ?i64) f64 {
+    const T = @TypeOf(value);
+    // Fast path: already a string slice
+    if (T == []const u8) return parseIntStr(value, radix);
+    // String literals: *const [N:0]u8 → coerce to []const u8
+    if (switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => switch (@typeInfo(p.child)) {
+                .array => |a| a.child == u8,
+                else => false,
+            },
+            else => false,
+        },
+        else => false,
+    }) return parseIntStr(value, radix);
+    // Float: format to buffer, then parse
+    if (T == f64 or T == comptime_float) {
+        var buf: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, "{d}", .{value}) catch return std.math.nan(f64);
+        return parseIntStr(s, radix);
+    }
+    // Int: format to buffer, then parse
+    if (T == i64 or T == comptime_int) {
+        var buf: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, "{d}", .{value}) catch return std.math.nan(f64);
+        return parseIntStr(s, radix);
+    }
+    return std.math.nan(f64);
+}
+
+/// Convert a single character to its digit value for the given base (2–36).
+fn digitValue(c: u8, base: u8) ?u8 {
+    const d: u8 = switch (c) {
+        '0'...'9' => c - '0',
+        'A'...'Z' => c - 'A' + 10,
+        'a'...'z' => c - 'a' + 10,
+        else => return null,
+    };
+    if (d < base) return d;
+    return null;
+}
+
+fn parseIntStr(s: []const u8, radix: ?i64) f64 {
+    var i: usize = 0;
+
+    // Skip leading whitespace
+    while (i < s.len and s[i] == ' ') : (i += 1) {}
+
+    // Handle sign
+    var neg = false;
+    if (i < s.len and s[i] == '-') {
+        neg = true;
+        i += 1;
+    } else if (i < s.len and s[i] == '+') {
+        i += 1;
+    }
+
+    // Determine the base
+    var base: u8 = 10;
+    if (radix) |r| {
+        // Radix must be 2..36; outside that range → NaN
+        if (r < 2 or r > 36) return std.math.nan(f64);
+        base = @intCast(r);
+    }
+
+    // Handle "0x" / "0X" prefix for hex when radix is 0, 16, or unspecified
+    if (i + 1 < s.len and s[i] == '0' and (s[i + 1] == 'x' or s[i + 1] == 'X')) {
+        if (radix == null or radix == 0 or radix == 16) {
+            base = 16;
+            i += 2;
+        }
+    }
+
+    // Parse digits
+    var result: f64 = 0;
+    var found_digit = false;
+    while (i < s.len) : (i += 1) {
+        const d = digitValue(s[i], base) orelse break;
+        result = result * @as(f64, @floatFromInt(base)) + @as(f64, @floatFromInt(d));
+        found_digit = true;
+    }
+
+    if (!found_digit) return std.math.nan(f64);
+    return if (neg) -result else result;
+}
+
+/// parseFloat stub: parse a float from a string.
+/// Simplified implementation — handles basic decimal notation.
+pub fn parseFloat(s: []const u8) f64 {
+    var result: f64 = 0.0;
+    var frac: f64 = 0.0;
+    var div: f64 = 10.0;
+    var neg = false;
+    var in_frac = false;
+    var i: usize = 0;
+    // Skip whitespace
+    while (i < s.len and s[i] == ' ') : (i += 1) {}
+    if (i < s.len and s[i] == '-') {
+        neg = true;
+        i += 1;
+    } else if (i < s.len and s[i] == '+') {
+        i += 1;
+    }
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '.' and !in_frac) {
+            in_frac = true;
+        } else if (c >= '0' and c <= '9') {
+            if (in_frac) {
+                frac += @as(f64, @floatFromInt(c - '0')) / div;
+                div *= 10.0;
+            } else {
+                result = result * 10.0 + @as(f64, @floatFromInt(c - '0'));
+            }
+        } else {
+            break;
+        }
+    }
+    result += frac;
+    return if (neg) -result else result;
+}
+
+/// isNaN stub: check if a float is NaN.
+pub fn isNaN(v: f64) bool {
+    return v != v;
+}
+
+/// isFinite stub: check if a float is finite (not Inf or NaN).
+pub fn isFinite(v: f64) bool {
+    return !isNaN(v) and v != std.math.inf(f64) and v != -std.math.inf(f64);
+}
+
 // ── Tests ──
 
 test "encodeURIComponent basic" {

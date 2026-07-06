@@ -4,8 +4,8 @@
 // Rule 2: Binary expressions → definite only if BOTH operands are literals.
 
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
-use crate::native_proto::builtins;
+use crate::native_builtins as builtins;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 
 impl TypeInferrer {
@@ -212,22 +212,16 @@ impl TypeInferrer {
                         }
                         // Global built-in functions (e.g., parseInt)
                         if let Some(builtin) = builtins::detect_builtin_call(ce) {
-                            // Object(BigInt) → BigInt.
-                            // Object() wraps primitive values into wrapper objects.
-                            // In native_proto we don't have Box<BigInt> wrappers,
-                            // so BigInt passes through. The comparison semantics
-                            // (Object(0n) === 0n → false, Object(0n) === Object(0n) → false)
-                            // are handled by emit_binary's Object(bigint) pre-check.
+                            // Object(x) → passthrough (runtime returns @TypeOf(value)).
+                            // In our simplified model, Object() doesn't create wrapper objects,
+                            // so the return type matches the input type.
                             if builtin == builtins::BuiltinCall::ObjectConstructor
                                 && ce.arguments.len() == 1
                                 && let Some(arg) = ce.arguments.first()
                                 && let Some(e) = arg.as_expression()
-                                && matches!(
-                                    self.infer_expr_type(e),
-                                    InferResult::Definite(ZigType::BigInt)
-                                )
+                                && let InferResult::Definite(arg_ty) = self.infer_expr_type(e)
                             {
-                                return InferResult::Definite(ZigType::BigInt);
+                                return InferResult::Definite(arg_ty);
                             }
                             if let Some(ret_ty) = builtins::builtin_return_type(&builtin) {
                                 return InferResult::Definite(ret_ty);
@@ -615,7 +609,7 @@ impl TypeInferrer {
                 }
             }
             // Exponential: JS `**` always returns number (f64).
-            // Codegen generates std.math.pow(f64, ...) for all non-BigInt cases.
+            // The Emitter generates std.math.pow(f64, ...) for all non-BigInt cases.
             BinaryOperator::Exponential => {
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;

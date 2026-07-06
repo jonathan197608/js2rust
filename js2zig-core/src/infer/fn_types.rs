@@ -2,10 +2,10 @@
 // Function-level type inference: parameters, return types, async detection.
 // Also contains private helper methods for TypeInferrer.
 
-use super::helpers::expr_depends_on_anytype;
+use super::helpers::{binding_name, expr_depends_on_anytype};
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
-use crate::native_proto::jsdoc;
+use crate::jsdoc;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
@@ -153,7 +153,7 @@ impl TypeInferrer {
         match ty {
             Some(definite_ty) => {
                 // When the return type is Anytype and all return expressions depend on
-                // anytype parameters, use AnytypeReturn so codegen emits @TypeOf(...).
+                // anytype parameters, use AnytypeReturn so the Emitter emits @TypeOf(...).
                 // This lets Zig resolve the concrete type at the call site.
                 if definite_ty == ZigType::Anytype
                     && Self::all_return_exprs_depend_on_anytype_params(
@@ -318,7 +318,7 @@ impl TypeInferrer {
         let mut params = Vec::new();
 
         for param in &fd.params.items {
-            if let Some(pname) = Self::binding_name(&param.pattern) {
+            if let Some(pname) = binding_name(&param.pattern) {
                 if is_export {
                     // Export: check JSDoc @param
                     let mut found_jsdoc = false;
@@ -342,8 +342,28 @@ impl TypeInferrer {
                         params.push((pname.to_string(), InferResult::Definite(ZigType::I64)));
                     }
                 } else {
-                    // Non-export: anytype
-                    params.push((pname.to_string(), InferResult::Indeterminate));
+                    // Non-export: try JSDoc @param first, fall back to anytype.
+                    // This ensures for-in and other type-dependent features work
+                    // correctly even for non-export functions.
+                    let mut found_jsdoc = false;
+                    if let Some(ref data) = self.jsdoc_data
+                        && let Some(param_list) = data.param_types.get(fn_name)
+                    {
+                        for (annot_name, type_name) in param_list {
+                            if annot_name == pname {
+                                let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
+                                params.push((
+                                    pname.to_string(),
+                                    InferResult::Definite(Self::zig_str_to_type(&zig_ty)),
+                                ));
+                                found_jsdoc = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_jsdoc {
+                        params.push((pname.to_string(), InferResult::Indeterminate));
+                    }
                 }
             }
         }
@@ -435,13 +455,6 @@ impl TypeInferrer {
         self.exported_functions
             .as_ref()
             .is_some_and(|set| set.contains(fn_name))
-    }
-
-    pub(crate) fn binding_name<'a>(pattern: &BindingPattern<'a>) -> Option<&'a str> {
-        match pattern {
-            BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
-            _ => None,
-        }
     }
 
     /// Check if an initializer is JSON.parse() and return the @type annotation.
@@ -551,6 +564,7 @@ impl TypeInferrer {
             "bool" => ZigType::Bool,
             "[]const u8" => ZigType::Str,
             "void" => ZigType::Void,
+            "bigint" => ZigType::BigInt,
             // Named struct (fallback for types not in typedefs)
             _ if !s.contains(' ') && !s.contains('[') => ZigType::NamedStruct(s.to_string()),
             _ => ZigType::I64, // default

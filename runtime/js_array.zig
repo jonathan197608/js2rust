@@ -595,12 +595,17 @@ test "from string" {
     // String "abc" should become ["a", "b", "c"]
     const str = JsAny.fromString("abc");
     var result = try from(alloc, str);
-    defer result.deinit(alloc);
+    for (result.items) |*item| item.deinitDeep(alloc);
+    result.deinit(alloc);
 
-    try std.testing.expectEqual(@as(usize, 3), result.items.len);
-    try std.testing.expectEqualStrings("a", result.items[0].asString(alloc));
-    try std.testing.expectEqualStrings("b", result.items[1].asString(alloc));
-    try std.testing.expectEqualStrings("c", result.items[2].asString(alloc));
+    // Re-run to verify correctness (no defer so we can check values first)
+    var result2 = try from(alloc, str);
+    try std.testing.expectEqual(@as(usize, 3), result2.items.len);
+    try std.testing.expectEqualStrings("a", result2.items[0].asString(alloc));
+    try std.testing.expectEqualStrings("b", result2.items[1].asString(alloc));
+    try std.testing.expectEqualStrings("c", result2.items[2].asString(alloc));
+    for (result2.items) |*item| item.deinitDeep(alloc);
+    result2.deinit(alloc);
 }
 
 test "from object with length" {

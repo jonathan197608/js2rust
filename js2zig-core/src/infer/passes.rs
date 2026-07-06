@@ -1,9 +1,10 @@
-// native_proto/infer/passes.rs
+﻿// native_proto/infer/passes.rs
 // Analysis passes: Pass 0 (object analysis), Pass 1 (used names),
 // Pass 2 (toplevel type walker) — excluding walk_fn_for_types.
 
+use super::helpers::binding_name;
 use super::{InferResult, TypeInferrer};
-use crate::native_proto::ZigType;
+use crate::types::ZigType;
 use oxc_ast::ast::*;
 use std::collections::{HashMap, HashSet};
 
@@ -140,6 +141,10 @@ impl TypeInferrer {
                     self.walk_stmt_for_analysis(s);
                 }
             }
+            Statement::LabeledStatement(ls) => {
+                // Recurse into labeled statement body (e.g. `outer: for(...) {...}`)
+                self.walk_stmt_for_analysis(&ls.body);
+            }
             _ => {}
         }
     }
@@ -213,6 +218,13 @@ impl TypeInferrer {
                 // inside the arrow function affect the outer scope's variables.
                 for stmt in &arrow.body.statements {
                     self.walk_stmt_for_analysis(stmt);
+                }
+            }
+            Expression::UpdateExpression(ue) => {
+                // i++, i--, ++i, --i → mark the argument as mutated
+                let prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
+                    self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
                 }
             }
             _ => {}
@@ -369,6 +381,9 @@ impl TypeInferrer {
                     }
                 }
             }
+            Statement::LabeledStatement(ls) => {
+                Self::collect_idents_from_stmt(&ls.body, names);
+            }
             _ => {}
         }
     }
@@ -483,7 +498,7 @@ impl TypeInferrer {
                         _ => ZigType::I64,
                     };
                     for decl in &vd.declarations {
-                        if let Some(name) = Self::binding_name(&decl.id) {
+                        if let Some(name) = binding_name(&decl.id) {
                             self.var_types.insert(name.to_string(), elem_ty.clone());
                         }
                     }
@@ -494,7 +509,7 @@ impl TypeInferrer {
                 // for-in loop variable is always a string (object property name).
                 if let ForStatementLeft::VariableDeclaration(vd) = &fis.left {
                     for decl in &vd.declarations {
-                        if let Some(name) = Self::binding_name(&decl.id) {
+                        if let Some(name) = binding_name(&decl.id) {
                             self.var_types.insert(name.to_string(), ZigType::Str);
                         }
                     }
@@ -526,6 +541,10 @@ impl TypeInferrer {
                 for s in &bs.body {
                     self.walk_stmt_for_types(s);
                 }
+            }
+            Statement::LabeledStatement(ls) => {
+                // Recurse into labeled statement body (e.g. `outer: for(...) {...}`)
+                self.walk_stmt_for_types(&ls.body);
             }
             Statement::ClassDeclaration(cd) => {
                 // Register class name for type inference of `new ClassName()`
@@ -658,7 +677,7 @@ impl TypeInferrer {
 
     pub(crate) fn collect_var_types_from_decl(&mut self, vd: &VariableDeclaration) {
         for decl in &vd.declarations {
-            if let Some(name) = Self::binding_name(&decl.id) {
+            if let Some(name) = binding_name(&decl.id) {
                 if let Some(init) = &decl.init {
                     // Check if this is JSON.parse(@type)
                     if let Some(type_name) = self.get_json_parse_type(name, init) {
@@ -685,7 +704,7 @@ impl TypeInferrer {
                                 self.array_element_types
                                     .insert(name.to_string(), (**elem_ty).clone());
                             }
-                            // Track Set variables so codegen can dispatch
+                            // Track Set variables so the Emitter can dispatch
                             // MapKeys/MapValues/MapEntries → SetKeys/SetValues/SetEntries.
                             if let ZigType::NamedStruct(ref name_str) = ty
                                 && name_str == "Set"

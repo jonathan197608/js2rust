@@ -83,11 +83,11 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
 
     // 3.5 src/host.zig — host function extern "c" declarations.
     // Always write it (even empty) — some generated modules import it for
-    // builtin codegen that references host.* functions (e.g. host.regex_test).
+    // builtin transpilation that references host.* functions (e.g. host.regex_test).
     let host_content = if opts.host_header.is_empty() {
         // Minimum: always include regex_test and regex_search declarations
-        // since codegen may reference them.
-        r#"// Auto-generated host.zig — minimum declarations for builtin codegen
+        // since the Emitter may reference them.
+        r#"// Auto-generated host.zig — minimum declarations for builtin transpilation
 // These symbols are defined in Rust with #[no_mangle] pub extern "C".
 pub extern fn host_regex_test(
     pattern_ptr: [*]const u8, pattern_len: usize,
@@ -98,7 +98,7 @@ pub extern fn host_regex_search(
     subject_ptr: [*]const u8, subject_len: usize,
 ) callconv(.c) i64;
 
-// Wrapper functions: codegen generates host.regex_test(pattern, subject) (dot
+// Wrapper functions: the Emitter generates host.regex_test(pattern, subject) (dot
 // notation, 2 args as []const u8 slices), but extern declarations use
 // host_regex_test with ptr+len pairs. These wrappers bridge the gap.
 pub fn regex_test(pattern: []const u8, subject: []const u8) bool {
@@ -131,7 +131,7 @@ pub extern fn host_regex_test(
 "#,
             );
         }
-        // Add wrapper functions so codegen's host.regex_test(...) (dot notation)
+        // Add wrapper functions so the Emitter's host.regex_test(...) (dot notation)
         // resolves to the extern host_regex_test (underscore naming).
         if !content.contains("pub fn regex_test(") {
             content.push_str(
