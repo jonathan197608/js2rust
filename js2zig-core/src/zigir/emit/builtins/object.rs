@@ -254,13 +254,42 @@ impl Emitter {
         method: &str,
         args: &[crate::zigir::types::IrExpr],
     ) {
-        self.write(&format!("js_console.{}(", method));
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
+        if args.len() <= 1 {
+            // Single-arg: js_console.log(msg), js_console.err(msg), js_console.warn(msg)
+            self.write(&format!("js_console.{}(", method));
+            if let Some(arg) = args.first() {
+                self.emit_expr(arg);
             }
-            self.emit_expr(arg);
+            self.write(")");
+        } else {
+            // Multi-arg: js_console.logMulti(.{ arg1, arg2, ... })
+            let multi_method = match method {
+                "log" => "logMulti",
+                "err" => "errMulti",
+                "warn" => "warnMulti",
+                other => {
+                    // Fallback: append "Multi" for unknown methods
+                    self.write(&format!("js_console.{}Multi(", other));
+                    self.write(".{");
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        self.emit_expr(arg);
+                    }
+                    self.write("})");
+                    return;
+                }
+            };
+            self.write(&format!("js_console.{}(", multi_method));
+            self.write(".{");
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    self.write(", ");
+                }
+                self.emit_expr(arg);
+            }
+            self.write("})");
         }
-        self.write(")");
     }
 }
