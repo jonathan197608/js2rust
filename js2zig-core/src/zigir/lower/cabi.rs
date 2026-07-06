@@ -27,9 +27,12 @@ impl Lowerer {
             if let IrDecl::Fn(f) = decl
                 && f.is_export
             {
+                // Filter out Anytype params (e.g., async `io` parameter) —
+                // they are Zig compile-time generics, not valid in C ABI.
                 let params: Vec<IrParam> = f
                     .params
                     .iter()
+                    .filter(|p| !matches!(p.zig_type, crate::types::ZigType::Anytype))
                     .map(|p| IrParam {
                         name: p.name.clone(),
                         zig_type: p.zig_type.clone(),
