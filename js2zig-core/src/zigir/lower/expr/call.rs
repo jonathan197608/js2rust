@@ -200,6 +200,27 @@ impl Lowerer {
                 None
             };
 
+            // ── Fix Object.keys for struct-typed arguments ──
+            // Object.keys(obj) where obj is a Zig struct (not HashMap) needs
+            // a different runtime function (keysStruct) that uses comptime reflection.
+            let method = if module == BuiltinModule::JsObject && method == "keys" {
+                if let Some(crate::zigir::types::IrExpr::Ident(ident)) = args.first() {
+                    if let Some(var_type) = self.type_info.var_types.get(ident.zig_name.as_str()) {
+                        if matches!(var_type, ZigType::Struct(_)) {
+                            "keysStruct".into()
+                        } else {
+                            method
+                        }
+                    } else {
+                        method
+                    }
+                } else {
+                    method
+                }
+            } else {
+                method
+            };
+
             // ── Handle complex receiver expressions (method chaining) ──
             // When the receiver is a CallExpression (e.g., encodeURIComponent(str).replace(...)),
             // extract_callee_object_name_static returns None. We lower the receiver expression
@@ -207,7 +228,9 @@ impl Lowerer {
             let obj_expr = if obj_name.is_none() {
                 if let Expression::StaticMemberExpression(sme) = &ce.callee {
                     match &sme.object {
-                        Expression::CallExpression(_) => {
+                        // Complex receivers: lower the entire expression so the Emitter
+                        // can inline it (e.g., new Date(0).getFullYear()).
+                        Expression::CallExpression(_) | Expression::NewExpression(_) => {
                             Some(Box::new(self.lower_expr(&sme.object)))
                         }
                         _ => None,

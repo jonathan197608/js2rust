@@ -102,6 +102,44 @@ impl Emitter {
                     self.write(")");
                 }
             }
+            "shift" => {
+                // arr.shift() — ArrayList orderedRemove(0)
+                if let Some(name) = obj {
+                    self.write(&format!("{}.orderedRemove(0)", name));
+                } else {
+                    self.write(&format!("js_array.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
+            }
+            "reverse" => {
+                // arr.reverse() — in-place std.mem.reverse, returns the array
+                if let Some(name) = obj {
+                    let blk = self.next_label();
+                    self.write(&format!(
+                        "({}: {{ std.mem.reverse(@TypeOf({}.items[0]), {}.items); break :{} {}; }})",
+                        blk, name, name, blk, name
+                    ));
+                } else {
+                    self.write(&format!("js_array.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
+            }
+            "sort" => {
+                // arr.sort() — in-place std.mem.sort, returns the array
+                if let Some(name) = obj {
+                    let blk = self.next_label();
+                    self.write(&format!(
+                        "({}: {{ std.mem.sort(@TypeOf({}.items[0]), {}.items, {{}}, comptime std.sort.asc(@TypeOf({}.items[0]))); break :{} {}; }})",
+                        blk, name, name, name, blk, name
+                    ));
+                } else {
+                    self.write(&format!("js_array.{}(", method));
+                    self.emit_inline_args(args);
+                    self.write(")");
+                }
+            }
             _ => {
                 // Fallback: js_array.method(args)
                 self.write(&format!("js_array.{}(", method));

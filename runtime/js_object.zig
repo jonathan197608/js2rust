@@ -27,6 +27,17 @@ pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     return list.toOwnedSlice(alloc);
 }
 
+/// Object.keys for struct types — returns field names as a comptime-known array.
+/// Usage: js_object.keysStruct(@TypeOf(obj))
+pub fn keysStruct(comptime T: type) [std.meta.fields(T).len][]const u8 {
+    const fields = comptime std.meta.fields(T);
+    var result: [fields.len][]const u8 = undefined;
+    inline for (fields, 0..) |field, i| {
+        result[i] = field.name;
+    }
+    return result;
+}
+
 /// Object.values — return array of JsValue values from a HashMap.
 pub fn values(alloc: Allocator, obj: *const JsValueHashMap) ![]JsValue {
     var kiter = obj.iterator();

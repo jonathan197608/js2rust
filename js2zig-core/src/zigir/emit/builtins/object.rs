@@ -76,6 +76,28 @@ impl Emitter {
                     self.write(")");
                 }
             }
+            // ── Object.keys/values/entries — need allocator prefix ──
+            "keys" => {
+                self.write("js_object.keys(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.keys\")");
+            }
+            "keysStruct" => {
+                // Object.keys for struct objects — comptime reflection, no allocator needed
+                self.write("js_object.keysStruct(@TypeOf(");
+                self.emit_inline_args(args);
+                self.write("))");
+            }
+            "values" => {
+                self.write("js_object.values(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.values\")");
+            }
+            "entries" => {
+                self.write("js_object.entries(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.entries\")");
+            }
             // ── Object.getOwnPropertyDescriptor — needs allocator prefix ──
             "getOwnPropertyDescriptor" => {
                 self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");

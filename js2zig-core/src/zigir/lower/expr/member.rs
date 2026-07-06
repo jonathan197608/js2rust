@@ -88,14 +88,15 @@ impl Lowerer {
                     };
                 }
             }
-            // ── .length on other types (string, slice, etc.) ──
-            if field_name == "length" {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::StringLen,
-                };
-            }
+        }
+
+        // ── .length on all types (string, slice, call result, etc.) ──
+        if field_name == "length" {
+            return IrExpr::FieldAccess {
+                object: Box::new(self.lower_expr(&mem.object)),
+                field: field_name.to_string(),
+                field_kind: FieldKind::StringLen,
+            };
         }
 
         // ── Default: struct field access ──

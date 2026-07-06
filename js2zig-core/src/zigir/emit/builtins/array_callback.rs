@@ -219,15 +219,19 @@ impl Emitter {
     pub(super) fn emit_filter_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
         let blk = self.next_label();
         let elem_type_str = data.elem_type.to_zig_type();
+        // When elem_param is "_" (unused in body), we still need a real variable name
+        // for the __filter.append() call — Zig's "_" is a discard, not an identifier.
+        let append_elem = if data.elem_param == "_" {
+            "__felem".to_string()
+        } else {
+            data.elem_param.clone()
+        };
         self.write(&format!("({}: {{ ", blk));
         self.write(&format!(
             "var __filter: std.ArrayList({}) = .empty; ",
             elem_type_str
         ));
-        self.write(&format!(
-            "for ({}.items) |{}| ",
-            data.obj_name, data.elem_param
-        ));
+        self.write(&format!("for ({}.items) |{}| ", data.obj_name, append_elem));
         self.write("{\n");
         self.indent_push();
         for stmt in &data.body {
@@ -238,7 +242,7 @@ impl Emitter {
                     self.emit_expr(expr);
                     self.write(&format!(
                         ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                        data.elem_param
+                        append_elem
                     ));
                 }
                 crate::zigir::types::IrStmt::Expr(expr) => {
@@ -246,7 +250,7 @@ impl Emitter {
                     self.emit_expr(expr);
                     self.write(&format!(
                         ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                        data.elem_param
+                        append_elem
                     ));
                 }
                 _ => self.emit_stmt(stmt),
@@ -478,12 +482,28 @@ impl Emitter {
             "var {}: {} = {}; ",
             acc_name, acc_type, init_expr_str
         ));
-        self.write(&format!(
-            "for ({}.items) |{}| ",
-            data.obj_name, data.elem_param
-        ));
+
+        // For reduce, the for-loop captures the current element.
+        // The first callback param (elem_param, e.g., "acc") aliases the accumulator.
+        // The second callback param (idx_param, e.g., "x") is the current element.
+        let loop_var = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            // Two-param callback: use idx_param as the loop variable (current element)
+            data.idx_param.clone()
+        } else {
+            // Single-param callback or no second param: use elem_param as loop variable
+            data.elem_param.clone()
+        };
+
+        self.write(&format!("for ({}.items) |{}| ", data.obj_name, loop_var));
         self.write("{\n");
         self.indent_push();
+
+        // Bind elem_param to the accumulator when it differs from the loop variable
+        // (i.e., when the callback has two params and elem_param is "acc")
+        if data.elem_param != "_" && data.elem_param != loop_var {
+            self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
+        }
+
         for stmt in &data.body {
             self.writeln("");
             match stmt {
