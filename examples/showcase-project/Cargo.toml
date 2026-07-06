@@ -3,10 +3,10 @@ name = "showcase-project"
 version = "0.1.0"
 edition = "2021"
 authors = ["jonathan197608"]
-description = "Showcase project for js2rust — for-in static struct integration demo"
+description = "Showcase project for js2rust �?for-in static struct integration demo"
 
 [dependencies]
-js2rust-bridge = { version = "0.8", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.9", path = "../../js2rust-bridge" }
 
 [build-dependencies]
-js2rust-bridge = { version = "0.8", path = "../../js2rust-bridge", features = ["stub-allocator"] }
+js2rust-bridge = { version = "0.9", path = "../../js2rust-bridge", features = ["stub-allocator"] }
