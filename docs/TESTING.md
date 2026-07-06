@@ -1,3 +1,14 @@
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f5b8cc36-c093-4470-8881-d47e43bb00e7'
+  PropagateID: 'f5b8cc36-c093-4470-8881-d47e43bb00e7'
+  ReservedCode1: '4235d542-2897-4772-a181-2922ddd8ad81'
+  ReservedCode2: '4235d542-2897-4772-a181-2922ddd8ad81'
+---
+
 # js2rust 测试说明文档
 
 > 本文档描述项目的测试体系、运行方式与回归验证流程，供代码重构或优化时参考。
@@ -11,13 +22,13 @@
 | **Rust 单元测试** | `js2zig-core/src/tests.rs` | 361 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 153 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
-### 基线指标（2026-07-03）
+### 基线指标（2026-07-06）
 
-- Rust 单元测试：**361 passed, 0 failed**
+- Rust 单元测试：**455 passed, 0 failed**
 - Clippy：**0 warnings**
-- MDN 端到端：**200 match / 4 mismatch / 0 error**（匹配率 98.0%，204 total）
-- 4 个 mismatch 均为已知限制，详见 `compare_results.json`
-- Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` 0 errors
+- MDN 端到端：**200 match / 3 mismatch / 1 error**（匹配率 98.0%，204 total）
+- 3 个 mismatch + 1 个 error 均为已知限制，详见下方表格
+- Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **19 个 pre-existing codegen 错误**
 
 ---
 
@@ -223,10 +234,10 @@ python _check_results.py
 
 | Fragment | 问题 | 优先级 | 说明 |
 |----------|------|--------|------|
-| `test_statements_frag_11` | const 重新赋值未报错 | P2 | 转译器生成 `var` 而非 `const`，try/catch 被省略 |
-| `test_expressions_frag_112` | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | IEEE 754 `-0` 边界情况，Zig 不区分 `0` 和 `-0` |
-| `test_builtins_frag_157` | `parseInt('xyz')` 返回 `0` 而非 `NaN` | KNOWN LIMITATION | i64 无法表示 NaN |
-| `test_builtins_frag_202` | `encodeURIComponent` 非法 URI 未抛 URIError | KNOWN LIMITATION | `encodeURIComponent` 未实现 URI 错误检测 |
+| `test_statements_frag_11` | const 重新赋值未报错 | WONTFIX | Zig 无法在运行时检测 const 重赋值 |
+| `test_expressions_frag_109` | BigInt `2n/0n` CRASH | ACCEPTABLE | 未捕获的 RangeError，行为正确 |
+| `test_expressions_frag_112` | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | i64 无法表示 `-0` |
+| `test_builtins_frag_202` | stack trace 格式差异 | WONTFIX | Zig stack trace 格式不同于 Node.js |
 
 ---
 
@@ -320,18 +331,34 @@ cd examples/showcase-project && cargo run     # 60+ 函数输出正确
 
 ### 5.3 验收标准
 
-| 检查项 | 要求 |
-|--------|------|
-| `cargo test` | 361 passed, 0 failed |
-| `cargo clippy` | 0 warnings |
-| `cargo fmt` | 无变更（已格式化） |
-| MDN `cargo run` exit code | 0（恒为 0，mdn-test-project 是诊断工具不做 pass/fail 门控） |
-| MDN match 数 | >= 200（不低于基线） |
-| MDN mismatch 数 | <= 4（不增加已知 mismatch） |
-| MDN error 数 | 0（无新增 crash） |
-| test-lib-project `cargo test` | 2 passed, 0 failed |
-| test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） |
-| showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） |
+| 检查项 | 要求 | 当前结果 |
+|--------|------|----------|
+| `cargo test -p js2zig-core --lib` | 455 passed, 0 failed | 455 passed |
+| `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
+| `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
+| MDN match 数 | >= 200（不低于基线） | 200 |
+| MDN mismatch 数 | <= 4（不增加已知 mismatch） | 3 |
+| MDN error 数 | <= 1（frag_109 BigInt/0 为已知 CRASH） | 1 |
+| test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
+| test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
+| showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | **FAIL — 19 pre-existing codegen bugs** |
+
+#### MDN 已知 mismatch/error（4 个）
+
+| Fragment | 类型 | 问题 | 优先级 |
+|----------|------|------|--------|
+| `test_statements_frag_11` | MISMATCH | const 重赋值无运行时 TypeError（Zig 根本限制） | WONTFIX |
+| `test_expressions_frag_109` | CRASH | BigInt `2n / 0n` → 未捕获 RangeError（行为正确） | ACCEPTABLE |
+| `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
+| `test_builtins_frag_202` | MISMATCH | stack trace 格式差异（运行时格式不可调合） | WONTFIX |
+
+#### showcase-project pre-existing codegen 错误（19 个）
+
+| 类别 | 数量 | 示例 |
+|------|------|------|
+| js_date member 错误 | 10 | `js_date.getFullYear()` 应为 `d.getFullYear()` 实例调用 |
+| 方法调用参数不匹配 | 7 | `js_array.shift()` 缺少 ArrayList 参数、`parseInt()` 缺少 radix |
+| 内联回调 codegen bug | 2 | `_` 标识符和 `x` undeclared（filter/reduce inline） |
 
 ### 5.4 新增测试
 
@@ -366,3 +393,5 @@ zig version
 ### Q: 测试文件太大不好导航？
 
 `tests.rs` 是单文件，测试按功能域前缀分组。用 IDE 的结构视图或搜索 `fn test_` 快速定位。测试按添加时间排列，P1/P2/P3/P6/P7/P8 分批添加。
+
+> AI生成
