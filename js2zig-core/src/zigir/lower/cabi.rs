@@ -623,7 +623,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::JsonParse => (BuiltinModule::JsJson, "parse".into(), ZigType::JsAny),
 
         // Global functions
-        BuiltinCall::ParseInt => (BuiltinModule::JsUri, "parseInt".into(), ZigType::I64),
+        BuiltinCall::ParseInt => (BuiltinModule::JsUri, "parseInt".into(), ZigType::F64),
         BuiltinCall::ParseFloat => (BuiltinModule::JsUri, "parseFloat".into(), ZigType::F64),
         BuiltinCall::IsNaN => (BuiltinModule::JsUri, "isNaN".into(), ZigType::Bool),
         BuiltinCall::IsFinite => (BuiltinModule::JsUri, "isFinite".into(), ZigType::Bool),
@@ -680,7 +680,7 @@ pub fn builtin_call_to_ir(
             "isSafeInteger".into(),
             ZigType::Bool,
         ),
-        BuiltinCall::NumberParseInt => (BuiltinModule::JsNumber, "parseInt".into(), ZigType::I64),
+        BuiltinCall::NumberParseInt => (BuiltinModule::JsNumber, "parseInt".into(), ZigType::F64),
         BuiltinCall::NumberParseFloat => {
             (BuiltinModule::JsNumber, "parseFloat".into(), ZigType::F64)
         }

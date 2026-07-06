@@ -25,7 +25,23 @@ fn printValue(msg: anytype) void {
     } else {
         switch (@typeInfo(T)) {
             .int, .comptime_int => std.debug.print("{d}", .{msg}),
-            .float, .comptime_float => std.debug.print("{d}", .{@as(f64, msg)}),
+            .float, .comptime_float => {
+                const v = @as(f64, msg);
+                if (std.math.isNan(v)) {
+                    std.debug.print("NaN", .{});
+                } else if (std.math.isInf(v)) {
+                    if (v < 0) {
+                        std.debug.print("-Infinity", .{});
+                    } else {
+                        std.debug.print("Infinity", .{});
+                    }
+                } else if (v == @trunc(v) and @abs(v) < 1e15) {
+                    // Integer-valued float: print without decimal point (e.g., 123.0 → "123")
+                    std.debug.print("{d:.0}", .{v});
+                } else {
+                    std.debug.print("{d}", .{v});
+                }
+            },
             .bool => std.debug.print("{}", .{msg}),
             else => std.debug.print("{any}", .{msg}),
         }

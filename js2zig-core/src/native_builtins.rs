@@ -878,7 +878,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         }
 
         // Global functions
-        BuiltinCall::ParseInt => Some(ZigType::I64),
+        BuiltinCall::ParseInt => Some(ZigType::F64),
         BuiltinCall::ParseFloat => Some(ZigType::F64),
         BuiltinCall::IsNaN | BuiltinCall::IsFinite => Some(ZigType::Bool),
         BuiltinCall::EncodeURIComponent | BuiltinCall::DecodeURIComponent => Some(ZigType::Str),
@@ -889,7 +889,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::NumberIsFinite
         | BuiltinCall::NumberIsInteger
         | BuiltinCall::NumberIsSafeInteger => Some(ZigType::Bool),
-        BuiltinCall::NumberParseInt => Some(ZigType::I64),
+        BuiltinCall::NumberParseInt => Some(ZigType::F64),
         BuiltinCall::NumberParseFloat => Some(ZigType::F64),
 
         // String static methods
