@@ -123,8 +123,21 @@ impl Emitter {
         op: AssignOp,
         value: &crate::zigir::types::IrExpr,
     ) {
-        use crate::zigir::ops::AssignOp;
         self.write_indent();
+        self.emit_assign_inline(target, op, value);
+        self.write(";\n");
+    }
+
+    /// Emit assignment inline (no indent, no semicolon, no newline).
+    /// Used in while continuation blocks where the assignment is part of
+    /// a single-line expression like `: ({ i += 1; })`.
+    pub(super) fn emit_assign_inline(
+        &mut self,
+        target: &IrAssignTarget,
+        op: AssignOp,
+        value: &crate::zigir::types::IrExpr,
+    ) {
+        use crate::zigir::ops::AssignOp;
         if op == AssignOp::Mod {
             // Zig doesn't support % on signed integers; use x = @rem(x, y)
             self.emit_assign_target(target);
@@ -173,7 +186,6 @@ impl Emitter {
             self.write(&format!(" {} ", op.to_zig_str()));
             self.emit_expr(value);
         }
-        self.write(";\n");
     }
 
     pub(super) fn emit_assign_target(&mut self, target: &IrAssignTarget) {

@@ -653,9 +653,11 @@ pub fn builtin_call_to_ir(
             "booleanConstructor".into(),
             ZigType::Bool,
         ),
-        BuiltinCall::BigIntConstructor => {
-            (BuiltinModule::JsBigInt, "fromI64".into(), ZigType::BigInt)
-        }
+        BuiltinCall::BigIntConstructor => (
+            BuiltinModule::JsBigInt,
+            "bigIntConstructor".into(),
+            ZigType::BigInt,
+        ),
         BuiltinCall::ObjectConstructor => (
             BuiltinModule::JsObject,
             "constructor".into(),

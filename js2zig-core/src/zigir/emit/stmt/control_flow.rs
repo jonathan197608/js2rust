@@ -149,18 +149,29 @@ impl Emitter {
         }
         self.write(")");
 
-        // Zig while continuation syntax for the update expression
+        // Zig while continuation syntax for the update expression.
+        // We emit the update inline inside a block expression: `: ({ update; })`
+        // NOTE: must NOT wrap in extra parentheses — `+=` is a statement in Zig,
+        // and `(i += 1)` is invalid. Use statement-level emission (no parens).
         if let Some(update_stmt) = update {
             self.write(" : ({ ");
-            // Emit the update as an expression-like statement inside the continuation
             match update_stmt.as_ref() {
                 IrStmt::Expr(expr) => {
-                    self.emit_expr(expr);
+                    // For Update expressions (i++, i--), force statement-level
+                    // output (no wrapping parentheses).
+                    if let crate::zigir::types::IrExpr::Update { op, target, .. } = expr {
+                        self.emit_assign_target_inner(target);
+                        self.write(&format!(
+                            " {}",
+                            crate::zigir::emit::helpers::update_op_to_zig(*op)
+                        ));
+                    } else {
+                        self.emit_expr(expr);
+                    }
                 }
                 IrStmt::Assign { target, op, value } => {
-                    self.emit_assign_target(target);
-                    self.write(&format!(" {} ", op.to_zig_str()));
-                    self.emit_expr(value);
+                    // Use emit_assign_stmt logic but without indent/newline
+                    self.emit_assign_inline(target, *op, value);
                 }
                 _ => {
                     // Fallback: emit the full statement (rare)

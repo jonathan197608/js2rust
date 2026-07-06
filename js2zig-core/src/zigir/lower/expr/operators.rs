@@ -58,10 +58,20 @@ impl Lowerer {
             BinaryOperator::Division => BinOp::Div,
             BinaryOperator::Remainder => BinOp::Mod,
             BinaryOperator::Exponential => {
-                // JS `**` always returns f64. Emit a PowExpr with type info
-                // so the Emitter can generate the correct f64 coercion.
                 let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::F64);
                 let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::F64);
+                // BigInt ** BigInt: use BinOp::Pow so emit_bigint_binary generates .pow() call.
+                if left_type == ZigType::BigInt || right_type == ZigType::BigInt {
+                    return IrExpr::Binary {
+                        op: BinOp::Pow,
+                        left: Box::new(self.lower_expr(&be.left)),
+                        right: Box::new(self.lower_expr(&be.right)),
+                        left_type: Some(left_type),
+                        right_type: Some(right_type),
+                    };
+                }
+                // Non-BigInt: JS `**` always returns f64. Emit a PowExpr with type info
+                // so the Emitter can generate the correct f64 coercion.
                 return IrExpr::PowExpr {
                     base: Box::new(self.lower_expr(&be.left)),
                     exp: Box::new(self.lower_expr(&be.right)),
@@ -235,15 +245,36 @@ impl Lowerer {
         use crate::zigir::types::IrExpr;
 
         // ── Special-case compound assignments that need expansion ──
-        // **= → a = std.math.pow(a, b) via PowExpr
+        // **= → a = a ** b
         if ae.operator == AssignmentOperator::Exponential {
             let target = self.lower_assign_target(&ae.left);
             let value = Box::new(self.lower_expr(&ae.right));
-            // Read target as expression for the PowExpr base
+            let target_type = self.infer_assign_target_type(&ae.left);
+            // Read target as expression for the base
             let base_ident = match &target {
                 crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
                 _ => IrExpr::Ident(IrIdent::new("__target")),
             };
+            // BigInt **= : use IrExpr::Binary with BinOp::Pow so emit_bigint_binary
+            // generates .pow() method call.
+            if target_type == Some(ZigType::BigInt) {
+                let name_clone = match &target {
+                    crate::zigir::types::IrAssignTarget::Ident(name) => name.clone(),
+                    _ => IrIdent::new("__target"),
+                };
+                return IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::Binary {
+                        op: BinOp::Pow,
+                        left: Box::new(IrExpr::Ident(name_clone)),
+                        right: value,
+                        left_type: Some(ZigType::BigInt),
+                        right_type: Some(ZigType::BigInt),
+                    }),
+                };
+            }
+            // Non-BigInt: a = std.math.pow(a, b) via PowExpr
             return IrExpr::Assign {
                 op: AssignOp::Assign,
                 target: Box::new(target),

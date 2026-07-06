@@ -91,6 +91,22 @@ impl Emitter {
                 if left_is_bigint && right_is_bigint {
                     self.emit_bigint_binary(*op, left, right);
                 }
+                // ── BigInt ** non-BigInt (e.g. 2n ** 2) ──
+                // BigInt .pow() expects u64 exponent, not &JsBigInt.
+                else if left_is_bigint && *op == BinOp::Pow {
+                    self.write("(");
+                    self.emit_expr(left);
+                    self.write(".pow(");
+                    if right_is_bigint {
+                        self.emit_expr(right);
+                        self.write(".toU64() catch @panic(\"BigInt toU64 failed\")");
+                    } else {
+                        self.write("@as(u64, @intCast(");
+                        self.emit_expr(right);
+                        self.write("))");
+                    }
+                    self.write(", js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                }
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
                     self.emit_string_comparison(*op, left, right);
@@ -98,9 +114,13 @@ impl Emitter {
                 // ── Cross-type comparison (e.g. String vs Number, Bool vs I64) ──
                 // When both types are known but different, Zig's == / != / < etc.
                 // are type-mismatch errors. Route through JsAny comparison instead.
+                // EXCEPTION: exclude BigInt — JsAny.from() does not support BigInt,
+                // and BigInt cross-type comparisons need a different strategy.
                 else if lt.is_some()
                     && rt.is_some()
                     && lt != rt
+                    && !left_is_bigint
+                    && !right_is_bigint
                     && matches!(
                         op,
                         BinOp::Eq

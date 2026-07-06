@@ -330,6 +330,12 @@ impl Lowerer {
                 {
                     return Some(ty.clone());
                 }
+                // Try built-in constructor / function calls
+                if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce)
+                    && let Some(ret_ty) = crate::native_builtins::builtin_return_type(&builtin)
+                {
+                    return Some(ret_ty);
+                }
                 None
             }
             // Could add more patterns here
@@ -373,8 +379,11 @@ impl Lowerer {
                 _ => None,
             },
 
-            // Exponential always produces f64
-            BinaryOperator::Exponential => Some(ZigType::F64),
+            // Exponential: BigInt if both operands BigInt, f64 otherwise
+            BinaryOperator::Exponential => match (left_ty.as_ref(), right_ty.as_ref()) {
+                (Some(ZigType::BigInt), _) | (_, Some(ZigType::BigInt)) => Some(ZigType::BigInt),
+                _ => Some(ZigType::F64),
+            },
 
             // Bitwise: always I64
             BinaryOperator::BitwiseAnd

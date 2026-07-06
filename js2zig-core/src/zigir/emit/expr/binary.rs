@@ -86,9 +86,9 @@ impl Emitter {
             BinOp::Pow => {
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".pow(&");
+                self.write(".pow(");
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
             }
             BinOp::BitAnd => {
                 self.write("(");
@@ -114,16 +114,16 @@ impl Emitter {
             BinOp::Shl => {
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".shiftLeft(");
+                self.write(".shiftLeft(@as(usize, @intCast(");
                 self.emit_expr(right);
-                self.write(".toU64(), js_allocator.allocator()) catch @panic(\"BigInt shl OOM\"))");
+                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt shl OOM\"))");
             }
             BinOp::Shr => {
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".shiftRight(");
+                self.write(".shiftRight(@as(usize, @intCast(");
                 self.emit_expr(right);
-                self.write(".toU64(), js_allocator.allocator()) catch @panic(\"BigInt shr OOM\"))");
+                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt shr OOM\"))");
             }
             // Equality
             BinOp::Eq | BinOp::StrictEq => {
