@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'f5b8cc36-c093-4470-8881-d47e43bb00e7'
-  PropagateID: 'f5b8cc36-c093-4470-8881-d47e43bb00e7'
-  ReservedCode1: '4235d542-2897-4772-a181-2922ddd8ad81'
-  ReservedCode2: '4235d542-2897-4772-a181-2922ddd8ad81'
+  ProduceID: '1973a471-8e60-46dc-8fbe-729f59807bde'
+  PropagateID: '1973a471-8e60-46dc-8fbe-729f59807bde'
+  ReservedCode1: '45d2fd6e-5825-40b7-8b01-dbeda6b8f077'
+  ReservedCode2: '45d2fd6e-5825-40b7-8b01-dbeda6b8f077'
 ---
 
 # js2rust 测试说明文档
@@ -28,7 +28,7 @@ AIGC:
 - Clippy：**0 warnings**
 - MDN 端到端：**200 match / 3 mismatch / 1 error**（匹配率 98.0%，204 total）
 - 3 个 mismatch + 1 个 error 均为已知限制，详见下方表格
-- Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **19 个 pre-existing codegen 错误**
+- Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 
 ---
 
@@ -341,7 +341,7 @@ cd examples/showcase-project && cargo run     # 60+ 函数输出正确
 | MDN error 数 | <= 1（frag_109 BigInt/0 为已知 CRASH） | 1 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
-| showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | **FAIL — 19 pre-existing codegen bugs** |
+| showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | **PASS — 0 codegen errors**（此前 19 个 bug 已全部修复：commit 173dfbf） |
 
 #### MDN 已知 mismatch/error（4 个）
 
@@ -352,13 +352,17 @@ cd examples/showcase-project && cargo run     # 60+ 函数输出正确
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | stack trace 格式差异（运行时格式不可调合） | WONTFIX |
 
-#### showcase-project pre-existing codegen 错误（19 个）
+#### showcase-project 已修复的 codegen 错误（此前 19 个，commit 173dfbf 全部修复）
 
-| 类别 | 数量 | 示例 |
-|------|------|------|
-| js_date member 错误 | 10 | `js_date.getFullYear()` 应为 `d.getFullYear()` 实例调用 |
-| 方法调用参数不匹配 | 7 | `js_array.shift()` 缺少 ArrayList 参数、`parseInt()` 缺少 radix |
-| 内联回调 codegen bug | 2 | `_` 标识符和 `x` undeclared（filter/reduce inline） |
+| 类别 | 数量 | 修复内容 |
+|------|------|----------|
+| Bug A: Date 实例方法 | 10 | NewExpression 加入 obj_expr 匹配，`new Date(0).getFullYear()` 正确生成实例调用 |
+| Bug B: shift/reverse/sort | 3 | emit_array_builtin 添加 obj 处理，生成实例方法调用 |
+| Bug C: parseInt 参数 | 0 | 已在之前修复，实际是 Bug A 的表现 |
+| Bug D: filter `_` 标识符 | 1 | elem_param 为 `_` 时使用 `__felem` 避免与 Zig discard 冲突 |
+| Bug E: reduce 未声明变量 | 1 | idx_param 作为循环变量，elem_param 绑定到累加器 |
+| Bug F: Object.keys 类型 | 1 | 添加 keysStruct comptime 反射 + allocator 前缀 |
+| Bonus: `.length` 在调用结果上 | 2 | 移到 Identifier 检查外部，确保 `Object.keys(x).length` → `.len` |
 
 ### 5.4 新增测试
 
