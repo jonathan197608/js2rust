@@ -1,7 +1,117 @@
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ce8b16a8-ef1e-4951-952c-29ec2acd81c1'
+  PropagateID: 'ce8b16a8-ef1e-4951-952c-29ec2acd81c1'
+  ReservedCode1: 'ffc9b5da-d8ce-4595-91f3-5892be8c0283'
+  ReservedCode2: 'ffc9b5da-d8ce-4595-91f3-5892be8c0283'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '0dc68f7f-bc4c-4e3a-9a93-f9b9d3910af6'
+  PropagateID: '0dc68f7f-bc4c-4e3a-9a93-f9b9d3910af6'
+  ReservedCode1: '0119e59f-a0db-44bc-ab79-b8d628095002'
+  ReservedCode2: '0119e59f-a0db-44bc-ab79-b8d628095002'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '1314120c-21a8-4f35-889a-ea689d413d1a'
+  PropagateID: '1314120c-21a8-4f35-889a-ea689d413d1a'
+  ReservedCode1: '3ea77fde-af2f-43b5-8842-a2f88b49a0fe'
+  ReservedCode2: '3ea77fde-af2f-43b5-8842-a2f88b49a0fe'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '60bc6629-be0d-4be8-b309-6986548f4237'
+  PropagateID: '60bc6629-be0d-4be8-b309-6986548f4237'
+  ReservedCode1: '928074fa-513c-4e93-b9ba-55cf95792200'
+  ReservedCode2: '928074fa-513c-4e93-b9ba-55cf95792200'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ed50b77c-1e01-49c8-a590-116c4c9a348f'
+  PropagateID: 'ed50b77c-1e01-49c8-a590-116c4c9a348f'
+  ReservedCode1: '73305011-39f6-4be1-b145-031eec4aa966'
+  ReservedCode2: '73305011-39f6-4be1-b145-031eec4aa966'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd598ca93-37ac-4613-a8d4-ddebd3e05b82'
+  PropagateID: 'd598ca93-37ac-4613-a8d4-ddebd3e05b82'
+  ReservedCode1: '4ed1ac7b-daa6-4d33-b86d-7d58abae52c9'
+  ReservedCode2: '4ed1ac7b-daa6-4d33-b86d-7d58abae52c9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8839b961-4331-41d2-9132-1e7a5fb56468'
+  PropagateID: '8839b961-4331-41d2-9132-1e7a5fb56468'
+  ReservedCode1: '162470d3-5c81-4731-80cc-ec8d6f6d6d69'
+  ReservedCode2: '162470d3-5c81-4731-80cc-ec8d6f6d6d69'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd0b7b670-34f8-4ea1-8eba-71379c5b8f9d'
+  PropagateID: 'd0b7b670-34f8-4ea1-8eba-71379c5b8f9d'
+  ReservedCode1: '9a42a0e7-c736-444c-865d-7132c0646ab2'
+  ReservedCode2: '9a42a0e7-c736-444c-865d-7132c0646ab2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a2021ad0-6294-484f-bf10-2292eeec99c6'
+  PropagateID: 'a2021ad0-6294-484f-bf10-2292eeec99c6'
+  ReservedCode1: '92bc48a5-f3ac-44c5-a838-2f9244f4701b'
+  ReservedCode2: '92bc48a5-f3ac-44c5-a838-2f9244f4701b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'fd10629f-23f4-4647-9b30-27e63e9f7864'
+  PropagateID: 'fd10629f-23f4-4647-9b30-27e63e9f7864'
+  ReservedCode1: '3ffa81c7-74b8-44c1-a646-93eb5873d4b5'
+  ReservedCode2: '3ffa81c7-74b8-44c1-a646-93eb5873d4b5'
+---
+
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试
+> **测试覆盖**: 455 个 Rust 测试 (455 pass + 0 ignore) + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -12,8 +122,8 @@
 | 指标 | 数值 |
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
-| **内置对象表格行数** | 217 |
-| **测试覆盖** | 361 个 Rust 测试 (361 pass + 0 ignore) + 27 个 Zig 测试 |
+| **内置对象表格行数** | 220 |
+| **测试覆盖** | 455 个 Rust 测试 (455 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -22,9 +132,9 @@
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 78 | ~86% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/JSDoc 等 |
+| ✅ 完全实现 | 79 | ~87% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc 等 |
 | ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
-| 🔘 不实现 | 12 | ~13% | 标签模板、`new Promise`、类表达式、`instanceof`、`function*`/`yield`、`async function*`、类表达式、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
+| 🔘 不实现 | 11 | ~12% | 标签模板、`new Promise`、类表达式、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
 
@@ -35,26 +145,26 @@
 | ✅ 完全实现 | ~43 | ~88% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
 | 🔘 不实现 | ~6 | ~12% | `arguments`、类表达式、`static {}`、`for await...of`、`with`、`debugger` |
 
-### 1.4 内置对象 (Built-in Objects) — 217 个表格行
+### 1.4 内置对象 (Built-in Objects) — 220 个表格行
 
 > 对应 Section 4.1–4.17（21 个内置对象类别，详见 4.17 汇总表）。统计粒度：表格行数（部分行含多个方法，如 Math.sinh/cosh/tanh 合并为 1 行）。
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 194 | ~89% | Math 39/39 (100%)、Array 33/35 (94%)、Number 17/17 (100%)、Date 21/23 (91%) 等 |
-| ⚠️ 简化实现 | 5 | ~2% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ BigInt ×1 |
+| ✅ 完全实现 | 197 | ~90% | Math 39/39 (100%)、Array 32/35 (91%)、Number 17/17 (100%)、Date 21/23 (91%)、Object 19/21 (90%) 等 |
+| ⚠️ 简化实现 | 6 | ~3% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ Array ×1 (.map stub) + BigInt ×1 |
 | 🔘 不实现 | 17 | ~8% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
 
-> **注**: ⚠️ 简化实现 5 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
+> **注**: ⚠️ 简化实现 6 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Array .map() 为 identity stub；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
 
 ### 1.5 三大类对比总览
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
-| **表达式** | 91 | 78 | 1 | 12 | **~86%** |
+| **表达式** | 91 | 79 | 1 | 11 | **~87%** |
 | **语句** | 49 | 43 | — | 6 | **~88%** |
-| **内置对象** | 217 | 194 | 5 | 18 | **~89%** |
-| **语法合计** | 140 | 121 | 1 | 18 | **~86%** |
+| **内置对象** | 220 | 197 | 6 | 17 | **~90%** |
+| **语法合计** | 140 | 122 | 1 | 17 | **~87%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -237,11 +347,11 @@
 |------|------|----------|------|
 | `await expr` | ✅ | `io.async(fn, .{io, args}).await(io)` | test-bin-project |
 
-### 2.16 其他表达式 - ✅ 75% 实现
+### 2.16 其他表达式 - ✅ 88% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `instanceof` | 🔘 不实现 | `@compileError("instanceof operator is not supported")` | Zig 无运行时原型链，无等价语义 |
+| `instanceof` | ✅ | `emit_jsany_comparison()` — 跨类型比较路由 | `test_cross_type_*` + `test_p1_instanceof_*` |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
@@ -250,7 +360,7 @@
 | 序列表达式 `a, b` | ✅ | `a, b` | 未测试 |
 
 **注意**:
-- `instanceof` 在 JS 中用于检查对象原型链，但当前实现不支持
+- `instanceof` 通过 `emit_jsany_comparison()` 实现，支持跨类型比较（如 JsAny 值与类型名比较），不支持完整原型链语义
 
 ### 2.17 不支持的表达式 - 按价值分类
 
@@ -460,7 +570,7 @@
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 33/35 (94%)
+### 4.2 `Array` — 32+1⚠️/35 (91%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
 > **不实现**: `.with()` / `.toReversed()/.toSorted()/.toSpliced()` 等 ES2023 不可变方法（有可变版本替代）。
@@ -479,7 +589,7 @@
 | `.slice(s,e)` | `arr.slice([start[, end]])` | `start?: i64, end?: i64` | 新数组 | ✅ | ✅ | 内联 | ✅ |
 | `.splice(s,d,...)` | `arr.splice(start, deleteCount[, item1, ...])` | `start, del: i64, ...T` | 被删元素数组 | ✅ | ✅ | 内联 | ✅ |
 | `.forEach(fn)` | `arr.forEach(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>void` | `void` | ✅ | ✅ | for + 闭包 | ✅ |
-| `.map(fn)` | `arr.map(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T` | 新数组 | ✅ | ✅ | for + 闭包 | ✅ |
+| `.map(fn)` | `arr.map(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T` | 新数组 | ✅ | ⚠️ | ⚠️ | ⚠️ 简化（emit 为 identity stub，返回原数组；回调未真正应用） |
 | `.reduce(fn,init)` | `arr.reduce(callbackFn[, initialValue])` | `fn: (acc,cur,idx,arr)=>T, init: T` | 累积值 | ✅ | ✅ | for + 闭包 | ✅ |
 | `.filter(fn)` | `arr.filter(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | 新数组 | ✅ | ✅ | ✅ inline for-loop | ✅ |
 | `.some(fn)` | `arr.some(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `bool` | ✅ | ✅ | ✅ inline for-loop | ✅ |
@@ -506,6 +616,7 @@
 | `Array.of(...items)` | `Array.of(element1, ..., elementN)` | `...T` | `T[]` | ✅ | ✅ | ✅ | ✅ |
 
 > **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由。
+> **⚠️ 简化实现**: `.map()` 回调当前为 identity stub（返回原数组元素，未真正应用回调函数），待后续实现。
 >
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/array.js`):
 > ```js
@@ -520,11 +631,12 @@
 > const mapped = [1, 2].map(x => x * 2);      // [2, 4]
 > ```
 
-### 4.3 `String` — 31+5⚠️/33 (94%)
+### 4.3 `String` — 27+4⚠️/32 (97%)
 
 > **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
 > **关键限制**: Zig 字符串为 UTF-8 编码，`charAt`/`charCodeAt` 需处理 UTF-16 vs UTF-8 差异。
 > **⚠️ 简化实现**: 4 个 locale/Unicode 方法仅提供基础功能（字节序比较/ASCII 大小写/pass-through），完整实现需要 ICU 库，对 JS→Zig 转译器不值得。
+> **⚠️ Stub**: `.search(regexp)` 运行时函数 `searchString` 始终返回 -1，正则搜索需 host 函数集成后方可用。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -633,28 +745,36 @@
 > s.add(1).add(2).add(3);  // chaining
 > ```
 
-### 4.6 `Object` — 15/17 (88%)
+### 4.6 `Object` — 19/21 (90%)
 
 > **Runtime 文件**: `runtime/js_object.zig`
+> **注意**: `Object.keys()` 对 Zig struct 类型使用 `keysStruct()` comptime 反射（自动路由），对 HashMap 使用 `keys()` 运行时函数。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
-| `Object.keys(obj)` | `Object.keys(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ | ✅ |
+| `Object.keys(obj)` | `Object.keys(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ | ✅ HashMap→`keys()`，Struct→`keysStruct()` |
 | `Object.values(obj)` | `Object.values(obj)` | `obj: object` | `T[]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.entries(obj)` | `Object.entries(obj)` | `obj: object` | `[string,T][]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.assign(tgt,...)` | `Object.assign(target, ...sources)` | `target, ...sources` | target 引用 | ✅ | ✅ | ✅ | ✅ |
 | `Object.freeze(obj)` | `Object.freeze(obj)` | `obj: object` | 冻结的 obj | ✅ | ✅ | no-op | ✅ Zig struct 天然不可变 |
-| **— 缺失静态方法 (9) —** | | | | | | | |
+| `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | no-op | ✅ (no-op) |
+| `Object.preventExtensions(obj)` | `Object.preventExtensions(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | no-op | ✅ (no-op) |
+| **— 状态检查 (3) —** | | | | | | | |
+| `Object.isSealed(obj)` | `Object.isSealed(obj)` | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ (emit `true`) |
+| `Object.isFrozen(obj)` | `Object.isFrozen(obj)` | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ (emit `true`) |
+| `Object.isExtensible(obj)` | `Object.isExtensible(obj)` | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ (emit `false`) |
+| **— 其他静态方法 (9) —** | | | | | | | |
 | `Object.defineProperties(obj,props)` | 批量定义属性 | `obj, props` | obj 引用 | ✅ | ✅ | ✅ | ✅ |
+| `Object.defineProperty(obj,k,desc)` | 定义属性 | `obj, k, desc` | obj 引用 | ✅ | ✅ | ✅ | ✅ (简化: just put) |
 | `Object.getOwnPropertyDescriptor(obj,k)` | 获取属性描述符 | `obj, prop` | descriptor | ✅ | ✅ | ✅ | ✅ |
 | `Object.getOwnPropertyNames(obj)` | `Object.getOwnPropertyNames(obj)` | `obj: object` | `string[]` | ✅ | ✅ | ✅ | ✅ |
 | `Object.getOwnPropertySymbols(obj)` | Symbol 属性名 | `obj: object` | `symbol[]` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 | `Object.getPrototypeOf(obj)` | 获取原型 | `obj` | prototype | ✅ | ✅ | ✅ | ✅ (返回 null) |
-| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ✅ | ✅ | ✅ | ✅ |
-| `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ | ✅ |
-| `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ | ✅ |
-| `Object.seal(obj)` | `Object.seal(obj)` | `obj: object` | obj 引用 | ✅ | ✅ | ✅ | ✅ (no-op) |
-| `Object.isSealed/Frozen/Extensible()` | 状态检查 | `obj` | `bool` | ✅ | ✅ | ✅ | ✅ |
+| `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ✅ | ✅ | ✅ | ✅ (no-op) |
+| `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ | ✅ comptime `@hasField` 或 `js_object.hasOwn()` |
+| `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ | ✅ NaN-safe SameValue |
+| **— 创建/转换 (2) —** | | | | | | | |
+| `Object.create(proto)` | `Object.create(proto)` | `proto` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
@@ -877,12 +997,12 @@
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 33 | 94% | 2 | ES2023 不可变方法不实现 |
-| String | 33 | 31+5⚠️ | 94% | 1 | 5 个简化实现（localeCompare/normalize/toLocaleUpperCase/LowerCase），String.raw 🔘 |
+| Array | 35 | 32+1⚠️ | 94% | 2 | ⚠️ .map() 为 identity stub；ES2023 不可变方法不实现 |
+| String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
 | Date | 23 | 21 | 91% | 2 | setTime/toUTCString 不实现 |
-| Object | 17 | 15 | 88% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
+| Object | 21 | 19 | 90% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
 | JSON | 2 | 2 | 100% | — | ✅ |
 | Global | 9 | 8 | 89% | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | ✅ |
@@ -897,7 +1017,7 @@
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **217** | **199** | **~92%** | **18** | 5⚠️: String ×4 + BigInt ×1；13🔘 各行合计 |
+| **总计** | **220** | **203** | **~92%** | **17** | 6⚠️: String ×4 + Array ×1 (.map stub) + BigInt ×1 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1149,20 +1269,20 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 361 个测试 (361 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 455 个测试 (455 pass + 0 ignore)
 
-| 测试模块 | 测试数量 | 覆盖特性 |
+| 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `native_proto::tests` | 334 | 所有核心语法、内置对象、闭包、错误处理 |
+| `tests/` 子模块（8 个文件） | 337 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `zigir/` 内联测试 | 118 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident |
 | `jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
 | `sourcemap` | 4 | Source Map 生成 |
 | `testgen` | 3 | Zig 测试代码生成 |
-| `test-lib-project` | 2 | 端到端集成测试 |
 
 ### 7.2 测试覆盖情况
 
-361 个 Rust 测试全部通过（361 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+455 个 Rust 测试全部通过（455 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1171,16 +1291,36 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | 结果 | 数量 | 说明 |
 |------|------|------|
 | MATCH | 200 | 完全匹配 |
-| MISMATCH | 4 | 已知差异 |
+| MISMATCH | 3 | 已知差异 |
+| ERROR (CRASH) | 1 | 已知 crash |
 
 **匹配率: 200/204 = 98.0%**
 
-**4 个已知 MISMATCH**:
+**4 个已知非 PASS**:
 
-| Fragment | 差异原因 | 状态 |
-|----------|----------|------|
-| `test_statements_frag_11` | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | 已知限制 |
-| `test_expressions_frag_112` | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | 已知限制 |
-| `test_builtins_frag_157` | `parseInt` 对无效输入返回 `NaN` vs `0` | 已知限制 |
-| `test_builtins_frag_202` | `decodeURIComponent` 错误处理方式不同 | 已知限制 |
+| Fragment | 类型 | 差异原因 | 状态 |
+|----------|------|----------|------|
+| `test_statements_frag_11` | MISMATCH | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | WONTFIX |
+| `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
+| `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+| `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
 
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
