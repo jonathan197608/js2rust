@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '3895067d-efbb-4be4-9518-aa082696654f'
+  PropagateID: '3895067d-efbb-4be4-9518-aa082696654f'
+  ReservedCode1: '8a47f0ab-1588-4b00-9d4e-8765daac9c97'
+  ReservedCode2: '8a47f0ab-1588-4b00-9d4e-8765daac9c97'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd6c4d25b-9853-4575-9213-4690445b1363'
+  PropagateID: 'd6c4d25b-9853-4575-9213-4690445b1363'
+  ReservedCode1: 'f459bbf1-f31c-4fcd-9554-74d921e9279b'
+  ReservedCode2: 'f459bbf1-f31c-4fcd-9554-74d921e9279b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'a6eb0b2a-1e2d-4434-9ced-8ba7241e5bd8'
   PropagateID: 'a6eb0b2a-1e2d-4434-9ced-8ba7241e5bd8'
   ReservedCode1: 'ec80b515-2be5-4404-b8fe-a7ea2e546c3d'
@@ -286,7 +308,7 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | ~43 | ~88% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
-| 🔘 不实现 | ~6 | ~12% | `arguments`、类表达式、`static {}`、`for await...of`、`with`、`debugger` |
+| 🔘 不实现 | ~6 | ~12% | `arguments`、`static {}`、`for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — 220 个表格行
 
@@ -716,7 +738,7 @@ AIGC:
 ### 4.2 `Array` — 34+1⚠️/35 (97%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
-> **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` 标记为「待实现」— 基于 clone + 可变版本实现，工作量小。
+> **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` — 已实现（inline clone + 修改副本），`compareFn` 参数暂忽略（与 `.sort()` 行为一致）。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -1449,6 +1471,10 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
 
 > AI生成
 
