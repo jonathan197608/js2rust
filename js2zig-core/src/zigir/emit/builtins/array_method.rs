@@ -31,6 +31,10 @@ impl Emitter {
             K::Concat => self.emit_concat_inline(data),
             K::CopyWithin => self.emit_copy_within_inline(data),
             K::Fill => self.emit_fill_inline(data),
+            K::With => self.emit_with_inline(data),
+            K::ToReversed => self.emit_to_reversed_inline(data),
+            K::ToSorted => self.emit_to_sorted_inline(data),
+            K::ToSpliced => self.emit_to_spliced_inline(data),
         }
     }
 
@@ -381,5 +385,165 @@ impl Emitter {
                 self.write("; }");
             }
         }
+    }
+
+    // ── with ───────────────────────────────────────────
+    // arr.with(index, value) → clone the array, replace element at index
+    // (blk: { var __with: std.ArrayList(elem_type) = .empty;
+    //   __with.appendSlice(allocator, obj.items) catch @panic("OOM");
+    //   __with.items[@intCast(idx)] = value;
+    //   break :blk __with; })
+    pub(super) fn emit_with_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __with: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__with.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.with appendSlice\"); ",
+            data.obj_name
+        ));
+        // Replace element at index
+        if let Some(idx_arg) = data.args.first() {
+            self.write("__with.items[@intCast(");
+            self.emit_expr(idx_arg);
+            self.write(")] = ");
+        } else {
+            self.write("__with.items[0] = ");
+        }
+        if data.args.len() >= 2 {
+            self.emit_expr(&data.args[1]);
+        } else {
+            self.write("undefined");
+        }
+        self.write("; ");
+        self.write(&format!("break :{} __with; }})", blk));
+    }
+
+    // ── toReversed ─────────────────────────────────────
+    // arr.toReversed() → clone the array in reverse order
+    // (blk: { var __rev: std.ArrayList(elem_type) = .empty;
+    //   __rev.ensureTotalCapacity(allocator, obj.items.len) catch @panic("OOM");
+    //   var __ri = obj.items.len; while (__ri > 0) { __ri -= 1; __rev.append(allocator, obj.items[__ri]) catch @panic("OOM"); }
+    //   break :blk __rev; })
+    pub(super) fn emit_to_reversed_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayMethodInline,
+    ) {
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __rev: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__rev.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.toReversed capacity\"); ",
+            data.obj_name
+        ));
+        self.write(&format!(
+            "var __ri: usize = {}.items.len; while (__ri > 0) {{ __ri -= 1; __rev.append(js_allocator.allocator(), {}.items[__ri]) catch @panic(\"OOM: Array.toReversed append\"); }} ",
+            data.obj_name, data.obj_name
+        ));
+        self.write(&format!("break :{} __rev; }})", blk));
+    }
+
+    // ── toSorted ───────────────────────────────────────
+    // arr.toSorted(compareFn?) → clone the array, sort the clone
+    // For now, compareFn is ignored (same as Array.sort behavior).
+    // (blk: { var __sorted: std.ArrayList(elem_type) = .empty;
+    //   __sorted.appendSlice(allocator, obj.items) catch @panic("OOM");
+    //   std.mem.sort(elem_type, __sorted.items, {}, comptime std.sort.asc(elem_type));
+    //   break :blk __sorted; })
+    pub(super) fn emit_to_sorted_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayMethodInline,
+    ) {
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __sorted: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__sorted.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
+            data.obj_name
+        ));
+        // Sort — for JsAny elements use JsAny.lt(); for i64 use numeric sort
+        if matches!(data.elem_type, ZigType::JsAny) {
+            self.write("std.mem.sort(JsAny, __sorted.items, {}, struct { fn lessThan(_: void, a: JsAny, b: JsAny) bool { return a.lt(b); } }.lessThan); ");
+        } else {
+            self.write(&format!(
+                "std.mem.sort({}, __sorted.items, {{}}, comptime std.sort.asc({})); ",
+                elem_type_str, elem_type_str
+            ));
+        }
+        self.write(&format!("break :{} __sorted; }})", blk));
+    }
+
+    // ── toSpliced ──────────────────────────────────────
+    // arr.toSpliced(start, deleteCount?, ...items) → clone, then splice the clone
+    // (blk: { var __sp: std.ArrayList(elem_type) = .empty;
+    //   __sp.appendSlice(allocator, obj.items) catch @panic("OOM");
+    //   const __sp_start = @as(usize, @intCast(@max(0, start)));
+    //   const __sp_cnt = @as(usize, @intCast(@min(@max(0, count), __sp.items.len -| __sp_start)));
+    //   var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); }
+    //   [insert items if args > 2]
+    //   break :blk __sp; })
+    pub(super) fn emit_to_spliced_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayMethodInline,
+    ) {
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __sp: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        // Clone original array
+        self.write(&format!(
+            "__sp.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSpliced appendSlice\"); ",
+            data.obj_name
+        ));
+        // Compute start index
+        self.write("const __sp_start = @as(usize, @intCast(@max(0, ");
+        if let Some(arg) = data.args.first() {
+            self.emit_expr(arg);
+        } else {
+            self.write("0");
+        }
+        self.write("))); ");
+        // Compute delete count
+        self.write("const __sp_cnt = @as(usize, @intCast(@min(@max(0, ");
+        if data.args.len() >= 2 {
+            self.emit_expr(&data.args[1]);
+        } else {
+            self.write("0");
+        }
+        self.write("), __sp.items.len -| __sp_start))); ");
+        // Remove elements from clone
+        self.write("var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); } ");
+        // Insert items if provided (args beyond start and deleteCount)
+        if data.args.len() > 2 {
+            let insert_items: Vec<String> = data.args[2..]
+                .iter()
+                .map(|arg| {
+                    let saved = std::mem::take(self.output_mut());
+                    self.emit_expr(arg);
+                    let rendered = std::mem::take(self.output_mut());
+                    *self.output_mut() = saved;
+                    rendered
+                })
+                .collect();
+            self.write(&format!(
+                "__sp.insertSlice(js_allocator.allocator(), __sp_start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.toSpliced insert\"); ",
+                elem_type_str, insert_items.join(", ")
+            ));
+        }
+        self.write(&format!("break :{} __sp; }})", blk));
     }
 }

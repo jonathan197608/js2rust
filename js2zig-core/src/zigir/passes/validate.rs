@@ -273,9 +273,7 @@ impl ValidatePass {
                 self.check_closure_refs_in_block(&struct_def.body);
                 if let Some(closure) = instance {
                     for cap in &closure.captured {
-                        self.check_closure_refs_in_expr(&IrExpr::Ident(
-                            cap.name.clone(),
-                        ));
+                        self.check_closure_refs_in_expr(&IrExpr::Ident(cap.name.clone()));
                     }
                 }
             }

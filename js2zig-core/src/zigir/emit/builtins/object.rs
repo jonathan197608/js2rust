@@ -7,11 +7,7 @@ use crate::zigir::types::IrExpr;
 use crate::zigir::emit::Emitter;
 
 impl Emitter {
-    pub(super) fn emit_object_builtin(
-        &mut self,
-        method: &str,
-        args: &[IrExpr],
-    ) {
+    pub(super) fn emit_object_builtin(&mut self, method: &str, args: &[IrExpr]) {
         match method {
             // ── No-op methods (Zig is immutable by default) ──
             "freeze" | "seal" | "preventExtensions" => {
@@ -169,12 +165,7 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_number_builtin(
-        &mut self,
-        method: &str,
-        obj: Option<&str>,
-        args: &[IrExpr],
-    ) {
+    pub(super) fn emit_number_builtin(&mut self, method: &str, obj: Option<&str>, args: &[IrExpr]) {
         match method {
             "toFixed" | "toExponential" | "toPrecision" => {
                 // js_number.toFixed(js_allocator.allocator(), obj, digits)
@@ -213,12 +204,7 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_symbol_builtin(
-        &mut self,
-        method: &str,
-        obj: Option<&str>,
-        args: &[IrExpr],
-    ) {
+    pub(super) fn emit_symbol_builtin(&mut self, method: &str, obj: Option<&str>, args: &[IrExpr]) {
         // Avoid Zig keyword conflicts: Symbol.for → symbolFor, Symbol.keyFor → symbolKeyFor
         let zig_method = match method {
             "for" => "symbolFor",
@@ -271,11 +257,7 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_console_builtin(
-        &mut self,
-        method: &str,
-        args: &[IrExpr],
-    ) {
+    pub(super) fn emit_console_builtin(&mut self, method: &str, args: &[IrExpr]) {
         if args.len() <= 1 {
             // Single-arg: js_console.log(msg), js_console.err(msg), js_console.warn(msg)
             self.write(&format!("js_console.{}(", method));

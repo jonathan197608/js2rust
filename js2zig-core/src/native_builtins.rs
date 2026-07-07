@@ -89,6 +89,12 @@ pub enum BuiltinCall {
     ArrayReduceRight,   // arr.reduceRight(fn, init)
     ArrayFill,          // arr.fill(val, start, end)
 
+    // Array ES2023 immutable methods
+    ArrayWith,       // arr.with(index, value) — replace element at index, return new array
+    ArrayToReversed, // arr.toReversed() — return reversed copy
+    ArrayToSorted,   // arr.toSorted(compareFn) — return sorted copy
+    ArrayToSpliced,  // arr.toSpliced(start, deleteCount, ...items) — return spliced copy
+
     // Array static methods
     ArrayFrom,    // Array.from(arrayLike[, mapFn[, thisArg]])
     ArrayOf,      // Array.of(...items)
@@ -334,7 +340,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "Object" => Some(BuiltinCall::ObjectConstructor),
             "Symbol" => Some(BuiltinCall::SymbolConstructor),
             _ => None,
-        }
+        };
     }
 
     // Check if callee is a StaticMemberExpression (obj.method())
@@ -388,7 +394,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "imul" => Some(BuiltinCall::MathImul),
                 "log1p" => Some(BuiltinCall::MathLog1p),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "Date" (for Date static methods)
@@ -400,7 +406,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "parse" => Some(BuiltinCall::DateParse),
                 "UTC" => Some(BuiltinCall::DateUTC),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "Object" (for Object static methods)
@@ -423,15 +429,13 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "defineProperty" => Some(BuiltinCall::ObjectDefineProperty),
                 "getPrototypeOf" => Some(BuiltinCall::ObjectGetPrototypeOf),
                 "defineProperties" => Some(BuiltinCall::ObjectDefineProperties),
-                "getOwnPropertyDescriptor" => {
-                    Some(BuiltinCall::ObjectGetOwnPropertyDescriptor)
-                }
+                "getOwnPropertyDescriptor" => Some(BuiltinCall::ObjectGetOwnPropertyDescriptor),
                 "setPrototypeOf" => Some(BuiltinCall::ObjectSetPrototypeOf),
                 "isSealed" => Some(BuiltinCall::ObjectIsSealed),
                 "isFrozen" => Some(BuiltinCall::ObjectIsFrozen),
                 "isExtensible" => Some(BuiltinCall::ObjectIsExtensible),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "JSON" (for JSON methods)
@@ -442,7 +446,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "stringify" => Some(BuiltinCall::JsonStringify),
                 "parse" => Some(BuiltinCall::JsonParse),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "console" (for console methods)
@@ -454,7 +458,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "error" => Some(BuiltinCall::ConsoleError),
                 "warn" => Some(BuiltinCall::ConsoleWarn),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is a RegExp literal (for /pattern/.test(str))
@@ -463,7 +467,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "test" => Some(BuiltinCall::RegExpTest),
                 "exec" => Some(BuiltinCall::RegExpExec),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "Number" (for Number static methods)
@@ -478,7 +482,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "parseInt" => Some(BuiltinCall::NumberParseInt),
                 "parseFloat" => Some(BuiltinCall::NumberParseFloat),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "String" (for String static methods)
@@ -489,7 +493,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "fromCharCode" => Some(BuiltinCall::StringFromCharCode),
                 "fromCodePoint" => Some(BuiltinCall::StringFromCodePoint),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "Array" (for Array static methods)
@@ -501,7 +505,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "of" => Some(BuiltinCall::ArrayOf),
                 "isArray" => Some(BuiltinCall::ArrayIsArray),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is "Symbol" (for Symbol static methods)
@@ -512,7 +516,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "for" => Some(BuiltinCall::SymbolFor),
                 "keyFor" => Some(BuiltinCall::SymbolKeyFor),
                 _ => None,
-            }
+            };
         }
 
         // Check if object is a string literal (for String methods)
@@ -618,6 +622,10 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "findLastIndex" => Some(BuiltinCall::ArrayFindLastIndex),
             "reduceRight" => Some(BuiltinCall::ArrayReduceRight),
             "fill" => Some(BuiltinCall::ArrayFill),
+            "with" => Some(BuiltinCall::ArrayWith),
+            "toReversed" => Some(BuiltinCall::ArrayToReversed),
+            "toSorted" => Some(BuiltinCall::ArrayToSorted),
+            "toSpliced" => Some(BuiltinCall::ArrayToSpliced),
             "at" => {
                 if is_string {
                     Some(BuiltinCall::StringAt)

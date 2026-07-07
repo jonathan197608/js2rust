@@ -365,14 +365,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 };
 
                 // Collect host function return types and param types for type inference
-                let mut host_return_types: HashMap<
-                    String,
-                    crate::types::ZigType,
-                > = HashMap::new();
-                let mut host_param_types: HashMap<
-                    String,
-                    Vec<crate::types::ZigType>,
-                > = HashMap::new();
+                let mut host_return_types: HashMap<String, crate::types::ZigType> = HashMap::new();
+                let mut host_param_types: HashMap<String, Vec<crate::types::ZigType>> =
+                    HashMap::new();
                 for def in host_fns.iter() {
                     host_return_types.insert(def.name.clone(), def.ret_type.clone());
                     host_param_types.insert(
@@ -382,8 +377,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
                 let _host_struct_fields = host_fns.struct_fields_map();
 
-                let _async_fns: HashSet<String> =
-                    host_fns.async_fn_names().into_iter().collect();
+                let _async_fns: HashSet<String> = host_fns.async_fn_names().into_iter().collect();
 
                 // Use native_proto (strict static type system) — pre-parsed AST
                 // from analyze_single_group, no re-parsing of source text.
@@ -430,14 +424,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             let cabi_exports = result.cabi_exports;
 
                             // closure_fns: not supported in native_proto yet, use empty
-                            let closure_fns: HashSet<String> =
-                                HashSet::new();
+                            let closure_fns: HashSet<String> = HashSet::new();
 
                             // fn_return_types: use var_types (native_proto::ZigType)
-                            let fn_return_types: HashMap<
-                                String,
-                                crate::types::ZigType,
-                            > = result
+                            let fn_return_types: HashMap<String, crate::types::ZigType> = result
                                 .var_types
                                 .iter()
                                 .map(|(k, v)| (k.clone(), v.clone()))

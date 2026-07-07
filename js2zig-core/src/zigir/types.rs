@@ -883,6 +883,14 @@ pub enum ArrayMethodKind {
     CopyWithin,
     /// `arr.fill(val[, start[, end]])` → for loop elem.* assignment
     Fill,
+    /// `arr.with(index, value)` → clone + replace element at index
+    With,
+    /// `arr.toReversed()` → clone + reverse
+    ToReversed,
+    /// `arr.toSorted(compareFn)` → clone + sort
+    ToSorted,
+    /// `arr.toSpliced(start, deleteCount, ...items)` → clone + splice
+    ToSpliced,
 }
 
 /// Data for inline expansion of array non-callback methods.

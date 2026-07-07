@@ -29,7 +29,10 @@ impl LineIndex {
 
     /// Convert a byte offset to (line, col), both 1-based.
     pub fn offset_to_line_col(&self, offset: u32) -> (u32, u32) {
-        let line_0 = self.line_starts.binary_search(&offset).unwrap_or_else(|insert| insert.saturating_sub(1));
+        let line_0 = self
+            .line_starts
+            .binary_search(&offset)
+            .unwrap_or_else(|insert| insert.saturating_sub(1));
         let col_0 = offset.saturating_sub(self.line_starts[line_0]);
         (line_0 as u32 + 1, col_0 + 1)
     }

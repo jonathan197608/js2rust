@@ -310,7 +310,7 @@ impl Lowerer {
                 }
             } else {
                 self_access
-            }
+            };
         }
 
         IrExpr::Ident(self.make_ident(var_name))

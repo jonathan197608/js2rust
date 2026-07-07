@@ -453,33 +453,57 @@ static { console.log("static block"); }
     );
 }
 
-// ── 🔘 不实现内置对象方法 ─────────────────────────────────────────
+// ── ✅ ES2023 Array immutable methods (now implemented) ──────────
 
 #[test]
-fn test_not_implemented_array_with() {
-    // 🔘 Array.prototype.with(): ES2023 不可变方法
-    assert_not_implemented(
-        r#"
-function test() {
+fn test_array_with() {
+    // ✅ Array.prototype.with(index, value) — ES2023 immutable method
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testWith() {
 const arr = [1, 2, 3];
-return arr.with(0, 99);
+const arr2 = arr.with(1, 99);
+return arr2[1];
 }
-"#,
-        "Array.prototype.with()",
+"#;
+    let zig = transpile_and_check(js, "test_array_with");
+    assert!(
+        zig.contains("__with"),
+        "Expected __with variable in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("appendSlice"),
+        "Expected clone via appendSlice in:\n{}",
+        zig
     );
 }
 
 #[test]
-fn test_not_implemented_array_to_reversed() {
-    // 🔘 Array.prototype.toReversed(): ES2023 不可变方法
-    assert_not_implemented(
-        r#"
-function test() {
+fn test_array_to_reversed() {
+    // ✅ Array.prototype.toReversed() — ES2023 immutable method
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testToReversed() {
 const arr = [1, 2, 3];
-return arr.toReversed();
+const arr2 = arr.toReversed();
+return arr2[0];
 }
-"#,
-        "Array.prototype.toReversed()",
+"#;
+    let zig = transpile_and_check(js, "test_array_to_reversed");
+    assert!(
+        zig.contains("__rev"),
+        "Expected __rev variable in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("append"),
+        "Expected append in reversed loop in:\n{}",
+        zig
     );
 }
 
@@ -739,30 +763,46 @@ return sum;
 // ── 补充：遗漏的 🔘 不实现特性 ──────────────────────────────────
 
 #[test]
-fn test_not_implemented_array_to_sorted() {
-    // 🔘 Array.prototype.toSorted(): ES2023 不可变方法
-    assert_not_implemented(
-        r#"
-function test() {
+fn test_array_to_sorted() {
+    // ✅ Array.prototype.toSorted() — ES2023 immutable method
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testToSorted() {
 const arr = [3, 1, 2];
-return arr.toSorted();
+const arr2 = arr.toSorted();
+return arr2[0];
 }
-"#,
-        "Array.prototype.toSorted()",
+"#;
+    let zig = transpile_and_check(js, "test_array_to_sorted");
+    assert!(
+        zig.contains("__sorted"),
+        "Expected __sorted variable in:\n{}",
+        zig
     );
+    assert!(zig.contains("sort"), "Expected sort call in:\n{}", zig);
 }
 
 #[test]
-fn test_not_implemented_array_to_spliced() {
-    // 🔘 Array.prototype.toSpliced(): ES2023 不可变方法
-    assert_not_implemented(
-        r#"
-function test() {
+fn test_array_to_spliced() {
+    // ✅ Array.prototype.toSpliced() — ES2023 immutable method
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testToSpliced() {
 const arr = [1, 2, 3, 4];
-return arr.toSpliced(1, 2);
+const arr2 = arr.toSpliced(1, 2);
+return arr2[1];
 }
-"#,
-        "Array.prototype.toSpliced()",
+"#;
+    let zig = transpile_and_check(js, "test_array_to_spliced");
+    assert!(zig.contains("__sp"), "Expected __sp variable in:\n{}", zig);
+    assert!(
+        zig.contains("orderedRemove"),
+        "Expected orderedRemove in:\n{}",
+        zig
     );
 }
 

@@ -124,35 +124,17 @@ impl Lowerer {
             // not if it's a variable of type string. Fix up the module/method here.
             let (module, method, return_type) = if let Some(name) = &obj_name {
                 if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
-                    if matches!(var_type, ZigType::Str)
-                        && module == BuiltinModule::JsArray
-                    {
+                    if matches!(var_type, ZigType::Str) && module == BuiltinModule::JsArray {
                         match method.as_str() {
-                            "at" => (
-                                BuiltinModule::JsString,
-                                "at".into(),
-                                ZigType::Str,
-                            ),
-                            "indexOf" => (
-                                BuiltinModule::JsString,
-                                "indexOf".into(),
-                                ZigType::I64,
-                            ),
-                            "includes" => (
-                                BuiltinModule::JsString,
-                                "includes".into(),
-                                ZigType::Bool,
-                            ),
-                            "lastIndexOf" => (
-                                BuiltinModule::JsString,
-                                "lastIndexOf".into(),
-                                ZigType::I64,
-                            ),
-                            "slice" => (
-                                BuiltinModule::JsString,
-                                "slice".into(),
-                                ZigType::Str,
-                            ),
+                            "at" => (BuiltinModule::JsString, "at".into(), ZigType::Str),
+                            "indexOf" => (BuiltinModule::JsString, "indexOf".into(), ZigType::I64),
+                            "includes" => {
+                                (BuiltinModule::JsString, "includes".into(), ZigType::Bool)
+                            }
+                            "lastIndexOf" => {
+                                (BuiltinModule::JsString, "lastIndexOf".into(), ZigType::I64)
+                            }
+                            "slice" => (BuiltinModule::JsString, "slice".into(), ZigType::Str),
                             _ => (module, method, return_type),
                         }
                     } else if let ZigType::NamedStruct(n) = var_type {
@@ -570,7 +552,7 @@ impl Lowerer {
                         self.lower_expr(expr)
                     } else {
                         crate::zigir::types::IrExpr::StringLiteral("".to_string())
-                    }
+                    };
                 }
                 "Number" => {
                     return if let Some(first_arg) = ne.arguments.first()
@@ -579,7 +561,7 @@ impl Lowerer {
                         self.lower_expr(expr)
                     } else {
                         crate::zigir::types::IrExpr::IntLiteral(0)
-                    }
+                    };
                 }
                 "Boolean" => {
                     return if let Some(first_arg) = ne.arguments.first()
@@ -588,7 +570,7 @@ impl Lowerer {
                         self.lower_expr(expr)
                     } else {
                         crate::zigir::types::IrExpr::BoolLiteral(false)
-                    }
+                    };
                 }
                 name if self.class_names.contains(name) => NewConstructor::Class(name.to_string()),
                 // Known-unsupported constructors → structured Unsupported (Emitter generates proper @compileError)

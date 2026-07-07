@@ -40,12 +40,11 @@ impl Lowerer {
                         is_rest: false,
                     })
                     .collect();
-                let ret_struct_name =
-                    if let ZigType::NamedStruct(ref s) = f.return_type {
-                        Some(s.clone())
-                    } else {
-                        None
-                    };
+                let ret_struct_name = if let ZigType::NamedStruct(ref s) = f.return_type {
+                    Some(s.clone())
+                } else {
+                    None
+                };
                 exports.push(IrCabiExport {
                     name: f.name.zig_name.clone(),
                     params,
@@ -167,6 +166,10 @@ impl Lowerer {
             BC::ArrayConcat => ArrayMethodKind::Concat,
             BC::ArrayCopyWithin => ArrayMethodKind::CopyWithin,
             BC::ArrayFill => ArrayMethodKind::Fill,
+            BC::ArrayWith => ArrayMethodKind::With,
+            BC::ArrayToReversed => ArrayMethodKind::ToReversed,
+            BC::ArrayToSorted => ArrayMethodKind::ToSorted,
+            BC::ArrayToSpliced => ArrayMethodKind::ToSpliced,
             _ => return None,
         };
 
@@ -835,6 +838,26 @@ pub fn builtin_call_to_ir(
             (BuiltinModule::JsArray, "reduceRight".into(), ZigType::JsAny)
         }
         BuiltinCall::ArrayFill => (BuiltinModule::JsArray, "fill".into(), ZigType::Void),
+        BuiltinCall::ArrayWith => (
+            BuiltinModule::JsArray,
+            "with".into(),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+        ),
+        BuiltinCall::ArrayToReversed => (
+            BuiltinModule::JsArray,
+            "toReversed".into(),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+        ),
+        BuiltinCall::ArrayToSorted => (
+            BuiltinModule::JsArray,
+            "toSorted".into(),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+        ),
+        BuiltinCall::ArrayToSpliced => (
+            BuiltinModule::JsArray,
+            "toSpliced".into(),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+        ),
         BuiltinCall::ArrayKeys => (
             BuiltinModule::JsArray,
             "keys".into(),

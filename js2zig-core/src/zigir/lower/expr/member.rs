@@ -409,10 +409,7 @@ impl Lowerer {
 
     /// Infer the type of an assignment target (left-hand side of `=` / `+=` etc.).
     /// Only handles the common cases: identifier and static member expression.
-    pub(super) fn infer_assign_target_type(
-        &self,
-        target: &AssignmentTarget,
-    ) -> Option<ZigType> {
+    pub(super) fn infer_assign_target_type(&self, target: &AssignmentTarget) -> Option<ZigType> {
         use oxc_ast::ast::AssignmentTarget;
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
