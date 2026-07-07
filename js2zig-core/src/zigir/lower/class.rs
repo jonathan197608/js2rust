@@ -14,6 +14,13 @@ use super::Lowerer;
 // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
 
 impl Lowerer {
+    /// Generate a unique name for an anonymous class expression.
+    fn next_anon_class_name(&mut self) -> String {
+        let n = self.anon_class_counter;
+        self.anon_class_counter += 1;
+        format!("_AnonClass_{}", n)
+    }
+
     /// Lower a class declaration into IrClassDecl.
     ///
     /// Extracts fields (from PropertyDefinition and implicit constructor `this.x = ...`),
@@ -28,7 +35,10 @@ impl Lowerer {
             .id
             .as_ref()
             .map(|id| id.name.to_string())
-            .unwrap_or_else(|| "AnonymousClass".to_string());
+            .unwrap_or_else(|| {
+                // Anonymous class expression needs a unique name to avoid collisions
+                self.next_anon_class_name()
+            });
 
         // ©¤©¤ First pass: collect explicit fields from PropertyDefinition ©¤©¤
         let mut field_names: Vec<String> = Vec::new();

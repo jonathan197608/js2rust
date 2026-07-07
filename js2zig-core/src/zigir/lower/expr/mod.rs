@@ -211,16 +211,22 @@ impl Lowerer {
             // ── Optional chaining (?.) ───────────────────────────────────────
             Expression::ChainExpression(ce) => self.lower_optional_chain(ce),
 
-            // ── Class expression (anonymous class as value) ──
+            // ── Class expression (anonymous or named class as value) ──
+            // e.g. `const X = class {}` or `const X = class Y {}`
+            // Lower same as ClassDeclaration, register as pending decl,
+            // return an Ident referencing the class struct name.
             Expression::ClassExpression(ce) => {
-                let name = ce
-                    .id
-                    .as_ref()
-                    .map(|id| id.name.as_str())
-                    .unwrap_or("<anonymous>");
-                IrExpr::CompileError {
-                    span: SourceSpan::default(),
-                    msg: format!("class expression '{}' is not supported", name),
+                if let Some(ir_class) = self.lower_class_decl(ce) {
+                    let class_name = ir_class.name.js_name.clone();
+                    self.class_names.insert(class_name.clone());
+                    self.pending_expr_fns
+                        .push(crate::zigir::types::IrDecl::Class(ir_class));
+                    IrExpr::Ident(self.make_ident(&class_name))
+                } else {
+                    IrExpr::CompileError {
+                        span: SourceSpan::default(),
+                        msg: "class expression could not be lowered".to_string(),
+                    }
                 }
             }
 

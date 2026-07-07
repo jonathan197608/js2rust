@@ -91,6 +91,9 @@ pub struct Lowerer {
     /// Affects UpdateExpression lowering (e.g., `i++` → `i += 1` vs block expr).
     pub(super) in_expr_stmt: bool,
 
+    /// Counter for anonymous class expressions (to generate unique names).
+    pub(super) anon_class_counter: u32,
+
     // ── Diagnostics ───────────────────────────────────
     pub(super) diagnostics: Vec<IrDiagnostic>,
 }
@@ -123,6 +126,7 @@ impl Lowerer {
             pending_label: None,
             current_class: None,
             in_expr_stmt: false,
+            anon_class_counter: 0,
             diagnostics: Vec::new(),
         }
     }

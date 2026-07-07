@@ -3,6 +3,127 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '4e6cc095-44d6-49ad-808b-373456e6a486'
+  PropagateID: '4e6cc095-44d6-49ad-808b-373456e6a486'
+  ReservedCode1: 'c634af27-0157-4e1f-b572-95434dc12c1e'
+  ReservedCode2: 'c634af27-0157-4e1f-b572-95434dc12c1e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'deeb59f1-a838-4e37-8e52-3b96f0fc2fbc'
+  PropagateID: 'deeb59f1-a838-4e37-8e52-3b96f0fc2fbc'
+  ReservedCode1: '71444410-b10a-4927-a7ed-875470caf57f'
+  ReservedCode2: '71444410-b10a-4927-a7ed-875470caf57f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '218f84ef-0fc3-465c-a92e-ace8f74ddcf4'
+  PropagateID: '218f84ef-0fc3-465c-a92e-ace8f74ddcf4'
+  ReservedCode1: '5c66cd86-6f42-4203-a9fe-fac6cd3c3e80'
+  ReservedCode2: '5c66cd86-6f42-4203-a9fe-fac6cd3c3e80'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '97989c3b-16d8-4fed-8a0a-2f4da528c833'
+  PropagateID: '97989c3b-16d8-4fed-8a0a-2f4da528c833'
+  ReservedCode1: '185d77e2-b367-466a-a54a-58538f1dfe15'
+  ReservedCode2: '185d77e2-b367-466a-a54a-58538f1dfe15'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '923e0b2d-aee0-4deb-9463-5e2718fb73f7'
+  PropagateID: '923e0b2d-aee0-4deb-9463-5e2718fb73f7'
+  ReservedCode1: '88affd08-0559-4afe-bc21-565136518481'
+  ReservedCode2: '88affd08-0559-4afe-bc21-565136518481'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f0565ed3-4291-465d-a6fd-c6159bb2d5f6'
+  PropagateID: 'f0565ed3-4291-465d-a6fd-c6159bb2d5f6'
+  ReservedCode1: '0d3d32b9-f3f8-4401-94a3-cebf209fdb7e'
+  ReservedCode2: '0d3d32b9-f3f8-4401-94a3-cebf209fdb7e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'aa8ef440-f2e4-4d8f-ba00-feea18aab363'
+  PropagateID: 'aa8ef440-f2e4-4d8f-ba00-feea18aab363'
+  ReservedCode1: 'cebc58e9-1178-41b3-9e84-88d128784c1b'
+  ReservedCode2: 'cebc58e9-1178-41b3-9e84-88d128784c1b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e1a27e4e-9122-44d2-9338-bf7c859f125f'
+  PropagateID: 'e1a27e4e-9122-44d2-9338-bf7c859f125f'
+  ReservedCode1: 'a62d9682-1d07-4869-a9a9-8d52a02ef3dd'
+  ReservedCode2: 'a62d9682-1d07-4869-a9a9-8d52a02ef3dd'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd20a35f4-d875-4b1a-bf9f-b1209b171353'
+  PropagateID: 'd20a35f4-d875-4b1a-bf9f-b1209b171353'
+  ReservedCode1: '16da818d-d935-45fd-ab06-01f31fa8bb54'
+  ReservedCode2: '16da818d-d935-45fd-ab06-01f31fa8bb54'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a25d7473-61bd-42b7-80e6-a44d7d334f15'
+  PropagateID: 'a25d7473-61bd-42b7-80e6-a44d7d334f15'
+  ReservedCode1: '92c1dac9-e060-425b-9985-0509f893e23a'
+  ReservedCode2: '92c1dac9-e060-425b-9985-0509f893e23a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6e8c2921-e388-45d7-97f8-59314beb6d18'
+  PropagateID: '6e8c2921-e388-45d7-97f8-59314beb6d18'
+  ReservedCode1: '0c0d16d7-0933-4926-925c-ac0e639d9fd4'
+  ReservedCode2: '0c0d16d7-0933-4926-925c-ac0e639d9fd4'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '66c66362-ba8d-4b2f-bb13-da9040ce465c'
   PropagateID: '66c66362-ba8d-4b2f-bb13-da9040ce465c'
   ReservedCode1: '5fa7bbca-9518-4a7c-9019-e411336109a7'
@@ -364,7 +485,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 455 个 Rust 测试 (455 pass + 0 ignore) + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 457 个 Rust 测试 (457 pass + 0 ignore) + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -376,7 +497,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 455 个 Rust 测试 (455 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 457 个 Rust 测试 (457 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -385,8 +506,8 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 79 | ~87% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc 等 |
-| ⚠️ 简化实现 | 2 | ~2% | BigInt 字面量（基本运算支持，混合类型受限）、类表达式（降维逻辑待实现） |
+| ✅ 完全实现 | 80 | ~88% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式 等 |
+| ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
 | 🔘 不实现 | 10 | ~11% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
@@ -395,8 +516,8 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~43 | ~88% | 变量声明/函数声明/类声明/if/switch/for/while/do-while/try-catch/throw 等 |
-| 🔘 不实现 | ~6 | ~12% | `arguments`、`static {}`、`for await...of`、`with`、`debugger` |
+| ✅ 完全实现 | ~44 | ~90% | 变量声明/函数声明/类声明（含类表达式）/if/switch/for/while/do-while/try-catch/throw 等 |
+| 🔘 不实现 | ~5 | ~10% | `arguments`、`static {}`、`for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — 220 个表格行
 
@@ -414,10 +535,10 @@ AIGC:
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
-| **表达式** | 91 | 79 | 2 | 10 | **~89%** |
-| **语句** | 49 | 43 | — | 6 | **~88%** |
+| **表达式** | 91 | 80 | 1 | 10 | **~90%** |
+| **语句** | 49 | 44 | — | 5 | **~90%** |
 | **内置对象** | 220 | 200 | 6 | 14 | **~94%** |
-| **语法合计** | 140 | 122 | 2 | 16 | **~89%** |
+| **语法合计** | 140 | 124 | 1 | 15 | **~90%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -619,7 +740,7 @@ AIGC:
 
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
-| 类表达式 `const X = class {}` | 当前 CompileError | ⚠️ 简化实现（降维逻辑与 ClassDeclaration 相同，待实现；当前可用 `class X {}` 声明替代） |
+| 类表达式 `const X = class {}` | ✅ 已实现 | ✅ 完全实现（复用 ClassDeclaration 逻辑 + pending_expr_fns + 匿名类计数器 `_AnonClass_N`） |
 | `function*` (生成器函数) | `Unsupported expression type: Function` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
 | `yield` / `yield*` (生成器) | `Unsupported expression type` | 🔘 不实现（随 `function*` 一同不实现） |
 | `async function*` (异步生成器) | 未测试 | 🔘 不实现（niche 场景） |
@@ -681,7 +802,7 @@ AIGC:
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
-### 3.3 类声明 - ✅ 82% 实现
+### 3.3 类声明 - ✅ 91% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -694,7 +815,7 @@ AIGC:
 | `extends` 继承 | ✅ | 内嵌 `base: ParentType` 字段 | showcase-project |
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
 | 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
-| 类表达式 `const X = class {}` | 🔘 不实现 | `@compileError` | 很少使用 |
+| 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
 | 静态初始化块 `static {}` | 🔘 不实现 | 未实现 | ES2022，使用较少 |
 
 ### 3.4 控制流语句 - ✅ 94% 实现
@@ -1524,11 +1645,11 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 455 个测试 (455 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 457 个测试 (457 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（8 个文件） | 337 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `tests/` 子模块（8 个文件） | 339 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
 | `zigir/` 内联测试 | 118 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident |
 | `jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
@@ -1537,7 +1658,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-455 个 Rust 测试全部通过（455 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+457 个 Rust 测试全部通过（457 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1559,6 +1680,28 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

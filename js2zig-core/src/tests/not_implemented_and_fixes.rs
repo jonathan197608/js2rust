@@ -305,13 +305,56 @@ return arr instanceof Array;
 }
 
 #[test]
-fn test_not_implemented_class_expression() {
-    // 🔘 类表达式: const X = class {}
-    assert_not_implemented(
-        r#"
-const X = class { constructor(x) { this.x = x; } };
-"#,
-        "Class expression (const X = class {})",
+fn test_class_expression() {
+    // ✅ Class expression: const X = class { constructor(val) { this.x = val; } }
+    // The class struct is emitted as a module-level declaration, and the
+    // variable is assigned a reference to it.
+    let js = r#"
+/**
+ * @returns {i64}
+ */
+export function testClassExpr() {
+const X = class { constructor(val) { this.x = val; } };
+const obj = X.init(42);
+return obj.x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_class_expression");
+    assert!(
+        zig.contains("_AnonClass_0 = struct") || zig.contains("= struct"),
+        "Expected class struct in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("init("),
+        "Expected init constructor in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_class_expression_named() {
+    // ✅ Named class expression: const X = class Y { ... }
+    let js = r#"
+/**
+ * @returns {i64}
+ */
+export function testNamedClassExpr() {
+const X = class MyClass { constructor(val) { this.x = val; } };
+const obj = X.init(99);
+return obj.x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_class_expression_named");
+    assert!(
+        zig.contains("MyClass = struct"),
+        "Expected named class struct in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("const X = MyClass"),
+        "Expected X assigned to MyClass in:\n{}",
+        zig
     );
 }
 
