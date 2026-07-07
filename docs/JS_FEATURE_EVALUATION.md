@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '5e581a00-daa1-45e5-9b95-cb2571ae4639'
+  PropagateID: '5e581a00-daa1-45e5-9b95-cb2571ae4639'
+  ReservedCode1: 'b34d8439-3007-48a3-9658-65f6012bc8d8'
+  ReservedCode2: 'b34d8439-3007-48a3-9658-65f6012bc8d8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '6760f755-6186-45e3-a108-28ab9081993b'
   PropagateID: '6760f755-6186-45e3-a108-28ab9081993b'
   ReservedCode1: '785f3021-6f37-48af-b2ba-b840824b2a52'
@@ -345,7 +356,7 @@ AIGC:
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
 | 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
-| 静态初始化块 `static {}` | ✅ | `const _: void = blk: { ... break :blk {}; };` + 静态字段读写 `__ClassName_field` | `test_static_block` + `test_static_field_read` + `test_static_field_assign` |
+| 静态初始化块 `static {}` | ✅ | `const _: void = blk: { ... break :blk {}; };` + 静态字段读写 `__ClassName_field` + `this.field` → 静态字段 | `test_static_block` + `test_static_field_read` + `test_static_field_assign` + `test_static_block_this_read` + `test_static_block_this_write` |
 
 ### 3.4 控制流语句 - ✅ 94% 实现
 
@@ -1208,3 +1219,5 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
