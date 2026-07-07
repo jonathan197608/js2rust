@@ -60,7 +60,22 @@ impl Lowerer {
 
             // ── This ──────────────────────────────────────────────────────────
             Expression::ThisExpression(te) => {
-                if self.current_class.is_some() {
+                if self.in_static_block {
+                    // In a static block, `this` refers to the class constructor itself.
+                    // Replace with the class name identifier so that `this.field`
+                    // is correctly routed to `__ClassName_field` via the existing
+                    // static field detection logic.
+                    if let Some(ref class_name) = self.current_class {
+                        IrExpr::Ident(IrIdent::new(class_name))
+                    } else {
+                        let span = self.span_to_source_span(te.span);
+                        self.add_error(span, "`this` used in static block without class context");
+                        IrExpr::CompileError {
+                            span: SourceSpan::default(),
+                            msg: "`this` used in static block without class context".to_string(),
+                        }
+                    }
+                } else if self.current_class.is_some() {
                     IrExpr::This
                 } else {
                     let span = self.span_to_source_span(te.span);

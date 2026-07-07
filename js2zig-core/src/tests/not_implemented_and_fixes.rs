@@ -560,6 +560,55 @@ export function writeStatic(v) {
     );
 }
 
+#[test]
+fn test_static_block_this_read() {
+    // ✅ `this.field` inside static {} → reads static field like ClassName.field
+    let js = r#"
+class Foo {
+  static x = 1;
+  static {
+    this.x = this.x + 1;
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_static_block_this_read");
+    assert!(
+        !zig.contains("@compileError"),
+        "Should not produce compileError, got:\n{}",
+        zig
+    );
+    // this.x read should produce __Foo_x, and write should produce __Foo_x =
+    assert!(
+        zig.contains("__Foo_x"),
+        "Expected __Foo_x for this.x access:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_static_block_this_write() {
+    // ✅ `this.field = value` inside static {} → writes static field like ClassName.field = value
+    let js = r#"
+class Foo {
+  static x = 1;
+  static {
+    this.x = 42;
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_static_block_this_write");
+    assert!(
+        !zig.contains("@compileError"),
+        "Should not produce compileError, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__Foo_x = 42"),
+        "Expected '__Foo_x = 42' for this.x = 42:\n{}",
+        zig
+    );
+}
+
 // ── ✅ ES2023 Array immutable methods (now implemented) ──────────
 
 #[test]

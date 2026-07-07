@@ -4,6 +4,7 @@
 use oxc_ast::ast::*;
 
 use crate::types::ZigType;
+use crate::zigir::ident::IrIdent;
 use crate::zigir::kinds::{ComputedKeyKind, FieldKind, IndexKind};
 
 use super::Lowerer;
@@ -130,6 +131,22 @@ impl Lowerer {
                     },
                 };
             }
+        }
+
+        // ── Static block: this.field → StaticField kind (same as ClassName.field) ──
+        if matches!(&mem.object, Expression::ThisExpression(_))
+            && self.in_static_block
+            && let Some(ref class_name) = self.current_class
+            && let Some(static_fields) = self.class_static_fields.get(class_name)
+            && static_fields.contains(field_name)
+        {
+            return IrExpr::FieldAccess {
+                object: Box::new(IrExpr::Ident(IrIdent::new(class_name))),
+                field: field_name.to_string(),
+                field_kind: FieldKind::StaticField {
+                    class_name: class_name.clone(),
+                },
+            };
         }
 
         // ── Default: struct field access ──
@@ -496,6 +513,17 @@ impl Lowerer {
                     class_name: obj_name.to_string(),
                 };
             }
+        }
+        // In static blocks, `this.field` is equivalent to `ClassName.field`
+        if matches!(object_expr, oxc_ast::ast::Expression::ThisExpression(_))
+            && self.in_static_block
+            && let Some(ref class_name) = self.current_class
+            && let Some(static_fields) = self.class_static_fields.get(class_name)
+            && static_fields.contains(field_name)
+        {
+            return FieldKind::StaticField {
+                class_name: class_name.clone(),
+            };
         }
         FieldKind::StructField
     }

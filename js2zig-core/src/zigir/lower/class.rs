@@ -41,7 +41,29 @@ impl Lowerer {
                 self.next_anon_class_name()
             });
 
-        // ©¤©¤ First pass: collect explicit fields from PropertyDefinition ©¤©¤
+        // Save/restore current_class — set early so that static blocks
+        // and field initializers can reference `this` correctly.
+        let saved_class = self.current_class.take();
+        self.current_class = Some(class_name.clone());
+
+        // Pre-scan: collect static field names so `this.field` in static blocks
+        // can be routed correctly via class_static_fields during lowering.
+        let mut pre_scan_static_names: HashSet<String> = HashSet::new();
+        for elem in &cd.body.body {
+            if let ClassElement::PropertyDefinition(pd) = elem
+                && pd.r#static
+                && !pd.computed
+                && let Some(name) = Self::property_key_name(&pd.key)
+            {
+                pre_scan_static_names.insert(name);
+            }
+        }
+        if !pre_scan_static_names.is_empty() {
+            self.class_static_fields
+                .insert(class_name.clone(), pre_scan_static_names);
+        }
+
+        // ── First pass: collect explicit fields from PropertyDefinition ──
         let mut field_names: Vec<String> = Vec::new();
         let mut fields: Vec<IrClassField> = Vec::new();
         let mut static_inits: Vec<(String, crate::zigir::types::IrExpr)> = Vec::new();
@@ -84,15 +106,18 @@ impl Lowerer {
                     constructor_func = Some(&md.value);
                 }
                 ClassElement::StaticBlock(sb) => {
-                    // Lower static block body and collect it
+                    // Lower static block — set in_static_block so `this` → ClassName
+                    let saved_static_block = self.in_static_block;
+                    self.in_static_block = true;
                     let block = self.lower_block(&sb.body);
+                    self.in_static_block = saved_static_block;
                     static_blocks.push(block);
                 }
                 _ => {}
             }
         }
 
-        // ©¤©¤ Second pass: scan constructor body for implicit `this.x = ...` fields ©¤©¤
+        // ── Second pass: scan constructor body for implicit `this.x = ...` fields ──
         if let Some(func) = constructor_func
             && let Some(body) = &func.body
         {
@@ -104,11 +129,7 @@ impl Lowerer {
             );
         }
 
-        // ©¤©¤ Save/restore current_class ©¤©¤
-        let saved_class = self.current_class.take();
-        self.current_class = Some(class_name.clone());
-
-        // ©¤©¤ Lower constructor ©¤©¤
+        // ── Lower constructor ──
         let constructor = if has_constructor {
             constructor_func
                 .map(|func| self.lower_class_method(&class_name, &field_names, "init", func, false))
@@ -148,13 +169,7 @@ impl Lowerer {
             }
         });
 
-        // Register static field names for this class (for routing ClassName.field access)
-        if !static_inits.is_empty() {
-            let static_names: HashSet<String> =
-                static_inits.iter().map(|(name, _)| name.clone()).collect();
-            self.class_static_fields
-                .insert(class_name.clone(), static_names);
-        }
+        // static field names already registered in class_static_fields during pre-scan
 
         Some(IrClassDecl {
             name: self.make_ident(&class_name),

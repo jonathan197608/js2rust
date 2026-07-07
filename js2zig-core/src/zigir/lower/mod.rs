@@ -91,6 +91,9 @@ pub struct Lowerer {
     /// Currently inside a class (affects `this` lowering).
     pub(super) current_class: Option<String>,
 
+    /// Currently inside a static block (affects `this` → ClassName rewriting).
+    pub(super) in_static_block: bool,
+
     /// Whether we're lowering inside an ExpressionStatement.
     /// Affects UpdateExpression lowering (e.g., `i++` → `i += 1` vs block expr).
     pub(super) in_expr_stmt: bool,
@@ -133,6 +136,7 @@ impl Lowerer {
             pending_arrow_structs: Vec::new(),
             pending_label: None,
             current_class: None,
+            in_static_block: false,
             in_expr_stmt: false,
             anon_class_counter: 0,
             source_name: String::new(),
