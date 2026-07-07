@@ -266,6 +266,41 @@ fn main() {
     let unl = testUserNameLength_app();
     println!("  testUserNameLength() = {} (expected 1)", unl);
 
+    // ════════════════════════════════════════════════════════════
+    // Static field tests (static block runtime needs bridge init mechanism)
+    println!("\n=== Static Field Tests ===");
+
+    let sfr = testStaticFieldRead_app();
+    println!("  testStaticFieldRead() = {} (expected 0)", sfr);
+
+    let sfa = testStaticFieldAssign_app();
+    println!("  testStaticFieldAssign() = {} (expected 0)", sfa);
+
+    let sfm = testStaticFieldMultiply_app();
+    println!("  testStaticFieldMultiply() = {} (expected 0)", sfm);
+
+    let sfsg = testStaticFieldSetThenGet_app();
+    println!("  testStaticFieldSetThenGet() = {} (expected 42)", sfsg);
+
+    // ════════════════════════════════════════════════════════════
+    // Dynamic array/string index tests
+    println!("\n=== Dynamic Index Tests ===");
+
+    let daa = testDynamicArrayAccess_app(2);
+    println!("  testDynamicArrayAccess(2) = {} (expected 30)", daa);
+
+    let das = testDynamicArrayAssign_app(1, 99);
+    println!("  testDynamicArrayAssign(1,99) = {} (expected 99)", das);
+
+    let dsum = testDynamicArraySum_app();
+    println!("  testDynamicArraySum() = {} (expected 15)", dsum);
+
+    let dsi = testDynamicStringIndex_app("Hello World", 0);
+    println!("  testDynamicStringIndex('Hello World',0) = {} (expected 1, checks byte 72='H')", dsi);
+
+    let dsw = testDynamicArraySwap_app(0, 2);
+    println!("  testDynamicArraySwap(0,2) = {} (expected 300)", dsw);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }

@@ -260,16 +260,23 @@ impl Emitter {
 
         // Static initialization blocks — emitted as top-level code after struct definition.
         // Each `static { ... }` block is wrapped in a const declaration so it's valid
-        // Zig at module scope: `const _: void = blk: { ... break :blk {}; };`
-        for block in &class.static_blocks {
+        // Zig at module scope: `const _static_init_N: void = blk: { ... break :blk {}; };`
+        // Unique naming avoids Zig "duplicate struct member name '_'" when multiple
+        // classes have static blocks. Note: Zig's lazy analysis may skip evaluation of
+        // these declarations if nothing references them. For runtime correctness, a
+        // future change should emit init functions called from js2rust_init().
+        let base_counter = self.static_init_counter;
+        for (counter, block) in class.static_blocks.iter().enumerate() {
             if !block.stmts.is_empty() {
-                self.write("const _: void = blk: { ");
+                let name = format!("_static_init_{}", base_counter + counter as u32);
+                self.write(&format!("const {}: void = blk: {{ ", name));
                 for stmt in &block.stmts {
                     self.emit_stmt(stmt);
                 }
                 self.writeln("break :blk {}; };");
             }
         }
+        self.static_init_counter = base_counter + class.static_blocks.len() as u32;
     }
 
     pub(super) fn emit_class_init(

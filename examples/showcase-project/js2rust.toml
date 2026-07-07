@@ -6,4 +6,6 @@ additional_js_files = [
     "js_src/phase_memory.js",
     "js_src/phase6.js",
     "js_src/test_classes.js",
+    "js_src/test_static_fields.js",
+    "js_src/test_dynamic_index.js",
 ]

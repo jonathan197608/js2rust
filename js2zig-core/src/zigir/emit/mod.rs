@@ -35,6 +35,8 @@ pub struct Emitter {
     try_label_counter: u32,
     /// Counter for generating unique block labels (for array literal labeled blocks).
     label_counter: u32,
+    /// Counter for generating unique static init/block names (_static_init_N).
+    static_init_counter: u32,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -68,6 +70,7 @@ impl Emitter {
             inside_try_block: None,
             try_label_counter: 0,
             label_counter: 0,
+            static_init_counter: 0,
         }
     }
 
