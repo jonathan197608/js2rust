@@ -159,7 +159,7 @@ impl Lowerer {
             IrAssignTarget::Member { object, .. } => {
                 Self::collect_ir_idents_in_expr(object, idents);
             }
-            IrAssignTarget::Index { object, index } => {
+            IrAssignTarget::Index { object, index, .. } => {
                 Self::collect_ir_idents_in_expr(object, idents);
                 Self::collect_ir_idents_in_expr(index, idents);
             }

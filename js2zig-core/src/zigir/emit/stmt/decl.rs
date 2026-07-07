@@ -247,6 +247,17 @@ impl Emitter {
         self.writeln("};");
         self.writeln("");
 
+        // Static field initializers — emitted as module-scope `var` declarations.
+        // e.g. `static x = 1` → `var __ClassName_x: i64 = 1;`
+        for (field_name, init_expr) in &class.static_inits {
+            let var_name = format!("__{}_{}", class_name, field_name);
+            self.write(&format!("var {}: ", var_name));
+            // Type: infer from expr or default to i64
+            self.write("i64 = ");
+            self.emit_expr(init_expr);
+            self.writeln(";");
+        }
+
         // Static initialization blocks — emitted as top-level code after struct definition.
         // Each `static { ... }` block is wrapped in a const declaration so it's valid
         // Zig at module scope: `const _: void = blk: { ... break :blk {}; };`

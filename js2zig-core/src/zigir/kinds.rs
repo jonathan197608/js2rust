@@ -33,6 +33,8 @@ pub enum FieldKind {
     PointerDeref,
     /// RegExp property: `.source`, `.flags`, `.global`
     RegExpProp { prop: String },
+    /// Static class field: `ClassName.field` → `__ClassName_field` module-scope var
+    StaticField { class_name: String },
 }
 
 /// How an index access (`obj[idx]`) should be emitted in Zig.
@@ -53,8 +55,10 @@ pub enum ComputedKeyKind {
     MapGet,
     /// JsAny dynamic: `obj.getByKey(key, alloc)`
     JsAnyGetByKey,
-    /// ArrayList item: `arr.items[key]`
+    /// ArrayList item: `arr.items[@as(usize, @intCast(key))]`
     ArrayListItem,
+    /// String character: `str[@as(usize, @intCast(key))]` (promoted to i64)
+    StringChar,
     /// Unsupported dynamic access → generates @compileError
     CompileError(String),
 }

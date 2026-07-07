@@ -367,7 +367,7 @@ impl IrPass for ConstantFoldPass {
                             changed = true;
                         }
                     }
-                    for init in &mut c.static_inits {
+                    for (_name, init) in &mut c.static_inits {
                         if Self::try_fold(init) {
                             changed = true;
                         }

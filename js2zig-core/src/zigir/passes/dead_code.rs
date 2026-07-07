@@ -608,7 +608,7 @@ fn collect_decl_refs(decl: &IrDecl, refs: &mut std::collections::HashSet<String>
             for m in &c.methods {
                 collect_block_refs(&m.body, refs);
             }
-            for init in &c.static_inits {
+            for (_name, init) in &c.static_inits {
                 collect_expr_refs(init, refs);
             }
         }
@@ -874,7 +874,7 @@ fn collect_target_refs(
         crate::zigir::types::IrAssignTarget::Member { object, .. } => {
             collect_expr_refs(object, refs);
         }
-        crate::zigir::types::IrAssignTarget::Index { object, index } => {
+        crate::zigir::types::IrAssignTarget::Index { object, index, .. } => {
             collect_expr_refs(object, refs);
             collect_expr_refs(index, refs);
         }

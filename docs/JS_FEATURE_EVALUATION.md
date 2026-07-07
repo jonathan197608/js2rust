@@ -3,6 +3,72 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '6760f755-6186-45e3-a108-28ab9081993b'
+  PropagateID: '6760f755-6186-45e3-a108-28ab9081993b'
+  ReservedCode1: '785f3021-6f37-48af-b2ba-b840824b2a52'
+  ReservedCode2: '785f3021-6f37-48af-b2ba-b840824b2a52'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '001e786a-9085-4ae8-88af-5ae1ebd7a173'
+  PropagateID: '001e786a-9085-4ae8-88af-5ae1ebd7a173'
+  ReservedCode1: '4e7dfb08-a9b1-48ae-bcde-c627fd329616'
+  ReservedCode2: '4e7dfb08-a9b1-48ae-bcde-c627fd329616'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3dabb736-31fc-4465-8ebb-c346afe85eac'
+  PropagateID: '3dabb736-31fc-4465-8ebb-c346afe85eac'
+  ReservedCode1: '6c4b9fff-0008-4cfa-803c-5f9f92f72e38'
+  ReservedCode2: '6c4b9fff-0008-4cfa-803c-5f9f92f72e38'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8a8539ac-f655-4e23-bbba-d5cff65b13cf'
+  PropagateID: '8a8539ac-f655-4e23-bbba-d5cff65b13cf'
+  ReservedCode1: 'a7d5dfc6-8ec4-4996-a1f6-113bc58223ee'
+  ReservedCode2: 'a7d5dfc6-8ec4-4996-a1f6-113bc58223ee'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '1d0fca0d-e682-464d-b7d0-1197e89ccba8'
+  PropagateID: '1d0fca0d-e682-464d-b7d0-1197e89ccba8'
+  ReservedCode1: 'ad55b266-dfbc-4170-b856-c933af709b06'
+  ReservedCode2: 'ad55b266-dfbc-4170-b856-c933af709b06'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '2101bbe3-35de-4132-8837-dc9a26962394'
+  PropagateID: '2101bbe3-35de-4132-8837-dc9a26962394'
+  ReservedCode1: '2d089375-c76b-4967-ac4a-0157f4b31662'
+  ReservedCode2: '2d089375-c76b-4967-ac4a-0157f4b31662'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'f18dffe6-eaac-4033-8ad2-725ba535a4b8'
   PropagateID: 'f18dffe6-eaac-4033-8ad2-725ba535a4b8'
   ReservedCode1: '8dd59a80-7b86-4feb-ac13-0e2aa1a761cf'
@@ -835,8 +901,8 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | ~45 | ~92% | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}）/if/switch/for/while/do-while/try-catch/throw 等 |
-| ⚠️ 简化实现 | ~1 | ~2% | `static {}` 初始化块（不支持静态字段赋值） |
+| ✅ 完全实现 | ~46 | ~94% | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}+静态字段读写）/if/switch/for/while/do-while/try-catch/throw 等 |
+| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | ~3 | ~6% | `for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — 220 个表格行
@@ -856,9 +922,9 @@ AIGC:
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
 | **表达式** | 91 | 82 | 1 | 8 | **~92%** |
-| **语句** | 49 | 45 | 1 | 3 | **~94%** |
+| **语句** | 49 | 46 | 0 | 3 | **~94%** |
 | **内置对象** | 220 | 207 | 5 | 8 | **~96%** |
-| **语法合计** | 140 | 127 | 2 | 11 | **~92%** |
+| **语法合计** | 140 | 128 | 1 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -974,12 +1040,13 @@ AIGC:
 |------|------|----------|------|
 | `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase-project |
 | `obj[key]` (计算属性) | ✅ | 按 `obj` 类型分发：`struct` → `obj.field`，`HashMap` → `obj.get(key)`/`obj.put(key, val)` | `test_native_proto_computed_member` |
-| `arr[idx]` (数组索引) | ✅ | `arr[idx]` (仅支持数字字面量) | showcase-project |
+| `arr[idx]` (数组索引) | ✅ | `arr.items[@as(usize, @intCast(idx))]`（支持变量索引） | `test_dynamic_array_access_index` + `test_dynamic_array_assignment_index` |
 | `.length` → `.len` | ✅ | 自动转换 | 同上 |
 
 **注意**:
 - `obj[key]` 现已支持：struct 类型按字符串字面量 key 映射到 `.field`，HashMap 类型生成 `.get(key)`/`.put(key, val)`
-- `arr[idx]` 仍仅支持数字字面量索引（如 `arr[0]`），变量索引待后续支持
+- `arr[idx]` 现已支持变量索引：ArrayList → `arr.items[@as(usize, @intCast(idx))]`，Slice → `arr[idx]`
+- `str[idx]` 支持变量索引（需要 JSDoc `@param {string}` 标注），→ `@as(i64, @intCast(str[@as(usize, @intCast(idx))]))`
 
 ### 2.10 函数调用 - ✅ 100% 实现
 
@@ -1122,7 +1189,7 @@ AIGC:
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
-### 3.3 类声明 - ⚠️ 98% 实现
+### 3.3 类声明 - ✅ 100% 实现
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -1136,7 +1203,7 @@ AIGC:
 | `super` 调用 | ✅ | `self.base.method()` | 同上 |
 | 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
-| 静态初始化块 `static {}` | ⚠️ 简化实现 | `const _: void = blk: { ... break :blk {}; };` (不支持静态字段赋值) | `test_static_block` |
+| 静态初始化块 `static {}` | ✅ | `const _: void = blk: { ... break :blk {}; };` + 静态字段读写 `__ClassName_field` | `test_static_block` + `test_static_field_read` + `test_static_field_assign` |
 
 ### 3.4 控制流语句 - ✅ 94% 实现
 
@@ -1999,6 +2066,18 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

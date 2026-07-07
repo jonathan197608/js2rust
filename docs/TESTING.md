@@ -3,6 +3,105 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '259fb6fa-22fd-4ffa-a96f-5d72cbc794b7'
+  PropagateID: '259fb6fa-22fd-4ffa-a96f-5d72cbc794b7'
+  ReservedCode1: '724ca483-e6ad-4f70-b495-bba5a56bcf5e'
+  ReservedCode2: '724ca483-e6ad-4f70-b495-bba5a56bcf5e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '27799403-eefb-43d0-8b6a-12844bdb56c2'
+  PropagateID: '27799403-eefb-43d0-8b6a-12844bdb56c2'
+  ReservedCode1: '68532b8c-ff80-44b2-a353-79b861fa9ead'
+  ReservedCode2: '68532b8c-ff80-44b2-a353-79b861fa9ead'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'dfbf94b5-2503-4700-b1f3-0e4a5e5aaf10'
+  PropagateID: 'dfbf94b5-2503-4700-b1f3-0e4a5e5aaf10'
+  ReservedCode1: 'cf62c0a3-3209-4520-98ea-06747f16a0a3'
+  ReservedCode2: 'cf62c0a3-3209-4520-98ea-06747f16a0a3'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '054ec370-b176-4f34-a857-bb3a7a2e7f32'
+  PropagateID: '054ec370-b176-4f34-a857-bb3a7a2e7f32'
+  ReservedCode1: 'ae2c83ee-d9bb-446d-9e2b-9bb55709fef3'
+  ReservedCode2: 'ae2c83ee-d9bb-446d-9e2b-9bb55709fef3'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8ff4ee10-8296-49c7-8573-4d91a4089c53'
+  PropagateID: '8ff4ee10-8296-49c7-8573-4d91a4089c53'
+  ReservedCode1: '56cd6473-c6a0-4589-a5a8-39933944c3cc'
+  ReservedCode2: '56cd6473-c6a0-4589-a5a8-39933944c3cc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '0b15e633-c222-424b-a168-b29662f67fa7'
+  PropagateID: '0b15e633-c222-424b-a168-b29662f67fa7'
+  ReservedCode1: '529a1251-6a5e-4738-9ef5-bed6550dc0f2'
+  ReservedCode2: '529a1251-6a5e-4738-9ef5-bed6550dc0f2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '25aafd78-220e-4132-8c12-591d71a810c7'
+  PropagateID: '25aafd78-220e-4132-8c12-591d71a810c7'
+  ReservedCode1: 'bfa96ecb-842d-4570-af04-79c2aa91ec90'
+  ReservedCode2: 'bfa96ecb-842d-4570-af04-79c2aa91ec90'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ade3a006-ddce-4ba4-accb-972794bb7a44'
+  PropagateID: 'ade3a006-ddce-4ba4-accb-972794bb7a44'
+  ReservedCode1: 'e6a47da6-ed15-446e-82f0-8626350c9886'
+  ReservedCode2: 'e6a47da6-ed15-446e-82f0-8626350c9886'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '45671563-5604-4757-a628-e34bf72a2b49'
+  PropagateID: '45671563-5604-4757-a628-e34bf72a2b49'
+  ReservedCode1: '767d2ac1-57bb-46b2-9194-077178ff3f82'
+  ReservedCode2: '767d2ac1-57bb-46b2-9194-077178ff3f82'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '4194b827-8ab7-48a5-8ba9-bef8d1ffd6dc'
   PropagateID: '4194b827-8ab7-48a5-8ba9-bef8d1ffd6dc'
   ReservedCode1: 'a68b69c8-fe17-42de-af47-d704b5d99e96'
@@ -19,12 +118,12 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 337 + 118 = 455 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 345 + 118 = 463 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-07）
 
-- Rust 单元测试：**455 passed, 0 failed**（337 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
+- Rust 单元测试：**463 passed, 0 failed**（345 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
 - Clippy：**0 warnings**
 - MDN 端到端：**200 match / 3 mismatch / 1 error**（匹配率 98.0%，204 total）
 - 3 个 mismatch + 1 个 error 均为已知限制，详见下方表格
@@ -44,7 +143,7 @@ js2zig-core/src/tests/
 ├── builtins_basic.rs               # 内置方法基础：Math/Array/String/JSON（31 个测试）
 ├── advanced_builtins.rs            # 高级内置：Number/Map/Set/URI/RegExp/Symbol（69 个测试）
 ├── destructure_class_arrays.rs     # 解构/Class/String 方法/Array 高阶（51 个测试）
-├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复/影子变量/方法链（68 个测试）
+├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复/影子变量/方法链（70 个测试）
 ├── objects_and_types.rs            # 对象/JSDoc/类型签名/JSON E2E（20 个测试）
 ├── phase1.rs                       # P1 特性：in/instanceof/Date/Object/spread（40 个测试）
 └── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（29 个测试）
@@ -371,7 +470,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（455 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（463 passed）
 cargo clippy -p js2zig-core -- -D warnings                           # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -403,7 +502,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 455 passed, 0 failed | 455 passed |
+| `cargo test -p js2zig-core --lib` | 463 passed, 0 failed | 463 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 200（不低于基线） | 200 |
@@ -459,5 +558,23 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成

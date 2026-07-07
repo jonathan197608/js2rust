@@ -8,6 +8,7 @@ use oxc_ast::ast::*;
 use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
+use crate::zigir::kinds::{FieldKind, IndexKind};
 use crate::zigir::ops::{AssignOp, BinOp, UnaOp, UpdateOp};
 
 use super::Lowerer;
@@ -454,6 +455,11 @@ impl Lowerer {
                         object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("self"))),
                         field: field_name,
                         is_pointer: *is_mut,
+                        field_kind: if *is_mut {
+                            FieldKind::PointerDeref
+                        } else {
+                            FieldKind::StructField
+                        },
                     };
                 }
 
@@ -464,12 +470,24 @@ impl Lowerer {
                     object: Box::new(self.lower_expr(&mem.object)),
                     field: mem.property.name.to_string(),
                     is_pointer: false,
+                    field_kind: self
+                        .infer_member_field_kind(&mem.object, mem.property.name.as_str()),
                 }
             }
             SimpleAssignmentTarget::ComputedMemberExpression(mem) => {
+                let obj_type = self.infer_expr_type(&mem.object);
+                let is_arraylist = obj_type
+                    .as_ref()
+                    .map(|t| matches!(t, ZigType::ArrayList(_)))
+                    .unwrap_or(false);
                 crate::zigir::types::IrAssignTarget::Index {
                     object: Box::new(self.lower_expr(&mem.object)),
                     index: Box::new(self.lower_expr(&mem.expression)),
+                    index_kind: if is_arraylist {
+                        IndexKind::ArrayListItem
+                    } else {
+                        IndexKind::SliceIndex
+                    },
                 }
             }
             _ => crate::zigir::types::IrAssignTarget::Ident(IrIdent::new("__unsupported_target")),
@@ -524,6 +542,11 @@ impl Lowerer {
                         object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("self"))),
                         field: field_name,
                         is_pointer: *is_mut,
+                        field_kind: if *is_mut {
+                            FieldKind::PointerDeref
+                        } else {
+                            FieldKind::StructField
+                        },
                     };
                 }
 
@@ -534,12 +557,24 @@ impl Lowerer {
                     object: Box::new(self.lower_expr(&mem.object)),
                     field: mem.property.name.to_string(),
                     is_pointer: false,
+                    field_kind: self
+                        .infer_member_field_kind(&mem.object, mem.property.name.as_str()),
                 }
             }
             AssignmentTarget::ComputedMemberExpression(mem) => {
+                let obj_type = self.infer_expr_type(&mem.object);
+                let is_arraylist = obj_type
+                    .as_ref()
+                    .map(|t| matches!(t, ZigType::ArrayList(_)))
+                    .unwrap_or(false);
                 crate::zigir::types::IrAssignTarget::Index {
                     object: Box::new(self.lower_expr(&mem.object)),
                     index: Box::new(self.lower_expr(&mem.expression)),
+                    index_kind: if is_arraylist {
+                        IndexKind::ArrayListItem
+                    } else {
+                        IndexKind::SliceIndex
+                    },
                 }
             }
             AssignmentTarget::ObjectAssignmentTarget(ot) => {

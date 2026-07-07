@@ -233,7 +233,9 @@ pub struct IrClassDecl {
     pub fields: Vec<IrClassField>,
     pub constructor: Option<IrClassMethod>,
     pub methods: Vec<IrClassMethod>,
-    pub static_inits: Vec<IrExpr>,
+    /// Static field initializers: (field_name, initializer_expr).
+    /// Emitted as module-scope `var __ClassName_field = value;` after struct definition.
+    pub static_inits: Vec<(String, IrExpr)>,
     /// Static initialization blocks (`static { ... }`) lowered as IrBlock.
     /// Emitted after struct definition, before top-level code.
     pub static_blocks: Vec<IrBlock>,
@@ -389,11 +391,13 @@ pub enum IrAssignTarget {
         object: Box<IrExpr>,
         field: String,
         is_pointer: bool,
+        field_kind: crate::zigir::kinds::FieldKind,
     },
     /// Index access: `obj[idx]`
     Index {
         object: Box<IrExpr>,
         index: Box<IrExpr>,
+        index_kind: crate::zigir::kinds::IndexKind,
     },
     /// Destructuring assignment.
     Destructure(Vec<IrDestructureBinding>),

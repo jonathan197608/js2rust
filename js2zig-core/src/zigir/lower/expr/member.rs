@@ -116,6 +116,22 @@ impl Lowerer {
             }
         }
 
+        // ── Static class field: ClassName.field → StaticField kind ──
+        if let Expression::Identifier(id) = &mem.object {
+            let obj_name = id.name.as_str();
+            if let Some(static_fields) = self.class_static_fields.get(obj_name)
+                && static_fields.contains(field_name)
+            {
+                return IrExpr::FieldAccess {
+                    object: Box::new(self.lower_expr(&mem.object)),
+                    field: field_name.to_string(),
+                    field_kind: FieldKind::StaticField {
+                        class_name: obj_name.to_string(),
+                    },
+                };
+            }
+        }
+
         // ── Default: struct field access ──
         IrExpr::FieldAccess {
             object: Box::new(self.lower_expr(&mem.object)),
@@ -180,6 +196,7 @@ impl Lowerer {
             Some(ZigType::Anytype) | Some(ZigType::JsAny) => ComputedKeyKind::JsAnyGetByKey,
             Some(ZigType::NamedStruct(name)) if name == "Map" => ComputedKeyKind::MapGet,
             Some(ZigType::ArrayList(_)) => ComputedKeyKind::ArrayListItem,
+            Some(ZigType::Str) => ComputedKeyKind::StringChar,
             Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
                 ComputedKeyKind::StructField
             }
@@ -459,5 +476,27 @@ impl Lowerer {
             }
             _ => None,
         }
+    }
+
+    /// Determine FieldKind for a member assignment target (`obj.field = ...`).
+    ///
+    /// Checks whether `object_expr.field_name` refers to a static class field,
+    /// and returns `FieldKind::StaticField` if so. Otherwise returns `FieldKind::StructField`.
+    pub(super) fn infer_member_field_kind(
+        &self,
+        object_expr: &oxc_ast::ast::Expression,
+        field_name: &str,
+    ) -> FieldKind {
+        if let oxc_ast::ast::Expression::Identifier(id) = object_expr {
+            let obj_name = id.name.as_str();
+            if let Some(static_fields) = self.class_static_fields.get(obj_name)
+                && static_fields.contains(field_name)
+            {
+                return FieldKind::StaticField {
+                    class_name: obj_name.to_string(),
+                };
+            }
+        }
+        FieldKind::StructField
     }
 }

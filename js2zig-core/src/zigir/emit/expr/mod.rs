@@ -720,19 +720,43 @@ impl Emitter {
                 object,
                 field,
                 is_pointer,
+                field_kind,
             } => {
-                self.emit_expr(object);
-                if *is_pointer {
-                    self.write(&format!(".{}.*", field));
-                } else {
-                    self.write(&format!(".{}", field));
+                use crate::zigir::kinds::FieldKind;
+                match field_kind {
+                    FieldKind::StaticField { class_name } => {
+                        self.write(&format!("__{}_{}", class_name, field));
+                    }
+                    _ => {
+                        self.emit_expr(object);
+                        if *is_pointer {
+                            self.write(&format!(".{}.*", field));
+                        } else {
+                            self.write(&format!(".{}", field));
+                        }
+                    }
                 }
             }
-            crate::zigir::types::IrAssignTarget::Index { object, index } => {
-                self.emit_expr(object);
-                self.write("[");
-                self.emit_expr(index);
-                self.write("]");
+            crate::zigir::types::IrAssignTarget::Index {
+                object,
+                index,
+                index_kind,
+            } => {
+                use crate::zigir::kinds::IndexKind;
+                match index_kind {
+                    IndexKind::ArrayListItem => {
+                        self.emit_expr(object);
+                        self.write(".items[@as(usize, @intCast(");
+                        self.emit_expr(index);
+                        self.write("))]");
+                    }
+                    IndexKind::SliceIndex => {
+                        self.emit_expr(object);
+                        self.write("[");
+                        self.emit_expr(index);
+                        self.write("]");
+                    }
+                }
             }
             crate::zigir::types::IrAssignTarget::Destructure(bindings) => {
                 for (i, binding) in bindings.iter().enumerate() {

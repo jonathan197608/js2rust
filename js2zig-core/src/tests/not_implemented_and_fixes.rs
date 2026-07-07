@@ -509,6 +509,57 @@ static x = 1;
     );
 }
 
+#[test]
+fn test_static_field_read() {
+    // ✅ Static field read: ClassName.field → __ClassName_field module-scope var
+    let js = r#"
+class Foo {
+  static x = 1;
+}
+/**
+ * @returns {number}
+ */
+export function readStatic() {
+  return Foo.x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_static_field_read");
+    assert!(
+        zig.contains("__Foo_x"),
+        "Expected __Foo_x in output:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_static_field_assign() {
+    // ✅ Static field write: ClassName.field = value → __ClassName_field = value
+    let js = r#"
+class Foo {
+  static x = 1;
+}
+/**
+ * @param {number} v
+ * @returns {number}
+ */
+export function writeStatic(v) {
+  Foo.x = v;
+  return Foo.x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_static_field_assign");
+    assert!(
+        zig.contains("__Foo_x = v"),
+        "Expected '__Foo_x = v' in output:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("return __Foo_x"),
+        "Expected 'return __Foo_x' in output:\n{}",
+        zig
+    );
+}
+
 // ── ✅ ES2023 Array immutable methods (now implemented) ──────────
 
 #[test]
@@ -1408,4 +1459,79 @@ fn test_update_expr_in_index() {
         !zig.contains(".items[i += 1]"),
         "Should not have i += 1 inside array index"
     );
+}
+
+#[test]
+fn test_dynamic_string_index() {
+    // str[idx] where idx is a variable → StringChar
+    let js = r#"
+        /**
+         * @param {string} s
+         */
+        export function getChar(s, i) {
+            return s[i];
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_dynamic_string_index");
+    assert!(
+        zig.contains("@as(i64, @intCast("),
+        "Expected @as(i64, @intCast(...)) for StringChar access"
+    );
+}
+
+#[test]
+fn test_bit_assign_operators() {
+    // <<= >>= &= |= ^= compound assignment
+    let js = r#"
+        export function bitOps(x) {
+            x <<= 2;
+            x >>= 1;
+            x &= 0xFF;
+            x |= 0x10;
+            x ^= 0x55;
+            return x;
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_bit_assign_operators");
+    assert!(zig.contains("<<="), "Expected <<= in output");
+    assert!(zig.contains(">>="), "Expected >>= in output");
+    assert!(zig.contains("&="), "Expected &= in output");
+    assert!(zig.contains("|="), "Expected |= in output");
+    assert!(zig.contains("^="), "Expected ^= in output");
+}
+
+#[test]
+fn test_in_operator() {
+    // "key" in obj → @hasField or .contains
+    let js = r#"
+        export function hasKey(obj, key) {
+            return key in obj;
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_in_operator");
+    // Should contain some form of containment check
+    assert!(
+        zig.contains("@hasField") || zig.contains(".contains"),
+        "Expected @hasField or .contains for 'in' operator"
+    );
+}
+
+#[test]
+fn test_labeled_statement() {
+    // label: while { break label; }
+    let js = r#"
+        export function labeledBreak(n) {
+            let result = 0;
+            outer: for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    result += j;
+                    if (j === 3) break outer;
+                }
+            }
+            return result;
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_labeled_statement");
+    assert!(zig.contains("outer:"), "Expected labeled statement");
+    assert!(zig.contains("break :outer"), "Expected break with label");
 }

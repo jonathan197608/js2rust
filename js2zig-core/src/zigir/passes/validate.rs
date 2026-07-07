@@ -441,7 +441,7 @@ impl ValidatePass {
             IrAssignTarget::Member { object, .. } => {
                 self.check_closure_refs_in_expr(object);
             }
-            IrAssignTarget::Index { object, index } => {
+            IrAssignTarget::Index { object, index, .. } => {
                 self.check_closure_refs_in_expr(object);
                 self.check_closure_refs_in_expr(index);
             }
@@ -770,7 +770,7 @@ fn collect_idents_from_target(
         IrAssignTarget::Member { object, .. } => {
             collect_idents_from_expr(object, names);
         }
-        IrAssignTarget::Index { object, index } => {
+        IrAssignTarget::Index { object, index, .. } => {
             collect_idents_from_expr(object, names);
             collect_idents_from_expr(index, names);
         }

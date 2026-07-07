@@ -22,7 +22,7 @@ pub mod expr;
 pub mod helpers;
 pub mod stmt;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use oxc_ast::ast::*;
 
@@ -70,6 +70,10 @@ pub struct Lowerer {
     // ── Module-level tracking ─────────────────────────
     /// Known class names (used to route `new ClassName()` correctly).
     pub(super) class_names: HashSet<String>,
+
+    /// Static field names per class: class_name → {field_name, ...}.
+    /// Used to route `ClassName.field` access to `__ClassName_field` module-scope var.
+    pub(super) class_static_fields: HashMap<String, HashSet<String>>,
 
     // ── Deferred declarations ─────────────────────────
     /// Function definitions deferred from expression context (def-before-use).
@@ -124,6 +128,7 @@ impl Lowerer {
             fn_ctx: None,
             closure_mgr: ClosureManager::new(),
             class_names: HashSet::new(),
+            class_static_fields: HashMap::new(),
             pending_expr_fns: Vec::new(),
             pending_arrow_structs: Vec::new(),
             pending_label: None,

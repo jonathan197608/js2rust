@@ -153,6 +153,10 @@ impl Emitter {
                     }
                 }
             }
+            FieldKind::StaticField { class_name } => {
+                // ClassName.field → __ClassName_field module-scope var
+                self.write(&format!("__{}_{}", class_name, field));
+            }
         }
     }
 
@@ -210,6 +214,14 @@ impl Emitter {
                 self.write(".items[@as(usize, @intCast(");
                 self.emit_expr(key);
                 self.write("))]");
+            }
+            ComputedKeyKind::StringChar => {
+                // str[idx] in JS returns a character; in Zig, byte access then cast to i64
+                self.write("@as(i64, @intCast(");
+                self.emit_expr(object);
+                self.write("[@as(usize, @intCast(");
+                self.emit_expr(key);
+                self.write("))]))");
             }
             ComputedKeyKind::CompileError(msg) => {
                 self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));

@@ -379,19 +379,12 @@ impl TypeInferrer {
                     }
                     InferResult::Definite(ZigType::Str) => {
                         // str[idx] → u8 character (promoted to i64 in Zig context)
-                        if matches!(&mem.expression, Expression::NumericLiteral(_)) {
-                            InferResult::Definite(ZigType::I64)
-                        } else {
-                            InferResult::Indeterminate
-                        }
+                        // Both literal and variable index return I64
+                        InferResult::Definite(ZigType::I64)
                     }
                     InferResult::Definite(ZigType::ArrayList(ref elem_ty)) => {
-                        // arr[idx] → element type
-                        if matches!(&mem.expression, Expression::NumericLiteral(_)) {
-                            InferResult::Definite(*elem_ty.clone())
-                        } else {
-                            InferResult::Indeterminate
-                        }
+                        // arr[idx] → element type (both literal and variable index)
+                        InferResult::Definite(*elem_ty.clone())
                     }
                     InferResult::Definite(ZigType::Struct(ref fields)) => {
                         // obj["key"] on anonymous struct → field type
