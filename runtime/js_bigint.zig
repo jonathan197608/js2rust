@@ -77,6 +77,7 @@ pub const JsBigInt = struct {
     /// Remainder (modulo): self % other.
     /// JS BigInt remainder matches truncated division (sign of dividend).
     pub fn rem(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
+        if (other.value.eqlZero()) return error.DivisionByZero;
         var quotient = try std.math.big.int.Managed.init(alloc);
         defer quotient.deinit();
         var remainder = try std.math.big.int.Managed.init(alloc);

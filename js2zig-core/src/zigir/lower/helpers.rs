@@ -41,6 +41,8 @@ pub struct FnContext {
     pub seen_return: bool,
     /// Whether the body contains throw/try-catch.
     pub fn_has_throw: bool,
+    /// Whether the body contains BigInt division/modulo (can throw RangeError).
+    pub has_bigint_div: bool,
     /// Currently inside a return value expression.
     pub in_return_expr: bool,
     /// Currently at the top-level of an ExpressionStatement.
@@ -76,6 +78,7 @@ impl FnContext {
             return_type,
             seen_return: false,
             fn_has_throw: false,
+            has_bigint_div: false,
             in_return_expr: false,
             in_expr_stmt: false,
             call_generated_catch: false,

@@ -611,6 +611,10 @@ impl Lowerer {
             }
         }
 
+        // Read has_bigint_div BEFORE exiting the function context, since
+        // exit_fn() takes the current fn_ctx and restores the outer one.
+        let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
+
         // Exit function context and shadow scope
         self.name_mangler.pop_shadow_scope();
         let _fn_ctx = self.exit_fn(saved);
@@ -634,7 +638,7 @@ impl Lowerer {
             body,
             is_export,
             is_async,
-            can_throw: has_throw,
+            can_throw: has_throw || has_bigint_div,
             is_cabi,
         })
     }

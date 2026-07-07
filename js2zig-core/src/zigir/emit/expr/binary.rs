@@ -74,14 +74,14 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(".div(&");
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => @panic(\"RangeError: BigInt division by zero\"), else => @panic(\"BigInt div OOM\") })");
+                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt div OOM\") })");
             }
             BinOp::Mod => {
                 self.write("(");
                 self.emit_expr(left);
                 self.write(".rem(&");
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt rem OOM\"))");
+                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt rem OOM\") })");
             }
             BinOp::Pow => {
                 self.write("(");

@@ -209,7 +209,12 @@ pub const JsValue = union(enum) {
     }
 
     /// Strict equality (===): same type AND same value. No coercion.
+    /// JS semantics: int and float are the same "number" type (3 === 3.0 is true).
     pub fn strictEq(self: JsValue, other: JsValue) bool {
+        // JS numbers: int↔float should compare equal when values match
+        if (self.isNumber() and other.isNumber()) {
+            return self.asF64() == other.asF64();
+        }
         if (@as(std.meta.Tag(JsValue), self) != @as(std.meta.Tag(JsValue), other))
             return false;
         return switch (self) {

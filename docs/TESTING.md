@@ -3,6 +3,72 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '8b2a64ec-13b7-4501-b4da-b83892980680'
+  PropagateID: '8b2a64ec-13b7-4501-b4da-b83892980680'
+  ReservedCode1: 'c6629780-2c60-4264-a5ed-de948e2cf1cc'
+  ReservedCode2: 'c6629780-2c60-4264-a5ed-de948e2cf1cc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'da0f8a4a-2ae7-4198-8d06-a08ee4a210f9'
+  PropagateID: 'da0f8a4a-2ae7-4198-8d06-a08ee4a210f9'
+  ReservedCode1: '25478915-3f8f-4bee-8c53-ac185e746689'
+  ReservedCode2: '25478915-3f8f-4bee-8c53-ac185e746689'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '20fbce1d-e747-4070-abbe-8fa4007cddd4'
+  PropagateID: '20fbce1d-e747-4070-abbe-8fa4007cddd4'
+  ReservedCode1: 'd6b78de8-3855-4ef2-a5a7-e9bf94471f42'
+  ReservedCode2: 'd6b78de8-3855-4ef2-a5a7-e9bf94471f42'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f0ddb5c6-811e-49c2-be49-45438abcab10'
+  PropagateID: 'f0ddb5c6-811e-49c2-be49-45438abcab10'
+  ReservedCode1: '06d1e218-0491-46e5-84bf-ef43b0db9bbc'
+  ReservedCode2: '06d1e218-0491-46e5-84bf-ef43b0db9bbc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e45c682c-0364-436b-b41a-963d87e459ff'
+  PropagateID: 'e45c682c-0364-436b-b41a-963d87e459ff'
+  ReservedCode1: '65ad427f-1e3e-43ce-bd57-2cdc76dbd6fe'
+  ReservedCode2: '65ad427f-1e3e-43ce-bd57-2cdc76dbd6fe'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '70355de5-bd80-4302-9f18-9bd4dece8031'
+  PropagateID: '70355de5-bd80-4302-9f18-9bd4dece8031'
+  ReservedCode1: '9ac5d13a-042b-45ae-b5e3-c215fb4ccc3d'
+  ReservedCode2: '9ac5d13a-042b-45ae-b5e3-c215fb4ccc3d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'cef8c7d1-033f-4c79-bfdf-635a26f3bbc2'
   PropagateID: 'cef8c7d1-033f-4c79-bfdf-635a26f3bbc2'
   ReservedCode1: 'a6119d1c-4895-42a3-bb98-796fdf706dc7'
@@ -162,15 +228,15 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 347 + 118 = 465 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 351 + 118 = 469 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-07）
 
-- Rust 单元测试：**465 passed, 0 failed**（347 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
+- Rust 单元测试：**469 passed, 0 failed**（351 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
 - Clippy：**0 warnings**
-- MDN 端到端：**200 match / 3 mismatch / 1 error**（匹配率 98.0%，204 total）
-- 3 个 mismatch + 1 个 error 均为已知限制，详见下方表格
+- MDN 端到端：**201 match / 3 mismatch / 0 error**（匹配率 98.5%，204 total）
+- 3 个 mismatch 均为已知限制，详见下方表格
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 
 ---
@@ -438,12 +504,11 @@ cargo run -- test_expressions_frag_4
 cargo run -- --all
 ```
 
-### 3.5 已知 mismatch/error（4 个）
+### 3.5 已知 mismatch（3 个）
 
 | Fragment | 类型 | 问题 | 优先级 | 说明 |
 |----------|------|------|--------|------|
 | `test_statements_frag_11` | MISMATCH | const 重新赋值未报错 | WONTFIX | Zig 无法在运行时检测 const 重赋值 |
-| `test_expressions_frag_109` | CRASH | BigInt `2n/0n` | ACCEPTABLE | 未捕获的 RangeError，行为正确 |
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | i64 无法表示 `-0` |
 | `test_builtins_frag_202` | MISMATCH | stack trace 格式差异 | WONTFIX | Zig stack trace 格式不同于 Node.js |
 
@@ -514,7 +579,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（465 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（469 passed）
 cargo clippy -p js2zig-core -- -D warnings                           # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -546,22 +611,21 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 465 passed, 0 failed | 465 passed |
+| `cargo test -p js2zig-core --lib` | 469 passed, 0 failed | 469 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
-| MDN match 数 | >= 200（不低于基线） | 200 |
-| MDN mismatch 数 | <= 4（不增加已知 mismatch） | 3 |
-| MDN error 数 | <= 1（frag_109 BigInt/0 为已知 CRASH） | 1 |
+| MDN match 数 | >= 201（不低于基线） | 201 |
+| MDN mismatch 数 | <= 3（不增加已知 mismatch） | 3 |
+| MDN error 数 | 0（BigInt div/0 已修复为可恢复 throw） | 0 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
 | showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | PASS — 0 codegen errors |
 
-#### MDN 已知 mismatch/error（4 个）
+#### MDN 已知 mismatch（3 个）
 
 | Fragment | 类型 | 问题 | 优先级 |
 |----------|------|------|--------|
 | `test_statements_frag_11` | MISMATCH | const 重赋值无运行时 TypeError（Zig 根本限制） | WONTFIX |
-| `test_expressions_frag_109` | CRASH | BigInt `2n / 0n` → 未捕获 RangeError（行为正确） | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | stack trace 格式差异（运行时格式不可调合） | WONTFIX |
 
@@ -602,6 +666,18 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

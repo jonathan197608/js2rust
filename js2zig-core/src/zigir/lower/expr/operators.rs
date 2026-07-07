@@ -131,6 +131,15 @@ impl Lowerer {
         let left_type = self.infer_expr_type(&be.left);
         let right_type = self.infer_expr_type(&be.right);
 
+        // BigInt division/modulo can throw RangeError — mark function as can_throw
+        if matches!(op, BinOp::Div | BinOp::Mod)
+            && (left_type.as_ref() == Some(&ZigType::BigInt)
+                || right_type.as_ref() == Some(&ZigType::BigInt))
+            && let Some(ctx) = self.fn_ctx.as_mut()
+        {
+            ctx.has_bigint_div = true;
+        }
+
         IrExpr::Binary {
             op,
             left: Box::new(self.lower_expr(&be.left)),

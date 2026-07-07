@@ -3,6 +3,83 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '50b7536a-0f6e-4198-9e3f-e1aa2e780fd2'
+  PropagateID: '50b7536a-0f6e-4198-9e3f-e1aa2e780fd2'
+  ReservedCode1: '55b35f61-e9e2-45b7-b4c5-eae7790b3da6'
+  ReservedCode2: '55b35f61-e9e2-45b7-b4c5-eae7790b3da6'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'dbda961a-9380-498e-b6ea-9bc3da96885c'
+  PropagateID: 'dbda961a-9380-498e-b6ea-9bc3da96885c'
+  ReservedCode1: '5426f323-ce75-4297-96e9-43c2e5204973'
+  ReservedCode2: '5426f323-ce75-4297-96e9-43c2e5204973'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '7e8c7f85-74ff-4154-ad23-da327dd2e70f'
+  PropagateID: '7e8c7f85-74ff-4154-ad23-da327dd2e70f'
+  ReservedCode1: '454941e4-6ae0-484d-af56-647776cfd9f9'
+  ReservedCode2: '454941e4-6ae0-484d-af56-647776cfd9f9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '4eea78a5-d9b6-4bf8-a1cb-1c2841569d6d'
+  PropagateID: '4eea78a5-d9b6-4bf8-a1cb-1c2841569d6d'
+  ReservedCode1: 'b0f90b9f-736f-4a1d-bf66-3a9a4c40ca69'
+  ReservedCode2: 'b0f90b9f-736f-4a1d-bf66-3a9a4c40ca69'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c4642632-b441-448a-85f8-323c8c217dca'
+  PropagateID: 'c4642632-b441-448a-85f8-323c8c217dca'
+  ReservedCode1: '968562cf-6d9b-45cf-9560-b71f4dda8790'
+  ReservedCode2: '968562cf-6d9b-45cf-9560-b71f4dda8790'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8011fc6c-d6e6-425d-8a43-948fde78958f'
+  PropagateID: '8011fc6c-d6e6-425d-8a43-948fde78958f'
+  ReservedCode1: '5608578b-6dab-4bb2-bc80-511bd63918dc'
+  ReservedCode2: '5608578b-6dab-4bb2-bc80-511bd63918dc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '18df12a7-d331-4e51-9771-8f874b4a1566'
+  PropagateID: '18df12a7-d331-4e51-9771-8f874b4a1566'
+  ReservedCode1: '000b6688-6ede-4665-abb0-f26481741b69'
+  ReservedCode2: '000b6688-6ede-4665-abb0-f26481741b69'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'bed9d108-8ec5-42d9-9d06-d04c50da61b6'
   PropagateID: 'bed9d108-8ec5-42d9-9d06-d04c50da61b6'
   ReservedCode1: 'b0382640-ea2a-4320-a2f6-6f1fbc2aa751'
@@ -34,7 +111,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 457 个 Rust 测试 (457 pass + 0 ignore) + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 469 个 Rust 测试 (469 pass + 0 ignore) + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -46,7 +123,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 457 个 Rust 测试 (457 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 469 个 Rust 测试 (469 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -1195,11 +1272,11 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 457 个测试 (457 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 469 个测试 (469 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（8 个文件） | 339 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `tests/` 子模块（8 个文件） | 351 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
 | `zigir/` 内联测试 | 118 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident |
 | `jsdoc` | 13 | JSDoc 解析与类型标注 |
 | `parser` | 7 | oxc_ast 解析器集成 |
@@ -1208,7 +1285,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-457 个 Rust 测试全部通过（457 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+469 个 Rust 测试全部通过（469 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1216,20 +1293,33 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 | 结果 | 数量 | 说明 |
 |------|------|------|
-| MATCH | 200 | 完全匹配 |
+| MATCH | 201 | 完全匹配 |
 | MISMATCH | 3 | 已知差异 |
-| ERROR (CRASH) | 1 | 已知 crash |
+| ERROR (CRASH) | 0 | — |
 
-**匹配率: 200/204 = 98.0%**
+**匹配率: 201/204 = 98.5%**
 
-**4 个已知非 PASS**:
+**3 个已知非 PASS**:
 
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
 | `test_statements_frag_11` | MISMATCH | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | WONTFIX |
-| `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 
