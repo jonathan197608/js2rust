@@ -458,6 +458,56 @@ impl Lowerer {
         }
     }
 
+    /// Infer the type of a simple assignment target (left-hand side of `++`/`--` etc.).
+    /// Handles the same cases as `infer_assign_target_type` but for `SimpleAssignmentTarget`.
+    pub(super) fn infer_simple_assign_target_type(
+        &self,
+        target: &SimpleAssignmentTarget,
+    ) -> Option<ZigType> {
+        use oxc_ast::ast::SimpleAssignmentTarget;
+        match target {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                match id.name.as_str() {
+                    "Infinity" | "NaN" => return Some(ZigType::F64),
+                    "undefined" => return Some(ZigType::JsAny),
+                    _ => {}
+                }
+                if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
+                    return Some(ty.clone());
+                }
+                if let Some(ctx) = self.fn_ctx.as_ref() {
+                    let qualified = format!("{}::{}", ctx.name, id.name);
+                    if let Some(ty) = self.type_info.var_types.get(&qualified) {
+                        return Some(ty.clone());
+                    }
+                }
+                let suffix = format!("::{}", id.name);
+                for (k, v) in &self.type_info.var_types {
+                    if k.ends_with(&suffix) {
+                        return Some(v.clone());
+                    }
+                }
+                None
+            }
+            SimpleAssignmentTarget::StaticMemberExpression(mem) => {
+                if let oxc_ast::ast::Expression::Identifier(id) = &mem.object {
+                    let obj_name = id.name.as_str();
+                    let field_name = mem.property.name.as_str();
+                    if let Some(static_fields) = self.class_static_fields.get(obj_name)
+                        && static_fields.contains(field_name)
+                    {
+                        let var_key = format!("__{}_{}", obj_name, field_name);
+                        if let Some(ty) = self.type_info.var_types.get(&var_key) {
+                            return Some(ty.clone());
+                        }
+                    }
+                }
+                self.infer_expr_type(&mem.object)
+            }
+            _ => None,
+        }
+    }
+
     /// Infer the type of an assignment target (left-hand side of `=` / `+=` etc.).
     /// Only handles the common cases: identifier and static member expression.
     pub(super) fn infer_assign_target_type(&self, target: &AssignmentTarget) -> Option<ZigType> {

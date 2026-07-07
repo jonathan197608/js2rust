@@ -1622,3 +1622,99 @@ export function add(n) {
         zig
     );
 }
+
+// ── BigInt ++/-- expansion ────────────────────────────────
+
+/// BigInt `++` should expand to `.add()` method call, not emit invalid Zig `+= 1`.
+#[test]
+fn test_bigint_increment() {
+    let js = r#"
+/**
+ * @param {bigint} x
+ * @returns {bigint}
+ */
+export function test(x) {
+    x++;
+    return x;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_bigint_increment");
+    println!("=== BigInt increment ===\n{}", zig);
+
+    // Should NOT use += for BigInt
+    assert!(
+        !zig.contains("x +="),
+        "BigInt increment should not use Zig +=:\n{}",
+        zig
+    );
+    // Should use .add() method call
+    assert!(
+        zig.contains(".add("),
+        "BigInt increment should use .add() method:\n{}",
+        zig
+    );
+}
+
+/// BigInt `--` should expand to `.sub()` method call, not emit invalid Zig `-= 1`.
+#[test]
+fn test_bigint_decrement() {
+    let js = r#"
+/**
+ * @param {bigint} x
+ * @returns {bigint}
+ */
+export function test(x) {
+    x--;
+    return x;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_bigint_decrement");
+    println!("=== BigInt decrement ===\n{}", zig);
+
+    assert!(
+        !zig.contains("x -="),
+        "BigInt decrement should not use Zig -=:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".sub("),
+        "BigInt decrement should use .sub() method:\n{}",
+        zig
+    );
+}
+
+/// BigInt static field `**=` should use `.pow()` method call, and should not
+/// contain the invalid `__target` placeholder from the old Member target handling.
+#[test]
+fn test_bigint_static_field_pow_assign() {
+    let js = r#"
+class Math {
+    /** @type {bigint} */
+    static base = 2n;
+}
+
+/**
+ * @param {bigint} exp
+ * @returns {bigint}
+ */
+export function test(exp) {
+    Math.base **= exp;
+    return Math.base;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_bigint_static_field_pow_assign");
+    println!("=== BigInt static field pow assign ===\n{}", zig);
+
+    // Should NOT contain the __target placeholder
+    assert!(
+        !zig.contains("__target"),
+        "BigInt **= on Member target should not use __target placeholder:\n{}",
+        zig
+    );
+    // Should use .pow() method call
+    assert!(
+        zig.contains(".pow("),
+        "BigInt **= should use .pow() method:\n{}",
+        zig
+    );
+}

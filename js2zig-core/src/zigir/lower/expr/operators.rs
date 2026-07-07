@@ -284,6 +284,59 @@ impl Lowerer {
 
     /// Lower an update expression (++/--).
     pub(super) fn lower_update(&mut self, ue: &UpdateExpression) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        // Check if the target is BigInt — BigInt has no Zig +=, -=,
+        // so we must expand `x++` into `x = x + BigInt(1)` and
+        // `x--` into `x = x - BigInt(1)` using method calls.
+        let target_type = self.infer_simple_assign_target_type(&ue.argument);
+        if target_type == Some(ZigType::BigInt) {
+            let target = self.lower_simple_assign_target(&ue.argument);
+            // Build read-side expression
+            let read_expr = match &target {
+                crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
+                crate::zigir::types::IrAssignTarget::Member {
+                    object,
+                    field,
+                    field_kind,
+                    ..
+                } => IrExpr::FieldAccess {
+                    object: object.clone(),
+                    field: field.clone(),
+                    field_kind: field_kind.clone(),
+                },
+                _ => {
+                    // Fallback for unsupported target types (index, destructure)
+                    return IrExpr::Update {
+                        op: if ue.operator == UpdateOperator::Increment {
+                            UpdateOp::Increment
+                        } else {
+                            UpdateOp::Decrement
+                        },
+                        target: Box::new(target),
+                        is_expr_stmt: self.in_expr_stmt,
+                    };
+                }
+            };
+            let bin_op = if ue.operator == UpdateOperator::Increment {
+                BinOp::Add
+            } else {
+                BinOp::Sub
+            };
+            return IrExpr::Assign {
+                op: AssignOp::Assign,
+                target: Box::new(target),
+                value: Box::new(IrExpr::Binary {
+                    op: bin_op,
+                    left: Box::new(read_expr),
+                    right: Box::new(IrExpr::BigIntLiteral("1".to_string())),
+                    left_type: Some(ZigType::BigInt),
+                    right_type: Some(ZigType::BigInt),
+                }),
+            };
+        }
+
+        // Non-BigInt: emit standard ++/--
         let op = if ue.operator == UpdateOperator::Increment {
             UpdateOp::Increment
         } else {
@@ -310,24 +363,30 @@ impl Lowerer {
             let target = self.lower_assign_target(&ae.left);
             let value = Box::new(self.lower_expr(&ae.right));
             let target_type = self.infer_assign_target_type(&ae.left);
-            // Read target as expression for the base
-            let base_ident = match &target {
+            // Build read-side expression from the assignment target
+            let base_expr = match &target {
                 crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
+                crate::zigir::types::IrAssignTarget::Member {
+                    object,
+                    field,
+                    field_kind,
+                    ..
+                } => IrExpr::FieldAccess {
+                    object: object.clone(),
+                    field: field.clone(),
+                    field_kind: field_kind.clone(),
+                },
                 _ => IrExpr::Ident(IrIdent::new("__target")),
             };
             // BigInt **= : use IrExpr::Binary with BinOp::Pow so emit_bigint_binary
             // generates .pow() method call.
             if target_type == Some(ZigType::BigInt) {
-                let name_clone = match &target {
-                    crate::zigir::types::IrAssignTarget::Ident(name) => name.clone(),
-                    _ => IrIdent::new("__target"),
-                };
                 return IrExpr::Assign {
                     op: AssignOp::Assign,
                     target: Box::new(target),
                     value: Box::new(IrExpr::Binary {
                         op: BinOp::Pow,
-                        left: Box::new(IrExpr::Ident(name_clone)),
+                        left: Box::new(base_expr),
                         right: value,
                         left_type: Some(ZigType::BigInt),
                         right_type: Some(ZigType::BigInt),
@@ -348,7 +407,7 @@ impl Lowerer {
                 op: AssignOp::Assign,
                 target: Box::new(target),
                 value: Box::new(IrExpr::PowExpr {
-                    base: Box::new(base_ident),
+                    base: Box::new(base_expr),
                     exp: value,
                     base_type,
                     exp_type,
