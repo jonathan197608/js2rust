@@ -150,10 +150,10 @@ impl TypeInferrer {
             self.host_return_types
                 .insert(def.name.clone(), def.ret_type.clone());
             // Populate struct field types for async return structs
-            if let crate::types::ZigType::NamedStruct(ref struct_name) = def.ret_type
+            if let ZigType::NamedStruct(ref struct_name) = def.ret_type
                 && let Some(fields) = host_fns.struct_fields_map().get(struct_name)
             {
-                let field_map: std::collections::HashMap<String, ZigType> =
+                let field_map: HashMap<String, ZigType> =
                     fields.iter().map(|(n, t)| (n.clone(), t.clone())).collect();
                 self.host_struct_fields
                     .insert(struct_name.clone(), field_map);

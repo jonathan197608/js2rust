@@ -581,7 +581,7 @@ impl TypeInferrer {
 
     /// Extract the return expression from a function body with a single return statement.
     fn extract_return_expr<'a>(
-        body: &'a oxc_ast::ast::FunctionBody<'a>,
+        body: &'a FunctionBody<'a>,
     ) -> Option<&'a Expression<'a>> {
         if body.statements.len() == 1
             && let Statement::ReturnStatement(ret) = &body.statements[0]

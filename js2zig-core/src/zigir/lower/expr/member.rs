@@ -411,7 +411,7 @@ impl Lowerer {
     /// Only handles the common cases: identifier and static member expression.
     pub(super) fn infer_assign_target_type(
         &self,
-        target: &oxc_ast::ast::AssignmentTarget,
+        target: &AssignmentTarget,
     ) -> Option<ZigType> {
         use oxc_ast::ast::AssignmentTarget;
         match target {

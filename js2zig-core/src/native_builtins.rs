@@ -317,23 +317,23 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
 
     // Global function calls (plain identifier callee)
     if let Expression::Identifier(id) = &ce.callee {
-        match id.name.as_str() {
-            "parseInt" => return Some(BuiltinCall::ParseInt),
-            "parseFloat" => return Some(BuiltinCall::ParseFloat),
-            "isNaN" => return Some(BuiltinCall::IsNaN),
-            "isFinite" => return Some(BuiltinCall::IsFinite),
-            "encodeURIComponent" => return Some(BuiltinCall::EncodeURIComponent),
-            "decodeURIComponent" => return Some(BuiltinCall::DecodeURIComponent),
-            "encodeURI" => return Some(BuiltinCall::EncodeURI),
-            "decodeURI" => return Some(BuiltinCall::DecodeURI),
-            "eval" => return Some(BuiltinCall::Eval),
-            "Number" => return Some(BuiltinCall::NumberConstructor),
-            "String" => return Some(BuiltinCall::StringConstructor),
-            "Boolean" => return Some(BuiltinCall::BooleanConstructor),
-            "BigInt" => return Some(BuiltinCall::BigIntConstructor),
-            "Object" => return Some(BuiltinCall::ObjectConstructor),
-            "Symbol" => return Some(BuiltinCall::SymbolConstructor),
-            _ => return None,
+        return match id.name.as_str() {
+            "parseInt" => Some(BuiltinCall::ParseInt),
+            "parseFloat" => Some(BuiltinCall::ParseFloat),
+            "isNaN" => Some(BuiltinCall::IsNaN),
+            "isFinite" => Some(BuiltinCall::IsFinite),
+            "encodeURIComponent" => Some(BuiltinCall::EncodeURIComponent),
+            "decodeURIComponent" => Some(BuiltinCall::DecodeURIComponent),
+            "encodeURI" => Some(BuiltinCall::EncodeURI),
+            "decodeURI" => Some(BuiltinCall::DecodeURI),
+            "eval" => Some(BuiltinCall::Eval),
+            "Number" => Some(BuiltinCall::NumberConstructor),
+            "String" => Some(BuiltinCall::StringConstructor),
+            "Boolean" => Some(BuiltinCall::BooleanConstructor),
+            "BigInt" => Some(BuiltinCall::BigIntConstructor),
+            "Object" => Some(BuiltinCall::ObjectConstructor),
+            "Symbol" => Some(BuiltinCall::SymbolConstructor),
+            _ => None,
         }
     }
 
@@ -350,44 +350,44 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             && id.name.as_str() == "Math"
         {
             // Math methods
-            match method_name {
-                "abs" => return Some(BuiltinCall::MathAbs),
-                "floor" => return Some(BuiltinCall::MathFloor),
-                "ceil" => return Some(BuiltinCall::MathCeil),
-                "round" => return Some(BuiltinCall::MathRound),
-                "sqrt" => return Some(BuiltinCall::MathSqrt),
-                "random" => return Some(BuiltinCall::MathRandom),
-                "pow" => return Some(BuiltinCall::MathPow),
-                "max" => return Some(BuiltinCall::MathMax),
-                "min" => return Some(BuiltinCall::MathMin),
-                "hypot" => return Some(BuiltinCall::MathHypot),
-                "sin" => return Some(BuiltinCall::MathSin),
-                "cos" => return Some(BuiltinCall::MathCos),
-                "tan" => return Some(BuiltinCall::MathTan),
-                "asin" => return Some(BuiltinCall::MathAsin),
-                "acos" => return Some(BuiltinCall::MathAcos),
-                "atan" => return Some(BuiltinCall::MathAtan),
-                "atan2" => return Some(BuiltinCall::MathAtan2),
-                "log" => return Some(BuiltinCall::MathLog),
-                "log10" => return Some(BuiltinCall::MathLog10),
-                "log2" => return Some(BuiltinCall::MathLog2),
-                "exp" => return Some(BuiltinCall::MathExp),
-                "sign" => return Some(BuiltinCall::MathSign),
-                "trunc" => return Some(BuiltinCall::MathTrunc),
-                "cbrt" => return Some(BuiltinCall::MathCbrt),
+            return match method_name {
+                "abs" => Some(BuiltinCall::MathAbs),
+                "floor" => Some(BuiltinCall::MathFloor),
+                "ceil" => Some(BuiltinCall::MathCeil),
+                "round" => Some(BuiltinCall::MathRound),
+                "sqrt" => Some(BuiltinCall::MathSqrt),
+                "random" => Some(BuiltinCall::MathRandom),
+                "pow" => Some(BuiltinCall::MathPow),
+                "max" => Some(BuiltinCall::MathMax),
+                "min" => Some(BuiltinCall::MathMin),
+                "hypot" => Some(BuiltinCall::MathHypot),
+                "sin" => Some(BuiltinCall::MathSin),
+                "cos" => Some(BuiltinCall::MathCos),
+                "tan" => Some(BuiltinCall::MathTan),
+                "asin" => Some(BuiltinCall::MathAsin),
+                "acos" => Some(BuiltinCall::MathAcos),
+                "atan" => Some(BuiltinCall::MathAtan),
+                "atan2" => Some(BuiltinCall::MathAtan2),
+                "log" => Some(BuiltinCall::MathLog),
+                "log10" => Some(BuiltinCall::MathLog10),
+                "log2" => Some(BuiltinCall::MathLog2),
+                "exp" => Some(BuiltinCall::MathExp),
+                "sign" => Some(BuiltinCall::MathSign),
+                "trunc" => Some(BuiltinCall::MathTrunc),
+                "cbrt" => Some(BuiltinCall::MathCbrt),
                 // Phase 4 Math methods
-                "expm1" => return Some(BuiltinCall::MathExpm1),
-                "sinh" => return Some(BuiltinCall::MathSinh),
-                "cosh" => return Some(BuiltinCall::MathCosh),
-                "tanh" => return Some(BuiltinCall::MathTanh),
-                "asinh" => return Some(BuiltinCall::MathAsinh),
-                "acosh" => return Some(BuiltinCall::MathAcosh),
-                "atanh" => return Some(BuiltinCall::MathAtanh),
-                "clz32" => return Some(BuiltinCall::MathClz32),
-                "fround" => return Some(BuiltinCall::MathFround),
-                "imul" => return Some(BuiltinCall::MathImul),
-                "log1p" => return Some(BuiltinCall::MathLog1p),
-                _ => return None,
+                "expm1" => Some(BuiltinCall::MathExpm1),
+                "sinh" => Some(BuiltinCall::MathSinh),
+                "cosh" => Some(BuiltinCall::MathCosh),
+                "tanh" => Some(BuiltinCall::MathTanh),
+                "asinh" => Some(BuiltinCall::MathAsinh),
+                "acosh" => Some(BuiltinCall::MathAcosh),
+                "atanh" => Some(BuiltinCall::MathAtanh),
+                "clz32" => Some(BuiltinCall::MathClz32),
+                "fround" => Some(BuiltinCall::MathFround),
+                "imul" => Some(BuiltinCall::MathImul),
+                "log1p" => Some(BuiltinCall::MathLog1p),
+                _ => None,
             }
         }
 
@@ -395,11 +395,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "Date"
         {
-            match method_name {
-                "now" => return Some(BuiltinCall::DateNow),
-                "parse" => return Some(BuiltinCall::DateParse),
-                "UTC" => return Some(BuiltinCall::DateUTC),
-                _ => return None,
+            return match method_name {
+                "now" => Some(BuiltinCall::DateNow),
+                "parse" => Some(BuiltinCall::DateParse),
+                "UTC" => Some(BuiltinCall::DateUTC),
+                _ => None,
             }
         }
 
@@ -407,30 +407,30 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "Object"
         {
-            match method_name {
-                "keys" => return Some(BuiltinCall::ObjectKeys),
-                "values" => return Some(BuiltinCall::ObjectValues),
-                "entries" => return Some(BuiltinCall::ObjectEntries),
-                "fromEntries" => return Some(BuiltinCall::ObjectFromEntries),
-                "assign" => return Some(BuiltinCall::ObjectAssign),
-                "freeze" => return Some(BuiltinCall::ObjectFreeze),
-                "seal" => return Some(BuiltinCall::ObjectSeal),
-                "preventExtensions" => return Some(BuiltinCall::ObjectPreventExtensions),
-                "hasOwn" => return Some(BuiltinCall::ObjectHasOwn),
-                "is" => return Some(BuiltinCall::ObjectIs),
-                "getOwnPropertyNames" => return Some(BuiltinCall::ObjectGetOwnPropertyNames),
-                "create" => return Some(BuiltinCall::ObjectCreate),
-                "defineProperty" => return Some(BuiltinCall::ObjectDefineProperty),
-                "getPrototypeOf" => return Some(BuiltinCall::ObjectGetPrototypeOf),
-                "defineProperties" => return Some(BuiltinCall::ObjectDefineProperties),
+            return match method_name {
+                "keys" => Some(BuiltinCall::ObjectKeys),
+                "values" => Some(BuiltinCall::ObjectValues),
+                "entries" => Some(BuiltinCall::ObjectEntries),
+                "fromEntries" => Some(BuiltinCall::ObjectFromEntries),
+                "assign" => Some(BuiltinCall::ObjectAssign),
+                "freeze" => Some(BuiltinCall::ObjectFreeze),
+                "seal" => Some(BuiltinCall::ObjectSeal),
+                "preventExtensions" => Some(BuiltinCall::ObjectPreventExtensions),
+                "hasOwn" => Some(BuiltinCall::ObjectHasOwn),
+                "is" => Some(BuiltinCall::ObjectIs),
+                "getOwnPropertyNames" => Some(BuiltinCall::ObjectGetOwnPropertyNames),
+                "create" => Some(BuiltinCall::ObjectCreate),
+                "defineProperty" => Some(BuiltinCall::ObjectDefineProperty),
+                "getPrototypeOf" => Some(BuiltinCall::ObjectGetPrototypeOf),
+                "defineProperties" => Some(BuiltinCall::ObjectDefineProperties),
                 "getOwnPropertyDescriptor" => {
-                    return Some(BuiltinCall::ObjectGetOwnPropertyDescriptor);
+                    Some(BuiltinCall::ObjectGetOwnPropertyDescriptor)
                 }
-                "setPrototypeOf" => return Some(BuiltinCall::ObjectSetPrototypeOf),
-                "isSealed" => return Some(BuiltinCall::ObjectIsSealed),
-                "isFrozen" => return Some(BuiltinCall::ObjectIsFrozen),
-                "isExtensible" => return Some(BuiltinCall::ObjectIsExtensible),
-                _ => return None,
+                "setPrototypeOf" => Some(BuiltinCall::ObjectSetPrototypeOf),
+                "isSealed" => Some(BuiltinCall::ObjectIsSealed),
+                "isFrozen" => Some(BuiltinCall::ObjectIsFrozen),
+                "isExtensible" => Some(BuiltinCall::ObjectIsExtensible),
+                _ => None,
             }
         }
 
@@ -438,10 +438,10 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "JSON"
         {
-            match method_name {
-                "stringify" => return Some(BuiltinCall::JsonStringify),
-                "parse" => return Some(BuiltinCall::JsonParse),
-                _ => return None,
+            return match method_name {
+                "stringify" => Some(BuiltinCall::JsonStringify),
+                "parse" => Some(BuiltinCall::JsonParse),
+                _ => None,
             }
         }
 
@@ -449,20 +449,20 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "console"
         {
-            match method_name {
-                "log" => return Some(BuiltinCall::ConsoleLog),
-                "error" => return Some(BuiltinCall::ConsoleError),
-                "warn" => return Some(BuiltinCall::ConsoleWarn),
-                _ => return None,
+            return match method_name {
+                "log" => Some(BuiltinCall::ConsoleLog),
+                "error" => Some(BuiltinCall::ConsoleError),
+                "warn" => Some(BuiltinCall::ConsoleWarn),
+                _ => None,
             }
         }
 
         // Check if object is a RegExp literal (for /pattern/.test(str))
         if let Expression::RegExpLiteral(_re) = obj_expr {
-            match method_name {
-                "test" => return Some(BuiltinCall::RegExpTest),
-                "exec" => return Some(BuiltinCall::RegExpExec),
-                _ => return None,
+            return match method_name {
+                "test" => Some(BuiltinCall::RegExpTest),
+                "exec" => Some(BuiltinCall::RegExpExec),
+                _ => None,
             }
         }
 
@@ -470,14 +470,14 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "Number"
         {
-            match method_name {
-                "isNaN" => return Some(BuiltinCall::NumberIsNaN),
-                "isFinite" => return Some(BuiltinCall::NumberIsFinite),
-                "isInteger" => return Some(BuiltinCall::NumberIsInteger),
-                "isSafeInteger" => return Some(BuiltinCall::NumberIsSafeInteger),
-                "parseInt" => return Some(BuiltinCall::NumberParseInt),
-                "parseFloat" => return Some(BuiltinCall::NumberParseFloat),
-                _ => return None,
+            return match method_name {
+                "isNaN" => Some(BuiltinCall::NumberIsNaN),
+                "isFinite" => Some(BuiltinCall::NumberIsFinite),
+                "isInteger" => Some(BuiltinCall::NumberIsInteger),
+                "isSafeInteger" => Some(BuiltinCall::NumberIsSafeInteger),
+                "parseInt" => Some(BuiltinCall::NumberParseInt),
+                "parseFloat" => Some(BuiltinCall::NumberParseFloat),
+                _ => None,
             }
         }
 
@@ -485,10 +485,10 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "String"
         {
-            match method_name {
-                "fromCharCode" => return Some(BuiltinCall::StringFromCharCode),
-                "fromCodePoint" => return Some(BuiltinCall::StringFromCodePoint),
-                _ => return None,
+            return match method_name {
+                "fromCharCode" => Some(BuiltinCall::StringFromCharCode),
+                "fromCodePoint" => Some(BuiltinCall::StringFromCodePoint),
+                _ => None,
             }
         }
 
@@ -496,11 +496,11 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "Array"
         {
-            match method_name {
-                "from" => return Some(BuiltinCall::ArrayFrom),
-                "of" => return Some(BuiltinCall::ArrayOf),
-                "isArray" => return Some(BuiltinCall::ArrayIsArray),
-                _ => return None,
+            return match method_name {
+                "from" => Some(BuiltinCall::ArrayFrom),
+                "of" => Some(BuiltinCall::ArrayOf),
+                "isArray" => Some(BuiltinCall::ArrayIsArray),
+                _ => None,
             }
         }
 
@@ -508,10 +508,10 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         if let Expression::Identifier(id) = obj_expr
             && id.name.as_str() == "Symbol"
         {
-            match method_name {
-                "for" => return Some(BuiltinCall::SymbolFor),
-                "keyFor" => return Some(BuiltinCall::SymbolKeyFor),
-                _ => return None,
+            return match method_name {
+                "for" => Some(BuiltinCall::SymbolFor),
+                "keyFor" => Some(BuiltinCall::SymbolKeyFor),
+                _ => None,
             }
         }
 

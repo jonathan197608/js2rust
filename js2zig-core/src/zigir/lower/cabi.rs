@@ -32,7 +32,7 @@ impl Lowerer {
                 let params: Vec<IrParam> = f
                     .params
                     .iter()
-                    .filter(|p| !matches!(p.zig_type, crate::types::ZigType::Anytype))
+                    .filter(|p| !matches!(p.zig_type, ZigType::Anytype))
                     .map(|p| IrParam {
                         name: p.name.clone(),
                         zig_type: p.zig_type.clone(),
@@ -41,7 +41,7 @@ impl Lowerer {
                     })
                     .collect();
                 let ret_struct_name =
-                    if let crate::types::ZigType::NamedStruct(ref s) = f.return_type {
+                    if let ZigType::NamedStruct(ref s) = f.return_type {
                         Some(s.clone())
                     } else {
                         None
@@ -75,7 +75,7 @@ impl Lowerer {
     }
 
     /// Convert a `Span` to an `IrDiagnostic` with source location.
-    pub(super) fn span_to_source_span(&self, span: oxc_span::Span) -> SourceSpan {
+    pub(super) fn span_to_source_span(&self, span: Span) -> SourceSpan {
         let offset = span.start as usize;
         let mut line: usize = 1;
         let mut col: usize = 1;

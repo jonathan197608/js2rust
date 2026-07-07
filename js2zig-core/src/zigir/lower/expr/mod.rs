@@ -43,16 +43,16 @@ impl Lowerer {
                 // Produce an IrNewExpr equivalent to `new RegExp("pattern")`
                 let pattern = rl.regex.pattern.text.as_str();
                 let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
-                crate::zigir::types::IrExpr::New(crate::zigir::types::IrNewExpr {
+                IrExpr::New(crate::zigir::types::IrNewExpr {
                     constructor: crate::zigir::kinds::NewConstructor::RegExp,
-                    args: vec![crate::zigir::types::IrExpr::StringLiteral(escaped)],
+                    args: vec![IrExpr::StringLiteral(escaped)],
                     result_type: crate::types::ZigType::JsAny,
                 })
             }
             Expression::BigIntLiteral(bi) => {
                 // BigInt literal: store the decimal value string (without trailing 'n')
                 let s = bi.value.as_str().to_string();
-                crate::zigir::types::IrExpr::BigIntLiteral(s)
+                IrExpr::BigIntLiteral(s)
             }
 
             // ── Identifier ────────────────────────────────────────────────────
@@ -301,15 +301,15 @@ impl Lowerer {
                 field: field_name.zig_name.clone(),
                 field_kind: FieldKind::StructField,
             };
-            if *is_mut {
+            return if *is_mut {
                 // Reference capture: dereference the pointer
-                return IrExpr::FieldAccess {
+                IrExpr::FieldAccess {
                     object: Box::new(self_access),
                     field: "*".to_string(),
                     field_kind: FieldKind::PointerDeref,
-                };
+                }
             } else {
-                return self_access;
+                self_access
             }
         }
 

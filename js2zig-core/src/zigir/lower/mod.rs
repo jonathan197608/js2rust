@@ -581,7 +581,7 @@ mod tests {
         // Parse an empty program
         let js = "";
         let allocator = oxc_allocator::Allocator::default();
-        let source_type = oxc_span::SourceType::default();
+        let source_type = SourceType::default();
         let parser = oxc_parser::Parser::new(&allocator, js, source_type);
         let result = parser.parse();
         let module = lowerer.lower(&result.program);

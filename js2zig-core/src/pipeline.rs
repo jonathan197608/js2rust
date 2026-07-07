@@ -365,14 +365,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 };
 
                 // Collect host function return types and param types for type inference
-                let mut host_return_types: std::collections::HashMap<
+                let mut host_return_types: HashMap<
                     String,
                     crate::types::ZigType,
-                > = std::collections::HashMap::new();
-                let mut host_param_types: std::collections::HashMap<
+                > = HashMap::new();
+                let mut host_param_types: HashMap<
                     String,
                     Vec<crate::types::ZigType>,
-                > = std::collections::HashMap::new();
+                > = HashMap::new();
                 for def in host_fns.iter() {
                     host_return_types.insert(def.name.clone(), def.ret_type.clone());
                     host_param_types.insert(
@@ -382,7 +382,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
                 let _host_struct_fields = host_fns.struct_fields_map();
 
-                let _async_fns: std::collections::HashSet<String> =
+                let _async_fns: HashSet<String> =
                     host_fns.async_fn_names().into_iter().collect();
 
                 // Use native_proto (strict static type system) — pre-parsed AST
@@ -430,11 +430,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             let cabi_exports = result.cabi_exports;
 
                             // closure_fns: not supported in native_proto yet, use empty
-                            let closure_fns: std::collections::HashSet<String> =
-                                std::collections::HashSet::new();
+                            let closure_fns: HashSet<String> =
+                                HashSet::new();
 
                             // fn_return_types: use var_types (native_proto::ZigType)
-                            let fn_return_types: std::collections::HashMap<
+                            let fn_return_types: HashMap<
                                 String,
                                 crate::types::ZigType,
                             > = result
@@ -655,7 +655,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         .collect::<Vec<_>>()
                 });
                 if let Ok(json_str) = serde_json::to_string_pretty(&sm_json) {
-                    let _ = std::fs::write(&sm_path, json_str);
+                    let _ = fs::write(&sm_path, json_str);
                 }
             }
 
@@ -1240,7 +1240,7 @@ pub fn write_cabi_metadata(
     // Rust function definitions, causing E0428 compilation errors.
     // We keep the first occurrence and skip subsequent duplicates.
     {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         exports_value.retain(|exp| {
             let name = exp["name"].as_str().unwrap_or("");
             seen.insert(name.to_string())

@@ -228,7 +228,7 @@ impl HostFnRegistry {
                 // Build C ABI params: string params expand to ptr+len (zero-copy)
                 let mut cabi_param_parts = Vec::new();
                 for (n, t) in &def.params {
-                    for (cabi_name, cabi_type) in Self::to_c_abi_param_types(n, t) {
+                    for (cabi_name, cabi_type) in Self::get_c_abi_param_types(n, t) {
                         cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
                     }
                 }
@@ -241,7 +241,7 @@ impl HostFnRegistry {
                         .find(|s| &s.zig_name == name)
                         .map(|s| s.c_name.clone())
                         .unwrap_or_else(|| name.clone()),
-                    other => Self::to_c_abi_ret_type(other),
+                    other => Self::get_c_abi_ret_type(other),
                 };
 
                 // Extern declaration (C ABI symbol defined in Rust)
@@ -329,7 +329,7 @@ impl HostFnRegistry {
             // Build C ABI params: string params expand to ptr+len (zero-copy)
             let mut cabi_param_parts = Vec::new();
             for (n, t) in &def.params {
-                for (cabi_name, cabi_type) in Self::to_c_abi_param_types(n, t) {
+                for (cabi_name, cabi_type) in Self::get_c_abi_param_types(n, t) {
                     cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
                 }
             }
@@ -343,7 +343,7 @@ impl HostFnRegistry {
                     .find(|s| &s.zig_name == name)
                     .map(|s| s.c_name.clone())
                     .unwrap_or_else(|| name.clone()),
-                other => Self::to_c_abi_ret_type(other),
+                other => Self::get_c_abi_ret_type(other),
             };
 
             // Check if this function needs string conversion wrappers
@@ -447,7 +447,7 @@ impl HostFnRegistry {
 
     /// Convert a ZigType to the corresponding C ABI type string (for return types).
     /// String returns use StrRet (zero-copy: memory is in Zig Arena).
-    fn to_c_abi_ret_type(ty: &ZigType) -> String {
+    fn get_c_abi_ret_type(ty: &ZigType) -> String {
         match ty {
             ZigType::Str => "StrRet".to_string(),
             other => other.to_zig_type(),
@@ -457,7 +457,7 @@ impl HostFnRegistry {
     /// Expand a single Zig-level param into one or more C ABI params.
     /// String params expand to `ptr: [*]const u8, len_name: usize` (zero-copy).
     /// Other types pass through as-is.
-    fn to_c_abi_param_types(param_name: &str, ty: &ZigType) -> Vec<(String, String)> {
+    fn get_c_abi_param_types(param_name: &str, ty: &ZigType) -> Vec<(String, String)> {
         match ty {
             ZigType::Str => vec![
                 (format!("{}_ptr", param_name), "[*]const u8".to_string()),

@@ -10,7 +10,7 @@ impl Emitter {
     pub(super) fn emit_object_builtin(
         &mut self,
         method: &str,
-        args: &[crate::zigir::types::IrExpr],
+        args: &[IrExpr],
     ) {
         match method {
             // ── No-op methods (Zig is immutable by default) ──
@@ -118,7 +118,7 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_json_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
+    pub(super) fn emit_json_builtin(&mut self, method: &str, args: &[IrExpr]) {
         match method {
             "parse" => {
                 self.write("js_json.parse(js_allocator.allocator(), ");
@@ -173,7 +173,7 @@ impl Emitter {
         &mut self,
         method: &str,
         obj: Option<&str>,
-        args: &[crate::zigir::types::IrExpr],
+        args: &[IrExpr],
     ) {
         match method {
             "toFixed" | "toExponential" | "toPrecision" => {
@@ -217,7 +217,7 @@ impl Emitter {
         &mut self,
         method: &str,
         obj: Option<&str>,
-        args: &[crate::zigir::types::IrExpr],
+        args: &[IrExpr],
     ) {
         // Avoid Zig keyword conflicts: Symbol.for → symbolFor, Symbol.keyFor → symbolKeyFor
         let zig_method = match method {
@@ -274,7 +274,7 @@ impl Emitter {
     pub(super) fn emit_console_builtin(
         &mut self,
         method: &str,
-        args: &[crate::zigir::types::IrExpr],
+        args: &[IrExpr],
     ) {
         if args.len() <= 1 {
             // Single-arg: js_console.log(msg), js_console.err(msg), js_console.warn(msg)

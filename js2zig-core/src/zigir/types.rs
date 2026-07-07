@@ -506,9 +506,9 @@ pub enum IrExpr {
         right: Box<IrExpr>,
         /// Inferred type of the left operand, used for type-aware emission
         /// (e.g., BigInt arithmetic, JsAny comparison, string comparison).
-        left_type: Option<crate::types::ZigType>,
+        left_type: Option<ZigType>,
         /// Inferred type of the right operand.
-        right_type: Option<crate::types::ZigType>,
+        right_type: Option<ZigType>,
     },
     Unary {
         op: UnaOp,
@@ -626,11 +626,11 @@ pub enum IrExpr {
     PowExpr {
         base: Box<IrExpr>,
         exp: Box<IrExpr>,
-        base_type: crate::types::ZigType,
-        exp_type: crate::types::ZigType,
+        base_type: ZigType,
+        exp_type: ZigType,
         /// If the result needs to be converted from f64 (pow always returns f64)
         /// to a different type (e.g. i64), this is set. None means keep as f64.
-        result_type: Option<crate::types::ZigType>,
+        result_type: Option<ZigType>,
     },
 
     CompileError {

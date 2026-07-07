@@ -334,14 +334,14 @@ impl Lowerer {
                 };
             }
             // Non-BigInt: a = std.math.pow(a, b) via PowExpr
-            let base_type = target_type.unwrap_or(crate::types::ZigType::F64);
+            let base_type = target_type.unwrap_or(ZigType::F64);
             let exp_type = self
                 .infer_expr_type(&ae.right)
-                .unwrap_or(crate::types::ZigType::F64);
+                .unwrap_or(ZigType::F64);
             // When assigning pow result to an i64 variable, set result_type so
             // the emit layer wraps in @as(i64, @intFromFloat(...))
-            let result_type = if base_type == crate::types::ZigType::I64 {
-                Some(crate::types::ZigType::I64)
+            let result_type = if base_type == ZigType::I64 {
+                Some(ZigType::I64)
             } else {
                 None
             };

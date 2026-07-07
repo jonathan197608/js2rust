@@ -35,7 +35,7 @@ pub struct ProjectOptions {
     pub cabi_wrapper_code: String,
     /// Names that have C ABI wrappers — these are skipped in the re-export section
     /// to avoid duplicate struct member errors.
-    pub cabi_names: std::collections::HashSet<String>,
+    pub cabi_names: HashSet<String>,
     /// Auto-generated test code (from testgen)
     pub test_code: String,
     /// Runtime source directory (relative to project root, e.g. "runtime")

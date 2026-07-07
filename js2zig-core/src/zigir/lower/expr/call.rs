@@ -125,31 +125,31 @@ impl Lowerer {
             let (module, method, return_type) = if let Some(name) = &obj_name {
                 if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
                     if matches!(var_type, ZigType::Str)
-                        && module == crate::zigir::builtins::BuiltinModule::JsArray
+                        && module == BuiltinModule::JsArray
                     {
                         match method.as_str() {
                             "at" => (
-                                crate::zigir::builtins::BuiltinModule::JsString,
+                                BuiltinModule::JsString,
                                 "at".into(),
                                 ZigType::Str,
                             ),
                             "indexOf" => (
-                                crate::zigir::builtins::BuiltinModule::JsString,
+                                BuiltinModule::JsString,
                                 "indexOf".into(),
                                 ZigType::I64,
                             ),
                             "includes" => (
-                                crate::zigir::builtins::BuiltinModule::JsString,
+                                BuiltinModule::JsString,
                                 "includes".into(),
                                 ZigType::Bool,
                             ),
                             "lastIndexOf" => (
-                                crate::zigir::builtins::BuiltinModule::JsString,
+                                BuiltinModule::JsString,
                                 "lastIndexOf".into(),
                                 ZigType::I64,
                             ),
                             "slice" => (
-                                crate::zigir::builtins::BuiltinModule::JsString,
+                                BuiltinModule::JsString,
                                 "slice".into(),
                                 ZigType::Str,
                             ),
@@ -204,7 +204,7 @@ impl Lowerer {
             // Object.keys(obj) where obj is a Zig struct (not HashMap) needs
             // a different runtime function (keysStruct) that uses comptime reflection.
             let method = if module == BuiltinModule::JsObject && method == "keys" {
-                if let Some(crate::zigir::types::IrExpr::Ident(ident)) = args.first() {
+                if let Some(IrExpr::Ident(ident)) = args.first() {
                     if let Some(var_type) = self.type_info.var_types.get(ident.zig_name.as_str()) {
                         if matches!(var_type, ZigType::Struct(_)) {
                             "keysStruct".into()
@@ -564,30 +564,30 @@ impl Lowerer {
                 "RangeError" => NewConstructor::Error("RangeError".to_string()),
                 // Wrapper constructors — emit argument value directly (no wrapper object in Zig)
                 "String" => {
-                    if let Some(first_arg) = ne.arguments.first()
+                    return if let Some(first_arg) = ne.arguments.first()
                         && let Some(expr) = first_arg.as_expression()
                     {
-                        return self.lower_expr(expr);
+                        self.lower_expr(expr)
                     } else {
-                        return crate::zigir::types::IrExpr::StringLiteral("".to_string());
+                        crate::zigir::types::IrExpr::StringLiteral("".to_string())
                     }
                 }
                 "Number" => {
-                    if let Some(first_arg) = ne.arguments.first()
+                    return if let Some(first_arg) = ne.arguments.first()
                         && let Some(expr) = first_arg.as_expression()
                     {
-                        return self.lower_expr(expr);
+                        self.lower_expr(expr)
                     } else {
-                        return crate::zigir::types::IrExpr::IntLiteral(0);
+                        crate::zigir::types::IrExpr::IntLiteral(0)
                     }
                 }
                 "Boolean" => {
-                    if let Some(first_arg) = ne.arguments.first()
+                    return if let Some(first_arg) = ne.arguments.first()
                         && let Some(expr) = first_arg.as_expression()
                     {
-                        return self.lower_expr(expr);
+                        self.lower_expr(expr)
                     } else {
-                        return crate::zigir::types::IrExpr::BoolLiteral(false);
+                        crate::zigir::types::IrExpr::BoolLiteral(false)
                     }
                 }
                 name if self.class_names.contains(name) => NewConstructor::Class(name.to_string()),

@@ -135,10 +135,7 @@ pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
     // Accept empty input only
     let _input: proc_macro2::TokenStream = input.into();
 
-    match generate() {
-        Ok(ts) => ts,
-        Err(e) => e.into(),
-    }
+    generate().unwrap_or_else(|e| e.into())
 }
 
 // ── Transpile + generate FFI ──────────────────────────────────────
