@@ -16,18 +16,31 @@ pub fn test_(subject: []const u8, pattern: []const u8) bool {
 /// Delegates to host C ABI functions for full regex matching (fancy-regex).
 pub const JsRegExp = struct {
     pattern: []const u8,
+    flags: []const u8,
+    global: bool,
 
-    /// Create a new RegExp from a pattern string.
-    /// The pattern is owned by this struct and must be freed with deinit().
-    pub fn init(alloc: Allocator, pattern: []const u8) !JsRegExp {
-        const owned = try alloc.dupe(u8, pattern);
-        return JsRegExp{ .pattern = owned };
+    /// Create a new RegExp from a pattern string and flags string.
+    pub fn init(alloc: Allocator, pattern: []const u8, flags: []const u8) !JsRegExp {
+        const owned_pattern = try alloc.dupe(u8, pattern);
+        const owned_flags = try alloc.dupe(u8, flags);
+        return JsRegExp{
+            .pattern = owned_pattern,
+            .flags = owned_flags,
+            .global = std.mem.indexOfScalar(u8, flags, 'g') != null,
+        };
     }
 
-    /// Release the owned pattern string.
+    /// Backward-compatible init without flags.
+    pub fn initNoFlags(alloc: Allocator, pattern: []const u8) !JsRegExp {
+        return init(alloc, pattern, "");
+    }
+
+    /// Release the owned pattern and flags strings.
     pub fn deinit(self: *JsRegExp, alloc: Allocator) void {
         alloc.free(self.pattern);
+        alloc.free(self.flags);
         self.pattern = &.{};
+        self.flags = &.{};
     }
 
     /// Test if the pattern matches anywhere in the subject.

@@ -192,6 +192,8 @@ pub enum BuiltinCall {
     DateSetUTCMinutes,      // date.setUTCMinutes(min, sec?, ms?)
     DateSetUTCSeconds,      // date.setUTCSeconds(sec, ms?)
     DateSetUTCMilliseconds, // date.setUTCMilliseconds(ms)
+    DateSetTime,            // date.setTime(ms)
+    DateToUTCString,        // date.toUTCString()
 
     // Object methods (static)
     ObjectKeys,                     // Object.keys(obj)
@@ -214,6 +216,7 @@ pub enum BuiltinCall {
     ObjectIsSealed,                 // Object.isSealed(obj) — always true in Zig
     ObjectIsFrozen,                 // Object.isFrozen(obj) — always true in Zig
     ObjectIsExtensible,             // Object.isExtensible(obj) — always false in Zig
+    ObjectGroupBy,                  // Object.groupBy(items, fn) — ES2024
 
     // Global functions
     ParseInt,           // parseInt(s)
@@ -434,6 +437,7 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
                 "isSealed" => Some(BuiltinCall::ObjectIsSealed),
                 "isFrozen" => Some(BuiltinCall::ObjectIsFrozen),
                 "isExtensible" => Some(BuiltinCall::ObjectIsExtensible),
+                "groupBy" => Some(BuiltinCall::ObjectGroupBy),
                 _ => None,
             };
         }
@@ -688,6 +692,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "setUTCMinutes" => Some(BuiltinCall::DateSetUTCMinutes),
             "setUTCSeconds" => Some(BuiltinCall::DateSetUTCSeconds),
             "setUTCMilliseconds" => Some(BuiltinCall::DateSetUTCMilliseconds),
+            "setTime" => Some(BuiltinCall::DateSetTime),
+            "toUTCString" => Some(BuiltinCall::DateToUTCString),
 
             // Map methods (called on local Map variables)
             "set" => Some(BuiltinCall::MapSet),
@@ -839,6 +845,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::DateToDateString => Some(ZigType::Str),
         BuiltinCall::DateToTimeString => Some(ZigType::Str),
         BuiltinCall::DateToLocaleString => Some(ZigType::Str),
+        BuiltinCall::DateToUTCString => Some(ZigType::Str),
         // Date toJSON/valueOf
         BuiltinCall::DateToJSON => Some(ZigType::Str),
         BuiltinCall::DateValueOf => Some(ZigType::I64),
@@ -856,7 +863,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::DateSetUTCHours
         | BuiltinCall::DateSetUTCMinutes
         | BuiltinCall::DateSetUTCSeconds
-        | BuiltinCall::DateSetUTCMilliseconds => Some(ZigType::I64),
+        | BuiltinCall::DateSetUTCMilliseconds
+        | BuiltinCall::DateSetTime => Some(ZigType::I64),
 
         // Object methods
         BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
@@ -869,6 +877,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::ObjectIsSealed
         | BuiltinCall::ObjectIsFrozen
         | BuiltinCall::ObjectIsExtensible => Some(ZigType::Bool),
+        BuiltinCall::ObjectGroupBy => Some(ZigType::JsAny),
 
         // Array static methods
         BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {

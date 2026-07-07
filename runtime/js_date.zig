@@ -121,6 +121,29 @@ pub const JsDate = struct {
         });
     }
 
+    /// Returns RFC 1123 format: "Wed, 12 Apr 2023 12:00:00 UTC"
+    pub fn toUTCString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
+        const cd = civilFromDays(dayCount(self.millis));
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const min = timePart(self.millis, 60 * 1000, 60);
+        const s = timePart(self.millis, 1000, 60);
+
+        const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+        const dow = @mod(dayCount(self.millis) + 4, 7);
+
+        return std.fmt.allocPrint(alloc, "{s}, {d} {s} {d} {d}:{d}:{d} UTC", .{
+            day_names[@intCast(dow)],
+            @as(u64, @intCast(cd.d)),
+            month_names[@intCast(cd.m - 1)],
+            @as(u64, @intCast(cd.y)),
+            @as(u64, @intCast(h)),
+            @as(u64, @intCast(min)),
+            @as(u64, @intCast(s)),
+        });
+    }
+
     /// Returns date portion only: "Wed Apr 12 2023"
     pub fn toDateString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
         const cd = civilFromDays(dayCount(self.millis));
@@ -263,6 +286,12 @@ pub const JsDate = struct {
         const time = self.millis - days * 86400000;
         const old_ms = @mod(time, 1000);
         return self.millis - old_ms + ms;
+    }
+
+    /// setTime(ms) → returns the new timestamp (caller reassigns)
+    pub fn setTime(self: JsDate, ms: i64) i64 {
+        _ = self;
+        return ms;
     }
 
     // ── UTC Setters ─────────────────────

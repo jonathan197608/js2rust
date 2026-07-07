@@ -94,13 +94,18 @@ impl Emitter {
                 }
             },
             NewConstructor::RegExp => {
-                // new RegExp(pat) → try js_regexp.JsRegExp.init(js_allocator.allocator(), pat)
+                // new RegExp(pat, flags?) → try js_regexp.JsRegExp.init(alloc, pat, flags_or_empty)
                 self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
-                for (i, arg) in new_expr.args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
+                if let Some(pat) = new_expr.args.first() {
+                    self.emit_expr(pat);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write(", ");
+                if new_expr.args.len() >= 2 {
+                    self.emit_expr(&new_expr.args[1]);
+                } else {
+                    self.write("\"\"");
                 }
                 self.write(")");
             }

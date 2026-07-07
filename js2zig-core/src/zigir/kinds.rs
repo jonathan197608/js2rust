@@ -31,6 +31,8 @@ pub enum FieldKind {
     Private,
     /// Pointer dereference field: `obj.field.*` (captured mutable closure var)
     PointerDeref,
+    /// RegExp property: `.source`, `.flags`, `.global`
+    RegExpProp { prop: String },
 }
 
 /// How an index access (`obj[idx]`) should be emitted in Zig.

@@ -548,15 +548,54 @@ impl Lowerer {
         }
 
         // Lower function body
-        let body = fd
+        let mut body = fd
             .body
             .as_ref()
             .map(|b| self.lower_block(&b.statements))
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
+        // If the body references `arguments` (lowered as `__arguments`), inject
+        // `const __arguments = &[_]JsAny{ JsAny.from(param0), JsAny.from(param1), ... }`
+        // at the start of the function body.
+        let used_idents_pre = Self::collect_ir_idents_in_block(&body);
+        if used_idents_pre.contains("__arguments") {
+            let args_exprs: Vec<crate::zigir::types::IrExpr> = params
+                .iter()
+                .filter(|p| p.name.zig_name != "io" && !p.is_rest)
+                .map(|p| {
+                    crate::zigir::types::IrExpr::Call(crate::zigir::types::IrCallExpr {
+                        callee: Box::new(crate::zigir::types::IrExpr::FieldAccess {
+                            object: Box::new(crate::zigir::types::IrExpr::Ident(
+                                crate::zigir::ident::IrIdent::new("JsAny"),
+                            )),
+                            field: "from".to_string(),
+                            field_kind: crate::zigir::kinds::FieldKind::StructField,
+                        }),
+                        args: vec![crate::zigir::types::IrExpr::Ident(p.name.clone())],
+                        call_kind: crate::zigir::kinds::CallKind::Direct,
+                    })
+                })
+                .collect();
+            let arguments_init =
+                crate::zigir::types::IrStmt::VarDecl(crate::zigir::types::IrVarDecl {
+                    name: crate::zigir::ident::IrIdent::new("__arguments"),
+                    is_const: true,
+                    zig_type: None,
+                    init: Some(crate::zigir::types::IrExpr::ArrayLiteral(
+                        crate::zigir::types::IrArrayLiteral {
+                            elements: args_exprs,
+                            spread_indices: vec![],
+                        },
+                    )),
+                    is_json_parse: false,
+                    needs_var_suppression: false,
+                });
+            body.stmts.insert(0, arguments_init);
+        }
+
         // Mark unused parameters: collect all identifier references in the body,
         // then check which params don't appear. Also include identifiers from
-        // compile-time-resolved expressions (e.g., typeof x ¡ú "number") that
+        // compile-time-resolved expressions (e.g., typeof x → "number") that
         // were optimized away but still semantically reference the parameter.
         let mut used_idents = Self::collect_ir_idents_in_block(&body);
         if let Some(ctx) = self.fn_ctx.as_ref() {

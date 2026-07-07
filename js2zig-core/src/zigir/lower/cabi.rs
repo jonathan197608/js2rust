@@ -1016,6 +1016,8 @@ pub fn builtin_call_to_ir(
             "setUTCMilliseconds".into(),
             ZigType::I64,
         ),
+        BuiltinCall::DateSetTime => (BuiltinModule::JsDate, "setTime".into(), ZigType::I64),
+        BuiltinCall::DateToUTCString => (BuiltinModule::JsDate, "toUTCString".into(), ZigType::Str),
 
         // Object static
         BuiltinCall::ObjectKeys => (
@@ -1086,6 +1088,7 @@ pub fn builtin_call_to_ir(
             "isExtensible".into(),
             ZigType::Bool,
         ),
+        BuiltinCall::ObjectGroupBy => (BuiltinModule::JsObject, "groupBy".into(), ZigType::JsAny),
 
         // Symbol
         BuiltinCall::SymbolFor => (BuiltinModule::JsSymbol, "for".into(), ZigType::JsSymbol), // Emitter renames "for" ï¿½ï¿½ "symbolFor" to avoid Zig keyword

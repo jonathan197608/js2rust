@@ -21,7 +21,7 @@ impl Emitter {
             | "setMonth" | "setDate" | "setHours" | "setMinutes" | "setSeconds"
             | "setMilliseconds" | "setUTCFullYear" | "setUTCMonth" | "setUTCDate"
             | "setUTCHours" | "setUTCMinutes" | "setUTCSeconds" | "setUTCMilliseconds"
-            | "valueOf" => {
+            | "setTime" | "valueOf" => {
                 if let Some(name) = obj {
                     self.write(&format!("{}.{}(", name, method));
                 } else {
@@ -37,7 +37,7 @@ impl Emitter {
             }
             // Instance methods that need allocator
             "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
-            | "toLocaleString" => {
+            | "toLocaleString" | "toUTCString" => {
                 if let Some(name) = obj {
                     self.write(&format!(
                         "try {}.{}(js_allocator.allocator())",

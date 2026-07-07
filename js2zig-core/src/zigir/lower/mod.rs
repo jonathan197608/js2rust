@@ -94,6 +94,9 @@ pub struct Lowerer {
     /// Counter for anonymous class expressions (to generate unique names).
     pub(super) anon_class_counter: u32,
 
+    /// Source file name (for `import.meta.url`). Empty string if unavailable.
+    pub(super) source_name: String,
+
     // ── Diagnostics ───────────────────────────────────
     pub(super) diagnostics: Vec<IrDiagnostic>,
 }
@@ -127,6 +130,7 @@ impl Lowerer {
             current_class: None,
             in_expr_stmt: false,
             anon_class_counter: 0,
+            source_name: String::new(),
             diagnostics: Vec::new(),
         }
     }

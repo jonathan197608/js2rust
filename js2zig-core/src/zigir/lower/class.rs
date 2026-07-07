@@ -4,7 +4,6 @@
 use oxc_ast::ast::*;
 
 use crate::types::ZigType;
-use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
 use crate::zigir::types::{IrBlock, IrParam};
 
 use super::Lowerer;
@@ -44,6 +43,7 @@ impl Lowerer {
         let mut field_names: Vec<String> = Vec::new();
         let mut fields: Vec<IrClassField> = Vec::new();
         let mut static_inits: Vec<crate::zigir::types::IrExpr> = Vec::new();
+        let mut static_blocks: Vec<crate::zigir::types::IrBlock> = Vec::new();
         let mut has_constructor = false;
         let mut constructor_func: Option<&Function> = None;
 
@@ -82,11 +82,9 @@ impl Lowerer {
                     constructor_func = Some(&md.value);
                 }
                 ClassElement::StaticBlock(sb) => {
-                    self.diagnostics.push(IrDiagnostic {
-                        level: DiagnosticLevel::Error,
-                        span: Some(self.span_to_source_span(sb.span)),
-                        message: "static {} blocks are not supported. Use static field initializers instead.".to_string(),
-                    });
+                    // Lower static block body and collect it
+                    let block = self.lower_block(&sb.body);
+                    static_blocks.push(block);
                 }
                 _ => {}
             }
@@ -154,6 +152,7 @@ impl Lowerer {
             constructor,
             methods,
             static_inits,
+            static_blocks,
             extends,
         })
     }

@@ -39,13 +39,13 @@ impl Lowerer {
             Expression::BooleanLiteral(b) => IrExpr::BoolLiteral(b.value),
             Expression::NullLiteral(_) => IrExpr::Null,
             Expression::RegExpLiteral(rl) => {
-                // JS regexp literal `/pattern/flags` → new RegExp(pattern)
-                // Produce an IrNewExpr equivalent to `new RegExp("pattern")`
+                // JS regexp literal `/pattern/flags` → new RegExp(pattern, flags)
                 let pattern = rl.regex.pattern.text.as_str();
                 let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
+                let flags = rl.regex.flags.to_string();
                 IrExpr::New(crate::zigir::types::IrNewExpr {
                     constructor: crate::zigir::kinds::NewConstructor::RegExp,
-                    args: vec![IrExpr::StringLiteral(escaped)],
+                    args: vec![IrExpr::StringLiteral(escaped), IrExpr::StringLiteral(flags)],
                     result_type: crate::types::ZigType::JsAny,
                 })
             }
@@ -164,14 +164,34 @@ impl Lowerer {
 
             // ── MetaProperty (import.meta, new.target) ──────
             Expression::MetaProperty(mp) => {
-                let span = self.span_to_source_span(mp.span);
-                self.add_error(
-                    span,
-                    "MetaProperty (import.meta/new.target) is not supported",
-                );
-                IrExpr::CompileError {
-                    span: SourceSpan::default(),
-                    msg: "MetaProperty not supported".to_string(),
+                let meta_name = mp.meta.name.as_str();
+                let prop_name = mp.property.name.as_str();
+                if meta_name == "import" && prop_name == "meta" {
+                    // import.meta → struct literal with .url field
+                    let url = if self.source_name.is_empty() {
+                        "import.meta.url".to_string()
+                    } else {
+                        self.source_name.clone()
+                    };
+                    IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral {
+                        items: vec![crate::zigir::types::IrObjectItem::Field(
+                            crate::zigir::types::IrObjectField {
+                                key: "url".to_string(),
+                                value: IrExpr::StringLiteral(url),
+                                is_computed: false,
+                            },
+                        )],
+                    })
+                } else {
+                    let span = self.span_to_source_span(mp.span);
+                    self.add_error(
+                        span,
+                        format!("MetaProperty {}.{} is not supported", meta_name, prop_name),
+                    );
+                    IrExpr::CompileError {
+                        span: SourceSpan::default(),
+                        msg: format!("MetaProperty {}.{} not supported", meta_name, prop_name),
+                    }
                 }
             }
 
@@ -249,17 +269,9 @@ impl Lowerer {
 
         let var_name = id.name.as_str();
 
-        // arguments object: not supported
+        // arguments object: rewrite to __arguments array
         if var_name == "arguments" {
-            let span = self.span_to_source_span(id.span);
-            self.add_error(
-                span,
-                "arguments object is not supported. Use rest parameters (...args) instead.",
-            );
-            return IrExpr::CompileError {
-                span: SourceSpan::default(),
-                msg: "arguments not supported".to_string(),
-            };
+            return IrExpr::Ident(IrIdent::new("__arguments"));
         }
 
         // JS global constants

@@ -94,6 +94,75 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(") catch @panic(\"OOM: Object.entries\")");
             }
+            "groupBy" => {
+                // Object.groupBy(items, callbackFn) — fully inline emission
+                // Generates: blk: { var _grp_map = std.StringHashMap(std.ArrayList(JsAny)).init(alloc);
+                //   for (items_arg.items) |_grp_item| {
+                //     const <param> = _grp_item; const _grp_key = <callback body expr>;
+                //     // insert into map
+                //   }
+                //   break :blk _grp_map }
+                self.write("blk: { var _grp_map = std.StringHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); ");
+                if let Some(items_arg) = args.first() {
+                    self.write("for (");
+                    self.emit_expr(items_arg);
+                    self.write(".items) |_grp_item| { ");
+                    if args.len() >= 2 {
+                        match &args[1] {
+                            IrExpr::ArrowFn(arrow) => {
+                                let param_name = arrow
+                                    .params
+                                    .first()
+                                    .map(|p| p.name.zig_name.clone())
+                                    .unwrap_or_else(|| "_".to_string());
+                                self.write(&format!(
+                                    "const {} = _grp_item; const _grp_key = ",
+                                    param_name
+                                ));
+                                // Concise arrow body is IrStmt::Return { value: Some(expr) }
+                                if let Some(first_stmt) = arrow.body.stmts.first() {
+                                    match first_stmt {
+                                        crate::zigir::types::IrStmt::Return { value: Some(v) } => {
+                                            self.emit_expr(v)
+                                        }
+                                        crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
+                                        _ => self.write("_grp_item"),
+                                    }
+                                }
+                            }
+                            IrExpr::Closure(closure) => {
+                                let param_name = closure
+                                    .fn_params
+                                    .first()
+                                    .map(|p| p.name.zig_name.clone())
+                                    .unwrap_or_else(|| "_".to_string());
+                                self.write(&format!(
+                                    "const {} = _grp_item; const _grp_key = ",
+                                    param_name
+                                ));
+                                if let Some(last) = closure.body.stmts.last() {
+                                    match last {
+                                        crate::zigir::types::IrStmt::Return { value: Some(v) } => {
+                                            self.emit_expr(v)
+                                        }
+                                        crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
+                                        _ => self.write("_grp_item"),
+                                    }
+                                }
+                            }
+                            _ => {
+                                self.write("const _grp_key = ");
+                                self.emit_expr(&args[1]);
+                                self.write("(_grp_item)");
+                            }
+                        }
+                    } else {
+                        self.write("const _grp_key = _grp_item");
+                    }
+                    self.write("; if (_grp_map.getPtr(_grp_key)) |_grp_list| { _grp_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); } else { var _grp_new_list = std.ArrayList(JsAny).init(js_allocator.allocator()); _grp_new_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); _grp_map.put(_grp_key, _grp_new_list) catch @panic(\"OOM\"); } } ");
+                }
+                self.write("break :blk _grp_map; }");
+            }
             // ── Object.getOwnPropertyDescriptor — needs allocator prefix ──
             "getOwnPropertyDescriptor" => {
                 self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");

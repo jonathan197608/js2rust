@@ -99,6 +99,23 @@ impl Lowerer {
             };
         }
 
+        // ── RegExp properties: .source, .flags, .global ──
+        if let Expression::Identifier(id) = &mem.object {
+            let var_name = id.name.as_str();
+            if let Some(ctx) = &self.fn_ctx
+                && ctx.regexp_vars.contains(var_name)
+                && matches!(field_name, "source" | "flags" | "global")
+            {
+                return IrExpr::FieldAccess {
+                    object: Box::new(self.lower_expr(&mem.object)),
+                    field: field_name.to_string(),
+                    field_kind: FieldKind::RegExpProp {
+                        prop: field_name.to_string(),
+                    },
+                };
+            }
+        }
+
         // ── Default: struct field access ──
         IrExpr::FieldAccess {
             object: Box::new(self.lower_expr(&mem.object)),

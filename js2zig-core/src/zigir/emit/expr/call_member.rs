@@ -132,6 +132,27 @@ impl Emitter {
                 self.emit_expr(object);
                 self.write(".*");
             }
+            FieldKind::RegExpProp { prop } => {
+                // regex.source → regex.pattern, regex.flags → regex.flags, regex.global → regex.global
+                match prop.as_str() {
+                    "source" => {
+                        self.emit_expr(object);
+                        self.write(".pattern");
+                    }
+                    "flags" => {
+                        self.emit_expr(object);
+                        self.write(".flags");
+                    }
+                    "global" => {
+                        self.emit_expr(object);
+                        self.write(".global");
+                    }
+                    _ => {
+                        self.emit_expr(object);
+                        self.write(&format!(".{}", prop));
+                    }
+                }
+            }
         }
     }
 

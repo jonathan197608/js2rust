@@ -234,6 +234,9 @@ pub struct IrClassDecl {
     pub constructor: Option<IrClassMethod>,
     pub methods: Vec<IrClassMethod>,
     pub static_inits: Vec<IrExpr>,
+    /// Static initialization blocks (`static { ... }`) lowered as IrBlock.
+    /// Emitted after struct definition, before top-level code.
+    pub static_blocks: Vec<IrBlock>,
     pub extends: Option<String>,
 }
 
@@ -1172,6 +1175,7 @@ mod tests {
                 is_static: false,
             }],
             static_inits: vec![],
+            static_blocks: vec![],
             extends: None,
         };
         assert_eq!(cls.fields.len(), 1);

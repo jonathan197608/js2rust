@@ -246,6 +246,19 @@ impl Emitter {
         self.indent_pop();
         self.writeln("};");
         self.writeln("");
+
+        // Static initialization blocks — emitted as top-level code after struct definition.
+        // Each `static { ... }` block is wrapped in a const declaration so it's valid
+        // Zig at module scope: `const _: void = blk: { ... break :blk {}; };`
+        for block in &class.static_blocks {
+            if !block.stmts.is_empty() {
+                self.write("const _: void = blk: { ");
+                for stmt in &block.stmts {
+                    self.emit_stmt(stmt);
+                }
+                self.writeln("break :blk {}; };");
+            }
+        }
     }
 
     pub(super) fn emit_class_init(
