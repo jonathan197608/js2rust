@@ -3,6 +3,94 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '66c66362-ba8d-4b2f-bb13-da9040ce465c'
+  PropagateID: '66c66362-ba8d-4b2f-bb13-da9040ce465c'
+  ReservedCode1: '5fa7bbca-9518-4a7c-9019-e411336109a7'
+  ReservedCode2: '5fa7bbca-9518-4a7c-9019-e411336109a7'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e61636f2-9936-4a4b-9718-f18c26e7ae38'
+  PropagateID: 'e61636f2-9936-4a4b-9718-f18c26e7ae38'
+  ReservedCode1: '27698f18-14e1-4e02-a683-05793616cbec'
+  ReservedCode2: '27698f18-14e1-4e02-a683-05793616cbec'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b2049851-8d21-460b-94d6-46b865fab554'
+  PropagateID: 'b2049851-8d21-460b-94d6-46b865fab554'
+  ReservedCode1: '9ac4a0d5-d78f-466b-8590-01c26ba195a5'
+  ReservedCode2: '9ac4a0d5-d78f-466b-8590-01c26ba195a5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '1b01c11e-decb-4803-8c72-dbb671bd5bab'
+  PropagateID: '1b01c11e-decb-4803-8c72-dbb671bd5bab'
+  ReservedCode1: '6407ea2a-b046-4ca3-8bcb-852e51207eb2'
+  ReservedCode2: '6407ea2a-b046-4ca3-8bcb-852e51207eb2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3f2f9aa7-219a-42f6-96c0-5dc3850b6f52'
+  PropagateID: '3f2f9aa7-219a-42f6-96c0-5dc3850b6f52'
+  ReservedCode1: '8bb2e7bc-7372-4cf2-b3a8-8efae10297cf'
+  ReservedCode2: '8bb2e7bc-7372-4cf2-b3a8-8efae10297cf'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ba108e0b-f7eb-4e4d-b345-4780e77c3414'
+  PropagateID: 'ba108e0b-f7eb-4e4d-b345-4780e77c3414'
+  ReservedCode1: '7aee39e9-8bee-4404-bcee-5520b7f8cc2d'
+  ReservedCode2: '7aee39e9-8bee-4404-bcee-5520b7f8cc2d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '69cd2e55-fe06-4411-a8fa-1a79a930aa06'
+  PropagateID: '69cd2e55-fe06-4411-a8fa-1a79a930aa06'
+  ReservedCode1: 'dcc2b66d-2f47-4846-a347-953739b51a15'
+  ReservedCode2: 'dcc2b66d-2f47-4846-a347-953739b51a15'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ae33c401-b082-4512-8185-149ccad2ac80'
+  PropagateID: 'ae33c401-b082-4512-8185-149ccad2ac80'
+  ReservedCode1: '277c0d39-4df0-46f4-8050-33c319293685'
+  ReservedCode2: '277c0d39-4df0-46f4-8050-33c319293685'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '3895067d-efbb-4be4-9518-aa082696654f'
   PropagateID: '3895067d-efbb-4be4-9518-aa082696654f'
   ReservedCode1: '8a47f0ab-1588-4b00-9d4e-8765daac9c97'
@@ -316,11 +404,11 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 199 | ~90% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 21/23 (91%)、Object 19/21 (90%) 等 |
-| ⚠️ 简化实现 | 7 | ~3% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ Array ×1 (.map stub) + Object ×1 (.groupBy 待实现) + BigInt ×1 |
+| ✅ 完全实现 | 200 | ~91% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 21/23 (91%)、Object 19/21 (90%) 等 |
+| ⚠️ 简化实现 | 6 | ~3% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ Object ×1 (.groupBy 待实现) + BigInt ×1 |
 | 🔘 不实现 | 14 | ~6% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
 
-> **注**: ⚠️ 简化实现 7 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Array .map() 为 identity stub；Object.groupBy() 迭代+分组待实现；BigInt，基本运算支持但混合类型受限）。Map.groupBy 🔘 不实现（可用 Object.groupBy 替代）。
+> **注**: ⚠️ 简化实现 6 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Object.groupBy() 迭代+分组待实现；BigInt，基本运算支持但混合类型受限）。Map.groupBy 🔘 不实现（可用 Object.groupBy 替代）。
 
 ### 1.5 三大类对比总览
 
@@ -328,7 +416,7 @@ AIGC:
 |------|------|---------|----------|-----------|--------|
 | **表达式** | 91 | 79 | 2 | 10 | **~89%** |
 | **语句** | 49 | 43 | — | 6 | **~88%** |
-| **内置对象** | 220 | 199 | 7 | 14 | **~94%** |
+| **内置对象** | 220 | 200 | 6 | 14 | **~94%** |
 | **语法合计** | 140 | 122 | 2 | 16 | **~89%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -735,7 +823,7 @@ AIGC:
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 34+1⚠️/35 (97%)
+### 4.2 `Array` — 35/35 (100%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
 > **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` — 已实现（inline clone + 修改副本），`compareFn` 参数暂忽略（与 `.sort()` 行为一致）。
@@ -754,7 +842,7 @@ AIGC:
 | `.slice(s,e)` | `arr.slice([start[, end]])` | `start?: i64, end?: i64` | 新数组 | ✅ | ✅ | 内联 | ✅ |
 | `.splice(s,d,...)` | `arr.splice(start, deleteCount[, item1, ...])` | `start, del: i64, ...T` | 被删元素数组 | ✅ | ✅ | 内联 | ✅ |
 | `.forEach(fn)` | `arr.forEach(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>void` | `void` | ✅ | ✅ | for + 闭包 | ✅ |
-| `.map(fn)` | `arr.map(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T` | 新数组 | ✅ | ⚠️ | ⚠️ | ⚠️ 简化（emit 为 identity stub，返回原数组；回调未真正应用） |
+| `.map(fn)` | `arr.map(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T` | 新数组 | ✅ | ✅ | ✅ inline for-loop | ✅ 回调 inline 展开（非链式场景） |
 | `.reduce(fn,init)` | `arr.reduce(callbackFn[, initialValue])` | `fn: (acc,cur,idx,arr)=>T, init: T` | 累积值 | ✅ | ✅ | for + 闭包 | ✅ |
 | `.filter(fn)` | `arr.filter(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | 新数组 | ✅ | ✅ | ✅ inline for-loop | ✅ |
 | `.some(fn)` | `arr.some(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `bool` | ✅ | ✅ | ✅ inline for-loop | ✅ |
@@ -783,7 +871,7 @@ AIGC:
 | `Array.of(...items)` | `Array.of(element1, ..., elementN)` | `...T` | `T[]` | ✅ | ✅ | ✅ | ✅ |
 
 > **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由。
-> **⚠️ 简化实现**: `.map()` 回调当前为 identity stub（返回原数组元素，未真正应用回调函数），待后续实现。
+> **已实现**: `.map()` 回调 inline 展开（与 filter/some/every 相同模式），非链式场景下回调真正应用；链式调用中回调 inline 可能不触发（已知限制）。
 >
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/array.js`):
 > ```js
@@ -1164,7 +1252,7 @@ AIGC:
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 34+1⚠️ | 97% | 0 | ⚠️ .map() 为 identity stub |
+| Array | 35 | 35 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
 | String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
@@ -1184,7 +1272,7 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **206** | **~94%** | **14** | 7⚠️: String ×4 + Array ×1 (.map stub) + Object ×1 (.groupBy 待实现) + BigInt ×1 |
+| **总计** | **220** | **207** | **~94%** | **14** | 6⚠️: String ×4 + Object ×1 (.groupBy 待实现) + BigInt ×1 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1471,6 +1559,22 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

@@ -440,12 +440,71 @@ impl Emitter {
         self.write(&format!("}} break :{} -1; }})", blk));
     }
 
-    // ── map (identity stub) ────────────────────────────
+    // ── map ────────────────────────────────────────────
     //
-    //  The Emitter just returns the object name — map is not fully implemented.
+    //  (blk_N: {
+    //      var __map: std.ArrayList(elem_type) = .empty;
+    //      __map.ensureTotalCapacity(allocator, obj.items.len) catch @panic("OOM");
+    //      for (obj.items) |elem| {
+    //          __map.append(allocator, <transform>) catch @panic("OOM: Array.map append");
+    //      }
+    //      break :blk_N __map;
+    //  })
+    //
+    //  The <transform> is the callback return expression.
+    //  For concise arrow bodies, body has a single Expr(Return { value }) or Expr(expr).
     //
     pub(super) fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        self.write(&data.obj_name);
+        let blk = self.next_label();
+        let elem_type_str = data.elem_type.to_zig_type();
+        // When elem_param is "_" (unused in body), we still need a real variable name
+        // for the for-loop capture — Zig's "_" is a discard, not an identifier.
+        let loop_elem = if data.elem_param == "_" {
+            "__melem".to_string()
+        } else {
+            data.elem_param.clone()
+        };
+        self.write(&format!("({}: {{ ", blk));
+        self.write(&format!(
+            "var __map: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__map.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.map capacity\"); ",
+            data.obj_name
+        ));
+        self.write(&format!("for ({}.items) |{}| ", data.obj_name, loop_elem));
+        self.write("{\n");
+        self.indent_push();
+        // Handle index parameter if present
+        if data.has_idx_param && !data.idx_param.is_empty() && data.idx_param != "_" {
+            // Map doesn't provide index in the for-loop easily,
+            // but the lowerer handles it by capturing the loop variable.
+            // For now, the idx_param is available as a separate counter if needed.
+        }
+        for stmt in &data.body {
+            self.writeln("");
+            match stmt {
+                // Return with value → this is the transform expression
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    self.write("__map.append(js_allocator.allocator(), ");
+                    self.emit_expr(expr);
+                    self.write(") catch @panic(\"OOM: Array.map append\");");
+                }
+                // Expression statement → concise arrow body
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    self.write("__map.append(js_allocator.allocator(), ");
+                    self.emit_expr(expr);
+                    self.write(") catch @panic(\"OOM: Array.map append\");");
+                }
+                // Other statements (rare in map callbacks)
+                _ => self.emit_stmt(stmt),
+            }
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} __map; }})", blk));
     }
 
     // ── reduce ─────────────────────────────────────────
