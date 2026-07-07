@@ -304,6 +304,16 @@ fn eliminate_unreachable_in_decl(decl: &mut IrDecl) -> bool {
                     changed = true;
                 }
             }
+            for (_name, init) in &mut c.static_inits {
+                if eliminate_unreachable_in_expr(init) {
+                    changed = true;
+                }
+            }
+            for block in &mut c.static_blocks {
+                if DeadCodeElimPass::eliminate_unreachable_in_block(block) {
+                    changed = true;
+                }
+            }
             changed
         }
         IrDecl::CompileError { .. } => false,
@@ -610,6 +620,9 @@ fn collect_decl_refs(decl: &IrDecl, refs: &mut std::collections::HashSet<String>
             }
             for (_name, init) in &c.static_inits {
                 collect_expr_refs(init, refs);
+            }
+            for block in &c.static_blocks {
+                collect_block_refs(block, refs);
             }
         }
         IrDecl::CompileError { .. } => {}

@@ -372,6 +372,11 @@ impl IrPass for ConstantFoldPass {
                             changed = true;
                         }
                     }
+                    for block in &mut c.static_blocks {
+                        if Self::fold_block(block) {
+                            changed = true;
+                        }
+                    }
                 }
                 crate::zigir::types::IrDecl::CompileError { .. } => {}
             }
