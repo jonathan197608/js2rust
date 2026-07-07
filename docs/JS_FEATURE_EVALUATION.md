@@ -3,6 +3,149 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'a6eb0b2a-1e2d-4434-9ced-8ba7241e5bd8'
+  PropagateID: 'a6eb0b2a-1e2d-4434-9ced-8ba7241e5bd8'
+  ReservedCode1: 'ec80b515-2be5-4404-b8fe-a7ea2e546c3d'
+  ReservedCode2: 'ec80b515-2be5-4404-b8fe-a7ea2e546c3d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3a3bf82a-0809-449b-803a-417a07d95348'
+  PropagateID: '3a3bf82a-0809-449b-803a-417a07d95348'
+  ReservedCode1: 'bafc5d85-fef8-4b45-a7c4-0f3aad139366'
+  ReservedCode2: 'bafc5d85-fef8-4b45-a7c4-0f3aad139366'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e42cb667-0f43-4f1e-959d-8a172331cd47'
+  PropagateID: 'e42cb667-0f43-4f1e-959d-8a172331cd47'
+  ReservedCode1: 'acada68b-d518-44ce-b400-732f552dff9b'
+  ReservedCode2: 'acada68b-d518-44ce-b400-732f552dff9b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '91f58a88-0402-4d81-8892-1a6883b12154'
+  PropagateID: '91f58a88-0402-4d81-8892-1a6883b12154'
+  ReservedCode1: 'aa53d3b0-9680-4f6a-9d3d-0b8f77fbe707'
+  ReservedCode2: 'aa53d3b0-9680-4f6a-9d3d-0b8f77fbe707'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '38b55cc0-6279-49da-a993-aa45020f3e4a'
+  PropagateID: '38b55cc0-6279-49da-a993-aa45020f3e4a'
+  ReservedCode1: '0fb8dad8-87de-45ef-9e35-56c3acc41f7e'
+  ReservedCode2: '0fb8dad8-87de-45ef-9e35-56c3acc41f7e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '4c298ed1-ce28-48d4-ab55-b38f9febea51'
+  PropagateID: '4c298ed1-ce28-48d4-ab55-b38f9febea51'
+  ReservedCode1: '4a266aef-a249-4138-82f6-98d2b84800a1'
+  ReservedCode2: '4a266aef-a249-4138-82f6-98d2b84800a1'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '2d79a7c6-6eef-453d-af2c-9bd12fa45946'
+  PropagateID: '2d79a7c6-6eef-453d-af2c-9bd12fa45946'
+  ReservedCode1: '49f64f94-fc1c-421a-9928-326c850b7d05'
+  ReservedCode2: '49f64f94-fc1c-421a-9928-326c850b7d05'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c3fcedd5-9e29-4cc3-a348-9fbd8b9518b9'
+  PropagateID: 'c3fcedd5-9e29-4cc3-a348-9fbd8b9518b9'
+  ReservedCode1: 'cf98cfd3-5095-4bfa-8421-fab310780ab0'
+  ReservedCode2: 'cf98cfd3-5095-4bfa-8421-fab310780ab0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '737b1cdb-6f17-4e85-ba75-329332c04f57'
+  PropagateID: '737b1cdb-6f17-4e85-ba75-329332c04f57'
+  ReservedCode1: '777998a4-6479-42c8-904e-a30db78cf77d'
+  ReservedCode2: '777998a4-6479-42c8-904e-a30db78cf77d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd5056ce2-5f2e-457c-a367-cea5f9414be3'
+  PropagateID: 'd5056ce2-5f2e-457c-a367-cea5f9414be3'
+  ReservedCode1: '437ec626-57b3-47a3-ba03-8049681bb753'
+  ReservedCode2: '437ec626-57b3-47a3-ba03-8049681bb753'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'cca41905-ac87-4429-9f65-cedb899e0fe4'
+  PropagateID: 'cca41905-ac87-4429-9f65-cedb899e0fe4'
+  ReservedCode1: 'aa7b50b9-6d65-424f-b7f3-32d51a72347e'
+  ReservedCode2: 'aa7b50b9-6d65-424f-b7f3-32d51a72347e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '50abf55c-480a-40c9-9bea-f5247f3e0bf4'
+  PropagateID: '50abf55c-480a-40c9-9bea-f5247f3e0bf4'
+  ReservedCode1: '96466793-c09a-403f-96c0-7a2f3bc1b332'
+  ReservedCode2: '96466793-c09a-403f-96c0-7a2f3bc1b332'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '351bb128-6560-4080-98cc-d165b94cd2fb'
+  PropagateID: '351bb128-6560-4080-98cc-d165b94cd2fb'
+  ReservedCode1: 'd91b08a0-4c89-4a76-8fae-a6c507d6c2af'
+  ReservedCode2: 'd91b08a0-4c89-4a76-8fae-a6c507d6c2af'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'ce8b16a8-ef1e-4951-952c-29ec2acd81c1'
   PropagateID: 'ce8b16a8-ef1e-4951-952c-29ec2acd81c1'
   ReservedCode1: 'ffc9b5da-d8ce-4595-91f3-5892be8c0283'
@@ -133,8 +276,8 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | 79 | ~87% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc 等 |
-| ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
-| 🔘 不实现 | 11 | ~12% | 标签模板、`new Promise`、类表达式、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
+| ⚠️ 简化实现 | 2 | ~2% | BigInt 字面量（基本运算支持，混合类型受限）、类表达式（降维逻辑待实现） |
+| 🔘 不实现 | 10 | ~11% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
 
@@ -151,20 +294,20 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 197 | ~90% | Math 39/39 (100%)、Array 32/35 (91%)、Number 17/17 (100%)、Date 21/23 (91%)、Object 19/21 (90%) 等 |
-| ⚠️ 简化实现 | 6 | ~3% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ Array ×1 (.map stub) + BigInt ×1 |
-| 🔘 不实现 | 17 | ~8% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
+| ✅ 完全实现 | 199 | ~90% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 21/23 (91%)、Object 19/21 (90%) 等 |
+| ⚠️ 简化实现 | 7 | ~3% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ Array ×1 (.map stub) + Object ×1 (.groupBy 待实现) + BigInt ×1 |
+| 🔘 不实现 | 14 | ~6% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
 
-> **注**: ⚠️ 简化实现 6 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Array .map() 为 identity stub；BigInt，基本运算支持但混合类型受限）。Map.groupBy/Object.groupBy 🔘 不实现（应用层逻辑）。
+> **注**: ⚠️ 简化实现 7 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Array .map() 为 identity stub；Object.groupBy() 迭代+分组待实现；BigInt，基本运算支持但混合类型受限）。Map.groupBy 🔘 不实现（可用 Object.groupBy 替代）。
 
 ### 1.5 三大类对比总览
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
-| **表达式** | 91 | 79 | 1 | 11 | **~87%** |
+| **表达式** | 91 | 79 | 2 | 10 | **~89%** |
 | **语句** | 49 | 43 | — | 6 | **~88%** |
-| **内置对象** | 220 | 197 | 6 | 17 | **~90%** |
-| **语法合计** | 140 | 122 | 1 | 17 | **~87%** |
+| **内置对象** | 220 | 199 | 7 | 14 | **~94%** |
+| **语法合计** | 140 | 122 | 2 | 16 | **~89%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -366,7 +509,7 @@ AIGC:
 
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
-| 类表达式 `const X = class {}` | `Unsupported NewExpression` | 🔘 不实现（很少使用，可用 `class X {}` 替代） |
+| 类表达式 `const X = class {}` | 当前 CompileError | ⚠️ 简化实现（降维逻辑与 ClassDeclaration 相同，待实现；当前可用 `class X {}` 声明替代） |
 | `function*` (生成器函数) | `Unsupported expression type: Function` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
 | `yield` / `yield*` (生成器) | `Unsupported expression type` | 🔘 不实现（随 `function*` 一同不实现） |
 | `async function*` (异步生成器) | 未测试 | 🔘 不实现（niche 场景） |
@@ -570,10 +713,10 @@ AIGC:
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 32+1⚠️/35 (91%)
+### 4.2 `Array` — 34+1⚠️/35 (97%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
-> **不实现**: `.with()` / `.toReversed()/.toSorted()/.toSpliced()` 等 ES2023 不可变方法（有可变版本替代）。
+> **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` 标记为「待实现」— 基于 clone + 可变版本实现，工作量小。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -608,8 +751,10 @@ AIGC:
 | `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ |
 | `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ |
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ |
-| `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
-| `.toReversed/Sorted/Spliced()` | 不可变版本 (ES2023) | — | 新数组 | 🔘 | 🔘 | 🔘 | 🔘 不实现（有可变版本替代） |
+| `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | ✅ | ✅ | ✅ | ✅ clone + 单元素替换 |
+| `.toReversed()` | `arr.toReversed()` (ES2023) | — | 新数组 | ✅ | ✅ | ✅ | ✅ clone + reverse |
+| `.toSorted(fn?)` | `arr.toSorted(compareFn)` (ES2023) | `fn?: (a,b)=>number` | 新数组 | ✅ | ✅ | ✅ | ✅ clone + sort |
+| `.toSpliced(s,d,...)` | `arr.toSpliced(start, deleteCount, ...items)` (ES2023) | `start, del, ...T` | 新数组 | ✅ | ✅ | ✅ | ✅ clone + splice |
 | **— 静态方法 —** | | | | | | | |
 | `Array.isArray(val)` | `Array.isArray(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ | ✅ |
 | `Array.from(arrayLike)` | `Array.from(arrayLike[, mapFn])` | `arrayLike, mapFn?` | `T[]` | ✅ | ✅ | ✅ | ✅ |
@@ -745,7 +890,7 @@ AIGC:
 > s.add(1).add(2).add(3);  // chaining
 > ```
 
-### 4.6 `Object` — 19/21 (90%)
+### 4.6 `Object` — 19+1⚠️/21 (95%)
 
 > **Runtime 文件**: `runtime/js_object.zig`
 > **注意**: `Object.keys()` 对 Zig struct 类型使用 `keysStruct()` comptime 反射（自动路由），对 HashMap 使用 `keys()` 运行时函数。
@@ -776,7 +921,7 @@ AIGC:
 | **— 创建/转换 (2) —** | | | | | | | |
 | `Object.create(proto)` | `Object.create(proto)` | `proto` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ |
-| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
+| `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | ⚠️ | ⚠️ | ⚠️ | ⚠️ 简化实现（迭代+HashMap 分组，待实现；State of JS 2024 #1 Object 特性） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/object.js`):
 > ```js
@@ -997,12 +1142,12 @@ AIGC:
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 32+1⚠️ | 94% | 2 | ⚠️ .map() 为 identity stub；ES2023 不可变方法不实现 |
+| Array | 35 | 34+1⚠️ | 97% | 0 | ⚠️ .map() 为 identity stub |
 | String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
 | Date | 23 | 21 | 91% | 2 | setTime/toUTCString 不实现 |
-| Object | 21 | 19 | 90% | 2 | groupBy 🔘 不实现，getOwnPropertySymbols 不实现 |
+| Object | 21 | 19+1⚠️ | 95% | 1 | ⚠️ groupBy 待实现；getOwnPropertySymbols 🔘 不实现 |
 | JSON | 2 | 2 | 100% | — | ✅ |
 | Global | 9 | 8 | 89% | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | ✅ |
@@ -1017,12 +1162,12 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **203** | **~92%** | **17** | 6⚠️: String ×4 + Array ×1 (.map stub) + BigInt ×1 |
+| **总计** | **220** | **206** | **~94%** | **14** | 7⚠️: String ×4 + Array ×1 (.map stub) + Object ×1 (.groupBy 待实现) + BigInt ×1 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt 基本运算支持但混合类型受限）
-> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、ES2023+ 不可变方法、WeakMap/Reflect/Intl、Map.groupBy/Object.groupBy）
+> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；Object.groupBy 迭代+分组待实现；BigInt 基本运算支持但混合类型受限）
+> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy）
 
 ---
 
@@ -1304,6 +1449,32 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `test_expressions_frag_109` | CRASH | BigInt `2n/0n` 未捕获 RangeError | ACCEPTABLE |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 
