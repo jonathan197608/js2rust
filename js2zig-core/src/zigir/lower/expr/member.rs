@@ -488,7 +488,22 @@ impl Lowerer {
                 None
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
-                // If the object is a known type, try to infer the field type
+                // Try to infer the field type for static class fields.
+                // For `ClassName.field`, look up `__ClassName_field` in var_types.
+                if let oxc_ast::ast::Expression::Identifier(id) = &mem.object {
+                    let obj_name = id.name.as_str();
+                    let field_name = mem.property.name.as_str();
+                    // Check if this is a known static field
+                    if let Some(static_fields) = self.class_static_fields.get(obj_name)
+                        && static_fields.contains(field_name)
+                    {
+                        let var_key = format!("__{}_{}", obj_name, field_name);
+                        if let Some(ty) = self.type_info.var_types.get(&var_key) {
+                            return Some(ty.clone());
+                        }
+                    }
+                }
+                // Fallback: return the object's type
                 self.infer_expr_type(&mem.object)
             }
             _ => None,

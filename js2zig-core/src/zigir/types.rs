@@ -233,9 +233,9 @@ pub struct IrClassDecl {
     pub fields: Vec<IrClassField>,
     pub constructor: Option<IrClassMethod>,
     pub methods: Vec<IrClassMethod>,
-    /// Static field initializers: (field_name, initializer_expr).
-    /// Emitted as module-scope `var __ClassName_field = value;` after struct definition.
-    pub static_inits: Vec<(String, IrExpr)>,
+    /// Static field initializers: (field_name, initializer_expr, zig_type).
+    /// Emitted as module-scope `var __ClassName_field: zig_type = value;` after struct definition.
+    pub static_inits: Vec<(String, IrExpr, ZigType)>,
     /// Static initialization blocks (`static { ... }`) lowered as IrBlock.
     /// Emitted after struct definition, before top-level code.
     pub static_blocks: Vec<IrBlock>,

@@ -267,8 +267,8 @@ fn main() {
     println!("  testUserNameLength() = {} (expected 1)", unl);
 
     // ════════════════════════════════════════════════════════════
-    // Static field tests (static block runtime needs bridge init mechanism)
-    println!("\n=== Static Field Tests ===");
+    // Static field + static block tests
+    println!("\n=== Static Field & Block Tests ===");
 
     let sfr = testStaticFieldRead_app();
     println!("  testStaticFieldRead() = {} (expected 0)", sfr);
@@ -281,6 +281,12 @@ fn main() {
 
     let sfsg = testStaticFieldSetThenGet_app();
     println!("  testStaticFieldSetThenGet() = {} (expected 42)", sfsg);
+
+    let sbi = testStaticBlockInit_app();
+    println!("  testStaticBlockInit() = {} (expected 0)", sbi);
+
+    let sbt = testStaticBlockThis_app();
+    println!("  testStaticBlockThis() = {} (expected 0)", sbt);
 
     // ════════════════════════════════════════════════════════════
     // Dynamic array/string index tests

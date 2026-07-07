@@ -1,7 +1,6 @@
-// test_static_fields.js — Static field read/write tests
-// Covers: ClassName.field read, ClassName.field = value write, computed values
-// Note: static {} block runtime execution is validated in unit tests (ast-check);
-// runtime execution requires an init-function mechanism not yet in the bridge layer.
+// test_static_fields.js — Static field read/write + static {} block tests
+// Covers: ClassName.field read, ClassName.field = value write, computed values,
+//         static {} block execution at runtime (via init_js2rust mechanism)
 
 // ── Counter: static field read + write ────────────────────────
 
@@ -44,4 +43,34 @@ class State {
 export function testStaticFieldSetThenGet() {
     State.value = 42;
     return State.value;
+}
+
+// ── Static block: runtime execution test ──────────────────────
+
+class Config {
+    static timeout = 0;
+    static {
+        Config.timeout = 5000;
+    }
+}
+
+/** @returns {i64} */
+export function testStaticBlockInit() {
+    if (Config.timeout === 5000) { return 0; }
+    return -1;
+}
+
+// ── Static block: `this` reference ────────────────────────────
+
+class Registry {
+    static entries = 0;
+    static {
+        this.entries = 100;
+    }
+}
+
+/** @returns {i64} */
+export function testStaticBlockThis() {
+    if (Registry.entries === 100) { return 0; }
+    return -1;
 }

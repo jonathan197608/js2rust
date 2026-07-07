@@ -1584,3 +1584,41 @@ fn test_labeled_statement() {
     assert!(zig.contains("outer:"), "Expected labeled statement");
     assert!(zig.contains("break :outer"), "Expected break with label");
 }
+
+// ── BigInt compound assignment on static class field ──────────
+
+/// BigInt compound assignment on a static class field (e.g. `Counter.total += n`)
+/// should be expanded to `Counter.total = Counter.total.add(n)` rather than
+/// emitting invalid Zig `+=`.
+#[test]
+fn test_bigint_static_field_compound_assign() {
+    let js = r#"
+class Counter {
+    /** @type {bigint} */
+    static total = 0n;
+}
+
+/**
+ * @param {bigint} n
+ * @returns {bigint}
+ */
+export function add(n) {
+    Counter.total += n;
+    return Counter.total;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_bigint_static_field_compound");
+    println!("=== BigInt static field compound assign ===\n{}", zig);
+
+    // Should NOT use += for BigInt; should expand to .add() method call
+    assert!(
+        !zig.contains("total +="),
+        "BigInt static field compound assignment should not use Zig +=:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".add("),
+        "BigInt static field compound assignment should use .add() method:\n{}",
+        zig
+    );
+}

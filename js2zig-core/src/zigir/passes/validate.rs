@@ -160,7 +160,7 @@ impl ValidatePass {
                 for m in &c.methods {
                     self.check_closure_refs_in_block(&m.body);
                 }
-                for (_name, init) in &c.static_inits {
+                for (_name, init, _ty) in &c.static_inits {
                     self.check_closure_refs_in_expr(init);
                 }
                 for block in &c.static_blocks {

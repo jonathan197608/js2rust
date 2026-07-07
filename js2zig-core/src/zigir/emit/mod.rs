@@ -35,8 +35,12 @@ pub struct Emitter {
     try_label_counter: u32,
     /// Counter for generating unique block labels (for array literal labeled blocks).
     label_counter: u32,
-    /// Counter for generating unique static init/block names (_static_init_N).
-    static_init_counter: u32,
+    /// Buffer for static block init code. When non-empty, `emit_module_inner`
+    /// generates a `pub fn init_js2rust() !void { ... }` at the end of the
+    /// module so the orchestrator's `init_js2rust()` will call it, ensuring
+    /// static blocks execute at runtime (Zig's lazy analysis would otherwise
+    /// skip unreferenced top-level `const` declarations).
+    static_init_buffer: String,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -70,7 +74,7 @@ impl Emitter {
             inside_try_block: None,
             try_label_counter: 0,
             label_counter: 0,
-            static_init_counter: 0,
+            static_init_buffer: String::new(),
         }
     }
 
@@ -104,6 +108,19 @@ impl Emitter {
         // 3. Emit top-level declarations (functions, variables, classes).
         for decl in &module.declarations {
             self.emit_decl(decl);
+        }
+
+        // 4. If any class had static {} blocks, generate init_js2rust()
+        //    so the orchestrator calls it from root init_js2rust().
+        //    This ensures static blocks execute at runtime rather than being
+        //    skipped by Zig's lazy analysis of unreferenced top-level `const`.
+        if !self.static_init_buffer.is_empty() {
+            self.writeln("pub fn init_js2rust() !void {");
+            self.indent_push();
+            let buf = std::mem::take(&mut self.static_init_buffer);
+            self.write(&buf);
+            self.indent_pop();
+            self.writeln("}");
         }
     }
 

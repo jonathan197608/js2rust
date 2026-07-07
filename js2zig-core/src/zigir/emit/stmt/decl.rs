@@ -249,34 +249,31 @@ impl Emitter {
 
         // Static field initializers — emitted as module-scope `var` declarations.
         // e.g. `static x = 1` → `var __ClassName_x: i64 = 1;`
-        for (field_name, init_expr) in &class.static_inits {
+        for (field_name, init_expr, field_ty) in &class.static_inits {
             let var_name = format!("__{}_{}", class_name, field_name);
             self.write(&format!("var {}: ", var_name));
-            // Type: infer from expr or default to i64
-            self.write("i64 = ");
+            self.write(&format!("{} = ", field_ty.to_zig_type()));
             self.emit_expr(init_expr);
             self.writeln(";");
         }
 
-        // Static initialization blocks — emitted as top-level code after struct definition.
-        // Each `static { ... }` block is wrapped in a const declaration so it's valid
-        // Zig at module scope: `const _static_init_N: void = blk: { ... break :blk {}; };`
-        // Unique naming avoids Zig "duplicate struct member name '_'" when multiple
-        // classes have static blocks. Note: Zig's lazy analysis may skip evaluation of
-        // these declarations if nothing references them. For runtime correctness, a
-        // future change should emit init functions called from js2rust_init().
-        let base_counter = self.static_init_counter;
-        for (counter, block) in class.static_blocks.iter().enumerate() {
+        // Static initialization blocks — collected into `static_init_buffer`.
+        // When any class has static blocks, the module-level `init_js2rust()`
+        // function is generated, which the orchestrator's root `init_js2rust()`
+        // auto-discovers and calls. This ensures static blocks execute at runtime
+        // (Zig's lazy analysis would otherwise skip unreferenced top-level `const`).
+        for block in &class.static_blocks {
             if !block.stmts.is_empty() {
-                let name = format!("_static_init_{}", base_counter + counter as u32);
-                self.write(&format!("const {}: void = blk: {{ ", name));
+                // Temporarily swap output to static_init_buffer so statements go there
+                let saved = std::mem::take(&mut self.output);
+                self.output = std::mem::take(&mut self.static_init_buffer);
                 for stmt in &block.stmts {
                     self.emit_stmt(stmt);
                 }
-                self.writeln("break :blk {}; };");
+                self.static_init_buffer = std::mem::take(&mut self.output);
+                self.output = saved;
             }
         }
-        self.static_init_counter = base_counter + class.static_blocks.len() as u32;
     }
 
     pub(super) fn emit_class_init(

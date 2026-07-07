@@ -466,7 +466,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     // Also call init_js2rust on each per-file module that defines its own
     for module in &opts.per_file_code {
         if module.zig_code.contains("pub fn init_js2rust") {
-            out.push_str(&format!("    _{}.init_js2rust();\n", module.mod_name));
+            out.push_str(&format!("    try _{}.init_js2rust();\n", module.mod_name));
         }
     }
     out.push_str("}\n\n");

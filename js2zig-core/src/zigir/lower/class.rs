@@ -66,7 +66,8 @@ impl Lowerer {
         // ── First pass: collect explicit fields from PropertyDefinition ──
         let mut field_names: Vec<String> = Vec::new();
         let mut fields: Vec<IrClassField> = Vec::new();
-        let mut static_inits: Vec<(String, crate::zigir::types::IrExpr)> = Vec::new();
+        let mut static_inits: Vec<(String, crate::zigir::types::IrExpr, crate::types::ZigType)> =
+            Vec::new();
         let mut static_blocks: Vec<crate::zigir::types::IrBlock> = Vec::new();
         let mut has_constructor = false;
         let mut constructor_func: Option<&Function> = None;
@@ -81,7 +82,17 @@ impl Lowerer {
                     if let Some(name) = Self::property_key_name(&pd.key) {
                         if is_static {
                             if let Some(value) = &pd.value {
-                                static_inits.push((name.clone(), self.lower_expr(value)));
+                                let field_ty = self
+                                    .type_info
+                                    .class_field_types
+                                    .get(&class_name)
+                                    .and_then(|m| m.get(&name))
+                                    .cloned()
+                                    .unwrap_or(ZigType::I64);
+                                // Register static field type in var_types for Member target type inference
+                                let var_key = format!("__{}_{}", class_name, name);
+                                self.type_info.var_types.insert(var_key, field_ty.clone());
+                                static_inits.push((name.clone(), self.lower_expr(value), field_ty));
                             }
                         } else if !field_names.contains(&name) {
                             let field_ty = self

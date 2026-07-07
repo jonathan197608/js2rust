@@ -374,9 +374,23 @@ impl Lowerer {
                 let target = self.lower_assign_target(&ae.left);
                 let value = Box::new(self.lower_expr(&ae.right));
                 // Build the read-side expression for the target.
-                // Only Ident targets are supported for now; other targets
-                // (member, index) fall through to the default path.
-                if let crate::zigir::types::IrAssignTarget::Ident(name) = &target {
+                let read_expr = match &target {
+                    crate::zigir::types::IrAssignTarget::Ident(name) => {
+                        Some(IrExpr::Ident(name.clone()))
+                    }
+                    crate::zigir::types::IrAssignTarget::Member {
+                        object,
+                        field,
+                        field_kind,
+                        ..
+                    } => Some(IrExpr::FieldAccess {
+                        object: object.clone(),
+                        field: field.clone(),
+                        field_kind: field_kind.clone(),
+                    }),
+                    _ => None,
+                };
+                if let Some(read) = read_expr {
                     let bin_op = match ae.operator {
                         AssignmentOperator::Addition => BinOp::Add,
                         AssignmentOperator::Subtraction => BinOp::Sub,
@@ -391,21 +405,20 @@ impl Lowerer {
                         AssignmentOperator::BitwiseXOR => BinOp::BitXor,
                         _ => BinOp::Add, // fallback, shouldn't reach here
                     };
-                    let name_clone = name.clone();
                     return IrExpr::Assign {
                         op: AssignOp::Assign,
                         target: Box::new(target),
                         value: Box::new(IrExpr::Binary {
                             op: bin_op,
-                            left: Box::new(IrExpr::Ident(name_clone)),
+                            left: Box::new(read),
                             right: value,
                             left_type: Some(ZigType::BigInt),
                             right_type: Some(ZigType::BigInt),
                         }),
                     };
                 }
-                // For non-Ident BigInt targets, fall through to default path
-                // (may produce invalid Zig but handles the common case first)
+                // For unsupported BigInt targets (index, destructure), fall through
+                // to default path (may produce invalid Zig but handles common cases)
             }
         }
 

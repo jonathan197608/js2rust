@@ -304,7 +304,7 @@ fn eliminate_unreachable_in_decl(decl: &mut IrDecl) -> bool {
                     changed = true;
                 }
             }
-            for (_name, init) in &mut c.static_inits {
+            for (_name, init, _ty) in &mut c.static_inits {
                 if eliminate_unreachable_in_expr(init) {
                     changed = true;
                 }
@@ -618,7 +618,7 @@ fn collect_decl_refs(decl: &IrDecl, refs: &mut std::collections::HashSet<String>
             for m in &c.methods {
                 collect_block_refs(&m.body, refs);
             }
-            for (_name, init) in &c.static_inits {
+            for (_name, init, _ty) in &c.static_inits {
                 collect_expr_refs(init, refs);
             }
             for block in &c.static_blocks {
