@@ -757,8 +757,15 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         // === Zig tests ===
         // Skip zig test when host functions are present — they require Rust-side
         // symbol resolution and cannot be linked by zig test standalone.
+        // Check both: (1) registered host_fns from toml, and (2) host.zig with
+        // extern declarations (auto-injected for regex etc.).
+        let has_host_zig = project_path.join("src").join("host.zig").exists();
+        let has_host_deps = !host_fns.is_empty() || has_host_zig;
         let mut test_ok = false;
-        if host_fns.is_empty() {
+        if has_host_deps {
+            println!("  zig test: SKIPPED (project has host function dependencies)");
+            test_ok = true; // don't block cache update
+        } else {
             let test_result = Command::new("zig")
                 .arg("build")
                 .arg("test")
@@ -775,9 +782,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
                 Err(_) => {}
             }
-        } else {
-            println!("  zig test: SKIPPED (project has host functions)");
-            test_ok = true; // don't block cache update
         }
 
         // === Update build cache on success ===
