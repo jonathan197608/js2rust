@@ -220,6 +220,7 @@ mod tests {
             init: Some(crate::zigir::types::IrExpr::IntLiteral(42)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
         let output = Emitter::emit_module(&module);
         assert!(output.contains("const x = 42"));

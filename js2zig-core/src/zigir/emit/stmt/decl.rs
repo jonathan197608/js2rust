@@ -146,6 +146,13 @@ impl Emitter {
             self.write_indent();
             self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
         }
+
+        // Const usage suppression for JS-const variables whose reassignment is
+        // replaced by a throw — the variable may not be read afterward.
+        if vd.needs_const_suppression {
+            self.write_indent();
+            self.write(&format!("_ = &{}; // const usage\n", vd.name.zig_name));
+        }
     }
 
     pub(crate) fn emit_fn_decl(&mut self, fd: &IrFnDecl) {

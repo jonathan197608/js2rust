@@ -104,23 +104,24 @@ impl Emitter {
                 );
             }
 
-            IrStmt::Throw { value } => {
+            IrStmt::Throw { value, error_name } => {
                 // Evaluate throw value for side effects, then break/return error.
                 self.write_indent();
                 self.write("_ = ");
                 self.emit_expr(value);
                 self.write(";\n");
 
+                let err = error_name.as_deref().unwrap_or("JsThrow");
                 let try_label = self.inside_try_block.clone();
                 if let Some(label) = try_label {
                     // Inside try block: break to the labeled block with error
                     self.writeln(&format!(
-                        "break :{} @as(anyerror!void, error.JsThrow);",
-                        label,
+                        "break :{} @as(anyerror!void, error.{});",
+                        label, err,
                     ));
                 } else {
                     // Outside try block: return error from function
-                    self.writeln("return error.JsThrow;");
+                    self.writeln(&format!("return error.{};", err));
                 }
             }
 

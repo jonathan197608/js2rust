@@ -3,6 +3,50 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'fb5a0a7c-ba99-4bc7-978e-1dfbca9edab7'
+  PropagateID: 'fb5a0a7c-ba99-4bc7-978e-1dfbca9edab7'
+  ReservedCode1: 'c207828b-5e38-4a29-b88e-8bc919eeb7ca'
+  ReservedCode2: 'c207828b-5e38-4a29-b88e-8bc919eeb7ca'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '58a497bf-229f-48a1-8146-136464a123ee'
+  PropagateID: '58a497bf-229f-48a1-8146-136464a123ee'
+  ReservedCode1: '039acd41-52f8-4ba3-866a-ecca33e84f89'
+  ReservedCode2: '039acd41-52f8-4ba3-866a-ecca33e84f89'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '14671730-3032-4389-991e-da59240a9561'
+  PropagateID: '14671730-3032-4389-991e-da59240a9561'
+  ReservedCode1: 'e46f57ff-e346-43bd-b54b-fb18393d7acf'
+  ReservedCode2: 'e46f57ff-e346-43bd-b54b-fb18393d7acf'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '0a15c346-661d-402c-8829-6db0afb8cf45'
+  PropagateID: '0a15c346-661d-402c-8829-6db0afb8cf45'
+  ReservedCode1: 'db713dbd-2ba5-4a7c-885b-a0baeea69fae'
+  ReservedCode2: 'db713dbd-2ba5-4a7c-885b-a0baeea69fae'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '8b2a64ec-13b7-4501-b4da-b83892980680'
   PropagateID: '8b2a64ec-13b7-4501-b4da-b83892980680'
   ReservedCode1: 'c6629780-2c60-4264-a5ed-de948e2cf1cc'
@@ -235,8 +279,8 @@ AIGC:
 
 - Rust 单元测试：**469 passed, 0 failed**（351 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
 - Clippy：**0 warnings**
-- MDN 端到端：**201 match / 3 mismatch / 0 error**（匹配率 98.5%，204 total）
-- 3 个 mismatch 均为已知限制，详见下方表格
+- MDN 端到端：**202 match / 2 mismatch / 0 error**（匹配率 99.0%，204 total）
+- 2 个 mismatch 均为已知限制，详见下方表格
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 
 ---
@@ -508,7 +552,6 @@ cargo run -- --all
 
 | Fragment | 类型 | 问题 | 优先级 | 说明 |
 |----------|------|------|--------|------|
-| `test_statements_frag_11` | MISMATCH | const 重新赋值未报错 | WONTFIX | Zig 无法在运行时检测 const 重赋值 |
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | i64 无法表示 `-0` |
 | `test_builtins_frag_202` | MISMATCH | stack trace 格式差异 | WONTFIX | Zig stack trace 格式不同于 Node.js |
 
@@ -614,18 +657,17 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 | `cargo test -p js2zig-core --lib` | 469 passed, 0 failed | 469 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
-| MDN match 数 | >= 201（不低于基线） | 201 |
-| MDN mismatch 数 | <= 3（不增加已知 mismatch） | 3 |
+| MDN match 数 | >= 202（不低于基线） | 202 |
+| MDN mismatch 数 | <= 2（不增加已知 mismatch） | 2 |
 | MDN error 数 | 0（BigInt div/0 已修复为可恢复 throw） | 0 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
 | showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | PASS — 0 codegen errors |
 
-#### MDN 已知 mismatch（3 个）
+#### MDN 已知 mismatch（2 个）
 
 | Fragment | 类型 | 问题 | 优先级 |
 |----------|------|------|--------|
-| `test_statements_frag_11` | MISMATCH | const 重赋值无运行时 TypeError（Zig 根本限制） | WONTFIX |
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | stack trace 格式差异（运行时格式不可调合） | WONTFIX |
 
@@ -666,6 +708,14 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

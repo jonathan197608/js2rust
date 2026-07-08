@@ -406,7 +406,7 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         }
         IrStmt::Block(b) => DeadCodeElimPass::eliminate_unreachable_in_block(b),
         IrStmt::Assign { value, .. } => eliminate_unreachable_in_expr(value),
-        IrStmt::Throw { value } => eliminate_unreachable_in_expr(value),
+        IrStmt::Throw { value, .. } => eliminate_unreachable_in_expr(value),
         IrStmt::Return { value } => {
             if let Some(v) = value {
                 eliminate_unreachable_in_expr(v)
@@ -707,7 +707,7 @@ fn collect_stmt_refs(stmt: &IrStmt, refs: &mut std::collections::HashSet<String>
                 collect_block_refs(f, refs);
             }
         }
-        IrStmt::Throw { value } => collect_expr_refs(value, refs),
+        IrStmt::Throw { value, .. } => collect_expr_refs(value, refs),
         IrStmt::Return { value } => {
             if let Some(v) = value {
                 collect_expr_refs(v, refs);
@@ -898,6 +898,7 @@ fn collect_target_refs(
                 }
             }
         }
+        crate::zigir::types::IrAssignTarget::CompileError { .. } => {}
     }
 }
 
@@ -953,6 +954,7 @@ mod tests {
             init: Some(IrExpr::IntLiteral(42)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
@@ -983,6 +985,7 @@ mod tests {
             init: Some(IrExpr::IntLiteral(42)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
@@ -1018,6 +1021,7 @@ mod tests {
             })),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
 
         let mut pass = DeadCodeElimPass::new();

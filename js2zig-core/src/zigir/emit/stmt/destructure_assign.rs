@@ -249,6 +249,9 @@ impl Emitter {
                     }
                 }
             }
+            IrAssignTarget::CompileError { msg } => {
+                self.write(&format!("@compileError(\"{}\")", msg));
+            }
         }
     }
 }

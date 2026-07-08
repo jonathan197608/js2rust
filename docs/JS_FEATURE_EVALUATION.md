@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'd71a7d67-d823-4533-bfd0-b3d100ea3ce6'
+  PropagateID: 'd71a7d67-d823-4533-bfd0-b3d100ea3ce6'
+  ReservedCode1: '77b6ea1c-86e6-4401-9b70-957942dc4285'
+  ReservedCode2: '77b6ea1c-86e6-4401-9b70-957942dc4285'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '100df0d2-68d3-4792-bca0-eb2ac6f1e8cc'
+  PropagateID: '100df0d2-68d3-4792-bca0-eb2ac6f1e8cc'
+  ReservedCode1: '7c149cbb-629a-4f8b-a908-e4c1dec39cb4'
+  ReservedCode2: '7c149cbb-629a-4f8b-a908-e4c1dec39cb4'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '50b7536a-0f6e-4198-9e3f-e1aa2e780fd2'
   PropagateID: '50b7536a-0f6e-4198-9e3f-e1aa2e780fd2'
   ReservedCode1: '55b35f61-e9e2-45b7-b4c5-eae7790b3da6'
@@ -1297,15 +1319,18 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | MISMATCH | 3 | 已知差异 |
 | ERROR (CRASH) | 0 | — |
 
-**匹配率: 201/204 = 98.5%**
+**匹配率: 202/204 = 99.0%**
 
-**3 个已知非 PASS**:
+**2 个已知非 PASS**:
 
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
-| `test_statements_frag_11` | MISMATCH | const 重赋值：JS 抛 TypeError，Zig 编译期检查不匹配 | WONTFIX |
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
-| `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` 错误处理方式不同 | WONTFIX |
+| `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` stack trace 格式差异 | WONTFIX |
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

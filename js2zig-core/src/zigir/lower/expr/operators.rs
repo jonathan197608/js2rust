@@ -571,7 +571,9 @@ impl Lowerer {
                     },
                 }
             }
-            _ => crate::zigir::types::IrAssignTarget::Ident(IrIdent::new("__unsupported_target")),
+            _ => crate::zigir::types::IrAssignTarget::CompileError {
+                msg: "unsupported assignment target".to_string(),
+            },
         }
     }
 
@@ -692,7 +694,9 @@ impl Lowerer {
                     .collect();
                 crate::zigir::types::IrAssignTarget::Destructure(bindings)
             }
-            _ => crate::zigir::types::IrAssignTarget::Ident(IrIdent::new("__unsupported_target")),
+            _ => crate::zigir::types::IrAssignTarget::CompileError {
+                msg: "unsupported assignment target".to_string(),
+            },
         }
     }
 

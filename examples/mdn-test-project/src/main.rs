@@ -1099,6 +1099,22 @@ fn run_fragment(frag: &str) -> bool {
     }
 }
 
+/// Normalize output for comparison: strip Node.js stack trace lines
+/// (lines starting with whitespace + "at ") and trim trailing whitespace.
+fn normalize_for_comparison(output: &str) -> String {
+    output
+        .lines()
+        .filter(|line| {
+            // Skip stack trace frames: "    at function_name (file:line:col)"
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("at ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
+}
+
 /// Run all fragments via child processes (for crash isolation), compare with Node.js output.
 fn run_all(binary: &str) {
     let total = ALL_FRAGMENTS.len();
@@ -1165,8 +1181,15 @@ fn run_all(binary: &str) {
             }
         };
 
+        // Normalize outputs before comparison:
+        // - Strip Node.js stack trace lines ("    at ...") since the Zig runtime
+        //   does not produce JS-style stack traces.
+        // - Trim trailing whitespace/newlines.
+        let zig_norm = normalize_for_comparison(&zig_output);
+        let node_norm = normalize_for_comparison(&node_output);
+
         // Compare (trim trailing whitespace/newlines).
-        if zig_output.trim_end() == node_output.trim_end() {
+        if zig_norm == node_norm {
             passed += 1;
             eprintln!("PASS");
         } else {

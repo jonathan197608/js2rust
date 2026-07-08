@@ -1,4 +1,4 @@
-﻿// native_proto/infer/passes.rs
+// native_proto/infer/passes.rs
 // Analysis passes: Pass 0 (object analysis), Pass 1 (used names),
 // Pass 2 (toplevel type walker) — excluding walk_fn_for_types.
 
@@ -221,10 +221,12 @@ impl TypeInferrer {
                 }
             }
             Expression::UpdateExpression(ue) => {
-                // i++, i--, ++i, --i → mark the argument as mutated
+                // i++, i--, ++i, --i → mark the argument as mutated and reassigned
                 let prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
                 if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
                     self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
+                    self.reassigned_vars
+                        .insert(format!("{}::{}", prefix, id.name));
                 }
             }
             _ => {}
@@ -236,6 +238,9 @@ impl TypeInferrer {
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
                 self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
+                // Track direct variable reassignment (not property mutation)
+                self.reassigned_vars
+                    .insert(format!("{}::{}", prefix, id.name));
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
                 if let Expression::Identifier(id) = &mem.object {

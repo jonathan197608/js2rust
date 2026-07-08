@@ -29,6 +29,12 @@ pub const JsError = struct {
         alloc.free(self.stack);
     }
 
+    /// Custom format: prints "name: message" (matching Node.js console output).
+    /// Without this, std.fmt defaults to `.{ .field = value, ... }`.
+    pub fn format(self: JsError, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}: {s}", .{ self.name, self.message });
+    }
+
     /// Construct a JsError from a Zig error union value.
     /// Maps known Zig errors to JS error names and messages; falls back to "Error".
     pub fn fromError(err: anyerror, alloc: Allocator) !JsError {
@@ -48,6 +54,7 @@ pub const JsError = struct {
         return switch (err) {
             error.InvalidUriEncoding => .{ .name = "URIError", .message = "URI malformed" },
             error.DivisionByZero => .{ .name = "RangeError", .message = "BigInt division by zero" },
+            error.ConstReassignment => .{ .name = "TypeError", .message = "Assignment to constant variable." },
             else => .{ .name = "Error", .message = @errorName(err) },
         };
     }

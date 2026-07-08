@@ -1,6 +1,7 @@
 //! JS Console method implementations for Zig.
 
 const std = @import("std");
+const js_error = @import("js_error.zig");
 
 /// Check if a type is a string type ([]const u8, []u8, *const [N:0]u8, etc.)
 fn isStringType(comptime T: type) bool {
@@ -22,6 +23,9 @@ fn printValue(msg: anytype) void {
     const T = @TypeOf(msg);
     if (comptime isStringType(T)) {
         std.debug.print("{s}", .{msg});
+    } else if (comptime T == js_error.JsError) {
+        // JsError: print "name: message" (e.g. "TypeError: Assignment to constant variable")
+        std.debug.print("{s}: {s}", .{ msg.name, msg.message });
     } else {
         switch (@typeInfo(T)) {
             .int, .comptime_int => std.debug.print("{d}", .{msg}),

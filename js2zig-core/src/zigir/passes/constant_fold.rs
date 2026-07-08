@@ -285,7 +285,7 @@ impl ConstantFoldPass {
                 }
                 changed
             }
-            crate::zigir::types::IrStmt::Throw { value } => Self::try_fold(value),
+            crate::zigir::types::IrStmt::Throw { value, .. } => Self::try_fold(value),
             crate::zigir::types::IrStmt::Return { value } => {
                 if let Some(v) = value {
                     Self::try_fold(v)

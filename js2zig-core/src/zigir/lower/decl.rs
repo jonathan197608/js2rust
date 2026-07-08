@@ -72,10 +72,36 @@ impl Lowerer {
             .as_ref()
             .map(|ctx| ctx.name.as_str())
             .unwrap_or("__toplevel__");
-        let is_const = !self
+        let is_actually_mutated = self
             .type_info
             .mutated_vars
             .contains(&format!("{}::{}", fn_prefix, js_name));
+        // Check if the variable is *directly* reassigned (x = ..., not x.y = ...).
+        // This distinguishes "variable reassignment" from "property mutation".
+        let is_directly_reassigned = self
+            .type_info
+            .reassigned_vars
+            .contains(&format!("{}::{}", fn_prefix, js_name));
+        let is_const = !is_actually_mutated;
+
+        // Track JS-const variables that get directly reassigned — these need a
+        // runtime TypeError guard because JS throws on const reassignment but
+        // Zig uses `var`.  Only direct reassignment (x = ...) triggers this,
+        // not property mutation (x.y = ...) which is legal on JS const objects.
+        if _vd_is_const
+            && is_directly_reassigned
+            && let Some(ctx) = self.fn_ctx.as_mut()
+        {
+            ctx.js_const_reassigned.insert(js_name.to_string());
+        }
+
+        // When a JS-const variable is directly reassigned (x = newValue), the
+        // reassignment is converted to a throw (TypeError). Since the Zig `var`
+        // is never actually assigned after initialization, Zig 0.16 reports
+        // "local variable is never mutated".  We keep `var` (in case the value
+        // is used later, e.g., console.log after catch) and use needs_var_suppression
+        // to add `_ = &x;` to silence the warning.
+        let is_js_const_reassigned = _vd_is_const && is_directly_reassigned;
 
         // Skip unused toplevel constants
         let has_type_annotation = self.jsdoc_data.type_annotations.contains_key(js_name);
@@ -116,11 +142,19 @@ impl Lowerer {
         let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
 
         // Needs var suppression (ArrayList/Map/Set method calls need `_= &var;`)
-        let needs_var_suppression = !is_const
+        // Also for JS-const variables whose reassignment is replaced by a throw:
+        // the var is never mutated at the Zig level, so Zig 0.16 reports
+        // "local variable is never mutated". `_ = &x;` silences this.
+        let needs_var_suppression = (!is_const
             && matches!(
                 zig_type,
                 Some(ZigType::ArrayList(_)) | Some(ZigType::NamedStruct(_))
-            );
+            ))
+            || is_js_const_reassigned;
+
+        // Needs const suppression: not needed anymore — we keep `var` and use
+        // var suppression instead.  Kept as always-false for struct field compat.
+        let needs_const_suppression = false;
 
         // Lower initializer expression
         let init = match decl.init.as_ref() {
@@ -187,6 +221,7 @@ impl Lowerer {
             init,
             is_json_parse,
             needs_var_suppression,
+            needs_const_suppression,
         })
     }
 
@@ -589,6 +624,7 @@ impl Lowerer {
                     )),
                     is_json_parse: false,
                     needs_var_suppression: false,
+                    needs_const_suppression: false,
                 });
             body.stmts.insert(0, arguments_init);
         }
@@ -611,9 +647,13 @@ impl Lowerer {
             }
         }
 
-        // Read has_bigint_div BEFORE exiting the function context, since
+        // Read has_bigint_div and has_js_const_reassign BEFORE exiting the function context, since
         // exit_fn() takes the current fn_ctx and restores the outer one.
         let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
+        let has_js_const_reassign = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| !ctx.js_const_reassigned.is_empty());
 
         // Exit function context and shadow scope
         self.name_mangler.pop_shadow_scope();
@@ -638,7 +678,7 @@ impl Lowerer {
             body,
             is_export,
             is_async,
-            can_throw: has_throw || has_bigint_div,
+            can_throw: has_throw || has_bigint_div || has_js_const_reassign,
             is_cabi,
         })
     }

@@ -74,7 +74,6 @@ pub fn build(force_rebuild: bool) {
         force_rebuild,
         run_zig_build: true, // compile Zig code
     };
-
     match js2zig_core::transpile_project(&project_config) {
         Ok(_result) => {
             link_from_cache(&cache_dir);

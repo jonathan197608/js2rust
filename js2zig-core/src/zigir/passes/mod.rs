@@ -238,6 +238,7 @@ mod tests {
                 init: Some(crate::zigir::types::IrExpr::IntLiteral(0)),
                 is_json_parse: false,
                 needs_var_suppression: false,
+                needs_const_suppression: false,
             }));
             PassResult::changed()
         }

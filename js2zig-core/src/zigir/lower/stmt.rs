@@ -111,6 +111,7 @@ impl Lowerer {
             Statement::TryStatement(ts) => self.lower_try(ts),
             Statement::ThrowStatement(ts) => crate::zigir::types::IrStmt::Throw {
                 value: self.lower_expr(&ts.argument),
+                error_name: None,
             },
 
             // ©¤©¤ Function control ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
@@ -140,10 +141,21 @@ impl Lowerer {
 
             // ©¤©¤ Expression statement ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             Statement::ExpressionStatement(es) => {
-                self.in_expr_stmt = true;
-                let expr = self.lower_expr(&es.expression);
-                self.in_expr_stmt = false;
-                crate::zigir::types::IrStmt::Expr(expr)
+                // Check if this is an assignment to a JS-const variable.
+                // In JS, `const x = 1; x = 2` throws TypeError at runtime.
+                // We detect this and emit a Throw with error.ConstReassignment
+                // instead of performing the assignment.
+                if let Some(throw_value) = self.make_const_reassign_throw(&es.expression) {
+                    crate::zigir::types::IrStmt::Throw {
+                        value: throw_value,
+                        error_name: Some("ConstReassignment".to_string()),
+                    }
+                } else {
+                    self.in_expr_stmt = true;
+                    let expr = self.lower_expr(&es.expression);
+                    self.in_expr_stmt = false;
+                    crate::zigir::types::IrStmt::Expr(expr)
+                }
             }
 
             // ©¤©¤ Function declaration (nested) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
@@ -530,17 +542,39 @@ impl Lowerer {
 
     /// Lower a try-catch statement.
     pub(super) fn lower_try(&mut self, ts: &TryStatement) -> crate::zigir::types::IrStmt {
-        let has_throw = ts.block.body.iter().any(|s| Self::stmt_has_throw_any(s));
+        // Lower try block first, then inspect the resulting IR for throws.
+        // This catches implicit throws like const-reassignment guards that
+        // `stmt_has_throw_any` (AST-level) cannot detect.
+        let try_block = {
+            let stmts = ts.block.body.iter().map(|s| self.lower_stmt(s)).collect();
+            IrBlock::new(stmts)
+        };
+
+        // AST-level throw detection (for nested try exclusion)
         let has_nested_try = ts
             .block
             .body
             .iter()
             .any(|s| matches!(s, Statement::TryStatement(_)));
 
-        let try_block = {
-            let stmts = ts.block.body.iter().map(|s| self.lower_stmt(s)).collect();
-            IrBlock::new(stmts)
-        };
+        // IR-level throw detection: scan lowered try_block for any IrStmt::Throw.
+        fn ir_block_has_throw(block: &IrBlock) -> bool {
+            block.stmts.iter().any(|s| match s {
+                crate::zigir::types::IrStmt::Throw { .. } => true,
+                // Recurse into nested blocks (if, while, for, etc.)
+                crate::zigir::types::IrStmt::If { then, else_, .. } => {
+                    ir_block_has_throw(then) || else_.as_ref().is_some_and(ir_block_has_throw)
+                }
+                crate::zigir::types::IrStmt::While { body, .. }
+                | crate::zigir::types::IrStmt::DoWhile { body, .. }
+                | crate::zigir::types::IrStmt::For { body, .. }
+                | crate::zigir::types::IrStmt::ForOf { body, .. }
+                | crate::zigir::types::IrStmt::ForIn { body, .. } => ir_block_has_throw(body),
+                crate::zigir::types::IrStmt::Block(b) => ir_block_has_throw(b),
+                _ => false,
+            })
+        }
+        let has_throw = ir_block_has_throw(&try_block);
 
         let (catch_var, catch_var_referenced, catch_block) = if let Some(handler) = &ts.handler {
             let var = handler
@@ -694,6 +728,7 @@ impl Lowerer {
 
     /// Check if a statement contains a `throw` (directly, not inside a
     /// nested try-catch — those throws are caught by the inner catch).
+    #[allow(dead_code)]
     pub(super) fn stmt_has_throw_any(stmt: &Statement) -> bool {
         match stmt {
             Statement::ThrowStatement(_) => true,
@@ -812,6 +847,35 @@ impl Lowerer {
             }
             _ => false,
         }
+    }
+
+    /// If the expression is an assignment to a JS-const variable, return Some(value)
+    /// where `value` is the lowered right-hand side of the assignment. This ensures
+    /// that variables referenced in the RHS (e.g., `y` in `x %= y`) are still
+    /// considered "used" by the Zig compiler, avoiding "unused local constant" errors.
+    /// Returns None if the expression is not a const-reassignment.
+    fn make_const_reassign_throw(
+        &mut self,
+        expr: &Expression,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        if let Expression::AssignmentExpression(ae) = expr {
+            // All assignment operators (simple `=` and compound `+=`, `-=`, etc.)
+            if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
+                // Check if the identifier is in js_const_reassigned
+                let is_const_reassign = self
+                    .fn_ctx
+                    .as_ref()
+                    .is_some_and(|ctx| ctx.js_const_reassigned.contains(id.name.as_str()));
+                if is_const_reassign {
+                    // Lower the RHS only (not the full assignment, since Zig
+                    // assignment is a statement, not an expression).
+                    // This preserves references to variables in the RHS (e.g., `y`
+                    // in `x %= y`) so they are not marked as unused.
+                    return Some(self.lower_expr(&ae.right));
+                }
+            }
+        }
+        None
     }
 
     /// Get and consume the pending loop label (set by lower_labeled).

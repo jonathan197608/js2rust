@@ -374,6 +374,7 @@ impl Lowerer {
                                     init: Some(value_ir),
                                     is_json_parse: false,
                                     needs_var_suppression: false,
+                                    needs_const_suppression: false,
                                 },
                             ));
                             continue;

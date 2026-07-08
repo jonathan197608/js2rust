@@ -105,7 +105,7 @@ impl Lowerer {
                     }
                 }
             }
-            IrStmt::Throw { value } => {
+            IrStmt::Throw { value, .. } => {
                 Self::collect_ir_idents_in_expr(value, idents);
             }
             IrStmt::Return { value } => {
@@ -170,6 +170,7 @@ impl Lowerer {
                     }
                 }
             }
+            IrAssignTarget::CompileError { .. } => {}
         }
     }
 

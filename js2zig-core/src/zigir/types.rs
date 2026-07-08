@@ -126,6 +126,9 @@ pub struct IrVarDecl {
     pub init: Option<IrExpr>,
     pub is_json_parse: bool,
     pub needs_var_suppression: bool,
+    /// Suppress "unused local constant" error by emitting `_ = varname;`.
+    /// Used for JS-const variables whose reassignment is replaced by a throw.
+    pub needs_const_suppression: bool,
 }
 
 // ── Function declaration ──────────────────────────────
@@ -340,6 +343,10 @@ pub enum IrStmt {
     },
     Throw {
         value: IrExpr,
+        /// Override the error variant emitted by the throw (default: "JsThrow").
+        /// For example, "ConstReassignment" emits `error.ConstReassignment` which
+        /// `js_error.JsError.fromError()` maps to `name="TypeError"`.
+        error_name: Option<String>,
     },
 
     // ── Function control ────────────────────────────
@@ -401,6 +408,8 @@ pub enum IrAssignTarget {
     },
     /// Destructuring assignment.
     Destructure(Vec<IrDestructureBinding>),
+    /// Unsupported assignment target — emits @compileError.
+    CompileError { msg: String },
 }
 
 #[derive(Debug, Clone)]
@@ -939,6 +948,7 @@ mod tests {
             init: Some(IrExpr::IntLiteral(42)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         };
         assert_eq!(v.name.zig_name, "x");
         assert!(v.is_const);
@@ -1143,6 +1153,7 @@ mod tests {
                 init: Some(IrExpr::IntLiteral(0)),
                 is_json_parse: false,
                 needs_var_suppression: false,
+                needs_const_suppression: false,
             }))),
             cond: Some(IrExpr::Binary {
                 op: BinOp::Lt,

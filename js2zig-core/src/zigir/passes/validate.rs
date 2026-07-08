@@ -248,7 +248,7 @@ impl ValidatePass {
                     self.check_closure_refs_in_block(f);
                 }
             }
-            IrStmt::Throw { value } => {
+            IrStmt::Throw { value, .. } => {
                 self.check_closure_refs_in_expr(value);
             }
             IrStmt::Return { value } => {
@@ -458,6 +458,7 @@ impl ValidatePass {
                     }
                 }
             }
+            IrAssignTarget::CompileError { .. } => {}
         }
     }
 }
@@ -580,7 +581,7 @@ fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet
                 collect_idents_from_stmts(&f.stmts, names);
             }
         }
-        IrStmt::Throw { value } => {
+        IrStmt::Throw { value, .. } => {
             collect_idents_from_expr(value, names);
         }
         IrStmt::Return { value } => {
@@ -787,6 +788,7 @@ fn collect_idents_from_target(
                 }
             }
         }
+        IrAssignTarget::CompileError { .. } => {}
     }
 }
 
@@ -868,6 +870,7 @@ mod tests {
             init: Some(IrExpr::IntLiteral(1)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
         module.declarations.push(IrDecl::Var(IrVarDecl {
             name: IrIdent::new("x"),
@@ -876,6 +879,7 @@ mod tests {
             init: Some(IrExpr::IntLiteral(2)),
             is_json_parse: false,
             needs_var_suppression: false,
+            needs_const_suppression: false,
         }));
 
         let mut pass = ValidatePass::new();

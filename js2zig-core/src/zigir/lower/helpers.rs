@@ -43,6 +43,11 @@ pub struct FnContext {
     pub fn_has_throw: bool,
     /// Whether the body contains BigInt division/modulo (can throw RangeError).
     pub has_bigint_div: bool,
+    /// JS-const variables that are reassigned (emit runtime TypeError guard).
+    /// In JS, `const x = 1; x = 2` throws TypeError at runtime, but Zig uses
+    /// `var` for reassigned variables so the assignment succeeds. We track these
+    /// to insert a throw before the actual assignment.
+    pub js_const_reassigned: HashSet<String>,
     /// Currently inside a return value expression.
     pub in_return_expr: bool,
     /// Currently at the top-level of an ExpressionStatement.
@@ -79,6 +84,7 @@ impl FnContext {
             seen_return: false,
             fn_has_throw: false,
             has_bigint_div: false,
+            js_const_reassigned: HashSet::new(),
             in_return_expr: false,
             in_expr_stmt: false,
             call_generated_catch: false,
