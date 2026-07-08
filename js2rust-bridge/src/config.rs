@@ -8,8 +8,11 @@
 //!
 //! ```toml
 //! [project]
-//! js_file = "js_src/main.js"           # required: core JS entry point
-//! additional_js_files = ["js_src/extra.js"]  # optional
+//! js_files = ["js_src/main.js"]              # required: JS source files (first is entry point)
+//!
+//! [build]
+//! force_rebuild = false   # optional, default false
+//! run_zig_build = true    # optional, default false
 //!
 //! [[host_functions]]
 //! name = "host_add"
@@ -37,17 +40,28 @@ use std::path::PathBuf;
 pub struct Js2rustConfig {
     pub project: ProjectSection,
     #[serde(default)]
+    pub build: BuildSection,
+    #[serde(default)]
     pub host_functions: Vec<HostFnToml>,
 }
 
 /// `[project]` section.
 #[derive(Debug, Deserialize)]
 pub struct ProjectSection {
-    /// Core JS source file path, relative to the crate root.
-    pub js_file: String,
-    /// Additional root JS files (multi-root mode), relative to the crate root.
+    /// JS source file paths (relative to crate root).
+    /// The first element is the entry point; additional elements are extra roots.
+    pub js_files: Vec<String>,
+}
+
+/// `[build]` section — controls build.rs behavior.
+#[derive(Debug, Default, Deserialize)]
+pub struct BuildSection {
+    /// Force rebuild (skip incremental cache). Default: false.
     #[serde(default)]
-    pub additional_js_files: Vec<String>,
+    pub force_rebuild: bool,
+    /// Whether to run `zig build` after transpilation. Default: false.
+    #[serde(default)]
+    pub run_zig_build: bool,
 }
 
 /// A single `[[host_functions]]` entry.
@@ -82,7 +96,7 @@ impl Js2rustConfig {
                  Create a js2rust.toml in your crate root with:\n\
                  \n\
                  [project]\n\
-                 js_file = \"js_src/main.js\"\n",
+                 js_files = [\"js_src/main.js\"]\n",
                 config_path.display(),
                 e
             );
@@ -98,11 +112,13 @@ impl Js2rustConfig {
         })
     }
 
-    /// Derive the Zig group name from the `js_file` file stem.
+    /// Derive the Zig group name from the first `js_files` entry's file stem.
     ///
     /// The file stem is sanitized for Zig identifier rules.
     pub fn group_name(&self) -> String {
-        let stem = std::path::Path::new(&self.project.js_file)
+        let default = "main.js".to_string();
+        let first = self.project.js_files.first().unwrap_or(&default);
+        let stem = std::path::Path::new(first)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("main");

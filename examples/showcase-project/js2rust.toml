@@ -1,6 +1,6 @@
 [project]
-js_file = "js_src/app.js"
-additional_js_files = [
+js_files = [
+    "js_src/app.js",
     "js_src/phase5.js",
     "js_src/test_throw.js",
     "js_src/phase_memory.js",
@@ -9,3 +9,6 @@ additional_js_files = [
     "js_src/test_static_fields.js",
     "js_src/test_dynamic_index.js",
 ]
+
+[build]
+run_zig_build = true

@@ -28,7 +28,7 @@ pub use js2rust_bridge_macro::{host_fn, js2rust_bridge};
 pub use js2zig_core::{HostConfig, HostFunction, HostType};
 
 // Re-export config types for programmatic use.
-pub use config::{HostFnToml, Js2rustConfig, ProjectSection};
+pub use config::{BuildSection, HostFnToml, Js2rustConfig, ProjectSection};
 
 use std::path::PathBuf;
 
@@ -43,19 +43,29 @@ use std::path::PathBuf;
 /// }
 /// ```
 ///
-/// The group name is derived automatically from the file stem of `project.js_file`.
-pub fn build(force_rebuild: bool) {
+/// The group name is derived automatically from the file stem of the first
+/// entry in `project.js_files`. Build behavior (force_rebuild, run_zig_build)
+/// is read from the `[build]` section of `js2rust.toml`.
+pub fn build() {
     let config = Js2rustConfig::from_manifest_dir();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
-    let js_file_path = PathBuf::from(&manifest_dir).join(&config.project.js_file);
-    let additional_js_paths: Vec<PathBuf> = config
+    // All JS files are resolved from js_files (first = entry, rest = additional roots)
+    let mut js_file_paths: Vec<PathBuf> = config
         .project
-        .additional_js_files
+        .js_files
         .iter()
         .map(|p| PathBuf::from(&manifest_dir).join(p))
         .collect();
+
+    // js_files must not be empty
+    if js_file_paths.is_empty() {
+        panic!("js2rust_bridge::build: project.js_files is empty in js2rust.toml");
+    }
+
+    let js_file_path = js_file_paths.remove(0);
+    let additional_js_paths = js_file_paths;
 
     let group_name = config.group_name();
 
@@ -67,12 +77,15 @@ pub fn build(force_rebuild: bool) {
 
     let project_config = js2zig_core::ProjectConfig {
         name: group_name,
-        js_file: js_file_path,
-        additional_js_files: additional_js_paths,
+        js_files: {
+            let mut all = vec![js_file_path];
+            all.extend(additional_js_paths);
+            all
+        },
         out_dir: cache_dir.clone(),
         host_config,
-        force_rebuild,
-        run_zig_build: true, // compile Zig code
+        force_rebuild: config.build.force_rebuild,
+        run_zig_build: config.build.run_zig_build,
     };
     match js2zig_core::transpile_project(&project_config) {
         Ok(_result) => {

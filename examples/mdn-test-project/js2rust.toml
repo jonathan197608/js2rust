@@ -1,6 +1,6 @@
 [project]
-js_file = "js_src/app.js"
-additional_js_files = [
+js_files = [
+    "js_src/app.js",
     "js_src/test_statements_frag_0.js",
     "js_src/test_statements_frag_11.js",
     "js_src/test_statements_frag_12.js",
@@ -204,5 +204,9 @@ additional_js_files = [
     "js_src/test_builtins_frag_169.js",
     "js_src/test_builtins_frag_172.js",
     "js_src/test_builtins_frag_175.js",
-    "js_src/test_builtins_frag_179.js"
+    "js_src/test_builtins_frag_179.js",
 ]
+
+[build]
+force_rebuild = true
+run_zig_build = true

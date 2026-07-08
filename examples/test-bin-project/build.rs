@@ -1,3 +1,3 @@
 fn main() {
-    js2rust_bridge::build(false);
+    js2rust_bridge::build();
 }

@@ -122,8 +122,13 @@ fn write_build_cache(out_dir: &Path, cache: &HashMap<String, String>) {
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     let ws = workspace_dir();
 
-    // Derive input directory and core file name from js_file path.
-    let js_file = &config.js_file;
+    // js_files must not be empty
+    if config.js_files.is_empty() {
+        return Err("js2rust: project.js_files is empty".to_string());
+    }
+
+    // Derive input directory and core file name from the first js_files entry.
+    let js_file = &config.js_files[0];
     let in_path = js_file
         .parent()
         .ok_or_else(|| format!("cannot get parent directory of '{}'", js_file.display()))?
@@ -147,9 +152,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         .map_err(|e| format!("cannot create output directory '{}': {}", out_dir, e))?;
 
     // === Phase 1: Analyze file groups (single or multi-root core files + transitive deps) ===
+    // Additional JS files = everything after the first entry
     let additional_js_files: Vec<String> = config
-        .additional_js_files
+        .js_files
         .iter()
+        .skip(1)
         .filter_map(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())

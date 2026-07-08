@@ -44,14 +44,22 @@ pub fn host_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct TomlConfig {
     project: TomlProject,
     #[serde(default)]
+    build: TomlBuild,
+    #[serde(default)]
     host_functions: Vec<TomlHostFn>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TomlProject {
-    js_file: String,
+    js_files: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct TomlBuild {
     #[serde(default)]
-    additional_js_files: Vec<String>,
+    force_rebuild: bool,
+    #[serde(default)]
+    run_zig_build: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,7 +85,7 @@ fn load_toml_config() -> TomlConfig {
              Create a js2rust.toml in your crate root with:\n\
              \n\
              [project]\n\
-             js_file = \"js_src/main.js\"\n",
+             js_files = [\"js_src/main.js\"]\n",
             config_path.display(),
             e
         );
@@ -144,23 +152,32 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     let config = load_toml_config();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 
-    // Derive group name from js_file stem
-    let stem = std::path::Path::new(&config.project.js_file)
+    // js_files must not be empty
+    if config.project.js_files.is_empty() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "js2rust_bridge: project.js_files is empty in js2rust.toml",
+        )
+        .to_compile_error());
+    }
+
+    // Derive group name from first js_files entry stem
+    let first_js = &config.project.js_files[0];
+    let stem = std::path::Path::new(first_js)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("main");
     let group = js2zig_core::analyzer::sanitize_module_name(stem);
 
-    // Resolve core JS file path
-    let js_file_path = std::path::Path::new(&manifest_dir).join(&config.project.js_file);
-
-    // Resolve additional JS file paths
-    let additional_js_paths: Vec<std::path::PathBuf> = config
+    // Resolve all JS file paths
+    let mut js_file_paths: Vec<std::path::PathBuf> = config
         .project
-        .additional_js_files
+        .js_files
         .iter()
         .map(|f| std::path::Path::new(&manifest_dir).join(f))
         .collect();
+    let js_file_path = js_file_paths.remove(0);
+    let additional_js_paths = js_file_paths;
 
     // Resolve cache directory
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
@@ -200,8 +217,11 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
         name: group.clone(),
-        js_file: js_file_path.clone(),
-        additional_js_files: additional_js_paths,
+        js_files: {
+            let mut all = vec![js_file_path.clone()];
+            all.extend(additional_js_paths);
+            all
+        },
         out_dir: cache_dir.clone(),
         host_config: if host_functions.is_empty() {
             None
@@ -210,8 +230,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
                 functions: host_functions,
             })
         },
-        force_rebuild: true,
-        run_zig_build: false,
+        force_rebuild: config.build.force_rebuild,
+        run_zig_build: config.build.run_zig_build,
     };
 
     // Transpile!
