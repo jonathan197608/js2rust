@@ -94,11 +94,22 @@ pub fn JsCollection(comptime Value: type) type {
             };
         }
 
-        /// Free the collection.
-        /// NOTE: does NOT recursively free heap-allocated JsAny values
-        /// (strings/arrays/objects). This matches the current behavior of
-        /// js_set.zig. Proper deep-free is a TODO.
-        pub fn deinit(self: *@This()) void {
+        /// Free the collection and recursively free heap-allocated JsAny values
+        /// (arrays and objects). Uses JsAny.deinit() which does NOT free
+        /// .value.string — this avoids double-free on string literals
+        /// (fromString("literal") puts non-heap pointers into .value.string).
+        /// String leaks are acceptable: production uses arena allocation,
+        /// and arena reset reclaims all strings at once.
+        pub fn deinit(self: *@This(), alloc: Allocator) void {
+            var iter = self.inner.iterator();
+            while (iter.next()) |entry| {
+                var key = entry.key_ptr.*;
+                key.deinit(alloc);
+                if (is_map) {
+                    var val = entry.value_ptr.*;
+                    val.deinit(alloc);
+                }
+            }
             self.inner.deinit();
         }
 
@@ -113,11 +124,30 @@ pub fn JsCollection(comptime Value: type) type {
             return self.inner.contains(key);
         }
 
-        pub fn delete(self: *@This(), key: JsAny) bool {
-            return self.inner.remove(key);
+        pub fn delete(self: *@This(), alloc: Allocator, key: JsAny) bool {
+            // Deep-free the existing entry before removing it
+            if (self.inner.getEntry(key)) |entry| {
+                var k = entry.key_ptr.*;
+                k.deinit(alloc);
+                if (is_map) {
+                    var v = entry.value_ptr.*;
+                    v.deinit(alloc);
+                }
+                return self.inner.remove(key);
+            }
+            return false;
         }
 
-        pub fn clear(self: *@This()) void {
+        pub fn clear(self: *@This(), alloc: Allocator) void {
+            var iter = self.inner.iterator();
+            while (iter.next()) |entry| {
+                var key = entry.key_ptr.*;
+                key.deinit(alloc);
+                if (is_map) {
+                    var val = entry.value_ptr.*;
+                    val.deinit(alloc);
+                }
+            }
             self.inner.clearAndFree();
         }
 
@@ -239,7 +269,7 @@ pub const JsSet = JsCollection(void);
 
 test "JsSet add/has (i64)" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(1));
     try s.add(JsAny.fromI64(2));
@@ -250,7 +280,7 @@ test "JsSet add/has (i64)" {
 
 test "JsSet add/has (string)" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromString("hello"));
     try s.add(JsAny.fromString("world"));
@@ -261,7 +291,7 @@ test "JsSet add/has (string)" {
 
 test "JsSet add/has (mixed types)" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(42));
     try s.add(JsAny.fromString("answer"));
@@ -276,7 +306,7 @@ test "JsSet add/has (mixed types)" {
 
 test "JsSet duplicate values ignored" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(1));
     try s.add(JsAny.fromI64(1)); // duplicate
@@ -285,27 +315,27 @@ test "JsSet duplicate values ignored" {
 
 test "JsSet delete" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(10));
-    try std.testing.expect(s.delete(JsAny.fromI64(10)));
+    try std.testing.expect(s.delete(std.testing.allocator, JsAny.fromI64(10)));
     try std.testing.expect(!s.has(JsAny.fromI64(10)));
-    try std.testing.expect(!s.delete(JsAny.fromI64(10)));
+    try std.testing.expect(!s.delete(std.testing.allocator, JsAny.fromI64(10)));
 }
 
 test "JsSet clear" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(1));
     try s.add(JsAny.fromI64(2));
-    s.clear();
+    s.clear(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 0), s.size());
 }
 
 test "JsSet size" {
     var s = JsSet.init(std.testing.allocator);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), s.size());
     try s.add(JsAny.fromI64(42));
@@ -315,7 +345,7 @@ test "JsSet size" {
 test "JsSet values()" {
     const alloc = std.testing.allocator;
     var s = JsSet.init(alloc);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(10));
     try s.add(JsAny.fromI64(20));
@@ -330,7 +360,7 @@ test "JsSet values()" {
 test "JsSet keys() same as values()" {
     const alloc = std.testing.allocator;
     var s = JsSet.init(alloc);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(1));
     try s.add(JsAny.fromI64(2));
@@ -346,7 +376,7 @@ test "JsSet keys() same as values()" {
 test "JsSet entries()" {
     const alloc = std.testing.allocator;
     var s = JsSet.init(alloc);
-    defer s.deinit();
+    defer s.deinit(std.testing.allocator);
 
     try s.add(JsAny.fromI64(5));
     try s.add(JsAny.fromI64(10));
@@ -369,7 +399,7 @@ test "JsSet entries()" {
 
 test "JsMap set/get/has" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
     try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
@@ -383,7 +413,7 @@ test "JsMap set/get/has" {
 
 test "JsMap get returns undefined for missing key" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
     try std.testing.expect(m.get(JsAny.fromString("missing")).isUndefined());
@@ -391,17 +421,17 @@ test "JsMap get returns undefined for missing key" {
 
 test "JsMap delete" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromString("x"), JsAny.fromI64(10));
-    try std.testing.expect(m.delete(JsAny.fromString("x")));
+    try std.testing.expect(m.delete(std.testing.allocator, JsAny.fromString("x")));
     try std.testing.expect(!m.has(JsAny.fromString("x")));
-    try std.testing.expect(!m.delete(JsAny.fromString("x")));
+    try std.testing.expect(!m.delete(std.testing.allocator, JsAny.fromString("x")));
 }
 
 test "JsMap clear" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
     try m.set(JsAny.fromString("b"), JsAny.fromI64(2));
@@ -411,7 +441,7 @@ test "JsMap clear" {
 
 test "JsMap size" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), m.size());
     try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
@@ -421,7 +451,7 @@ test "JsMap size" {
 test "JsMap keys()" {
     const alloc = std.testing.allocator;
     var m = JsMap.init(alloc);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
     try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
@@ -435,7 +465,7 @@ test "JsMap keys()" {
 test "JsMap values()" {
     const alloc = std.testing.allocator;
     var m = JsMap.init(alloc);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
     try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
@@ -449,7 +479,7 @@ test "JsMap values()" {
 test "JsMap entries()" {
     const alloc = std.testing.allocator;
     var m = JsMap.init(alloc);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     try m.set(JsAny.fromI64(5), JsAny.fromString("five"));
     try m.set(JsAny.fromI64(10), JsAny.fromString("ten"));
@@ -468,7 +498,7 @@ test "JsMap entries()" {
 
 test "JsMap key can be any JsAny type" {
     var m = JsMap.init(std.testing.allocator);
-    defer m.deinit();
+    defer m.deinit(std.testing.allocator);
 
     // key as number
     try m.set(JsAny.fromI64(42), JsAny.fromString("answer"));

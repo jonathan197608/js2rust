@@ -774,8 +774,16 @@ return s.has("x");
 }
 "#;
     let zig = transpile_and_check(js, "test_p7_set_delete_clear");
-    assert!(zig.contains(".delete("), "Expected '.delete(' in:\n{}", zig);
-    assert!(zig.contains(".clear()"), "Expected '.clear()' in:\n{}", zig);
+    assert!(
+        zig.contains(".delete(js_allocator.allocator(),"),
+        "Expected '.delete(js_allocator.allocator(),' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".clear(js_allocator.allocator())"),
+        "Expected '.clear(js_allocator.allocator())' in:\n{}",
+        zig
+    );
 }
 
 // Phase 7: Object defineProperties / getOwnPropertyDescriptor / setPrototypeOf

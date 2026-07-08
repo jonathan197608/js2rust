@@ -295,11 +295,11 @@ impl Emitter {
                 self.write(")");
             }
             "delete" => {
-                // map.delete(key) → map.delete(JsAny.from(key))
+                // map.delete(key) → map.delete(js_allocator.allocator(), JsAny.from(key))
                 if let Some(name) = obj {
-                    self.write(&format!("{}.delete(", name));
+                    self.write(&format!("{}.delete(js_allocator.allocator(), ", name));
                 } else {
-                    self.write("js_collections.delete(");
+                    self.write("js_collections.delete(js_allocator.allocator(), ");
                 }
                 if let Some(key) = args.first() {
                     self.write("JsAny.from(");
@@ -310,9 +310,9 @@ impl Emitter {
             }
             "clear" => {
                 if let Some(name) = obj {
-                    self.write(&format!("{}.clear()", name));
+                    self.write(&format!("{}.clear(js_allocator.allocator())", name));
                 } else {
-                    self.write("js_collections.clear()");
+                    self.write("js_collections.clear(js_allocator.allocator())");
                 }
             }
             "keys" | "values" | "entries" => {

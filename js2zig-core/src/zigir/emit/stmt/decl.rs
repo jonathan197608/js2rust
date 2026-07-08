@@ -147,6 +147,17 @@ impl Emitter {
             self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
         }
 
+        // Auto-cleanup: defer deinit for Map/Set variables to prevent memory leaks.
+        if let Some(ZigType::NamedStruct(name)) = &vd.zig_type
+            && (name == "Map" || name == "Set")
+        {
+            self.write_indent();
+            self.write(&format!(
+                "defer {}.deinit(js_allocator.allocator()); // auto-cleanup\n",
+                vd.name.zig_name
+            ));
+        }
+
         // Const usage suppression for JS-const variables whose reassignment is
         // replaced by a throw — the variable may not be read afterward.
         if vd.needs_const_suppression {
