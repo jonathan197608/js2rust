@@ -3,6 +3,50 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'b212846e-e749-4dd5-9b68-8ddfb2c216bc'
+  PropagateID: 'b212846e-e749-4dd5-9b68-8ddfb2c216bc'
+  ReservedCode1: 'da6d18d7-8009-4f83-9da3-d90ecfe20899'
+  ReservedCode2: 'da6d18d7-8009-4f83-9da3-d90ecfe20899'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '0016ef83-d69b-42ca-a7b0-d49fe965adfd'
+  PropagateID: '0016ef83-d69b-42ca-a7b0-d49fe965adfd'
+  ReservedCode1: '4598b382-9a89-43e0-ae3e-94163a2263fc'
+  ReservedCode2: '4598b382-9a89-43e0-ae3e-94163a2263fc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ede8d1ee-2968-43c5-b490-3c8a19cc4fd2'
+  PropagateID: 'ede8d1ee-2968-43c5-b490-3c8a19cc4fd2'
+  ReservedCode1: '3e713d28-43a0-4c95-9cda-cd675d5a3397'
+  ReservedCode2: '3e713d28-43a0-4c95-9cda-cd675d5a3397'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9c2caf16-7264-4b3b-bbf2-f03f3e5e7f6c'
+  PropagateID: '9c2caf16-7264-4b3b-bbf2-f03f3e5e7f6c'
+  ReservedCode1: '4d2f6ac3-b314-4cf8-8961-5278c1515f9f'
+  ReservedCode2: '4d2f6ac3-b314-4cf8-8961-5278c1515f9f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'fb5a0a7c-ba99-4bc7-978e-1dfbca9edab7'
   PropagateID: 'fb5a0a7c-ba99-4bc7-978e-1dfbca9edab7'
   ReservedCode1: 'c207828b-5e38-4a29-b88e-8bc919eeb7ca'
@@ -275,12 +319,12 @@ AIGC:
 | **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 351 + 118 = 469 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
-### 基线指标（2026-07-07）
+### 基线指标（2026-07-08）
 
 - Rust 单元测试：**469 passed, 0 failed**（351 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
 - Clippy：**0 warnings**
-- MDN 端到端：**202 match / 2 mismatch / 0 error**（匹配率 99.0%，204 total）
-- 2 个 mismatch 均为已知限制，详见下方表格
+- MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
+- 1 个 mismatch 为已知限制，详见下方表格
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 
 ---
@@ -548,12 +592,11 @@ cargo run -- test_expressions_frag_4
 cargo run -- --all
 ```
 
-### 3.5 已知 mismatch（3 个）
+### 3.5 已知 mismatch（1 个）
 
 | Fragment | 类型 | 问题 | 优先级 | 说明 |
 |----------|------|------|--------|------|
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | i64 无法表示 `-0` |
-| `test_builtins_frag_202` | MISMATCH | stack trace 格式差异 | WONTFIX | Zig stack trace 格式不同于 Node.js |
 
 ---
 
@@ -657,19 +700,18 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 | `cargo test -p js2zig-core --lib` | 469 passed, 0 failed | 469 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
-| MDN match 数 | >= 202（不低于基线） | 202 |
-| MDN mismatch 数 | <= 2（不增加已知 mismatch） | 2 |
+| MDN match 数 | >= 203（不低于基线） | 203 |
+| MDN mismatch 数 | <= 1（不增加已知 mismatch） | 1 |
 | MDN error 数 | 0（BigInt div/0 已修复为可恢复 throw） | 0 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
 | showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | PASS — 0 codegen errors |
 
-#### MDN 已知 mismatch（2 个）
+#### MDN 已知 mismatch（1 个）
 
 | Fragment | 类型 | 问题 | 优先级 |
 |----------|------|------|--------|
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
-| `test_builtins_frag_202` | MISMATCH | stack trace 格式差异（运行时格式不可调合） | WONTFIX |
 
 ### 5.4 新增测试
 
@@ -708,6 +750,14 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 
