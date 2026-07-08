@@ -472,9 +472,17 @@ impl Lowerer {
     }
 
     /// Infer the return type of a host function.
-    pub(super) fn infer_host_return_type(&self, _host_name: &str) -> ZigType {
-        // TODO: look up host function return type from type_info
-        ZigType::JsAny
+    /// Looks up the return type from `type_info.host_return_types`, which is
+    /// populated during the type inference pass. Falls back to `ZigType::JsAny`
+    /// if the function is not registered.
+    pub(super) fn infer_host_return_type(&self, host_name: &str) -> ZigType {
+        // The HashMap key includes the "host_" prefix (e.g. "host_add")
+        let full_name = format!("host_{}", host_name);
+        self.type_info
+            .host_return_types
+            .get(&full_name)
+            .cloned()
+            .unwrap_or(ZigType::JsAny)
     }
 
     /// Lower an await expression.

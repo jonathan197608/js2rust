@@ -561,6 +561,7 @@ mod tests {
             errors: Vec::new(),
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
         }
     }
 
@@ -781,6 +782,7 @@ mod tests {
             errors: Vec::new(),
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
         };
         let lowerer = Lowerer::new(
             type_info,
@@ -821,6 +823,7 @@ mod tests {
             errors: Vec::new(),
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
         };
         let lowerer = Lowerer::new(
             type_info,
@@ -866,6 +869,7 @@ mod tests {
             errors: Vec::new(),
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
         };
         let lowerer = Lowerer::new(
             type_info,

@@ -364,21 +364,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     dep_re_exports.get(member).cloned().unwrap_or_default()
                 };
 
-                // Collect host function return types and param types for type inference
-                let mut host_return_types: HashMap<String, crate::types::ZigType> = HashMap::new();
-                let mut host_param_types: HashMap<String, Vec<crate::types::ZigType>> =
-                    HashMap::new();
-                for def in host_fns.iter() {
-                    host_return_types.insert(def.name.clone(), def.ret_type.clone());
-                    host_param_types.insert(
-                        def.name.clone(),
-                        def.params.iter().map(|(_, t)| t.clone()).collect(),
-                    );
-                }
-                let _host_struct_fields = host_fns.struct_fields_map();
-
-                let _async_fns: HashSet<String> = host_fns.async_fn_names().into_iter().collect();
-
                 // Use native_proto (strict static type system) — pre-parsed AST
                 // from analyze_single_group, no re-parsing of source text.
                 let exports_for_all_modules = transpile_exports.clone();

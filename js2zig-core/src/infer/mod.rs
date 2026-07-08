@@ -70,6 +70,8 @@ pub struct TypeCheckResult {
     /// Class field types: class_name → (field_name → ZigType)
     /// Collected from PropertyDefinition initializers by the TypeInferrer.
     pub class_field_types: HashMap<String, HashMap<String, ZigType>>,
+    /// Host function return types: fn_name → ZigType (full name, e.g. "host_add")
+    pub host_return_types: HashMap<String, ZigType>,
 }
 
 // ── TypeInferrer ────────────────────────────────────
@@ -203,6 +205,7 @@ impl TypeInferrer {
             errors: std::mem::take(&mut self.errors),
             is_async: std::mem::take(&mut self.is_async),
             class_field_types: std::mem::take(&mut self.class_field_types),
+            host_return_types: std::mem::take(&mut self.host_return_types),
         }
     }
 }
