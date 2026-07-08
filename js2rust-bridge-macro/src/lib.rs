@@ -375,6 +375,17 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
     }
 
     for exp in exports {
+        // Skip runtime init/deinit — they are provided by runtime_init block below.
+        if exp.name == "js2rust_init" || exp.name == "js2rust_deinit" {
+            // Still generate the extern FFI binding so the raw_mod can link them.
+            let fn_name = format_ident!("{}", exp.name);
+            let ret_ty = zig_ret_type_to_rust_ffi(&exp.ret_type);
+            extern_fns.push(quote! {
+                pub fn #fn_name() -> #ret_ty;
+            });
+            continue;
+        }
+
         let fn_name = format_ident!("{}", exp.name);
 
         let mut extern_params = Vec::new();
@@ -406,7 +417,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
             }
         }
 
-        let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &raw_mod, group_suffix);
+        let safe_wrapper = generate_safe_wrapper(exp, &fn_name, &raw_mod);
         safe_wrappers.push(safe_wrapper);
     }
 
@@ -743,9 +754,8 @@ fn generate_safe_wrapper(
     exp: &CabiExport,
     fn_name: &syn::Ident,
     raw_mod: &syn::Ident,
-    group_suffix: &str,
 ) -> proc_macro2::TokenStream {
-    let wrapper_name = format_ident!("{}_{}", exp.name, group_suffix);
+    let wrapper_name = fn_name.clone();
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
 

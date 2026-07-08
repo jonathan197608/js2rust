@@ -435,7 +435,7 @@ test "JsMap clear" {
 
     try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
     try m.set(JsAny.fromString("b"), JsAny.fromI64(2));
-    m.clear();
+    m.clear(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 0), m.size());
 }
 

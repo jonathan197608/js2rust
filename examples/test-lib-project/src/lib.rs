@@ -13,13 +13,13 @@ mod tests {
 
     #[test]
     fn test_greet() {
-        let result = greet_main("World").unwrap();
+        let result = greet("World").unwrap();
         assert_eq!(result, "Hello, World!");
     }
 
     #[test]
     fn test_add() {
-        let result = add_main(1i64, 2i64);
+        let result = add(1i64, 2i64);
         assert_eq!(result, 3i64);
     }
 }
