@@ -1,5 +1,5 @@
 /// Generate a complete Zig library project from translated JS code.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -26,9 +26,11 @@ pub struct ProjectOptions {
     /// becomes a thin orchestrator that imports all per-file modules.
     pub per_file_code: Vec<PerFileModule>,
     /// Export names that should be re-exported from lib.zig.
-    /// Each entry: (export_name, source_module_name).
+    /// Each entry: (cabi_name, source_module_name, bare_fn_name).
     /// In multi-file mode, this should include ALL public exports from ALL modules.
-    pub external_exports: Vec<(String, String)>,
+    /// `cabi_name` is the disambiguated public name (may be `{fn}_{module}` on collision).
+    /// `bare_fn_name` is the original function name inside the per-file module.
+    pub external_exports: Vec<(String, String, String)>,
     /// Pre-generated `pub export fn` wrapper code for C ABI exports.
     /// Each wrapper calls a per-file module function and lives in the root lib.zig
     /// so that Zig propagates the symbols into the final .lib.
@@ -49,6 +51,10 @@ pub struct ProjectOptions {
     /// standard library references this symbol and Windows COFF doesn't
     /// support weak linkage across object files.
     pub include_windows_stub: bool,
+    /// Maps disambiguated CABI names → bare function names.
+    /// When export names collide across modules, the CABI name becomes
+    /// `{fn}_{module}` while the internal per-file function keeps its bare name.
+    pub export_rename: HashMap<String, String>,
 }
 
 /// Generate the full Zig library project.
@@ -529,30 +535,31 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push_str("// Re-export all public exports from per-file modules\n");
         let mut exported: HashSet<&str> = HashSet::new();
 
-        for (exp_name, mod_name) in &opts.external_exports {
-            if !exported.insert(exp_name) {
+        for (cabi_name, mod_name, bare_name) in &opts.external_exports {
+            if !exported.insert(cabi_name.as_str()) {
                 continue;
             }
             // Skip names that already have C ABI pub export fn wrappers
             // (they'd cause duplicate struct member errors in Zig).
-            if opts.cabi_names.contains(exp_name.as_str()) {
+            if opts.cabi_names.contains(cabi_name.as_str()) {
                 continue;
             }
-            if cabi_string_fns.contains(exp_name.as_str()) {
+            if cabi_string_fns.contains(bare_name.as_str()) {
                 // C ABI string-returning function: generate adapter
-                // pub fn greet(s: []const u8) []const u8 {
-                //     return std.mem.sliceTo(_mod.greet(@ptrCast(s.ptr)), 0);
-                // }
+                // The public name is cabi_name (possibly disambiguated),
+                // but the internal call uses bare_name (original fn name in module).
                 out.push_str(&format!(
-                    "pub fn {name}(s: []const u8) []const u8 {{\n    return std.mem.sliceTo(_{mod}.{name}(@ptrCast(s.ptr)), 0);\n}}\n",
-                    name = exp_name,
-                    mod = mod_name
+                    "pub fn {cabi}(s: []const u8) []const u8 {{\n    return std.mem.sliceTo(_{mod}.{bare}(@ptrCast(s.ptr)), 0);\n}}\n",
+                    cabi = cabi_name,
+                    mod = mod_name,
+                    bare = bare_name,
                 ));
             } else {
                 out.push_str(&format!(
-                    "pub const {exp} = _{mod}.{exp};\n",
-                    exp = exp_name,
-                    mod = mod_name
+                    "pub const {cabi} = _{mod}.{bare};\n",
+                    cabi = cabi_name,
+                    mod = mod_name,
+                    bare = bare_name,
                 ));
             }
         }

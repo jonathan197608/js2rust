@@ -177,9 +177,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 pub fn write_cabi_metadata(
     out_dir: &std::path::Path,
     group_name: &str,
-    cabi_exports: &[native_proto::NativeCabiExport],
+    cabi_exports: &[(String, native_proto::NativeCabiExport)],
     host_fns: &host::HostFnRegistry,
     include_init: bool,
+    cabi_rename: &std::collections::HashMap<String, String>,
 ) {
-    pipeline::write_cabi_metadata(out_dir, group_name, cabi_exports, host_fns, include_init)
+    pipeline::write_cabi_metadata(
+        out_dir,
+        group_name,
+        cabi_exports,
+        host_fns,
+        include_init,
+        cabi_rename,
+    )
 }

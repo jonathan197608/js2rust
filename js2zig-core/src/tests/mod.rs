@@ -5,6 +5,7 @@ mod common;
 mod advanced_builtins;
 mod basic;
 mod builtins_basic;
+mod collision;
 mod destructure_class_arrays;
 mod not_implemented_and_fixes;
 mod objects_and_types;
