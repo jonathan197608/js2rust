@@ -410,11 +410,17 @@ impl ValidatePass {
                 self.check_closure_refs_in_block(&fe.body);
             }
             IrExpr::ArrayCallbackInline(inline_data) => {
+                if let Some(obj_expr) = &inline_data.obj_expr {
+                    self.check_closure_refs_in_expr(obj_expr);
+                }
                 for stmt in &inline_data.body {
                     self.check_closure_refs_in_stmt(stmt);
                 }
             }
             IrExpr::ArrayMethodInline(inline_data) => {
+                if let Some(obj_expr) = &inline_data.obj_expr {
+                    self.check_closure_refs_in_expr(obj_expr);
+                }
                 for arg in &inline_data.args {
                     self.check_closure_refs_in_expr(arg);
                 }
@@ -737,11 +743,17 @@ fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet
             }
         }
         IrExpr::ArrayCallbackInline(inline_data) => {
+            if let Some(obj_expr) = &inline_data.obj_expr {
+                collect_idents_from_expr(obj_expr, names);
+            }
             for stmt in &inline_data.body {
                 collect_idents_from_stmt(stmt, names);
             }
         }
         IrExpr::ArrayMethodInline(inline_data) => {
+            if let Some(obj_expr) = &inline_data.obj_expr {
+                collect_idents_from_expr(obj_expr, names);
+            }
             for arg in &inline_data.args {
                 collect_idents_from_expr(arg, names);
             }

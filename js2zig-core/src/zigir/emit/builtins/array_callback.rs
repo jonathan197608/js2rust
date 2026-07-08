@@ -5,6 +5,24 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
+/// Resolve the receiver for an inline array callback/method.
+/// When `obj_expr` is set (method chaining), render it as an inline Zig expression.
+/// ArrayCallbackInline/ArrayMethodInline already emit `(blk: { ... })` with parens,
+/// so we skip wrapping to avoid double-parens. Other expr types get parens for safety.
+/// Otherwise (no obj_expr), return `obj_name` as-is (simple variable reference).
+fn resolve_receiver(data: &crate::zigir::types::IrArrayCallbackInline) -> String {
+    if let Some(expr) = &data.obj_expr {
+        use crate::zigir::types::IrExpr;
+        let rendered = Emitter::emit_expr_inline(expr);
+        match expr.as_ref() {
+            IrExpr::ArrayCallbackInline(_) | IrExpr::ArrayMethodInline(_) => rendered,
+            _ => format!("({})", rendered),
+        }
+    } else {
+        data.obj_name.clone()
+    }
+}
+
 // ═══════════════════════════════════════════════════════
 //  Array callback inlining
 // ═══════════════════════════════════════════════════════
@@ -51,7 +69,8 @@ impl Emitter {
             CollectionKind::Array => {
                 self.write(&format!(
                     "for ({}.items) |{}| ",
-                    data.obj_name, data.elem_param
+                    resolve_receiver(data),
+                    data.elem_param
                 ));
                 self.write("{\n");
                 self.indent_push();
@@ -65,7 +84,10 @@ impl Emitter {
             }
             CollectionKind::Map => {
                 // Map.forEach → while-iterator over inner HashMap
-                self.writeln(&format!("var iter = {}.inner.iterator();", data.obj_name));
+                self.writeln(&format!(
+                    "var iter = {}.inner.iterator();",
+                    resolve_receiver(data)
+                ));
                 self.writeln("while (iter.next()) |entry| {");
                 self.indent_push();
                 // Bind val and key parameters
@@ -93,7 +115,8 @@ impl Emitter {
                 // Set.forEach → for-loop over set.items.items
                 self.write(&format!(
                     "for ({}.items.items) |{}| ",
-                    data.obj_name, data.elem_param
+                    resolve_receiver(data),
+                    data.elem_param
                 ));
                 self.write("{\n");
                 self.indent_push();
@@ -127,12 +150,15 @@ impl Emitter {
         if data.has_idx_param {
             self.write(&format!(
                 "for ({}.items, 0..) |{}, {}| ",
-                data.obj_name, data.elem_param, data.idx_param
+                resolve_receiver(data),
+                data.elem_param,
+                data.idx_param
             ));
         } else {
             self.write(&format!(
                 "for ({}.items) |{}| ",
-                data.obj_name, data.elem_param
+                resolve_receiver(data),
+                data.elem_param
             ));
         }
         self.write("{\n");
@@ -174,12 +200,15 @@ impl Emitter {
         if data.has_idx_param {
             self.write(&format!(
                 "for ({}.items, 0..) |{}, {}| ",
-                data.obj_name, data.elem_param, data.idx_param
+                resolve_receiver(data),
+                data.elem_param,
+                data.idx_param
             ));
         } else {
             self.write(&format!(
                 "for ({}.items) |{}| ",
-                data.obj_name, data.elem_param
+                resolve_receiver(data),
+                data.elem_param
             ));
         }
         self.write("{\n");
@@ -231,7 +260,11 @@ impl Emitter {
             "var __filter: std.ArrayList({}) = .empty; ",
             elem_type_str
         ));
-        self.write(&format!("for ({}.items) |{}| ", data.obj_name, append_elem));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            resolve_receiver(data),
+            append_elem
+        ));
         self.write("{\n");
         self.indent_push();
         for stmt in &data.body {
@@ -276,7 +309,8 @@ impl Emitter {
         self.write(&format!("({}: {{ ", blk));
         self.write(&format!(
             "for ({}.items) |{}| ",
-            data.obj_name, data.elem_param
+            resolve_receiver(data),
+            data.elem_param
         ));
         self.write("{\n");
         self.indent_push();
@@ -322,7 +356,9 @@ impl Emitter {
         self.write(&format!("({}: {{ ", blk));
         self.write(&format!(
             "for ({}.items, 0..) |{}, {}| ",
-            data.obj_name, data.elem_param, index_name
+            resolve_receiver(data),
+            data.elem_param,
+            index_name
         ));
         self.write("{\n");
         self.indent_push();
@@ -371,7 +407,7 @@ impl Emitter {
         let blk = self.next_label();
         self.write(&format!(
             "({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
-            blk, data.obj_name, data.elem_param, data.obj_name
+            blk, resolve_receiver(data), data.elem_param, resolve_receiver(data)
         ));
         self.indent_push();
         for stmt in &data.body {
@@ -416,7 +452,7 @@ impl Emitter {
         let idx_name = format!("__{}_idx", data.elem_param);
         self.write(&format!(
             "({}: {{ var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
-            blk, data.obj_name, data.elem_param, data.obj_name, idx_name
+            blk, resolve_receiver(data), data.elem_param, resolve_receiver(data), idx_name
         ));
         self.indent_push();
         for stmt in &data.body {
@@ -471,9 +507,13 @@ impl Emitter {
         ));
         self.write(&format!(
             "__map.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.map capacity\"); ",
-            data.obj_name
+            resolve_receiver(data)
         ));
-        self.write(&format!("for ({}.items) |{}| ", data.obj_name, loop_elem));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            resolve_receiver(data),
+            loop_elem
+        ));
         self.write("{\n");
         self.indent_push();
         // Handle index parameter if present
@@ -553,7 +593,11 @@ impl Emitter {
             data.elem_param.clone()
         };
 
-        self.write(&format!("for ({}.items) |{}| ", data.obj_name, loop_var));
+        self.write(&format!(
+            "for ({}.items) |{}| ",
+            resolve_receiver(data),
+            loop_var
+        ));
         self.write("{\n");
         self.indent_push();
 

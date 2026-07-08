@@ -207,13 +207,13 @@ impl Lowerer {
             // When the receiver is a CallExpression (e.g., encodeURIComponent(str).replace(...)),
             // extract_callee_object_name_static returns None. We lower the receiver expression
             // and store it in obj_expr so the Emitter can inline it.
-            let obj_expr = if obj_name.is_none() {
+            let mut inner_expr = if obj_name.is_none() {
                 if let Expression::StaticMemberExpression(sme) = &ce.callee {
                     match &sme.object {
                         // Complex receivers: lower the entire expression so the Emitter
                         // can inline it (e.g., new Date(0).getFullYear()).
                         Expression::CallExpression(_) | Expression::NewExpression(_) => {
-                            Some(Box::new(self.lower_expr(&sme.object)))
+                            Some(self.lower_expr(&sme.object))
                         }
                         _ => None,
                     }
@@ -223,6 +223,43 @@ impl Lowerer {
             } else {
                 None
             };
+
+            // ── Method chaining: re-attempt inline when inner expr is ArrayCallbackInline/ArrayMethodInline ──
+            // For `arr.filter(x => x > 1).map(x => x * 2)`, the inner `.filter()` was inlined
+            // as ArrayCallbackInline, but the outer `.map()` fell through because extract_callee_object_name_static
+            // returned None (receiver is a CallExpression, not an Identifier).
+            // We give it a second chance: use the inner inline's element type, generate a temp var name,
+            // and construct the outer inline directly.
+            if let Some(inner) = inner_expr.take() {
+                let chain_elem_type = match &inner {
+                    IrExpr::ArrayCallbackInline(cb) => Some(cb.elem_type.clone()),
+                    IrExpr::ArrayMethodInline(mm) => Some(mm.elem_type.clone()),
+                    _ => None,
+                };
+
+                if let Some(elem_type) = chain_elem_type {
+                    // Try to re-attempt callback inline with a synthetic obj_name
+                    if let Some(inlined) =
+                        self.try_inline_array_callback_with_chain(ce, &builtin, &elem_type, &inner)
+                    {
+                        return inlined;
+                    }
+
+                    // Try to re-attempt method inline with a synthetic obj_name
+                    if let Some(inlined) = self
+                        .try_inline_array_method_with_chain(ce, &builtin, &args, &elem_type, &inner)
+                    {
+                        return inlined;
+                    }
+
+                    // Both failed — fall through to BuiltinCall with obj_expr
+                    inner_expr = Some(inner);
+                } else {
+                    inner_expr = Some(inner);
+                }
+            }
+
+            let obj_expr = inner_expr.map(Box::new);
 
             return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
                 module,

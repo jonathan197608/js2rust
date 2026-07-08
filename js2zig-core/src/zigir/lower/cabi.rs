@@ -183,6 +183,7 @@ impl Lowerer {
         Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
             kind,
             obj_name,
+            obj_expr: None,
             elem_type,
             args: args.to_vec(),
         })))
@@ -310,6 +311,7 @@ impl Lowerer {
                 kind,
                 collection_kind,
                 obj_name,
+                obj_expr: None,
                 elem_type,
                 elem_param,
                 has_idx_param,
@@ -318,6 +320,161 @@ impl Lowerer {
                 reduce_init,
             },
         )))
+    }
+
+    /// Try to inline an array callback method when the receiver is a chained expression
+    /// (e.g., `arr.filter(x => x > 1).map(x => x * 2)`). The inner expression has already
+    /// been lowered (typically to `ArrayCallbackInline` or `ArrayMethodInline`), and we know
+    /// its element type. We construct the outer callback inline with a synthetic `obj_name`
+    /// (a temp var placeholder) and store the inner expression in `obj_expr` so the emitter
+    /// can render it inline.
+    pub(super) fn try_inline_array_callback_with_chain(
+        &mut self,
+        ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+        elem_type: &ZigType,
+        inner_expr: &crate::zigir::types::IrExpr,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::{ArrayCallbackKind, IrArrayCallbackInline, IrExpr};
+
+        let kind = match builtin {
+            BC::ArrayForEach => ArrayCallbackKind::ForEach,
+            BC::ArraySome => ArrayCallbackKind::Some,
+            BC::ArrayEvery => ArrayCallbackKind::Every,
+            BC::ArrayFilter => ArrayCallbackKind::Filter,
+            BC::ArrayFind => ArrayCallbackKind::Find,
+            BC::ArrayFindIndex => ArrayCallbackKind::FindIndex,
+            BC::ArrayFindLast => ArrayCallbackKind::FindLast,
+            BC::ArrayFindLastIndex => ArrayCallbackKind::FindLastIndex,
+            BC::ArrayMap => ArrayCallbackKind::Map,
+            BC::ArrayReduce => ArrayCallbackKind::Reduce,
+            _ => return None,
+        };
+
+        let first_arg = ce.arguments.first()?.as_expression()?;
+
+        let (params, body) = match first_arg {
+            Expression::ArrowFunctionExpression(arrow) => (&arrow.params, &arrow.body),
+            Expression::FunctionExpression(f) => match &f.body {
+                Some(b) => (&f.params, b),
+                None => return None,
+            },
+            _ => return None,
+        };
+
+        let elem_param_raw = params
+            .items
+            .first()
+            .and_then(|p| crate::infer::binding_name(&p.pattern))
+            .unwrap_or("_")
+            .to_string();
+        let idx_param_raw = params
+            .items
+            .get(1)
+            .and_then(|p| crate::infer::binding_name(&p.pattern));
+        let has_idx_param = idx_param_raw.is_some();
+
+        // Check if parameters are actually used in the callback body.
+        let elem_used = body
+            .statements
+            .iter()
+            .any(|s| Self::ast_stmt_uses_ident(&elem_param_raw, s));
+        let elem_param = if elem_used {
+            elem_param_raw
+        } else {
+            "_".to_string()
+        };
+
+        let idx_param = if let Some(idx_name) = idx_param_raw {
+            if idx_name != "_"
+                && body
+                    .statements
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(idx_name, s))
+            {
+                idx_name.to_string()
+            } else {
+                "_".to_string()
+            }
+        } else {
+            String::new()
+        };
+
+        // Lower the callback body
+        let ir_body: Vec<crate::zigir::types::IrStmt> =
+            body.statements.iter().map(|s| self.lower_stmt(s)).collect();
+
+        // For method chaining, use a synthetic temp var name as placeholder.
+        // The emitter will replace it with the inline expression from obj_expr.
+        let chain_obj_name = self.name_mangler.next_name("__chain");
+
+        // Reduce init value
+        let reduce_init = if kind == ArrayCallbackKind::Reduce && ce.arguments.len() >= 2 {
+            ce.arguments
+                .get(1)
+                .and_then(|a| a.as_expression())
+                .map(|e| self.lower_expr(e))
+        } else {
+            None
+        };
+
+        Some(IrExpr::ArrayCallbackInline(Box::new(
+            IrArrayCallbackInline {
+                kind,
+                collection_kind: crate::zigir::types::CollectionKind::Array,
+                obj_name: chain_obj_name,
+                obj_expr: Some(Box::new(inner_expr.clone())),
+                elem_type: elem_type.clone(),
+                elem_param,
+                has_idx_param,
+                idx_param,
+                body: ir_body,
+                reduce_init,
+            },
+        )))
+    }
+
+    /// Try to inline an array non-callback method when the receiver is a chained expression.
+    /// Similar to `try_inline_array_callback_with_chain` but for methods like join, slice, etc.
+    pub(super) fn try_inline_array_method_with_chain(
+        &mut self,
+        _ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+        args: &[crate::zigir::types::IrExpr],
+        elem_type: &ZigType,
+        inner_expr: &crate::zigir::types::IrExpr,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::{ArrayMethodKind, IrArrayMethodInline, IrExpr};
+
+        let kind = match builtin {
+            BC::ArrayIncludes => ArrayMethodKind::Includes,
+            BC::ArrayIndexOf => ArrayMethodKind::IndexOf,
+            BC::ArrayLastIndexOf => ArrayMethodKind::LastIndexOf,
+            BC::ArrayJoin => ArrayMethodKind::Join,
+            BC::ArraySlice => ArrayMethodKind::Slice,
+            BC::ArraySplice => ArrayMethodKind::Splice,
+            BC::ArrayAt => ArrayMethodKind::At,
+            BC::ArrayConcat => ArrayMethodKind::Concat,
+            BC::ArrayCopyWithin => ArrayMethodKind::CopyWithin,
+            BC::ArrayFill => ArrayMethodKind::Fill,
+            BC::ArrayWith => ArrayMethodKind::With,
+            BC::ArrayToReversed => ArrayMethodKind::ToReversed,
+            BC::ArrayToSorted => ArrayMethodKind::ToSorted,
+            BC::ArrayToSpliced => ArrayMethodKind::ToSpliced,
+            _ => return None,
+        };
+
+        let chain_obj_name = self.name_mangler.next_name("__chain");
+
+        Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
+            kind,
+            obj_name: chain_obj_name,
+            obj_expr: Some(Box::new(inner_expr.clone())),
+            elem_type: elem_type.clone(),
+            args: args.to_vec(),
+        })))
     }
 
     /// Extract the object variable name from a CallExpression's callee.

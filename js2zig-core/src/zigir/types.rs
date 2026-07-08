@@ -859,6 +859,9 @@ pub struct IrArrayCallbackInline {
     pub collection_kind: CollectionKind,
     /// Name of the array object being iterated (e.g., "arr").
     pub obj_name: String,
+    /// Inline receiver expression for method chaining (e.g., `arr.filter(...).map(...)`).
+    /// When present, the emitter renders this expression and uses it instead of `obj_name`.
+    pub obj_expr: Option<Box<IrExpr>>,
     /// The Zig type of array elements (for filter's ArrayList type).
     pub elem_type: ZigType,
     /// The callback element parameter name (e.g., "x" from `(x) => ...`),
@@ -916,6 +919,9 @@ pub struct IrArrayMethodInline {
     pub kind: ArrayMethodKind,
     /// Name of the array object being operated on (e.g., "arr").
     pub obj_name: String,
+    /// Inline receiver expression for method chaining.
+    /// When present, the emitter renders this expression and uses it instead of `obj_name`.
+    pub obj_expr: Option<Box<IrExpr>>,
     /// The Zig type of array elements (for ArrayList type in slice/concat/splice).
     pub elem_type: ZigType,
     /// Method arguments (already lowered to IR).

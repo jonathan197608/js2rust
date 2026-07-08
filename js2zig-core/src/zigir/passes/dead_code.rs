@@ -200,6 +200,10 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
         IrExpr::Sequence(exprs) => exprs.iter().any(expr_has_side_effects),
         IrExpr::ArrayCallbackInline(inline_data) => {
             inline_data.body.iter().any(stmt_has_side_effects)
+                || inline_data
+                    .obj_expr
+                    .as_ref()
+                    .is_some_and(|e| expr_has_side_effects(e))
         }
         IrExpr::ArrayMethodInline(inline_data) => {
             // All array method inlines have side effects (loops, allocs, mutations)
@@ -579,9 +583,27 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
                     changed = true;
                 }
             }
+            if let Some(obj_expr) = &mut inline_data.obj_expr
+                && eliminate_unreachable_in_expr(obj_expr)
+            {
+                changed = true;
+            }
             changed
         }
-        IrExpr::ArrayMethodInline(_) => false,
+        IrExpr::ArrayMethodInline(inline_data) => {
+            let mut changed = false;
+            if let Some(obj_expr) = &mut inline_data.obj_expr
+                && eliminate_unreachable_in_expr(obj_expr)
+            {
+                changed = true;
+            }
+            for arg in &mut inline_data.args {
+                if eliminate_unreachable_in_expr(arg) {
+                    changed = true;
+                }
+            }
+            changed
+        }
         IrExpr::OptionalChain { object, body, .. } => {
             eliminate_unreachable_in_expr(object) | eliminate_unreachable_in_expr(body)
         }
@@ -849,6 +871,9 @@ fn collect_expr_refs(expr: &IrExpr, refs: &mut std::collections::HashSet<String>
         IrExpr::ArrayCallbackInline(inline_data) => {
             for stmt in &inline_data.body {
                 collect_stmt_refs(stmt, refs);
+            }
+            if let Some(obj_expr) = &inline_data.obj_expr {
+                collect_expr_refs(obj_expr, refs);
             }
         }
         IrExpr::ArrayMethodInline(inline_data) => {
