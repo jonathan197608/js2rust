@@ -32,8 +32,15 @@ pub fn transpile_js(
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
     host_fns: Option<&crate::host::HostFnRegistry>,
+    module_name: &str,
 ) -> Result<TranspileResult, String> {
-    transpile_js_inner(program, js_source, exported_functions, host_fns)
+    transpile_js_inner(
+        program,
+        js_source,
+        exported_functions,
+        host_fns,
+        module_name,
+    )
 }
 
 /// Internal helper: transpile JS AST to Zig, returning TranspileResult.
@@ -48,6 +55,7 @@ fn transpile_js_inner(
     js_source: &str,
     exported_functions: Option<std::collections::HashSet<String>>,
     host_fns: Option<&crate::host::HostFnRegistry>,
+    module_name: &str,
 ) -> Result<TranspileResult, String> {
     // JSDoc extraction (still needs raw source text)
     let (typedefs, type_annotations, return_types, param_types) =
@@ -85,6 +93,7 @@ fn transpile_js_inner(
         exported_functions.clone(),
         async_host_fns.clone(),
         js_source.to_string(),
+        module_name.to_string(),
     );
     let mut ir_module = lowerer.lower(program);
 

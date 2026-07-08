@@ -12,7 +12,7 @@ pub fn parse_and_transpile(
 ) -> Result<TranspileResult, String> {
     let alloc = oxc_allocator::Allocator::default();
     let program = crate::parser::parse(&alloc, js);
-    transpile_js(&program, js, exports, None)
+    transpile_js(&program, js, exports, None, "test")
 }
 
 /// Helper: run `zig ast-check` on generated Zig code.

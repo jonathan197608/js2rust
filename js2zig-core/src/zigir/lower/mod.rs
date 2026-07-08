@@ -57,6 +57,8 @@ pub struct Lowerer {
     pub(super) exported_functions: Option<HashSet<String>>,
     /// Original JS source text (for diagnostics line:col).
     pub(super) source: String,
+    /// Module name (derived from JS filename, e.g. "main" or "array_methods").
+    pub(super) module_name: String,
 
     // ── Name management ───────────────────────────────
     pub(super) name_mangler: NameMangler,
@@ -120,6 +122,7 @@ impl Lowerer {
         exported_functions: Option<HashSet<String>>,
         async_host_fns: HashSet<String>,
         source: String,
+        module_name: String,
     ) -> Self {
         Self {
             type_info,
@@ -127,6 +130,7 @@ impl Lowerer {
             async_host_fns,
             exported_functions,
             source,
+            module_name,
             name_mangler: NameMangler::new(),
             fn_ctx: None,
             closure_mgr: ClosureManager::new(),
@@ -152,7 +156,7 @@ impl Lowerer {
 impl Lowerer {
     /// Lower a complete JS `Program` into an `IrModule`.
     pub fn lower(&mut self, program: &Program) -> IrModule {
-        let module_name = String::from("main"); // TODO: derive from filename
+        let module_name = self.module_name.clone();
 
         // 1. Infer required imports from type info
         let imports = self.infer_imports();
@@ -580,6 +584,7 @@ mod tests {
             None,
             HashSet::new(),
             "let x = 1;".to_string(),
+            String::from("test"),
         );
         assert!(lowerer.fn_ctx.is_none());
         assert!(lowerer.class_names.is_empty());
@@ -595,7 +600,14 @@ mod tests {
             return_types: HashMap::new(),
             param_types: HashMap::new(),
         };
-        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+        let mut lowerer = Lowerer::new(
+            type_info,
+            jsdoc_data,
+            None,
+            HashSet::new(),
+            String::new(),
+            String::from("test"),
+        );
 
         // Parse an empty program
         let js = "";
@@ -605,7 +617,7 @@ mod tests {
         let result = parser.parse();
         let module = lowerer.lower(&result.program);
 
-        assert_eq!(module.name, "main");
+        assert_eq!(module.name, "test");
         assert!(module.declarations.is_empty());
         assert!(module.closure_structs.is_empty());
         assert!(module.diagnostics.is_empty());
@@ -620,7 +632,14 @@ mod tests {
             return_types: HashMap::new(),
             param_types: HashMap::new(),
         };
-        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+        let mut lowerer = Lowerer::new(
+            type_info,
+            jsdoc_data,
+            None,
+            HashSet::new(),
+            String::new(),
+            String::from("test"),
+        );
 
         // Enter a function
         let saved = lowerer.enter_fn("foo", true, Some(ZigType::I64));
@@ -646,7 +665,14 @@ mod tests {
             return_types: HashMap::new(),
             param_types: HashMap::new(),
         };
-        let mut lowerer = Lowerer::new(type_info, jsdoc_data, None, HashSet::new(), String::new());
+        let mut lowerer = Lowerer::new(
+            type_info,
+            jsdoc_data,
+            None,
+            HashSet::new(),
+            String::new(),
+            String::from("test"),
+        );
 
         // Enter outer function
         let saved_outer = lowerer.enter_fn("outer", true, Some(ZigType::Void));
@@ -689,6 +715,7 @@ mod tests {
             Some(exported),
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
 
         assert!(lowerer.is_export_fn(Some("greet")));
@@ -715,6 +742,7 @@ mod tests {
             None,
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
         let imports = lowerer.infer_imports();
         assert!(
@@ -750,6 +778,7 @@ mod tests {
             None,
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
         let imports = lowerer.infer_imports();
         let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
@@ -790,6 +819,7 @@ mod tests {
             None,
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
         let imports = lowerer.infer_imports();
         let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
@@ -831,6 +861,7 @@ mod tests {
             None,
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
         let imports = lowerer.infer_imports();
         let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
@@ -877,6 +908,7 @@ mod tests {
             None,
             HashSet::new(),
             String::new(),
+            String::from("test"),
         );
         let imports = lowerer.infer_imports();
         let js_runtime_count = imports

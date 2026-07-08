@@ -381,6 +381,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     &src,
                     Some(transpile_exports),
                     Some(&host_fns),
+                    member,
                 );
 
                 let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
