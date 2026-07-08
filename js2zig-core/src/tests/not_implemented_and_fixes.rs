@@ -1529,6 +1529,23 @@ fn test_dynamic_string_index() {
 }
 
 #[test]
+fn test_string_literal_index_inferred_type() {
+    // const s = "hello"; s[0] — type inferred as Str, not relying on JSDoc
+    let js = r#"
+        export function getFirstChar() {
+            const s = "hello";
+            return s[0];
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_string_literal_index_inferred_type");
+    assert!(
+        zig.contains("@as(i64, @intCast("),
+        "Expected @as(i64, @intCast(...)) for StringChar on inferred string var, got:\n{}",
+        zig
+    );
+}
+
+#[test]
 fn test_bit_assign_operators() {
     // <<= >>= &= |= ^= compound assignment
     let js = r#"

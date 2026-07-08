@@ -174,12 +174,24 @@ impl Lowerer {
         // Determine the ZigType of the object (for routing)
         let obj_type = self.infer_expr_type(&mem.object);
 
-        // ── Case 1: NumericLiteral key → IndexAccess ──
+        // ── Case 1: NumericLiteral key → IndexAccess or StringChar ──
         if let Expression::NumericLiteral(nl) = &mem.expression {
             let is_arraylist = obj_type
                 .as_ref()
                 .map(|t| matches!(t, ZigType::ArrayList(_)))
                 .unwrap_or(false);
+            let is_string = obj_type
+                .as_ref()
+                .map(|t| matches!(t, ZigType::Str))
+                .unwrap_or(false);
+            // str[0] → StringChar (JS charCodeAt semantics, returns i64)
+            if is_string {
+                return IrExpr::ComputedField {
+                    object,
+                    key: Box::new(IrExpr::IntLiteral(nl.value as i64)),
+                    key_kind: ComputedKeyKind::StringChar,
+                };
+            }
             return IrExpr::IndexAccess {
                 object,
                 index: Box::new(IrExpr::IntLiteral(nl.value as i64)),
