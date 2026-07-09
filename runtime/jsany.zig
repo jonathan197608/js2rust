@@ -6,6 +6,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsValue = @import("jsvalue.zig").JsValue;
+const js_allocator = @import("js_allocator.zig");
 
 /// Type alias for a dynamic JS array.
 pub const JsArrayList = std.ArrayList(JsAny);
@@ -573,7 +574,15 @@ pub const JsAny = union(enum) {
 
     /// Deinit heap-allocated array or object.
     /// Does NOT free .value.string — use deinitDeep() for that.
+    ///
+    /// Under the multi-arena allocator, free()/destroy() are no-ops, so the
+    /// entire traversal + cleanup is wasted CPU. isNoOpFree() short-circuits
+    /// with a single pointer comparison, skipping all work.
     pub fn deinit(self: *JsAny, alloc: Allocator) void {
+        if (js_allocator.isNoOpFree(alloc)) {
+            self.* = .{ .null = {} };
+            return;
+        }
         switch (self.*) {
             .array => |a| {
                 for (a.items) |*item| item.deinit(alloc);
@@ -599,7 +608,14 @@ pub const JsAny = union(enum) {
     /// Use this variant when JsAny may contain heap-allocated strings
     /// (e.g., values from JSON.parse). NOT safe for string literals
     /// (e.g., JsAny.fromString("hello")).
+    ///
+    /// Under the multi-arena allocator, all free()/destroy() are no-ops.
+    /// isNoOpFree() short-circuits with a single pointer comparison.
     pub fn deinitDeep(self: *JsAny, alloc: Allocator) void {
+        if (js_allocator.isNoOpFree(alloc)) {
+            self.* = .{ .null = {} };
+            return;
+        }
         switch (self.*) {
             .value => |v| {
                 if (v == .string) alloc.free(v.string);

@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const js_allocator = @import("js_allocator.zig");
 
 /// Global symbol counter for unique Symbol() creation.
 var next_symbol_id: u64 = 0;
@@ -78,7 +79,9 @@ pub const JsSymbol = struct {
     }
 
     /// Free the symbol's owned description (if any).
+    /// Under the arena allocator, free() is a no-op — isNoOpFree() skips the work.
     pub fn deinit(self: *JsSymbol, alloc: Allocator) void {
+        if (js_allocator.isNoOpFree(alloc)) return;
         if (self.description) |d| {
             alloc.free(d);
             self.description = null;

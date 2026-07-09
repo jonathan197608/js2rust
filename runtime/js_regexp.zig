@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const js_allocator = @import("js_allocator.zig");
 
 /// RegExp.test — check if pattern matches anywhere in the subject.
 /// Simplified: uses substring matching.
@@ -36,7 +37,9 @@ pub const JsRegExp = struct {
     }
 
     /// Release the owned pattern and flags strings.
+    /// Under the arena allocator, free() is a no-op — isNoOpFree() skips the work.
     pub fn deinit(self: *JsRegExp, alloc: Allocator) void {
+        if (js_allocator.isNoOpFree(alloc)) return;
         alloc.free(self.pattern);
         alloc.free(self.flags);
         self.pattern = &.{};

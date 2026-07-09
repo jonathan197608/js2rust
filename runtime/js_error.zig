@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const js_allocator = @import("js_allocator.zig");
 
 /// Error "class" — wraps name, message and stack strings.
 /// In JS, caught errors have `.name`, `.message` and `.stack` properties.
@@ -20,10 +21,11 @@ pub const JsError = struct {
     }
 
     pub fn deinit(self: JsError, alloc: Allocator) void {
+        if (js_allocator.isNoOpFree(alloc)) return;
         // name and message may point into the stack allocation,
         // so only free the stack string (which owns its own buffer).
         // If they were individually duped, free all three.
-        // Safe approach: free all three since init() dupes name & message.
+        // Safe approach: free all three since init() dupes name & messages.
         alloc.free(self.name);
         alloc.free(self.message);
         alloc.free(self.stack);

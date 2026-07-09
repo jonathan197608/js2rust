@@ -14,6 +14,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsAny = @import("jsany.zig").JsAny;
+const js_allocator = @import("js_allocator.zig");
 
 // ── JsAnyHashMapContext ───────────────────────────────────────────
 // Shared between Map and Set. Implements SameValueZero:
@@ -100,7 +101,12 @@ pub fn JsCollection(comptime Value: type) type {
         /// (fromString("literal") puts non-heap pointers into .value.string).
         /// String leaks are acceptable: production uses arena allocation,
         /// and arena reset reclaims all strings at once.
+        ///
+        /// Under the multi-arena allocator, free() is a no-op, so the entire
+        /// traversal is wasted CPU. isNoOpFree() short-circuits with a single
+        /// pointer comparison, skipping the traversal entirely.
         pub fn deinit(self: *@This(), alloc: Allocator) void {
+            if (js_allocator.isNoOpFree(alloc)) return;
             var iter = self.inner.iterator();
             while (iter.next()) |entry| {
                 var key = entry.key_ptr.*;
@@ -139,6 +145,10 @@ pub fn JsCollection(comptime Value: type) type {
         }
 
         pub fn clear(self: *@This(), alloc: Allocator) void {
+            if (js_allocator.isNoOpFree(alloc)) {
+                self.inner.clearAndFree();
+                return;
+            }
             var iter = self.inner.iterator();
             while (iter.next()) |entry| {
                 var key = entry.key_ptr.*;

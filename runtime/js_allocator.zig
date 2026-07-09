@@ -544,6 +544,15 @@ pub fn allocBytes(n: usize) ![]u8 {
     return g_instance.?.allocBytes(n);
 }
 
+/// Check whether the given allocator's free operation is a no-op.
+/// Under the multi-arena allocator, `freeImpl` discards all parameters,
+/// so individual deinit() calls waste CPU traversing data structures
+/// only to call no-op free(). This check allows deinit methods to
+/// short-circuit with a single pointer comparison.
+pub fn isNoOpFree(alloc: Allocator) bool {
+    return alloc.vtable.free == freeImpl;
+}
+
 /// 复制字节到 Arena（返回 error 而非 panic）
 pub fn dupeBytes(src: []const u8) ![]u8 {
     const buf = try g_instance.?.allocBytes(src.len);
