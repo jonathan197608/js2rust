@@ -368,8 +368,10 @@ fn milliTimestampWindows() i64 {
 
 fn milliTimestampPosix() i64 {
     var ts: std.posix.timespec = undefined;
-    std.posix.system.clock_gettime(.REALTIME, &ts) catch return 0;
-    return @as(i64, ts.tv_sec) * 1000 + @divTrunc(@as(i64, ts.tv_nsec), 1_000_000);
+    // std.posix.system.clock_gettime returns c_int (0 on success, -1 on error),
+    // NOT an error union — cannot use `catch`.
+    if (std.posix.system.clock_gettime(.REALTIME, &ts) != 0) return 0;
+    return @as(i64, ts.sec) * 1000 + @divTrunc(@as(i64, ts.nsec), 1_000_000);
 }
 
 // ── Date math: millis ↔ civil date ──

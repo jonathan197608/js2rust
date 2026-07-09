@@ -8,6 +8,13 @@ const JsValue = @import("jsvalue.zig").JsValue;
 
 const JsValueHashMap = std.StringHashMap(JsValue);
 
+/// Object(value) — wraps a primitive value in an object wrapper.
+/// Simplified: returns the value as-is (this runtime has no real object wrappers).
+/// This allows Object(0n), Object("str"), etc. to compile and be used in comparisons.
+pub fn constructor(value: anytype) @TypeOf(value) {
+    return value;
+}
+
 /// Object.keys — return array of string keys from a HashMap.
 pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     var kiter = obj.iterator();
