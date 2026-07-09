@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'e5a2b865-2f87-48fd-b500-5460a22d422a'
+  PropagateID: 'e5a2b865-2f87-48fd-b500-5460a22d422a'
+  ReservedCode1: 'ae9f808c-c707-461d-874a-f5d831e8e0d3'
+  ReservedCode2: 'ae9f808c-c707-461d-874a-f5d831e8e0d3'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '27dabdf1-c792-42a1-afe4-c404c641224f'
   PropagateID: '27dabdf1-c792-42a1-afe4-c404c641224f'
   ReservedCode1: '33e5e61e-8ef5-4c3f-97b4-c17aada83edc'
@@ -1327,16 +1338,19 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | 结果 | 数量 | 说明 |
 |------|------|------|
 | MATCH | 203 | 完全匹配 |
-| MISMATCH | 1 | 已知差异 |
+| MISMATCH | 2 | 已知差异 |
 | ERROR (CRASH) | 0 | — |
 
-**匹配率: 203/204 = 99.5%**
+**匹配率: 202/204 = 99.0%**
 
-**1 个已知非 PASS**:
+**2 个已知非 PASS**:
 
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+| `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` stack trace 格式差异 | WONTFIX |
+
+> AI生成
 
 > AI生成
 
