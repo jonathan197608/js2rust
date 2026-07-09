@@ -127,6 +127,40 @@ impl ZigType {
             ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn => None,
         }
     }
+
+    /// Parse a Zig type string back into `ZigType`.
+    ///
+    /// This is the inverse of `to_zig_type()` for primitive and named types.
+    /// Complex types (ArrayList, Struct) are not supported by this method;
+    /// they should be constructed directly.
+    ///
+    /// Replaces the previously duplicated `parse_type_str()` (host.rs)
+    /// and `zig_str_to_type()` (infer/fn_types.rs).
+    pub fn from_zig_str(s: &str) -> ZigType {
+        match s {
+            "i64" => ZigType::I64,
+            "i32" => ZigType::I64, // i32 widens to i64
+            "f64" => ZigType::F64,
+            "bool" => ZigType::Bool,
+            "[]const u8" => ZigType::Str,
+            "void" => ZigType::Void,
+            "bigint" => ZigType::BigInt,
+            "jsany" | "JsAny" => ZigType::JsAny,
+            "jssymbol" | "JsSymbol" => ZigType::JsSymbol,
+            "jserror" | "JsError" => ZigType::JsError,
+            "anytype" => ZigType::Anytype,
+            // Host JSON config uses "string" and "any" as type names
+            "string" => ZigType::Str,
+            "any" | "jsvalue" => ZigType::Void,
+            // struct: prefix from host JSON config
+            other if other.starts_with("struct:") => ZigType::NamedStruct(other[7..].to_string()),
+            // Named struct (fallback for types not in typedefs — no spaces or brackets)
+            other if !other.contains(' ') && !other.contains('[') => {
+                ZigType::NamedStruct(other.to_string())
+            }
+            _ => ZigType::I64, // default fallback
+        }
+    }
 }
 
 /// Convert HostType to ZigType.

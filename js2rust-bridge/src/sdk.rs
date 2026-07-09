@@ -114,6 +114,30 @@ impl std::fmt::Debug for HostStr<'_> {
 
 // ── String return — allocated in Zig Arena ─────────────────────────
 
+/// Allocate a string in Zig Arena via `js_allocator_dupe`.
+///
+/// Internal helper shared by `JsStr::new()` and `JsStrField::new()`.
+/// Returns a null pointer on OOM (the Zig side returns null on allocation failure).
+///
+/// # Safety
+///
+/// The returned pointer must be used in accordance with Zig Arena lifetime rules.
+unsafe fn dupe_to_arena(s: &str) -> *mut u8 {
+    // Declared here to keep the extern block local (isolated from user code).
+    // NOTE: return type is *mut u8 (not Option<*mut u8>) because Rust does NOT
+    // guarantee null-pointer optimization for Option<*mut u8> — it would be
+    // 16 bytes instead of 8, causing an ABI mismatch with Zig's ?[*]u8.
+    unsafe extern "C" {
+        fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
+    }
+    let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
+    assert!(
+        !ptr.is_null(),
+        "js_allocator_dupe returned null: Zig arena OOM"
+    );
+    ptr
+}
+
 /// Return type for sync host functions that return a string.
 ///
 /// Memory is allocated in Zig's Arena via `js_allocator_dupe` (single call:
@@ -139,18 +163,7 @@ impl JsStr {
         if s.is_empty() {
             return Self::empty();
         }
-        // Declared here to keep the extern block local (isolated from user code).
-        // NOTE: return type is *mut u8 (not Option<*mut u8>) because Rust does NOT
-        // guarantee null-pointer optimization for Option<*mut u8> — it would be
-        // 16 bytes instead of 8, causing an ABI mismatch with Zig's ?[*]u8.
-        unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
-        }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
-        assert!(
-            !ptr.is_null(),
-            "js_allocator_dupe returned null: Zig arena OOM"
-        );
+        let ptr = unsafe { dupe_to_arena(s) };
         Self {
             ptr,
             len: s.len() as isize,
@@ -220,15 +233,7 @@ impl JsStrField {
         if s.is_empty() {
             return Self::empty();
         }
-        // NOTE: *mut u8 (not Option<*mut u8>) — see JsStr::new for ABI rationale.
-        unsafe extern "C" {
-            fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8;
-        }
-        let ptr = unsafe { js_allocator_dupe(s.as_ptr(), s.len()) };
-        assert!(
-            !ptr.is_null(),
-            "js_allocator_dupe returned null: Zig arena OOM"
-        );
+        let ptr = unsafe { dupe_to_arena(s) };
         Self { ptr, len: s.len() }
     }
 

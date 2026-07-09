@@ -12,6 +12,7 @@
 //! A minimal `build.rs` only needs `js2rust_bridge::build(false)`.
 
 use indexmap::IndexMap;
+use js2zig_core::toml_config::HostFnToml;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
@@ -36,68 +37,6 @@ mod host_fn;
 #[proc_macro_attribute]
 pub fn host_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     host_fn::host_fn_impl(attr.into(), item.into()).into()
-}
-
-// ── js2rust.toml deserialization (minimal, shared format contract) ──
-
-#[derive(Debug, Deserialize)]
-struct TomlConfig {
-    project: TomlProject,
-    #[serde(default)]
-    build: TomlBuild,
-    #[serde(default)]
-    host_functions: Vec<TomlHostFn>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TomlProject {
-    js_files: Vec<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct TomlBuild {
-    #[serde(default)]
-    force_rebuild: bool,
-    #[serde(default)]
-    run_zig_build: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct TomlHostFn {
-    name: String,
-    params: Vec<String>,
-    #[serde(default)]
-    returns: Option<String>,
-    #[serde(default)]
-    is_async: bool,
-    #[serde(default)]
-    async_returns: IndexMap<String, String>,
-}
-
-/// Load js2rust.toml from CARGO_MANIFEST_DIR.
-fn load_toml_config() -> TomlConfig {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    let config_path = std::path::Path::new(&manifest_dir).join("js2rust.toml");
-
-    let content = std::fs::read_to_string(&config_path).unwrap_or_else(|e| {
-        panic!(
-            "js2rust_bridge: failed to read {}: {}\n\
-             Create a js2rust.toml in your crate root with:\n\
-             \n\
-             [project]\n\
-             js_files = [\"js_src/main.js\"]\n",
-            config_path.display(),
-            e
-        );
-    });
-
-    toml::from_str(&content).unwrap_or_else(|e| {
-        panic!(
-            "js2rust_bridge: failed to parse {}: {}",
-            config_path.display(),
-            e
-        );
-    })
 }
 
 // ── C ABI export metadata (mirrors the JSON schema) ───────────────
@@ -149,7 +88,7 @@ pub fn js2rust_bridge(input: TokenStream) -> TokenStream {
 // ── Transpile + generate FFI ──────────────────────────────────────
 
 fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
-    let config = load_toml_config();
+    let config = js2zig_core::toml_config::Js2rustConfig::from_manifest_dir();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 
     // js_files must not be empty
@@ -162,12 +101,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     }
 
     // Derive group name from first js_files entry stem
-    let first_js = &config.project.js_files[0];
-    let stem = std::path::Path::new(first_js)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
-    let group = js2zig_core::analyzer::sanitize_module_name(stem);
+    let group = config.group_name();
 
     // Resolve all JS file paths
     let mut js_file_paths: Vec<std::path::PathBuf> = config
@@ -182,37 +116,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     // Resolve cache directory
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
 
-    // Convert host function declarations to js2zig_core::HostFunction
-    let mut host_functions = Vec::new();
-    for hf in &config.host_functions {
-        let params: Vec<_> = hf
-            .params
-            .iter()
-            .map(|t| type_name_to_host_type(t))
-            .collect();
-
-        let return_type = hf.returns.as_deref().and_then(|t| {
-            if t == "void" {
-                None
-            } else {
-                Some(type_name_to_host_type(t))
-            }
-        });
-
-        let async_return_fields: Vec<(String, js2zig_core::HostType)> = hf
-            .async_returns
-            .iter()
-            .map(|(name, ty)| (name.clone(), type_name_to_host_type(ty)))
-            .collect();
-
-        host_functions.push(js2zig_core::HostFunction {
-            name: hf.name.clone(),
-            params,
-            return_type,
-            is_async: hf.is_async,
-            async_return_fields,
-        });
-    }
+    // Convert host function declarations — now uses js2zig_core canonical implementation
+    let host_config = config.to_host_config();
 
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
@@ -223,13 +128,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             all
         },
         out_dir: cache_dir.clone(),
-        host_config: if host_functions.is_empty() {
-            None
-        } else {
-            Some(js2zig_core::HostConfig {
-                functions: host_functions,
-            })
-        },
+        host_config,
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
     };
@@ -320,24 +219,6 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         )
         .to_compile_error()
     })
-}
-
-// ── Type name conversion (shared) ─────────────────────────────────
-
-fn type_name_to_host_type(name: &str) -> js2zig_core::HostType {
-    match name {
-        "i64" => js2zig_core::HostType::I64,
-        "i32" => js2zig_core::HostType::I32,
-        "f64" => js2zig_core::HostType::F64,
-        "bool" => js2zig_core::HostType::Bool,
-        "str" => js2zig_core::HostType::Str,
-        "void" => js2zig_core::HostType::Void,
-        other => panic!(
-            "js2rust.toml: unknown host type '{}'. \
-            Valid types: i64, i32, f64, bool, str, void",
-            other
-        ),
-    }
 }
 
 // ── FFI bindings generation ───────────────────────────────────────
@@ -504,7 +385,7 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
 ///
 /// Async functions that return a struct get the struct definition with
 /// `JsStrField` fields, already `#[repr(C)]`-compatible.
-fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<String> {
+fn generate_host_stubs(host_fns: &[HostFnToml], group_suffix: &str) -> Option<String> {
     if host_fns.is_empty() {
         return None;
     }
@@ -540,7 +421,10 @@ fn generate_host_stubs(host_fns: &[TomlHostFn], group_suffix: &str) -> Option<St
 
         // Return type
         let ret_ty = if !hf.async_returns.is_empty() {
-            let struct_name = format_ident!("Host{}Result", pascal_case(&hf.name));
+            let struct_name = format_ident!(
+                "Host{}Result",
+                js2zig_core::toml_config::pascal_case(&hf.name)
+            );
             async_struct_defs.push(generate_async_struct(&struct_name, &hf.async_returns));
             quote! { #struct_name }
         } else if hf.returns.as_deref() == Some("str") {
@@ -660,7 +544,7 @@ fn generate_async_struct(
 }
 
 /// Build a doc string for the host function stub.
-fn build_host_stub_doc(hf: &TomlHostFn) -> String {
+fn build_host_stub_doc(hf: &HostFnToml) -> String {
     let js_params = hf.params.join(", ");
     let js_ret = if !hf.async_returns.is_empty() {
         format!(
@@ -692,7 +576,10 @@ fn build_host_stub_doc(hf: &TomlHostFn) -> String {
     let ret_sig = if hf.returns.as_deref() == Some("str") {
         "JsStr".to_string()
     } else if !hf.async_returns.is_empty() {
-        format!("Host{}Result", pascal_case(&hf.name))
+        format!(
+            "Host{}Result",
+            js2zig_core::toml_config::pascal_case(&hf.name)
+        )
     } else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() {
         "void".to_string()
     } else {
@@ -719,23 +606,6 @@ fn build_host_stub_doc(hf: &TomlHostFn) -> String {
         ret_sig = ret_sig,
         sdk_note = sdk_note,
     )
-}
-
-/// Convert snake_case to PascalCase.
-fn pascal_case(name: &str) -> String {
-    let mut result = String::with_capacity(name.len());
-    let mut capitalize = true;
-    for ch in name.chars() {
-        if ch == '_' {
-            capitalize = true;
-        } else if capitalize {
-            result.push(ch.to_ascii_uppercase());
-            capitalize = false;
-        } else {
-            result.push(ch);
-        }
-    }
-    result
 }
 
 /// Convert type name to Rust C ABI FFI type.

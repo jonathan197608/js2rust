@@ -6,6 +6,7 @@ pub mod parser;
 pub mod project;
 pub mod sourcemap;
 pub mod testgen;
+pub mod toml_config;
 pub mod types;
 
 /// Native-type system transpilation (anytype + @TypeOf).

@@ -68,12 +68,7 @@ pub fn build() {
     let additional_js_paths = js_file_paths;
 
     let group_name = config.group_name();
-
-    let host_config = if config.host_functions.is_empty() {
-        None
-    } else {
-        Some(build_host_config(&config))
-    };
+    let host_config = config.to_host_config();
 
     let project_config = js2zig_core::ProjectConfig {
         name: group_name,
@@ -140,59 +135,5 @@ fn link_from_cache(cache_dir: &std::path::Path) {
              Run `cargo build` twice on a clean checkout.",
             cache_dir.display()
         );
-    }
-}
-
-/// Convert `Js2rustConfig.host_functions` to `HostConfig`.
-fn build_host_config(config: &Js2rustConfig) -> HostConfig {
-    let functions: Vec<HostFunction> = config
-        .host_functions
-        .iter()
-        .map(|hf| {
-            let params: Vec<HostType> = hf
-                .params
-                .iter()
-                .map(|t| type_name_to_host_type(t))
-                .collect();
-
-            let return_type = hf.returns.as_deref().and_then(|t| {
-                if t == "void" {
-                    None
-                } else {
-                    Some(type_name_to_host_type(t))
-                }
-            });
-
-            let async_return_fields: Vec<(String, HostType)> = hf
-                .async_returns
-                .iter()
-                .map(|(name, ty)| (name.clone(), type_name_to_host_type(ty)))
-                .collect();
-
-            HostFunction {
-                name: hf.name.clone(),
-                params,
-                return_type,
-                is_async: hf.is_async,
-                async_return_fields,
-            }
-        })
-        .collect();
-
-    HostConfig { functions }
-}
-
-fn type_name_to_host_type(name: &str) -> HostType {
-    match name {
-        "i64" => HostType::I64,
-        "i32" => HostType::I32,
-        "f64" => HostType::F64,
-        "bool" => HostType::Bool,
-        "str" => HostType::Str,
-        "void" => HostType::Void,
-        other => panic!(
-            "js2rust.toml: unknown host type '{}'. Valid types: i64, i32, f64, bool, str, void",
-            other
-        ),
     }
 }

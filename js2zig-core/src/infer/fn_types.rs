@@ -558,16 +558,6 @@ impl TypeInferrer {
     }
 
     pub(crate) fn zig_str_to_type(s: &str) -> ZigType {
-        match s {
-            "i64" => ZigType::I64,
-            "f64" => ZigType::F64,
-            "bool" => ZigType::Bool,
-            "[]const u8" => ZigType::Str,
-            "void" => ZigType::Void,
-            "bigint" => ZigType::BigInt,
-            // Named struct (fallback for types not in typedefs)
-            _ if !s.contains(' ') && !s.contains('[') => ZigType::NamedStruct(s.to_string()),
-            _ => ZigType::I64, // default
-        }
+        ZigType::from_zig_str(s)
     }
 }

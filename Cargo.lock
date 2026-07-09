@@ -200,12 +200,14 @@ name = "js2zig-core"
 version = "0.8.0"
 dependencies = [
  "glob",
+ "indexmap",
  "oxc_allocator",
  "oxc_ast",
  "oxc_parser",
  "oxc_span",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

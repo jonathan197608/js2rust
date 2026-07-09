@@ -138,16 +138,7 @@ impl HostFnRegistry {
             let fields: Vec<(String, ZigType)> = s
                 .fields
                 .iter()
-                .map(|f| {
-                    let zig_type = match f.zig_type.as_str() {
-                        "i64" | "i32" => ZigType::I64,
-                        "f64" => ZigType::F64,
-                        "bool" => ZigType::Bool,
-                        "[]const u8" => ZigType::Str,
-                        _ => ZigType::Void,
-                    };
-                    (f.name.clone(), zig_type)
-                })
+                .map(|f| (f.name.clone(), ZigType::from_zig_str(&f.zig_type)))
                 .collect();
             map.insert(s.zig_name.clone(), fields);
         }
@@ -571,18 +562,7 @@ impl HostFnRegistry {
 
     /// Parse a type string from JSON config into ZigType.
     fn parse_type_str(s: &str) -> ZigType {
-        match s {
-            "i64" => ZigType::I64,
-            "f64" => ZigType::F64,
-            "bool" => ZigType::Bool,
-            "string" => ZigType::Str,
-            "any" => ZigType::Void,
-            "jsvalue" => ZigType::Void,
-            "jsany" => ZigType::Anytype,
-            "void" => ZigType::Void,
-            other if other.starts_with("struct:") => ZigType::NamedStruct(other[7..].to_string()),
-            _ => ZigType::Void,
-        }
+        ZigType::from_zig_str(s)
     }
 
     /// Generate JSON metadata for cabi_imports.json (consumed by sys/build.rs).
