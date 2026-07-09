@@ -6,8 +6,6 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
-use super::resolve_chain_receiver;
-
 // ═══════════════════════════════════════════════════════
 //  Array non-callback method inlining
 // ═══════════════════════════════════════════════════════
@@ -44,9 +42,7 @@ impl Emitter {
     // For string arrays: (std.mem.indexOf(u8, obj, target) != null)
     // For i64 arrays: (blk: { for (obj.items) |item| { if (item == target) break :blk true; } break :blk false; })
     pub(super) fn emit_includes_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         // If the array is a string type, use std.mem.indexOf
         if matches!(data.elem_type, ZigType::Str) {
@@ -58,11 +54,7 @@ impl Emitter {
             }
             self.write(") != null)");
         } else {
-            let blk = self.next_label();
-            self.write(&format!("({}: {{ ", blk));
-            if let Some(b) = binding {
-                self.write(&b);
-            }
+            let blk = self.begin_labeled_block(&binding);
             self.write(&format!("for ({}.items) |item| ", receiver));
             self.write("{\n");
             self.indent_push();
@@ -82,9 +74,7 @@ impl Emitter {
     // For string: (if (std.mem.indexOf(u8, obj, target)) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))
     // For i64: (blk: { for (obj.items, 0..) |item, i| { if (item == target) break :blk @as(i64, @intCast(i)); } break :blk @as(i64, -1); })
     pub(super) fn emit_index_of_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         if matches!(data.elem_type, ZigType::Str) {
             self.write("(if (std.mem.indexOf(u8, ");
@@ -95,11 +85,7 @@ impl Emitter {
             }
             self.write(")) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))");
         } else {
-            let blk = self.next_label();
-            self.write(&format!("({}: {{ ", blk));
-            if let Some(b) = binding {
-                self.write(&b);
-            }
+            let blk = self.begin_labeled_block(&binding);
             self.write(&format!("for ({}.items, 0..) |item, i| ", receiver));
             self.write("{\n");
             self.indent_push();
@@ -121,15 +107,9 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write(&format!(
             "var __i: isize = @as(isize, @intCast({}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
             receiver, receiver
@@ -149,11 +129,8 @@ impl Emitter {
     //     __join_buf.writer().print("{d}", .{__item}) catch break :blk ""; }
     //   break :blk __join_buf.toOwnedSlice() catch ""; })
     pub(super) fn emit_join_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
         // Format specifier based on element type:
         // I64/F64 → {d}, Bool → {}, Str → {s}, other → {any}
         let fmt_spec = match data.elem_type {
@@ -163,20 +140,13 @@ impl Emitter {
             ZigType::Str => "{s}",
             _ => "{any}",
         };
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write("var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator()); ");
         self.write(&format!("for ({}.items, 0..) |__item, __i| ", receiver));
         self.write("{\n");
         self.indent_push();
         let sep = if let Some(arg) = data.args.first() {
-            let saved = std::mem::take(self.output_mut());
-            self.emit_expr(arg);
-            let rendered = std::mem::take(self.output_mut());
-            *self.output_mut() = saved;
-            rendered
+            self.render_expr_to_string(arg)
         } else {
             ",".to_string()
         };
@@ -203,16 +173,10 @@ impl Emitter {
     //   __slice.appendSlice(js_allocator.allocator(), obj.items[start..end]) catch @panic("OOM");
     //   break :blk __slice; })
     pub(super) fn emit_slice_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __slice: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -249,16 +213,10 @@ impl Emitter {
     //   [insert items if args > 2]
     //   break :blk __spliced; })
     pub(super) fn emit_splice_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __spliced: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -287,13 +245,7 @@ impl Emitter {
         if data.args.len() > 2 {
             let insert_items: Vec<String> = data.args[2..]
                 .iter()
-                .map(|arg| {
-                    let saved = std::mem::take(self.output_mut());
-                    self.emit_expr(arg);
-                    let rendered = std::mem::take(self.output_mut());
-                    *self.output_mut() = saved;
-                    rendered
-                })
+                .map(|arg| self.render_expr_to_string(arg))
                 .collect();
             self.write(&format!(
                 "{}.insertSlice(js_allocator.allocator(), __start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.splice insert\"); ",
@@ -306,15 +258,9 @@ impl Emitter {
     // ── at ─────────────────────────────────────────────
     // (blk: { const __idx = arg; const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast(obj.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); break :blk obj.items[__at_idx]; })
     pub(super) fn emit_at_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write("const __idx = ");
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
@@ -335,16 +281,10 @@ impl Emitter {
     //   [for each arg:] __concat.appendSlice(allocator, arg.items) catch @panic("OOM");
     //   break :blk __concat; })
     pub(super) fn emit_concat_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __concat: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -369,15 +309,9 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write("const __cpw_target = @as(isize, @intCast(");
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
@@ -413,9 +347,7 @@ impl Emitter {
     // for (obj.items[@intCast(start)..@intCast(end)]) |*elem| { elem.* = val; }
     // When chaining, wraps in a block so the const binding is scoped.
     pub(super) fn emit_fill_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         // When chaining, wrap in a block so the const binding is scoped.
         if let Some(b) = &binding {
@@ -467,16 +399,10 @@ impl Emitter {
     //   __with.items[@intCast(idx)] = value;
     //   break :blk __with; })
     pub(super) fn emit_with_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __with: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -512,16 +438,10 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __rev: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -548,16 +468,10 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __sorted: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -591,16 +505,10 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __sp: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -632,13 +540,7 @@ impl Emitter {
         if data.args.len() > 2 {
             let insert_items: Vec<String> = data.args[2..]
                 .iter()
-                .map(|arg| {
-                    let saved = std::mem::take(self.output_mut());
-                    self.emit_expr(arg);
-                    let rendered = std::mem::take(self.output_mut());
-                    *self.output_mut() = saved;
-                    rendered
-                })
+                .map(|arg| self.render_expr_to_string(arg))
                 .collect();
             self.write(&format!(
                 "__sp.insertSlice(js_allocator.allocator(), __sp_start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.toSpliced insert\"); ",

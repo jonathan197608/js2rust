@@ -125,6 +125,92 @@ impl Emitter {
         }
     }
 
+    /// Emit `module_prefix.method(args)` — the common fallback pattern.
+    pub(super) fn emit_module_call(
+        &mut self,
+        module_prefix: &str,
+        method: &str,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        self.write(&format!("{}.{}(", module_prefix, method));
+        self.emit_inline_args(args);
+        self.write(")");
+    }
+
+    /// Emit `obj.method(args)` if `obj` is Some, else `module_prefix.method(args)`.
+    pub(super) fn emit_receiver_or_module_call(
+        &mut self,
+        obj: Option<&str>,
+        module_prefix: &str,
+        method: &str,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        if let Some(name) = obj {
+            self.write(&format!("{}.{}(", name, method));
+            self.emit_inline_args(args);
+            self.write(")");
+        } else {
+            self.emit_module_call(module_prefix, method, args);
+        }
+    }
+
+    /// Resolve chain receiver and update label_counter.
+    /// Returns (receiver_string, optional_binding).
+    pub(super) fn resolve_receiver(
+        &mut self,
+        obj_expr: &Option<Box<crate::zigir::types::IrExpr>>,
+        obj_name: &str,
+    ) -> (String, Option<String>) {
+        let (receiver, binding, new_lc) =
+            resolve_chain_receiver(obj_expr, obj_name, self.label_counter);
+        self.label_counter = new_lc;
+        (receiver, binding)
+    }
+
+    /// Emit the opening of a labeled block: `(blk_N: { [binding]`.
+    /// Returns the label name for the caller to use in break statements.
+    pub(super) fn begin_labeled_block(&mut self, binding: &Option<String>) -> String {
+        let blk = self.next_label();
+        self.write(&format!("({}: {{ ", blk));
+        if let Some(b) = binding {
+            self.write(b);
+        }
+        blk
+    }
+
+    /// Render an expression to a string by temporarily swapping the output buffer.
+    pub(super) fn render_expr_to_string(&mut self, expr: &crate::zigir::types::IrExpr) -> String {
+        let saved = std::mem::take(self.output_mut());
+        self.emit_expr(expr);
+        let rendered = std::mem::take(self.output_mut());
+        *self.output_mut() = saved;
+        rendered
+    }
+
+    /// Emit callback body statements, fusing `IrStmt::Return { value }` and
+    /// `IrStmt::Expr` into a single predicate via `emit_pred`. Other statements
+    /// are emitted normally.
+    pub(super) fn emit_callback_body<F>(
+        &mut self,
+        stmts: &[crate::zigir::types::IrStmt],
+        mut emit_pred: F,
+    ) where
+        F: FnMut(&mut Self, &crate::zigir::types::IrExpr),
+    {
+        for stmt in stmts {
+            self.writeln("");
+            match stmt {
+                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
+                    emit_pred(self, expr);
+                }
+                crate::zigir::types::IrStmt::Expr(expr) => {
+                    emit_pred(self, expr);
+                }
+                _ => self.emit_stmt(stmt),
+            }
+        }
+    }
+
     fn emit_array_builtin(
         &mut self,
         method: &str,
@@ -134,27 +220,20 @@ impl Emitter {
         // Some array methods are direct ArrayList operations when we have the object name.
         match method {
             "pop" => {
-                // arr.pop() — direct ArrayList method, not js_array.pop()
                 if let Some(name) = obj {
                     self.write(&format!("{}.pop()", name));
                 } else {
-                    self.write(&format!("js_array.{}(", method));
-                    self.emit_inline_args(args);
-                    self.write(")");
+                    self.emit_module_call("js_array", method, args);
                 }
             }
             "shift" => {
-                // arr.shift() — ArrayList orderedRemove(0)
                 if let Some(name) = obj {
                     self.write(&format!("{}.orderedRemove(0)", name));
                 } else {
-                    self.write(&format!("js_array.{}(", method));
-                    self.emit_inline_args(args);
-                    self.write(")");
+                    self.emit_module_call("js_array", method, args);
                 }
             }
             "reverse" => {
-                // arr.reverse() — in-place std.mem.reverse, returns the array
                 if let Some(name) = obj {
                     let blk = self.next_label();
                     self.write(&format!(
@@ -162,13 +241,10 @@ impl Emitter {
                         blk, name, name, blk, name
                     ));
                 } else {
-                    self.write(&format!("js_array.{}(", method));
-                    self.emit_inline_args(args);
-                    self.write(")");
+                    self.emit_module_call("js_array", method, args);
                 }
             }
             "sort" => {
-                // arr.sort() — in-place std.mem.sort, returns the array
                 if let Some(name) = obj {
                     let blk = self.next_label();
                     self.write(&format!(
@@ -176,16 +252,11 @@ impl Emitter {
                         blk, name, name, name, blk, name
                     ));
                 } else {
-                    self.write(&format!("js_array.{}(", method));
-                    self.emit_inline_args(args);
-                    self.write(")");
+                    self.emit_module_call("js_array", method, args);
                 }
             }
             _ => {
-                // Fallback: js_array.method(args)
-                self.write(&format!("js_array.{}(", method));
-                self.emit_inline_args(args);
-                self.write(")");
+                self.emit_module_call("js_array", method, args);
             }
         }
     }

@@ -5,85 +5,57 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
+// ── Data-driven tables ──────────────────────────────────
+// Direct Zig builtins: emit `@fn(args)`.
+const ZIG_BUILTINS: &[&str] = &["abs", "floor", "ceil", "round", "sqrt", "trunc"];
+
+// Float-wrap Zig builtins: emit `@fn(@as(f64, @floatFromInt(args)))`.
+const ZIG_FLOAT_BUILTINS: &[&str] = &["sin", "cos", "tan", "atan", "log", "log10", "log2", "exp"];
+
+// std.math direct calls: emit `std.math.fn(args)`.
+const STD_MATH_DIRECT: &[&str] = &[
+    "expm1", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "log1p", "cbrt",
+];
+
+// Float-wrap std.math calls: emit `std.math.fn(@as(f64, @floatFromInt(args)))`.
+const STD_MATH_FLOAT: &[&str] = &["asin", "acos"];
+
 impl Emitter {
     pub(super) fn emit_math_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        // Many Math methods map to Zig builtin functions (@sqrt, @floor, etc.)
-        // rather than std.math.*().
-        // NOTE: We emit args manually (without emit_args which adds parens).
+        // ── Data-driven: direct Zig builtins ──
+        if ZIG_BUILTINS.contains(&method) {
+            self.write(&format!("@{}(", method));
+            self.emit_inline_args(args);
+            self.write(")");
+            return;
+        }
+
+        // ── Data-driven: float-wrap Zig builtins ──
+        if ZIG_FLOAT_BUILTINS.contains(&method) {
+            self.write(&format!("@{}(@as(f64, @floatFromInt(", method));
+            self.emit_inline_args(args);
+            self.write(")))");
+            return;
+        }
+
+        // ── Data-driven: std.math direct calls ──
+        if STD_MATH_DIRECT.contains(&method) {
+            self.write(&format!("std.math.{}(", method));
+            self.emit_inline_args(args);
+            self.write(")");
+            return;
+        }
+
+        // ── Data-driven: float-wrap std.math calls ──
+        if STD_MATH_FLOAT.contains(&method) {
+            self.write(&format!("std.math.{}(@as(f64, @floatFromInt(", method));
+            self.emit_inline_args(args);
+            self.write(")))");
+            return;
+        }
+
+        // ── Special-case methods ──
         match method {
-            // Direct Zig builtins
-            "abs" => {
-                self.write("@abs(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "floor" => {
-                self.write("@floor(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "ceil" => {
-                self.write("@ceil(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "round" => {
-                self.write("@round(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "sqrt" => {
-                self.write("@sqrt(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            // Trig: @fn(@as(f64, @floatFromInt(arg)))
-            "sin" => {
-                self.write("@sin(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "cos" => {
-                self.write("@cos(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "tan" => {
-                self.write("@tan(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "atan" => {
-                self.write("@atan(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            // Log
-            "log" => {
-                self.write("@log(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "log10" => {
-                self.write("@log10(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "log2" => {
-                self.write("@log2(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "exp" => {
-                self.write("@exp(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "trunc" => {
-                self.write("@trunc(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
             // atan2: std.math.atan2(f64, x, y)
             "atan2" => {
                 self.write("std.math.atan2(f64, ");
@@ -96,72 +68,9 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
-            // min/max — use blk expansion pattern
-            "min" => {
-                let blk = self.next_label();
-                match args.len() {
-                    0 => {
-                        self.write("@as(i64, 9223372036854775807)");
-                    }
-                    1 => {
-                        self.write("@as(i64, ");
-                        self.emit_expr(&args[0]);
-                        self.write(")");
-                    }
-                    _ => {
-                        // (blk_N: { var __min = @as(i64, a); if (@as(i64, b) < __min) __min = @as(i64, b);  break :blk_N __min; })
-                        self.write(&format!("({}: {{ var __min = @as(i64, ", blk));
-                        self.emit_expr(&args[0]);
-                        self.write("); ");
-                        for arg in &args[1..] {
-                            let arg_str = {
-                                let saved = std::mem::take(self.output_mut());
-                                self.emit_expr(arg);
-                                let rendered = std::mem::take(self.output_mut());
-                                *self.output_mut() = saved;
-                                rendered
-                            };
-                            self.write(&format!(
-                                "if (@as(i64, {}) < __min) __min = @as(i64, {}); ",
-                                arg_str, arg_str
-                            ));
-                        }
-                        self.write(&format!(" break :{} __min; }})", blk));
-                    }
-                }
-            }
-            "max" => {
-                let blk = self.next_label();
-                match args.len() {
-                    0 => {
-                        self.write("@as(i64, -9223372036854775808)");
-                    }
-                    1 => {
-                        self.write("@as(i64, ");
-                        self.emit_expr(&args[0]);
-                        self.write(")");
-                    }
-                    _ => {
-                        // (blk_N: { var __max = @as(i64, a); if (@as(i64, b) > __max) __max = @as(i64, b);  break :blk_N __max; })
-                        self.write(&format!("({}: {{ var __max = @as(i64, ", blk));
-                        self.emit_expr(&args[0]);
-                        self.write("); ");
-                        for arg in &args[1..] {
-                            let arg_str = {
-                                let saved = std::mem::take(self.output_mut());
-                                self.emit_expr(arg);
-                                let rendered = std::mem::take(self.output_mut());
-                                *self.output_mut() = saved;
-                                rendered
-                            };
-                            self.write(&format!(
-                                "if (@as(i64, {}) > __max) __max = @as(i64, {}); ",
-                                arg_str, arg_str
-                            ));
-                        }
-                        self.write(&format!(" break :{} __max; }})", blk));
-                    }
-                }
+            // min/max — unified block expansion pattern
+            "min" | "max" => {
+                self.emit_min_max(method, args);
             }
             // random: inline expression using std.crypto.random
             "random" => {
@@ -185,7 +94,6 @@ impl Emitter {
                         if _i > 0 {
                             self.write(" + ");
                         }
-                        // @as(f64, @floatFromInt(arg)) * @as(f64, @floatFromInt(arg))
                         self.write("@as(f64, @floatFromInt(");
                         self.emit_expr(arg);
                         self.write("))*@as(f64, @floatFromInt(");
@@ -195,62 +103,6 @@ impl Emitter {
                     self.write(")");
                 }
             },
-            // std.math one-arg functions: expm1, sinh, cosh, tanh, asinh, acosh, atanh
-            "expm1" => {
-                self.write("std.math.expm1(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "sinh" => {
-                self.write("std.math.sinh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "cosh" => {
-                self.write("std.math.cosh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "tanh" => {
-                self.write("std.math.tanh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "asinh" => {
-                self.write("std.math.asinh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "acosh" => {
-                self.write("std.math.acosh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "atanh" => {
-                self.write("std.math.atanh(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "log1p" => {
-                self.write("std.math.log1p(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "asin" => {
-                self.write("std.math.asin(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "acos" => {
-                self.write("std.math.acos(@as(f64, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write(")))");
-            }
-            "cbrt" => {
-                self.write("std.math.cbrt(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
             "fround" => {
                 self.write("@as(f32, @floatFromInt(");
                 self.emit_inline_args(args);
@@ -288,9 +140,46 @@ impl Emitter {
             }
             // random, sign, etc: fall through to js_math module
             _ => {
-                self.write(&format!("js_math.{}(", method));
-                self.emit_inline_args(args);
+                self.emit_module_call("js_math", method, args);
+            }
+        }
+    }
+
+    /// Unified min/max block expansion.
+    /// min: (blk: { var __min = @as(i64, a); if (@as(i64, b) < __min) __min = @as(i64, b); break :blk __min; })
+    /// max: same with > and __max
+    fn emit_min_max(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
+        let is_min = method == "min";
+        let blk = self.next_label();
+        let var = if is_min { "__min" } else { "__max" };
+        let extreme = if is_min {
+            "@as(i64, 9223372036854775807)"
+        } else {
+            "@as(i64, -9223372036854775808)"
+        };
+        let cmp_op = if is_min { "<" } else { ">" };
+
+        match args.len() {
+            0 => {
+                self.write(extreme);
+            }
+            1 => {
+                self.write("@as(i64, ");
+                self.emit_expr(&args[0]);
                 self.write(")");
+            }
+            _ => {
+                self.write(&format!("({}: {{ var {} = @as(i64, ", blk, var));
+                self.emit_expr(&args[0]);
+                self.write("); ");
+                for arg in &args[1..] {
+                    let arg_str = self.render_expr_to_string(arg);
+                    self.write(&format!(
+                        "if (@as(i64, {}) {} {}) {} = @as(i64, {}); ",
+                        arg_str, cmp_op, var, var, arg_str
+                    ));
+                }
+                self.write(&format!(" break :{} {}; }})", blk, var));
             }
         }
     }

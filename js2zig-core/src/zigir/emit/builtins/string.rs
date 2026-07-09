@@ -78,9 +78,7 @@ impl Emitter {
             // ── Fallback ──
             _ => {
                 // Unknown string method — naive emission
-                self.write(&format!("js_string.{}(", method));
-                self.emit_inline_args(args);
-                self.write(")");
+                self.emit_module_call("js_string", method, args);
                 return;
             }
         };

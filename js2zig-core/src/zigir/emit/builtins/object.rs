@@ -171,14 +171,7 @@ impl Emitter {
             }
             // ── Default: js_object.method(args) ──
             _ => {
-                self.write(&format!("js_object.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_object", method, args);
             }
         }
     }
@@ -222,14 +215,7 @@ impl Emitter {
                 self.write(") catch @panic(\"OOM: JSON.stringify\")");
             }
             _ => {
-                self.write(&format!("js_json.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_json", method, args);
             }
         }
     }
@@ -266,9 +252,7 @@ impl Emitter {
                 self.write(")");
             }
             _ => {
-                self.write(&format!("js_number.{}(", method));
-                self.emit_inline_args(args);
-                self.write(")");
+                self.emit_module_call("js_number", method, args);
             }
         }
     }
@@ -314,14 +298,7 @@ impl Emitter {
             }
             // Static methods: js_symbol.symbolFor(key), js_symbol.symbolKeyFor(sym), etc.
             _ => {
-                self.write(&format!("js_symbol.{}(", zig_method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_symbol", zig_method, args);
             }
         }
     }

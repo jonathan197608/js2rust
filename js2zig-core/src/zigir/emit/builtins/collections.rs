@@ -22,18 +22,7 @@ impl Emitter {
             | "setMilliseconds" | "setUTCFullYear" | "setUTCMonth" | "setUTCDate"
             | "setUTCHours" | "setUTCMinutes" | "setUTCSeconds" | "setUTCMilliseconds"
             | "setTime" | "valueOf" => {
-                if let Some(name) = obj {
-                    self.write(&format!("{}.{}(", name, method));
-                } else {
-                    self.write(&format!("js_date.{}(", method));
-                }
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_receiver_or_module_call(obj, "js_date", method, args);
             }
             // Instance methods that need allocator
             "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
@@ -70,14 +59,7 @@ impl Emitter {
             }
             _ => {
                 // Static methods: js_date.method(args)
-                self.write(&format!("js_date.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_date", method, args);
             }
         }
     }
@@ -106,14 +88,7 @@ impl Emitter {
             }
             self.write(")");
         } else {
-            self.write(&format!("js_typedarray.{}(", method));
-            for (i, arg) in args.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                self.emit_expr(arg);
-            }
-            self.write(")");
+            self.emit_module_call("js_typedarray", method, args);
         }
     }
     pub(super) fn emit_uri_builtin(
@@ -192,9 +167,7 @@ impl Emitter {
                 self.write(")");
             }
             _ => {
-                self.write(&format!("js_uri.{}(", method));
-                self.emit_inline_args(args);
-                self.write(")");
+                self.emit_module_call("js_uri", method, args);
             }
         }
     }
@@ -228,14 +201,7 @@ impl Emitter {
                 self.write(".bitwiseNot(js_allocator.allocator()) catch @panic(\"BigInt bitwiseNot OOM\"))");
             }
             _ => {
-                self.write(&format!("js_bigint.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_bigint", method, args);
             }
         }
     }
@@ -344,20 +310,11 @@ impl Emitter {
             // ── forEach — handled by IrArrayCallbackInline, not here ──
             "forEach" => {
                 // Fallback: should be handled by callback inline, not here
-                self.write(&format!("js_collections.{}(", method));
-                self.emit_inline_args(args);
-                self.write(")");
+                self.emit_module_call("js_collections", method, args);
             }
             // ── Default ──
             _ => {
-                self.write(&format!("js_collections.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_collections", method, args);
             }
         }
     }
@@ -399,14 +356,7 @@ impl Emitter {
             }
             _ => {
                 // Default: js_runtime.method(args)
-                self.write(&format!("js_runtime.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_runtime", method, args);
             }
         }
     }

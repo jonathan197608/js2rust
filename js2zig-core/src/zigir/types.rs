@@ -408,13 +408,13 @@ pub enum IrAssignTarget {
         object: Box<IrExpr>,
         field: String,
         is_pointer: bool,
-        field_kind: crate::zigir::kinds::FieldKind,
+        field_kind: FieldKind,
     },
     /// Index access: `obj[idx]`
     Index {
         object: Box<IrExpr>,
         index: Box<IrExpr>,
-        index_kind: crate::zigir::kinds::IndexKind,
+        index_kind: IndexKind,
     },
     /// Destructuring assignment.
     Destructure(Vec<IrDestructureBinding>),

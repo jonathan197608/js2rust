@@ -82,14 +82,7 @@ impl Emitter {
                 }
             }
             _ => {
-                self.write(&format!("js_regexp.{}(", method));
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
-                self.write(")");
+                self.emit_module_call("js_regexp", method, args);
             }
         }
     }

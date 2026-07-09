@@ -5,8 +5,6 @@ use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
-use super::resolve_chain_receiver;
-
 // ═══════════════════════════════════════════════════════
 //  Array callback inlining
 // ═══════════════════════════════════════════════════════
@@ -52,9 +50,7 @@ impl Emitter {
     ) {
         use crate::zigir::types::CollectionKind;
 
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         match data.collection_kind {
             CollectionKind::Array => {
@@ -150,15 +146,9 @@ impl Emitter {
     //  })
     //
     pub(super) fn emit_some_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         if data.has_idx_param {
             self.write(&format!(
                 "for ({}.items, 0..) |{}, {}| ",
@@ -169,22 +159,12 @@ impl Emitter {
         }
         self.write("{\n");
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} true;", blk));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} true;", blk));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} true;", blk_clone));
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -201,15 +181,9 @@ impl Emitter {
     //  })
     //
     pub(super) fn emit_every_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         if data.has_idx_param {
             self.write(&format!(
                 "for ({}.items, 0..) |{}, {}| ",
@@ -220,22 +194,12 @@ impl Emitter {
         }
         self.write("{\n");
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (!(");
-                    self.emit_expr(expr);
-                    self.write(&format!(")) break :{} false;", blk));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (!(");
-                    self.emit_expr(expr);
-                    self.write(&format!(")) break :{} false;", blk));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (!(");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(")) break :{} false;", blk_clone));
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -253,11 +217,9 @@ impl Emitter {
     //  })
     //
     pub(super) fn emit_filter_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
         // When elem_param is "_" (unused in body), we still need a real variable name
         // for the __filter.append() call — Zig's "_" is a discard, not an identifier.
@@ -266,10 +228,6 @@ impl Emitter {
         } else {
             data.elem_param.clone()
         };
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __filter: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -277,28 +235,15 @@ impl Emitter {
         self.write(&format!("for ({}.items) |{}| ", receiver, append_elem));
         self.write("{\n");
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(
-                        ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                        append_elem
-                    ));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(
-                        ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                        append_elem
-                    ));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let append_elem_clone = append_elem.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(
+                ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
+                append_elem_clone
+            ));
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -315,34 +260,19 @@ impl Emitter {
     //  })
     //
     pub(super) fn emit_find_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
         self.write("{\n");
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, data.elem_param));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, data.elem_param));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let elem_param = data.elem_param.clone();
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} {};", blk_clone, elem_param));
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -363,17 +293,11 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let index_name = format!("__{}_i", data.elem_param);
         let idx_name = format!("__{}_idx", data.elem_param);
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "for ({}.items, 0..) |{}, {}| ",
             receiver, data.elem_param, index_name
@@ -384,22 +308,13 @@ impl Emitter {
             "const {}: i64 = @intCast({});",
             idx_name, index_name
         ));
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, idx_name));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, idx_name));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let idx_name_clone = idx_name.clone();
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -422,36 +337,21 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write(&format!(
             "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
             receiver, data.elem_param, receiver
         ));
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, data.elem_param));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, data.elem_param));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let elem_param = data.elem_param.clone();
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} {};", blk_clone, elem_param));
+        });
         self.indent_pop();
         self.writeln("");
         self.write(&format!("}} break :{} undefined; }})", blk));
@@ -474,37 +374,22 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let idx_name = format!("__{}_idx", data.elem_param);
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
             receiver, data.elem_param, receiver, idx_name
         ));
         self.indent_push();
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, idx_name));
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("if (");
-                    self.emit_expr(expr);
-                    self.write(&format!(") break :{} {};", blk, idx_name));
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let idx_name_clone = idx_name.clone();
+        let blk_clone = blk.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
+        });
         self.indent_pop();
         self.writeln("");
         self.write(&format!("}} break :{} -1; }})", blk));
@@ -525,11 +410,9 @@ impl Emitter {
     //  For concise arrow bodies, body has a single Expr(Return { value }) or Expr(expr).
     //
     pub(super) fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
         // When elem_param is "_" (unused in body), we still need a real variable name
         // for the for-loop capture — Zig's "_" is a discard, not an identifier.
@@ -538,10 +421,6 @@ impl Emitter {
         } else {
             data.elem_param.clone()
         };
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var __map: std.ArrayList({}) = .empty; ",
             elem_type_str
@@ -559,25 +438,11 @@ impl Emitter {
             // but the lowerer handles it by capturing the loop variable.
             // For now, the idx_param is available as a separate counter if needed.
         }
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                // Return with value → this is the transform expression
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write("__map.append(js_allocator.allocator(), ");
-                    self.emit_expr(expr);
-                    self.write(") catch @panic(\"OOM: Array.map append\");");
-                }
-                // Expression statement → concise arrow body
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write("__map.append(js_allocator.allocator(), ");
-                    self.emit_expr(expr);
-                    self.write(") catch @panic(\"OOM: Array.map append\");");
-                }
-                // Other statements (rare in map callbacks)
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("__map.append(js_allocator.allocator(), ");
+            emitter.emit_expr(expr);
+            emitter.write(") catch @panic(\"OOM: Array.map append\");");
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
@@ -595,21 +460,13 @@ impl Emitter {
     //  })
     //
     pub(super) fn emit_reduce_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding, new_lc) =
-            resolve_chain_receiver(&data.obj_expr, &data.obj_name, self.label_counter);
-        self.label_counter = new_lc;
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.next_label();
+        let blk = self.begin_labeled_block(&binding);
         let acc_name = format!("_acc_{}", self.peek_label_id());
         // Determine init value and accumulator type
         let init_expr_str = match &data.reduce_init {
-            Some(expr) => {
-                let saved = std::mem::take(self.output_mut());
-                self.emit_expr(expr);
-                let rendered = std::mem::take(self.output_mut());
-                *self.output_mut() = saved;
-                rendered
-            }
+            Some(expr) => self.render_expr_to_string(expr),
             None => "0".to_string(),
         };
         let acc_type = if init_expr_str.contains('.') {
@@ -617,10 +474,6 @@ impl Emitter {
         } else {
             "i64"
         };
-        self.write(&format!("({}: {{ ", blk));
-        if let Some(b) = binding {
-            self.write(&b);
-        }
         self.write(&format!(
             "var {}: {} = {}; ",
             acc_name, acc_type, init_expr_str
@@ -647,22 +500,12 @@ impl Emitter {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
         }
 
-        for stmt in &data.body {
-            self.writeln("");
-            match stmt {
-                crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
-                    self.write(&format!("{} = ", acc_name));
-                    self.emit_expr(expr);
-                    self.write(";");
-                }
-                crate::zigir::types::IrStmt::Expr(expr) => {
-                    self.write(&format!("{} = ", acc_name));
-                    self.emit_expr(expr);
-                    self.write(";");
-                }
-                _ => self.emit_stmt(stmt),
-            }
-        }
+        let acc_name_clone = acc_name.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write(&format!("{} = ", acc_name_clone));
+            emitter.emit_expr(expr);
+            emitter.write(";");
+        });
         self.indent_pop();
         self.writeln("");
         self.write("}");
