@@ -8,13 +8,6 @@ const JsValue = @import("jsvalue.zig").JsValue;
 
 const JsValueHashMap = std.StringHashMap(JsValue);
 
-/// Object(x) — convert a primitive to an object wrapper.
-/// Simplified: in native_proto mode we don't have real wrapper objects,
-/// so this just returns the value as-is (passthrough).
-pub fn constructor(value: anytype) @TypeOf(value) {
-    return value;
-}
-
 /// Object.keys — return array of string keys from a HashMap.
 pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     var kiter = obj.iterator();
@@ -162,14 +155,6 @@ pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
     return obj;
 }
 
-/// Object.seal(obj) — prevent extensions (simplified: no-op in Zig).
-/// In JS, sealed objects cannot add new properties.
-/// Our generated Zig code is immutable by default, so this is a no-op.
-pub fn seal(obj: *JsValueHashMap) void {
-    _ = obj;
-    // No-op: Zig HashMap can still be modified, but JS code can't after seal()
-}
-
 /// Object.defineProperty(obj, key, descriptor) — define a property.
 /// Simplified: just set the value (ignore descriptor).
 pub fn defineProperty(obj: *JsValueHashMap, key: []const u8, value: JsValue) !void {
@@ -240,16 +225,6 @@ test "create with proto" {
     defer obj.deinit();
     try std.testing.expect(obj.contains("name"));
     try std.testing.expect(obj.contains("version"));
-}
-
-test "seal is no-op" {
-    const alloc = std.testing.allocator;
-    var obj = JsValueHashMap.init(alloc);
-    defer obj.deinit();
-    try obj.put("x", JsValue{ .int = 1 });
-
-    seal(&obj); // Should not panic or error
-    try std.testing.expectEqual(@as(i64, 1), obj.get("x").?.int);
 }
 
 test "defineProperty" {

@@ -62,41 +62,6 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
     return result;
 }
 
-/// Array.fromWithMap(arrayLike, mapFn) — create array with mapping function.
-/// mapFn receives (element, index) and returns new element.
-pub fn fromWithMap(
-    alloc: Allocator,
-    arrayLike: JsAny,
-    comptime mapFn: fn(JsAny, usize) JsAny,
-) !std.ArrayList(JsAny) {
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-
-    // If already an array, copy and map
-    if (arrayLike.isArray()) {
-        const src = arrayLike.array.*;
-        try result.ensureTotalCapacity(alloc, src.items.len);
-        for (src.items, 0..) |item, i| {
-            result.appendAssumeCapacity(mapFn(item, i));
-        }
-        return result;
-    }
-
-    // If string, split into characters and map
-    if (arrayLike.isString()) {
-        const str = arrayLike.value.string;
-        try result.ensureTotalCapacity(alloc, str.len);
-        for (str, 0..) |ch, i| {
-            const chr = try alloc.dupe(u8, &[1]u8{ch});
-            result.appendAssumeCapacity(mapFn(JsAny.fromString(chr), i));
-        }
-        return result;
-    }
-
-    // Fallback: empty array
-    return result;
-}
-
 /// Array.of(items) — create ArrayList(JsAny) from slice of JsAny.
 pub fn of(alloc: Allocator, items: []const JsAny) !std.ArrayList(JsAny) {
     var result = std.ArrayList(JsAny).empty;
@@ -136,87 +101,12 @@ pub fn unshift(alloc: Allocator, arr: []const i64, val: i64) ![]const i64 {
     return result;
 }
 
-/// Array.join — join elements with separator, returns new string.
-pub fn join(alloc: Allocator, arr: []const i64, sep: []const u8) ![]const u8 {
-    if (arr.len == 0) return &[0]u8{};
-
-    var buf: std.ArrayList(u8) = .empty;
-    errdefer buf.deinit(alloc);
-    var writer = buf.writer();
-
-    for (arr, 0..) |val, i| {
-        if (i > 0) try writer.writeAll(sep);
-        try writer.print("{d}", .{val});
-    }
-
-    return buf.toOwnedSlice(alloc);
-}
-
-/// Array.map — simplified: multiply each element by a scalar.
-pub fn map(alloc: Allocator, arr: []const i64, mul: i64) ![]const i64 {
-    const result = try alloc.alloc(i64, arr.len);
-    for (arr, 0..) |val, i| {
-        result[i] = val * mul;
-    }
-    return result;
-}
-
-/// Array.filter — keep elements above threshold.
-pub fn filter(alloc: Allocator, arr: []const i64, threshold: i64) ![]const i64 {
-    var buf: std.ArrayList(i64) = .empty;
-    errdefer buf.deinit(alloc);
-    for (arr) |val| {
-        if (val > threshold) {
-            try buf.append(alloc, val);
-        }
-    }
-    return buf.toOwnedSlice(alloc);
-}
-
-/// Array.indexOf — find first index of val, or -1.
-pub fn indexOf(arr: []const i64, val: i64) i64 {
-    for (arr, 0..) |v, i| {
-        if (v == val) return @intCast(i);
-    }
-    return -1;
-}
-
-/// Array.includes — check if arr contains val.
-pub fn includes(arr: []const i64, val: i64) bool {
-    return indexOf(arr, val) != -1;
-}
-
 /// Array.reverse — return new reversed slice.
 pub fn reverse(alloc: Allocator, arr: []const i64) ![]const i64 {
     const result = try alloc.alloc(i64, arr.len);
     for (arr, 0..) |_, i| {
         result[i] = arr[arr.len - 1 - i];
     }
-    return result;
-}
-
-/// Array.slice — extract sub-slice (start inclusive, end exclusive).
-/// Returns borrowed slice. Negative indices count from end.
-pub fn slice(arr: []const i64, start: i64, end: i64) []const i64 {
-    const len: i64 = @intCast(arr.len);
-    var st: i64 = start;
-    var en: i64 = end;
-
-    if (st < 0) st = @max(0, len + st);
-    if (en < 0) en = @max(0, len + en);
-
-    st = @min(@max(0, st), len);
-    en = @min(@max(0, en), len);
-    if (st >= en) return &[0]i64{};
-
-    return arr[@intCast(st)..@intCast(en)];
-}
-
-/// Array.concat — concatenate two arrays, returns new slice.
-pub fn concat(alloc: Allocator, a: []const i64, b: []const i64) ![]const i64 {
-    const result = try alloc.alloc(i64, a.len + b.len);
-    @memcpy(result[0..a.len], a);
-    @memcpy(result[a.len..], b);
     return result;
 }
 
@@ -237,185 +127,6 @@ pub fn flat(alloc: Allocator, arr: []const i64) ![]const i64 {
 pub fn flatMap(alloc: Allocator, arr: []const i64, _mul: i64) ![]const i64 {
     _ = _mul;
     return try alloc.dupe(i64, arr);
-}
-
-// ── Tests ──
-
-test "indexOf" {
-    try std.testing.expectEqual(@as(i64, 2), indexOf(&[_]i64{ 10, 20, 30, 40 }, 30));
-    try std.testing.expectEqual(@as(i64, -1), indexOf(&[_]i64{ 10, 20 }, 99));
-}
-
-test "includes" {
-    try std.testing.expect(includes(&[_]i64{ 10, 20, 30 }, 20));
-    try std.testing.expect(!includes(&[_]i64{ 10, 20 }, 99));
-}
-
-test "reverse" {
-    const result = try reverse(std.testing.allocator, &[_]i64{ 1, 2, 3 });
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqual(@as(i64, 3), result[0]);
-    try std.testing.expectEqual(@as(i64, 2), result[1]);
-    try std.testing.expectEqual(@as(i64, 1), result[2]);
-}
-
-test "slice" {
-    const arr = &[_]i64{ 10, 20, 30, 40, 50 };
-    const s = slice(arr, 1, 4);
-    try std.testing.expectEqual(@as(usize, 3), s.len);
-    try std.testing.expectEqual(@as(i64, 20), s[0]);
-    try std.testing.expectEqual(@as(i64, 40), s[2]);
-}
-
-test "concat" {
-    const a = &[_]i64{ 1, 2 };
-    const b = &[_]i64{ 3, 4, 5 };
-    const result = try concat(std.testing.allocator, a, b);
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqual(@as(usize, 5), result.len);
-    try std.testing.expectEqual(@as(i64, 3), result[2]);
-}
-
-test "sort" {
-    const result = try sort(std.testing.allocator, &[_]i64{ 3, 1, 4, 1, 5 });
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqual(@as(i64, 1), result[0]);
-    try std.testing.expectEqual(@as(i64, 5), result[4]);
-}
-
-test "shift" {
-    const arr = &[_]i64{ 10, 20, 30 };
-    try std.testing.expectEqual(@as(i64, 10), shift(arr).?);
-    try std.testing.expectEqual(@as(?i64, null), shift(&[_]i64{}));
-}
-
-test "unshift" {
-    const result = try unshift(std.testing.allocator, &[_]i64{ 2, 3 }, 1);
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqual(@as(usize, 3), result.len);
-    try std.testing.expectEqual(@as(i64, 1), result[0]);
-}
-
-// ── ArrayList(JsAny) helpers (for dynamic arrays) ─────────────
-
-/// In-place reverse of ArrayList(JsAny).
-/// Used by arr.reverse() for dynamic arrays.
-/// Returns void (array is mutated in place).
-pub fn reverseInPlace(arr: *std.ArrayList(JsAny)) void {
-    std.mem.reverse(JsAny, arr.items);
-}
-
-/// In-place sort of ArrayList(JsAny) using JsAny.lt() comparator.
-/// Used by arr.sort() for dynamic arrays.
-/// Returns void (array is mutated in place).
-pub fn sortInPlace(arr: *std.ArrayList(JsAny)) void {
-    std.mem.sort(JsAny, arr.items, {}, struct {
-        fn lessThan(_: void, a: JsAny, b: JsAny) bool {
-            return a.lt(b);
-        }
-    }.lessThan);
-}
-
-/// Slice ArrayList(JsAny) and return new ArrayList(JsAny).
-/// Negative indices count from end.
-pub fn sliceAny(alloc: Allocator, arr: *const std.ArrayList(JsAny), start: i64, end: i64) !std.ArrayList(JsAny) {
-    const len: i64 = @intCast(arr.items.len);
-    var st: i64 = start;
-    var en: i64 = end;
-
-    if (st < 0) st = @max(0, len + st);
-    if (en < 0) en = @max(0, len + en);
-
-    st = @min(@max(0, st), len);
-    en = @min(@max(0, en), len);
-    if (st >= en) return std.ArrayList(JsAny).empty;
-
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-    try result.ensureTotalCapacity(alloc, @intCast(en - st));
-    for (arr.items[@intCast(st)..@intCast(en)]) |item| {
-        result.appendAssumeCapacity(item);
-    }
-    return result;
-}
-
-/// Join ArrayList(JsAny) elements with separator, returns allocated string.
-pub fn joinAny(alloc: Allocator, arr: *const std.ArrayList(JsAny), sep: []const u8) ![]const u8 {
-    if (arr.items.len == 0) return &[0]u8{};
-
-    var buf = std.ArrayList(u8).empty;
-    errdefer buf.deinit(alloc);
-    try buf.ensureTotalCapacity(alloc, arr.items.len * 4); // estimate: 4 chars per element
-    var writer = buf.writer();
-
-    for (arr.items, 0..) |item, i| {
-        if (i > 0) try writer.writeAll(sep);
-        try writer.print("{f}", .{item});
-    }
-
-    return buf.toOwnedSlice(alloc);
-}
-
-
-/// Map ArrayList(JsAny) by multiplying each element by scalar.
-/// Returns new ArrayList(JsAny).
-pub fn mapAnyScalar(alloc: Allocator, arr: *const std.ArrayList(JsAny), scalar: i64) !std.ArrayList(JsAny) {
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-    try result.ensureTotalCapacity(alloc, arr.items.len);
-    for (arr.items) |item| {
-        const val = item.asI64();
-        result.appendAssumeCapacity(JsAny.fromI64(val * scalar));
-    }
-    return result;
-}
-
-/// Filter ArrayList(JsAny), keeping elements > threshold.
-/// Returns new ArrayList(JsAny).
-pub fn filterAnyThreshold(alloc: Allocator, arr: *const std.ArrayList(JsAny), threshold: i64) !std.ArrayList(JsAny) {
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-    for (arr.items) |item| {
-        const val = item.asI64();
-        if (val > threshold) {
-            try result.append(alloc, item);
-        }
-    }
-    return result;
-}
-
-/// Map ArrayList(JsAny) using a comptime function.
-/// Returns new ArrayList(JsAny).
-pub fn mapWithFn(
-    alloc: Allocator,
-    arr: *const std.ArrayList(JsAny),
-    comptime f: fn(JsAny) JsAny,
-) !std.ArrayList(JsAny) {
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-    try result.ensureTotalCapacity(alloc, arr.items.len);
-    for (arr.items) |item| {
-        result.appendAssumeCapacity(f(item));
-    }
-    return result;
-}
-
-/// Filter ArrayList(JsAny) using a comptime predicate.
-/// Returns new ArrayList(JsAny).
-pub fn filterWithFn(
-    alloc: Allocator,
-    arr: *const std.ArrayList(JsAny),
-    comptime pred: fn(JsAny) bool,
-) !std.ArrayList(JsAny) {
-    var result = std.ArrayList(JsAny).empty;
-    errdefer result.deinit(alloc);
-    try result.ensureTotalCapacity(alloc, arr.items.len);
-    for (arr.items) |item| {
-        if (pred(item)) {
-            result.appendAssumeCapacity(item);
-        }
-    }
-    return result;
 }
 
 /// Array.keys() — returns new ArrayList(JsAny) containing indices.
@@ -463,6 +174,36 @@ pub fn entries(alloc: Allocator, arr: *const std.ArrayList(JsAny)) !std.ArrayLis
         result.appendAssumeCapacity(JsAny{ .array = pair_ptr });
     }
     return result;
+}
+
+// ── Tests ──
+
+test "reverse" {
+    const result = try reverse(std.testing.allocator, &[_]i64{ 1, 2, 3 });
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqual(@as(i64, 3), result[0]);
+    try std.testing.expectEqual(@as(i64, 2), result[1]);
+    try std.testing.expectEqual(@as(i64, 1), result[2]);
+}
+
+test "sort" {
+    const result = try sort(std.testing.allocator, &[_]i64{ 3, 1, 4, 1, 5 });
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqual(@as(i64, 1), result[0]);
+    try std.testing.expectEqual(@as(i64, 5), result[4]);
+}
+
+test "shift" {
+    const arr = &[_]i64{ 10, 20, 30 };
+    try std.testing.expectEqual(@as(i64, 10), shift(arr).?);
+    try std.testing.expectEqual(@as(?i64, null), shift(&[_]i64{}));
+}
+
+test "unshift" {
+    const result = try unshift(std.testing.allocator, &[_]i64{ 2, 3 }, 1);
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqual(@as(usize, 3), result.len);
+    try std.testing.expectEqual(@as(i64, 1), result[0]);
 }
 
 test "flat" {
@@ -643,30 +384,4 @@ test "of" {
     try std.testing.expectEqual(@as(i64, 10), result.items[0].asI64());
     try std.testing.expectEqualStrings("hello", result.items[1].asString(alloc));
     try std.testing.expect(result.items[2].asBool());
-}
-
-test "fromWithMap" {
-    const alloc = std.testing.allocator;
-
-    // Create source array
-    var src = try JsAny.newArray(alloc);
-    defer src.deinit(alloc);
-    try src.arrayPush(alloc, JsAny.fromI64(1));
-    try src.arrayPush(alloc, JsAny.fromI64(2));
-    try src.arrayPush(alloc, JsAny.fromI64(3));
-
-    // Map function: multiply by 2
-    const Double = struct {
-        fn map(item: JsAny, _: usize) JsAny {
-            return JsAny.fromI64(item.asI64() * 2);
-        }
-    }.map;
-
-    var result = try fromWithMap(alloc, src, Double);
-    defer result.deinit(alloc);
-
-    try std.testing.expectEqual(@as(usize, 3), result.items.len);
-    try std.testing.expectEqual(@as(i64, 2), result.items[0].asI64());
-    try std.testing.expectEqual(@as(i64, 4), result.items[1].asI64());
-    try std.testing.expectEqual(@as(i64, 6), result.items[2].asI64());
 }

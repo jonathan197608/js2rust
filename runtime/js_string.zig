@@ -687,14 +687,6 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
     return outer_arr;
 }
 
-/// Search string for regex (stub: always returns -1).
-/// Requires regex engine support.
-pub fn searchString(s: []const u8, regex: []const u8) i64 {
-    _ = s;
-    _ = regex;
-    return -1;
-}
-
 test "localeCompare" {
     try std.testing.expectEqual(@as(i64, -1), localeCompare("apple", "banana"));
     try std.testing.expectEqual(@as(i64, 0), localeCompare("apple", "apple"));

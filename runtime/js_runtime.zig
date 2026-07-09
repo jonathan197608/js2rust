@@ -21,9 +21,6 @@ pub const jsany = @import("jsany.zig");
 
 pub const js_typedarray = @import("js_typedarray.zig");
 
-pub const js_promise = @import("js_promise.zig");
-pub const Promise = js_promise.Promise;
-
 // Re-export commonly used types at top level for convenience.
 pub const JsValue = jsvalue.JsValue;
 pub const JsAny = jsany.JsAny;

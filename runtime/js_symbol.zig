@@ -67,11 +67,6 @@ pub const JsSymbol = struct {
         return JsSymbol{ .id = getNextId(), .description = null };
     }
 
-    /// Get the description string, or null if none.
-    pub fn getDescription(self: JsSymbol) ?[]const u8 {
-        return self.description;
-    }
-
     /// Return a string representation of this symbol.
     /// JS: symbol.toString() → "Symbol(description)" or "Symbol()"
     pub fn toString(self: JsSymbol, alloc: Allocator) ![]const u8 {

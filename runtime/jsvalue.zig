@@ -51,10 +51,6 @@ pub const JsValue = union(enum) {
         return self == .string;
     }
 
-    pub fn isBool(self: JsValue) bool {
-        return self == .bool;
-    }
-
     pub fn isNull(self: JsValue) bool {
         return self == .null;
     }
@@ -65,17 +61,6 @@ pub const JsValue = union(enum) {
 
     pub fn isNumber(self: JsValue) bool {
         return self == .int or self == .float;
-    }
-
-    pub fn typeName(self: JsValue) []const u8 {
-        return switch (self) {
-            .int => "number",
-            .float => "number",
-            .bool => "boolean",
-            .string => "string",
-            .null => "object",
-            .undefined => "undefined",
-        };
     }
 
     // --- std.fmt integration (for template literals) ---
@@ -138,53 +123,6 @@ pub const JsValue = union(enum) {
         };
     }
 
-    // --- arithmetic (JS semantics) ---
-
-    /// add: if either operand is a string, concatenate; otherwise numeric add.
-    pub fn add(self: JsValue, other: JsValue, alloc: Allocator) JsValue {
-        if (self == .string or other == .string) {
-            const self_s = self.asString(alloc);
-            const other_s = other.asString(alloc);
-            const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ self_s, other_s }) catch "";
-            return .{ .string = result };
-        }
-        if (self == .int and other == .int) {
-            return .{ .int = self.int + other.int };
-        }
-        return .{ .float = self.asF64() + other.asF64() };
-    }
-
-    pub fn sub(self: JsValue, other: JsValue) JsValue {
-        return .{ .float = self.asF64() - other.asF64() };
-    }
-
-    pub fn mul(self: JsValue, other: JsValue) JsValue {
-        return .{ .float = self.asF64() * other.asF64() };
-    }
-
-    pub fn div(self: JsValue, other: JsValue) JsValue {
-        const denom = other.asF64();
-        if (denom == 0.0) return .{ .float = std.math.inf(f64) };
-        return .{ .float = self.asF64() / denom };
-    }
-
-    pub fn rem(self: JsValue, other: JsValue) JsValue {
-        return .{ .float = @mod(self.asF64(), other.asF64()) };
-    }
-
-    // --- unary ---
-
-    pub fn neg(self: JsValue) JsValue {
-        return switch (self) {
-            .int => |v| .{ .int = -v },
-            else => .{ .float = -self.asF64() },
-        };
-    }
-
-    pub fn not(self: JsValue) JsValue {
-        return .{ .bool = !self.asBool() };
-    }
-
     // --- comparison (JS == loose semantics, not ===) ---
 
     pub fn eq(self: JsValue, other: JsValue) bool {
@@ -225,21 +163,5 @@ pub const JsValue = union(enum) {
             .null => true,
             .undefined => true,
         };
-    }
-
-    pub fn lt(self: JsValue, other: JsValue) bool {
-        return self.asF64() < other.asF64();
-    }
-
-    pub fn le(self: JsValue, other: JsValue) bool {
-        return self.asF64() <= other.asF64();
-    }
-
-    pub fn gt(self: JsValue, other: JsValue) bool {
-        return self.asF64() > other.asF64();
-    }
-
-    pub fn ge(self: JsValue, other: JsValue) bool {
-        return self.asF64() >= other.asF64();
     }
 };

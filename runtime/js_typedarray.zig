@@ -99,6 +99,16 @@ pub fn fromI64AsU32(alloc: Allocator, arr: anytype) ![]u32 {
     return convertArray(u32, alloc, arr);
 }
 
+/// Accept i64 array and return as []i64 (BigInt64Array — identity copy).
+pub fn fromI64AsI64(alloc: Allocator, arr: anytype) ![]i64 {
+    return convertArray(i64, alloc, arr);
+}
+
+/// Accept i64 array and convert to []u64 (BigUint64Array).
+pub fn fromI64AsU64(alloc: Allocator, arr: anytype) ![]u64 {
+    return convertArray(u64, alloc, arr);
+}
+
 pub fn fromF64AsF32(alloc: Allocator, arr: anytype) ![]f32 {
     const T = @TypeOf(arr);
     const slice = if (@typeInfo(T) == .array)
@@ -110,76 +120,6 @@ pub fn fromF64AsF32(alloc: Allocator, arr: anytype) ![]f32 {
         result[i] = @floatCast(val);
     }
     return result;
-}
-
-pub fn fromI64AsF64(alloc: Allocator, arr: anytype) ![]f64 {
-    return convertArray(f64, alloc, arr);
-}
-
-pub fn fromU32(alloc: Allocator, arr: []const u32) ![]u32 {
-    return try alloc.dupe(u32, arr);
-}
-
-pub fn fromF32(alloc: Allocator, arr: []const f32) ![]f32 {
-    return try alloc.dupe(f32, arr);
-}
-
-pub fn fromF64(alloc: Allocator, arr: []const f64) ![]f64 {
-    return try alloc.dupe(f64, arr);
-}
-
-// ── Empty slice helpers (used in catch branches) ──
-
-pub fn emptyI8() []i8 {
-    return &[_]i8{};
-}
-
-pub fn emptyU8() []u8 {
-    return &[_]u8{};
-}
-
-pub fn emptyI16() []i16 {
-    return &[_]i16{};
-}
-
-pub fn emptyU16() []u16 {
-    return &[_]u16{};
-}
-
-pub fn emptyI32() []i32 {
-    return &[_]i32{};
-}
-
-pub fn emptyU32() []u32 {
-    return &[_]u32{};
-}
-
-pub fn emptyF32() []f32 {
-    return &[_]f32{};
-}
-
-pub fn emptyF64() []f64 {
-    return &[_]f64{};
-}
-
-// ── of() — create TypedArray from variadic args ──
-// JS: Int32Array.of(1, 2, 3)
-// Zig: we just create a slice literal
-
-pub fn ofI8(alloc: Allocator, items: []const i8) ![]i8 {
-    return try alloc.dupe(i8, items);
-}
-
-pub fn ofU8(alloc: Allocator, items: []const u8) ![]u8 {
-    return try alloc.dupe(u8, items);
-}
-
-pub fn ofI32(alloc: Allocator, items: []const i32) ![]i32 {
-    return try alloc.dupe(i32, items);
-}
-
-pub fn ofF64(alloc: Allocator, items: []const f64) ![]f64 {
-    return try alloc.dupe(f64, items);
 }
 
 // ── get() — access element at index ──
@@ -489,12 +429,6 @@ pub fn byteLengthF32(arr: []const f32) i64 {
 
 pub fn byteLengthF64(arr: []const f64) i64 {
     return @intCast(arr.len * @sizeOf(f64));
-}
-
-// ── byteOffset() — always 0 (no ArrayBuffer abstraction yet) ──
-
-pub fn byteOffset() i64 {
-    return 0;
 }
 
 // ── Tests ──
