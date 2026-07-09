@@ -61,6 +61,37 @@ impl TypeInferrer {
             }
         }
 
+        // Refine parameter types from usage: if a parameter of Anytype
+        // (non-export only) is used as the target of a string-specific method
+        // call or property, refine it to Str. This reduces the need for
+        // JSDoc @param {string}. We do NOT refine export function params
+        // (which default to I64) because that would break C ABI signatures.
+        if !is_export
+            && let Some(body) = &fd.body
+        {
+            let param_names: Vec<String> = params
+                .iter()
+                .filter(|(_, r)| matches!(r, InferResult::Indeterminate))
+                .map(|(n, _)| n.clone())
+                .collect();
+            if !param_names.is_empty() {
+                let mut refined = HashSet::new();
+                for s in &body.statements {
+                    Self::detect_string_param_usage(s, &param_names, &mut refined);
+                }
+                for pname in &refined {
+                    self.var_types.insert(pname.clone(), ZigType::Str);
+                    if let Some(param_list) = self.fn_param_types.get_mut(fn_name) {
+                        for (n, t) in param_list.iter_mut() {
+                            if n == pname {
+                                *t = ZigType::Str;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Return type (after body walk so local vars are known)
         let ret_ty = self.infer_fn_return_type(fd, fn_name, is_export);
         match &ret_ty {
@@ -528,5 +559,209 @@ impl TypeInferrer {
 
     pub(crate) fn zig_str_to_type(s: &str) -> ZigType {
         ZigType::from_zig_str(s)
+    }
+
+    // ============================================================
+    // Parameter type refinement from usage
+    // ============================================================
+
+    /// String-specific methods that unambiguously indicate the receiver is a string.
+    /// Only includes methods that are (1) string-only (not on Array) and (2)
+    /// have straightforward type implications when the parameter is refined.
+    /// Excluded: match/matchAll/search (regex interaction), split/slice/
+    /// substring/concat/at (also available on Array).
+    const STRING_ONLY_METHODS: &'static [&'static str] = &[
+        "charAt",
+        "charCodeAt",
+        "codePointAt",
+        "toUpperCase",
+        "toLowerCase",
+        "toLocaleUpperCase",
+        "toLocaleLowerCase",
+        "trim",
+        "trimStart",
+        "trimEnd",
+        "padStart",
+        "padEnd",
+        "repeat",
+        "replace",
+        "replaceAll",
+        "normalize",
+        "localeCompare",
+    ];
+
+    /// Detect parameters that are used as the target of string-specific
+    /// method calls. Walks the statement recursively.
+    fn detect_string_param_usage(
+        stmt: &Statement,
+        param_names: &[String],
+        refined: &mut HashSet<String>,
+    ) {
+        match stmt {
+            Statement::ExpressionStatement(es) => {
+                Self::detect_string_param_usage_in_expr(&es.expression, param_names, refined);
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(arg) = &rs.argument {
+                    Self::detect_string_param_usage_in_expr(arg, param_names, refined);
+                }
+            }
+            Statement::VariableDeclaration(vd) => {
+                for decl in &vd.declarations {
+                    if let Some(init) = &decl.init {
+                        Self::detect_string_param_usage_in_expr(init, param_names, refined);
+                    }
+                }
+            }
+            Statement::IfStatement(is) => {
+                Self::detect_string_param_usage_in_expr(&is.test, param_names, refined);
+                Self::detect_string_param_usage(&is.consequent, param_names, refined);
+                if let Some(alt) = &is.alternate {
+                    Self::detect_string_param_usage(alt, param_names, refined);
+                }
+            }
+            Statement::BlockStatement(bs) => {
+                for s in &bs.body {
+                    Self::detect_string_param_usage(s, param_names, refined);
+                }
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(ForStatementInit::VariableDeclaration(vd)) = &fs.init {
+                    for decl in &vd.declarations {
+                        if let Some(init) = &decl.init {
+                            Self::detect_string_param_usage_in_expr(
+                                init, param_names, refined,
+                            );
+                        }
+                    }
+                }
+                if let Some(test) = &fs.test {
+                    Self::detect_string_param_usage_in_expr(test, param_names, refined);
+                }
+                if let Some(update) = &fs.update {
+                    Self::detect_string_param_usage_in_expr(update, param_names, refined);
+                }
+                Self::detect_string_param_usage(&fs.body, param_names, refined);
+            }
+            Statement::ForInStatement(fis) => {
+                Self::detect_string_param_usage_in_expr(&fis.right, param_names, refined);
+                Self::detect_string_param_usage(&fis.body, param_names, refined);
+            }
+            Statement::ForOfStatement(fos) => {
+                Self::detect_string_param_usage_in_expr(&fos.right, param_names, refined);
+                Self::detect_string_param_usage(&fos.body, param_names, refined);
+            }
+            Statement::WhileStatement(ws) => {
+                Self::detect_string_param_usage_in_expr(&ws.test, param_names, refined);
+                Self::detect_string_param_usage(&ws.body, param_names, refined);
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::detect_string_param_usage(&dws.body, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&dws.test, param_names, refined);
+            }
+            Statement::SwitchStatement(ss) => {
+                Self::detect_string_param_usage_in_expr(&ss.discriminant, param_names, refined);
+                for case in &ss.cases {
+                    for s in &case.consequent {
+                        Self::detect_string_param_usage(s, param_names, refined);
+                    }
+                }
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    Self::detect_string_param_usage(s, param_names, refined);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        Self::detect_string_param_usage(s, param_names, refined);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        Self::detect_string_param_usage(s, param_names, refined);
+                    }
+                }
+            }
+            Statement::LabeledStatement(ls) => {
+                Self::detect_string_param_usage(&ls.body, param_names, refined);
+            }
+            _ => {}
+        }
+    }
+
+    /// Walk expression tree looking for string-only method calls on parameters.
+    fn detect_string_param_usage_in_expr(
+        expr: &Expression,
+        param_names: &[String],
+        refined: &mut HashSet<String>,
+    ) {
+        match expr {
+            Expression::CallExpression(ce) => {
+                // Check if this is param.stringOnlyMethod(...)
+                if let Expression::StaticMemberExpression(sme) = &ce.callee
+                    && let Some(name) =
+                        super::helpers::extract_expr_identifier_name(&sme.object)
+                    && param_names.contains(&name)
+                    && Self::STRING_ONLY_METHODS
+                        .contains(&sme.property.name.as_str())
+                {
+                    refined.insert(name);
+                }
+                // Recurse into arguments
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::detect_string_param_usage_in_expr(e, param_names, refined);
+                    }
+                }
+            }
+            Expression::BinaryExpression(be) => {
+                Self::detect_string_param_usage_in_expr(&be.left, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&be.right, param_names, refined);
+            }
+            Expression::UnaryExpression(ue) => {
+                Self::detect_string_param_usage_in_expr(&ue.argument, param_names, refined);
+            }
+            Expression::AssignmentExpression(ae) => {
+                Self::detect_string_param_usage_in_expr(&ae.right, param_names, refined);
+            }
+            Expression::TemplateLiteral(tl) => {
+                for expr in &tl.expressions {
+                    Self::detect_string_param_usage_in_expr(expr, param_names, refined);
+                }
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::detect_string_param_usage_in_expr(&ce.test, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&ce.consequent, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&ce.alternate, param_names, refined);
+            }
+            Expression::LogicalExpression(le) => {
+                Self::detect_string_param_usage_in_expr(&le.left, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&le.right, param_names, refined);
+            }
+            Expression::ParenthesizedExpression(pe) => {
+                Self::detect_string_param_usage_in_expr(&pe.expression, param_names, refined);
+            }
+            Expression::SequenceExpression(se) => {
+                for e in &se.expressions {
+                    Self::detect_string_param_usage_in_expr(e, param_names, refined);
+                }
+            }
+            Expression::StaticMemberExpression(sme) => {
+                Self::detect_string_param_usage_in_expr(&sme.object, param_names, refined);
+            }
+            Expression::ComputedMemberExpression(cme) => {
+                Self::detect_string_param_usage_in_expr(&cme.object, param_names, refined);
+                Self::detect_string_param_usage_in_expr(&cme.expression, param_names, refined);
+            }
+            Expression::NewExpression(ne) => {
+                for arg in &ne.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::detect_string_param_usage_in_expr(e, param_names, refined);
+                    }
+                }
+            }
+            // Identifiers, literals, etc. don't contain method calls
+            _ => {}
+        }
     }
 }

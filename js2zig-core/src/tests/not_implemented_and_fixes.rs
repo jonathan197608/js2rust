@@ -1538,6 +1538,28 @@ fn test_dynamic_string_index() {
 }
 
 #[test]
+fn test_string_param_refined_from_method_usage() {
+    // No JSDoc @param {string}, but s.charAt() usage infers s as Str
+    // (only for non-export functions where params default to Anytype),
+    // so s[i] should be treated as StringChar (not array index).
+    let js = r#"
+        export function testStringRefinement() {
+            function inner(s, i) {
+                const c = s.charAt(0);
+                return s[i];
+            }
+            return inner("hello", 0);
+        }
+    "#;
+    let zig = transpile_and_assert(js, "test_string_param_refined_from_method_usage");
+    assert!(
+        zig.contains("@as(i64, @intCast("),
+        "Expected @as(i64, @intCast(...)) for StringChar via type refinement, got:\n{}",
+        zig
+    );
+}
+
+#[test]
 fn test_string_literal_index_inferred_type() {
     // const s = "hello"; s[0] — type inferred as Str, not relying on JSDoc
     let js = r#"
