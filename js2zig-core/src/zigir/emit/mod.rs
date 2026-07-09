@@ -86,6 +86,21 @@ impl Emitter {
         sub_emitter.output.trim().to_string()
     }
 
+    /// Like `emit_expr_inline`, but initializes the sub-emitter's `label_counter`
+    /// to `label_offset` instead of 0, ensuring that any labeled blocks generated
+    /// inside the sub-expression use label numbers ≥ `label_offset`.
+    /// Returns `(rendered_string, updated_label_counter)`.
+    pub(crate) fn emit_expr_inline_with_label_offset(
+        expr: &crate::zigir::types::IrExpr,
+        label_offset: u32,
+    ) -> (String, u32) {
+        let mut sub_emitter = Self::new();
+        sub_emitter.label_counter = label_offset;
+        sub_emitter.emit_expr(expr);
+        let new_counter = sub_emitter.label_counter;
+        (sub_emitter.output.trim().to_string(), new_counter)
+    }
+
     /// Emit a complete IrModule to a Zig source string.
     pub fn emit_module(module: &IrModule) -> String {
         let mut emitter = Self::new();

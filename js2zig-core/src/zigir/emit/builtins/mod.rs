@@ -71,6 +71,47 @@ impl Emitter {
 }
 
 // ═══════════════════════════════════════════════════════
+//  Chain-receiver resolution
+// ═══════════════════════════════════════════════════════
+
+/// Resolve the receiver for an inline array callback/method, fixing two
+/// method-chaining bugs:
+///
+/// **Bug A — Label conflict**: `emit_expr_inline()` starts each sub-emitter
+/// with `label_counter = 0`, so nested chains like `filter().map()` both
+/// emit `blk_0`. We pass `label_offset` so inner blocks use higher labels.
+///
+/// **Bug B — Double evaluation**: Methods like `map` call the receiver
+/// expression twice (e.g. for `ensureTotalCapacity` and `for`), re-running
+/// the entire inner chain. We emit a `const __chain_N = <expr>;` binding
+/// once and return the variable name for all references.
+///
+/// Returns `(receiver_string, optional_binding, updated_label_counter)`.
+/// The caller must emit the binding (if any) inside the enclosing block
+/// before the first use of `receiver_string`.
+pub(super) fn resolve_chain_receiver(
+    obj_expr: &Option<Box<crate::zigir::types::IrExpr>>,
+    obj_name: &str,
+    label_offset: u32,
+) -> (String, Option<String>, u32) {
+    if let Some(expr) = obj_expr {
+        use crate::zigir::types::IrExpr;
+        let (rendered, new_counter) =
+            Emitter::emit_expr_inline_with_label_offset(expr, label_offset);
+        match expr.as_ref() {
+            IrExpr::ArrayCallbackInline(_) | IrExpr::ArrayMethodInline(_) => {
+                let chain_var = format!("__chain_{}", label_offset);
+                let binding = format!("const {} = {}; ", chain_var, rendered);
+                (chain_var, Some(binding), new_counter)
+            }
+            _ => (format!("({})", rendered), None, new_counter),
+        }
+    } else {
+        (obj_name.to_string(), None, label_offset)
+    }
+}
+
+// ═══════════════════════════════════════════════════════
 //  Shared helpers
 // ═══════════════════════════════════════════════════════
 

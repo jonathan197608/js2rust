@@ -1735,3 +1735,38 @@ export function test(exp) {
         zig
     );
 }
+
+#[test]
+fn test_method_chaining_array_filter_map() {
+    // Method chaining: arr.filter(fn).map(fn)
+    // This tests the fix for two bugs:
+    //   Bug A — Label conflict: filter and map both emitted blk_0
+    //   Bug B — Double evaluation: map rendered the filter expression twice
+    // The fix emits a const __chain_N binding for the inner expression
+    // and propagates label offsets so inner blocks use higher label numbers.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testFilterMap() {
+const arr = [1, 2, 3, 4, 5];
+const result = arr.filter(x => x > 3).map(x => x * 2);
+return result[0] + result[1];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_method_chaining_array_filter_map");
+    println!("=== Array method chaining: filter().map() ===\n{}", zig);
+    // Verify the output contains __chain binding (no double evaluation)
+    assert!(
+        zig.contains("__chain_"),
+        "Expected __chain binding for chained filter().map() in:\n{}",
+        zig
+    );
+    // Verify no label conflict: should have distinct blk labels
+    assert!(zig.contains("blk_0"), "Expected blk_0 label in:\n{}", zig);
+    assert!(
+        zig.contains("blk_1"),
+        "Expected blk_1 label (no label conflict) in:\n{}",
+        zig
+    );
+}
