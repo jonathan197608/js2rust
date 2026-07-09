@@ -216,24 +216,8 @@ impl HostFnRegistry {
         for def in &self.fns {
             // ── Async functions: emit extern + async wrapper, skip _wrap ──
             if def.is_async {
-                // Build C ABI params: string params expand to ptr+len (zero-copy)
-                let mut cabi_param_parts = Vec::new();
-                for (n, t) in &def.params {
-                    for (cabi_name, cabi_type) in Self::get_c_abi_param_types(n, t) {
-                        cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
-                    }
-                }
-                let params_cabi = cabi_param_parts.join(", ");
-
-                let ret_cabi = match &def.ret_type {
-                    ZigType::NamedStruct(name) => self
-                        .structs
-                        .iter()
-                        .find(|s| &s.zig_name == name)
-                        .map(|s| s.c_name.clone())
-                        .unwrap_or_else(|| name.clone()),
-                    other => Self::get_c_abi_ret_type(other),
-                };
+                let params_cabi = Self::build_cabi_params(&def.params);
+                let ret_cabi = self.resolve_cabi_ret_type(&def.ret_type);
 
                 // Extern declaration (C ABI symbol defined in Rust)
                 out.push_str(&format!(
@@ -258,15 +242,7 @@ impl HostFnRegistry {
                 out.push_str("    _ = io;\n");
 
                 // Build call args: string params pass .ptr and .len (zero-copy)
-                let mut call_args = Vec::new();
-                for (n, t) in &def.params {
-                    if *t == ZigType::Str {
-                        call_args.push(format!("{}.ptr", n));
-                        call_args.push(format!("{}.len", n));
-                    } else {
-                        call_args.push(n.clone());
-                    }
-                }
+                let call_args = Self::build_call_args(&def.params);
 
                 // Call extern and convert return
                 if let ZigType::NamedStruct(ref zig_name) = def.ret_type {
@@ -317,41 +293,15 @@ impl HostFnRegistry {
             }
 
             // ── Sync functions ──
-            // Build C ABI params: string params expand to ptr+len (zero-copy)
-            let mut cabi_param_parts = Vec::new();
-            for (n, t) in &def.params {
-                for (cabi_name, cabi_type) in Self::get_c_abi_param_types(n, t) {
-                    cabi_param_parts.push(format!("{}: {}", cabi_name, cabi_type));
-                }
-            }
-            let params_cabi = cabi_param_parts.join(", ");
-
-            // Return type in C ABI representation
-            let ret_cabi = match &def.ret_type {
-                ZigType::NamedStruct(name) => self
-                    .structs
-                    .iter()
-                    .find(|s| &s.zig_name == name)
-                    .map(|s| s.c_name.clone())
-                    .unwrap_or_else(|| name.clone()),
-                other => Self::get_c_abi_ret_type(other),
-            };
+            let params_cabi = Self::build_cabi_params(&def.params);
+            let ret_cabi = self.resolve_cabi_ret_type(&def.ret_type);
 
             // Check if this function needs string conversion wrappers
             let has_string_params = def.params.iter().any(|(_, t)| *t == ZigType::Str);
             let has_string_return = def.ret_type == ZigType::Str;
             let is_void = def.ret_type == ZigType::Void;
 
-            // Build call args for C ABI: string params pass .ptr and .len
-            let mut call_args = Vec::new();
-            for (n, t) in &def.params {
-                if *t == ZigType::Str {
-                    call_args.push(format!("{}.ptr", n));
-                    call_args.push(format!("{}.len", n));
-                } else {
-                    call_args.push(n.clone());
-                }
-            }
+            let call_args = Self::build_call_args(&def.params);
 
             // ── String params or return: generate wrapper ──
             if has_string_params || has_string_return {
@@ -434,6 +384,44 @@ impl HostFnRegistry {
         }
 
         out
+    }
+
+    /// Build C ABI parameter list string (expands string params to ptr+len).
+    fn build_cabi_params(params: &[(String, ZigType)]) -> String {
+        let mut parts = Vec::new();
+        for (n, t) in params {
+            for (cabi_name, cabi_type) in Self::get_c_abi_param_types(n, t) {
+                parts.push(format!("{}: {}", cabi_name, cabi_type));
+            }
+        }
+        parts.join(", ")
+    }
+
+    /// Resolve C ABI return type (NamedStruct → C ABI struct name, Str → StrRet).
+    fn resolve_cabi_ret_type(&self, ret_type: &ZigType) -> String {
+        match ret_type {
+            ZigType::NamedStruct(name) => self
+                .structs
+                .iter()
+                .find(|s| &s.zig_name == name)
+                .map(|s| s.c_name.clone())
+                .unwrap_or_else(|| name.clone()),
+            other => Self::get_c_abi_ret_type(other),
+        }
+    }
+
+    /// Build call arguments (string params expand to .ptr/.len for zero-copy).
+    fn build_call_args(params: &[(String, ZigType)]) -> Vec<String> {
+        let mut args = Vec::new();
+        for (n, t) in params {
+            if *t == ZigType::Str {
+                args.push(format!("{}.ptr", n));
+                args.push(format!("{}.len", n));
+            } else {
+                args.push(n.clone());
+            }
+        }
+        args
     }
 
     /// Convert a ZigType to the corresponding C ABI type string (for return types).
