@@ -1392,8 +1392,7 @@ fn test_method_chaining_string_literal_method() {
 #[test]
 fn test_method_chaining_array_join_after_map() {
     // Method chaining: arr.map(fn).join(sep)
-    // When map is in a chain, the callback inline may not trigger (known limitation).
-    // The key assertion is that the code transpiles without error.
+    // The chain fix ensures: distinct block labels and single evaluation via __chain binding.
     let js = r#"
 /**
  * @returns {string}
@@ -1405,10 +1404,20 @@ return arr.map(function(x) { return x * 2; }).join(",");
 "#;
     let zig = transpile_and_assert(js, "test_method_chaining_array_join_after_map");
     println!("=== Array method chaining: map().join() ===\n{}", zig);
-    // Verify the output contains either inline map (__map) or a join call
+    // Verify inline map emission with chain binding
     assert!(
-        zig.contains("__map") || zig.contains("__join_buf") || zig.contains("join"),
-        "Expected map or join emission in:\n{}",
+        zig.contains("__map"),
+        "Expected inline __map ArrayList in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__chain_"),
+        "Expected __chain binding for chained map().join() in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__join_buf"),
+        "Expected inline __join_buf for join emission in:\n{}",
         zig
     );
 }
