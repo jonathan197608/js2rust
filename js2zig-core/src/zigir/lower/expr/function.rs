@@ -41,7 +41,7 @@ impl Lowerer {
             .collect();
 
         // Lower the body
-        let body = if is_concise {
+        let mut body = if is_concise {
             if let Statement::ExpressionStatement(es) = &af.body.statements[0] {
                 let expr_ir = self.lower_expr(&es.expression);
                 IrBlock::new(vec![crate::zigir::types::IrStmt::Return {
@@ -53,6 +53,19 @@ impl Lowerer {
         } else {
             self.lower_block(&af.body.statements)
         };
+
+        // Ownership transfer: clear needs_deinit for returned Map/Set variables
+        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
+        if !returned_vars.is_empty() {
+            for stmt in &mut body.stmts {
+                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
+                    && vd.needs_deinit
+                    && returned_vars.contains(&vd.name.zig_name)
+                {
+                    vd.needs_deinit = false;
+                }
+            }
+        }
 
         // Restore closure state
         self.closure_mgr.restore_captured(saved_captured);
@@ -153,11 +166,24 @@ impl Lowerer {
         let params = self.lower_fn_params(fe, &name);
 
         // Lower body
-        let body = fe
+        let mut body = fe
             .body
             .as_ref()
             .map(|b| self.lower_block(&b.statements))
             .unwrap_or_else(|| IrBlock::new(vec![]));
+
+        // Ownership transfer: clear needs_deinit for returned Map/Set variables
+        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
+        if !returned_vars.is_empty() {
+            for stmt in &mut body.stmts {
+                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
+                    && vd.needs_deinit
+                    && returned_vars.contains(&vd.name.zig_name)
+                {
+                    vd.needs_deinit = false;
+                }
+            }
+        }
 
         // Restore
         self.closure_mgr.restore_captured(saved_captured);

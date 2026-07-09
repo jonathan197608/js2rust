@@ -6,6 +6,92 @@ use std::collections::HashSet;
 use super::Lowerer;
 
 impl Lowerer {
+    /// Collect zig_names of variables that appear as direct return values
+    /// (e.g., `return myMap;`). These variables transfer ownership to the
+    /// caller and should not have `defer deinit()` auto-cleanup.
+    pub(crate) fn collect_returned_var_zig_names_in_block(
+        block: &crate::zigir::types::IrBlock,
+    ) -> HashSet<String> {
+        let mut names = HashSet::new();
+        for stmt in &block.stmts {
+            Self::collect_returned_var_zig_names_in_stmt(stmt, &mut names);
+        }
+        names
+    }
+
+    fn collect_returned_var_zig_names_in_stmt(
+        stmt: &crate::zigir::types::IrStmt,
+        names: &mut HashSet<String>,
+    ) {
+        use crate::zigir::types::IrStmt;
+        match stmt {
+            IrStmt::Return {
+                value: Some(crate::zigir::types::IrExpr::Ident(ident)),
+            } => {
+                names.insert(ident.zig_name.clone());
+            }
+            IrStmt::Return { value: None | Some(_) } => {}
+            IrStmt::If { then, else_, .. } => {
+                for s in &then.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+                if let Some(e) = else_ {
+                    for s in &e.stmts {
+                        Self::collect_returned_var_zig_names_in_stmt(s, names);
+                    }
+                }
+            }
+            IrStmt::Block(b) => {
+                for s in &b.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+            }
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                for s in &try_block.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+                for s in &catch_block.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+                if let Some(f) = finally {
+                    for s in &f.stmts {
+                        Self::collect_returned_var_zig_names_in_stmt(s, names);
+                    }
+                }
+            }
+            IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
+                for s in &body.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+            }
+            IrStmt::For { body, .. } => {
+                for s in &body.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+            }
+            IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
+                for s in &body.stmts {
+                    Self::collect_returned_var_zig_names_in_stmt(s, names);
+                }
+            }
+            IrStmt::Switch { cases, .. } => {
+                for c in cases {
+                    for s in &c.body {
+                        Self::collect_returned_var_zig_names_in_stmt(s, names);
+                    }
+                }
+            }
+            // VarDecl, Assign, Expr, Throw, Break, Continue, Comment, etc.
+            // do not contain return statements in their structure.
+            _ => {}
+        }
+    }
+
     /// Collect all identifier names (js_name) referenced in an IR block.
     /// Used to determine which function parameters are unused.
     pub(crate) fn collect_ir_idents_in_block(
@@ -369,5 +455,77 @@ impl Lowerer {
             | IrExpr::This
             | IrExpr::CompileError { .. } => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::zigir::ident::IrIdent;
+    use crate::zigir::types::{IrBlock, IrExpr, IrStmt, IrVarDecl};
+    use crate::types::ZigType;
+
+    #[test]
+    fn test_collect_returned_var_direct() {
+        // return myMap; → myMap should be collected
+        let block = IrBlock::new(vec![
+            IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new("myMap"),
+                is_const: true,
+                zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+                init: None,
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_const_suppression: false,
+                needs_deinit: true,
+            }),
+            IrStmt::Return {
+                value: Some(IrExpr::Ident(IrIdent::new("myMap"))),
+            },
+        ]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.contains("myMap"));
+        assert_eq!(names.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_returned_var_in_if() {
+        // if (cond) { return s; } → s should be collected
+        let block = IrBlock::new(vec![IrStmt::If {
+            cond: IrExpr::BoolLiteral(true),
+            then: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::Ident(IrIdent::new("s"))),
+            }]),
+            else_: None,
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.contains("s"));
+    }
+
+    #[test]
+    fn test_collect_returned_var_not_ident() {
+        // return 42; → nothing collected
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::IntLiteral(42)),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_collect_returned_var_no_return() {
+        // No return → empty
+        let block = IrBlock::new(vec![IrStmt::VarDecl(IrVarDecl {
+            name: IrIdent::new("m"),
+            is_const: true,
+            zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+            init: None,
+            is_json_parse: false,
+            needs_var_suppression: false,
+            needs_const_suppression: false,
+            needs_deinit: true,
+        })]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.is_empty());
     }
 }

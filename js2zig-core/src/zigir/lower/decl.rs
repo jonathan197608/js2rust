@@ -657,6 +657,22 @@ impl Lowerer {
             }
         }
 
+        // Ownership transfer: variables that are directly returned should not
+        // get `defer deinit()` — their ownership transfers to the caller.
+        // Scan the body for `return varname;` patterns and clear needs_deinit
+        // on the corresponding IrVarDecl.
+        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
+        if !returned_vars.is_empty() {
+            for stmt in &mut body.stmts {
+                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
+                    && vd.needs_deinit
+                    && returned_vars.contains(&vd.name.zig_name)
+                {
+                    vd.needs_deinit = false;
+                }
+            }
+        }
+
         // Read has_bigint_div and has_js_const_reassign BEFORE exiting the function context, since
         // exit_fn() takes the current fn_ctx and restores the outer one.
         let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
@@ -734,11 +750,25 @@ impl Lowerer {
             }
         }
 
-        let body = fd
+        let mut body = fd
             .body
             .as_ref()
             .map(|b| self.lower_block(&b.statements))
             .unwrap_or_else(|| IrBlock::new(vec![]));
+
+        // Ownership transfer: variables that are directly returned should not
+        // get `defer deinit()` — their ownership transfers to the caller.
+        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
+        if !returned_vars.is_empty() {
+            for stmt in &mut body.stmts {
+                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
+                    && vd.needs_deinit
+                    && returned_vars.contains(&vd.name.zig_name)
+                {
+                    vd.needs_deinit = false;
+                }
+            }
+        }
 
         self.name_mangler.pop_shadow_scope();
         let _fn_ctx = self.exit_fn(saved);

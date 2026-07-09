@@ -415,6 +415,25 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_map_var_returned_no_deinit() {
+        // When needs_deinit is false (ownership transferred via return),
+        // no defer deinit should be emitted.
+        let mut module = IrModule::new("test".to_string());
+        module.declarations.push(IrDecl::Var(IrVarDecl {
+            name: IrIdent::new("m"),
+            is_const: true,
+            zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+            init: None,
+            is_json_parse: false,
+            needs_var_suppression: false,
+            needs_const_suppression: false,
+            needs_deinit: false, // cleared by ownership transfer pass
+        }));
+        let output = Emitter::emit_module(&module);
+        assert!(!output.contains("defer m.deinit"));
+    }
+
+    #[test]
     fn test_emit_static_map_field_deinit() {
         use crate::zigir::types::{IrClassDecl, IrClassField};
 
