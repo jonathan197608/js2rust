@@ -59,9 +59,16 @@ impl Lowerer {
     }
 }
 
-// ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
-//  Utility methods
-// ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
+// ── Utility methods ──
+
+type CallbackInlineParts = (
+    crate::zigir::types::ArrayCallbackKind,
+    String,
+    bool,
+    String,
+    Vec<crate::zigir::types::IrStmt>,
+    Option<crate::zigir::types::IrExpr>,
+);
 
 impl Lowerer {
     /// Check whether a function name is in the exported set.
@@ -135,10 +142,9 @@ impl Lowerer {
         builtin: &crate::native_builtins::BuiltinCall,
         args: &[crate::zigir::types::IrExpr],
     ) -> Option<crate::zigir::types::IrExpr> {
-        use crate::native_builtins::BuiltinCall as BC;
-        use crate::zigir::types::{ArrayMethodKind, IrArrayMethodInline, IrExpr};
+        use crate::zigir::types::{IrArrayMethodInline, IrExpr};
 
-        // Never inline array methods for string variables ï¿½ï¿½ these should go through
+        // Never inline array methods for string variables — these should go through
         // BuiltinCall (JsString) instead. Check variable type from TypeInfo.
         let obj_name_raw = Self::extract_callee_object_name_static(&ce.callee);
         if let Some(name) = &obj_name_raw
@@ -155,23 +161,7 @@ impl Lowerer {
         }
         let obj_name = obj_name_raw?;
 
-        let kind = match builtin {
-            BC::ArrayIncludes => ArrayMethodKind::Includes,
-            BC::ArrayIndexOf => ArrayMethodKind::IndexOf,
-            BC::ArrayLastIndexOf => ArrayMethodKind::LastIndexOf,
-            BC::ArrayJoin => ArrayMethodKind::Join,
-            BC::ArraySlice => ArrayMethodKind::Slice,
-            BC::ArraySplice => ArrayMethodKind::Splice,
-            BC::ArrayAt => ArrayMethodKind::At,
-            BC::ArrayConcat => ArrayMethodKind::Concat,
-            BC::ArrayCopyWithin => ArrayMethodKind::CopyWithin,
-            BC::ArrayFill => ArrayMethodKind::Fill,
-            BC::ArrayWith => ArrayMethodKind::With,
-            BC::ArrayToReversed => ArrayMethodKind::ToReversed,
-            BC::ArrayToSorted => ArrayMethodKind::ToSorted,
-            BC::ArrayToSpliced => ArrayMethodKind::ToSpliced,
-            _ => return None,
-        };
+        let kind = Self::resolve_method_kind(builtin)?;
 
         let elem_type = self
             .type_info
@@ -189,32 +179,60 @@ impl Lowerer {
         })))
     }
 
-    /// Try to inline an array callback method (forEach, some, every, filter, find,
-    /// findIndex, findLast, findLastIndex, map, reduce) when the first argument
-    /// is an ArrowFunctionExpression or FunctionExpression.
-    ///
-    /// Returns `IrExpr::ArrayCallbackInline` if inlinable, `None` otherwise.
-    pub(super) fn try_inline_array_callback(
+    /// Shared logic: resolve callback kind from BuiltinCall.
+    fn resolve_callback_kind(
+        builtin: &crate::native_builtins::BuiltinCall,
+    ) -> Option<crate::zigir::types::ArrayCallbackKind> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::ArrayCallbackKind;
+        match builtin {
+            BC::ArrayForEach => Some(ArrayCallbackKind::ForEach),
+            BC::ArraySome => Some(ArrayCallbackKind::Some),
+            BC::ArrayEvery => Some(ArrayCallbackKind::Every),
+            BC::ArrayFilter => Some(ArrayCallbackKind::Filter),
+            BC::ArrayFind => Some(ArrayCallbackKind::Find),
+            BC::ArrayFindIndex => Some(ArrayCallbackKind::FindIndex),
+            BC::ArrayFindLast => Some(ArrayCallbackKind::FindLast),
+            BC::ArrayFindLastIndex => Some(ArrayCallbackKind::FindLastIndex),
+            BC::ArrayMap => Some(ArrayCallbackKind::Map),
+            BC::ArrayReduce => Some(ArrayCallbackKind::Reduce),
+            _ => None,
+        }
+    }
+
+    /// Shared logic: resolve method kind from BuiltinCall.
+    fn resolve_method_kind(
+        builtin: &crate::native_builtins::BuiltinCall,
+    ) -> Option<crate::zigir::types::ArrayMethodKind> {
+        use crate::native_builtins::BuiltinCall as BC;
+        use crate::zigir::types::ArrayMethodKind;
+        match builtin {
+            BC::ArrayIncludes => Some(ArrayMethodKind::Includes),
+            BC::ArrayIndexOf => Some(ArrayMethodKind::IndexOf),
+            BC::ArrayLastIndexOf => Some(ArrayMethodKind::LastIndexOf),
+            BC::ArrayJoin => Some(ArrayMethodKind::Join),
+            BC::ArraySlice => Some(ArrayMethodKind::Slice),
+            BC::ArraySplice => Some(ArrayMethodKind::Splice),
+            BC::ArrayAt => Some(ArrayMethodKind::At),
+            BC::ArrayConcat => Some(ArrayMethodKind::Concat),
+            BC::ArrayCopyWithin => Some(ArrayMethodKind::CopyWithin),
+            BC::ArrayFill => Some(ArrayMethodKind::Fill),
+            BC::ArrayWith => Some(ArrayMethodKind::With),
+            BC::ArrayToReversed => Some(ArrayMethodKind::ToReversed),
+            BC::ArrayToSorted => Some(ArrayMethodKind::ToSorted),
+            BC::ArrayToSpliced => Some(ArrayMethodKind::ToSpliced),
+            _ => None,
+        }
+    }
+
+    /// Shared logic: parse callback parameters and lower the body from a CallExpression.
+    /// Returns (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) or None.
+    fn parse_callback_inline(
         &mut self,
         ce: &CallExpression,
-        builtin: &crate::native_builtins::BuiltinCall,
-    ) -> Option<crate::zigir::types::IrExpr> {
-        use crate::native_builtins::BuiltinCall as BC;
-        use crate::zigir::types::{ArrayCallbackKind, IrArrayCallbackInline, IrExpr};
-
-        let kind = match builtin {
-            BC::ArrayForEach => ArrayCallbackKind::ForEach,
-            BC::ArraySome => ArrayCallbackKind::Some,
-            BC::ArrayEvery => ArrayCallbackKind::Every,
-            BC::ArrayFilter => ArrayCallbackKind::Filter,
-            BC::ArrayFind => ArrayCallbackKind::Find,
-            BC::ArrayFindIndex => ArrayCallbackKind::FindIndex,
-            BC::ArrayFindLast => ArrayCallbackKind::FindLast,
-            BC::ArrayFindLastIndex => ArrayCallbackKind::FindLastIndex,
-            BC::ArrayMap => ArrayCallbackKind::Map,
-            BC::ArrayReduce => ArrayCallbackKind::Reduce,
-            _ => return None,
-        };
+        kind: crate::zigir::types::ArrayCallbackKind,
+    ) -> Option<CallbackInlineParts> {
+        use crate::zigir::types::ArrayCallbackKind;
 
         let first_arg = ce.arguments.first()?.as_expression()?;
 
@@ -269,17 +287,6 @@ impl Lowerer {
         let ir_body: Vec<crate::zigir::types::IrStmt> =
             body.statements.iter().map(|s| self.lower_stmt(s)).collect();
 
-        // Extract object name
-        let obj_name = self.extract_callee_object_name(ce)?;
-
-        // Get element type
-        let elem_type = self
-            .type_info
-            .array_element_types
-            .get(obj_name.as_str())
-            .cloned()
-            .unwrap_or(ZigType::I64);
-
         // Reduce init value
         let reduce_init = if kind == ArrayCallbackKind::Reduce && ce.arguments.len() >= 2 {
             ce.arguments
@@ -289,6 +296,40 @@ impl Lowerer {
         } else {
             None
         };
+
+        Some((
+            kind,
+            elem_param,
+            has_idx_param,
+            idx_param,
+            ir_body,
+            reduce_init,
+        ))
+    }
+
+    /// Try to inline an array callback method (forEach, some, every, filter, find,
+    /// findIndex, findLast, findLastIndex, map, reduce) when the first argument
+    /// is an ArrowFunctionExpression or FunctionExpression.
+    ///
+    /// Returns `IrExpr::ArrayCallbackInline` if inlinable, `None` otherwise.
+    pub(super) fn try_inline_array_callback(
+        &mut self,
+        ce: &CallExpression,
+        builtin: &crate::native_builtins::BuiltinCall,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
+
+        let kind = Self::resolve_callback_kind(builtin)?;
+        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
+            self.parse_callback_inline(ce, kind)?;
+
+        let obj_name = self.extract_callee_object_name(ce)?;
+        let elem_type = self
+            .type_info
+            .array_element_types
+            .get(obj_name.as_str())
+            .cloned()
+            .unwrap_or(ZigType::I64);
 
         // Determine collection kind based on variable type
         let collection_kind = self
@@ -335,89 +376,13 @@ impl Lowerer {
         elem_type: &ZigType,
         inner_expr: &crate::zigir::types::IrExpr,
     ) -> Option<crate::zigir::types::IrExpr> {
-        use crate::native_builtins::BuiltinCall as BC;
-        use crate::zigir::types::{ArrayCallbackKind, IrArrayCallbackInline, IrExpr};
+        use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
-        let kind = match builtin {
-            BC::ArrayForEach => ArrayCallbackKind::ForEach,
-            BC::ArraySome => ArrayCallbackKind::Some,
-            BC::ArrayEvery => ArrayCallbackKind::Every,
-            BC::ArrayFilter => ArrayCallbackKind::Filter,
-            BC::ArrayFind => ArrayCallbackKind::Find,
-            BC::ArrayFindIndex => ArrayCallbackKind::FindIndex,
-            BC::ArrayFindLast => ArrayCallbackKind::FindLast,
-            BC::ArrayFindLastIndex => ArrayCallbackKind::FindLastIndex,
-            BC::ArrayMap => ArrayCallbackKind::Map,
-            BC::ArrayReduce => ArrayCallbackKind::Reduce,
-            _ => return None,
-        };
+        let kind = Self::resolve_callback_kind(builtin)?;
+        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
+            self.parse_callback_inline(ce, kind)?;
 
-        let first_arg = ce.arguments.first()?.as_expression()?;
-
-        let (params, body) = match first_arg {
-            Expression::ArrowFunctionExpression(arrow) => (&arrow.params, &arrow.body),
-            Expression::FunctionExpression(f) => match &f.body {
-                Some(b) => (&f.params, b),
-                None => return None,
-            },
-            _ => return None,
-        };
-
-        let elem_param_raw = params
-            .items
-            .first()
-            .and_then(|p| crate::infer::binding_name(&p.pattern))
-            .unwrap_or("_")
-            .to_string();
-        let idx_param_raw = params
-            .items
-            .get(1)
-            .and_then(|p| crate::infer::binding_name(&p.pattern));
-        let has_idx_param = idx_param_raw.is_some();
-
-        // Check if parameters are actually used in the callback body.
-        let elem_used = body
-            .statements
-            .iter()
-            .any(|s| Self::ast_stmt_uses_ident(&elem_param_raw, s));
-        let elem_param = if elem_used {
-            elem_param_raw
-        } else {
-            "_".to_string()
-        };
-
-        let idx_param = if let Some(idx_name) = idx_param_raw {
-            if idx_name != "_"
-                && body
-                    .statements
-                    .iter()
-                    .any(|s| Self::ast_stmt_uses_ident(idx_name, s))
-            {
-                idx_name.to_string()
-            } else {
-                "_".to_string()
-            }
-        } else {
-            String::new()
-        };
-
-        // Lower the callback body
-        let ir_body: Vec<crate::zigir::types::IrStmt> =
-            body.statements.iter().map(|s| self.lower_stmt(s)).collect();
-
-        // For method chaining, use a synthetic temp var name as placeholder.
-        // The emitter will replace it with the inline expression from obj_expr.
         let chain_obj_name = self.name_mangler.next_name("__chain");
-
-        // Reduce init value
-        let reduce_init = if kind == ArrayCallbackKind::Reduce && ce.arguments.len() >= 2 {
-            ce.arguments
-                .get(1)
-                .and_then(|a| a.as_expression())
-                .map(|e| self.lower_expr(e))
-        } else {
-            None
-        };
 
         Some(IrExpr::ArrayCallbackInline(Box::new(
             IrArrayCallbackInline {
@@ -445,26 +410,9 @@ impl Lowerer {
         elem_type: &ZigType,
         inner_expr: &crate::zigir::types::IrExpr,
     ) -> Option<crate::zigir::types::IrExpr> {
-        use crate::native_builtins::BuiltinCall as BC;
-        use crate::zigir::types::{ArrayMethodKind, IrArrayMethodInline, IrExpr};
+        use crate::zigir::types::{IrArrayMethodInline, IrExpr};
 
-        let kind = match builtin {
-            BC::ArrayIncludes => ArrayMethodKind::Includes,
-            BC::ArrayIndexOf => ArrayMethodKind::IndexOf,
-            BC::ArrayLastIndexOf => ArrayMethodKind::LastIndexOf,
-            BC::ArrayJoin => ArrayMethodKind::Join,
-            BC::ArraySlice => ArrayMethodKind::Slice,
-            BC::ArraySplice => ArrayMethodKind::Splice,
-            BC::ArrayAt => ArrayMethodKind::At,
-            BC::ArrayConcat => ArrayMethodKind::Concat,
-            BC::ArrayCopyWithin => ArrayMethodKind::CopyWithin,
-            BC::ArrayFill => ArrayMethodKind::Fill,
-            BC::ArrayWith => ArrayMethodKind::With,
-            BC::ArrayToReversed => ArrayMethodKind::ToReversed,
-            BC::ArrayToSorted => ArrayMethodKind::ToSorted,
-            BC::ArrayToSpliced => ArrayMethodKind::ToSpliced,
-            _ => return None,
-        };
+        let kind = Self::resolve_method_kind(builtin)?;
 
         let chain_obj_name = self.name_mangler.next_name("__chain");
 
@@ -488,26 +436,16 @@ impl Lowerer {
             Expression::StaticMemberExpression(mem) => match &mem.object {
                 Expression::Identifier(id) => Some(id.name.as_str().to_string()),
                 Expression::StringLiteral(sl) => {
-                    // "hello".method() ï¿½ï¿½ format as Zig string literal
-                    let s = sl.value.to_string();
-                    let escaped = s
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n")
-                        .replace('\t', "\\t")
-                        .replace('\r', "\\r");
+                    // "hello".method() — format as Zig string literal
+                    let escaped = crate::zigir::emit::helpers::escape_zig_string(sl.value.as_str());
                     Some(format!("\"{}\"", escaped))
                 }
                 Expression::TemplateLiteral(tl)
                     if tl.quasis.len() == 1 && tl.expressions.is_empty() =>
                 {
-                    // `hello`.method() ï¿½ï¿½ same as StringLiteral
-                    let raw = &tl.quasis[0].value.raw;
-                    let escaped = raw
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n")
-                        .replace('\t', "\\t");
+                    // `hello`.method() — same as StringLiteral
+                    let escaped =
+                        crate::zigir::emit::helpers::escape_zig_string(&tl.quasis[0].value.raw);
                     Some(format!("\"{}\"", escaped))
                 }
                 _ => None,

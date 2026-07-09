@@ -84,6 +84,31 @@ impl TypeInferrer {
     // Function return type inference
     // ============================================================
 
+    /// Unify types of all return expressions in a function.
+    /// Returns Some(ZigType) if all return exprs agree, None on mismatch or no inferrable type.
+    fn unify_return_expr_types(
+        &mut self,
+        return_exprs: &[&Expression],
+        fn_name: &str,
+    ) -> Option<ZigType> {
+        let mut ty: Option<ZigType> = None;
+        for expr in return_exprs {
+            let expr_ty = self.infer_expr_type(expr);
+            match (&ty, &expr_ty) {
+                (None, InferResult::Definite(et)) => ty = Some(et.clone()),
+                (Some(t), InferResult::Definite(et)) if *t != *et => {
+                    self.errors.push(format!(
+                        "Return type mismatch in '{}': expected {:?}, found {:?}",
+                        fn_name, t, et
+                    ));
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        ty
+    }
+
     pub(crate) fn infer_fn_return_type(
         &mut self,
         fd: &Function,
@@ -91,32 +116,20 @@ impl TypeInferrer {
         is_export: bool,
     ) -> InferResult {
         // Export function: try @returns annotation FIRST
+        if is_export && let Some(ty) = self.lookup_jsdoc_return_type(fn_name) {
+            return InferResult::Definite(ty);
+        }
+
+        // Collect return expressions (shared by export & non-export)
+        let return_exprs = Self::collect_return_exprs(fd);
+        if return_exprs.is_empty() {
+            return InferResult::Definite(ZigType::Void);
+        }
+
+        let ty = self.unify_return_expr_types(&return_exprs, fn_name);
+
+        // Export: type mismatch or uninferrable → error
         if is_export {
-            if let Some(ty) = self.lookup_jsdoc_return_type(fn_name) {
-                return InferResult::Definite(ty);
-            }
-            // No @returns — try infer from return expressions
-            let return_exprs = Self::collect_return_exprs(fd);
-            if return_exprs.is_empty() {
-                // No return expressions → void (e.g. test functions,
-                // side-effect-only export functions)
-                return InferResult::Definite(ZigType::Void);
-            }
-            let mut ty: Option<ZigType> = None;
-            for expr in &return_exprs {
-                let expr_ty = self.infer_expr_type(expr);
-                match (&ty, &expr_ty) {
-                    (None, InferResult::Definite(et)) => ty = Some(et.clone()),
-                    (Some(t), InferResult::Definite(et)) if *t != *et => {
-                        self.errors.push(format!(
-                            "Return type mismatch in '{}': expected {:?}, found {:?}",
-                            fn_name, t, et
-                        ));
-                        return InferResult::Indeterminate;
-                    }
-                    _ => {}
-                }
-            }
             if let Some(definite_ty) = ty {
                 return InferResult::Definite(definite_ty);
             }
@@ -128,28 +141,7 @@ impl TypeInferrer {
             return InferResult::Definite(ZigType::Str);
         }
 
-        // Non-export: infer from return expressions
-        let return_exprs = Self::collect_return_exprs(fd);
-        if return_exprs.is_empty() {
-            return InferResult::Definite(ZigType::Void);
-        }
-
-        let mut ty: Option<ZigType> = None;
-        for expr in &return_exprs {
-            let expr_ty = self.infer_expr_type(expr);
-            match (&ty, &expr_ty) {
-                (None, InferResult::Definite(et)) => ty = Some(et.clone()),
-                (Some(t), InferResult::Definite(et)) if *t != *et => {
-                    self.errors.push(format!(
-                        "Return type mismatch in '{}': expected {:?}, found {:?}",
-                        fn_name, t, et
-                    ));
-                    return InferResult::Indeterminate;
-                }
-                _ => {}
-            }
-        }
-
+        // Non-export: resolve anytype/indeterminate
         match ty {
             Some(definite_ty) => {
                 // When the return type is Anytype and all return expressions depend on
@@ -319,55 +311,32 @@ impl TypeInferrer {
 
         for param in &fd.params.items {
             if let Some(pname) = binding_name(&param.pattern) {
-                if is_export {
-                    // Export: check JSDoc @param
-                    let mut found_jsdoc = false;
-                    if let Some(ref data) = self.jsdoc_data
-                        && let Some(param_list) = data.param_types.get(fn_name)
-                    {
-                        for (annot_name, type_name) in param_list {
-                            if annot_name == pname {
-                                let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
-                                params.push((
-                                    pname.to_string(),
-                                    InferResult::Definite(Self::zig_str_to_type(&zig_ty)),
-                                ));
-                                found_jsdoc = true;
-                                break; // exit inner for, skip default
-                            }
-                        }
-                    }
-                    if !found_jsdoc {
-                        // Default export param: I64
-                        params.push((pname.to_string(), InferResult::Definite(ZigType::I64)));
-                    }
+                // Try JSDoc @param first (shared by export & non-export)
+                if let Some(ty) = self.lookup_jsdoc_param_type(fn_name, pname) {
+                    params.push((pname.to_string(), InferResult::Definite(ty)));
+                } else if is_export {
+                    // Export without JSDoc: default to I64
+                    params.push((pname.to_string(), InferResult::Definite(ZigType::I64)));
                 } else {
-                    // Non-export: try JSDoc @param first, fall back to anytype.
-                    // This ensures for-in and other type-dependent features work
-                    // correctly even for non-export functions.
-                    let mut found_jsdoc = false;
-                    if let Some(ref data) = self.jsdoc_data
-                        && let Some(param_list) = data.param_types.get(fn_name)
-                    {
-                        for (annot_name, type_name) in param_list {
-                            if annot_name == pname {
-                                let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
-                                params.push((
-                                    pname.to_string(),
-                                    InferResult::Definite(Self::zig_str_to_type(&zig_ty)),
-                                ));
-                                found_jsdoc = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !found_jsdoc {
-                        params.push((pname.to_string(), InferResult::Indeterminate));
-                    }
+                    // Non-export without JSDoc: indeterminate → anytype
+                    params.push((pname.to_string(), InferResult::Indeterminate));
                 }
             }
         }
         params
+    }
+
+    /// Look up JSDoc @param type for a function parameter and convert to ZigType.
+    fn lookup_jsdoc_param_type(&self, fn_name: &str, param_name: &str) -> Option<ZigType> {
+        let data = self.jsdoc_data.as_ref()?;
+        let param_list = data.param_types.get(fn_name)?;
+        for (annot_name, type_name) in param_list {
+            if annot_name == param_name {
+                let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
+                return Some(Self::zig_str_to_type(&zig_ty));
+            }
+        }
+        None
     }
 
     // ============================================================

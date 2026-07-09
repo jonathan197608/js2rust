@@ -167,7 +167,7 @@ pub fn format_param_with_rest(name: &IrIdent, ty: &ZigType, is_rest: bool) -> St
 }
 
 /// Escape a string for use in a Zig string literal.
-pub fn escape_zig_string(s: &str) -> String {
+pub(crate) fn escape_zig_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len() + 16);
     for byte in s.bytes() {
         match byte {
