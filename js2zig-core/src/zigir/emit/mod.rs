@@ -12,6 +12,8 @@ pub mod stmt;
 
 use crate::zigir::types::{IrDecl, IrModule};
 
+use std::collections::HashSet;
+
 use helpers::EmitterHelpers;
 
 // ═══════════════════════════════════════════════════════
@@ -41,6 +43,14 @@ pub struct Emitter {
     /// static blocks execute at runtime (Zig's lazy analysis would otherwise
     /// skip unreferenced top-level `const` declarations).
     static_init_buffer: String,
+    /// Buffer for static deinit code. When non-empty, `emit_module_inner`
+    /// generates a `pub fn deinit_js2rust() void { ... }` that calls
+    /// `.deinit(alloc)` on all static Map/Set/ArrayList fields.
+    static_deinit_buffer: String,
+    /// Set of class names that have `needs_deinit = true` (contain Map/Set/ArrayList fields).
+    /// Used by `emit_var_decl` to determine whether a local variable of a NamedStruct
+    /// type should get `defer varname.deinit(alloc)`.
+    class_needs_deinit: HashSet<String>,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -75,6 +85,8 @@ impl Emitter {
             try_label_counter: 0,
             label_counter: 0,
             static_init_buffer: String::new(),
+            static_deinit_buffer: String::new(),
+            class_needs_deinit: HashSet::new(),
         }
     }
 
@@ -137,6 +149,17 @@ impl Emitter {
             self.indent_pop();
             self.writeln("}");
         }
+
+        // 5. If any static Map/Set/ArrayList fields need deinit, generate
+        //    deinit_js2rust() so the orchestrator calls it from root deinit_js2rust().
+        if !self.static_deinit_buffer.is_empty() {
+            self.writeln("pub fn deinit_js2rust() void {");
+            self.indent_push();
+            let buf = std::mem::take(&mut self.static_deinit_buffer);
+            self.write(&buf);
+            self.indent_pop();
+            self.writeln("}");
+        }
     }
 
     // ── Declaration dispatch ─────────────────────────
@@ -188,7 +211,7 @@ mod tests {
     use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
     use crate::zigir::types::{
-        IrBlock, IrFnDecl, IrParam, IrStmt, IrTypedef, IrTypedefField, IrVarDecl,
+        IrBlock, IrDecl, IrFnDecl, IrParam, IrStmt, IrTypedef, IrTypedefField, IrVarDecl,
     };
 
     #[test]
@@ -236,6 +259,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
         let output = Emitter::emit_module(&module);
         assert!(output.contains("const x = 42"));
@@ -297,5 +321,125 @@ mod tests {
         }));
         let output = Emitter::emit_module(&module);
         assert!(output.contains("fn mayFail() !i64 {"));
+    }
+
+    #[test]
+    fn test_emit_class_with_deinit() {
+        use crate::zigir::types::{IrClassDecl, IrClassField, IrClassMethod};
+
+        let mut module = IrModule::new("test".to_string());
+        // Class with a Map field → needs_deinit = true → generates deinit() method
+        module.declarations.push(IrDecl::Class(IrClassDecl {
+            name: IrIdent::new("Cache"),
+            fields: vec![
+                IrClassField {
+                    name: "data".to_string(),
+                    zig_type: ZigType::NamedStruct("Map".to_string()),
+                    default: None,
+                },
+                IrClassField {
+                    name: "name".to_string(),
+                    zig_type: ZigType::I64,
+                    default: None,
+                },
+            ],
+            constructor: None,
+            methods: vec![IrClassMethod {
+                name: "get".to_string(),
+                params: vec![],
+                return_type: ZigType::Void,
+                body: IrBlock::new(vec![]),
+                is_static: false,
+            }],
+            static_inits: vec![],
+            static_blocks: vec![],
+            extends: None,
+            needs_deinit: true,
+        }));
+        let output = Emitter::emit_module(&module);
+        assert!(output.contains("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {"));
+        assert!(output.contains("self.data.deinit(alloc);"));
+        // I64 field should NOT appear in deinit body
+        let deinit_start = output.find("pub fn deinit").unwrap();
+        let deinit_end = output[deinit_start..].find('}').unwrap() + deinit_start;
+        let deinit_body = &output[deinit_start..deinit_end];
+        assert!(!deinit_body.contains("self.name.deinit"));
+    }
+
+    #[test]
+    fn test_emit_class_without_deinit() {
+        use crate::zigir::types::{IrClassDecl, IrClassField};
+
+        let mut module = IrModule::new("test".to_string());
+        // Class with only I64 fields → needs_deinit = false → no deinit() method
+        module.declarations.push(IrDecl::Class(IrClassDecl {
+            name: IrIdent::new("Point"),
+            fields: vec![
+                IrClassField {
+                    name: "x".to_string(),
+                    zig_type: ZigType::I64,
+                    default: None,
+                },
+                IrClassField {
+                    name: "y".to_string(),
+                    zig_type: ZigType::I64,
+                    default: None,
+                },
+            ],
+            constructor: None,
+            methods: vec![],
+            static_inits: vec![],
+            static_blocks: vec![],
+            extends: None,
+            needs_deinit: false,
+        }));
+        let output = Emitter::emit_module(&module);
+        assert!(!output.contains("pub fn deinit"));
+    }
+
+    #[test]
+    fn test_emit_map_var_auto_cleanup() {
+        let mut module = IrModule::new("test".to_string());
+        module.declarations.push(IrDecl::Var(IrVarDecl {
+            name: IrIdent::new("m"),
+            is_const: false,
+            zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+            init: None,
+            is_json_parse: false,
+            needs_var_suppression: true,
+            needs_const_suppression: false,
+            needs_deinit: true,
+        }));
+        let output = Emitter::emit_module(&module);
+        assert!(output.contains("defer m.deinit(js_allocator.allocator());"));
+    }
+
+    #[test]
+    fn test_emit_static_map_field_deinit() {
+        use crate::zigir::types::{IrClassDecl, IrClassField};
+
+        let mut module = IrModule::new("test".to_string());
+        // Class with static Map field → deinit_js2rust() generated
+        module.declarations.push(IrDecl::Class(IrClassDecl {
+            name: IrIdent::new("Registry"),
+            fields: vec![IrClassField {
+                name: "name".to_string(),
+                zig_type: ZigType::I64,
+                default: None,
+            }],
+            constructor: None,
+            methods: vec![],
+            static_inits: vec![(
+                "entries".to_string(),
+                crate::zigir::types::IrExpr::Ident(IrIdent::new("Map")),
+                ZigType::NamedStruct("Map".to_string()),
+            )],
+            static_blocks: vec![],
+            extends: None,
+            needs_deinit: false,
+        }));
+        let output = Emitter::emit_module(&module);
+        assert!(output.contains("pub fn deinit_js2rust() void {"));
+        assert!(output.contains("__Registry_entries.deinit(js_allocator.allocator());"));
     }
 }

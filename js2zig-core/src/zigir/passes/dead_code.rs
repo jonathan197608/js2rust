@@ -980,6 +980,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
@@ -1011,6 +1012,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
@@ -1047,6 +1049,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
 
         let mut pass = DeadCodeElimPass::new();

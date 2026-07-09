@@ -214,6 +214,14 @@ impl Lowerer {
             ctx.add_regexp_var(&ident.zig_name);
         }
 
+        // needs_deinit: true for Map/Set types and will be checked for class
+        // instances by the Emitter using class_needs_deinit. Set to false for
+        // types that don't own resources.
+        let needs_deinit = matches!(
+            zig_type,
+            Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set"
+        );
+
         IrDecl::Var(IrVarDecl {
             name: ident,
             is_const,
@@ -222,6 +230,7 @@ impl Lowerer {
             is_json_parse,
             needs_var_suppression,
             needs_const_suppression,
+            needs_deinit,
         })
     }
 
@@ -625,6 +634,7 @@ impl Lowerer {
                     is_json_parse: false,
                     needs_var_suppression: false,
                     needs_const_suppression: false,
+                    needs_deinit: false,
                 });
             body.stmts.insert(0, arguments_init);
         }

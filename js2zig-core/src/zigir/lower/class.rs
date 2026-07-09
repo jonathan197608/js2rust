@@ -182,6 +182,15 @@ impl Lowerer {
 
         // static field names already registered in class_static_fields during pre-scan
 
+        // Compute needs_deinit: true if any field is Map, Set, ArrayList,
+        // or a NamedStruct that itself needs deinit (nested class).
+        let needs_deinit = fields.iter().any(|f| {
+            matches!(
+                f.zig_type,
+                ZigType::NamedStruct(ref n) if n == "Map" || n == "Set"
+            ) || matches!(f.zig_type, ZigType::ArrayList(_))
+        });
+
         Some(IrClassDecl {
             name: self.make_ident(&class_name),
             fields,
@@ -190,6 +199,7 @@ impl Lowerer {
             static_inits,
             static_blocks,
             extends,
+            needs_deinit,
         })
     }
 
@@ -375,6 +385,7 @@ impl Lowerer {
                                     is_json_parse: false,
                                     needs_var_suppression: false,
                                     needs_const_suppression: false,
+                                    needs_deinit: false,
                                 },
                             ));
                             continue;

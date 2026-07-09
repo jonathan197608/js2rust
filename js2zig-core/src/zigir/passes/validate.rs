@@ -883,6 +883,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
         module.declarations.push(IrDecl::Var(IrVarDecl {
             name: IrIdent::new("x"),
@@ -892,6 +893,7 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         }));
 
         let mut pass = ValidatePass::new();

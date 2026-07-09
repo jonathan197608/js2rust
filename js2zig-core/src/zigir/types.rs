@@ -129,6 +129,11 @@ pub struct IrVarDecl {
     /// Suppress "unused local constant" error by emitting `_ = varname;`.
     /// Used for JS-const variables whose reassignment is replaced by a throw.
     pub needs_const_suppression: bool,
+    /// Whether this variable should get `defer varname.deinit(alloc)` auto-cleanup.
+    /// Set to true by default for Map/Set types and class instances with needs_deinit,
+    /// but can be set to false by the Emitter for variables that are returned
+    /// (ownership transfer, should not be auto-cleaned).
+    pub needs_deinit: bool,
 }
 
 // ── Function declaration ──────────────────────────────
@@ -243,6 +248,11 @@ pub struct IrClassDecl {
     /// Emitted after struct definition, before top-level code.
     pub static_blocks: Vec<IrBlock>,
     pub extends: Option<String>,
+    /// Whether this class has any fields that need deinit (Map, Set, ArrayList,
+    /// or nested class with needs_deinit). When true, the Emitter generates a
+    /// `pub fn deinit(self: *@This(), alloc: Allocator) void` method and
+    /// local variables of this type get `defer varname.deinit(alloc)`.
+    pub needs_deinit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -955,9 +965,26 @@ mod tests {
             is_json_parse: false,
             needs_var_suppression: false,
             needs_const_suppression: false,
+            needs_deinit: false,
         };
         assert_eq!(v.name.zig_name, "x");
         assert!(v.is_const);
+        assert!(!v.needs_deinit);
+    }
+
+    #[test]
+    fn test_ir_var_decl_needs_deinit() {
+        let v = IrVarDecl {
+            name: IrIdent::new("m"),
+            is_const: false,
+            zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+            init: None,
+            is_json_parse: false,
+            needs_var_suppression: true,
+            needs_const_suppression: false,
+            needs_deinit: true,
+        };
+        assert!(v.needs_deinit);
     }
 
     #[test]
@@ -1160,6 +1187,7 @@ mod tests {
                 is_json_parse: false,
                 needs_var_suppression: false,
                 needs_const_suppression: false,
+                needs_deinit: false,
             }))),
             cond: Some(IrExpr::Binary {
                 op: BinOp::Lt,
@@ -1198,9 +1226,30 @@ mod tests {
             static_inits: vec![],
             static_blocks: vec![],
             extends: None,
+            needs_deinit: false,
         };
         assert_eq!(cls.fields.len(), 1);
         assert_eq!(cls.methods.len(), 1);
+        assert!(!cls.needs_deinit);
+    }
+
+    #[test]
+    fn test_ir_class_decl_needs_deinit() {
+        let cls = IrClassDecl {
+            name: IrIdent::new("Cache"),
+            fields: vec![IrClassField {
+                name: "data".to_string(),
+                zig_type: ZigType::NamedStruct("Map".to_string()),
+                default: None,
+            }],
+            constructor: None,
+            methods: vec![],
+            static_inits: vec![],
+            static_blocks: vec![],
+            extends: None,
+            needs_deinit: true,
+        };
+        assert!(cls.needs_deinit);
     }
 
     #[test]

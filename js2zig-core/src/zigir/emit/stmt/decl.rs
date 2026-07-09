@@ -147,13 +147,27 @@ impl Emitter {
             self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
         }
 
-        // Auto-cleanup: defer deinit for Map/Set variables to prevent memory leaks.
-        if let Some(ZigType::NamedStruct(name)) = &vd.zig_type
-            && (name == "Map" || name == "Set")
-        {
+        // Auto-cleanup: defer deinit for Map/Set variables and class instances
+        // that contain Map/Set/ArrayList fields, to prevent memory leaks.
+        if vd.needs_deinit {
             self.write_indent();
             self.write(&format!(
                 "defer {}.deinit(js_allocator.allocator()); // auto-cleanup\n",
+                vd.name.zig_name
+            ));
+        } else if let Some(ZigType::NamedStruct(name)) = &vd.zig_type
+            && name != "Map"
+            && name != "Set"
+            && name != "JsDate"
+            && name != "JsBigInt"
+            && name != "JsRegExp"
+            && name != "Error"
+            && name != "JsError"
+            && self.class_needs_deinit.contains(name)
+        {
+            self.write_indent();
+            self.write(&format!(
+                "defer {}.deinit(js_allocator.allocator()); // auto-cleanup class\n",
                 vd.name.zig_name
             ));
         }
@@ -235,6 +249,11 @@ impl Emitter {
     pub(crate) fn emit_class_decl(&mut self, class: &IrClassDecl) {
         let class_name = &class.name.zig_name;
 
+        // Register class in needs_deinit set if it contains Map/Set/ArrayList fields.
+        if class.needs_deinit {
+            self.class_needs_deinit.insert(class_name.clone());
+        }
+
         self.writeln(&format!("const {} = struct {{", class_name));
         self.indent_push();
 
@@ -261,6 +280,24 @@ impl Emitter {
             self.emit_class_method(class_name, method);
         }
 
+        // deinit() method — generated when any field is Map, Set, or ArrayList.
+        if class.needs_deinit {
+            self.writeln("");
+            self.writeln("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {");
+            self.indent_push();
+            for field in &class.fields {
+                let needs_field_deinit = matches!(
+                    &field.zig_type,
+                ZigType::NamedStruct(n) if n == "Map" || n == "Set"
+                ) || matches!(&field.zig_type, ZigType::ArrayList(_));
+                if needs_field_deinit {
+                    self.writeln(&format!("self.{}.deinit(alloc);", field.name));
+                }
+            }
+            self.indent_pop();
+            self.writeln("}");
+        }
+
         self.indent_pop();
         self.writeln("};");
         self.writeln("");
@@ -273,6 +310,18 @@ impl Emitter {
             self.write(&format!("{} = ", field_ty.to_zig_type()));
             self.emit_expr(init_expr);
             self.writeln(";");
+
+            // Register static Map/Set/ArrayList fields for deinit in deinit_js2rust()
+            let needs_static_deinit = matches!(
+                field_ty,
+                ZigType::NamedStruct(n) if n == "Map" || n == "Set"
+            ) || matches!(field_ty, ZigType::ArrayList(_));
+            if needs_static_deinit {
+                self.static_deinit_buffer.push_str(&format!(
+                    "    {}.deinit(js_allocator.allocator());\n",
+                    var_name
+                ));
+            }
         }
 
         // Static initialization blocks — collected into `static_init_buffer`.
