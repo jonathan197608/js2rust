@@ -57,7 +57,7 @@ impl TypeInferrer {
         // so that .length dispatch uses SliceLen (→ .len) instead of StringLen (→ utf16Len).
         // Do NOT add to fn_param_types since the lowerer handles rest param emission separately.
         if let Some(rest) = &fd.params.rest
-            && let Some(rname) = crate::infer::binding_name(&rest.rest.argument)
+            && let Some(rname) = binding_name(&rest.rest.argument)
         {
             self.var_types.insert(rname.to_string(), ZigType::JsAny);
         }
