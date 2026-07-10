@@ -10,8 +10,161 @@ use crate::zigir::types::{IrBlock, IrDecl, IrParam, IrVarDecl};
 
 use super::Lowerer;
 use super::cabi::{init_may_have_side_effects, property_key_name};
+use super::helpers::FnContext;
+
+/// Intermediate result of entering a function context and lowering
+/// its parameters and body. Callers can inspect/modify the params
+/// and body while still inside the fn context, then call
+/// [`Lowerer::exit_fn_body`] to finalize.
+struct FnBodyScope {
+    saved: Option<FnContext>,
+    params: Vec<IrParam>,
+    body: IrBlock,
+}
 
 impl Lowerer {
+    // ── Shared query helpers ─────────────────────────────
+
+    /// Current function name, or `"__toplevel__"` if outside any function.
+    /// Used as a key prefix for `type_info.mutated_vars` / `reassigned_vars` lookups.
+    fn fn_prefix(&self) -> &str {
+        self.fn_ctx
+            .as_ref()
+            .map(|ctx| ctx.name.as_str())
+            .unwrap_or("__toplevel__")
+    }
+
+    /// Check whether a variable is recorded as "mutated" in the current scope.
+    fn is_var_mutated(&self, var_name: &str) -> bool {
+        self.type_info
+            .mutated_vars
+            .contains(&format!("{}::{}", self.fn_prefix(), var_name))
+    }
+
+    /// Check whether a variable is directly reassigned (x = ..., not x.y = ...).
+    fn is_var_reassigned(&self, var_name: &str) -> bool {
+        self.type_info
+            .reassigned_vars
+            .contains(&format!("{}::{}", self.fn_prefix(), var_name))
+    }
+
+    /// Check if a toplevel binding should be skipped.
+    /// At module level: unused const or non-const (var/let) are skipped.
+    fn should_skip_toplevel_binding(&self, bind_name: &str, is_const: bool) -> bool {
+        if self.fn_ctx.is_none() && is_const && !self.type_info.used_names.contains(bind_name) {
+            return true;
+        }
+        if self.fn_ctx.is_none() && !is_const {
+            return true;
+        }
+        false
+    }
+
+    /// Infer the type of a destructuring init expression (only supports identifiers).
+    fn init_expr_type(&self, init_expr: &Expression) -> Option<ZigType> {
+        if let Expression::Identifier(id) = init_expr {
+            self.type_info.var_types.get(id.name.as_str()).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// Compute the source string for destructuring access patterns:
+    /// uses the temp variable if needed, otherwise the init identifier name,
+    /// or generates a fresh `_js_dest` name.
+    fn compute_destructure_source(
+        &mut self,
+        needs_temp: bool,
+        temp_name: &str,
+        init_expr: &Expression,
+    ) -> String {
+        if needs_temp {
+            temp_name.to_string()
+        } else if let Expression::Identifier(id) = init_expr {
+            id.name.to_string()
+        } else {
+            self.name_mangler.next_name("_js_dest")
+        }
+    }
+
+    /// When the return type is `AnytypeReturn`, capture the first return
+    /// expression from the body so the Emitter can emit `@TypeOf(expr)`.
+    fn resolve_typeof_return_body(
+        return_type: &ZigType,
+        body: &crate::zigir::types::IrBlock,
+    ) -> Option<std::boxed::Box<crate::zigir::types::IrExpr>> {
+        if matches!(return_type, ZigType::AnytypeReturn) {
+            Self::find_first_return_expr_in_block(body).map(|e| Box::new(e.clone()))
+        } else {
+            None
+        }
+    }
+
+    // ── Function body lowering pipeline ──────────────────
+
+    /// Phase 1: enter function context and lower params + body.
+    /// The caller still holds the active fn context and can do
+    /// additional work (e.g., `__arguments` injection, unused param
+    /// marking, reading fn_ctx flags).
+    fn enter_fn_body(
+        &mut self,
+        fd: &Function,
+        fn_name: &str,
+        is_export: bool,
+        return_type: &ZigType,
+    ) -> FnBodyScope {
+        let saved = self.enter_fn(fn_name, is_export, Some(return_type.clone()));
+        self.name_mangler.push_shadow_scope();
+
+        let params = self.lower_fn_params(fd, fn_name);
+
+        // Register parameter names in fn_scope_vars (for shadow detection)
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            for param in &params {
+                ctx.add_scope_var(&param.name.js_name);
+            }
+        }
+
+        let body = fd
+            .body
+            .as_ref()
+            .map(|b| self.lower_block(&b.statements))
+            .unwrap_or_else(|| IrBlock::new(vec![]));
+
+        FnBodyScope {
+            saved,
+            params,
+            body,
+        }
+    }
+
+    /// Phase 2: finalize function body lowering — run ownership transfer,
+    /// exit function context, and compute typeof_return_body.
+    fn exit_fn_body(
+        &mut self,
+        scope: FnBodyScope,
+        return_type: &ZigType,
+    ) -> (
+        Vec<IrParam>,
+        IrBlock,
+        Option<std::boxed::Box<crate::zigir::types::IrExpr>>,
+    ) {
+        let FnBodyScope {
+            saved,
+            params,
+            mut body,
+        } = scope;
+
+        Self::clear_deinit_for_returned_vars(&mut body);
+
+        self.name_mangler.pop_shadow_scope();
+        let _fn_ctx = self.exit_fn(saved);
+
+        let typeof_return_body = Self::resolve_typeof_return_body(return_type, &body);
+
+        (params, body, typeof_return_body)
+    }
+
     /// Lower a variable declaration.
     ///
     /// Translates JS `const`/`var`/`let` into `IrDecl::Var`. The Lowerer
@@ -67,21 +220,10 @@ impl Lowerer {
 
         // Determine const vs var based on mutation analysis (not JS keyword).
         // Zig 'const' for never-mutated, 'var' for actually reassigned.
-        let fn_prefix = self
-            .fn_ctx
-            .as_ref()
-            .map(|ctx| ctx.name.as_str())
-            .unwrap_or("__toplevel__");
-        let is_actually_mutated = self
-            .type_info
-            .mutated_vars
-            .contains(&format!("{}::{}", fn_prefix, js_name));
+        let is_actually_mutated = self.is_var_mutated(js_name);
         // Check if the variable is *directly* reassigned (x = ..., not x.y = ...).
         // This distinguishes "variable reassignment" from "property mutation".
-        let is_directly_reassigned = self
-            .type_info
-            .reassigned_vars
-            .contains(&format!("{}::{}", fn_prefix, js_name));
+        let is_directly_reassigned = self.is_var_reassigned(js_name);
         let is_const = !is_actually_mutated;
 
         // Track JS-const variables that get directly reassigned — these need a
@@ -259,11 +401,7 @@ impl Lowerer {
         match &decl.id {
             BindingPattern::ObjectPattern(op) => {
                 // ©¤©¤ Object destructuring ©¤©¤
-                let init_type = if let Expression::Identifier(id) = init_expr {
-                    self.type_info.var_types.get(id.name.as_str()).cloned()
-                } else {
-                    None
-                };
+                let init_type = self.init_expr_type(init_expr);
 
                 let struct_field_names: Option<Vec<String>> = match &init_type {
                     Some(ZigType::Struct(fields)) if !fields.is_empty() => {
@@ -278,19 +416,7 @@ impl Lowerer {
                 let temp_name = self.name_mangler.next_name("_js_dest");
 
                 // Source for access patterns: temp var name or inline the init expr
-                let source = if needs_temp {
-                    temp_name.clone()
-                } else if let Expression::Identifier(id) = init_expr {
-                    id.name.to_string()
-                } else {
-                    self.name_mangler.next_name("_js_dest")
-                };
-
-                let fn_prefix = self
-                    .fn_ctx
-                    .as_ref()
-                    .map(|ctx| ctx.name.as_str())
-                    .unwrap_or("__toplevel__");
+                let source = self.compute_destructure_source(needs_temp, &temp_name, init_expr);
 
                 // Phase 1: Collect binding metadata (no lower_expr calls yet)
                 struct RawObjBinding {
@@ -320,20 +446,9 @@ impl Lowerer {
                         _ => continue,
                     };
 
-                    let is_const = !self
-                        .type_info
-                        .mutated_vars
-                        .contains(&format!("{}::{}", fn_prefix, bind_name));
+                    let is_const = !self.is_var_mutated(bind_name);
 
-                    // Skip unused toplevel constants
-                    if self.fn_ctx.is_none()
-                        && is_const
-                        && !self.type_info.used_names.contains(bind_name)
-                    {
-                        default_counter += if has_default { 1 } else { 0 };
-                        continue;
-                    }
-                    if self.fn_ctx.is_none() && !is_const {
+                    if self.should_skip_toplevel_binding(bind_name, is_const) {
                         default_counter += if has_default { 1 } else { 0 };
                         continue;
                     }
@@ -407,12 +522,8 @@ impl Lowerer {
             }
 
             BindingPattern::ArrayPattern(ap) => {
-                // ©¤©¤ Array destructuring ©¤©¤
-                let init_type = if let Expression::Identifier(id) = init_expr {
-                    self.type_info.var_types.get(id.name.as_str()).cloned()
-                } else {
-                    None
-                };
+                // ── Array destructuring ──
+                let init_type = self.init_expr_type(init_expr);
                 let is_arraylist = matches!(init_type, Some(ZigType::ArrayList(_)));
 
                 // Decide if we need a temp variable
@@ -420,19 +531,7 @@ impl Lowerer {
                 let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
                 let temp_name = self.name_mangler.next_name("_js_dest");
 
-                let source = if needs_temp {
-                    temp_name.clone()
-                } else if let Expression::Identifier(id) = init_expr {
-                    id.name.to_string()
-                } else {
-                    self.name_mangler.next_name("_js_dest")
-                };
-
-                let fn_prefix = self
-                    .fn_ctx
-                    .as_ref()
-                    .map(|ctx| ctx.name.as_str())
-                    .unwrap_or("__toplevel__");
+                let source = self.compute_destructure_source(needs_temp, &temp_name, init_expr);
 
                 // Phase 1: Collect binding metadata
                 struct RawArrBinding {
@@ -460,19 +559,9 @@ impl Lowerer {
                         _ => continue,
                     };
 
-                    let is_const = !self
-                        .type_info
-                        .mutated_vars
-                        .contains(&format!("{}::{}", fn_prefix, bind_name));
+                    let is_const = !self.is_var_mutated(bind_name);
 
-                    if self.fn_ctx.is_none()
-                        && is_const
-                        && !self.type_info.used_names.contains(bind_name)
-                    {
-                        default_counter += if has_default { 1 } else { 0 };
-                        continue;
-                    }
-                    if self.fn_ctx.is_none() && !is_const {
+                    if self.should_skip_toplevel_binding(bind_name, is_const) {
                         default_counter += if has_default { 1 } else { 0 };
                         continue;
                     }
@@ -575,35 +664,16 @@ impl Lowerer {
             .cloned()
             .unwrap_or(ZigType::Void);
 
-        // Enter function context
-        let saved = self.enter_fn(name, is_export, Some(return_type.clone()));
-
-        // Push shadow scope for function body (param renames live here)
-        self.name_mangler.push_shadow_scope();
-
-        // Lower parameters
-        let mut params = self.lower_fn_params(fd, name);
-
-        // Register parameter names in fn_scope_vars (for shadow detection)
-        if let Some(ctx) = self.fn_ctx.as_mut() {
-            for param in &params {
-                ctx.add_scope_var(&param.name.js_name);
-            }
-        }
-
-        // Lower function body
-        let mut body = fd
-            .body
-            .as_ref()
-            .map(|b| self.lower_block(&b.statements))
-            .unwrap_or_else(|| IrBlock::new(vec![]));
+        // Enter function context and lower params + body
+        let mut scope = self.enter_fn_body(fd, name, is_export, &return_type);
 
         // If the body references `arguments` (lowered as `__arguments`), inject
         // `const __arguments = &[_]JsAny{ JsAny.from(param0), JsAny.from(param1), ... }`
         // at the start of the function body.
-        let used_idents_pre = Self::collect_ir_idents_in_block(&body);
+        let used_idents_pre = Self::collect_ir_idents_in_block(&scope.body);
         if used_idents_pre.contains("__arguments") {
-            let args_exprs: Vec<crate::zigir::types::IrExpr> = params
+            let args_exprs: Vec<crate::zigir::types::IrExpr> = scope
+                .params
                 .iter()
                 .filter(|p| p.name.zig_name != "io" && !p.is_rest)
                 .map(|p| {
@@ -636,14 +706,14 @@ impl Lowerer {
                     needs_const_suppression: false,
                     needs_deinit: false,
                 });
-            body.stmts.insert(0, arguments_init);
+            scope.body.stmts.insert(0, arguments_init);
         }
 
         // Mark unused parameters: collect all identifier references in the body,
         // then check which params don't appear. Also include identifiers from
         // compile-time-resolved expressions (e.g., typeof x → "number") that
         // were optimized away but still semantically reference the parameter.
-        let mut used_idents = Self::collect_ir_idents_in_block(&body);
+        let mut used_idents = Self::collect_ir_idents_in_block(&scope.body);
         if let Some(ctx) = self.fn_ctx.as_ref() {
             used_idents.extend(ctx.compile_time_referenced_idents.iter().cloned());
         }
@@ -651,38 +721,25 @@ impl Lowerer {
         if is_async {
             used_idents.insert("io".to_string());
         }
-        for param in &mut params {
+        for param in &mut scope.params {
             if !used_idents.contains(&param.name.js_name) {
                 param.is_unused = true;
             }
         }
 
-        // Ownership transfer: variables that are directly returned should not
-        // get `defer deinit()` — their ownership transfers to the caller.
-        Self::clear_deinit_for_returned_vars(&mut body);
-
-        // Read has_bigint_div and has_js_const_reassign BEFORE exiting the function context, since
-        // exit_fn() takes the current fn_ctx and restores the outer one.
+        // Read has_bigint_div and has_js_const_reassign BEFORE exiting the
+        // function context, since exit_fn() restores the outer context.
         let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
         let has_js_const_reassign = self
             .fn_ctx
             .as_ref()
             .is_some_and(|ctx| !ctx.js_const_reassigned.is_empty());
 
-        // Exit function context and shadow scope
-        self.name_mangler.pop_shadow_scope();
-        let _fn_ctx = self.exit_fn(saved);
+        // Exit function context and finalize body
+        let (params, body, typeof_return_body) = self.exit_fn_body(scope, &return_type);
 
         // Determine C ABI: export functions use `export fn` calling convention
         let is_cabi = is_export;
-
-        // For AnytypeReturn: capture the first return expression so the Emitter
-        // can emit `@TypeOf(expr)` instead of the literal `anytype` keyword.
-        let typeof_return_body = if matches!(return_type, ZigType::AnytypeReturn) {
-            Self::find_first_return_expr_in_block(&body).map(|e| Box::new(e.clone()))
-        } else {
-            None
-        };
 
         Some(crate::zigir::types::IrFnDecl {
             name: self.make_ident(name),
@@ -715,10 +772,10 @@ impl Lowerer {
             .map(|id| id.name.as_str())
             .unwrap_or("_anon_fn");
 
-        // Detect captures from enclosing scope
+        // Detect captures from enclosing scope (before entering fn context)
         let captures = self.detect_fn_body_captures(fd);
 
-        // Enter a sub-function context to lower the body
+        // Return type from inference
         let return_type = self
             .type_info
             .fn_return_types
@@ -726,38 +783,9 @@ impl Lowerer {
             .cloned()
             .unwrap_or(ZigType::Void);
 
-        let saved = self.enter_fn(fn_name, false, Some(return_type.clone()));
-        self.name_mangler.push_shadow_scope();
-
-        let params = self.lower_fn_params(fd, fn_name);
-
-        // Register param names in fn_scope_vars
-        if let Some(ctx) = self.fn_ctx.as_mut() {
-            for param in &params {
-                ctx.add_scope_var(&param.name.js_name);
-            }
-        }
-
-        let mut body = fd
-            .body
-            .as_ref()
-            .map(|b| self.lower_block(&b.statements))
-            .unwrap_or_else(|| IrBlock::new(vec![]));
-
-        // Ownership transfer: variables that are directly returned should not
-        // get `defer deinit()` — their ownership transfers to the caller.
-        Self::clear_deinit_for_returned_vars(&mut body);
-
-        self.name_mangler.pop_shadow_scope();
-        let _fn_ctx = self.exit_fn(saved);
-
-        // For AnytypeReturn: capture the first return expression so the Emitter
-        // can emit `@TypeOf(expr)` instead of `anytype`.
-        let typeof_return_body = if matches!(return_type, ZigType::AnytypeReturn) {
-            Self::find_first_return_expr_in_block(&body).map(|e| Box::new(e.clone()))
-        } else {
-            None
-        };
+        // Enter function context and lower params + body, then exit
+        let scope = self.enter_fn_body(fd, fn_name, false, &return_type);
+        let (params, body, typeof_return_body) = self.exit_fn_body(scope, &return_type);
 
         // Register as a nested function name (for call-site rewriting)
         if let Some(ctx) = self.fn_ctx.as_mut() {
