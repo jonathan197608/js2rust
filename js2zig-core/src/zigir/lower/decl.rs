@@ -659,19 +659,7 @@ impl Lowerer {
 
         // Ownership transfer: variables that are directly returned should not
         // get `defer deinit()` — their ownership transfers to the caller.
-        // Scan the body for `return varname;` patterns and clear needs_deinit
-        // on the corresponding IrVarDecl.
-        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
-        if !returned_vars.is_empty() {
-            for stmt in &mut body.stmts {
-                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
-                    && vd.needs_deinit
-                    && returned_vars.contains(&vd.name.zig_name)
-                {
-                    vd.needs_deinit = false;
-                }
-            }
-        }
+        Self::clear_deinit_for_returned_vars(&mut body);
 
         // Read has_bigint_div and has_js_const_reassign BEFORE exiting the function context, since
         // exit_fn() takes the current fn_ctx and restores the outer one.
@@ -758,17 +746,7 @@ impl Lowerer {
 
         // Ownership transfer: variables that are directly returned should not
         // get `defer deinit()` — their ownership transfers to the caller.
-        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
-        if !returned_vars.is_empty() {
-            for stmt in &mut body.stmts {
-                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
-                    && vd.needs_deinit
-                    && returned_vars.contains(&vd.name.zig_name)
-                {
-                    vd.needs_deinit = false;
-                }
-            }
-        }
+        Self::clear_deinit_for_returned_vars(&mut body);
 
         self.name_mangler.pop_shadow_scope();
         let _fn_ctx = self.exit_fn(saved);
@@ -926,31 +904,9 @@ impl Lowerer {
     /// This is needed to determine whether the return type should be an
     /// error union (`!T` vs `T`).
     pub(super) fn has_throw_in_body(body: &FunctionBody) -> bool {
-        body.statements.iter().any(|s| Self::stmt_has_throw(s))
-    }
-
-    pub(super) fn stmt_has_throw(stmt: &Statement) -> bool {
-        match stmt {
-            Statement::ThrowStatement(_) => true,
-            Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_has_throw(s)),
-            Statement::IfStatement(is) => {
-                Self::stmt_has_throw(&is.consequent)
-                    || is
-                        .alternate
-                        .as_ref()
-                        .is_some_and(|a| Self::stmt_has_throw(a))
-            }
-            Statement::WhileStatement(ws) => Self::stmt_has_throw(&ws.body),
-            Statement::DoWhileStatement(dws) => Self::stmt_has_throw(&dws.body),
-            Statement::ForStatement(fs) => Self::stmt_has_throw(&fs.body),
-            Statement::ForOfStatement(fos) => Self::stmt_has_throw(&fos.body),
-            Statement::ForInStatement(fis) => Self::stmt_has_throw(&fis.body),
-            Statement::TryStatement(_) => true, // try-catch implies potential throw
-            Statement::SwitchStatement(ss) => ss
-                .cases
-                .iter()
-                .any(|c| c.consequent.iter().any(|s| Self::stmt_has_throw(s))),
-            _ => false,
-        }
+        use super::helpers::{ThrowWalkMode, stmt_has_throw};
+        body.statements
+            .iter()
+            .any(|s| stmt_has_throw(s, ThrowWalkMode::TryImpliesThrow))
     }
 }

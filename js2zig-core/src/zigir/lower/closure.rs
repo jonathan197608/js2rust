@@ -60,21 +60,49 @@ impl Lowerer {
         &self,
         arrow: &ArrowFunctionExpression,
     ) -> Vec<(String, ZigType, bool)> {
-        let mut captured = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let param_names = Self::collect_param_names(&arrow.params.items);
+        self.collect_captures_from_body(&param_names, &arrow.body.statements, true)
+    }
 
-        // Collect parameter names + locally declared variable names
-        let mut local_names: std::collections::HashSet<String> = arrow
-            .params
-            .items
+    /// Detect variables captured by a nested function (declaration or expression).
+    ///
+    /// Returns list of (variable_name, ZigType, is_mutable) for variables from
+    /// the enclosing scope that are referenced in the function body.
+    pub(super) fn detect_fn_body_captures(&self, fd: &Function) -> Vec<(String, ZigType, bool)> {
+        let param_names = Self::collect_param_names(&fd.params.items);
+        fd.body
+            .as_ref()
+            .map(|body| self.collect_captures_from_body(&param_names, &body.statements, true))
+            .unwrap_or_default()
+    }
+
+    /// Extract parameter names from a parameter list.
+    fn collect_param_names(
+        params: &oxc_allocator::Vec<'_, oxc_ast::ast::FormalParameter>,
+    ) -> std::collections::HashSet<String> {
+        params
             .iter()
             .filter_map(|p| crate::infer::binding_name(&p.pattern))
             .map(|s| s.to_string())
-            .collect();
-        local_names.extend(Self::collect_local_declarations(&arrow.body.statements));
+            .collect()
+    }
 
-        // Walk the body statements to find Identifier references
-        for stmt in &arrow.body.statements {
+    /// Core capture-collection logic shared by arrow and regular functions.
+    fn collect_captures_from_body(
+        &self,
+        param_names: &std::collections::HashSet<String>,
+        stmts: &oxc_allocator::Vec<'_, Statement>,
+        include_local_decls: bool,
+    ) -> Vec<(String, ZigType, bool)> {
+        let mut captured = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        let mut local_names = param_names.clone();
+        if include_local_decls {
+            local_names.extend(Self::collect_local_declarations(stmts));
+        }
+
+        for stmt in stmts {
             Self::collect_idents_from_stmt(
                 stmt,
                 &mut captured,
@@ -84,46 +112,9 @@ impl Lowerer {
             );
         }
 
-        // Detect which captured variables are mutated in the arrow body
-        let mutated = Self::detect_mutated_vars_in_stmts(&arrow.body.statements);
+        let mutated = Self::detect_mutated_vars_in_stmts(stmts);
         for (name, _ztype, is_mut) in &mut captured {
             *is_mut = mutated.contains(name);
-        }
-
-        captured
-    }
-
-    /// Detect variables captured by a nested function (declaration or expression).
-    ///
-    /// Returns list of (variable_name, ZigType, is_mutable) for variables from
-    /// the enclosing scope that are referenced in the function body.
-    pub(super) fn detect_fn_body_captures(&self, fd: &Function) -> Vec<(String, ZigType, bool)> {
-        let mut captured = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-
-        let mut local_names: std::collections::HashSet<String> = fd
-            .params
-            .items
-            .iter()
-            .filter_map(|p| crate::infer::binding_name(&p.pattern))
-            .map(|s| s.to_string())
-            .collect();
-
-        if let Some(body) = &fd.body {
-            local_names.extend(Self::collect_local_declarations(&body.statements));
-            for stmt in &body.statements {
-                Self::collect_idents_from_stmt(
-                    stmt,
-                    &mut captured,
-                    &mut seen,
-                    &local_names,
-                    &self.type_info,
-                );
-            }
-            let mutated = Self::detect_mutated_vars_in_stmts(&body.statements);
-            for (name, _ztype, is_mut) in &mut captured {
-                *is_mut = mutated.contains(name);
-            }
         }
 
         captured
@@ -555,33 +546,9 @@ impl Lowerer {
 
     /// Check whether a list of statements contains a `throw`.
     pub(super) fn has_throw_in_stmts(stmts: &oxc_allocator::Vec<'_, Statement>) -> bool {
-        for stmt in stmts {
-            if Self::has_throw_in_stmt(stmt) {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub(super) fn has_throw_in_stmt(stmt: &Statement) -> bool {
-        match stmt {
-            Statement::ThrowStatement(_) => true,
-            Statement::BlockStatement(bs) => Self::has_throw_in_stmts(&bs.body),
-            Statement::IfStatement(is) => {
-                Self::has_throw_in_stmt(&is.consequent)
-                    || is
-                        .alternate
-                        .as_ref()
-                        .is_some_and(|a| Self::has_throw_in_stmt(a))
-            }
-            Statement::SwitchStatement(ss) => ss
-                .cases
-                .iter()
-                .any(|c| c.consequent.iter().any(|s| Self::has_throw_in_stmt(s))),
-            Statement::TryStatement(ts) => Self::has_throw_in_stmts(&ts.block.body),
-            Statement::WhileStatement(ws) => Self::has_throw_in_stmt(&ws.body),
-            Statement::ForStatement(fs) => Self::has_throw_in_stmt(&fs.body),
-            _ => false,
-        }
+        use super::helpers::{ThrowWalkMode, stmt_has_throw};
+        stmts
+            .iter()
+            .any(|s| stmt_has_throw(s, ThrowWalkMode::TryBlockOnly))
     }
 }

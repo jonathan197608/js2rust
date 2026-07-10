@@ -483,6 +483,67 @@ impl Lowerer {
         IrExpr::Assign { op, target, value }
     }
 
+    /// Lower an identifier assignment target, handling captured closure variables.
+    fn lower_ident_assign_target(&mut self, var_name: &str) -> crate::zigir::types::IrAssignTarget {
+        // Check if this identifier is a captured closure variable.
+        if let Some((_, _, is_mut)) = self
+            .closure_mgr
+            .current_captured
+            .iter()
+            .find(|(n, _, _)| n == var_name)
+        {
+            let field_name = self.make_ident(var_name).zig_name;
+            return crate::zigir::types::IrAssignTarget::Member {
+                object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("self"))),
+                field: field_name,
+                is_pointer: *is_mut,
+                field_kind: if *is_mut {
+                    FieldKind::PointerDeref
+                } else {
+                    FieldKind::StructField
+                },
+            };
+        }
+
+        crate::zigir::types::IrAssignTarget::Ident(IrIdent::new(var_name))
+    }
+
+    /// Lower a static member assignment target (obj.prop).
+    fn lower_static_member_assign_target(
+        &mut self,
+        object: &Expression,
+        property_name: &str,
+    ) -> crate::zigir::types::IrAssignTarget {
+        crate::zigir::types::IrAssignTarget::Member {
+            object: Box::new(self.lower_expr(object)),
+            field: property_name.to_string(),
+            is_pointer: false,
+            field_kind: self.infer_member_field_kind(object, property_name),
+        }
+    }
+
+    /// Lower a computed member assignment target (obj[expr]).
+    fn lower_computed_member_assign_target(
+        &mut self,
+        object: &Expression,
+        expression: &Expression,
+    ) -> crate::zigir::types::IrAssignTarget {
+        let obj_type = self.infer_expr_type(object);
+        let is_arraylist = obj_type
+            .as_ref()
+            .map(|t| matches!(t, ZigType::ArrayList(_)))
+            .unwrap_or(false);
+        crate::zigir::types::IrAssignTarget::Index {
+            object: Box::new(self.lower_expr(object)),
+            index: Box::new(self.lower_expr(expression)),
+            index_kind: if is_arraylist {
+                IndexKind::ArrayListItem
+            } else {
+                IndexKind::SliceIndex
+            },
+        }
+    }
+
     /// Lower a simple assignment target (from UpdateExpression).
     /// SimpleAssignmentTarget can be an identifier or member expression.
     pub(super) fn lower_simple_assign_target(
@@ -491,54 +552,13 @@ impl Lowerer {
     ) -> crate::zigir::types::IrAssignTarget {
         match target {
             SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                let var_name = id.name.as_str();
-
-                // Check if this identifier is a captured closure variable.
-                if let Some((_, _, is_mut)) = self
-                    .closure_mgr
-                    .current_captured
-                    .iter()
-                    .find(|(n, _, _)| n == var_name)
-                {
-                    let field_name = self.make_ident(var_name).zig_name;
-                    return crate::zigir::types::IrAssignTarget::Member {
-                        object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("self"))),
-                        field: field_name,
-                        is_pointer: *is_mut,
-                        field_kind: if *is_mut {
-                            FieldKind::PointerDeref
-                        } else {
-                            FieldKind::StructField
-                        },
-                    };
-                }
-
-                crate::zigir::types::IrAssignTarget::Ident(IrIdent::new(var_name))
+                self.lower_ident_assign_target(id.name.as_str())
             }
             SimpleAssignmentTarget::StaticMemberExpression(mem) => {
-                crate::zigir::types::IrAssignTarget::Member {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: mem.property.name.to_string(),
-                    is_pointer: false,
-                    field_kind: self
-                        .infer_member_field_kind(&mem.object, mem.property.name.as_str()),
-                }
+                self.lower_static_member_assign_target(&mem.object, mem.property.name.as_str())
             }
             SimpleAssignmentTarget::ComputedMemberExpression(mem) => {
-                let obj_type = self.infer_expr_type(&mem.object);
-                let is_arraylist = obj_type
-                    .as_ref()
-                    .map(|t| matches!(t, ZigType::ArrayList(_)))
-                    .unwrap_or(false);
-                crate::zigir::types::IrAssignTarget::Index {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    index: Box::new(self.lower_expr(&mem.expression)),
-                    index_kind: if is_arraylist {
-                        IndexKind::ArrayListItem
-                    } else {
-                        IndexKind::SliceIndex
-                    },
-                }
+                self.lower_computed_member_assign_target(&mem.object, &mem.expression)
             }
             _ => crate::zigir::types::IrAssignTarget::CompileError {
                 msg: "unsupported assignment target".to_string(),
@@ -579,55 +599,13 @@ impl Lowerer {
     ) -> crate::zigir::types::IrAssignTarget {
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                let var_name = id.name.as_str();
-
-                // Check if this identifier is a captured closure variable.
-                // If so, rewrite the assignment target to self.xxx (value) or self.xxx.* (ref).
-                if let Some((_, _, is_mut)) = self
-                    .closure_mgr
-                    .current_captured
-                    .iter()
-                    .find(|(n, _, _)| n == var_name)
-                {
-                    let field_name = self.make_ident(var_name).zig_name;
-                    return crate::zigir::types::IrAssignTarget::Member {
-                        object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("self"))),
-                        field: field_name,
-                        is_pointer: *is_mut,
-                        field_kind: if *is_mut {
-                            FieldKind::PointerDeref
-                        } else {
-                            FieldKind::StructField
-                        },
-                    };
-                }
-
-                crate::zigir::types::IrAssignTarget::Ident(IrIdent::new(var_name))
+                self.lower_ident_assign_target(id.name.as_str())
             }
             AssignmentTarget::StaticMemberExpression(mem) => {
-                crate::zigir::types::IrAssignTarget::Member {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: mem.property.name.to_string(),
-                    is_pointer: false,
-                    field_kind: self
-                        .infer_member_field_kind(&mem.object, mem.property.name.as_str()),
-                }
+                self.lower_static_member_assign_target(&mem.object, mem.property.name.as_str())
             }
             AssignmentTarget::ComputedMemberExpression(mem) => {
-                let obj_type = self.infer_expr_type(&mem.object);
-                let is_arraylist = obj_type
-                    .as_ref()
-                    .map(|t| matches!(t, ZigType::ArrayList(_)))
-                    .unwrap_or(false);
-                crate::zigir::types::IrAssignTarget::Index {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    index: Box::new(self.lower_expr(&mem.expression)),
-                    index_kind: if is_arraylist {
-                        IndexKind::ArrayListItem
-                    } else {
-                        IndexKind::SliceIndex
-                    },
-                }
+                self.lower_computed_member_assign_target(&mem.object, &mem.expression)
             }
             AssignmentTarget::ObjectAssignmentTarget(ot) => {
                 let bindings: Vec<crate::zigir::types::IrDestructureBinding> = ot

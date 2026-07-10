@@ -55,19 +55,7 @@ impl Lowerer {
         };
 
         // Ownership transfer: clear needs_deinit for returned Map/Set variables
-        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
-        if !returned_vars.is_empty() {
-            for stmt in &mut body.stmts {
-                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
-                    && vd.needs_deinit
-                    && returned_vars.contains(&vd.name.zig_name)
-                {
-                    vd.needs_deinit = false;
-                }
-            }
-        }
-
-        // Restore closure state
+        Self::clear_deinit_for_returned_vars(&mut body);
         self.closure_mgr.restore_captured(saved_captured);
         self.exit_fn(saved_fn);
 
@@ -173,19 +161,7 @@ impl Lowerer {
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
         // Ownership transfer: clear needs_deinit for returned Map/Set variables
-        let returned_vars = Self::collect_returned_var_zig_names_in_block(&body);
-        if !returned_vars.is_empty() {
-            for stmt in &mut body.stmts {
-                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
-                    && vd.needs_deinit
-                    && returned_vars.contains(&vd.name.zig_name)
-                {
-                    vd.needs_deinit = false;
-                }
-            }
-        }
-
-        // Restore
+        Self::clear_deinit_for_returned_vars(&mut body);
         self.closure_mgr.restore_captured(saved_captured);
         self.exit_fn(saved_fn);
 

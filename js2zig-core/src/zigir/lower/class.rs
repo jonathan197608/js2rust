@@ -9,6 +9,7 @@ use crate::types::ZigType;
 use crate::zigir::types::{IrBlock, IrParam};
 
 use super::Lowerer;
+use super::cabi::property_key_name;
 
 // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
 //  Remaining stubs
@@ -53,7 +54,7 @@ impl Lowerer {
             if let ClassElement::PropertyDefinition(pd) = elem
                 && pd.r#static
                 && !pd.computed
-                && let Some(name) = Self::property_key_name(&pd.key)
+                && let Some(name) = property_key_name(&pd.key)
             {
                 pre_scan_static_names.insert(name);
             }
@@ -79,7 +80,7 @@ impl Lowerer {
                         continue;
                     }
                     let is_static = pd.r#static;
-                    if let Some(name) = Self::property_key_name(&pd.key) {
+                    if let Some(name) = property_key_name(&pd.key) {
                         if is_static {
                             if let Some(value) = &pd.value {
                                 let field_ty = self
@@ -155,7 +156,7 @@ impl Lowerer {
                 && !Self::is_constructor_method(md)
             {
                 let method_name =
-                    Self::property_key_name(&md.key).unwrap_or_else(|| "anonymous".to_string());
+                    property_key_name(&md.key).unwrap_or_else(|| "anonymous".to_string());
                 let is_static = md.r#static;
                 let method = self.lower_class_method(
                     &class_name,
@@ -203,19 +204,9 @@ impl Lowerer {
         })
     }
 
-    /// Extract the string name from a PropertyKey.
-    pub(super) fn property_key_name(key: &PropertyKey) -> Option<String> {
-        match key {
-            PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
-            PropertyKey::StringLiteral(sl) => Some(sl.value.to_string()),
-            PropertyKey::PrivateIdentifier(id) => Some(id.name.to_string()),
-            _ => None,
-        }
-    }
-
     /// Check if a MethodDefinition is `constructor()`.
     pub(super) fn is_constructor_method(md: &MethodDefinition) -> bool {
-        Self::property_key_name(&md.key).is_some_and(|name| name == "constructor")
+        property_key_name(&md.key).is_some_and(|name| name == "constructor")
     }
 
     /// Scan constructor body for `this.x = ...` assignments and add

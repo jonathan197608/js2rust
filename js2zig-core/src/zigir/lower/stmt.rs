@@ -730,30 +730,8 @@ impl Lowerer {
     /// nested try-catch — those throws are caught by the inner catch).
     #[allow(dead_code)]
     pub(super) fn stmt_has_throw_any(stmt: &Statement) -> bool {
-        match stmt {
-            Statement::ThrowStatement(_) => true,
-            Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_has_throw_any(s)),
-            Statement::IfStatement(is) => {
-                Self::stmt_has_throw_any(&is.consequent)
-                    || is
-                        .alternate
-                        .as_ref()
-                        .is_some_and(|a| Self::stmt_has_throw_any(a))
-            }
-            Statement::WhileStatement(ws) => Self::stmt_has_throw_any(&ws.body),
-            Statement::DoWhileStatement(dws) => Self::stmt_has_throw_any(&dws.body),
-            Statement::ForStatement(fs) => Self::stmt_has_throw_any(&fs.body),
-            Statement::ForOfStatement(fos) => Self::stmt_has_throw_any(&fos.body),
-            Statement::ForInStatement(fis) => Self::stmt_has_throw_any(&fis.body),
-            Statement::SwitchStatement(ss) => ss
-                .cases
-                .iter()
-                .any(|c| c.consequent.iter().any(|s| Self::stmt_has_throw_any(s))),
-            Statement::LabeledStatement(ls) => Self::stmt_has_throw_any(&ls.body),
-            // Intentionally NOT recursing into TryStatement ¡ª
-            // throws inside a nested try are caught by its own catch.
-            _ => false,
-        }
+        use super::helpers::{ThrowWalkMode, stmt_has_throw as walk};
+        walk(stmt, ThrowWalkMode::SkipTry)
     }
 
     /// Lower a labeled statement.

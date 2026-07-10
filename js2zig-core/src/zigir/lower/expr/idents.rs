@@ -19,6 +19,22 @@ impl Lowerer {
         names
     }
 
+    /// Clear `needs_deinit` on VarDecls whose names appear in the returned-vars set.
+    /// Called after `collect_returned_var_zig_names_in_block` to implement ownership transfer.
+    pub(crate) fn clear_deinit_for_returned_vars(body: &mut crate::zigir::types::IrBlock) {
+        let returned_vars = Self::collect_returned_var_zig_names_in_block(body);
+        if !returned_vars.is_empty() {
+            for stmt in &mut body.stmts {
+                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
+                    && vd.needs_deinit
+                    && returned_vars.contains(&vd.name.zig_name)
+                {
+                    vd.needs_deinit = false;
+                }
+            }
+        }
+    }
+
     fn collect_returned_var_zig_names_in_stmt(
         stmt: &crate::zigir::types::IrStmt,
         names: &mut HashSet<String>,
