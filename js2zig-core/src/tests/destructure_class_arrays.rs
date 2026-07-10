@@ -1369,25 +1369,27 @@ return Object.is(a, b);
     );
 }
 
-// ── Test: Object.getOwnPropertyNames() stub ───────
+// ── Test: Object.getOwnPropertyNames() ───────
 
 #[test]
-fn test_native_proto_object_getownpropertynames_stub() {
+fn test_native_proto_object_getownpropertynames() {
     let js = r#"
 export function getPropNames(obj) {
 return Object.getOwnPropertyNames(obj);
 }
 "#;
-    let zig = transpile_and_assert(js, "test_native_proto_object_getownpropertynames_stub");
+    let zig = transpile_and_assert(js, "test_native_proto_object_getownpropertynames");
+    println!("=== Object.getOwnPropertyNames Zig code ===\n{}", zig);
 
+    // Should now emit actual runtime call, not @compileError
     assert!(
-        zig.contains("@compileError"),
-        "Expected @compileError for Object.getOwnPropertyNames() in:\n{}",
+        zig.contains("getOwnPropertyNames"),
+        "Expected getOwnPropertyNames in:\n{}",
         zig
     );
     assert!(
-        zig.contains("getOwnPropertyNames"),
-        "Expected 'getOwnPropertyNames' mention in:\n{}",
+        !zig.contains("@compileError"),
+        "Should not have @compileError for getOwnPropertyNames in:\n{}",
         zig
     );
 }

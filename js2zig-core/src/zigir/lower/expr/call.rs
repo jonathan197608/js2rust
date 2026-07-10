@@ -34,9 +34,6 @@ impl Lowerer {
                             "getOwnPropertySymbols" => Some(
                                 "Object.getOwnPropertySymbols() is not supported (Symbol keys are not available in js2zig)".to_string(),
                             ),
-                            "getOwnPropertyNames" => Some(
-                                "Object.getOwnPropertyNames() is not yet implemented in js2zig".to_string(),
-                            ),
                             _ => None,
                         },
                         "Map" if method_name == "groupBy" => Some(
@@ -182,14 +179,21 @@ impl Lowerer {
                 None
             };
 
-            // ── Fix Object.keys for struct-typed arguments ──
-            // Object.keys(obj) where obj is a Zig struct (not HashMap) needs
-            // a different runtime function (keysStruct) that uses comptime reflection.
-            let method = if module == BuiltinModule::JsObject && method == "keys" {
+            // ── Fix Object.keys/getOwnPropertyNames for struct-typed arguments ──
+            // Object.keys(obj) / Object.getOwnPropertyNames(obj) where obj is a Zig struct
+            // (not HashMap) needs a different runtime function (keysStruct /
+            // getOwnPropertyNamesStruct) that uses comptime reflection.
+            let method = if module == BuiltinModule::JsObject
+                && (method == "keys" || method == "getOwnPropertyNames")
+            {
                 if let Some(IrExpr::Ident(ident)) = args.first() {
                     if let Some(var_type) = self.type_info.var_types.get(ident.zig_name.as_str()) {
                         if matches!(var_type, ZigType::Struct(_)) {
-                            "keysStruct".into()
+                            if method == "keys" {
+                                "keysStruct".into()
+                            } else {
+                                "getOwnPropertyNamesStruct".into()
+                            }
                         } else {
                             method
                         }

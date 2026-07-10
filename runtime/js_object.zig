@@ -38,6 +38,19 @@ pub fn keysStruct(comptime T: type) [std.meta.fields(T).len][]const u8 {
     return result;
 }
 
+/// Object.getOwnPropertyNames — for HashMap objects, returns all own property names.
+/// In our simplified model (no prototype chain, no non-enumerable properties),
+/// this is semantically identical to Object.keys().
+pub fn getOwnPropertyNames(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
+    return keys(alloc, obj);
+}
+
+/// Object.getOwnPropertyNames for struct types — returns field names.
+/// Semantically identical to keysStruct since all Zig struct fields are own properties.
+pub fn getOwnPropertyNamesStruct(comptime T: type) [std.meta.fields(T).len][]const u8 {
+    return keysStruct(T);
+}
+
 /// Object.values — return array of JsValue values from a HashMap.
 pub fn values(alloc: Allocator, obj: *const JsValueHashMap) ![]JsValue {
     var kiter = obj.iterator();

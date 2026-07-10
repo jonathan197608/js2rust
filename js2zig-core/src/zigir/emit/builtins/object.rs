@@ -169,6 +169,18 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(")");
             }
+            // ── Object.getOwnPropertyNames — same as Object.keys for our model ──
+            "getOwnPropertyNames" => {
+                self.write("js_object.getOwnPropertyNames(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.getOwnPropertyNames\")");
+            }
+            "getOwnPropertyNamesStruct" => {
+                // Object.getOwnPropertyNames for struct objects — comptime reflection
+                self.write("js_object.getOwnPropertyNamesStruct(@TypeOf(");
+                self.emit_inline_args(args);
+                self.write("))");
+            }
             // ── Default: js_object.method(args) ──
             _ => {
                 self.emit_module_call("js_object", method, args);
