@@ -9,6 +9,41 @@ use crate::zigir::types::{
 };
 
 impl Emitter {
+    /// Resolve the return type string for a function/closure that may use `AnytypeReturn`.
+    ///
+    /// When the return type is `AnytypeReturn`, generates `@TypeOf(first_return_expr)`
+    /// (stripping `try` prefixes which are invalid in comptime type expressions).
+    /// For non-AnytypeReturn types, delegates to `format_return_type`.
+    pub(super) fn resolve_anytype_return(
+        &mut self,
+        return_type: &ZigType,
+        typeof_return_body: &Option<std::boxed::Box<crate::zigir::types::IrExpr>>,
+        is_async: bool,
+        can_throw: bool,
+    ) -> String {
+        if matches!(return_type, ZigType::AnytypeReturn) {
+            if let Some(body_expr) = typeof_return_body {
+                let captured = self.expr_to_string(body_expr);
+                let stripped = captured.replace("try ", "");
+                let base = format!("@TypeOf({})", stripped);
+                if is_async || can_throw {
+                    format!("!{}", base)
+                } else {
+                    base
+                }
+            } else {
+                // Fallback: no return expression found
+                if can_throw {
+                    "!void".to_string()
+                } else {
+                    "void".to_string()
+                }
+            }
+        } else {
+            format_return_type(return_type, is_async, can_throw)
+        }
+    }
+
     pub(crate) fn emit_typedef(&mut self, typedef: &IrTypedef) {
         self.writeln(&format!("const {} = struct {{", typedef.name));
         self.indent_push();
@@ -70,16 +105,8 @@ impl Emitter {
             need_comma = true;
         }
         // Return type: use @TypeOf(expr) for AnytypeReturn, else normal type
-        let ret_type_str = if matches!(cs.return_type, ZigType::AnytypeReturn) {
-            if let Some(ref body_expr) = cs.typeof_return_body {
-                let inline = Self::emit_expr_inline(body_expr);
-                format!("@TypeOf({})", inline.replace("try ", ""))
-            } else {
-                cs.return_type.to_zig_type()
-            }
-        } else {
-            cs.return_type.to_zig_type()
-        };
+        let ret_type_str =
+            self.resolve_anytype_return(&cs.return_type, &cs.typeof_return_body, false, false);
         sig.push_str(&format!(") {} {{", ret_type_str));
         self.writeln(&sig);
 
@@ -194,29 +221,12 @@ impl Emitter {
             }
         }
 
-        let ret_type = if matches!(fd.return_type, ZigType::AnytypeReturn) {
-            // Generate @TypeOf(first_return_expr) instead of literal "anytype"
-            if let Some(ref body_expr) = fd.typeof_return_body {
-                let captured = self.expr_to_string(body_expr);
-                // Strip 'try ' prefixes — try is not valid in @TypeOf (comptime type expression)
-                let stripped = captured.replace("try ", "");
-                let base = format!("@TypeOf({})", stripped);
-                if fd.is_async || fd.can_throw {
-                    format!("!{}", base)
-                } else {
-                    base
-                }
-            } else {
-                // Fallback: no return expression found, use void
-                if fd.can_throw {
-                    "!void".to_string()
-                } else {
-                    "void".to_string()
-                }
-            }
-        } else {
-            format_return_type(&fd.return_type, fd.is_async, fd.can_throw)
-        };
+        let ret_type = self.resolve_anytype_return(
+            &fd.return_type,
+            &fd.typeof_return_body,
+            fd.is_async,
+            fd.can_throw,
+        );
         self.write(&format!(") {} {{\n", ret_type));
 
         // Emit `_ = _param;` for unused params at the start of the body

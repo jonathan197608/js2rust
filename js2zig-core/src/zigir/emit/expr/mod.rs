@@ -8,7 +8,7 @@ pub mod template_new;
 
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
-    EmitterHelpers, escape_zig_string, format_param_with_rest, logical_op_to_zig, update_op_to_zig,
+    EmitterHelpers, escape_zig_string, logical_op_to_zig, update_op_to_zig,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -376,45 +376,10 @@ impl Emitter {
 
             // ── Function expressions ────────────────
             // NOTE: Dead code path — Lowerer always converts ArrowFn to IrExpr::Ident
-            // + pending_arrow_structs. Kept as defensive fallback.
-            crate::zigir::types::IrExpr::ArrowFn(arrow) => {
-                // Arrow fn at expression level: emit inline struct
-                self.writeln(&format!("const {} = struct {{", arrow_name_placeholder()));
-                self.indent_push();
-                let ret = arrow.return_type.to_zig_type();
-                let mut sig = String::from("pub fn call(");
-                for (i, param) in arrow.params.iter().enumerate() {
-                    if i > 0 {
-                        sig.push_str(", ");
-                    }
-                    sig.push_str(&format_param_with_rest(
-                        &param.name,
-                        &param.zig_type,
-                        param.is_rest,
-                    ));
-                }
-                sig.push_str(&format!(") {} {{", ret));
-                self.writeln(&sig);
-                self.indent_push();
-                // Body
-                if arrow.is_concise {
-                    self.write_indent();
-                    self.write("return ");
-                    if let Some(stmt) = arrow.body.stmts.first()
-                        && let crate::zigir::types::IrStmt::Expr(e) = stmt
-                    {
-                        self.emit_expr(e);
-                    }
-                    self.write(";\n");
-                } else {
-                    for stmt in &arrow.body.stmts {
-                        self.emit_stmt(stmt);
-                    }
-                }
-                self.indent_pop();
-                self.writeln("}");
-                self.indent_pop();
-                self.writeln("};");
+            // + pending_arrow_structs before reaching the emitter.
+            crate::zigir::types::IrExpr::ArrowFn(_arrow) => {
+                // Should never be reached; emit a placeholder to avoid panic.
+                self.write("/* ArrowFn — should be lowered to closure struct */");
             }
 
             crate::zigir::types::IrExpr::Closure(closure) => {
@@ -752,16 +717,7 @@ impl Emitter {
     /// Emit a `std.fmt.allocPrint(allocator, fmt, .{args})` call.
     /// Shared by IrExpr::AllocPrint and emit_template_literal.
     pub(super) fn emit_alloc_print(&mut self, fmt: &str, args: &[crate::zigir::types::IrExpr]) {
-        let arg_strs: Vec<String> = args
-            .iter()
-            .map(|arg| {
-                let saved = std::mem::take(self.output_mut());
-                self.emit_expr(arg);
-                let rendered = std::mem::take(self.output_mut());
-                *self.output_mut() = saved;
-                rendered
-            })
-            .collect();
+        let arg_strs: Vec<String> = args.iter().map(|arg| self.expr_to_string(arg)).collect();
         let args_str = format!(".{{{}}}", arg_strs.join(", "));
         self.write(&format!(
             "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
@@ -850,8 +806,4 @@ pub(super) fn typed_array_init(
         TypedArrayKind::BigInt64Array => ("js_runtime.js_typedarray", "fromI64AsI64"),
         TypedArrayKind::BigUint64Array => ("js_runtime.js_typedarray", "fromI64AsU64"),
     }
-}
-
-fn arrow_name_placeholder() -> String {
-    "_arrow_fn".to_string()
 }
