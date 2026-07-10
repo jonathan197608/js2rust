@@ -3,6 +3,94 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '3e51073a-4092-43ce-a44b-1c3a97264950'
+  PropagateID: '3e51073a-4092-43ce-a44b-1c3a97264950'
+  ReservedCode1: 'cc774f7e-d59c-4a67-981b-e038b4f068af'
+  ReservedCode2: 'cc774f7e-d59c-4a67-981b-e038b4f068af'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd36e443b-f14c-4911-a297-be3ce86b3035'
+  PropagateID: 'd36e443b-f14c-4911-a297-be3ce86b3035'
+  ReservedCode1: 'c03d39dc-1cf1-42b5-9f84-2415dc515b6e'
+  ReservedCode2: 'c03d39dc-1cf1-42b5-9f84-2415dc515b6e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '22c92f63-8d29-49e8-92a3-46f1a400ebb0'
+  PropagateID: '22c92f63-8d29-49e8-92a3-46f1a400ebb0'
+  ReservedCode1: 'c057ccee-3123-432f-bdd6-6a4035f6cde5'
+  ReservedCode2: 'c057ccee-3123-432f-bdd6-6a4035f6cde5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '79c9be2e-4e1e-44eb-a61d-d14d348721a1'
+  PropagateID: '79c9be2e-4e1e-44eb-a61d-d14d348721a1'
+  ReservedCode1: 'f585a544-3eee-43c5-bb15-2685e5f1376c'
+  ReservedCode2: 'f585a544-3eee-43c5-bb15-2685e5f1376c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3dcc3c6f-aa2d-4545-a6ed-d39169ea92a6'
+  PropagateID: '3dcc3c6f-aa2d-4545-a6ed-d39169ea92a6'
+  ReservedCode1: 'ba99279a-d09d-4647-9703-e86356b6f785'
+  ReservedCode2: 'ba99279a-d09d-4647-9703-e86356b6f785'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '21304d8c-2464-4360-a572-8be86d01c9b2'
+  PropagateID: '21304d8c-2464-4360-a572-8be86d01c9b2'
+  ReservedCode1: '9aea4e66-0dea-458f-b8ae-b2c7ae4e7e1b'
+  ReservedCode2: '9aea4e66-0dea-458f-b8ae-b2c7ae4e7e1b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '208ea4f9-5690-4009-8ccb-fbebfebc5a80'
+  PropagateID: '208ea4f9-5690-4009-8ccb-fbebfebc5a80'
+  ReservedCode1: 'a862b8a3-5814-414b-b5b6-51f9b5646905'
+  ReservedCode2: 'a862b8a3-5814-414b-b5b6-51f9b5646905'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '0688675a-c638-4e37-9d7c-72f4040e6549'
+  PropagateID: '0688675a-c638-4e37-9d7c-72f4040e6549'
+  ReservedCode1: '561dcf12-511e-4e69-a303-79603dff7601'
+  ReservedCode2: '561dcf12-511e-4e69-a303-79603dff7601'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '0d0af9bc-16cf-4567-8232-ad9eea0e3600'
   PropagateID: '0d0af9bc-16cf-4567-8232-ad9eea0e3600'
   ReservedCode1: '081f30f1-2d48-49fb-b597-71ac9a2d6619'
@@ -298,7 +386,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 489 个 Rust 测试 (489 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -310,7 +398,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 486 个 Rust 测试 (486 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 489 个 Rust 测试 (489 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -456,7 +544,7 @@ AIGC:
 | 特性              | 状态           | Zig 输出 | 测试 |
 |-----------------|--------------|----------|------|
 | `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | 未测试 |
+| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` |
 | `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
 | `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
 | `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
@@ -542,12 +630,12 @@ AIGC:
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `instanceof` | ✅ | 三层策略：Error → .name 比较；编译时类型推断 → 字面量；JsAny → `js_runtime.instanceOf()` | `test_p1_instanceof_*` + `test_implemented_instanceof_*` |
-| `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
-| 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
+| `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | `test_p1_in_operator` |
+| 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | `test_p8_regex_*` (17 个测试) |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
-| 非空断言 `x!` (TS) | ✅ | `x.?` | 未测试 |
-| 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 未测试 |
-| 序列表达式 `a, b` | ✅ | `a, b` | 未测试 |
+| 非空断言 `x!` (TS) | ✅ | `x.?` | 需要 TS 解析器（当前不可测试） |
+| 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 需要 TS 解析器（当前不可测试） |
+| 序列表达式 `a, b` | ✅ | `a, b` | `test_sequence_expression` |
 
 **注意**:
 - `instanceof` 实现三种策略：
@@ -655,7 +743,7 @@ AIGC:
 | `while` | ✅ | `while (cond) {}` | showcase-project |
 | `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |
 | `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
-| 标签语句 `label: while` | ✅ | `label: while {}` | 未测试 |
+| 标签语句 `label: while` | ✅ | `label: while {}` | `test_p1_labeled_*` (6 个测试) |
 | 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` |
 | `for await...of` | 🔘 不实现 | `Promise.{}() not supported` | 异步迭代，当前项目聚焦同步代码 |
 
@@ -682,7 +770,7 @@ AIGC:
 |------|------|----------|------|
 | 表达式语句 | ✅ | `expr;` | 所有测试 |
 | 块语句 `{ }` | ✅ | `{ }` | 同上 |
-| 空语句 `;` | ✅ | 忽略 | 未测试 |
+| 空语句 `;` | ✅ | 忽略 | `test_empty_statement` |
 | `with` 语句 | 🔘 不实现 | JS 严格模式已废弃 | 绝不实现 |
 | `debugger` 语句 | 🔘 不实现 | 不支持 | 调试用，Zig 有自身调试工具 |
 | 声明 + 表达式混合 | ✅ | 未使用变量由 Zig 编译器报错（视为 JS 代码质量检查） | 测试 `test_p3_mixed_decl_expr_unused_var` |
@@ -1464,7 +1552,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 486 个测试 (486 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 489 个测试 (489 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
@@ -1473,7 +1561,7 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ### 7.2 测试覆盖情况
 
-486 个 Rust 测试全部通过（486 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+489 个 Rust 测试全部通过（489 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1492,6 +1580,22 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

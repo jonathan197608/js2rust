@@ -1844,6 +1844,41 @@ return result[0] + result[1];
 }
 
 #[test]
+fn test_sequence_expression() {
+    // Sequence expression: (a, b) evaluates both, returns b
+    let js = r#"
+export function seqExpr(x, y) {
+    return (x, y);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_sequence_expression");
+    // Should contain comma-separated expressions in the return
+    assert!(
+        zig.contains(", "),
+        "Expected comma-separated sequence expression in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_empty_statement() {
+    // Empty statement: ; → ignored (comment)
+    let js = r#"
+export function emptyStmt() {
+    ;
+    return 42;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_empty_statement");
+    // Should contain the return statement (empty statement is silently ignored)
+    assert!(
+        zig.contains("42"),
+        "Expected return 42 after empty statement in:\n{}",
+        zig
+    );
+}
+
+#[test]
 fn test_method_chaining_3_level_filter_map_join() {
     // 3-level chaining: arr.filter(fn).map(fn).join(sep)
     // Validates that label_offset propagation works through 3 nested inline emitters

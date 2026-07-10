@@ -3,6 +3,61 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'e86a5b36-a4dc-46b7-bb6d-9923bc58dd0a'
+  PropagateID: 'e86a5b36-a4dc-46b7-bb6d-9923bc58dd0a'
+  ReservedCode1: 'b23379af-9282-4904-b2c4-c4438c3a7796'
+  ReservedCode2: 'b23379af-9282-4904-b2c4-c4438c3a7796'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '4d1b2e0a-4253-4b8b-8791-848e3f9377dc'
+  PropagateID: '4d1b2e0a-4253-4b8b-8791-848e3f9377dc'
+  ReservedCode1: '84856dd6-1edc-42be-9c45-cb82b82e83d0'
+  ReservedCode2: '84856dd6-1edc-42be-9c45-cb82b82e83d0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'eb3d6e89-d9af-49ce-aae7-7f28f847700a'
+  PropagateID: 'eb3d6e89-d9af-49ce-aae7-7f28f847700a'
+  ReservedCode1: 'cab5213b-7de4-417e-aea6-d4b826c68ea4'
+  ReservedCode2: 'cab5213b-7de4-417e-aea6-d4b826c68ea4'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '47e1d62c-1b7b-41ee-9788-bb29f73aa3b2'
+  PropagateID: '47e1d62c-1b7b-41ee-9788-bb29f73aa3b2'
+  ReservedCode1: '9d27b5a7-7468-4390-a90c-031c0410541c'
+  ReservedCode2: '9d27b5a7-7468-4390-a90c-031c0410541c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'afadfe65-9e4e-41d2-908c-7ebce12fcc12'
+  PropagateID: 'afadfe65-9e4e-41d2-908c-7ebce12fcc12'
+  ReservedCode1: 'ee57e987-32f6-4e4b-95d2-f9c32c058871'
+  ReservedCode2: 'ee57e987-32f6-4e4b-95d2-f9c32c058871'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '6ba0b6dc-b6ad-4912-9e02-4ecba6df241f'
   PropagateID: '6ba0b6dc-b6ad-4912-9e02-4ecba6df241f'
   ReservedCode1: 'cc8c6942-a2c9-488d-8939-38fefce71ec9'
@@ -448,13 +503,13 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 367 + 119 = 486 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 370 + 119 = 489 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~202 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-10）
 
-- Rust 单元测试：**486 passed, 0 failed**（367 在 `tests/` 子模块 + 119 内联在 `zigir/` 等源文件中）
+- Rust 单元测试：**489 passed, 0 failed**（370 在 `tests/` 子模块 + 119 内联在 `zigir/` 等源文件中）
 - Zig runtime 测试：**~202 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 35、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
 - Clippy：**0 warnings**
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
@@ -502,7 +557,7 @@ js2zig-core/src/tests/
 | `sourcemap.rs` | 4 | Source map 测试 |
 | 其他 | 9 | ops/builtins/testgen 等 |
 
-**总计：486 个测试**（367 + 119）
+**总计：489 个测试**（370 + 119）
 
 ### 2.2 测试分类
 
@@ -799,7 +854,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（486 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（489 passed）
 cargo clippy -p js2zig-core -- -D warnings                           # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -831,7 +886,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 486 passed, 0 failed | 486 passed |
+| `cargo test -p js2zig-core --lib` | 489 passed, 0 failed | 489 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 203（不低于基线） | 203 |
@@ -884,6 +939,16 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 
