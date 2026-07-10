@@ -264,7 +264,8 @@ impl JsStrField {
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn js_allocator_dupe(src: *const u8, len: usize) -> *mut u8 {
-    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    let layout = std::alloc::Layout::from_size_align(len, 1)
+        .expect("Layout::from_size_align(len, 1) is infallible: align=1 is power-of-two and divides any size");
     let ptr = unsafe { std::alloc::alloc(layout) };
     if ptr.is_null() {
         return std::ptr::null_mut();
@@ -284,7 +285,8 @@ pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
     if size == 0 {
         return std::ptr::null_mut();
     }
-    let layout = std::alloc::Layout::from_size_align(size, 1).unwrap();
+    let layout = std::alloc::Layout::from_size_align(size, 1)
+        .expect("Layout::from_size_align(size, 1) is infallible: align=1 is power-of-two and divides any size");
     let ptr = unsafe { std::alloc::alloc(layout) };
     if ptr.is_null() {
         std::ptr::null_mut()

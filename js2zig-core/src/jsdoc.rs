@@ -453,8 +453,7 @@ mod tests {
  */
 "#;
         let parsed = parse_jsdoc(jsdoc);
-        assert!(parsed.typedef.is_some());
-        let user = parsed.typedef.unwrap();
+        let user = parsed.typedef.expect("test: expected @typedef to be parsed");
         assert_eq!(user.name, "User");
         assert_eq!(user.fields.len(), 4);
         assert_eq!(user.fields[0].name, "name");

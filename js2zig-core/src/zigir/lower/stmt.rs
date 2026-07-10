@@ -71,7 +71,7 @@ impl Lowerer {
                         })
                         .collect();
                     if stmts.len() == 1 {
-                        stmts.into_iter().next().unwrap()
+                        stmts.into_iter().next().expect("stmts.len()==1 guarantees one element")
                     } else {
                         // Transparent block: emits flat without {} braces so that
                         // `const a = 1, b = 2;` doesn't create a new Zig scope.
