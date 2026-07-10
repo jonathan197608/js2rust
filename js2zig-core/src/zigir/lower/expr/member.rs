@@ -258,7 +258,7 @@ impl Lowerer {
 
     /// Look up the ZigType of an identifier by name.
     /// Checks special globals, then var_types (exact, qualified, suffix-based).
-    fn infer_ident_type(&self, name: &str) -> Option<ZigType> {
+    pub(crate) fn infer_ident_type(&self, name: &str) -> Option<ZigType> {
         // Special globals
         match name {
             "Infinity" | "NaN" => return Some(ZigType::F64),

@@ -488,25 +488,11 @@ impl Lowerer {
             Expression::StringLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             Expression::Identifier(id) => {
-                // Try exact match first (simple name like "count")
-                if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
-                    return Some(ty.clone());
+                // Steps 1-3: delegate to infer_ident_type (exact, qualified, suffix)
+                if let Some(ty) = self.infer_ident_type(id.name.as_str()) {
+                    return Some(ty);
                 }
-                // Try qualified name with current function prefix
-                if let Some(ctx) = self.fn_ctx.as_ref() {
-                    let qualified = format!("{}::{}", ctx.name, id.name);
-                    if let Some(ty) = self.type_info.var_types.get(&qualified) {
-                        return Some(ty.clone());
-                    }
-                }
-                // Suffix-based fallback (covers nested scopes)
-                let suffix = format!("::{}", id.name);
-                for (k, v) in &self.type_info.var_types {
-                    if k.ends_with(&suffix) {
-                        return Some(v.clone());
-                    }
-                }
-                // Fallback: check captured variable list (handles anytype-derived vars)
+                // Step 4: captured variable fallback (handles anytype-derived vars)
                 for (name, ty, _is_mut) in captured {
                     if name == id.name.as_str() {
                         return Some(ty.clone());
