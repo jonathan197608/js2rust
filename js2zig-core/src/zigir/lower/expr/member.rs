@@ -567,7 +567,7 @@ impl Lowerer {
                 None
             }
             SimpleAssignmentTarget::StaticMemberExpression(mem) => {
-                if let oxc_ast::ast::Expression::Identifier(id) = &mem.object {
+                if let Expression::Identifier(id) = &mem.object {
                     let obj_name = id.name.as_str();
                     let field_name = mem.property.name.as_str();
                     if let Some(static_fields) = self.class_static_fields.get(obj_name)
@@ -617,7 +617,7 @@ impl Lowerer {
             AssignmentTarget::StaticMemberExpression(mem) => {
                 // Try to infer the field type for static class fields.
                 // For `ClassName.field`, look up `__ClassName_field` in var_types.
-                if let oxc_ast::ast::Expression::Identifier(id) = &mem.object {
+                if let Expression::Identifier(id) = &mem.object {
                     let obj_name = id.name.as_str();
                     let field_name = mem.property.name.as_str();
                     // Check if this is a known static field
@@ -643,10 +643,10 @@ impl Lowerer {
     /// and returns `FieldKind::StaticField` if so. Otherwise returns `FieldKind::StructField`.
     pub(super) fn infer_member_field_kind(
         &self,
-        object_expr: &oxc_ast::ast::Expression,
+        object_expr: &Expression,
         field_name: &str,
     ) -> FieldKind {
-        if let oxc_ast::ast::Expression::Identifier(id) = object_expr {
+        if let Expression::Identifier(id) = object_expr {
             let obj_name = id.name.as_str();
             if let Some(static_fields) = self.class_static_fields.get(obj_name)
                 && static_fields.contains(field_name)
@@ -657,7 +657,7 @@ impl Lowerer {
             }
         }
         // In static blocks, `this.field` is equivalent to `ClassName.field`
-        if matches!(object_expr, oxc_ast::ast::Expression::ThisExpression(_))
+        if matches!(object_expr, Expression::ThisExpression(_))
             && self.in_static_block
             && let Some(ref class_name) = self.current_class
             && let Some(static_fields) = self.class_static_fields.get(class_name)

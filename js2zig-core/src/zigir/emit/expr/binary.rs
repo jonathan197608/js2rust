@@ -79,8 +79,16 @@ impl Emitter {
         use crate::zigir::ops::BinOp;
 
         match op {
-            // Simple method calls: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+            // Method calls: _a.op(&_b, alloc) catch ...
+            // Division/remainder may throw DivisionByZero; all others just panic on OOM.
+            BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::Div
+            | BinOp::Mod => {
                 let (method, label) = match op {
                     BinOp::Add => ("add", "add"),
                     BinOp::Sub => ("sub", "sub"),
@@ -88,20 +96,6 @@ impl Emitter {
                     BinOp::BitAnd => ("bitwiseAnd", "and"),
                     BinOp::BitOr => ("bitwiseOr", "or"),
                     BinOp::BitXor => ("bitwiseXor", "xor"),
-                    _ => unreachable!(),
-                };
-                self.write("(");
-                self.emit_expr(left);
-                self.write(&format!(".{}(&", method));
-                self.emit_expr(right);
-                self.write(&format!(
-                    ", js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
-                    label
-                ));
-            }
-            // Division / remainder: may throw DivisionByZero
-            BinOp::Div | BinOp::Mod => {
-                let (method, label) = match op {
                     BinOp::Div => ("div", "div"),
                     BinOp::Mod => ("rem", "rem"),
                     _ => unreachable!(),
@@ -110,10 +104,15 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(&format!(".{}(&", method));
                 self.emit_expr(right);
-                self.write(&format!(
-                    ", js_allocator.allocator()) catch |err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
-                    label
-                ));
+                self.write(", js_allocator.allocator()) catch ");
+                if matches!(op, BinOp::Div | BinOp::Mod) {
+                    self.write(&format!(
+                        "|err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
+                        label
+                    ));
+                } else {
+                    self.write(&format!("@panic(\"BigInt {} OOM\"))", label));
+                }
             }
             BinOp::Pow => {
                 self.write("(");
@@ -122,19 +121,20 @@ impl Emitter {
                 self.emit_expr(right);
                 self.write(".toU64() catch @panic(\"BigInt toU64 failed\"), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
             }
-            BinOp::Shl => {
+            BinOp::Shl | BinOp::Shr => {
+                let (method, label) = match op {
+                    BinOp::Shl => ("shiftLeft", "shl"),
+                    BinOp::Shr => ("shiftRight", "shr"),
+                    _ => unreachable!(),
+                };
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".shiftLeft(@as(usize, @intCast(");
+                self.write(&format!(".{}(@as(usize, @intCast(", method));
                 self.emit_expr(right);
-                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt shl OOM\"))");
-            }
-            BinOp::Shr => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".shiftRight(@as(usize, @intCast(");
-                self.emit_expr(right);
-                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt shr OOM\"))");
+                self.write(&format!(
+                    ".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                    label
+                ));
             }
             // Equality
             BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
