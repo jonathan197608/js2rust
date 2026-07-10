@@ -8,8 +8,7 @@ pub mod template_new;
 
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
-    EmitterHelpers, bin_op_to_zig, escape_zig_string, format_param_with_rest, logical_op_to_zig,
-    update_op_to_zig,
+    EmitterHelpers, escape_zig_string, format_param_with_rest, logical_op_to_zig, update_op_to_zig,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -44,7 +43,7 @@ impl Emitter {
                 // so `BigInt.init(...) catch @panic(...) + x` would parse incorrectly.
                 self.write(&format!(
                     "(js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\"))",
-                    s
+                    escape_zig_string(s)
                 ));
             }
 
@@ -111,19 +110,13 @@ impl Emitter {
                 }
                 // ── BigInt ** non-BigInt (e.g. 2n ** 2) ──
                 // BigInt .pow() expects u64 exponent, not &JsBigInt.
+                // Pure BigInt ** BigInt is handled by emit_bigint_binary above.
                 else if left_is_bigint && *op == BinOp::Pow {
                     self.write("(");
                     self.emit_expr(left);
-                    self.write(".pow(");
-                    if right_is_bigint {
-                        self.emit_expr(right);
-                        self.write(".toU64() catch @panic(\"BigInt toU64 failed\")");
-                    } else {
-                        self.write("@as(u64, @intCast(");
-                        self.emit_expr(right);
-                        self.write("))");
-                    }
-                    self.write(", js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                    self.write(".pow(@as(u64, @intCast(");
+                    self.emit_expr(right);
+                    self.write(")), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
                 }
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
@@ -193,32 +186,23 @@ impl Emitter {
                 {
                     self.emit_jsany_comparison(*op, left, right, left_is_jsany, right_is_jsany);
                 }
-                // ── Division ──
-                else if *op == BinOp::Div {
+                // ── Division / Remainder ──
+                else if *op == BinOp::Div || *op == BinOp::Mod {
                     if left_is_float || right_is_float {
                         self.write("(");
                         self.emit_expr(left);
-                        self.write(" / ");
+                        self.write(&format!(" {} ", if *op == BinOp::Div { "/" } else { "%" }));
                         self.emit_expr(right);
                         self.write(")");
                     } else {
-                        self.write("@divTrunc(");
-                        self.emit_expr(left);
-                        self.write(", ");
-                        self.emit_expr(right);
-                        self.write(")");
-                    }
-                }
-                // ── Remainder ──
-                else if *op == BinOp::Mod {
-                    if left_is_float || right_is_float {
-                        self.write("(");
-                        self.emit_expr(left);
-                        self.write(" % ");
-                        self.emit_expr(right);
-                        self.write(")");
-                    } else {
-                        self.write("@rem(");
+                        self.write(&format!(
+                            "{}(",
+                            if *op == BinOp::Div {
+                                "@divTrunc"
+                            } else {
+                                "@rem"
+                            }
+                        ));
                         self.emit_expr(left);
                         self.write(", ");
                         self.emit_expr(right);
@@ -243,9 +227,7 @@ impl Emitter {
                 }
                 // ── Default: direct operator ──
                 else {
-                    self.emit_expr(left);
-                    self.write(&format!(" {} ", bin_op_to_zig(*op)));
-                    self.emit_expr(right);
+                    self.emit_default_binop(*op, left, right);
                 }
             }
 
@@ -663,7 +645,7 @@ impl Emitter {
                 use crate::zigir::kinds::FieldKind;
                 match field_kind {
                     FieldKind::StaticField { class_name } => {
-                        self.write(&format!("__{}_{}", class_name, field));
+                        self.emit_static_field(class_name, field);
                     }
                     _ => {
                         self.emit_expr(object);
@@ -683,16 +665,10 @@ impl Emitter {
                 use crate::zigir::kinds::IndexKind;
                 match index_kind {
                     IndexKind::ArrayListItem => {
-                        self.emit_expr(object);
-                        self.write(".items[@as(usize, @intCast(");
-                        self.emit_expr(index);
-                        self.write("))]");
+                        self.emit_arraylist_item(object, index);
                     }
                     IndexKind::SliceIndex => {
-                        self.emit_expr(object);
-                        self.write("[");
-                        self.emit_expr(index);
-                        self.write("]");
+                        self.emit_slice_index(object, index);
                     }
                 }
             }

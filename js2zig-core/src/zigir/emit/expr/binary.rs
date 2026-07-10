@@ -36,7 +36,39 @@ impl Emitter {
         }
     }
 
-    /// Emit a BigInt binary operation.
+    /// Emit a default binary operator: `left OP right` (no parens).
+    /// Shared by bigint/string/jsany fallback and the main Binary dispatch in mod.rs.
+    pub(super) fn emit_default_binop(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+    ) {
+        self.emit_expr(left);
+        self.write(&format!(
+            " {} ",
+            crate::zigir::emit::helpers::bin_op_to_zig(op)
+        ));
+        self.emit_expr(right);
+    }
+
+    /// Emit an ordering comparison: `(order_expr == .lt)` / `!= .gt` etc.
+    /// `order_expr_fn` emits the expression that yields `std.math.Order`.
+    pub(super) fn emit_order_cmp<F>(&mut self, op: crate::zigir::ops::BinOp, order_expr_fn: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.write("(");
+        order_expr_fn(self);
+        match op {
+            crate::zigir::ops::BinOp::Lt => self.write(" == .lt)"),
+            crate::zigir::ops::BinOp::Le => self.write(" != .gt)"),
+            crate::zigir::ops::BinOp::Gt => self.write(" == .gt)"),
+            crate::zigir::ops::BinOp::Ge => self.write(" != .lt)"),
+            _ => unreachable!(),
+        }
+    }
+
     /// BigInt arithmetic uses method calls like `_a.add(&_b, alloc)`.
     pub(super) fn emit_bigint_binary(
         &mut self,
@@ -47,26 +79,12 @@ impl Emitter {
         use crate::zigir::ops::BinOp;
 
         match op {
-            // Arithmetic with simple catch: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
-            BinOp::Add | BinOp::Sub | BinOp::Mul => {
+            // Simple method calls: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
                 let (method, label) = match op {
                     BinOp::Add => ("add", "add"),
                     BinOp::Sub => ("sub", "sub"),
                     BinOp::Mul => ("mul", "mul"),
-                    _ => unreachable!(),
-                };
-                self.write("(");
-                self.emit_expr(left);
-                self.write(&format!(".{}(&", method));
-                self.emit_expr(right);
-                self.write(&format!(
-                    ", js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
-                    label
-                ));
-            }
-            // Bitwise with simple catch: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
-                let (method, label) = match op {
                     BinOp::BitAnd => ("bitwiseAnd", "and"),
                     BinOp::BitOr => ("bitwiseOr", "or"),
                     BinOp::BitXor => ("bitwiseXor", "xor"),
@@ -81,19 +99,21 @@ impl Emitter {
                     label
                 ));
             }
-            BinOp::Div => {
+            // Division / remainder: may throw DivisionByZero
+            BinOp::Div | BinOp::Mod => {
+                let (method, label) = match op {
+                    BinOp::Div => ("div", "div"),
+                    BinOp::Mod => ("rem", "rem"),
+                    _ => unreachable!(),
+                };
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".div(&");
+                self.write(&format!(".{}(&", method));
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt div OOM\") })");
-            }
-            BinOp::Mod => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".rem(&");
-                self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch |err| switch (err) { error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt rem OOM\") })");
+                self.write(&format!(
+                    ", js_allocator.allocator()) catch |err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
+                    label
+                ));
             }
             BinOp::Pow => {
                 self.write("(");
@@ -117,60 +137,33 @@ impl Emitter {
                 self.write(".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt shr OOM\"))");
             }
             // Equality
-            BinOp::Eq | BinOp::StrictEq => {
-                self.emit_expr(left);
-                self.write(".eq(&");
-                self.emit_expr(right);
-                self.write(")");
-            }
-            BinOp::Ne | BinOp::StrictNe => {
-                self.write("!");
+            BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
+                let negate = matches!(op, BinOp::Ne | BinOp::StrictNe);
+                if negate {
+                    self.write("!");
+                }
                 self.emit_expr(left);
                 self.write(".eq(&");
                 self.emit_expr(right);
                 self.write(")");
             }
             // Ordering
-            BinOp::Lt => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".order(&");
-                self.emit_expr(right);
-                self.write(") == .lt)");
-            }
-            BinOp::Le => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".order(&");
-                self.emit_expr(right);
-                self.write(") != .gt)");
-            }
-            BinOp::Gt => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".order(&");
-                self.emit_expr(right);
-                self.write(") == .gt)");
-            }
-            BinOp::Ge => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".order(&");
-                self.emit_expr(right);
-                self.write(") != .lt)");
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let left_clone = left.clone();
+                let right_clone = right.clone();
+                self.emit_order_cmp(op, |emitter| {
+                    emitter.emit_expr(&left_clone);
+                    emitter.write(".order(&");
+                    emitter.emit_expr(&right_clone);
+                    emitter.write(")");
+                });
             }
             // >>> is not supported for BigInt (JS throws TypeError)
             BinOp::UrShr => {
                 self.write("@compileError(\"BigInt does not support unsigned right shift\")");
             }
             _ => {
-                // Fallback: try direct operator
-                self.emit_expr(left);
-                self.write(&format!(
-                    " {} ",
-                    crate::zigir::emit::helpers::bin_op_to_zig(op)
-                ));
-                self.emit_expr(right);
+                self.emit_default_binop(op, left, right);
             }
         }
     }
@@ -182,7 +175,6 @@ impl Emitter {
         left: &crate::zigir::types::IrExpr,
         right: &crate::zigir::types::IrExpr,
     ) {
-        use crate::zigir::emit::helpers::bin_op_to_zig;
         use crate::zigir::ops::BinOp;
         match op {
             BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
@@ -199,39 +191,19 @@ impl Emitter {
                     self.write(")");
                 }
             }
-            BinOp::Lt => {
-                self.write("(std.mem.order(u8, ");
-                self.emit_expr(left);
-                self.write(", ");
-                self.emit_expr(right);
-                self.write(") == .lt)");
-            }
-            BinOp::Le => {
-                self.write("(std.mem.order(u8, ");
-                self.emit_expr(left);
-                self.write(", ");
-                self.emit_expr(right);
-                self.write(") != .gt)");
-            }
-            BinOp::Gt => {
-                self.write("(std.mem.order(u8, ");
-                self.emit_expr(left);
-                self.write(", ");
-                self.emit_expr(right);
-                self.write(") == .gt)");
-            }
-            BinOp::Ge => {
-                self.write("(std.mem.order(u8, ");
-                self.emit_expr(left);
-                self.write(", ");
-                self.emit_expr(right);
-                self.write(") != .lt)");
+            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let left_clone = left.clone();
+                let right_clone = right.clone();
+                self.emit_order_cmp(op, |emitter| {
+                    emitter.write("std.mem.order(u8, ");
+                    emitter.emit_expr(&left_clone);
+                    emitter.write(", ");
+                    emitter.emit_expr(&right_clone);
+                    emitter.write(")");
+                });
             }
             _ => {
-                // Other string operators (not expected)
-                self.emit_expr(left);
-                self.write(&format!(" {} ", bin_op_to_zig(op)));
-                self.emit_expr(right);
+                self.emit_default_binop(op, left, right);
             }
         }
     }
@@ -316,10 +288,7 @@ impl Emitter {
                 }
             }
             _ => {
-                // Fallback
-                self.emit_expr(left);
-                self.write(&format!(" {} ", bin_op_to_zig(op)));
-                self.emit_expr(right);
+                self.emit_default_binop(op, left, right);
             }
         }
     }
@@ -372,29 +341,22 @@ impl Emitter {
                 self.write(")");
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                // Use .order() which returns std.math.Order (.lt, .eq, .gt)
-                let cmp_expr =
-                    |s: &mut Self, is_bigint: bool, expr: &crate::zigir::types::IrExpr| {
-                        if is_bigint {
-                            s.emit_expr(expr);
-                        } else {
-                            emit_as_bigint(s, expr);
-                        }
-                    };
-                // lhs.order(&rhs) compare to expected Order value
-                self.write("(");
-                cmp_expr(self, left_is_bigint, left);
-                self.write(".order(&");
-                cmp_expr(self, right_is_bigint, right);
-                self.write(") ");
-                match op {
-                    BinOp::Lt => self.write("== .lt"),
-                    BinOp::Le => self.write("!= .gt"),
-                    BinOp::Gt => self.write("== .gt"),
-                    BinOp::Ge => self.write("!= .lt"),
-                    _ => unreachable!(),
-                }
-                self.write(")");
+                let left_clone = left.clone();
+                let right_clone = right.clone();
+                self.emit_order_cmp(op, |emitter| {
+                    let cmp_expr =
+                        |s: &mut Self, is_bigint: bool, expr: &crate::zigir::types::IrExpr| {
+                            if is_bigint {
+                                s.emit_expr(expr);
+                            } else {
+                                emit_as_bigint(s, expr);
+                            }
+                        };
+                    cmp_expr(emitter, left_is_bigint, &left_clone);
+                    emitter.write(".order(&");
+                    cmp_expr(emitter, right_is_bigint, &right_clone);
+                    emitter.write(")");
+                });
             }
             _ => unreachable!(),
         }

@@ -8,11 +8,7 @@ use crate::zigir::kinds::{CallKind, ComputedKeyKind, FieldKind, IndexKind};
 impl Emitter {
     pub(super) fn emit_call_expr(&mut self, call: &crate::zigir::types::IrCallExpr) {
         match &call.call_kind {
-            CallKind::Direct => {
-                self.emit_expr(&call.callee);
-                self.emit_args(&call.args);
-            }
-            CallKind::Method { object_type: _ } => {
+            CallKind::Direct | CallKind::Method { .. } => {
                 self.emit_expr(&call.callee);
                 self.emit_args(&call.args);
             }
@@ -37,11 +33,8 @@ impl Emitter {
         kind: &FieldKind,
     ) {
         match kind {
-            FieldKind::StructField => {
-                self.emit_expr(object);
-                self.write(&format!(".{}", field));
-            }
-            FieldKind::Namespace => {
+            // Direct field access: obj.field (same for StructField, Namespace, Private)
+            FieldKind::StructField | FieldKind::Namespace | FieldKind::Private => {
                 self.emit_expr(object);
                 self.write(&format!(".{}", field));
             }
@@ -131,38 +124,23 @@ impl Emitter {
                     self.write(&format!(".{}", prop));
                 }
             }
-            FieldKind::Private => {
-                self.emit_expr(object);
-                self.write(&format!(".{}", field));
-            }
             FieldKind::PointerDeref => {
                 self.emit_expr(object);
                 self.write(".*");
             }
             FieldKind::RegExpProp { prop } => {
-                // regex.source → regex.pattern, regex.flags → regex.flags, regex.global → regex.global
-                match prop.as_str() {
-                    "source" => {
-                        self.emit_expr(object);
-                        self.write(".pattern");
-                    }
-                    "flags" => {
-                        self.emit_expr(object);
-                        self.write(".flags");
-                    }
-                    "global" => {
-                        self.emit_expr(object);
-                        self.write(".global");
-                    }
-                    _ => {
-                        self.emit_expr(object);
-                        self.write(&format!(".{}", prop));
-                    }
+                // regex.source → regex.pattern; others map directly (regex.flags → .flags, etc.)
+                if prop == "source" {
+                    self.emit_expr(object);
+                    self.write(".pattern");
+                } else {
+                    self.emit_expr(object);
+                    self.write(&format!(".{}", prop));
                 }
             }
             FieldKind::StaticField { class_name } => {
                 // ClassName.field → __ClassName_field module-scope var
-                self.write(&format!("__{}_{}", class_name, field));
+                self.emit_static_field(class_name, field);
             }
         }
     }
@@ -175,16 +153,10 @@ impl Emitter {
     ) {
         match kind {
             IndexKind::ArrayListItem => {
-                self.emit_expr(object);
-                self.write(".items[@as(usize, @intCast(");
-                self.emit_expr(index);
-                self.write("))]");
+                self.emit_arraylist_item(object, index);
             }
             IndexKind::SliceIndex => {
-                self.emit_expr(object);
-                self.write("[");
-                self.emit_expr(index);
-                self.write("]");
+                self.emit_slice_index(object, index);
             }
         }
     }
@@ -217,10 +189,7 @@ impl Emitter {
                 self.write(", js_allocator.allocator())");
             }
             ComputedKeyKind::ArrayListItem => {
-                self.emit_expr(object);
-                self.write(".items[@as(usize, @intCast(");
-                self.emit_expr(key);
-                self.write("))]");
+                self.emit_arraylist_item(object, key);
             }
             ComputedKeyKind::StringChar => {
                 // str[idx] in JS returns a UTF-16 code unit value; use charCodeAt for correct semantics
@@ -234,5 +203,37 @@ impl Emitter {
                 self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));
             }
         }
+    }
+
+    // ── Shared index/field helpers ────────────────────────
+    // Used by emit_index_access, emit_computed_field, and emit_assign_target_inner.
+
+    /// Emit `object.items[@as(usize, @intCast(index))]` — ArrayList element access.
+    pub(super) fn emit_arraylist_item(
+        &mut self,
+        object: &crate::zigir::types::IrExpr,
+        index: &crate::zigir::types::IrExpr,
+    ) {
+        self.emit_expr(object);
+        self.write(".items[@as(usize, @intCast(");
+        self.emit_expr(index);
+        self.write("))]");
+    }
+
+    /// Emit `object[index]` — Slice/array index access.
+    pub(super) fn emit_slice_index(
+        &mut self,
+        object: &crate::zigir::types::IrExpr,
+        index: &crate::zigir::types::IrExpr,
+    ) {
+        self.emit_expr(object);
+        self.write("[");
+        self.emit_expr(index);
+        self.write("]");
+    }
+
+    /// Emit `__ClassName_field` — static field access on a class.
+    pub(super) fn emit_static_field(&mut self, class_name: &str, field: &str) {
+        self.write(&format!("__{}_{}", class_name, field));
     }
 }

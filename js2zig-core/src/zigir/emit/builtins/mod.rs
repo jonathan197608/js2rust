@@ -177,12 +177,9 @@ impl Emitter {
     }
 
     /// Render an expression to a string by temporarily swapping the output buffer.
+    /// Delegates to `expr_to_string` in expr/mod.rs (the canonical implementation).
     pub(super) fn render_expr_to_string(&mut self, expr: &crate::zigir::types::IrExpr) -> String {
-        let saved = std::mem::take(self.output_mut());
-        self.emit_expr(expr);
-        let rendered = std::mem::take(self.output_mut());
-        *self.output_mut() = saved;
-        rendered
+        self.expr_to_string(expr)
     }
 
     /// Emit `if (<expr>) break :<blk> <value>` or `if (!(<expr>)) break :<blk> <value>`.

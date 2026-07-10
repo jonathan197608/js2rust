@@ -7,6 +7,26 @@ use crate::zigir::ident::IrIdent;
 use crate::zigir::types::{IrBlock, IrForInKind, IrForOfKind, IrStmt, IrSwitchCase};
 
 impl Emitter {
+    /// Emit label prefix if present: `lbl: ` (used by while/do-while/for/for-in/for-of).
+    fn emit_label_prefix(&mut self, label: &Option<String>) {
+        if let Some(lbl) = label {
+            self.write(&format!("{}: ", lbl));
+        }
+    }
+
+    /// Check if a block always exits (return/throw/break/continue).
+    fn block_always_exits(block: &IrBlock) -> bool {
+        block.stmts.last().is_some_and(|s| {
+            matches!(
+                s,
+                IrStmt::Return { .. }
+                    | IrStmt::Throw { .. }
+                    | IrStmt::Break { .. }
+                    | IrStmt::Continue { .. }
+            )
+        })
+    }
+
     pub(super) fn emit_if_stmt(
         &mut self,
         cond: &crate::zigir::types::IrExpr,
@@ -59,9 +79,7 @@ impl Emitter {
         label: &Option<String>,
     ) {
         self.write_indent();
-        if let Some(lbl) = label {
-            self.write(&format!("{}: ", lbl));
-        }
+        self.emit_label_prefix(label);
         self.write("while (");
         self.emit_expr_as_bool(cond);
         self.write(") {\n");
@@ -78,9 +96,7 @@ impl Emitter {
         label: &Option<String>,
     ) {
         self.write_indent();
-        if let Some(lbl) = label {
-            self.write(&format!("{}: ", lbl));
-        }
+        self.emit_label_prefix(label);
         // Zig doesn't have do-while; use `while (true)` with break at end
         self.write("while (true) {\n");
         self.indent_push();
@@ -103,9 +119,7 @@ impl Emitter {
     ) {
         // Wrap the entire for loop in a block scope: { init; while (cond) : ({ update; }) { body } }
         self.write_indent();
-        if let Some(lbl) = label {
-            self.write(&format!("{}: ", lbl));
-        }
+        self.emit_label_prefix(label);
         self.write("{\n");
         self.indent_push();
 
@@ -181,9 +195,7 @@ impl Emitter {
             IrForInKind::HashMapIter => {
                 // `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
                 self.write_indent();
-                if let Some(lbl) = label {
-                    self.write(&format!("{}: ", lbl));
-                }
+                self.emit_label_prefix(label);
                 self.write("var ");
                 let it_name = "__it";
                 self.write(it_name);
@@ -255,9 +267,7 @@ impl Emitter {
         match kind {
             IrForOfKind::Array => {
                 self.write_indent();
-                if let Some(lbl) = label {
-                    self.write(&format!("{}: ", lbl));
-                }
+                self.emit_label_prefix(label);
                 self.write("for (");
                 self.emit_expr(iterable);
                 if iterable_is_arraylist {
@@ -273,9 +283,7 @@ impl Emitter {
             }
             IrForOfKind::MapSetIter { is_map } => {
                 self.write_indent();
-                if let Some(lbl) = label {
-                    self.write(&format!("{}: ", lbl));
-                }
+                self.emit_label_prefix(label);
                 let it_name = "__it";
                 self.write("var ");
                 self.write(it_name);
@@ -363,19 +371,7 @@ impl Emitter {
 
         // ── B1: No throw, no catch, no nested try → inline body + finally ──
         // Also applies when: no throw AND body always exits (catch is unreachable)
-        if !has_throw
-            && (!needs_catch
-                || try_block.stmts.last().is_some_and(|s| {
-                    matches!(
-                        s,
-                        IrStmt::Return { .. }
-                            | IrStmt::Throw { .. }
-                            | IrStmt::Break { .. }
-                            | IrStmt::Continue { .. }
-                    )
-                }))
-            && !has_nested_try
-        {
+        if !has_throw && (!needs_catch || Self::block_always_exits(try_block)) && !has_nested_try {
             self.emit_block_stmts_unlabeled(try_block);
             if let Some(finally_block) = finally {
                 self.emit_block_stmts_unlabeled(finally_block);
@@ -431,15 +427,7 @@ impl Emitter {
         // Normal completion of try body (no throw).
         // Skip if the try body ends with a return/break/continue/throw —
         // execution never reaches this point.
-        let body_always_exits = try_block.stmts.last().is_some_and(|s| {
-            matches!(
-                s,
-                IrStmt::Return { .. }
-                    | IrStmt::Throw { .. }
-                    | IrStmt::Break { .. }
-                    | IrStmt::Continue { .. }
-            )
-        });
+        let body_always_exits = Self::block_always_exits(try_block);
         if !body_always_exits {
             self.write_indent();
             self.write(&format!("break :{} {{}};\n", body_blk_label));
