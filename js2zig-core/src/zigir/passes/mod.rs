@@ -4,6 +4,7 @@
 // Each pass implements the `IrPass` trait and can be composed into a
 // `PassPipeline` that runs them in sequence on an `IrModule`.
 
+mod collect_idents;
 mod constant_fold;
 mod dead_code;
 mod validate;

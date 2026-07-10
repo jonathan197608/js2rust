@@ -3,9 +3,8 @@
 
 use oxc_ast::ast::*;
 
-use crate::types::ZigType;
-
 use super::Lowerer;
+use crate::zigir::lower::helpers;
 
 impl Lowerer {
     /// Lower an array expression.
@@ -126,16 +125,13 @@ impl Lowerer {
         let format_specs: Vec<String> = tl
             .expressions
             .iter()
-            .map(|expr| match self.infer_expr_type(expr) {
-                Some(ZigType::Str) => "{s}".to_string(),
-                Some(ZigType::I64) => "{d}".to_string(),
-                Some(ZigType::F64) => "{d:.15}".to_string(),
-                Some(ZigType::Bool) => "{}".to_string(),
-                _ => {
-                    if self.expr_is_string(expr) {
-                        "{s}".to_string()
-                    } else {
-                        "{}".to_string()
+            .map(|expr| {
+                if self.expr_is_string(expr) {
+                    "{s}".to_string()
+                } else {
+                    match self.infer_expr_type(expr) {
+                        Some(ty) => helpers::format_specifier_for_type(&ty).to_string(),
+                        None => "{}".to_string(),
                     }
                 }
             })

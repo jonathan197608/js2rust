@@ -136,58 +136,37 @@ impl TypeInferrer {
             // NewExpression: new Map(), new Set(), new Date()
             Expression::NewExpression(ne) => {
                 if let Expression::Identifier(id) = &ne.callee {
-                    match id.name.as_str() {
-                        "Map" => InferResult::Definite(ZigType::NamedStruct("Map".to_string())),
-                        "Set" => InferResult::Definite(ZigType::NamedStruct("Set".to_string())),
-                        "Date" => InferResult::Definite(ZigType::NamedStruct("Date".to_string())),
-                        "DataView" => {
-                            InferResult::Definite(ZigType::NamedStruct("DataView".to_string()))
-                        }
-                        "ArrayBuffer" => {
-                            InferResult::Definite(ZigType::NamedStruct("ArrayBuffer".to_string()))
-                        }
-                        "Uint8Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Uint8Array".to_string()))
-                        }
-                        "Uint8ClampedArray" => InferResult::Definite(ZigType::NamedStruct(
-                            "Uint8ClampedArray".to_string(),
-                        )),
-                        "Uint16Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Uint16Array".to_string()))
-                        }
-                        "Uint32Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Uint32Array".to_string()))
-                        }
-                        "Int8Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Int8Array".to_string()))
-                        }
-                        "Int16Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Int16Array".to_string()))
-                        }
-                        "Int32Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Int32Array".to_string()))
-                        }
-                        "Float32Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Float32Array".to_string()))
-                        }
-                        "Float64Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("Float64Array".to_string()))
-                        }
-                        "BigInt64Array" => {
-                            InferResult::Definite(ZigType::NamedStruct("BigInt64Array".to_string()))
-                        }
-                        "BigUint64Array" => InferResult::Definite(ZigType::NamedStruct(
-                            "BigUint64Array".to_string(),
-                        )),
-                        "RegExp" => {
-                            InferResult::Definite(ZigType::NamedStruct("RegExp".to_string()))
-                        }
-                        "Boolean" => InferResult::Definite(ZigType::Bool),
-                        "String" => InferResult::Definite(ZigType::Str),
-                        name if self.class_names.contains(name) => {
-                            InferResult::Definite(ZigType::NamedStruct(name.to_string()))
-                        }
-                        _ => InferResult::Indeterminate,
+                    let name = id.name.as_str();
+                    // TypedArray / builtin NamedStruct constructors
+                    if matches!(
+                        name,
+                        "Map"
+                            | "Set"
+                            | "Date"
+                            | "DataView"
+                            | "ArrayBuffer"
+                            | "Uint8Array"
+                            | "Uint8ClampedArray"
+                            | "Uint16Array"
+                            | "Uint32Array"
+                            | "Int8Array"
+                            | "Int16Array"
+                            | "Int32Array"
+                            | "Float32Array"
+                            | "Float64Array"
+                            | "BigInt64Array"
+                            | "BigUint64Array"
+                            | "RegExp"
+                    ) {
+                        InferResult::Definite(ZigType::NamedStruct(name.to_string()))
+                    } else if name == "Boolean" {
+                        InferResult::Definite(ZigType::Bool)
+                    } else if name == "String" {
+                        InferResult::Definite(ZigType::Str)
+                    } else if self.class_names.contains(name) {
+                        InferResult::Definite(ZigType::NamedStruct(name.to_string()))
+                    } else {
+                        InferResult::Indeterminate
                     }
                 } else {
                     InferResult::Indeterminate

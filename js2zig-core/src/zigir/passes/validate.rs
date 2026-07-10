@@ -12,6 +12,8 @@ use crate::zigir::passes::{IrPass, PassResult};
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
 use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrFnDecl, IrModule, IrStmt};
 
+use super::collect_idents;
+
 /// Validation pass: checks structural integrity of the IR.
 ///
 /// Produces warnings for suspicious patterns and errors for violations
@@ -128,7 +130,11 @@ impl ValidatePass {
     fn check_closure_integrity(&mut self, module: &IrModule) {
         for cs in &module.closure_structs {
             // Check that each captured variable is actually referenced in the body
-            let referenced = collect_ident_names(&cs.body);
+            let referenced = {
+                let mut names = std::collections::HashSet::new();
+                collect_idents::collect_block_idents(&cs.body, &mut names);
+                names
+            };
             for capture in &cs.captured {
                 if !referenced.contains(&capture.name.zig_name) {
                     self.warn(format!(
@@ -289,7 +295,11 @@ impl ValidatePass {
     fn check_closure_refs_in_expr(&mut self, expr: &IrExpr) {
         match expr {
             IrExpr::Closure(closure) => {
-                let referenced = collect_ident_names(&closure.body);
+                let referenced = {
+                    let mut names = std::collections::HashSet::new();
+                    collect_idents::collect_block_idents(&closure.body, &mut names);
+                    names
+                };
                 for capture in &closure.captured {
                     if !referenced.contains(&capture.name.zig_name) {
                         self.warn(format!(
@@ -499,310 +509,6 @@ impl Default for ValidatePass {
 // ═══════════════════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════════════════
-
-/// Collect all identifier names referenced in a block.
-fn collect_ident_names(block: &IrBlock) -> std::collections::HashSet<String> {
-    let mut names = std::collections::HashSet::new();
-    collect_idents_from_stmts(&block.stmts, &mut names);
-    names
-}
-
-fn collect_idents_from_block(block: &IrBlock, names: &mut std::collections::HashSet<String>) {
-    collect_idents_from_stmts(&block.stmts, names);
-}
-
-fn collect_idents_from_stmts(stmts: &[IrStmt], names: &mut std::collections::HashSet<String>) {
-    for stmt in stmts {
-        collect_idents_from_stmt(stmt, names);
-    }
-}
-
-fn collect_idents_from_stmt(stmt: &IrStmt, names: &mut std::collections::HashSet<String>) {
-    match stmt {
-        IrStmt::VarDecl(v) => {
-            if let Some(e) = &v.init {
-                collect_idents_from_expr(e, names);
-            }
-        }
-        IrStmt::Assign { target, value, .. } => {
-            collect_idents_from_target(target, names);
-            collect_idents_from_expr(value, names);
-        }
-        IrStmt::If { cond, then, else_ } => {
-            collect_idents_from_expr(cond, names);
-            collect_idents_from_stmts(&then.stmts, names);
-            if let Some(e) = else_ {
-                collect_idents_from_stmts(&e.stmts, names);
-            }
-        }
-        IrStmt::While { cond, body, .. } => {
-            collect_idents_from_expr(cond, names);
-            collect_idents_from_stmts(&body.stmts, names);
-        }
-        IrStmt::DoWhile { body, cond, .. } => {
-            collect_idents_from_stmts(&body.stmts, names);
-            collect_idents_from_expr(cond, names);
-        }
-        IrStmt::For {
-            init,
-            cond,
-            update,
-            body,
-            ..
-        } => {
-            if let Some(i) = init {
-                collect_idents_from_stmt(i, names);
-            }
-            if let Some(c) = cond {
-                collect_idents_from_expr(c, names);
-            }
-            if let Some(u) = update {
-                collect_idents_from_stmt(u, names);
-            }
-            collect_idents_from_stmts(&body.stmts, names);
-        }
-        IrStmt::ForIn { iterable, body, .. } => {
-            collect_idents_from_expr(iterable, names);
-            collect_idents_from_stmts(&body.stmts, names);
-        }
-        IrStmt::ForOf { iterable, body, .. } => {
-            collect_idents_from_expr(iterable, names);
-            collect_idents_from_stmts(&body.stmts, names);
-        }
-        IrStmt::Switch { expr, cases } => {
-            collect_idents_from_expr(expr, names);
-            for case in cases {
-                collect_idents_from_stmts(&case.body, names);
-            }
-        }
-        IrStmt::Try {
-            try_block,
-            catch_block,
-            finally,
-            ..
-        } => {
-            collect_idents_from_stmts(&try_block.stmts, names);
-            collect_idents_from_stmts(&catch_block.stmts, names);
-            if let Some(f) = finally {
-                collect_idents_from_stmts(&f.stmts, names);
-            }
-        }
-        IrStmt::Throw { value, .. } => {
-            collect_idents_from_expr(value, names);
-        }
-        IrStmt::Return { value } => {
-            if let Some(v) = value {
-                collect_idents_from_expr(v, names);
-            }
-        }
-        IrStmt::Expr(e) => {
-            collect_idents_from_expr(e, names);
-        }
-        IrStmt::Block(b) => {
-            collect_idents_from_stmts(&b.stmts, names);
-        }
-        IrStmt::Break { .. }
-        | IrStmt::Continue { .. }
-        | IrStmt::CompileError { .. }
-        | IrStmt::Comment(_) => {}
-        IrStmt::DestructureDecl(data) => {
-            collect_idents_from_expr(&data.init, names);
-            for binding in &data.bindings {
-                if let Some(d) = &binding.default {
-                    collect_idents_from_expr(d, names);
-                }
-            }
-        }
-        IrStmt::NestedFnDecl {
-            struct_def,
-            instance,
-        } => {
-            collect_idents_from_block(&struct_def.body, names);
-            if let Some(closure) = instance {
-                for cap in &closure.captured {
-                    names.insert(cap.name.js_name.clone());
-                }
-            }
-        }
-    }
-}
-
-fn collect_idents_from_expr(expr: &IrExpr, names: &mut std::collections::HashSet<String>) {
-    match expr {
-        IrExpr::Ident(id) => {
-            names.insert(id.zig_name.clone());
-        }
-        IrExpr::Binary { left, right, .. } => {
-            collect_idents_from_expr(left, names);
-            collect_idents_from_expr(right, names);
-        }
-        IrExpr::Unary { operand, .. } => {
-            collect_idents_from_expr(operand, names);
-        }
-        IrExpr::Logical { left, right, .. } => {
-            collect_idents_from_expr(left, names);
-            collect_idents_from_expr(right, names);
-        }
-        IrExpr::Call(call) => {
-            collect_idents_from_expr(&call.callee, names);
-            for arg in &call.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::BuiltinCall(bc) => {
-            for arg in &bc.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::HostCall(hc) => {
-            for arg in &hc.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::FieldAccess { object, .. } => {
-            collect_idents_from_expr(object, names);
-        }
-        IrExpr::IndexAccess { object, index, .. } => {
-            collect_idents_from_expr(object, names);
-            collect_idents_from_expr(index, names);
-        }
-        IrExpr::ComputedField { object, key, .. } => {
-            collect_idents_from_expr(object, names);
-            collect_idents_from_expr(key, names);
-        }
-        IrExpr::Conditional { cond, then, else_ } => {
-            collect_idents_from_expr(cond, names);
-            collect_idents_from_expr(then, names);
-            collect_idents_from_expr(else_, names);
-        }
-        IrExpr::TemplateLiteral { exprs, .. } => {
-            for e in exprs {
-                collect_idents_from_expr(e, names);
-            }
-        }
-        IrExpr::ArrayLiteral(arr) => {
-            for e in &arr.elements {
-                collect_idents_from_expr(e, names);
-            }
-        }
-        IrExpr::ObjectLiteral(obj) => {
-            use crate::zigir::types::IrObjectItem;
-            for item in &obj.items {
-                match item {
-                    IrObjectItem::Field(f) => {
-                        collect_idents_from_expr(&f.value, names);
-                    }
-                    IrObjectItem::Spread(e) => {
-                        collect_idents_from_expr(e, names);
-                    }
-                }
-            }
-        }
-        IrExpr::Assign { target, value, .. } => {
-            collect_idents_from_target(target, names);
-            collect_idents_from_expr(value, names);
-        }
-        IrExpr::Update { target, .. } => {
-            collect_idents_from_target(target, names);
-        }
-        IrExpr::Closure(c) => {
-            collect_idents_from_stmts(&c.body.stmts, names);
-        }
-        IrExpr::ArrowFn(af) => {
-            collect_idents_from_stmts(&af.body.stmts, names);
-        }
-        IrExpr::FnExpr(fe) => {
-            collect_idents_from_stmts(&fe.body.stmts, names);
-        }
-        IrExpr::Await(a) => {
-            collect_idents_from_expr(&a.callee, names);
-            for arg in &a.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::New(n) => {
-            for arg in &n.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::BlockExpr { body, result, .. } => {
-            collect_idents_from_stmts(body, names);
-            collect_idents_from_expr(result, names);
-        }
-        IrExpr::AllocPrint { args, .. } => {
-            for a in args {
-                collect_idents_from_expr(a, names);
-            }
-        }
-        IrExpr::Spread(e) | IrExpr::Typeof(e) | IrExpr::Void(e) | IrExpr::Paren(e) => {
-            collect_idents_from_expr(e, names);
-        }
-        IrExpr::Sequence(exprs) => {
-            for e in exprs {
-                collect_idents_from_expr(e, names);
-            }
-        }
-        IrExpr::ArrayCallbackInline(inline_data) => {
-            if let Some(obj_expr) = &inline_data.obj_expr {
-                collect_idents_from_expr(obj_expr, names);
-            }
-            for stmt in &inline_data.body {
-                collect_idents_from_stmt(stmt, names);
-            }
-        }
-        IrExpr::ArrayMethodInline(inline_data) => {
-            if let Some(obj_expr) = &inline_data.obj_expr {
-                collect_idents_from_expr(obj_expr, names);
-            }
-            for arg in &inline_data.args {
-                collect_idents_from_expr(arg, names);
-            }
-        }
-        IrExpr::OptionalChain { object, body, .. } => {
-            collect_idents_from_expr(object, names);
-            collect_idents_from_expr(body, names);
-        }
-        IrExpr::PowExpr { base, exp, .. } => {
-            collect_idents_from_expr(base, names);
-            collect_idents_from_expr(exp, names);
-        }
-        IrExpr::IntLiteral(_)
-        | IrExpr::FloatLiteral(_)
-        | IrExpr::StringLiteral(_)
-        | IrExpr::BoolLiteral(_)
-        | IrExpr::BigIntLiteral(_)
-        | IrExpr::Null
-        | IrExpr::Undefined
-        | IrExpr::This
-        | IrExpr::CompileError { .. } => {}
-    }
-}
-
-fn collect_idents_from_target(
-    target: &IrAssignTarget,
-    names: &mut std::collections::HashSet<String>,
-) {
-    match target {
-        IrAssignTarget::Ident(id) => {
-            names.insert(id.zig_name.clone());
-        }
-        IrAssignTarget::Member { object, .. } => {
-            collect_idents_from_expr(object, names);
-        }
-        IrAssignTarget::Index { object, index, .. } => {
-            collect_idents_from_expr(object, names);
-            collect_idents_from_expr(index, names);
-        }
-        IrAssignTarget::Destructure(bindings) => {
-            for b in bindings {
-                if let Some(d) = &b.default {
-                    collect_idents_from_expr(d, names);
-                }
-            }
-        }
-        IrAssignTarget::CompileError { .. } => {}
-    }
-}
 
 /// Check if a ZigType is safe for C ABI boundaries.
 ///

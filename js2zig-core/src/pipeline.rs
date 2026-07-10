@@ -580,11 +580,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // cabi_rename: maps cabi_name (possibly disambiguated) → bare_name
             let mut cabi_rename: HashMap<String, String> = HashMap::new();
             for (exp_name, mod_name) in &all_module_exports {
-                let cabi_name = if is_colliding(exp_name) {
-                    format!("{}_{}", exp_name, mod_name)
-                } else {
-                    exp_name.clone()
-                };
+                let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
                 cabi_rename
                     .entry(cabi_name)
                     .or_insert_with(|| exp_name.clone());
@@ -593,22 +589,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // --- Generate C ABI wrapper code for lib.zig ---
             let mut name_to_module: HashMap<String, String> = HashMap::new();
             for (exp_name, mod_name) in &all_module_exports {
-                let key = if is_colliding(exp_name) {
-                    format!("{}_{}", exp_name, mod_name)
-                } else {
-                    exp_name.clone()
-                };
+                let key = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
                 name_to_module
                     .entry(key)
                     .or_insert_with(|| mod_name.clone());
             }
             let mut name_to_cabi: HashMap<String, &crate::types::NativeCabiExport> = HashMap::new();
             for (mod_name, exp) in &all_cabi_exports {
-                let key = if is_colliding(&exp.name) {
-                    format!("{}_{}", exp.name, mod_name)
-                } else {
-                    exp.name.clone()
-                };
+                let key = disambiguate_name(&exp.name, mod_name, |n| is_colliding(n));
                 name_to_cabi.entry(key).or_insert(exp);
             }
             let cabi_wrapper_code = gen_cabi_wrappers(&name_to_module, &name_to_cabi, &cabi_rename);
@@ -618,11 +606,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let disambiguated_exports: Vec<(String, String, String)> = all_module_exports
                 .iter()
                 .map(|(exp_name, mod_name)| {
-                    let cabi_name = if is_colliding(exp_name) {
-                        format!("{}_{}", exp_name, mod_name)
-                    } else {
-                        exp_name.clone()
-                    };
+                    let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
                     (cabi_name, mod_name.clone(), exp_name.clone())
                 })
                 .collect();
@@ -813,6 +797,53 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 /// the function with idiomatic Zig string types.
 ///
 /// `cabi_rename` maps disambiguated CABI names → bare function names.
+/// Format conversion statements: empty → empty string, otherwise joined with newlines.
+fn format_conversions(convs: &[String]) -> String {
+    if convs.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", convs.join("\n"))
+    }
+}
+
+/// Emit `comptime { @export(...) }` line for a CABI wrapper.
+fn emit_comptime_export(out: &mut String, name: &str) {
+    out.push_str(&format!(
+        "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
+        name = name,
+    ));
+}
+
+/// Disambiguate a name by appending the module name if it collides.
+fn disambiguate_name(name: &str, module: &str, is_colliding: impl Fn(&str) -> bool) -> String {
+    if is_colliding(name) {
+        format!("{}_{}", name, module)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Emit an async Zig-friendly adapter function.
+fn emit_async_adapter(
+    out: &mut String,
+    name: &str,
+    bare: &str,
+    params: &str,
+    ret_type: &str,
+    module: &str,
+    args: &str,
+) {
+    out.push_str(&format!(
+        "pub fn {name}({params}) {ret_type} {{\n    return {module}.{bare}({args}) catch @panic(\"async error in {name}\");\n}}\n",
+        name = name,
+        bare = bare,
+        params = params,
+        ret_type = ret_type,
+        module = module,
+        args = args,
+    ));
+}
+
 /// When an export name collides across modules, the CABI wrapper gets the
 /// disambiguated name (`{fn}_{module}`) as its public symbol, but calls the
 /// original bare-named function inside the per-file module.
@@ -926,20 +957,17 @@ pub fn gen_cabi_wrappers(
 
             if returns_string {
                 // Zig-friendly adapter (for tests) — calls _impl directly
-                out.push_str(&format!(
-                    "pub fn {name}({params}) []const u8 {{\n    return {mod}.{bare}({args}) catch @panic(\"async error in {name}\");\n}}\n",
-                    name = name,
-                    bare = bare_name,
-                    params = zig_params.join(", "),
-                    mod = module,
-                    args = async_zig_args,
-                ));
+                emit_async_adapter(
+                    &mut out,
+                    name,
+                    bare_name,
+                    &zig_params.join(", "),
+                    "[]const u8",
+                    &module,
+                    &async_zig_args,
+                );
                 // C ABI wrapper (StrRet — zero-copy, panic via negative len)
-                let conversions = if cabi_to_zig_conversions.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
-                };
+                let conversions = format_conversions(&cabi_to_zig_conversions);
                 out.push_str(&format!(
                     "pub export fn {name}_cabi({cabi_params}) StrRet {{\n{conv}    return StrRet.from({mod}.{bare}({args}) catch |err| return StrRet.from_panic(err));\n}}\n",
                     name = name,
@@ -949,29 +977,22 @@ pub fn gen_cabi_wrappers(
                     mod = module,
                     args = async_cabi_args,
                 ));
-                out.push_str(&format!(
-                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
-                    name = name,
-                ));
+                emit_comptime_export(&mut out, name);
             } else if let crate::types::ZigType::NamedStruct(ref sn) = exp.ret_type {
                 // Async struct return: use out-pointer C ABI wrapper
                 let struct_name = format!("host.{}", sn);
-                let conversions = if cabi_to_zig_conversions.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
-                };
+                let conversions = format_conversions(&cabi_to_zig_conversions);
 
                 // Zig-friendly adapter (for tests)
-                out.push_str(&format!(
-                    "pub fn {name}({params}) {struct_name} {{\n    return {mod}.{bare}({args}) catch @panic(\"async error in {name}\");\n}}\n",
-                    name = name,
-                    bare = bare_name,
-                    params = zig_params.join(", "),
-                    struct_name = struct_name,
-                    mod = module,
-                    args = async_zig_args,
-                ));
+                emit_async_adapter(
+                    &mut out,
+                    name,
+                    bare_name,
+                    &zig_params.join(", "),
+                    &struct_name,
+                    &module,
+                    &async_zig_args,
+                );
 
                 // C ABI wrapper: add *<struct_name> out-pointer parameter
                 let mut cabi_params_with_out = cabi_params.clone();
@@ -991,29 +1012,22 @@ pub fn gen_cabi_wrappers(
                     conv = conversions,
                     cabi_call = cabi_call,
                 ));
-                out.push_str(&format!(
-                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
-                    name = name,
-                ));
+                emit_comptime_export(&mut out, name);
             } else {
                 // Async non-string, non-struct return (e.g., i64, bool)
                 let ret_zig = exp.ret_type.to_zig_type();
-                let conversions = if cabi_to_zig_conversions.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}\n", cabi_to_zig_conversions.join("\n"))
-                };
+                let conversions = format_conversions(&cabi_to_zig_conversions);
 
                 // Zig-friendly adapter (for tests)
-                out.push_str(&format!(
-                    "pub fn {name}({params}) {ret} {{\n    return {mod}.{bare}({args}) catch @panic(\"async error in {name}\");\n}}\n",
-                    name = name,
-                    bare = bare_name,
-                    params = zig_params.join(", "),
-                    ret = ret_zig,
-                    mod = module,
-                    args = async_zig_args,
-                ));
+                emit_async_adapter(
+                    &mut out,
+                    name,
+                    bare_name,
+                    &zig_params.join(", "),
+                    &ret_zig,
+                    &module,
+                    &async_zig_args,
+                );
 
                 // C ABI wrapper
                 let cabi_params_with_runtime = {
@@ -1037,10 +1051,7 @@ pub fn gen_cabi_wrappers(
                     conv = conversions,
                     cabi_call = cabi_call,
                 ));
-                out.push_str(&format!(
-                    "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
-                    name = name,
-                ));
+                emit_comptime_export(&mut out, name);
             }
 
             out.push('\n');
@@ -1068,11 +1079,7 @@ pub fn gen_cabi_wrappers(
             ));
 
             // ── C ABI wrapper (StrRet — zero-copy, error via sign-bit) ──
-            let conversions = if cabi_to_zig_conversions.is_empty() {
-                String::new()
-            } else {
-                format!("{}\n", cabi_to_zig_conversions.join("\n"))
-            };
+            let conversions = format_conversions(&cabi_to_zig_conversions);
             let cabi_call = if exp.can_throw {
                 format!(
                     "{mod}.{bare}({args}) catch |err| return StrRet.from_panic(err)",
@@ -1095,10 +1102,7 @@ pub fn gen_cabi_wrappers(
                 conv = conversions,
                 cabi_call = cabi_call,
             ));
-            out.push_str(&format!(
-                "comptime {{ @export(&{name}_cabi, .{{ .name = \"{name}\", .linkage = .strong }}); }}\n",
-                name = name,
-            ));
+            emit_comptime_export(&mut out, name);
         } else {
             let ret_zig = exp.ret_type.to_cabi_str();
             let exp_ret_is_js_value = exp.ret_type == crate::types::ZigType::Void;
@@ -1149,11 +1153,7 @@ pub fn gen_cabi_wrappers(
                 )
             };
 
-            let conversions = if cabi_to_zig_conversions.is_empty() {
-                String::new()
-            } else {
-                format!("{}\n", cabi_to_zig_conversions.join("\n"))
-            };
+            let conversions = format_conversions(&cabi_to_zig_conversions);
 
             if ret_zig == "void" {
                 if exp.can_throw {

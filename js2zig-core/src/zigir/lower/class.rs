@@ -67,8 +67,7 @@ impl Lowerer {
         // ── First pass: collect explicit fields from PropertyDefinition ──
         let mut field_names: Vec<String> = Vec::new();
         let mut fields: Vec<IrClassField> = Vec::new();
-        let mut static_inits: Vec<(String, crate::zigir::types::IrExpr, ZigType)> =
-            Vec::new();
+        let mut static_inits: Vec<(String, crate::zigir::types::IrExpr, ZigType)> = Vec::new();
         let mut static_blocks: Vec<IrBlock> = Vec::new();
         let mut has_constructor = false;
         let mut constructor_func: Option<&Function> = None;

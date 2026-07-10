@@ -256,3 +256,15 @@ pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement, mode: ThrowWalkMode
         _ => false,
     }
 }
+
+/// Determine the Zig format specifier for a given type.
+/// Used by string concatenation and template literal lowering.
+pub(crate) fn format_specifier_for_type(ty: &ZigType) -> &'static str {
+    match ty {
+        ZigType::Str => "{s}",
+        ZigType::I64 => "{d}",
+        ZigType::F64 => "{d:.15}",
+        ZigType::Bool => "{}",
+        _ => "{}",
+    }
+}

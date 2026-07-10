@@ -185,6 +185,22 @@ pub(crate) fn escape_zig_string(s: &str) -> String {
     result
 }
 
+/// Escape a string for use in a Zig **format** string literal.
+/// Same as `escape_zig_string` but also doubles `{` and `}` for Zig's
+/// `std.fmt` format-string escaping (`{` → `{{`, `}` → `}}`).
+pub(crate) fn escape_zig_format_string(s: &str) -> String {
+    let escaped = escape_zig_string(s);
+    let mut result = String::with_capacity(escaped.len() + 16);
+    for ch in escaped.chars() {
+        match ch {
+            '{' => result.push_str("{{"),
+            '}' => result.push_str("}}"),
+            _ => result.push(ch),
+        }
+    }
+    result
+}
+
 // ═══════════════════════════════════════════════════════
 //  Tests
 // ═══════════════════════════════════════════════════════
@@ -224,6 +240,18 @@ mod tests {
         assert_eq!(escape_zig_string("line1\nline2"), "line1\\nline2");
         assert_eq!(escape_zig_string("tab\there"), "tab\\there");
         assert_eq!(escape_zig_string("back\\slash"), "back\\\\slash");
+    }
+
+    #[test]
+    fn test_escape_zig_format_string() {
+        // Basic: no braces
+        assert_eq!(escape_zig_format_string("hello"), "hello");
+        // Braces are doubled
+        assert_eq!(escape_zig_format_string("{s}"), "{{s}}");
+        // Control chars + braces
+        assert_eq!(escape_zig_format_string("a\n{b}"), "a\\n{{b}}");
+        // Quote + brace
+        assert_eq!(escape_zig_format_string("\"{x}\""), "\\\"{{x}}\\\"");
     }
 
     #[test]

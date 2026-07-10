@@ -29,39 +29,18 @@ impl TypeInferrer {
                 }
             }
             Statement::FunctionDeclaration(fd) => {
-                let saved_current_fn = std::mem::take(&mut self.current_fn);
-                self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
-                if let Some(body) = &fd.body {
-                    for s in &body.statements {
-                        self.walk_stmt_for_analysis(s);
-                    }
-                }
-                self.current_fn = saved_current_fn;
+                self.walk_fn_body_for_analysis(fd);
             }
             Statement::ExportNamedDeclaration(export_decl) => {
                 if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
-                    let saved_current_fn = std::mem::take(&mut self.current_fn);
-                    self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
-                    if let Some(body) = &fd.body {
-                        for s in &body.statements {
-                            self.walk_stmt_for_analysis(s);
-                        }
-                    }
-                    self.current_fn = saved_current_fn;
+                    self.walk_fn_body_for_analysis(fd);
                 }
             }
             Statement::ExportDefaultDeclaration(export_decl) => {
                 if let ExportDefaultDeclarationKind::FunctionDeclaration(fd) =
                     &export_decl.declaration
                 {
-                    let saved_current_fn = std::mem::take(&mut self.current_fn);
-                    self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
-                    if let Some(body) = &fd.body {
-                        for s in &body.statements {
-                            self.walk_stmt_for_analysis(s);
-                        }
-                    }
-                    self.current_fn = saved_current_fn;
+                    self.walk_fn_body_for_analysis(fd);
                 }
             }
             Statement::ExpressionStatement(es) => {
@@ -156,6 +135,18 @@ impl TypeInferrer {
                 self.walk_expr_for_analysis(init);
             }
         }
+    }
+
+    /// Walk a function declaration body, saving and restoring `current_fn`.
+    fn walk_fn_body_for_analysis(&mut self, fd: &Function) {
+        let saved_current_fn = std::mem::take(&mut self.current_fn);
+        self.current_fn = fd.id.as_ref().map(|id| id.name.to_string());
+        if let Some(body) = &fd.body {
+            for s in &body.statements {
+                self.walk_stmt_for_analysis(s);
+            }
+        }
+        self.current_fn = saved_current_fn;
     }
 
     pub(crate) fn walk_expr_for_analysis(&mut self, expr: &Expression) {

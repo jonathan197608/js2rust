@@ -12,6 +12,7 @@ use crate::zigir::kinds::{FieldKind, IndexKind};
 use crate::zigir::ops::{AssignOp, BinOp, UnaOp, UpdateOp};
 
 use super::Lowerer;
+use crate::zigir::lower::helpers;
 
 impl Lowerer {
     /// Lower a binary expression.
@@ -681,19 +682,9 @@ impl Lowerer {
         for op in &operands {
             match op {
                 Expression::StringLiteral(sl) => {
-                    // Escape for Zig format string literal
-                    for ch in sl.value.chars() {
-                        match ch {
-                            '\\' => fmt.push_str("\\\\"),
-                            '"' => fmt.push_str("\\\""),
-                            '\n' => fmt.push_str("\\n"),
-                            '\r' => fmt.push_str("\\r"),
-                            '\t' => fmt.push_str("\\t"),
-                            '{' => fmt.push_str("{{"),
-                            '}' => fmt.push_str("}}"),
-                            c => fmt.push(c),
-                        }
-                    }
+                    fmt.push_str(&crate::zigir::emit::helpers::escape_zig_format_string(
+                        &sl.value,
+                    ));
                 }
                 _ => {
                     // Pick placeholder based on inferred type
@@ -701,11 +692,8 @@ impl Lowerer {
                         "{s}"
                     } else {
                         match self.infer_expr_type(op) {
-                            Some(ZigType::Str) => "{s}",
-                            Some(ZigType::I64) => "{d}",
-                            Some(ZigType::F64) => "{d:.15}",
-                            Some(ZigType::Bool) => "{}",
-                            _ => "{}",
+                            Some(ty) => helpers::format_specifier_for_type(&ty),
+                            None => "{}",
                         }
                     };
                     fmt.push_str(placeholder);

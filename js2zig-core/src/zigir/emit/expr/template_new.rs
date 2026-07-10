@@ -12,11 +12,11 @@ impl Emitter {
         exprs: &[crate::zigir::types::IrExpr],
         format_specs: &[String],
     ) {
-        use crate::zigir::emit::helpers::escape_zig_string;
+        use crate::zigir::emit::helpers::escape_zig_format_string;
         // Zig template literal → std.fmt.allocPrint
         if exprs.is_empty() {
             // No expressions: just a string literal
-            self.write(&format!("\"{}\"", escape_zig_string(&parts[0])));
+            self.write(&format!("\"{}\"", escape_zig_format_string(&parts[0])));
         } else {
             // Build the format string: parts[0] + {spec0} + parts[1] + {spec1} + ...
             let mut fmt = String::new();
@@ -24,7 +24,7 @@ impl Emitter {
                 if i > 0 && i - 1 < format_specs.len() {
                     fmt.push_str(&format_specs[i - 1]);
                 }
-                fmt.push_str(&escape_zig_string(part));
+                fmt.push_str(&escape_zig_format_string(part));
             }
             // Emit args as a separate pass to get their string representations
             self.emit_alloc_print(&fmt, exprs);

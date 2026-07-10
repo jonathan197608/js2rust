@@ -55,18 +55,7 @@ impl HostFunction {
     /// Derive a PascalCase struct name from the function name.
     /// e.g. "fetch_user" → "FetchUserResult"
     pub fn struct_zig_name(&self) -> String {
-        let pascal: String = self
-            .name
-            .split('_')
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                    None => String::new(),
-                }
-            })
-            .collect();
-        format!("{}Result", pascal)
+        format!("{}Result", crate::toml_config::pascal_case(&self.name))
     }
 
     /// Derive the C ABI extern struct name.
