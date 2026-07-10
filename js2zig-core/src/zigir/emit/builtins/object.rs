@@ -7,6 +7,22 @@ use crate::zigir::types::IrExpr;
 use crate::zigir::emit::Emitter;
 
 impl Emitter {
+    /// Emit `js_object.method(js_allocator.allocator(), args) catch @panic("OOM: Object.method")`.
+    /// Shared by keys, values, entries, getOwnPropertyNames.
+    fn emit_object_alloc_method(&mut self, method: &str, args: &[IrExpr]) {
+        self.write(&format!("js_object.{}(js_allocator.allocator(), ", method));
+        self.emit_inline_args(args);
+        self.write(&format!(") catch @panic(\"OOM: Object.{}\")", method));
+    }
+
+    /// Emit `js_object.methodStruct(@TypeOf(args))`.
+    /// Shared by keysStruct, getOwnPropertyNamesStruct.
+    fn emit_object_struct_method(&mut self, method: &str, args: &[IrExpr]) {
+        self.write(&format!("js_object.{}Struct(@TypeOf(", method));
+        self.emit_inline_args(args);
+        self.write("))");
+    }
+
     pub(super) fn emit_object_builtin(&mut self, method: &str, args: &[IrExpr]) {
         match method {
             // ── No-op methods (Zig is immutable by default) ──
@@ -72,27 +88,13 @@ impl Emitter {
                     self.write(")");
                 }
             }
-            // ── Object.keys/values/entries — need allocator prefix ──
-            "keys" => {
-                self.write("js_object.keys(js_allocator.allocator(), ");
-                self.emit_inline_args(args);
-                self.write(") catch @panic(\"OOM: Object.keys\")");
+            // ── Object.keys/values/entries/getOwnPropertyNames — need allocator prefix ──
+            "keys" | "values" | "entries" | "getOwnPropertyNames" => {
+                self.emit_object_alloc_method(method, args);
             }
-            "keysStruct" => {
-                // Object.keys for struct objects — comptime reflection, no allocator needed
-                self.write("js_object.keysStruct(@TypeOf(");
-                self.emit_inline_args(args);
-                self.write("))");
-            }
-            "values" => {
-                self.write("js_object.values(js_allocator.allocator(), ");
-                self.emit_inline_args(args);
-                self.write(") catch @panic(\"OOM: Object.values\")");
-            }
-            "entries" => {
-                self.write("js_object.entries(js_allocator.allocator(), ");
-                self.emit_inline_args(args);
-                self.write(") catch @panic(\"OOM: Object.entries\")");
+            // ── Object.keysStruct/getOwnPropertyNamesStruct — comptime reflection ──
+            "keysStruct" | "getOwnPropertyNamesStruct" => {
+                self.emit_object_struct_method(method, args);
             }
             "groupBy" => {
                 // Object.groupBy(items, callbackFn) — fully inline emission
@@ -168,18 +170,6 @@ impl Emitter {
                 self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
                 self.write(")");
-            }
-            // ── Object.getOwnPropertyNames — same as Object.keys for our model ──
-            "getOwnPropertyNames" => {
-                self.write("js_object.getOwnPropertyNames(js_allocator.allocator(), ");
-                self.emit_inline_args(args);
-                self.write(") catch @panic(\"OOM: Object.getOwnPropertyNames\")");
-            }
-            "getOwnPropertyNamesStruct" => {
-                // Object.getOwnPropertyNames for struct objects — comptime reflection
-                self.write("js_object.getOwnPropertyNamesStruct(@TypeOf(");
-                self.emit_inline_args(args);
-                self.write("))");
             }
             // ── Default: js_object.method(args) ──
             _ => {

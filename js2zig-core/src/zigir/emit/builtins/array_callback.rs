@@ -139,16 +139,19 @@ impl Emitter {
         }
     }
 
-    // ── some ───────────────────────────────────────────
+    // ── some / every (shared) ─────────────────────────────
     //
-    //  (blk_N: {
-    //      for (obj.items[, 0..]) |elem[, idx]| {
-    //          if (<pred>) break :blk_N true;
-    //      }
-    //      break :blk_N false;
-    //  })
+    //  Both emit a labeled block with a for-loop that short-circuits:
+    //    some:  if (pred)  break :blk true;  default: false
+    //    every: if (!(pred)) break :blk false; default: true
     //
-    pub(super) fn emit_some_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+    fn emit_short_circuit_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        negate: bool,
+        match_value: &str,
+        default_value: &str,
+    ) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
@@ -163,50 +166,34 @@ impl Emitter {
         self.write("{\n");
         self.indent_push();
         let blk_clone = blk.clone();
+        let match_val = match_value.to_string();
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} true;", blk_clone));
+            if negate {
+                emitter.write("if (!(");
+                emitter.emit_expr(expr);
+                emitter.write(&format!(")) break :{} {};", blk_clone, match_val));
+            } else {
+                emitter.write("if (");
+                emitter.emit_expr(expr);
+                emitter.write(&format!(") break :{} {};", blk_clone, match_val));
+            }
         });
         self.indent_pop();
         self.writeln("");
         self.write("}");
-        self.write(&format!(" break :{} false; }})", blk));
+        self.write(&format!(" break :{} {}; }})", blk, default_value));
+    }
+
+    // ── some ───────────────────────────────────────────
+
+    pub(super) fn emit_some_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.emit_short_circuit_inline(data, false, "true", "false");
     }
 
     // ── every ──────────────────────────────────────────
-    //
-    //  (blk_N: {
-    //      for (obj.items[, 0..]) |elem[, idx]| {
-    //          if (!(<pred>)) break :blk_N false;
-    //      }
-    //      break :blk_N true;
-    //  })
-    //
-    pub(super) fn emit_every_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
-        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let blk = self.begin_labeled_block(&binding);
-        if data.has_idx_param {
-            self.write(&format!(
-                "for ({}.items, 0..) |{}, {}| ",
-                receiver, data.elem_param, data.idx_param
-            ));
-        } else {
-            self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
-        }
-        self.write("{\n");
-        self.indent_push();
-        let blk_clone = blk.clone();
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (!(");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(")) break :{} false;", blk_clone));
-        });
-        self.indent_pop();
-        self.writeln("");
-        self.write("}");
-        self.write(&format!(" break :{} true; }})", blk));
+    pub(super) fn emit_every_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.emit_short_circuit_inline(data, true, "false", "true");
     }
 
     // ── filter ─────────────────────────────────────────
@@ -398,58 +385,67 @@ impl Emitter {
         self.write(&format!("}} break :{} -1; }})", blk));
     }
 
-    // ── map ────────────────────────────────────────────
+    // ── map / flatMap (shared) ────────────────────────────
+    //
+    //  Both emit the same pattern: create ArrayList → pre-allocate → for-loop
+    //  append → break with list.  Only the variable prefix and method name
+    //  differ (map → __map, flatMap → __fmap).
     //
     //  (blk_N: {
-    //      var __map: std.ArrayList(elem_type) = .empty;
-    //      __map.ensureTotalCapacity(allocator, obj.items.len) catch @panic("OOM");
+    //      var <var>: std.ArrayList(elem_type) = .empty;
+    //      <var>.ensureTotalCapacity(allocator, obj.items.len) catch @panic("OOM");
     //      for (obj.items) |elem| {
-    //          __map.append(allocator, <transform>) catch @panic("OOM: Array.map append");
+    //          <var>.append(allocator, <body_expr>) catch @panic("OOM");
     //      }
-    //      break :blk_N __map;
+    //      break :blk_N <var>;
     //  })
     //
-    //  The <transform> is the callback return expression.
-    //  For concise arrow bodies, body has a single Expr(Return { value }) or Expr(expr).
-    //
-    pub(super) fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+    fn emit_collect_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        var_prefix: &str,
+        method_name: &str,
+    ) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        // When elem_param is "_" (unused in body), we still need a real variable name
-        // for the for-loop capture — Zig's "_" is a discard, not an identifier.
         let loop_elem = if data.elem_param == "_" {
             "__melem".to_string()
         } else {
             data.elem_param.clone()
         };
         self.write(&format!(
-            "var __map: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            var_prefix, elem_type_str
         ));
         self.write(&format!(
-            "__map.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.map capacity\"); ",
-            receiver
+            "{}.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.{} capacity\"); ",
+            var_prefix, receiver, method_name
         ));
         self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
         self.write("{\n");
         self.indent_push();
-        // Handle index parameter if present
-        if data.has_idx_param && !data.idx_param.is_empty() && data.idx_param != "_" {
-            // Map doesn't provide index in the for-loop easily,
-            // but the lowerer handles it by capturing the loop variable.
-            // For now, the idx_param is available as a separate counter if needed.
-        }
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("__map.append(js_allocator.allocator(), ");
+        let var_clone = var_prefix.to_string();
+        let method_clone = method_name.to_string();
+        self.emit_callback_body(&data.body, move |emitter, expr| {
+            emitter.write(&format!("{}.append(js_allocator.allocator(), ", var_clone));
             emitter.emit_expr(expr);
-            emitter.write(") catch @panic(\"OOM: Array.map append\");");
+            emitter.write(&format!(
+                ") catch @panic(\"OOM: Array.{} append\");",
+                method_clone
+            ));
         });
         self.indent_pop();
         self.writeln("");
         self.write("}");
-        self.write(&format!(" break :{} __map; }})", blk));
+        self.write(&format!(" break :{} {}; }})", blk, var_prefix));
+    }
+
+    // ── map ────────────────────────────────────────────
+
+    pub(super) fn emit_map_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.emit_collect_inline(data, "__map", "map");
     }
 
     // ── reduce ─────────────────────────────────────────
@@ -519,13 +515,6 @@ impl Emitter {
     //
     //  arr.sort((a, b) => a - b)  →  in-place sort with custom comparator
     //
-    //  Emits:
-    //    (blk: { std.mem.sort(elem_type, arr.items, {}, struct {
-    //        fn lessThan(_: void, a: elem_type, b: elem_type) bool {
-    //            return <compareFn body> < 0;
-    //        }
-    //    }.lessThan); break :blk arr; })
-    //
     //  Note: JS compareFn(a, b) returns <0 if a < b, 0 if equal, >0 if a > b.
     //  Zig lessThan returns bool, so we convert: compareFn(a, b) < 0 → a < b.
     //
@@ -536,8 +525,6 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let elem_type_str = data.elem_type.to_zig_type();
-        // Sort uses two element params: elem_param = first element (a),
-        // idx_param = second element (b). Unlike other callbacks, there is no index.
         let param_a = &data.elem_param;
         let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
             &data.idx_param
@@ -553,23 +540,15 @@ impl Emitter {
         let blk = self.next_label();
         self.write(&format!("({}: ", blk));
 
-        // Emit the sort with inline lessThan struct
-        self.write(&format!(
-            "std.mem.sort({}, {}.items, {{}}, struct {{ fn lessThan(_: void, {}: {}, {}: {}) bool {{ ",
-            elem_type_str, receiver, param_a, elem_type_str, param_b, elem_type_str
-        ));
+        self.emit_sort_less_than(
+            &format!("{}.items", receiver),
+            &elem_type_str,
+            param_a,
+            param_b,
+            &data.body,
+        );
 
-        // Emit the compareFn body, wrapping return value with < 0
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("return (");
-            emitter.emit_expr(expr);
-            emitter.write(") < 0;");
-        });
-
-        self.write(&format!(
-            " }} }}.lessThan); break :{} {}; }})",
-            blk, receiver
-        ));
+        self.write(&format!(" break :{} {}; }})", blk, receiver));
 
         if binding.is_some() {
             self.write(" }");
@@ -579,15 +558,6 @@ impl Emitter {
     // ── toSorted (with compareFn) ───────────────────────────
     //
     //  arr.toSorted((a, b) => a - b)  →  sort returning a new array
-    //
-    //  Emits:
-    //    (blk: { var __sorted: std.ArrayList(elem_type) = .empty;
-    //      __sorted.appendSlice(allocator, arr.items) catch @panic("OOM");
-    //      std.mem.sort(elem_type, __sorted.items, {}, struct {
-    //          fn lessThan(_: void, a: elem_type, b: elem_type) bool {
-    //              return <compareFn body> < 0;
-    //          }
-    //      }.lessThan); break :blk __sorted; })
     //
     pub(super) fn emit_to_sorted_callback_inline(
         &mut self,
@@ -613,19 +583,39 @@ impl Emitter {
             receiver
         ));
 
-        // Sort with inline lessThan struct
+        self.emit_sort_less_than(
+            "__sorted.items",
+            &elem_type_str,
+            param_a,
+            param_b,
+            &data.body,
+        );
+
+        self.write(&format!(" break :{} __sorted; }})", blk));
+    }
+
+    /// Shared helper: emit `std.mem.sort(ElemType, target, {}, struct { fn lessThan ... }`
+    /// for both sort and toSorted callback inlining.
+    fn emit_sort_less_than(
+        &mut self,
+        target_items: &str,
+        elem_type_str: &str,
+        param_a: &str,
+        param_b: &str,
+        body: &[crate::zigir::types::IrStmt],
+    ) {
         self.write(&format!(
-            "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, {}: {}, {}: {}) bool {{ ",
-            elem_type_str, param_a, elem_type_str, param_b, elem_type_str
+            "std.mem.sort({}, {}, {{}}, struct {{ fn lessThan(_: void, {}: {}, {}: {}) bool {{ ",
+            elem_type_str, target_items, param_a, elem_type_str, param_b, elem_type_str
         ));
 
-        self.emit_callback_body(&data.body, |emitter, expr| {
+        self.emit_callback_body(body, |emitter, expr| {
             emitter.write("return (");
             emitter.emit_expr(expr);
             emitter.write(") < 0;");
         });
 
-        self.write(&format!(" }} }}.lessThan); break :{} __sorted; }})", blk));
+        self.write(" } }}.lessThan);");
     }
 
     // ── flatMap ───────────────────────────────────────
@@ -634,48 +624,12 @@ impl Emitter {
     //  Since our type system uses uniform element types (ArrayList(i64), etc.),
     //  the callback returns a scalar, so flatMap is semantically equivalent to map
     //  (flatten(1) on a flat array of scalars is a no-op).
-    //
-    //  (blk_N: {
-    //      var __fmap: std.ArrayList(elem_type) = .empty;
-    //      __fmap.ensureTotalCapacity(...)
-    //      for (obj.items) |elem| {
-    //          __fmap.append(allocator, <body_expr>) catch @panic("OOM");
-    //      }
-    //      break :blk_N __fmap;
-    //  })
-    //
+    //  Delegates to emit_collect_inline with __fmap prefix.
+
     pub(super) fn emit_flat_map_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
-
-        let blk = self.begin_labeled_block(&binding);
-        let elem_type_str = data.elem_type.to_zig_type();
-        let loop_elem = if data.elem_param == "_" {
-            "__melem".to_string()
-        } else {
-            data.elem_param.clone()
-        };
-        self.write(&format!(
-            "var __fmap: std.ArrayList({}) = .empty; ",
-            elem_type_str
-        ));
-        self.write(&format!(
-            "__fmap.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.flatMap capacity\"); ",
-            receiver
-        ));
-        self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
-        self.write("{\n");
-        self.indent_push();
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("__fmap.append(js_allocator.allocator(), ");
-            emitter.emit_expr(expr);
-            emitter.write(") catch @panic(\"OOM: Array.flatMap append\");");
-        });
-        self.indent_pop();
-        self.writeln("");
-        self.write("}");
-        self.write(&format!(" break :{} __fmap; }})", blk));
+        self.emit_collect_inline(data, "__fmap", "flatMap");
     }
 }
