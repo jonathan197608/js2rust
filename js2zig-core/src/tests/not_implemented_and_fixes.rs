@@ -292,15 +292,23 @@ const result = tag`hello ${1}`;
 }
 
 #[test]
-fn test_not_implemented_instanceof() {
-    // 🔘 instanceof 运算符
-    assert_not_implemented(
-        r#"
+fn test_implemented_instanceof_runtime() {
+    // ✅ instanceof 运算符 — fallback runtime dispatch for untyped params
+    let js = r#"
 function check(arr) {
 return arr instanceof Array;
 }
-"#,
-        "instanceof operator",
+"#;
+    let zig = transpile_and_assert(js, "test_implemented_instanceof_runtime");
+    assert!(
+        zig.contains("instanceOf"),
+        "Expected instanceOf call in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("\"Array\""),
+        "Expected 'Array' string literal in:\n{}",
+        zig
     );
 }
 
@@ -1012,19 +1020,29 @@ return re.global;
 // 验证即使添加 @returns 类型标注，不实现特性仍然报错
 
 #[test]
-fn test_not_implemented_instanceof_with_annotation() {
-    // 🔘 instanceof 带返回类型标注 — 不应静默通过
-    assert_not_implemented(
-        r#"
+fn test_implemented_instanceof_with_annotation() {
+    // ✅ instanceof with @returns annotation — no longer produces @compileError
+    // Without JSDoc param type, arr is inferred from usage or defaults to anytype.
+    // The key assertion is that instanceof is handled (no @compileError).
+    let js = r#"
 /**
- * @param {i64[]} arr
  * @returns {bool}
  */
 function check(arr) {
 return arr instanceof Array;
 }
-"#,
-        "instanceof with @returns annotation",
+"#;
+    let zig = transpile_and_check(js, "test_implemented_instanceof_with_annotation");
+    assert!(
+        !zig.contains("@compileError"),
+        "Should not contain @compileError:\n{}",
+        zig
+    );
+    // Should produce either a runtime instanceOf call or a compile-time literal
+    assert!(
+        zig.contains("instanceOf") || zig.contains("true") || zig.contains("false"),
+        "Expected instanceof resolution in:\n{}",
+        zig
     );
 }
 

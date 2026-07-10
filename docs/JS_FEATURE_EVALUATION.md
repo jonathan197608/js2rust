@@ -3,6 +3,39 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '21b64183-86a8-42c1-8fad-663ccb919419'
+  PropagateID: '21b64183-86a8-42c1-8fad-663ccb919419'
+  ReservedCode1: '28747f69-db28-407f-9bd2-09451e194da9'
+  ReservedCode2: '28747f69-db28-407f-9bd2-09451e194da9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c86c5571-2c21-4be3-800e-95afd6f23f90'
+  PropagateID: 'c86c5571-2c21-4be3-800e-95afd6f23f90'
+  ReservedCode1: 'a5b47d2a-b59e-4a5f-8535-e8b80c0f0f40'
+  ReservedCode2: 'a5b47d2a-b59e-4a5f-8535-e8b80c0f0f40'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '60d893fe-5d37-4d80-850e-9571f4a76187'
+  PropagateID: '60d893fe-5d37-4d80-850e-9571f4a76187'
+  ReservedCode1: '394312a0-8400-4996-8d5c-4f3b15ae4afc'
+  ReservedCode2: '394312a0-8400-4996-8d5c-4f3b15ae4afc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '8af893cb-15b9-4f29-b35b-606bfc157600'
   PropagateID: '8af893cb-15b9-4f29-b35b-606bfc157600'
   ReservedCode1: '85591a3c-ebf4-41f4-baa2-45f572444152'
@@ -199,7 +232,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 43 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 49 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -442,7 +475,7 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `instanceof` | ✅ | `emit_jsany_comparison()` — 跨类型比较路由 | `test_cross_type_*` + `test_p1_instanceof_*` |
+| `instanceof` | ✅ | 三层策略：Error → .name 比较；编译时类型推断 → 字面量；JsAny → `js_runtime.instanceOf()` | `test_p1_instanceof_*` + `test_implemented_instanceof_*` |
 | `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | 未测试 |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | 未测试 |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
@@ -451,7 +484,11 @@ AIGC:
 | 序列表达式 `a, b` | ✅ | `a, b` | 未测试 |
 
 **注意**:
-- `instanceof` 通过 `emit_jsany_comparison()` 实现，支持跨类型比较（如 JsAny 值与类型名比较），不支持完整原型链语义
+- `instanceof` 实现三种策略：
+  1. Error 类型 → `e.name == "TypeName"` （高效，匹配 9 种标准错误类型）
+  2. 编译时类型推断 → 已知类型直接 resolve 为 `true`/`false`（ArrayList→Array/Object、Map→Map/Object、自定义类通过 `class_extends_map` 遍历原型链）
+  3. 动态类型（JsAny/anytype）→ 运行时 `js_runtime.instanceOf(value, "TypeName")`，基于 JsAny tag + `__jsClass__`/`__jsExtends__` 元数据
+  - 原型链语义：自定义类通过 `class_extends_map` 在编译时遍历；JsAny 对象通过 `__jsClass__` 和 `__jsExtends__` 字段在运行时匹配
 
 ### 2.17 不支持的表达式 - 按价值分类
 
@@ -1394,6 +1431,12 @@ InferResult  →  Definite(ZigType) | Indeterminate
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` stack trace 格式差异 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

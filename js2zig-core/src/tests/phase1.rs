@@ -31,8 +31,7 @@ return "name" in obj;
 
 #[test]
 fn test_p1_instanceof_operator() {
-    // obj instanceof Foo → @compileError(...)
-    // Note: @compileError causes unreachable code, so ast-check won't pass.
+    // obj instanceof Array → js_runtime.instanceOf(obj, "Array") (runtime dispatch for untyped obj)
     let js = r#"
 function checkType(obj) {
 return obj instanceof Array;
@@ -40,13 +39,13 @@ return obj instanceof Array;
 "#;
     let zig = transpile_and_assert(js, "test_p1_instanceof_operator");
     assert!(
-        zig.contains("@compileError"),
-        "Expected @compileError in:\n{}",
+        zig.contains("instanceOf"),
+        "Expected instanceOf call in:\n{}",
         zig
     );
     assert!(
-        zig.contains("instanceof"),
-        "Expected 'instanceof' mention in:\n{}",
+        zig.contains("\"Array\""),
+        "Expected 'Array' string literal in:\n{}",
         zig
     );
 }

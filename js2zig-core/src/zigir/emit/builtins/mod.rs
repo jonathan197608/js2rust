@@ -58,9 +58,7 @@ impl Emitter {
             BuiltinModule::JsCollections => {
                 self.emit_collections_builtin(&bc.method, bc.obj_name.as_deref(), &bc.args)
             }
-            BuiltinModule::JsRuntime => {
-                self.emit_runtime_builtin(&bc.method, bc.obj_name.as_deref(), &bc.args)
-            }
+            BuiltinModule::JsRuntime => self.emit_runtime_builtin(&bc.method, obj, &bc.args),
             BuiltinModule::JsError => {
                 // JsError is not directly callable as a builtin method;
                 // it's constructed in catch dispatch (emit_try_stmt).

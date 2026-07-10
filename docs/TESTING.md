@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '130f9a67-ed9f-41c7-9f0e-4023d0c10dca'
+  PropagateID: '130f9a67-ed9f-41c7-9f0e-4023d0c10dca'
+  ReservedCode1: 'fe39f638-dd4d-4cd1-8f5e-e722bf8e9e4f'
+  ReservedCode2: 'fe39f638-dd4d-4cd1-8f5e-e722bf8e9e4f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '83131b12-7eb1-44cc-9c59-af7f24d590fd'
+  PropagateID: '83131b12-7eb1-44cc-9c59-af7f24d590fd'
+  ReservedCode1: '04767237-2399-499d-80e0-922bfc9717ce'
+  ReservedCode2: '04767237-2399-499d-80e0-922bfc9717ce'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'a2c105bd-5ab7-452f-a5fa-c4bb3b88d81c'
   PropagateID: 'a2c105bd-5ab7-452f-a5fa-c4bb3b88d81c'
   ReservedCode1: 'f1dc4e2a-85f2-4c1c-8f1a-8ce17d33a395'
@@ -339,13 +361,13 @@ AIGC:
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
 | **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 367 + 119 = 486 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
-| **Zig runtime 测试** | `runtime/js_string.zig` 等 | 43 | 运行时函数正确性（UTF-16 helpers、字符串方法） | `zig.exe` 在 PATH |
+| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~49 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-10）
 
 - Rust 单元测试：**486 passed, 0 failed**（367 在 `tests/` 子模块 + 119 内联在 `zigir/` 等源文件中）
-- Zig runtime 测试：**43 passed, 0 failed**（`runtime/js_string.zig` 19 个 UTF-16 相关测试 + 24 个原有测试）
+- Zig runtime 测试：**~49 passed, 0 failed**（`runtime/js_string.zig` 19 个 UTF-16 相关测试 + `runtime/jsany.zig` 6 个 instanceOf 测试 + 24 个原有测试）
 - Clippy：**0 warnings**
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
 - 1 个 mismatch 为已知限制，详见下方表格
@@ -775,6 +797,10 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

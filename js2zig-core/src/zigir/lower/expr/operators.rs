@@ -32,38 +32,7 @@ impl Lowerer {
         // ── Unsupported operators → compile error (or special handling) ──
         match be.operator {
             BinaryOperator::Instanceof => {
-                // Special case: `e instanceof SomeError` → compare e.name
-                // with the error constructor name at runtime.
-                if let Expression::Identifier(ident) = &be.right {
-                    let name = ident.name.as_str();
-                    if matches!(
-                        name,
-                        "Error"
-                            | "URIError"
-                            | "TypeError"
-                            | "RangeError"
-                            | "SyntaxError"
-                            | "ReferenceError"
-                            | "EvalError"
-                    ) {
-                        let left_expr = self.lower_expr(&be.left);
-                        return IrExpr::Binary {
-                            op: BinOp::Eq,
-                            left: Box::new(IrExpr::FieldAccess {
-                                object: Box::new(left_expr),
-                                field: "name".to_string(),
-                                field_kind: crate::zigir::kinds::FieldKind::StructField,
-                            }),
-                            right: Box::new(IrExpr::StringLiteral(name.to_string())),
-                            left_type: Some(ZigType::Str),
-                            right_type: Some(ZigType::Str),
-                        };
-                    }
-                }
-                return IrExpr::CompileError {
-                    span: self.span_to_source_span(be.span),
-                    msg: "instanceof operator is not supported in Zig".to_string(),
-                };
+                return self.lower_instanceof(be);
             }
             BinaryOperator::In => {
                 // `key in obj` → obj.contains(key)
@@ -801,6 +770,153 @@ impl Lowerer {
             }
         } else {
             out.push(&be.right);
+        }
+    }
+
+    /// Lower `x instanceof Type` with prototype chain semantics.
+    ///
+    /// Three strategies:
+    /// 1. **Error types** → `e.name == "TypeName"` (existing efficient approach)
+    /// 2. **Compile-time type-aware** → known left type resolves at transpile time
+    /// 3. **Runtime** → emit `js_runtime.instanceOf(value, "TypeName")` for dynamic types
+    fn lower_instanceof(&mut self, be: &BinaryExpression) -> crate::zigir::types::IrExpr {
+        use crate::zigir::builtins::BuiltinModule;
+        use crate::zigir::kinds::FieldKind;
+        use crate::zigir::types::{IrBuiltinCall, IrExpr};
+
+        // Get the type name from the right operand
+        let type_name = if let Expression::Identifier(ident) = &be.right {
+            ident.name.to_string()
+        } else {
+            return IrExpr::CompileError {
+                span: self.span_to_source_span(be.span),
+                msg: "instanceof: right operand must be an identifier (constructor name)"
+                    .to_string(),
+            };
+        };
+
+        // ── Strategy 1: Error types → .name comparison ──
+        let error_types = [
+            "Error",
+            "URIError",
+            "TypeError",
+            "RangeError",
+            "SyntaxError",
+            "ReferenceError",
+            "EvalError",
+            "AggregateError",
+            "SuppressedError",
+        ];
+        if error_types.contains(&type_name.as_str()) {
+            let left_expr = self.lower_expr(&be.left);
+            return IrExpr::Binary {
+                op: BinOp::Eq,
+                left: Box::new(IrExpr::FieldAccess {
+                    object: Box::new(left_expr),
+                    field: "name".to_string(),
+                    field_kind: FieldKind::StructField,
+                }),
+                right: Box::new(IrExpr::StringLiteral(type_name)),
+                left_type: Some(ZigType::Str),
+                right_type: Some(ZigType::Str),
+            };
+        }
+
+        // ── Strategy 2: Compile-time type-aware instanceof ──
+        if let Some(left_ty) = self.infer_expr_type(&be.left)
+            && let Some(result) = self.resolve_instanceof_compile_time(&left_ty, &type_name)
+        {
+            return result;
+        }
+
+        // ── Strategy 3: Runtime instanceof check ──
+        let left_expr = self.lower_expr(&be.left);
+        IrExpr::BuiltinCall(IrBuiltinCall {
+            module: BuiltinModule::JsRuntime,
+            method: "instanceOf".to_string(),
+            obj_name: None,
+            obj_expr: Some(Box::new(left_expr)),
+            args: vec![IrExpr::StringLiteral(type_name)],
+            return_type: ZigType::Bool,
+            regex_info: None,
+            ta_type_suffix: None,
+        })
+    }
+
+    /// Resolve `instanceof` at compile time when the left operand's type is known.
+    ///
+    /// Returns `Some(IrExpr)` if resolved, `None` if we need runtime dispatch.
+    fn resolve_instanceof_compile_time(
+        &self,
+        left_ty: &ZigType,
+        type_name: &str,
+    ) -> Option<crate::zigir::types::IrExpr> {
+        use crate::zigir::types::IrExpr;
+
+        match left_ty {
+            // ArrayList matches Array
+            ZigType::ArrayList(_) => {
+                if type_name == "Array" || type_name == "Object" {
+                    return Some(IrExpr::BoolLiteral(true));
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            // Map matches Map and Object
+            ZigType::NamedStruct(name) if name == "Map" => {
+                if type_name == "Map" || type_name == "Object" {
+                    return Some(IrExpr::BoolLiteral(true));
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            // Set matches Set and Object
+            ZigType::NamedStruct(name) if name == "Set" => {
+                if type_name == "Set" || type_name == "Object" {
+                    return Some(IrExpr::BoolLiteral(true));
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            // Custom class: check direct match and prototype chain
+            ZigType::NamedStruct(class_name) => {
+                if class_name == type_name {
+                    return Some(IrExpr::BoolLiteral(true));
+                }
+                if type_name == "Object" {
+                    // All class instances are instanceof Object
+                    return Some(IrExpr::BoolLiteral(true));
+                }
+                // Walk prototype chain via class_extends_map
+                let mut current = class_name.as_str();
+                loop {
+                    if current == type_name {
+                        return Some(IrExpr::BoolLiteral(true));
+                    }
+                    if let Some(parent) = self.class_extends_map.get(current) {
+                        current = parent.as_str();
+                    } else {
+                        break;
+                    }
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            // String primitives: NOT instanceof String in JS (only String objects are)
+            ZigType::Str => Some(IrExpr::BoolLiteral(false)),
+            // Numeric/Boolean primitives: NOT instanceof their wrapper types
+            ZigType::I64 | ZigType::F64 => {
+                if type_name == "Number" {
+                    return Some(IrExpr::BoolLiteral(false)); // primitives aren't objects
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            ZigType::Bool => {
+                if type_name == "Boolean" {
+                    return Some(IrExpr::BoolLiteral(false)); // primitives aren't objects
+                }
+                Some(IrExpr::BoolLiteral(false))
+            }
+            // For JsAny / Anytype, we can't resolve at compile time
+            ZigType::JsAny | ZigType::Anytype => None,
+            // Other types: conservatively say we can't resolve
+            _ => None,
         }
     }
 }

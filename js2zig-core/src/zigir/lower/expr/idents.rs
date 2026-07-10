@@ -333,6 +333,9 @@ impl Lowerer {
                 if let Some(ref obj) = bc.obj_name {
                     idents.insert(obj.clone());
                 }
+                if let Some(ref obj_expr) = bc.obj_expr {
+                    Self::collect_ir_idents_in_expr(obj_expr, idents);
+                }
                 for a in &bc.args {
                     Self::collect_ir_idents_in_expr(a, idents);
                 }

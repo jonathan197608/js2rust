@@ -664,6 +664,54 @@ pub fn jsTypeof(val: JsAny) []const u8 {
     };
 }
 
+/// JS `instanceof` operator for JsAny dynamic type checking.
+/// Since the Zig runtime has no prototype chain, this uses a tag-based
+/// approach that maps JsAny variants to JS class names:
+///   - .array → matches "Array" and "Object"
+///   - .object → matches "Object" and any custom class stored in __jsClass__
+///   - .value.int / .value.float → "Number" is false (primitives aren't objects)
+///   - .value.string → "String" is false (primitive strings aren't String objects)
+///   - .value.bool → "Boolean" is false (primitive booleans aren't Boolean objects)
+///   - .null → always false
+///
+/// For custom class instances stored as .object, the object may contain a
+/// __jsClass__ key with the class name string. This allows basic prototype-like
+/// matching for `obj instanceof ClassName` checks.
+pub fn instanceOf(val: JsAny, type_name: []const u8) bool {
+    return switch (val) {
+        .array => std.mem.eql(u8, type_name, "Array") or std.mem.eql(u8, type_name, "Object"),
+        .object => |o| blk: {
+            // Direct Object match
+            if (std.mem.eql(u8, type_name, "Object")) break :blk true;
+            // Check if this object has a __jsClass__ field for custom class matching
+            const class_opt = o.get("__jsClass__");
+            if (class_opt) |class_tag| {
+                if (class_tag.isString()) {
+                    if (std.mem.eql(u8, class_tag.value.string, type_name)) break :blk true;
+                    // Walk parent chain via __jsExtends__
+                    const parent_opt = o.get("__jsExtends__");
+                    if (parent_opt) |parent_tag| {
+                        if (parent_tag.isString()) {
+                            if (std.mem.eql(u8, parent_tag.value.string, type_name)) break :blk true;
+                        }
+                    }
+                }
+            }
+            break :blk false;
+        },
+        .value => |v| switch (v) {
+            // JS primitives are never instanceof their wrapper types
+            .int, .float => false,
+            .bool => false,
+            .string => false,
+            // typeof null === "object" but null instanceof Object is false in JS
+            .null => false,
+            .undefined => false,
+        },
+        .null => false, // null is not instanceof anything
+    };
+}
+
 // ── Tests ──
 
 test "JsAny primitive constructors" {
@@ -883,4 +931,79 @@ test "jsTypeof array and object" {
     var obj = try JsAny.newObject(alloc);
     defer obj.deinit(alloc);
     try std.testing.expectEqualStrings("object", jsTypeof(obj));
+}
+
+test "instanceOf array checks" {
+    const alloc = std.testing.allocator;
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+
+    // [].instanceof Array === true
+    try std.testing.expect(instanceOf(arr, "Array"));
+    // [].instanceof Object === true
+    try std.testing.expect(instanceOf(arr, "Object"));
+    // [].instanceof String === false
+    try std.testing.expect(!instanceOf(arr, "String"));
+}
+
+test "instanceOf object checks" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    // {}.instanceof Object === true
+    try std.testing.expect(instanceOf(obj, "Object"));
+    // {}.instanceof Array === false
+    try std.testing.expect(!instanceOf(obj, "Array"));
+}
+
+test "instanceOf custom class object" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    // Mark this object as an instance of "Dog"
+    try obj.set("__jsClass__", JsAny.fromString("Dog"), alloc);
+
+    // dog instanceof Dog === true
+    try std.testing.expect(instanceOf(obj, "Dog"));
+    // dog instanceof Object === true
+    try std.testing.expect(instanceOf(obj, "Object"));
+    // dog instanceof Cat === false
+    try std.testing.expect(!instanceOf(obj, "Cat"));
+}
+
+test "instanceOf custom class with extends" {
+    const alloc = std.testing.allocator;
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+
+    // Mark as "Husky" extends "Dog"
+    try obj.set("__jsClass__", JsAny.fromString("Husky"), alloc);
+    try obj.set("__jsExtends__", JsAny.fromString("Dog"), alloc);
+
+    // husky instanceof Husky === true
+    try std.testing.expect(instanceOf(obj, "Husky"));
+    // husky instanceof Object === true
+    try std.testing.expect(instanceOf(obj, "Object"));
+    // husky instanceof Dog === true (via __jsExtends__)
+    try std.testing.expect(instanceOf(obj, "Dog"));
+    // husky instanceof Cat === false
+    try std.testing.expect(!instanceOf(obj, "Cat"));
+}
+
+test "instanceOf primitives are always false" {
+    // In JS, primitive values are never instanceof their wrapper types
+    try std.testing.expect(!instanceOf(JsAny.fromI64(42), "Number"));
+    try std.testing.expect(!instanceOf(JsAny.fromF64(3.14), "Number"));
+    try std.testing.expect(!instanceOf(JsAny.fromString("hello"), "String"));
+    try std.testing.expect(!instanceOf(JsAny.fromBool(true), "Boolean"));
+    // Primitives are not instanceof Object either
+    try std.testing.expect(!instanceOf(JsAny.fromI64(42), "Object"));
+    try std.testing.expect(!instanceOf(JsAny.fromString("hello"), "Object"));
+}
+
+test "instanceOf null and undefined" {
+    try std.testing.expect(!instanceOf(JsAny.fromNull(), "Object"));
+    try std.testing.expect(!instanceOf(JsAny.undefined_value, "Object"));
 }

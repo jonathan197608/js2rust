@@ -354,6 +354,19 @@ impl Emitter {
                 }
                 self.write(&format!(".deleteByKey(_dk, alloc); break :{blk} true; }}"));
             }
+            "instanceOf" => {
+                // instanceOf(value, "TypeName") → js_runtime.instanceOf(value, "TypeName")
+                // The value comes from obj_expr (not obj_name), already resolved by
+                // emit_builtin_call as `obj`. Fall through to emit_module_call with
+                // the receiver prepended as the first argument.
+                self.write("js_runtime.instanceOf(");
+                if let Some(name) = obj {
+                    self.write(name);
+                    self.write(", ");
+                }
+                self.emit_inline_args(args);
+                self.write(")");
+            }
             _ => {
                 // Default: js_runtime.method(args)
                 self.emit_module_call("js_runtime", method, args);

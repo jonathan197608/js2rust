@@ -77,6 +77,10 @@ pub struct Lowerer {
     /// Used to route `ClassName.field` access to `__ClassName_field` module-scope var.
     pub(super) class_static_fields: HashMap<String, HashSet<String>>,
 
+    /// Class inheritance map: class_name → parent_class_name.
+    /// Used for `instanceof` prototype chain traversal.
+    pub(super) class_extends_map: HashMap<String, String>,
+
     // ── Deferred declarations ─────────────────────────
     /// Function definitions deferred from expression context (def-before-use).
     /// These are inserted before the statement that triggered them.
@@ -136,6 +140,7 @@ impl Lowerer {
             closure_mgr: ClosureManager::new(),
             class_names: HashSet::new(),
             class_static_fields: HashMap::new(),
+            class_extends_map: HashMap::new(),
             pending_expr_fns: Vec::new(),
             pending_arrow_structs: Vec::new(),
             pending_label: None,
@@ -493,6 +498,11 @@ impl Lowerer {
             Statement::ClassDeclaration(cd) => {
                 if let Some(ir_class) = self.lower_class_decl(cd) {
                     self.class_names.insert(ir_class.name.js_name.clone());
+                    // Register extends relationship for instanceof chain traversal
+                    if let Some(ref parent) = ir_class.extends {
+                        self.class_extends_map
+                            .insert(ir_class.name.js_name.clone(), parent.clone());
+                    }
                     decls.push(IrDecl::Class(ir_class));
                 }
             }

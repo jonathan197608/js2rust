@@ -254,6 +254,11 @@ impl Lowerer {
                 if let Some(ir_class) = self.lower_class_decl(ce) {
                     let class_name = ir_class.name.js_name.clone();
                     self.class_names.insert(class_name.clone());
+                    // Register extends relationship for instanceof chain traversal
+                    if let Some(ref parent) = ir_class.extends {
+                        self.class_extends_map
+                            .insert(class_name.clone(), parent.clone());
+                    }
                     self.pending_expr_fns
                         .push(crate::zigir::types::IrDecl::Class(ir_class));
                     IrExpr::Ident(self.make_ident(&class_name))
