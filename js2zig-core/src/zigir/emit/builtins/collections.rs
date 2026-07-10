@@ -130,21 +130,6 @@ impl Emitter {
                 }
                 self.write(")");
             }
-            "parseFloat" => {
-                self.write("js_uri.parseFloat(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "isNaN" => {
-                self.write("js_uri.isNaN(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
-            "isFinite" => {
-                self.write("js_uri.isFinite(");
-                self.emit_inline_args(args);
-                self.write(")");
-            }
             _ => {
                 self.emit_module_call("js_uri", method, args);
             }
@@ -163,21 +148,21 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
             }
-            // -bigintExpr → (expr).neg(allocator) catch @panic("OOM: BigInt neg")
-            "bigIntNeg" => {
+            "bigIntNeg" | "bigIntBitwiseNot" => {
+                // (-expr).method(allocator) catch @panic(...)
+                let (zig_method, panic_ctx) = if method == "bigIntNeg" {
+                    ("neg", "BigInt neg OOM")
+                } else {
+                    ("bitwiseNot", "BigInt bitwiseNot OOM")
+                };
                 self.write("(");
                 if let Some(o) = obj {
                     self.write(o);
                 }
-                self.write(".neg(js_allocator.allocator()) catch @panic(\"BigInt neg OOM\"))");
-            }
-            // ~bigintExpr → (expr).bitwiseNot(allocator) catch @panic("OOM: BigInt bitwiseNot")
-            "bigIntBitwiseNot" => {
-                self.write("(");
-                if let Some(o) = obj {
-                    self.write(o);
-                }
-                self.write(".bitwiseNot(js_allocator.allocator()) catch @panic(\"BigInt bitwiseNot OOM\"))");
+                self.write(&format!(
+                    ".{}(js_allocator.allocator()) catch @panic(\"{}\"))",
+                    zig_method, panic_ctx
+                ));
             }
             _ => {
                 self.emit_module_call("js_bigint", method, args);
@@ -211,26 +196,12 @@ impl Emitter {
                 }
                 self.write(") catch @panic(\"OOM: allocation\")");
             }
-            "get" => {
-                // map.get(key) → map.get(JsAny.from(key))
+            "get" | "has" => {
+                // map.get(key)/map.has(key) → map.method(JsAny.from(key))
                 if let Some(name) = obj {
-                    self.write(&format!("{}.get(", name));
+                    self.write(&format!("{}.{}(", name, method));
                 } else {
-                    self.write("js_collections.get(");
-                }
-                if let Some(key) = args.first() {
-                    self.write("JsAny.from(");
-                    self.emit_expr(key);
-                    self.write(")");
-                }
-                self.write(")");
-            }
-            "has" => {
-                // map.has(key) → map.has(JsAny.from(key))
-                if let Some(name) = obj {
-                    self.write(&format!("{}.has(", name));
-                } else {
-                    self.write("js_collections.has(");
+                    self.write(&format!("js_collections.{}(", method));
                 }
                 if let Some(key) = args.first() {
                     self.write("JsAny.from(");

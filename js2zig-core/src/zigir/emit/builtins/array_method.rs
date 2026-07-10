@@ -11,6 +11,28 @@ use crate::zigir::emit::Emitter;
 // ═══════════════════════════════════════════════════════
 
 impl Emitter {
+    /// Emit insert-items block shared by splice/toSpliced: if args.len() > 2,
+    /// collect args[2..] as rendered strings and emit `target.insertSlice(allocator, start_var, &[_]elem_type{ items }) catch @panic(...)`.
+    fn emit_splice_insert(
+        &mut self,
+        target: &str,
+        start_var: &str,
+        elem_type_str: &str,
+        args: &[crate::zigir::types::IrExpr],
+        method_name: &str,
+    ) {
+        if args.len() > 2 {
+            let insert_items: Vec<String> = args[2..]
+                .iter()
+                .map(|arg| self.render_expr_to_string(arg))
+                .collect();
+            self.write(&format!(
+                "{}.insertSlice(js_allocator.allocator(), {}, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.{} insert\"); ",
+                target, start_var, elem_type_str, insert_items.join(", "), method_name
+            ));
+        }
+    }
+
     /// Emit the start-index and delete-count computation shared by splice/toSpliced.
     /// Writes: `const {start_var} = @as(usize, @intCast(@max(0, start_expr)));  const {cnt_var} = @as(usize, @intCast(@min(@max(0, count_expr), {receiver}.items.len -| {start_var})));  `
     fn emit_splice_start_count(
@@ -259,17 +281,7 @@ impl Emitter {
             receiver
         ));
         // Insert items if provided (args beyond start and count)
-        // Use insertSlice for batch insertion
-        if data.args.len() > 2 {
-            let insert_items: Vec<String> = data.args[2..]
-                .iter()
-                .map(|arg| self.render_expr_to_string(arg))
-                .collect();
-            self.write(&format!(
-                "{}.insertSlice(js_allocator.allocator(), __start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.splice insert\"); ",
-                receiver, elem_type_str, insert_items.join(", ")
-            ));
-        }
+        self.emit_splice_insert(&receiver, "__start", &elem_type_str, &data.args, "splice");
         self.write(&format!("break :{} __spliced; }})", blk));
     }
 
@@ -542,16 +554,13 @@ impl Emitter {
         // Remove elements from clone
         self.write("var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); } ");
         // Insert items if provided (args beyond start and deleteCount)
-        if data.args.len() > 2 {
-            let insert_items: Vec<String> = data.args[2..]
-                .iter()
-                .map(|arg| self.render_expr_to_string(arg))
-                .collect();
-            self.write(&format!(
-                "__sp.insertSlice(js_allocator.allocator(), __sp_start, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.toSpliced insert\"); ",
-                elem_type_str, insert_items.join(", ")
-            ));
-        }
+        self.emit_splice_insert(
+            "__sp",
+            "__sp_start",
+            &elem_type_str,
+            &data.args,
+            "toSpliced",
+        );
         self.write(&format!("break :{} __sp; }})", blk));
     }
 }

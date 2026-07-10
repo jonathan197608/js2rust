@@ -114,42 +114,58 @@ impl Emitter {
         self.write(")");
     }
 
-    // ── String.match() ──────────────────────────────────
-    pub(super) fn emit_string_match(
+    /// Shared by match/matchAll: emit `js_string.{method}(js_allocator.allocator(), receiver, pattern_expr) catch @panic(...)`
+    /// for the is_var_ref and literal branches. The fallback branch uses js_string.{method}(receiver).
+    fn emit_string_match_like(
         &mut self,
         obj: Option<&str>,
         regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+        method: &str,
     ) {
         let receiver = obj.unwrap_or("\"\"");
         match regex_info {
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
                     self.write(&format!(
-                        "js_string.matchString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
-                        receiver, var
+                        "js_string.{}(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                        method, receiver, var
                     ));
                 }
             }
             Some(ri) => {
                 if let Some(pattern) = &ri.pattern {
-                    if ri.has_global {
-                        self.write(&format!(
-                            "js_string.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
-                            receiver, pattern
-                        ));
-                    } else {
-                        self.write(&format!(
-                            "js_string.matchString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
-                            receiver, pattern
-                        ));
-                    }
+                    self.write(&format!(
+                        "js_string.{}(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                        method, receiver, pattern
+                    ));
                 }
             }
             None => {
-                // Fallback: no regex info available — emit as js_string.match()
-                self.write(&format!("js_string.match({})", receiver));
+                self.write(&format!("js_string.{}({})", method, receiver));
             }
         }
+    }
+
+    // ── String.match() ──────────────────────────────────
+    pub(super) fn emit_string_match(
+        &mut self,
+        obj: Option<&str>,
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        // match has an extra global-flag branch → matchStringGlobal
+        if let Some(ri) = regex_info
+            && !ri.is_var_ref
+            && ri.has_global
+            && let Some(pattern) = &ri.pattern
+        {
+            let receiver = obj.unwrap_or("\"\"");
+            self.write(&format!(
+                "js_string.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                receiver, pattern
+            ));
+            return;
+        }
+        self.emit_string_match_like(obj, regex_info, "matchString");
     }
 
     // ── String.matchAll() ───────────────────────────────
@@ -158,29 +174,7 @@ impl Emitter {
         obj: Option<&str>,
         regex_info: Option<&crate::zigir::types::IrRegexInfo>,
     ) {
-        let receiver = obj.unwrap_or("\"\"");
-        match regex_info {
-            Some(ri) if ri.is_var_ref => {
-                if let Some(var) = &ri.var_name {
-                    self.write(&format!(
-                        "js_string.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
-                        receiver, var
-                    ));
-                }
-            }
-            Some(ri) => {
-                if let Some(pattern) = &ri.pattern {
-                    self.write(&format!(
-                        "js_string.matchAllString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
-                        receiver, pattern
-                    ));
-                }
-            }
-            None => {
-                // Fallback
-                self.write(&format!("js_string.matchAll({})", receiver));
-            }
-        }
+        self.emit_string_match_like(obj, regex_info, "matchAllString");
     }
 
     // ── String.search() ─────────────────────────────────
