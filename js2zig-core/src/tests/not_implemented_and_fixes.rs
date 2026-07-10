@@ -1842,3 +1842,30 @@ return result[0] + result[1];
         zig
     );
 }
+
+#[test]
+fn test_method_chaining_3_level_filter_map_join() {
+    // 3-level chaining: arr.filter(fn).map(fn).join(sep)
+    // Validates that label_offset propagation works through 3 nested inline emitters
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function testFilterMapJoin() {
+const arr = [1, 2, 3, 4, 5];
+const result = arr.filter(x => x > 2).map(x => x * 10).join("-");
+return result;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_method_chaining_3_level_filter_map_join");
+    println!("=== 3-level chaining: filter().map().join() ===\n{}", zig);
+    // Should contain __chain bindings for both inner expressions
+    assert!(
+        zig.contains("__chain_"),
+        "Expected __chain binding for 3-level chain in:\n{}",
+        zig
+    );
+    // Should contain distinct labels for filter and map blocks
+    assert!(zig.contains("blk_0"), "Expected blk_0 in:\n{}", zig);
+    assert!(zig.contains("blk_1"), "Expected blk_1 in:\n{}", zig);
+}
