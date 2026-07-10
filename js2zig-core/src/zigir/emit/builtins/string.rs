@@ -24,7 +24,7 @@ impl Emitter {
                 return;
             }
             "search" => {
-                self.emit_string_search(obj, regex_info);
+                self.emit_string_search(obj, args, regex_info);
                 return;
             }
             _ => {}
@@ -187,6 +187,7 @@ impl Emitter {
     pub(super) fn emit_string_search(
         &mut self,
         obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
         regex_info: Option<&crate::zigir::types::IrRegexInfo>,
     ) {
         let receiver = obj.unwrap_or("\"\"");
@@ -202,7 +203,13 @@ impl Emitter {
                 }
             }
             None => {
-                self.write(&format!("host.regex_search(, {})", receiver));
+                // Non-regex argument: render the first arg as a string pattern
+                if let Some(arg) = args.first() {
+                    let pattern = Self::emit_expr_inline(arg);
+                    self.write(&format!("host.regex_search({}, {})", pattern, receiver));
+                } else {
+                    self.write(&format!("host.regex_search(\"\", {})", receiver));
+                }
             }
         }
     }
