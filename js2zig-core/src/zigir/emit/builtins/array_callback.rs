@@ -41,7 +41,7 @@ impl Emitter {
     // ── forEach ────────────────────────────────────────
     //
     //  Array: for (obj.items) |elem| { <body stmts> }
-    //  Map:   var iter = m.inner.iterator(); while (iter.next()) |entry| { const val = entry.value_ptr.*; const key = entry.key_ptr.*; <body stmts> }
+    //  Map:   var iter = m.inner.iterator(); while (iter.next()) |entry| { ... }
     //  Set:   for (s.items.items) |val| { <body stmts> }
     //
     //  When chaining (obj_expr is set), wraps in a block:
@@ -57,85 +57,94 @@ impl Emitter {
 
         match data.collection_kind {
             CollectionKind::Array => {
-                // When chaining, wrap in a block so the const binding is scoped.
-                if let Some(b) = &binding {
-                    self.write("{ ");
-                    self.write(b);
-                }
-                self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
-                self.write("{\n");
-                self.indent_push();
-                for stmt in &data.body {
-                    self.writeln("");
-                    self.emit_stmt(stmt);
-                }
-                self.indent_pop();
-                self.writeln("");
-                self.write("}");
-                if binding.is_some() {
-                    self.write(" }");
-                }
+                self.emit_for_each_simple_loop(
+                    &binding,
+                    &receiver,
+                    ".items",
+                    &data.elem_param,
+                    &data.body,
+                );
             }
             CollectionKind::Map => {
-                // Map.forEach → while-iterator over inner HashMap
-                if let Some(b) = &binding {
-                    self.write("{ ");
-                    self.write(b);
-                }
-                self.writeln(&format!("var iter = {}.inner.iterator();", receiver));
-                self.writeln("while (iter.next()) |entry| {");
-                self.indent_push();
-                // Bind val and key parameters
-                if data.elem_param != "_" {
-                    self.writeln(&format!("const {} = entry.value_ptr.*;", data.elem_param));
-                }
-                // idx_param serves as the key parameter for Map forEach
-                if !data.idx_param.is_empty() && data.idx_param != "_" {
-                    self.writeln(&format!("const {} = entry.key_ptr.*;", data.idx_param));
-                }
-                for stmt in &data.body {
-                    self.emit_stmt(stmt);
-                }
-                // Suppress unused variable warnings
-                if data.elem_param != "_" {
-                    self.writeln(&format!("_ = &{};", data.elem_param));
-                }
-                if !data.idx_param.is_empty() && data.idx_param != "_" {
-                    self.writeln(&format!("_ = &{};", data.idx_param));
-                }
-                self.indent_pop();
-                self.write("}");
-                if binding.is_some() {
-                    self.write(" }");
-                }
+                self.emit_for_each_map_loop(&binding, &receiver, data, &data.body);
             }
             CollectionKind::Set => {
-                // Set.forEach → for-loop over set.items.items
-                if let Some(b) = &binding {
-                    self.write("{ ");
-                    self.write(b);
-                }
-                self.write(&format!(
-                    "for ({}.items.items) |{}| ",
-                    receiver, data.elem_param
-                ));
-                self.write("{\n");
-                self.indent_push();
-                for stmt in &data.body {
-                    self.writeln("");
-                    self.emit_stmt(stmt);
-                }
-                self.indent_pop();
-                self.writeln("");
-                self.write("}");
-                // Suppress unused variable warning
-                if data.elem_param != "_" {
-                    // The _ = &val; is emitted inside the loop by the lower_stmt
-                }
-                if binding.is_some() {
-                    self.write(" }");
-                }
+                self.emit_for_each_simple_loop(
+                    &binding,
+                    &receiver,
+                    ".items.items",
+                    &data.elem_param,
+                    &data.body,
+                );
             }
+        }
+    }
+
+    /// Emit a simple for-loop forEach (Array/Set): binding + for (recv.items_path) |elem| { body }
+    fn emit_for_each_simple_loop(
+        &mut self,
+        binding: &Option<String>,
+        receiver: &str,
+        items_path: &str,
+        elem_param: &str,
+        body: &[crate::zigir::types::IrStmt],
+    ) {
+        if let Some(b) = binding {
+            self.write("{ ");
+            self.write(b);
+        }
+        self.write(&format!(
+            "for ({}{}) |{}| ",
+            receiver, items_path, elem_param
+        ));
+        self.write("{\n");
+        self.indent_push();
+        for stmt in body {
+            self.writeln("");
+            self.emit_stmt(stmt);
+        }
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        if binding.is_some() {
+            self.write(" }");
+        }
+    }
+
+    /// Emit Map.forEach: while-iterator over inner HashMap with key/value binding.
+    fn emit_for_each_map_loop(
+        &mut self,
+        binding: &Option<String>,
+        receiver: &str,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        body: &[crate::zigir::types::IrStmt],
+    ) {
+        if let Some(b) = binding {
+            self.write("{ ");
+            self.write(b);
+        }
+        self.writeln(&format!("var iter = {}.inner.iterator();", receiver));
+        self.writeln("while (iter.next()) |entry| {");
+        self.indent_push();
+        if data.elem_param != "_" {
+            self.writeln(&format!("const {} = entry.value_ptr.*;", data.elem_param));
+        }
+        if !data.idx_param.is_empty() && data.idx_param != "_" {
+            self.writeln(&format!("const {} = entry.key_ptr.*;", data.idx_param));
+        }
+        for stmt in body {
+            self.emit_stmt(stmt);
+        }
+        if data.elem_param != "_" {
+            self.writeln(&format!("_ = &{};", data.elem_param));
+        }
+        if !data.idx_param.is_empty() && data.idx_param != "_" {
+            self.writeln(&format!("_ = &{};", data.idx_param));
+        }
+        self.indent_pop();
+        self.write("}");
+        if binding.is_some() {
+            self.write(" }");
         }
     }
 
@@ -211,27 +220,21 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        // When elem_param is "_" (unused in body), we still need a real variable name
-        // for the __filter.append() call — Zig's "_" is a discard, not an identifier.
-        let append_elem = if data.elem_param == "_" {
-            "__felem".to_string()
-        } else {
-            data.elem_param.clone()
-        };
+        let loop_elem = Self::resolve_loop_elem(&data.elem_param, "__felem");
         self.write(&format!(
             "var __filter: std.ArrayList({}) = .empty; ",
             elem_type_str
         ));
-        self.write(&format!("for ({}.items) |{}| ", receiver, append_elem));
+        self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
         self.write("{\n");
         self.indent_push();
-        let append_elem_clone = append_elem.clone();
+        let loop_elem_clone = loop_elem.clone();
         self.emit_callback_body(&data.body, |emitter, expr| {
             emitter.write("if (");
             emitter.emit_expr(expr);
             emitter.write(&format!(
                 ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                append_elem_clone
+                loop_elem_clone
             ));
         });
         self.indent_pop();
@@ -257,10 +260,7 @@ impl Emitter {
         let blk_clone = blk.clone();
 
         if reverse {
-            self.write(&format!(
-                "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
-                receiver, data.elem_param, receiver
-            ));
+            self.emit_reverse_loop_header(&receiver, &data.elem_param, "");
         } else {
             self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
             self.write("{\n");
@@ -306,10 +306,8 @@ impl Emitter {
         let blk_clone = blk.clone();
 
         if reverse {
-            self.write(&format!(
-                "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
-                receiver, data.elem_param, receiver, idx_name
-            ));
+            let extra = format!("const {}: i64 = @intCast(__i); ", idx_name);
+            self.emit_reverse_loop_header(&receiver, &data.elem_param, &extra);
         } else {
             let index_name = format!("__{}_i", data.elem_param);
             self.write(&format!(
@@ -391,11 +389,7 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
-        let loop_elem = if data.elem_param == "_" {
-            "__melem".to_string()
-        } else {
-            data.elem_param.clone()
-        };
+        let loop_elem = Self::resolve_loop_elem(&data.elem_param, "__melem");
         self.write(&format!(
             "var {}: std.ArrayList({}) = .empty; ",
             var_prefix, elem_type_str
@@ -561,6 +555,26 @@ impl Emitter {
         );
 
         self.write(&format!(" break :{} __sorted; }})", blk));
+    }
+
+    /// Emit the header for a reverse iteration loop:
+    ///   `var __i: usize = <receiver>.items.len; while (__i > 0) { __i -= 1; const <elem> = <receiver>.items[__i]; <extra>`
+    /// Used by findLast and findLastIndex.
+    fn emit_reverse_loop_header(&mut self, receiver: &str, elem_param: &str, extra: &str) {
+        self.write(&format!(
+            "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; {}",
+            receiver, elem_param, receiver, extra
+        ));
+    }
+
+    /// When `elem_param` is `"_"` (discard), substitute `fallback` as a real Zig identifier.
+    /// Zig's `_` is a discard, not an identifier, so we can't use it in `.append(_, _)` calls.
+    fn resolve_loop_elem(elem_param: &str, fallback: &str) -> String {
+        if elem_param == "_" {
+            fallback.to_string()
+        } else {
+            elem_param.to_string()
+        }
     }
 
     /// Resolve shared sort/toSorted parameters: (elem_type_str, param_a, param_b).
