@@ -3,6 +3,94 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '6ba0b6dc-b6ad-4912-9e02-4ecba6df241f'
+  PropagateID: '6ba0b6dc-b6ad-4912-9e02-4ecba6df241f'
+  ReservedCode1: 'cc8c6942-a2c9-488d-8939-38fefce71ec9'
+  ReservedCode2: 'cc8c6942-a2c9-488d-8939-38fefce71ec9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a046b24c-6d4a-453f-a1e8-e2ed22406c39'
+  PropagateID: 'a046b24c-6d4a-453f-a1e8-e2ed22406c39'
+  ReservedCode1: 'd85c8739-0c43-4eb6-afa6-becb145cfc8b'
+  ReservedCode2: 'd85c8739-0c43-4eb6-afa6-becb145cfc8b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '79cd9e4c-3435-40e4-8c0f-0e7258e3e861'
+  PropagateID: '79cd9e4c-3435-40e4-8c0f-0e7258e3e861'
+  ReservedCode1: '3561b085-0615-4f17-9f63-a7908ed91c3c'
+  ReservedCode2: '3561b085-0615-4f17-9f63-a7908ed91c3c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9e46e548-7382-4ddf-a8f8-83b2cb76bad4'
+  PropagateID: '9e46e548-7382-4ddf-a8f8-83b2cb76bad4'
+  ReservedCode1: '337236f5-dec6-45fb-8dd0-39931ba6f314'
+  ReservedCode2: '337236f5-dec6-45fb-8dd0-39931ba6f314'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9d31757c-d34c-4e0f-b62c-2576c5e3b5d4'
+  PropagateID: '9d31757c-d34c-4e0f-b62c-2576c5e3b5d4'
+  ReservedCode1: '4711519d-9e63-4222-bb6f-11c2288ae386'
+  ReservedCode2: '4711519d-9e63-4222-bb6f-11c2288ae386'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a1c917d8-3134-4a0d-ad3c-cc032bcb2e97'
+  PropagateID: 'a1c917d8-3134-4a0d-ad3c-cc032bcb2e97'
+  ReservedCode1: 'fc094979-ecf7-4f38-a383-9d51cf4e5b64'
+  ReservedCode2: 'fc094979-ecf7-4f38-a383-9d51cf4e5b64'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '5e1bc73c-1dd1-4a9a-9223-497d03a4e0e9'
+  PropagateID: '5e1bc73c-1dd1-4a9a-9223-497d03a4e0e9'
+  ReservedCode1: 'f8f2f5c3-d0c7-4abc-ad57-f5d5f7fa1530'
+  ReservedCode2: 'f8f2f5c3-d0c7-4abc-ad57-f5d5f7fa1530'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd61952f1-e7e1-44e6-b6cf-84f48a8f63e0'
+  PropagateID: 'd61952f1-e7e1-44e6-b6cf-84f48a8f63e0'
+  ReservedCode1: 'e53b4a47-306f-4fc4-8024-b7337c24ab6b'
+  ReservedCode2: 'e53b4a47-306f-4fc4-8024-b7337c24ab6b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '130f9a67-ed9f-41c7-9f0e-4023d0c10dca'
   PropagateID: '130f9a67-ed9f-41c7-9f0e-4023d0c10dca'
   ReservedCode1: 'fe39f638-dd4d-4cd1-8f5e-e722bf8e9e4f'
@@ -361,13 +449,13 @@ AIGC:
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
 | **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 367 + 119 = 486 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
-| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~49 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查） | `zig.exe` 在 PATH |
+| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~202 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-10）
 
 - Rust 单元测试：**486 passed, 0 failed**（367 在 `tests/` 子模块 + 119 内联在 `zigir/` 等源文件中）
-- Zig runtime 测试：**~49 passed, 0 failed**（`runtime/js_string.zig` 19 个 UTF-16 相关测试 + `runtime/jsany.zig` 6 个 instanceOf 测试 + 24 个原有测试）
+- Zig runtime 测试：**~202 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 35、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
 - Clippy：**0 warnings**
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
 - 1 个 mismatch 为已知限制，详见下方表格
@@ -394,7 +482,7 @@ js2zig-core/src/tests/
 └── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（29 个测试）
 ```
 
-另有 **118 个内联测试**分布在 `zigir/` 源文件中：
+另有 **119 个内联测试**分布在 `zigir/` 源文件中：
 
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
@@ -414,7 +502,7 @@ js2zig-core/src/tests/
 | `sourcemap.rs` | 4 | Source map 测试 |
 | 其他 | 9 | ops/builtins/testgen 等 |
 
-**总计：455 个测试**
+**总计：486 个测试**（367 + 119）
 
 ### 2.2 测试分类
 
@@ -579,8 +667,7 @@ examples/mdn-test-project/
 ├── src/main.rs             # CLI 入口 + 204 个 fragment 分发与对比
 ├── js_src/                 # JS 源文件（424 个 .js + 424 个 .node.js + 1 个 app.js）
 ├── pass_fragments.json     # 通过转译的 204 个 fragment 列表
-├── comparison_results.json # 上次对比结果快照
-├── compare_results.json    # 旧版对比结果（仅 153 条，已过时）
+├── comparison_results.json # 上次对比结果快照（203 match / 1 mismatch）
 ├── compare_outputs.py      # Node.js vs Zig 输出对比脚本（已过时，main.rs 内置对比逻辑）
 └── _check_results.py       # 快速查看 comparison_results.json
 ```
@@ -712,7 +799,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（469 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（486 passed）
 cargo clippy -p js2zig-core -- -D warnings                           # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -744,7 +831,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 469 passed, 0 failed | 469 passed |
+| `cargo test -p js2zig-core --lib` | 486 passed, 0 failed | 486 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 203（不低于基线） | 203 |
@@ -792,11 +879,27 @@ zig version
 
 ### Q: Python 对比脚本还能用吗？
 
-`compare_outputs.py` 和 `_check_results.py` 仍存在但已过时：脚本内置 153 条 fragment 计数，与当前 204 条不匹配。对比逻辑已内置到 `main.rs` 的 `run_all()` 中，推荐直接使用 `cargo run -- --all`。`compare_results.json` 也是旧版快照，请以 `comparison_results.json` 为准。
+`compare_outputs.py` 和 `_check_results.py` 仍存在但已过时：脚本内置 153 条 fragment 计数，与当前 204 条不匹配。对比逻辑已内置到 `main.rs` 的 `run_all()` 中，推荐直接使用 `cargo run -- --all`。旧版 `compare_results.json` 已删除，以 `comparison_results.json` 为准。
 
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

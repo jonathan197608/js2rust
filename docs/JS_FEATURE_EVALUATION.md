@@ -3,6 +3,72 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '0d0af9bc-16cf-4567-8232-ad9eea0e3600'
+  PropagateID: '0d0af9bc-16cf-4567-8232-ad9eea0e3600'
+  ReservedCode1: '081f30f1-2d48-49fb-b597-71ac9a2d6619'
+  ReservedCode2: '081f30f1-2d48-49fb-b597-71ac9a2d6619'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '705978c9-d4bd-416d-b822-46c6862163bc'
+  PropagateID: '705978c9-d4bd-416d-b822-46c6862163bc'
+  ReservedCode1: 'aea21aad-5695-40d0-988f-b754c84134d6'
+  ReservedCode2: 'aea21aad-5695-40d0-988f-b754c84134d6'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f1370f21-1762-4a63-8ee6-bed0b96e1567'
+  PropagateID: 'f1370f21-1762-4a63-8ee6-bed0b96e1567'
+  ReservedCode1: '2059b2a2-54be-4030-9a0e-06bd0c306c1d'
+  ReservedCode2: '2059b2a2-54be-4030-9a0e-06bd0c306c1d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ee34d9ba-0596-4391-94ec-f3a576e3c04b'
+  PropagateID: 'ee34d9ba-0596-4391-94ec-f3a576e3c04b'
+  ReservedCode1: '6638b7d3-5e5b-4d39-b60e-030070569f8c'
+  ReservedCode2: '6638b7d3-5e5b-4d39-b60e-030070569f8c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '7318b71b-b527-432c-bcf2-6301614162c3'
+  PropagateID: '7318b71b-b527-432c-bcf2-6301614162c3'
+  ReservedCode1: 'deebce6c-cfb6-4676-859c-425258e5e037'
+  ReservedCode2: 'deebce6c-cfb6-4676-859c-425258e5e037'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '2220905e-aa13-4da3-b3fa-a87de4bde87f'
+  PropagateID: '2220905e-aa13-4da3-b3fa-a87de4bde87f'
+  ReservedCode1: '429ac120-8df3-4d7b-b12a-1b0236715d10'
+  ReservedCode2: '429ac120-8df3-4d7b-b12a-1b0236715d10'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '21b64183-86a8-42c1-8fad-663ccb919419'
   PropagateID: '21b64183-86a8-42c1-8fad-663ccb919419'
   ReservedCode1: '28747f69-db28-407f-9bd2-09451e194da9'
@@ -232,7 +298,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 49 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -244,7 +310,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 486 个 Rust 测试 (486 pass + 0 ignore) + 43 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 486 个 Rust 测试 (486 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -273,11 +339,11 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 207 | ~94% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
+| ✅ 完全实现 | 204 | ~93% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
 | ⚠️ 简化实现 | 5 | ~2% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ BigInt ×1 |
-| 🔘 不实现 | 8 | ~4% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics 等整类不实现 |
+| 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
-> **注**: ⚠️ 简化实现 5 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。Map.groupBy 🔘 不实现（可用 Object.groupBy 替代）。
+> **注**: ⚠️ 简化实现 5 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
 
 ### 1.5 三大类对比总览
 
@@ -285,7 +351,7 @@ AIGC:
 |------|------|---------|----------|-----------|--------|
 | **表达式** | 91 | 82 | 1 | 8 | **~92%** |
 | **语句** | 49 | 46 | 0 | 3 | **~94%** |
-| **内置对象** | 220 | 207 | 5 | 8 | **~96%** |
+| **内置对象** | 220 | 204 | 5 | 11 | **~95%** |
 | **语法合计** | 140 | 128 | 1 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -1398,20 +1464,16 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 469 个测试 (469 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 486 个测试 (486 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（8 个文件） | 351 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
-| `zigir/` 内联测试 | 118 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident |
-| `jsdoc` | 13 | JSDoc 解析与类型标注 |
-| `parser` | 7 | oxc_ast 解析器集成 |
-| `sourcemap` | 4 | Source Map 生成 |
-| `testgen` | 3 | Zig 测试代码生成 |
+| `tests/` 子模块（8 个文件） | 367 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `zigir/` 内联测试 | 119 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident |
 
 ### 7.2 测试覆盖情况
 
-469 个 Rust 测试全部通过（469 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+486 个 Rust 测试全部通过（486 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1420,17 +1482,28 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | 结果 | 数量 | 说明 |
 |------|------|------|
 | MATCH | 203 | 完全匹配 |
-| MISMATCH | 2 | 已知差异 |
+| MISMATCH | 1 | 已知差异 |
 | ERROR (CRASH) | 0 | — |
 
-**匹配率: 202/204 = 99.0%**
+**匹配率: 203/204 = 99.5%**
 
-**2 个已知非 PASS**:
+**1 个已知非 PASS**:
 
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
-| `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` stack trace 格式差异 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

@@ -1,28 +1,13 @@
 {
   "total": 204,
-  "matches": 200,
-  "mismatches": 4,
+  "matches": 203,
+  "mismatches": 1,
   "errors": 0,
   "mismatch_list": [
-    [
-      "test_statements_frag_11",
-      "TypeError: Assignment to constant variable.\n    at testStatements_frag_11 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_11.node.js:12:18)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_statements_frag_11.node.js:26:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49\n42",
-      "99"
-    ],
     [
       "test_expressions_frag_112",
       "3\n-3\n0\n-0",
       "3\n-3\n0\n0"
-    ],
-    [
-      "test_builtins_frag_157",
-      "123\n123\n123\n77\n1\n255\n255\nNaN",
-      "123\n123\n123\n77\n1\n255\n255\n0"
-    ],
-    [
-      "test_builtins_frag_202",
-      "true\nURI malformed\nURIError\nURIError: URI malformed\n    at decodeURIComponent (<anonymous>)\n    at testBuiltins_frag_202 (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_202.node.js:10:11)\n    at Object.<anonymous> (C:\\Users\\18988\\RustroverProjects\\js2rust\\examples\\mdn-test-project\\js_src\\test_builtins_frag_202.node.js:24:5)\n    at Module._compile (node:internal/modules/cjs/loader:1705:14)\n    at Object..js (node:internal/modules/cjs/loader:1838:10)\n    at Module.load (node:internal/modules/cjs/loader:1441:32)\n    at Function._load (node:internal/modules/cjs/loader:1263:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
-      ""
     ]
   ],
   "error_list": []
