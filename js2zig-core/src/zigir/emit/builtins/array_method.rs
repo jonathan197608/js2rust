@@ -459,7 +459,8 @@ impl Emitter {
 
     // ── toSorted ───────────────────────────────────────
     // arr.toSorted(compareFn?) → clone the array, sort the clone
-    // For now, compareFn is ignored (same as Array.sort behavior).
+    // No compareFn path: default ascending sort. With compareFn, dispatched via
+    // ArrayCallbackKind::ToSorted in array_callback.rs instead.
     // (blk: { var __sorted: std.ArrayList(elem_type) = .empty;
     //   __sorted.appendSlice(allocator, obj.items) catch @panic("OOM");
     //   std.mem.sort(elem_type, __sorted.items, {}, comptime std.sort.asc(elem_type));
