@@ -15,10 +15,12 @@ impl Emitter {
         self.write(&format!(") catch @panic(\"OOM: Object.{}\")", method));
     }
 
-    /// Emit `js_object.methodStruct(@TypeOf(args))`.
+    /// Emit `js_object.method(@TypeOf(args))`.
     /// Shared by keysStruct, getOwnPropertyNamesStruct.
+    /// Note: `method` already includes the "Struct" suffix (set by lower/call.rs),
+    /// so we must NOT append it again.
     fn emit_object_struct_method(&mut self, method: &str, args: &[IrExpr]) {
-        self.write(&format!("js_object.{}Struct(@TypeOf(", method));
+        self.write(&format!("js_object.{}(@TypeOf(", method));
         self.emit_inline_args(args);
         self.write("))");
     }
