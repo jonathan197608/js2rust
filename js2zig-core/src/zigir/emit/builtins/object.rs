@@ -98,66 +98,13 @@ impl Emitter {
             }
             "groupBy" => {
                 // Object.groupBy(items, callbackFn) — fully inline emission
-                // Generates: blk: { var _grp_map = std.StringHashMap(std.ArrayList(JsAny)).init(alloc);
-                //   for (items_arg.items) |_grp_item| {
-                //     const <param> = _grp_item; const _grp_key = <callback body expr>;
-                //     // insert into map
-                //   }
-                //   break :blk _grp_map }
                 self.write("blk: { var _grp_map = std.StringHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); ");
                 if let Some(items_arg) = args.first() {
                     self.write("for (");
                     self.emit_expr(items_arg);
                     self.write(".items) |_grp_item| { ");
                     if args.len() >= 2 {
-                        match &args[1] {
-                            IrExpr::ArrowFn(arrow) => {
-                                let param_name = arrow
-                                    .params
-                                    .first()
-                                    .map(|p| p.name.zig_name.clone())
-                                    .unwrap_or_else(|| "_".to_string());
-                                self.write(&format!(
-                                    "const {} = _grp_item; const _grp_key = ",
-                                    param_name
-                                ));
-                                // Concise arrow body is IrStmt::Return { value: Some(expr) }
-                                if let Some(first_stmt) = arrow.body.stmts.first() {
-                                    match first_stmt {
-                                        crate::zigir::types::IrStmt::Return { value: Some(v) } => {
-                                            self.emit_expr(v)
-                                        }
-                                        crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
-                                        _ => self.write("_grp_item"),
-                                    }
-                                }
-                            }
-                            IrExpr::Closure(closure) => {
-                                let param_name = closure
-                                    .fn_params
-                                    .first()
-                                    .map(|p| p.name.zig_name.clone())
-                                    .unwrap_or_else(|| "_".to_string());
-                                self.write(&format!(
-                                    "const {} = _grp_item; const _grp_key = ",
-                                    param_name
-                                ));
-                                if let Some(last) = closure.body.stmts.last() {
-                                    match last {
-                                        crate::zigir::types::IrStmt::Return { value: Some(v) } => {
-                                            self.emit_expr(v)
-                                        }
-                                        crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
-                                        _ => self.write("_grp_item"),
-                                    }
-                                }
-                            }
-                            _ => {
-                                self.write("const _grp_key = ");
-                                self.emit_expr(&args[1]);
-                                self.write("(_grp_item)");
-                            }
-                        }
+                        self.emit_group_by_callback(&args[1]);
                     } else {
                         self.write("const _grp_key = _grp_item");
                     }
@@ -175,6 +122,55 @@ impl Emitter {
             _ => {
                 self.emit_module_call("js_object", method, args);
             }
+        }
+    }
+
+    /// Emit the callback parameter binding and key expression for Object.groupBy.
+    /// Handles ArrowFn (first stmt), Closure (last stmt), and fallback call.
+    fn emit_group_by_callback(&mut self, callback: &IrExpr) {
+        match callback {
+            IrExpr::ArrowFn(arrow) => {
+                let param_name = arrow
+                    .params
+                    .first()
+                    .map(|p| p.name.zig_name.clone())
+                    .unwrap_or_else(|| "_".to_string());
+                self.write(&format!(
+                    "const {} = _grp_item; const _grp_key = ",
+                    param_name
+                ));
+                if let Some(stmt) = arrow.body.stmts.first() {
+                    self.emit_stmt_value(stmt);
+                }
+            }
+            IrExpr::Closure(closure) => {
+                let param_name = closure
+                    .fn_params
+                    .first()
+                    .map(|p| p.name.zig_name.clone())
+                    .unwrap_or_else(|| "_".to_string());
+                self.write(&format!(
+                    "const {} = _grp_item; const _grp_key = ",
+                    param_name
+                ));
+                if let Some(stmt) = closure.body.stmts.last() {
+                    self.emit_stmt_value(stmt);
+                }
+            }
+            _ => {
+                self.write("const _grp_key = ");
+                self.emit_expr(callback);
+                self.write("(_grp_item)");
+            }
+        }
+    }
+
+    /// Extract the value expression from a Return or Expr statement, or emit a fallback.
+    fn emit_stmt_value(&mut self, stmt: &crate::zigir::types::IrStmt) {
+        match stmt {
+            crate::zigir::types::IrStmt::Return { value: Some(v) } => self.emit_expr(v),
+            crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
+            _ => self.write("_grp_item"),
         }
     }
 
@@ -315,33 +311,26 @@ impl Emitter {
             self.write(")");
         } else {
             // Multi-arg: js_console.logMulti(.{ arg1, arg2, ... })
-            let multi_method = match method {
-                "log" => "logMulti",
-                "err" => "errMulti",
-                "warn" => "warnMulti",
-                other => {
-                    // Fallback: append "Multi" for unknown methods
-                    self.write(&format!("js_console.{}Multi(", other));
-                    self.write(".{");
-                    for (i, arg) in args.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        self.emit_expr(arg);
-                    }
-                    self.write("})");
-                    return;
-                }
+            let multi_method: String = match method {
+                "log" => "logMulti".to_string(),
+                "err" => "errMulti".to_string(),
+                "warn" => "warnMulti".to_string(),
+                other => format!("{}Multi", other),
             };
-            self.write(&format!("js_console.{}(", multi_method));
-            self.write(".{");
-            for (i, arg) in args.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                self.emit_expr(arg);
-            }
-            self.write("})");
+            self.emit_console_multi(&multi_method, args);
         }
+    }
+
+    /// Emit `js_console.method(.{ arg1, arg2, ... })`.
+    fn emit_console_multi(&mut self, method: &str, args: &[IrExpr]) {
+        self.write(&format!("js_console.{}(", method));
+        self.write(".{");
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            self.emit_expr(arg);
+        }
+        self.write("})");
     }
 }

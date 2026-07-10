@@ -240,24 +240,32 @@ impl Emitter {
         self.write(&format!(" break :{} __filter; }})", blk));
     }
 
-    // ── find ───────────────────────────────────────────
+    // ── find / findLast (shared) ────────────────────────
     //
-    //  (blk_N: {
-    //      for (obj.items) |elem| {
-    //          if (<pred>) break :blk_N elem;
-    //      }
-    //      break :blk_N undefined;
-    //  })
+    //  find:      for (obj.items) |elem| { if (pred) break :blk elem; } break :blk undefined;
+    //  findLast:  var __i = len; while (__i > 0) { __i--; const elem = items[__i]; if (pred) break :blk elem; } break :blk undefined;
     //
-    pub(super) fn emit_find_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+    fn emit_find_like_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        reverse: bool,
+    ) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
-        self.write("{\n");
-        self.indent_push();
         let elem_param = data.elem_param.clone();
         let blk_clone = blk.clone();
+
+        if reverse {
+            self.write(&format!(
+                "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
+                receiver, data.elem_param, receiver
+            ));
+        } else {
+            self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
+            self.write("{\n");
+        }
+        self.indent_push();
         self.emit_callback_body(&data.body, |emitter, expr| {
             emitter.write("if (");
             emitter.emit_expr(expr);
@@ -265,124 +273,97 @@ impl Emitter {
         });
         self.indent_pop();
         self.writeln("");
-        self.write("}");
-        self.write(&format!(" break :{} undefined; }})", blk));
+
+        if reverse {
+            self.write(&format!("}} break :{} undefined; }})", blk));
+        } else {
+            self.write("}");
+            self.write(&format!(" break :{} undefined; }})", blk));
+        }
+    }
+
+    // ── find ───────────────────────────────────────────
+
+    pub(super) fn emit_find_inline(&mut self, data: &crate::zigir::types::IrArrayCallbackInline) {
+        self.emit_find_like_inline(data, false);
+    }
+
+    // ── findIndex / findLastIndex (shared) ──────────────
+    //
+    //  findIndex:     for (items, 0..) |elem, __i| { const __idx = @intCast(__i); if (pred) break :blk __idx; } break :blk -1;
+    //  findLastIndex: var __i = len; while (__i > 0) { __i--; const elem = items[__i]; const __idx = @intCast(__i); if (pred) break :blk __idx; } break :blk -1;
+    //
+    fn emit_find_index_like_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        reverse: bool,
+    ) {
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+
+        let blk = self.begin_labeled_block(&binding);
+        let idx_name = format!("__{}_idx", data.elem_param);
+        let idx_name_clone = idx_name.clone();
+        let blk_clone = blk.clone();
+
+        if reverse {
+            self.write(&format!(
+                "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
+                receiver, data.elem_param, receiver, idx_name
+            ));
+        } else {
+            let index_name = format!("__{}_i", data.elem_param);
+            self.write(&format!(
+                "for ({}.items, 0..) |{}, {}| ",
+                receiver, data.elem_param, index_name
+            ));
+            self.write("{\n");
+            self.writeln(&format!(
+                "const {}: i64 = @intCast({});",
+                idx_name, index_name
+            ));
+        }
+        self.indent_push();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("if (");
+            emitter.emit_expr(expr);
+            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
+        });
+        self.indent_pop();
+        self.writeln("");
+
+        if reverse {
+            self.write(&format!("}} break :{} -1; }})", blk));
+        } else {
+            self.write("}");
+            self.write(&format!(" break :{} -1; }})", blk));
+        }
     }
 
     // ── findIndex ──────────────────────────────────────
-    //
-    //  (blk_N: {
-    //      for (obj.items, 0..) |elem, __i| {
-    //          const __idx: i64 = @intCast(__i);
-    //          if (<pred>) break :blk_N __idx;
-    //      }
-    //      break :blk_N -1;
-    //  })
-    //
+
     pub(super) fn emit_find_index_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
-
-        let blk = self.begin_labeled_block(&binding);
-        let index_name = format!("__{}_i", data.elem_param);
-        let idx_name = format!("__{}_idx", data.elem_param);
-        self.write(&format!(
-            "for ({}.items, 0..) |{}, {}| ",
-            receiver, data.elem_param, index_name
-        ));
-        self.write("{\n");
-        self.indent_push();
-        self.writeln(&format!(
-            "const {}: i64 = @intCast({});",
-            idx_name, index_name
-        ));
-        let idx_name_clone = idx_name.clone();
-        let blk_clone = blk.clone();
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
-        });
-        self.indent_pop();
-        self.writeln("");
-        self.write("}");
-        self.write(&format!(" break :{} -1; }})", blk));
+        self.emit_find_index_like_inline(data, false);
     }
 
     // ── findLast ───────────────────────────────────────
-    //
-    //  (blk_N: {
-    //      var __i: usize = obj.items.len;
-    //      while (__i > 0) {
-    //          __i -= 1;
-    //          const elem = obj.items[__i];
-    //          if (<pred>) break :blk_N elem;
-    //      }
-    //      break :blk_N undefined;
-    //  })
-    //
+
     pub(super) fn emit_find_last_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
-
-        let blk = self.begin_labeled_block(&binding);
-        self.write(&format!(
-            "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
-            receiver, data.elem_param, receiver
-        ));
-        self.indent_push();
-        let elem_param = data.elem_param.clone();
-        let blk_clone = blk.clone();
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} {};", blk_clone, elem_param));
-        });
-        self.indent_pop();
-        self.writeln("");
-        self.write(&format!("}} break :{} undefined; }})", blk));
+        self.emit_find_like_inline(data, true);
     }
 
     // ── findLastIndex ──────────────────────────────────
-    //
-    //  (blk_N: {
-    //      var __i: usize = obj.items.len;
-    //      while (__i > 0) {
-    //          __i -= 1;
-    //          const elem = obj.items[__i];
-    //          const __idx: i64 = @intCast(__i);
-    //          if (<pred>) break :blk_N __idx;
-    //      }
-    //      break :blk_N -1;
-    //  })
-    //
+
     pub(super) fn emit_find_last_index_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) {
-        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
-
-        let blk = self.begin_labeled_block(&binding);
-        let idx_name = format!("__{}_idx", data.elem_param);
-        self.write(&format!(
-            "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; const {}: i64 = @intCast(__i); ",
-            receiver, data.elem_param, receiver, idx_name
-        ));
-        self.indent_push();
-        let idx_name_clone = idx_name.clone();
-        let blk_clone = blk.clone();
-        self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
-        });
-        self.indent_pop();
-        self.writeln("");
-        self.write(&format!("}} break :{} -1; }})", blk));
+        self.emit_find_index_like_inline(data, true);
     }
 
     // ── map / flatMap (shared) ────────────────────────────
@@ -524,13 +505,7 @@ impl Emitter {
     ) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let elem_type_str = data.elem_type.to_zig_type();
-        let param_a = &data.elem_param;
-        let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
-            &data.idx_param
-        } else {
-            "_"
-        };
+        let (elem_type_str, param_a, param_b) = self.resolve_sort_params(data);
 
         if let Some(b) = &binding {
             self.write("{ ");
@@ -543,8 +518,8 @@ impl Emitter {
         self.emit_sort_less_than(
             &format!("{}.items", receiver),
             &elem_type_str,
-            param_a,
-            param_b,
+            &param_a,
+            &param_b,
             &data.body,
         );
 
@@ -565,13 +540,7 @@ impl Emitter {
     ) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        let elem_type_str = data.elem_type.to_zig_type();
-        let param_a = &data.elem_param;
-        let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
-            &data.idx_param
-        } else {
-            "_"
-        };
+        let (elem_type_str, param_a, param_b) = self.resolve_sort_params(data);
 
         let blk = self.begin_labeled_block(&binding);
         self.write(&format!(
@@ -586,12 +555,27 @@ impl Emitter {
         self.emit_sort_less_than(
             "__sorted.items",
             &elem_type_str,
-            param_a,
-            param_b,
+            &param_a,
+            &param_b,
             &data.body,
         );
 
         self.write(&format!(" break :{} __sorted; }})", blk));
+    }
+
+    /// Resolve shared sort/toSorted parameters: (elem_type_str, param_a, param_b).
+    fn resolve_sort_params(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) -> (String, String, String) {
+        let elem_type_str = data.elem_type.to_zig_type();
+        let param_a = data.elem_param.clone();
+        let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            data.idx_param.clone()
+        } else {
+            "_".to_string()
+        };
+        (elem_type_str, param_a, param_b)
     }
 
     /// Shared helper: emit `std.mem.sort(ElemType, target, {}, struct { fn lessThan ... }`
