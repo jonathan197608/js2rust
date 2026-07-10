@@ -27,21 +27,7 @@ impl Emitter {
                 fmt.push_str(&escape_zig_string(part));
             }
             // Emit args as a separate pass to get their string representations
-            let arg_strs: Vec<String> = exprs
-                .iter()
-                .map(|arg| {
-                    let saved = std::mem::take(self.output_mut());
-                    self.emit_expr(arg);
-                    let rendered = std::mem::take(self.output_mut());
-                    *self.output_mut() = saved;
-                    rendered
-                })
-                .collect();
-            let args_str = format!(".{{{}}}", arg_strs.join(", "));
-            self.write(&format!(
-                "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
-                fmt, args_str
-            ));
+            self.emit_alloc_print(&fmt, exprs);
         }
     }
 

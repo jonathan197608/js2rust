@@ -47,27 +47,39 @@ impl Emitter {
         use crate::zigir::ops::BinOp;
 
         match op {
-            // Arithmetic: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
-            BinOp::Add => {
+            // Arithmetic with simple catch: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
+            BinOp::Add | BinOp::Sub | BinOp::Mul => {
+                let (method, label) = match op {
+                    BinOp::Add => ("add", "add"),
+                    BinOp::Sub => ("sub", "sub"),
+                    BinOp::Mul => ("mul", "mul"),
+                    _ => unreachable!(),
+                };
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".add(&");
+                self.write(&format!(".{}(&", method));
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt add OOM\"))");
+                self.write(&format!(
+                    ", js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                    label
+                ));
             }
-            BinOp::Sub => {
+            // Bitwise with simple catch: _a.op(&_b, alloc) catch @panic("BigInt op OOM")
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+                let (method, label) = match op {
+                    BinOp::BitAnd => ("bitwiseAnd", "and"),
+                    BinOp::BitOr => ("bitwiseOr", "or"),
+                    BinOp::BitXor => ("bitwiseXor", "xor"),
+                    _ => unreachable!(),
+                };
                 self.write("(");
                 self.emit_expr(left);
-                self.write(".sub(&");
+                self.write(&format!(".{}(&", method));
                 self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt sub OOM\"))");
-            }
-            BinOp::Mul => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".mul(&");
-                self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt mul OOM\"))");
+                self.write(&format!(
+                    ", js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                    label
+                ));
             }
             BinOp::Div => {
                 self.write("(");
@@ -89,27 +101,6 @@ impl Emitter {
                 self.write(".pow(");
                 self.emit_expr(right);
                 self.write(".toU64() catch @panic(\"BigInt toU64 failed\"), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
-            }
-            BinOp::BitAnd => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".bitwiseAnd(&");
-                self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt and OOM\"))");
-            }
-            BinOp::BitOr => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".bitwiseOr(&");
-                self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt or OOM\"))");
-            }
-            BinOp::BitXor => {
-                self.write("(");
-                self.emit_expr(left);
-                self.write(".bitwiseXor(&");
-                self.emit_expr(right);
-                self.write(", js_allocator.allocator()) catch @panic(\"BigInt xor OOM\"))");
             }
             BinOp::Shl => {
                 self.write("(");
@@ -194,19 +185,19 @@ impl Emitter {
         use crate::zigir::emit::helpers::bin_op_to_zig;
         use crate::zigir::ops::BinOp;
         match op {
-            BinOp::Eq | BinOp::StrictEq => {
+            BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
+                let negate = matches!(op, BinOp::Ne | BinOp::StrictNe);
+                if negate {
+                    self.write("(!");
+                }
                 self.write("std.mem.eql(u8, ");
                 self.emit_expr(left);
                 self.write(", ");
                 self.emit_expr(right);
                 self.write(")");
-            }
-            BinOp::Ne | BinOp::StrictNe => {
-                self.write("(!std.mem.eql(u8, ");
-                self.emit_expr(left);
-                self.write(", ");
-                self.emit_expr(right);
-                self.write("))");
+                if negate {
+                    self.write(")");
+                }
             }
             BinOp::Lt => {
                 self.write("(std.mem.order(u8, ");
@@ -279,31 +270,24 @@ impl Emitter {
         };
 
         match op {
-            BinOp::Eq => {
+            // Equality: Eq/StrictEq and Ne/StrictNe share the same emit logic;
+            // only the method name (.eq vs .strictEq) and negation differ.
+            BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
+                let method = match op {
+                    BinOp::StrictEq | BinOp::StrictNe => "strictEq",
+                    _ => "eq",
+                };
+                let negate = matches!(op, BinOp::Ne | BinOp::StrictNe);
+                if negate {
+                    self.write("!(");
+                }
                 emit_left_as_jsany(self);
-                self.write(".eq(");
+                self.write(&format!(".{}(", method));
                 emit_right_as_jsany(self);
                 self.write(")");
-            }
-            BinOp::StrictEq => {
-                emit_left_as_jsany(self);
-                self.write(".strictEq(");
-                emit_right_as_jsany(self);
-                self.write(")");
-            }
-            BinOp::Ne => {
-                self.write("!(");
-                emit_left_as_jsany(self);
-                self.write(".eq(");
-                emit_right_as_jsany(self);
-                self.write("))");
-            }
-            BinOp::StrictNe => {
-                self.write("!(");
-                emit_left_as_jsany(self);
-                self.write(".strictEq(");
-                emit_right_as_jsany(self);
-                self.write("))");
+                if negate {
+                    self.write(")");
+                }
             }
             // Ordering: use JsAny.from().asI64() for numeric comparison
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
@@ -369,22 +353,11 @@ impl Emitter {
         };
 
         match op {
-            BinOp::Eq | BinOp::StrictEq => {
-                if left_is_bigint {
-                    self.emit_expr(left);
-                } else {
-                    emit_as_bigint(self, left);
+            BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
+                let negate = matches!(op, BinOp::Ne | BinOp::StrictNe);
+                if negate {
+                    self.write("!");
                 }
-                self.write(".eq(&");
-                if right_is_bigint {
-                    self.emit_expr(right);
-                } else {
-                    emit_as_bigint(self, right);
-                }
-                self.write(")");
-            }
-            BinOp::Ne | BinOp::StrictNe => {
-                self.write("!");
                 if left_is_bigint {
                     self.emit_expr(left);
                 } else {

@@ -8,8 +8,8 @@ pub mod template_new;
 
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{
-    EmitterHelpers, assign_op_to_zig, bin_op_to_zig, escape_zig_string, format_param_with_rest,
-    logical_op_to_zig, update_op_to_zig,
+    EmitterHelpers, bin_op_to_zig, escape_zig_string, format_param_with_rest, logical_op_to_zig,
+    update_op_to_zig,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -341,55 +341,7 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::Assign { op, target, value } => {
-                use crate::zigir::ops::AssignOp;
-                if *op == AssignOp::Mod {
-                    // Zig doesn't support % on signed integers; use x = @rem(x, y)
-                    self.emit_assign_target_inner(target);
-                    self.write(" = @rem(");
-                    self.emit_assign_target_inner(target);
-                    self.write(", ");
-                    self.emit_expr(value);
-                    self.write(")");
-                } else if *op == AssignOp::Div {
-                    // Zig signed integer division requires @divTrunc
-                    self.emit_assign_target_inner(target);
-                    self.write(" = @divTrunc(");
-                    self.emit_assign_target_inner(target);
-                    self.write(", ");
-                    self.emit_expr(value);
-                    self.write(")");
-                } else if *op == AssignOp::LogicAnd {
-                    // a &&= b → a = if (a.toBool()) b else a
-                    self.emit_assign_target_inner(target);
-                    self.write(" = if (");
-                    self.emit_assign_target_inner(target);
-                    self.write(".toBool()) ");
-                    self.emit_expr(value);
-                    self.write(" else ");
-                    self.emit_assign_target_inner(target);
-                } else if *op == AssignOp::LogicOr {
-                    // a ||= b → a = if (!a.toBool()) b else a
-                    self.emit_assign_target_inner(target);
-                    self.write(" = if (!");
-                    self.emit_assign_target_inner(target);
-                    self.write(".toBool()) ");
-                    self.emit_expr(value);
-                    self.write(" else ");
-                    self.emit_assign_target_inner(target);
-                } else if *op == AssignOp::Nullish {
-                    // a ??= b → a = if (a.isNullish()) b else a
-                    self.emit_assign_target_inner(target);
-                    self.write(" = if (");
-                    self.emit_assign_target_inner(target);
-                    self.write(".isNullish()) ");
-                    self.emit_expr(value);
-                    self.write(" else ");
-                    self.emit_assign_target_inner(target);
-                } else {
-                    self.emit_assign_target_inner(target);
-                    self.write(&format!(" {} ", assign_op_to_zig(*op)));
-                    self.emit_expr(value);
-                }
+                self.emit_compound_assign(target, *op, value);
             }
 
             // ── Calls ───────────────────────────────
@@ -585,21 +537,7 @@ impl Emitter {
                     self.write(&format!("\"{}\"", unescaped));
                 } else {
                     // Emit args by capturing each as a string
-                    let arg_strs: Vec<String> = args
-                        .iter()
-                        .map(|arg| {
-                            let saved = std::mem::take(self.output_mut());
-                            self.emit_expr(arg);
-                            let rendered = std::mem::take(self.output_mut());
-                            *self.output_mut() = saved;
-                            rendered
-                        })
-                        .collect();
-                    let args_str = format!(".{{{}}}", arg_strs.join(", "));
-                    self.write(&format!(
-                        "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
-                        fmt, args_str
-                    ));
+                    self.emit_alloc_print(fmt, args);
                 }
             }
 
@@ -774,6 +712,85 @@ impl Emitter {
                 self.write(&format!("@compileError(\"{}\")", msg));
             }
         }
+    }
+
+    /// Emit a compound assignment (Mod/Div/LogicAnd/LogicOr/Nullish or simple op).
+    /// Shared by IrExpr::Assign (expression context) and emit_assign_inline (statement context).
+    pub(super) fn emit_compound_assign(
+        &mut self,
+        target: &crate::zigir::types::IrAssignTarget,
+        op: crate::zigir::ops::AssignOp,
+        value: &crate::zigir::types::IrExpr,
+    ) {
+        use crate::zigir::ops::AssignOp;
+        if op == AssignOp::Mod {
+            // Zig doesn't support % on signed integers; use x = @rem(x, y)
+            self.emit_assign_target_inner(target);
+            self.write(" = @rem(");
+            self.emit_assign_target_inner(target);
+            self.write(", ");
+            self.emit_expr(value);
+            self.write(")");
+        } else if op == AssignOp::Div {
+            // Zig signed integer division requires @divTrunc
+            self.emit_assign_target_inner(target);
+            self.write(" = @divTrunc(");
+            self.emit_assign_target_inner(target);
+            self.write(", ");
+            self.emit_expr(value);
+            self.write(")");
+        } else if op == AssignOp::LogicAnd {
+            // a &&= b → a = if (a.toBool()) b else a
+            self.emit_assign_target_inner(target);
+            self.write(" = if (");
+            self.emit_assign_target_inner(target);
+            self.write(".toBool()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target_inner(target);
+        } else if op == AssignOp::LogicOr {
+            // a ||= b → a = if (!a.toBool()) b else a
+            self.emit_assign_target_inner(target);
+            self.write(" = if (!");
+            self.emit_assign_target_inner(target);
+            self.write(".toBool()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target_inner(target);
+        } else if op == AssignOp::Nullish {
+            // a ??= b → a = if (a.isNullish()) b else a
+            self.emit_assign_target_inner(target);
+            self.write(" = if (");
+            self.emit_assign_target_inner(target);
+            self.write(".isNullish()) ");
+            self.emit_expr(value);
+            self.write(" else ");
+            self.emit_assign_target_inner(target);
+        } else {
+            self.emit_assign_target_inner(target);
+            self.write(&format!(" {} ", op.to_zig_str()));
+            self.emit_expr(value);
+        }
+    }
+
+    /// Emit a `std.fmt.allocPrint(allocator, fmt, .{args})` call.
+    /// Shared by IrExpr::AllocPrint and emit_template_literal.
+    pub(super) fn emit_alloc_print(&mut self, fmt: &str, args: &[crate::zigir::types::IrExpr]) {
+        let arg_strs: Vec<String> = args
+            .iter()
+            .map(|arg| {
+                let saved = std::mem::take(self.output_mut());
+                self.emit_expr(arg);
+                let rendered = std::mem::take(self.output_mut());
+                *self.output_mut() = saved;
+                rendered
+            })
+            .collect();
+        let args_str = format!(".{{{}}}", arg_strs.join(", "));
+        self.write(&format!(
+            "std.fmt.allocPrint(js_allocator.allocator(), \"{}\", {}) catch @panic(\"OOM: template literal allocPrint\")",
+            fmt, args_str
+        ));
     }
 
     pub(super) fn emit_args(&mut self, args: &[crate::zigir::types::IrExpr]) {

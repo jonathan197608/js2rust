@@ -177,15 +177,7 @@ impl Emitter {
         let blk_clone = blk.clone();
         let match_val = match_value.to_string();
         self.emit_callback_body(&data.body, |emitter, expr| {
-            if negate {
-                emitter.write("if (!(");
-                emitter.emit_expr(expr);
-                emitter.write(&format!(")) break :{} {};", blk_clone, match_val));
-            } else {
-                emitter.write("if (");
-                emitter.emit_expr(expr);
-                emitter.write(&format!(") break :{} {};", blk_clone, match_val));
-            }
+            emitter.emit_if_break_pred(expr, &blk_clone, &match_val, negate);
         });
         self.indent_pop();
         self.writeln("");
@@ -267,9 +259,7 @@ impl Emitter {
         }
         self.indent_push();
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} {};", blk_clone, elem_param));
+            emitter.emit_if_break_pred(expr, &blk_clone, &elem_param, false);
         });
         self.indent_pop();
         self.writeln("");
@@ -322,9 +312,7 @@ impl Emitter {
         }
         self.indent_push();
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
-            emitter.emit_expr(expr);
-            emitter.write(&format!(") break :{} {};", blk_clone, idx_name_clone));
+            emitter.emit_if_break_pred(expr, &blk_clone, &idx_name_clone, false);
         });
         self.indent_pop();
         self.writeln("");

@@ -185,6 +185,26 @@ impl Emitter {
         rendered
     }
 
+    /// Emit `if (<expr>) break :<blk> <value>` or `if (!(<expr>)) break :<blk> <value>`.
+    /// Shared by short-circuit (some/every), find-like, and find-index-like inlining.
+    pub(super) fn emit_if_break_pred(
+        &mut self,
+        expr: &crate::zigir::types::IrExpr,
+        blk: &str,
+        value: &str,
+        negate: bool,
+    ) {
+        if negate {
+            self.write("if (!(");
+            self.emit_expr(expr);
+            self.write(&format!(")) break :{} {};", blk, value));
+        } else {
+            self.write("if (");
+            self.emit_expr(expr);
+            self.write(&format!(") break :{} {};", blk, value));
+        }
+    }
+
     /// Emit callback body statements, fusing `IrStmt::Return { value }` and
     /// `IrStmt::Expr` into a single predicate via `emit_pred`. Other statements
     /// are emitted normally.

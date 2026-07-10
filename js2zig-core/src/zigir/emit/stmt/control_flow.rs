@@ -20,32 +20,7 @@ impl Emitter {
         self.indent_push();
         self.emit_block_stmts_unlabeled(then);
         self.indent_pop();
-        if let Some(else_block) = else_ {
-            // Check if the else block is a single if statement (else-if chain)
-            if else_block.stmts.len() == 1
-                && let IrStmt::If {
-                    cond: inner_cond,
-                    then: inner_then,
-                    else_: inner_else,
-                } = &else_block.stmts[0]
-            {
-                self.write_indent();
-                self.write("} else if (");
-                self.emit_expr_as_bool(inner_cond);
-                self.write(") {\n");
-                self.indent_push();
-                self.emit_block_stmts_unlabeled(inner_then);
-                self.indent_pop();
-                // Recurse for the inner else
-                self.emit_else_chain(inner_else);
-                return;
-            }
-            self.writeln("} else {");
-            self.indent_push();
-            self.emit_block_stmts_unlabeled(else_block);
-            self.indent_pop();
-        }
-        self.writeln("}");
+        self.emit_else_chain(else_);
     }
 
     /// Recursively emit else / else-if chains.
