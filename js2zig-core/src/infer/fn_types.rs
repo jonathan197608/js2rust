@@ -53,6 +53,15 @@ impl TypeInferrer {
                 .collect(),
         );
 
+        // Handle rest parameter (...args) — register in var_types as JsAny
+        // so that .length dispatch uses SliceLen (→ .len) instead of StringLen (→ utf16Len).
+        // Do NOT add to fn_param_types since the lowerer handles rest param emission separately.
+        if let Some(rest) = &fd.params.rest
+            && let Some(rname) = crate::infer::binding_name(&rest.rest.argument)
+        {
+            self.var_types.insert(rname.to_string(), ZigType::JsAny);
+        }
+
         // Walk body for local var types FIRST,
         // so return-type inference can reference them.
         if let Some(body) = &fd.body {
@@ -66,9 +75,7 @@ impl TypeInferrer {
         // call or property, refine it to Str. This reduces the need for
         // JSDoc @param {string}. We do NOT refine export function params
         // (which default to I64) because that would break C ABI signatures.
-        if !is_export
-            && let Some(body) = &fd.body
-        {
+        if !is_export && let Some(body) = &fd.body {
             let param_names: Vec<String> = params
                 .iter()
                 .filter(|(_, r)| matches!(r, InferResult::Indeterminate))
@@ -354,6 +361,7 @@ impl TypeInferrer {
                 }
             }
         }
+
         params
     }
 
@@ -629,9 +637,7 @@ impl TypeInferrer {
                 if let Some(ForStatementInit::VariableDeclaration(vd)) = &fs.init {
                     for decl in &vd.declarations {
                         if let Some(init) = &decl.init {
-                            Self::detect_string_param_usage_in_expr(
-                                init, param_names, refined,
-                            );
+                            Self::detect_string_param_usage_in_expr(init, param_names, refined);
                         }
                     }
                 }
@@ -699,11 +705,9 @@ impl TypeInferrer {
             Expression::CallExpression(ce) => {
                 // Check if this is param.stringOnlyMethod(...)
                 if let Expression::StaticMemberExpression(sme) = &ce.callee
-                    && let Some(name) =
-                        super::helpers::extract_expr_identifier_name(&sme.object)
+                    && let Some(name) = super::helpers::extract_expr_identifier_name(&sme.object)
                     && param_names.contains(&name)
-                    && Self::STRING_ONLY_METHODS
-                        .contains(&sme.property.name.as_str())
+                    && Self::STRING_ONLY_METHODS.contains(&sme.property.name.as_str())
                 {
                     refined.insert(name);
                 }

@@ -50,6 +50,13 @@ impl Emitter {
                 self.write(".items.len");
             }
             FieldKind::StringLen => {
+                // JS string.length returns UTF-16 code unit count, not byte count
+                self.write("js_string.utf16Len(");
+                self.emit_expr(object);
+                self.write(")");
+            }
+            FieldKind::SliceLen => {
+                // Slice/TypedArray length: element count
                 self.emit_expr(object);
                 self.write(".len");
             }
@@ -216,12 +223,12 @@ impl Emitter {
                 self.write("))]");
             }
             ComputedKeyKind::StringChar => {
-                // str[idx] in JS returns a character; in Zig, byte access then cast to i64
-                self.write("@as(i64, @intCast(");
+                // str[idx] in JS returns a UTF-16 code unit value; use charCodeAt for correct semantics
+                self.write("@as(i64, @intCast(js_string.charCodeAt(");
                 self.emit_expr(object);
-                self.write("[@as(usize, @intCast(");
+                self.write(", ");
                 self.emit_expr(key);
-                self.write("))]))");
+                self.write(")))");
             }
             ComputedKeyKind::CompileError(msg) => {
                 self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));

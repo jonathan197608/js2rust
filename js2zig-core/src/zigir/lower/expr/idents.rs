@@ -30,7 +30,9 @@ impl Lowerer {
             } => {
                 names.insert(ident.zig_name.clone());
             }
-            IrStmt::Return { value: None | Some(_) } => {}
+            IrStmt::Return {
+                value: None | Some(_),
+            } => {}
             IrStmt::If { then, else_, .. } => {
                 for s in &then.stmts {
                     Self::collect_returned_var_zig_names_in_stmt(s, names);
@@ -461,9 +463,9 @@ impl Lowerer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
     use crate::zigir::types::{IrBlock, IrExpr, IrStmt, IrVarDecl};
-    use crate::types::ZigType;
 
     #[test]
     fn test_collect_returned_var_direct() {

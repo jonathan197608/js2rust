@@ -10,8 +10,10 @@ pub enum FieldKind {
     Namespace,
     /// ArrayList length: `arr.items.len`
     ArrayListLen,
-    /// String length: `str.len`
+    /// String length: `js_string.utf16Len(str)` (UTF-16 code unit count, JS semantics)
     StringLen,
+    /// Slice/TypedArray length: `obj.len` (element count)
+    SliceLen,
     /// Map/Set size: `map.size()` or `set.size()`  (method call, not field)
     MapSetSize,
     /// Math constant: `std.math.pi`, etc.

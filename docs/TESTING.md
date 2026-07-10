@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'a2c105bd-5ab7-452f-a5fa-c4bb3b88d81c'
+  PropagateID: 'a2c105bd-5ab7-452f-a5fa-c4bb3b88d81c'
+  ReservedCode1: 'f1dc4e2a-85f2-4c1c-8f1a-8ce17d33a395'
+  ReservedCode2: 'f1dc4e2a-85f2-4c1c-8f1a-8ce17d33a395'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6fd1b5eb-78cc-41f3-b02b-5131b47e6246'
+  PropagateID: '6fd1b5eb-78cc-41f3-b02b-5131b47e6246'
+  ReservedCode1: 'e7cac2b1-96aa-470e-b0b5-979cd59c9830'
+  ReservedCode2: 'e7cac2b1-96aa-470e-b0b5-979cd59c9830'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'b212846e-e749-4dd5-9b68-8ddfb2c216bc'
   PropagateID: 'b212846e-e749-4dd5-9b68-8ddfb2c216bc'
   ReservedCode1: 'da6d18d7-8009-4f83-9da3-d90ecfe20899'
@@ -316,16 +338,19 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 351 + 118 = 469 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（8 子模块）+ 内联测试 | 367 + 119 = 486 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Zig runtime 测试** | `runtime/js_string.zig` 等 | 43 | 运行时函数正确性（UTF-16 helpers、字符串方法） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
-### 基线指标（2026-07-08）
+### 基线指标（2026-07-10）
 
-- Rust 单元测试：**469 passed, 0 failed**（351 在 `tests/` 子模块 + 118 内联在 `zigir/` 等源文件中）
+- Rust 单元测试：**486 passed, 0 failed**（367 在 `tests/` 子模块 + 119 内联在 `zigir/` 等源文件中）
+- Zig runtime 测试：**43 passed, 0 failed**（`runtime/js_string.zig` 19 个 UTF-16 相关测试 + 24 个原有测试）
 - Clippy：**0 warnings**
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
 - 1 个 mismatch 为已知限制，详见下方表格
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
+- UTF-16/UTF-8 差异处理：String `.length`/`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 已正确实现 UTF-16 索引语义（`.length` → `utf16Len()`，切片 → `utf16IndexToByteOffset()`，查找 → `byteOffsetToUtf16Index()`）
 
 ---
 
@@ -750,6 +775,10 @@ zig version
 ### Q: 测试文件如何导航？
 
 测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

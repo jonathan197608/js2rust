@@ -3,6 +3,50 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '8af893cb-15b9-4f29-b35b-606bfc157600'
+  PropagateID: '8af893cb-15b9-4f29-b35b-606bfc157600'
+  ReservedCode1: '85591a3c-ebf4-41f4-baa2-45f572444152'
+  ReservedCode2: '85591a3c-ebf4-41f4-baa2-45f572444152'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a17d179c-93a3-4a68-acb9-38f741f11605'
+  PropagateID: 'a17d179c-93a3-4a68-acb9-38f741f11605'
+  ReservedCode1: 'c2f8fee2-e202-4307-922e-f94319f3124c'
+  ReservedCode2: 'c2f8fee2-e202-4307-922e-f94319f3124c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '1c371aa2-46fd-4201-82ca-10f4efd5022b'
+  PropagateID: '1c371aa2-46fd-4201-82ca-10f4efd5022b'
+  ReservedCode1: 'd76b03ce-39a8-4cb1-8adc-6bd4e1864aa4'
+  ReservedCode2: 'd76b03ce-39a8-4cb1-8adc-6bd4e1864aa4'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '49d2a2c0-1698-4918-b43e-3d1cc4006d43'
+  PropagateID: '49d2a2c0-1698-4918-b43e-3d1cc4006d43'
+  ReservedCode1: '49c8cfea-a5c5-4463-b4f8-a492a74070bb'
+  ReservedCode2: '49c8cfea-a5c5-4463-b4f8-a492a74070bb'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'e5a2b865-2f87-48fd-b500-5460a22d422a'
   PropagateID: 'e5a2b865-2f87-48fd-b500-5460a22d422a'
   ReservedCode1: 'ae9f808c-c707-461d-874a-f5d831e8e0d3'
@@ -155,7 +199,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 469 个 Rust 测试 (469 pass + 0 ignore) + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 486 个 Rust 测试 (486 pass + 0 ignore) + 43 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -167,7 +211,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 469 个 Rust 测试 (469 pass + 0 ignore) + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 486 个 Rust 测试 (486 pass + 0 ignore) + 43 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -326,12 +370,13 @@ AIGC:
 | `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase-project |
 | `obj[key]` (计算属性) | ✅ | 按 `obj` 类型分发：`struct` → `obj.field`，`HashMap` → `obj.get(key)`/`obj.put(key, val)` | `test_native_proto_computed_member` |
 | `arr[idx]` (数组索引) | ✅ | `arr.items[@as(usize, @intCast(idx))]`（支持变量索引） | `test_dynamic_array_access_index` + `test_dynamic_array_assignment_index` |
-| `.length` → `.len` | ✅ | 自动转换 | 同上 |
+| `.length` | ✅ | 类型感知分发：String → `utf16Len(obj)`，ArrayList → `obj.items.len`，其他 → `obj.len` | 同上 |
 
 **注意**:
 - `obj[key]` 现已支持：struct 类型按字符串字面量 key 映射到 `.field`，HashMap 类型生成 `.get(key)`/`.put(key, val)`
 - `arr[idx]` 现已支持变量索引：ArrayList → `arr.items[@as(usize, @intCast(idx))]`，Slice → `arr[idx]`
 - `str[idx]` 支持变量索引（需要 JSDoc `@param {string}` 标注），→ `@as(i64, @intCast(str[@as(usize, @intCast(idx))]))`
+- `.length` 分发逻辑：String（`ZigType::Str`）→ `js_string.utf16Len(obj)`，ArrayList → `obj.items.len`，其他类型（TypedArray、rest params、`match()` 结果等）→ `obj.len`。对非 Identifier 表达式先尝试 `infer_expr_type()` 推导类型再分发。
 
 ### 2.10 函数调用 - ✅ 100% 实现
 
@@ -682,7 +727,7 @@ AIGC:
 ### 4.3 `String` — 27+4⚠️/32 (97%)
 
 > **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
-> **关键限制**: Zig 字符串为 UTF-8 编码，`charAt`/`charCodeAt` 需处理 UTF-16 vs UTF-8 差异。
+> **UTF-16 语义**: 已完整实现 UTF-16/UTF-8 差异处理。`.length` → `utf16Len()`，`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 均使用 UTF-16 索引语义（补充字符计为 2 个 code unit）。运行时提供 `utf16Len()`/`utf16IndexToByteOffset()`/`byteOffsetToUtf16Index()`/`firstUtf16CodeUnits()`/`encodeCodeUnit()` 等辅助函数。
 > **⚠️ 简化实现**: 4 个 locale/Unicode 方法仅提供基础功能（字节序比较/ASCII 大小写/pass-through），完整实现需要 ICU 库，对 JS→Zig 转译器不值得。
 > **⚠️ Stub**: `.search(regexp)` 运行时函数 `searchString` 始终返回 -1，正则搜索需 host 函数集成后方可用。
 
@@ -1349,6 +1394,14 @@ InferResult  →  Definite(ZigType) | Indeterminate
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
 | `test_builtins_frag_202` | MISMATCH | `decodeURIComponent` stack trace 格式差异 | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

@@ -91,8 +91,73 @@ impl Lowerer {
             }
         }
 
-        // ── .length on all types (string, slice, call result, etc.) ──
+        // ── .length — type-aware dispatch ──
         if field_name == "length" {
+            // Check type info for the object to determine the right FieldKind
+            if let Expression::Identifier(id) = &mem.object
+                && let Some(zig_type) = self.type_info.var_types.get(id.name.as_str())
+            {
+                // String → utf16Len
+                if matches!(zig_type, ZigType::Str) {
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::StringLen,
+                    };
+                }
+                // ArrayList → items.len (should have been caught above, but just in case)
+                if matches!(zig_type, ZigType::ArrayList(_)) {
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::ArrayListLen,
+                    };
+                }
+                // NamedStruct (TypedArray, Map, Set, etc.) or other types → slice .len
+                return IrExpr::FieldAccess {
+                    object: Box::new(self.lower_expr(&mem.object)),
+                    field: field_name.to_string(),
+                    field_kind: FieldKind::SliceLen,
+                };
+            }
+            // No var_types entry: try infer_expr_type for non-Identifier objects
+            // (e.g., str.match(...).length, someCall().length)
+            if !matches!(&mem.object, Expression::Identifier(_)) {
+                if let Some(inferred) = self.infer_expr_type(&mem.object) {
+                    if matches!(inferred, ZigType::Str) {
+                        return IrExpr::FieldAccess {
+                            object: Box::new(self.lower_expr(&mem.object)),
+                            field: field_name.to_string(),
+                            field_kind: FieldKind::StringLen,
+                        };
+                    }
+                    // Any non-string inferred type → SliceLen
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::SliceLen,
+                    };
+                }
+                // infer_expr_type returned None: check NewExpression pattern
+                if let Expression::CallExpression(call) = &mem.object
+                    && let Expression::NewExpression(_) = &call.callee
+                {
+                    return IrExpr::FieldAccess {
+                        object: Box::new(self.lower_expr(&mem.object)),
+                        field: field_name.to_string(),
+                        field_kind: FieldKind::SliceLen,
+                    };
+                }
+                // Truly unknown non-Identifier: default to SliceLen since
+                // string .length on a call result is rare, and SliceLen
+                // produces a more actionable compile error if wrong
+                return IrExpr::FieldAccess {
+                    object: Box::new(self.lower_expr(&mem.object)),
+                    field: field_name.to_string(),
+                    field_kind: FieldKind::SliceLen,
+                };
+            }
+            // Identifier with no type info: default to StringLen
             return IrExpr::FieldAccess {
                 object: Box::new(self.lower_expr(&mem.object)),
                 field: field_name.to_string(),
