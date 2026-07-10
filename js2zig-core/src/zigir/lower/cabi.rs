@@ -198,6 +198,7 @@ impl Lowerer {
             BC::ArrayReduce => Some(ArrayCallbackKind::Reduce),
             BC::ArraySort => Some(ArrayCallbackKind::Sort),
             BC::ArrayToSorted => Some(ArrayCallbackKind::ToSorted),
+            BC::ArrayFlatMap => Some(ArrayCallbackKind::FlatMap),
             _ => None,
         }
     }

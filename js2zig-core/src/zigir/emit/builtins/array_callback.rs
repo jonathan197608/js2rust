@@ -34,6 +34,7 @@ impl Emitter {
             K::Reduce => self.emit_reduce_inline(data),
             K::Sort => self.emit_sort_callback_inline(data),
             K::ToSorted => self.emit_to_sorted_callback_inline(data),
+            K::FlatMap => self.emit_flat_map_inline(data),
         }
     }
 
@@ -625,5 +626,56 @@ impl Emitter {
         });
 
         self.write(&format!(" }} }}.lessThan); break :{} __sorted; }})", blk));
+    }
+
+    // ── flatMap ───────────────────────────────────────
+    //
+    //  arr.flatMap(fn) → map + flatten(depth=1).
+    //  Since our type system uses uniform element types (ArrayList(i64), etc.),
+    //  the callback returns a scalar, so flatMap is semantically equivalent to map
+    //  (flatten(1) on a flat array of scalars is a no-op).
+    //
+    //  (blk_N: {
+    //      var __fmap: std.ArrayList(elem_type) = .empty;
+    //      __fmap.ensureTotalCapacity(...)
+    //      for (obj.items) |elem| {
+    //          __fmap.append(allocator, <body_expr>) catch @panic("OOM");
+    //      }
+    //      break :blk_N __fmap;
+    //  })
+    //
+    pub(super) fn emit_flat_map_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) {
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+
+        let blk = self.begin_labeled_block(&binding);
+        let elem_type_str = data.elem_type.to_zig_type();
+        let loop_elem = if data.elem_param == "_" {
+            "__melem".to_string()
+        } else {
+            data.elem_param.clone()
+        };
+        self.write(&format!(
+            "var __fmap: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__fmap.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.flatMap capacity\"); ",
+            receiver
+        ));
+        self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
+        self.write("{\n");
+        self.indent_push();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("__fmap.append(js_allocator.allocator(), ");
+            emitter.emit_expr(expr);
+            emitter.write(") catch @panic(\"OOM: Array.flatMap append\");");
+        });
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} __fmap; }})", blk));
     }
 }

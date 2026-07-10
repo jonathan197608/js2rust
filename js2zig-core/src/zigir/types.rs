@@ -846,6 +846,8 @@ pub enum ArrayCallbackKind {
     Sort,
     /// arr.toSorted(compareFn) — sort returning a new array with custom comparator
     ToSorted,
+    /// arr.flatMap(fn) — map + flatten(1), callback returns scalar element
+    FlatMap,
 }
 
 /// Data for inline expansion of array callback methods.

@@ -117,15 +117,18 @@ pub fn sort(alloc: Allocator, arr: []const i64) ![]const i64 {
     return result;
 }
 
-/// Array.flat — identity operation for i64 arrays (elements are already flat).
-pub fn flat(alloc: Allocator, arr: []const i64) ![]const i64 {
+/// Array.flat — for uniform-typed arrays (i64, f64, etc.) this is an identity
+/// operation since elements cannot be nested sub-arrays. The depth parameter
+/// is accepted but has no effect on flat scalar arrays.
+pub fn flat(alloc: Allocator, arr: []const i64, _depth: i64) ![]const i64 {
+    _ = _depth;
     return try alloc.dupe(i64, arr);
 }
 
-/// Array.flatMap — same as identity map (simplified).
-/// For i64 arrays, returns a copy of the original array.
-pub fn flatMap(alloc: Allocator, arr: []const i64, _mul: i64) ![]const i64 {
-    _ = _mul;
+/// Array.flatMap runtime fallback for scalar types without callback inlining.
+/// With callback inlining (ArrayCallbackKind::FlatMap), the emit layer generates
+/// an inline for-loop instead of calling this function.
+pub fn flatMap(alloc: Allocator, arr: []const i64) ![]const i64 {
     return try alloc.dupe(i64, arr);
 }
 
@@ -207,15 +210,14 @@ test "unshift" {
 }
 
 test "flat" {
-    const result = try flat(std.testing.allocator, &[_]i64{ 1, 2, 3 });
+    const result = try flat(std.testing.allocator, &[_]i64{ 1, 2, 3 }, 1);
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualSlices(i64, &[_]i64{ 1, 2, 3 }, result);
 }
 
 test "flatMap" {
-    const result = try flatMap(std.testing.allocator, &[_]i64{ 1, 2, 3 }, 2);
+    const result = try flatMap(std.testing.allocator, &[_]i64{ 1, 2, 3 });
     defer std.testing.allocator.free(result);
-    // flatMap for i64 is identity (returns copy of original)
     try std.testing.expectEqualSlices(i64, &[_]i64{ 1, 2, 3 }, result);
 }
 

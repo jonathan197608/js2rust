@@ -2018,3 +2018,87 @@ export function testToSortedAsc() {
         zig
     );
 }
+
+// ── flatMap inline callback tests ───────
+
+#[test]
+fn test_flatmap_with_callback() {
+    let js = r#"
+/**
+ * @param {i64[]} arr
+ * @returns {i64[]}
+ */
+export function doubleAll(arr) {
+    return arr.flatMap((x) => x * 2);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_flatmap_with_callback");
+    println!("=== flatMap with callback ===\n{}", zig);
+    // flatMap with callback should be inlined via ArrayCallbackKind::FlatMap
+    assert!(
+        zig.contains("__fmap"),
+        "Expected __fmap inline expansion:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("for"),
+        "Expected for-loop in flatMap:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_flatmap_with_chaining() {
+    let js = r#"
+/**
+ * @param {i64[]} arr
+ * @returns {i64[]}
+ */
+export function filterThenFlatMap(arr) {
+    return arr.filter((x) => x > 1).flatMap((x) => x * 10);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_flatmap_with_chaining");
+    println!("=== flatMap with chaining ===\n{}", zig);
+    assert!(
+        zig.contains("__fmap"),
+        "Expected __fmap in chained flatMap:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_flat_without_depth() {
+    let js = r#"
+export function testFlatNoArgs() {
+    const arr = [1, 2, 3];
+    return arr.flat();
+}
+"#;
+    let zig = transpile_and_assert(js, "test_flat_without_depth");
+    println!("=== flat without depth ===\n{}", zig);
+    // flat() without callback falls to runtime js_array.flat()
+    assert!(
+        zig.contains("js_array.flat"),
+        "Expected js_array.flat runtime call:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_flat_with_depth() {
+    let js = r#"
+export function testFlatDepth() {
+    const arr = [1, 2, 3];
+    return arr.flat(2);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_flat_with_depth");
+    println!("=== flat with depth ===\n{}", zig);
+    // flat(depth) also falls to runtime js_array.flat() with depth argument
+    assert!(
+        zig.contains("js_array.flat"),
+        "Expected js_array.flat runtime call:\n{}",
+        zig
+    );
+}

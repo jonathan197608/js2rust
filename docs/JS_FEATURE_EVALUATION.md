@@ -3,6 +3,39 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '8b1ff31b-1399-4b24-9859-3c26c121e2de'
+  PropagateID: '8b1ff31b-1399-4b24-9859-3c26c121e2de'
+  ReservedCode1: '3636eb3e-f793-49b2-9fe9-00793afe8b6d'
+  ReservedCode2: '3636eb3e-f793-49b2-9fe9-00793afe8b6d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'dc2572e4-6b03-4594-b3da-ef8aa548bee5'
+  PropagateID: 'dc2572e4-6b03-4594-b3da-ef8aa548bee5'
+  ReservedCode1: 'dc8d04da-c2cb-47b8-8042-d4fa33c03ce9'
+  ReservedCode2: 'dc8d04da-c2cb-47b8-8042-d4fa33c03ce9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '93cd5c9b-c918-4ea5-b9a4-5bd46e867ece'
+  PropagateID: '93cd5c9b-c918-4ea5-b9a4-5bd46e867ece'
+  ReservedCode1: 'd04f2891-8554-414b-8e12-890e555a77ca'
+  ReservedCode2: 'd04f2891-8554-414b-8e12-890e555a77ca'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '4cda269f-6715-4091-ad93-b026d5e6d89a'
   PropagateID: '4cda269f-6715-4091-ad93-b026d5e6d89a'
   ReservedCode1: '3bd6db38-1c41-4d5f-a045-4771c0351818'
@@ -485,7 +518,7 @@ AIGC:
 # JS 语言特性实现说�?
 
 > **项目**: js2rust (JS �?Zig 转译�?
-> **测试覆盖**: 493 �?Rust 测试 (493 pass + 0 ignore) + 202 �?Zig runtime 测试 + 204 �?MDN 端到�?fragment
+> **测试覆盖**: 493 �?Rust 测试 (497 pass + 0 ignore) + 202 �?Zig runtime 测试 + 204 �?MDN 端到�?fragment
 
 ---
 
@@ -497,7 +530,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达�?+ 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 493 �?Rust 测试 (493 pass + 0 ignore) + 202 �?Zig runtime 测试 + 204 �?MDN 端到�?fragment |
+| **测试覆盖** | 493 �?Rust 测试 (497 pass + 0 ignore) + 202 �?Zig runtime 测试 + 204 �?MDN 端到�?fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达�?(Expressions) �?91 特�?
@@ -975,8 +1008,8 @@ AIGC:
 | `.filter(fn)` | `arr.filter(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | 新数�?| �?| �?| �?inline for-loop | �?|
 | `.some(fn)` | `arr.some(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `bool` | �?| �?| �?inline for-loop | �?|
 | `.every(fn)` | `arr.every(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `bool` | �?| �?| �?inline for-loop | �?|
-| `.flat(depth)` | `arr.flat([depth])` | `depth?: number` | 新数�?| �?| �?| �?js_array.flat | �?|
-| `.flatMap(fn)` | `arr.flatMap(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T[]` | 新数�?| �?| �?| �?js_array.flatMap | �?|
+| `.flat(depth)` | `arr.flat([depth])` | `depth?: number` | 新数�?| �?| �?| �?runtime identity（标量数组 flat=dupe） | �?|
+| `.flatMap(fn)` | `arr.flatMap(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>T[]` | 新数�?| �?| �?| �?inline for-loop (callback inline 展开为 FlatMap) | �?|
 | `.concat(...arr)` | `arr.concat(value1, ..., valueN)` | `...T[]` | 新数�?| �?| �?| �?inline for-loop | �?|
 | `.find(fn)` | `arr.find(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `T \| undefined` | �?| �?| �?inline for-loop | �?|
 | `.findIndex(fn)` | `arr.findIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` (-1) | �?| �?| �?inline for-loop | �?|
@@ -1651,7 +1684,7 @@ InferResult  �? Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 493 个测�?(493 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 497 个测�?(497 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特�?|
 |----------|----------|----------|
@@ -1679,6 +1712,12 @@ InferResult  �? Definite(ZigType) | Indeterminate
 | Fragment | 类型 | 差异原因 | 状�?|
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一�?`-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+
+> AI生成
+
+> AI生成
+
+> AI生成
 
 > AI生成
 

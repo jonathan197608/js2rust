@@ -487,8 +487,9 @@ return arr.flat();
     let zig = transpile_and_assert(js, "test_native_proto_array_flat");
     println!("=== Array.flat Zig code ===\n{}", zig);
 
-    // Verify: flat identity - arr.flat() → arr (i64 arrays already flat)
+    // flat() without callback falls through to runtime js_array.flat()
     assert!(zig.contains("testFlat"), "Expected testFlat function");
+    assert!(zig.contains("js_array.flat"), "Expected js_array.flat call");
 }
 
 #[test]
@@ -502,8 +503,9 @@ return arr.flatMap((x) => x * 2);
     let zig = transpile_and_assert(js, "test_native_proto_array_flat_map");
     println!("=== Array.flatMap Zig code ===\n{}", zig);
 
-    // Verify: flatMap is recognized; simplified to return original array
+    // flatMap with callback should be inlined (ArrayCallbackKind::FlatMap)
     assert!(zig.contains("testFlatMap"), "Expected testFlatMap function");
+    assert!(zig.contains("__fmap"), "Expected __fmap inline expansion");
 }
 
 #[test]
