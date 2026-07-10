@@ -141,42 +141,32 @@ impl Emitter {
 
         self.write(";\n");
 
-        // Var usage suppression for ArrayList/Map/Set
-        if vd.needs_var_suppression {
+        // Var/const usage suppression for ArrayList/Map/Set or JS-const variables
+        // whose value may not be read after compilation transforms.
+        if vd.needs_var_suppression || vd.needs_const_suppression {
+            let kind = if vd.needs_var_suppression {
+                "var"
+            } else {
+                "const"
+            };
             self.write_indent();
-            self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
+            self.write(&format!("_ = &{}; // {} usage\n", vd.name.zig_name, kind));
         }
 
         // Auto-cleanup: defer deinit for Map/Set variables and class instances
         // that contain Map/Set/ArrayList fields, to prevent memory leaks.
-        if vd.needs_deinit {
+        if vd.needs_deinit
+            || matches!(&vd.zig_type, Some(ZigType::NamedStruct(name))
+                if name != "Map" && name != "Set" && name != "JsDate"
+                    && name != "JsBigInt" && name != "JsRegExp"
+                    && name != "Error" && name != "JsError"
+                    && self.class_needs_deinit.contains(name))
+        {
             self.write_indent();
             self.write(&format!(
                 "defer {}.deinit(js_allocator.allocator()); // auto-cleanup\n",
                 vd.name.zig_name
             ));
-        } else if let Some(ZigType::NamedStruct(name)) = &vd.zig_type
-            && name != "Map"
-            && name != "Set"
-            && name != "JsDate"
-            && name != "JsBigInt"
-            && name != "JsRegExp"
-            && name != "Error"
-            && name != "JsError"
-            && self.class_needs_deinit.contains(name)
-        {
-            self.write_indent();
-            self.write(&format!(
-                "defer {}.deinit(js_allocator.allocator()); // auto-cleanup class\n",
-                vd.name.zig_name
-            ));
-        }
-
-        // Const usage suppression for JS-const variables whose reassignment is
-        // replaced by a throw — the variable may not be read afterward.
-        if vd.needs_const_suppression {
-            self.write_indent();
-            self.write(&format!("_ = &{}; // const usage\n", vd.name.zig_name));
         }
     }
 
@@ -343,6 +333,20 @@ impl Emitter {
         }
     }
 
+    /// Emit a struct literal return: `return .{ .field0 = val0, .field1 = val1, ... };`
+    /// Pairs are provided as `(field_name, value_string)` slices.
+    fn emit_struct_literal_return(&mut self, pairs: &[(&str, String)]) {
+        self.write_indent();
+        self.write("return .{ ");
+        for (i, (name, val)) in pairs.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            self.write(&format!(".{} = {}", name, val));
+        }
+        self.write(" };\n");
+    }
+
     pub(super) fn emit_class_init(
         &mut self,
         class_name: &str,
@@ -367,16 +371,12 @@ impl Emitter {
         // Constructor body
         self.emit_block_stmts_unlabeled(&ctor.body);
 
-        // Return struct literal (from fields assigned in body)
-        self.write_indent();
-        self.write("return .{ ");
-        for (i, field) in fields.iter().enumerate() {
-            if i > 0 {
-                self.write(", ");
-            }
-            self.write(&format!(".{} = {}", field.name, field.name));
-        }
-        self.write(" };\n");
+        // Return struct literal (from fields assigned in body — values are the local vars)
+        let pairs: Vec<(&str, String)> = fields
+            .iter()
+            .map(|f| (f.name.as_str(), f.name.clone()))
+            .collect();
+        self.emit_struct_literal_return(&pairs);
 
         self.indent_pop();
         self.writeln("}");
@@ -388,19 +388,19 @@ impl Emitter {
         if fields.is_empty() {
             self.writeln("return .{};");
         } else {
-            self.write_indent();
-            self.write("return .{ ");
-            for (i, field) in fields.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                let default_val = match &field.default {
-                    Some(expr) => self.expr_to_string(expr),
-                    None => "0".to_string(),
-                };
-                self.write(&format!(".{} = {}", field.name, default_val));
-            }
-            self.write(" };\n");
+            let pairs: Vec<(&str, String)> = fields
+                .iter()
+                .map(|f| {
+                    (
+                        f.name.as_str(),
+                        match &f.default {
+                            Some(expr) => self.expr_to_string(expr),
+                            None => "0".to_string(),
+                        },
+                    )
+                })
+                .collect();
+            self.emit_struct_literal_return(&pairs);
         }
         self.indent_pop();
         self.writeln("}");

@@ -11,6 +11,37 @@ use crate::zigir::emit::Emitter;
 // ═══════════════════════════════════════════════════════
 
 impl Emitter {
+    /// Emit the start-index and delete-count computation shared by splice/toSpliced.
+    /// Writes: `const {start_var} = @as(usize, @intCast(@max(0, start_expr)));  const {cnt_var} = @as(usize, @intCast(@min(@max(0, count_expr), {receiver}.items.len -| {start_var})));  `
+    fn emit_splice_start_count(
+        &mut self,
+        start_var: &str,
+        cnt_var: &str,
+        receiver: &str,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        self.write(&format!(
+            "const {} = @as(usize, @intCast(@max(0, ",
+            start_var
+        ));
+        if let Some(arg) = args.first() {
+            self.emit_expr(arg);
+        } else {
+            self.write("0");
+        }
+        self.write("))); ");
+        self.write(&format!(
+            "const {} = @as(usize, @intCast(@min(@max(0, ",
+            cnt_var
+        ));
+        if args.len() >= 2 {
+            self.emit_expr(&args[1]);
+        } else {
+            self.write("0");
+        }
+        self.write(&format!("), {}.items.len -| {}))); ", receiver, start_var));
+    }
+
     /// Emit an inlined array non-callback method as a Zig block expression or
     /// statement. This handles inline patterns for includes,
     /// indexOf, lastIndexOf, join, slice, splice, at, concat, copyWithin, fill.
@@ -221,20 +252,7 @@ impl Emitter {
             "var __spliced: std.ArrayList({}) = .empty; ",
             elem_type_str
         ));
-        self.write("const __start = @as(usize, @intCast(@max(0, ");
-        if let Some(arg) = data.args.first() {
-            self.emit_expr(arg);
-        } else {
-            self.write("0");
-        }
-        self.write("))); ");
-        self.write("const __cnt = @as(usize, @intCast(@min(@max(0, ");
-        if data.args.len() >= 2 {
-            self.emit_expr(&data.args[1]);
-        } else {
-            self.write("0");
-        }
-        self.write(&format!("), {}.items.len -| __start))); ", receiver));
+        self.emit_splice_start_count("__start", "__cnt", &receiver, &data.args);
         self.write("var __i: usize = 0; while (__i < __cnt) : (__i += 1) { ");
         self.write(&format!(
             "__spliced.append(js_allocator.allocator(), {}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }} ",
@@ -519,22 +537,8 @@ impl Emitter {
             "__sp.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSpliced appendSlice\"); ",
             receiver
         ));
-        // Compute start index
-        self.write("const __sp_start = @as(usize, @intCast(@max(0, ");
-        if let Some(arg) = data.args.first() {
-            self.emit_expr(arg);
-        } else {
-            self.write("0");
-        }
-        self.write("))); ");
-        // Compute delete count
-        self.write("const __sp_cnt = @as(usize, @intCast(@min(@max(0, ");
-        if data.args.len() >= 2 {
-            self.emit_expr(&data.args[1]);
-        } else {
-            self.write("0");
-        }
-        self.write("), __sp.items.len -| __sp_start))); ");
+        // Compute start index and delete count
+        self.emit_splice_start_count("__sp_start", "__sp_cnt", &receiver, &data.args);
         // Remove elements from clone
         self.write("var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); } ");
         // Insert items if provided (args beyond start and deleteCount)

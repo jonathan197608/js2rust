@@ -52,6 +52,28 @@ impl Emitter {
         self.write(&format!("break :{} __arr; }})", blk));
     }
 
+    /// Emit object field pairs (`.key = value` or `@"key" = value`), preceded by
+    /// separator handling. Shared between the inline-property path and the
+    /// spreadMerge inline-text path.
+    fn emit_object_fields<'a, I>(&mut self, fields: I)
+    where
+        I: Iterator<Item = &'a crate::zigir::types::IrObjectField>,
+    {
+        let mut first = true;
+        for field in fields {
+            if !first {
+                self.write(", ");
+            }
+            first = false;
+            if field.is_computed {
+                self.write(&format!("@\"{}\" = ", field.key));
+            } else {
+                self.write(&format!(".{} = ", field.key));
+            }
+            self.emit_expr(&field.value);
+        }
+    }
+
     pub(super) fn emit_object_literal(&mut self, obj: &crate::zigir::types::IrObjectLiteral) {
         use crate::zigir::types::IrObjectItem;
 
@@ -70,21 +92,13 @@ impl Emitter {
         if !has_spread {
             // Pure inline properties — emit directly as .{ ... }
             self.write(".{ ");
-            let mut first = true;
-            for item in &obj.items {
-                if let IrObjectItem::Field(field) = item {
-                    if !first {
-                        self.write(", ");
-                    }
-                    first = false;
-                    if field.is_computed {
-                        self.write(&format!("@\"{}\" = ", field.key)); // simplified
-                    } else {
-                        self.write(&format!(".{} = ", field.key));
-                    }
-                    self.emit_expr(&field.value);
+            self.emit_object_fields(obj.items.iter().filter_map(|item| {
+                if let IrObjectItem::Field(f) = item {
+                    Some(f)
+                } else {
+                    None
                 }
-            }
+            }));
             self.write(" }");
             return;
         }
@@ -122,19 +136,7 @@ impl Emitter {
         } else {
             let saved_output = std::mem::take(&mut self.output);
             self.write(".{ ");
-            let mut first = true;
-            for field in &inline_fields {
-                if !first {
-                    self.write(", ");
-                }
-                first = false;
-                if field.is_computed {
-                    self.write(&format!("@\"{}\" = ", field.key));
-                } else {
-                    self.write(&format!(".{} = ", field.key));
-                }
-                self.emit_expr(&field.value);
-            }
+            self.emit_object_fields(inline_fields.iter().copied());
             self.write(" }");
             let text = std::mem::take(&mut self.output);
             self.output = saved_output;
