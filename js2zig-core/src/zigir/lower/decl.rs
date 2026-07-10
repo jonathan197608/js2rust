@@ -392,7 +392,11 @@ impl Lowerer {
                 }
 
                 crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
-                    temp_name: if needs_temp { Some(temp_name.clone()) } else { None },
+                    temp_name: if needs_temp {
+                        Some(temp_name.clone())
+                    } else {
+                        None
+                    },
                     init: init_ir,
                     kind: IrDestructureKind::Object {
                         is_struct,
@@ -522,7 +526,11 @@ impl Lowerer {
                 }
 
                 crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
-                    temp_name: if needs_temp { Some(temp_name.clone()) } else { None },
+                    temp_name: if needs_temp {
+                        Some(temp_name.clone())
+                    } else {
+                        None
+                    },
                     init: init_ir,
                     kind: IrDestructureKind::Array { is_arraylist },
                     bindings,
