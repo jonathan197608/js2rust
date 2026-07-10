@@ -210,6 +210,32 @@ impl Emitter {
 
     /// Emit a JsAny comparison operation.
     /// JsAny equality uses .eq()/.strictEq(), ordering uses .asI64().
+    /// Emit an expression, optionally wrapping it in `JsAny.from()` if it
+    /// is not already a JsAny-typed value.
+    fn emit_expr_as_jsany(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
+        if is_jsany {
+            self.emit_expr(expr);
+        } else {
+            self.write("JsAny.from(");
+            self.emit_expr(expr);
+            self.write(")");
+        }
+    }
+
+    /// Emit an expression as `.asI64()`, wrapping with `JsAny.from()` first
+    /// if it is not already a JsAny-typed value.
+    fn emit_expr_as_i64(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
+        self.write("(");
+        if is_jsany {
+            self.emit_expr(expr);
+            self.write(".asI64())");
+        } else {
+            self.write("JsAny.from(");
+            self.emit_expr(expr);
+            self.write(").asI64())");
+        }
+    }
+
     pub(super) fn emit_jsany_comparison(
         &mut self,
         op: crate::zigir::ops::BinOp,
@@ -220,26 +246,6 @@ impl Emitter {
     ) {
         use crate::zigir::emit::helpers::bin_op_to_zig;
         use crate::zigir::ops::BinOp;
-
-        // Wrap non-JsAny operand with JsAny.from() if needed
-        let emit_left_as_jsany = |emitter: &mut Emitter| {
-            if left_is_jsany {
-                emitter.emit_expr(left);
-            } else {
-                emitter.write("JsAny.from(");
-                emitter.emit_expr(left);
-                emitter.write(")");
-            }
-        };
-        let emit_right_as_jsany = |emitter: &mut Emitter| {
-            if right_is_jsany {
-                emitter.emit_expr(right);
-            } else {
-                emitter.write("JsAny.from(");
-                emitter.emit_expr(right);
-                emitter.write(")");
-            }
-        };
 
         match op {
             // Equality: Eq/StrictEq and Ne/StrictNe share the same emit logic;
@@ -253,9 +259,9 @@ impl Emitter {
                 if negate {
                     self.write("!(");
                 }
-                emit_left_as_jsany(self);
+                self.emit_expr_as_jsany(left, left_is_jsany);
                 self.write(&format!(".{}(", method));
-                emit_right_as_jsany(self);
+                self.emit_expr_as_jsany(right, right_is_jsany);
                 self.write(")");
                 if negate {
                     self.write(")");
@@ -267,25 +273,9 @@ impl Emitter {
                 // Both sides need to go through JsAny for consistent comparison.
                 // For already-JsAny sides, call .asI64() directly.
                 // For non-JsAny sides, wrap with JsAny.from() then .asI64().
-                if left_is_jsany {
-                    self.write("(");
-                    self.emit_expr(left);
-                    self.write(".asI64())");
-                } else {
-                    self.write("(JsAny.from(");
-                    self.emit_expr(left);
-                    self.write(").asI64())");
-                }
+                self.emit_expr_as_i64(left, left_is_jsany);
                 self.write(&format!(" {} ", zig_op));
-                if right_is_jsany {
-                    self.write("(");
-                    self.emit_expr(right);
-                    self.write(".asI64())");
-                } else {
-                    self.write("(JsAny.from(");
-                    self.emit_expr(right);
-                    self.write(").asI64())");
-                }
+                self.emit_expr_as_i64(right, right_is_jsany);
             }
             _ => {
                 self.emit_default_binop(op, left, right);
