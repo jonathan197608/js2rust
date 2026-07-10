@@ -275,15 +275,11 @@ impl Lowerer {
 
                 // Decide if we need a temp variable
                 let needs_temp = init_may_have_side_effects(init_expr) || op.properties.len() > 1;
-                let temp_name = if needs_temp {
-                    Some(self.name_mangler.next_name("_js_dest"))
-                } else {
-                    None
-                };
+                let temp_name = self.name_mangler.next_name("_js_dest");
 
                 // Source for access patterns: temp var name or inline the init expr
                 let source = if needs_temp {
-                    temp_name.clone().unwrap()
+                    temp_name.clone()
                 } else if let Expression::Identifier(id) = init_expr {
                     id.name.to_string()
                 } else {
@@ -384,7 +380,7 @@ impl Lowerer {
                         is_const: rb.is_const,
                         access: IrDestructureAccess::ObjectField {
                             source: if needs_temp {
-                                temp_name.clone().unwrap()
+                                temp_name.clone()
                             } else {
                                 source.clone()
                             },
@@ -396,7 +392,7 @@ impl Lowerer {
                 }
 
                 crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
-                    temp_name: if needs_temp { temp_name } else { None },
+                    temp_name: if needs_temp { Some(temp_name.clone()) } else { None },
                     init: init_ir,
                     kind: IrDestructureKind::Object {
                         is_struct,
@@ -418,14 +414,10 @@ impl Lowerer {
                 // Decide if we need a temp variable
                 let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
                 let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
-                let temp_name = if needs_temp {
-                    Some(self.name_mangler.next_name("_js_dest"))
-                } else {
-                    None
-                };
+                let temp_name = self.name_mangler.next_name("_js_dest");
 
                 let source = if needs_temp {
-                    temp_name.clone().unwrap()
+                    temp_name.clone()
                 } else if let Expression::Identifier(id) = init_expr {
                     id.name.to_string()
                 } else {
@@ -519,7 +511,7 @@ impl Lowerer {
                         is_const: rb.is_const,
                         access: IrDestructureAccess::ArrayIndex {
                             source: if needs_temp {
-                                temp_name.clone().unwrap()
+                                temp_name.clone()
                             } else {
                                 source.clone()
                             },
@@ -530,7 +522,7 @@ impl Lowerer {
                 }
 
                 crate::zigir::types::IrStmt::DestructureDecl(IrDestructureDecl {
-                    temp_name: if needs_temp { temp_name } else { None },
+                    temp_name: if needs_temp { Some(temp_name.clone()) } else { None },
                     init: init_ir,
                     kind: IrDestructureKind::Array { is_arraylist },
                     bindings,
