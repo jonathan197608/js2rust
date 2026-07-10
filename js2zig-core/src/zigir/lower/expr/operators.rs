@@ -321,7 +321,7 @@ impl Lowerer {
             UpdateOp::Decrement
         };
         let target = Box::new(self.lower_simple_assign_target(&ue.argument));
-        crate::zigir::types::IrExpr::Update {
+        IrExpr::Update {
             op,
             target,
             is_expr_stmt: self.in_expr_stmt,

@@ -17,7 +17,7 @@ impl Emitter {
     pub(super) fn resolve_anytype_return(
         &mut self,
         return_type: &ZigType,
-        typeof_return_body: &Option<std::boxed::Box<crate::zigir::types::IrExpr>>,
+        typeof_return_body: &Option<Box<crate::zigir::types::IrExpr>>,
         is_async: bool,
         can_throw: bool,
     ) -> String {

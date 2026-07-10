@@ -91,8 +91,8 @@ impl Lowerer {
     /// expression from the body so the Emitter can emit `@TypeOf(expr)`.
     fn resolve_typeof_return_body(
         return_type: &ZigType,
-        body: &crate::zigir::types::IrBlock,
-    ) -> Option<std::boxed::Box<crate::zigir::types::IrExpr>> {
+        body: &IrBlock,
+    ) -> Option<Box<crate::zigir::types::IrExpr>> {
         if matches!(return_type, ZigType::AnytypeReturn) {
             Self::find_first_return_expr_in_block(body).map(|e| Box::new(e.clone()))
         } else {
@@ -147,7 +147,7 @@ impl Lowerer {
     ) -> (
         Vec<IrParam>,
         IrBlock,
-        Option<std::boxed::Box<crate::zigir::types::IrExpr>>,
+        Option<Box<crate::zigir::types::IrExpr>>,
     ) {
         let FnBodyScope {
             saved,

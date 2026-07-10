@@ -78,7 +78,7 @@ impl Lowerer {
 
     /// Extract parameter names from a parameter list.
     fn collect_param_names(
-        params: &oxc_allocator::Vec<'_, oxc_ast::ast::FormalParameter>,
+        params: &oxc_allocator::Vec<'_, FormalParameter>,
     ) -> std::collections::HashSet<String> {
         params
             .iter()
