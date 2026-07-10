@@ -842,6 +842,10 @@ pub enum ArrayCallbackKind {
     FindLastIndex,
     Map,
     Reduce,
+    /// arr.sort(compareFn) — in-place sort with custom comparator
+    Sort,
+    /// arr.toSorted(compareFn) — sort returning a new array with custom comparator
+    ToSorted,
 }
 
 /// Data for inline expansion of array callback methods.

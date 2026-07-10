@@ -1904,3 +1904,117 @@ return result;
     assert!(zig.contains("blk_0"), "Expected blk_0 in:\n{}", zig);
     assert!(zig.contains("blk_1"), "Expected blk_1 in:\n{}", zig);
 }
+
+#[test]
+fn test_sort_with_comparefn() {
+    // arr.sort((a, b) => a - b) → in-place sort with custom comparator
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testSortDesc() {
+    const arr = [3, 1, 4, 1, 5];
+    arr.sort((a, b) => b - a);
+    return arr.items[0];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_sort_with_comparefn");
+    println!("=== sort with compareFn ===\n{}", zig);
+    // Should generate a struct with lessThan function (not std.sort.asc)
+    assert!(
+        zig.contains("lessThan"),
+        "Expected lessThan function in custom sort:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("< 0"),
+        "Expected '< 0' conversion from JS compareFn to Zig lessThan:\n{}",
+        zig
+    );
+    // Should NOT use the default std.sort.asc comptime
+    assert!(
+        !zig.contains("std.sort.asc"),
+        "Custom sort should not use std.sort.asc:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_sort_without_comparefn() {
+    // arr.sort() → default ascending sort (no compareFn)
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testSortAsc() {
+    const arr = [3, 1, 4, 1, 5];
+    arr.sort();
+    return arr.items[0];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_sort_without_comparefn");
+    println!("=== sort without compareFn ===\n{}", zig);
+    // Should use the default std.sort.asc comptime
+    assert!(
+        zig.contains("std.sort.asc"),
+        "Default sort should use std.sort.asc:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_to_sorted_with_comparefn() {
+    // arr.toSorted((a, b) => a - b) → sort returning new array with custom comparator
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testToSortedDesc() {
+    const arr = [3, 1, 4, 1, 5];
+    const sorted = arr.toSorted((a, b) => b - a);
+    return sorted.items[0];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_toSorted_with_comparefn");
+    println!("=== toSorted with compareFn ===\n{}", zig);
+    // Should generate a struct with lessThan function
+    assert!(
+        zig.contains("lessThan"),
+        "Expected lessThan function in custom toSorted:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("< 0"),
+        "Expected '< 0' conversion from JS compareFn to Zig lessThan:\n{}",
+        zig
+    );
+    // Should NOT use the default std.sort.asc comptime
+    assert!(
+        !zig.contains("std.sort.asc"),
+        "Custom toSorted should not use std.sort.asc:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_to_sorted_without_comparefn() {
+    // arr.toSorted() → default ascending sort (no compareFn)
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testToSortedAsc() {
+    const arr = [3, 1, 4, 1, 5];
+    const sorted = arr.toSorted();
+    return sorted.items[0];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_toSorted_without_comparefn");
+    println!("=== toSorted without compareFn ===\n{}", zig);
+    // Should use the default std.sort.asc comptime
+    assert!(
+        zig.contains("std.sort.asc") || zig.contains("lessThan"),
+        "Default toSorted should use std.sort.asc or JsAny lessThan:\n{}",
+        zig
+    );
+}

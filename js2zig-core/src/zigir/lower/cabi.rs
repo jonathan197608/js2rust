@@ -196,6 +196,8 @@ impl Lowerer {
             BC::ArrayFindLastIndex => Some(ArrayCallbackKind::FindLastIndex),
             BC::ArrayMap => Some(ArrayCallbackKind::Map),
             BC::ArrayReduce => Some(ArrayCallbackKind::Reduce),
+            BC::ArraySort => Some(ArrayCallbackKind::Sort),
+            BC::ArrayToSorted => Some(ArrayCallbackKind::ToSorted),
             _ => None,
         }
     }

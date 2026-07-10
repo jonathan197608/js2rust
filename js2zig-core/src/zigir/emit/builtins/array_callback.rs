@@ -32,6 +32,8 @@ impl Emitter {
             K::FindLastIndex => self.emit_find_last_index_inline(data),
             K::Map => self.emit_map_inline(data),
             K::Reduce => self.emit_reduce_inline(data),
+            K::Sort => self.emit_sort_callback_inline(data),
+            K::ToSorted => self.emit_to_sorted_callback_inline(data),
         }
     }
 
@@ -510,5 +512,118 @@ impl Emitter {
         self.writeln("");
         self.write("}");
         self.write(&format!(" break :{} {}; }})", blk, acc_name));
+    }
+
+    // ── sort (with compareFn) ──────────────────────────────
+    //
+    //  arr.sort((a, b) => a - b)  →  in-place sort with custom comparator
+    //
+    //  Emits:
+    //    (blk: { std.mem.sort(elem_type, arr.items, {}, struct {
+    //        fn lessThan(_: void, a: elem_type, b: elem_type) bool {
+    //            return <compareFn body> < 0;
+    //        }
+    //    }.lessThan); break :blk arr; })
+    //
+    //  Note: JS compareFn(a, b) returns <0 if a < b, 0 if equal, >0 if a > b.
+    //  Zig lessThan returns bool, so we convert: compareFn(a, b) < 0 → a < b.
+    //
+    pub(super) fn emit_sort_callback_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) {
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+
+        let elem_type_str = data.elem_type.to_zig_type();
+        // Sort uses two element params: elem_param = first element (a),
+        // idx_param = second element (b). Unlike other callbacks, there is no index.
+        let param_a = &data.elem_param;
+        let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            &data.idx_param
+        } else {
+            "_"
+        };
+
+        if let Some(b) = &binding {
+            self.write("{ ");
+            self.write(b);
+        }
+
+        let blk = self.next_label();
+        self.write(&format!("({}: ", blk));
+
+        // Emit the sort with inline lessThan struct
+        self.write(&format!(
+            "std.mem.sort({}, {}.items, {{}}, struct {{ fn lessThan(_: void, {}: {}, {}: {}) bool {{ ",
+            elem_type_str, receiver, param_a, elem_type_str, param_b, elem_type_str
+        ));
+
+        // Emit the compareFn body, wrapping return value with < 0
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("return (");
+            emitter.emit_expr(expr);
+            emitter.write(") < 0;");
+        });
+
+        self.write(&format!(
+            " }} }}.lessThan); break :{} {}; }})",
+            blk, receiver
+        ));
+
+        if binding.is_some() {
+            self.write(" }");
+        }
+    }
+
+    // ── toSorted (with compareFn) ───────────────────────────
+    //
+    //  arr.toSorted((a, b) => a - b)  →  sort returning a new array
+    //
+    //  Emits:
+    //    (blk: { var __sorted: std.ArrayList(elem_type) = .empty;
+    //      __sorted.appendSlice(allocator, arr.items) catch @panic("OOM");
+    //      std.mem.sort(elem_type, __sorted.items, {}, struct {
+    //          fn lessThan(_: void, a: elem_type, b: elem_type) bool {
+    //              return <compareFn body> < 0;
+    //          }
+    //      }.lessThan); break :blk __sorted; })
+    //
+    pub(super) fn emit_to_sorted_callback_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) {
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+
+        let elem_type_str = data.elem_type.to_zig_type();
+        let param_a = &data.elem_param;
+        let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            &data.idx_param
+        } else {
+            "_"
+        };
+
+        let blk = self.begin_labeled_block(&binding);
+        self.write(&format!(
+            "var __sorted: std.ArrayList({}) = .empty; ",
+            elem_type_str
+        ));
+        self.write(&format!(
+            "__sorted.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
+            receiver
+        ));
+
+        // Sort with inline lessThan struct
+        self.write(&format!(
+            "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, {}: {}, {}: {}) bool {{ ",
+            elem_type_str, param_a, elem_type_str, param_b, elem_type_str
+        ));
+
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write("return (");
+            emitter.emit_expr(expr);
+            emitter.write(") < 0;");
+        });
+
+        self.write(&format!(" }} }}.lessThan); break :{} __sorted; }})", blk));
     }
 }
