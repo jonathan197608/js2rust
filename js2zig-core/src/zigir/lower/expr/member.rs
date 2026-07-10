@@ -10,6 +10,21 @@ use crate::zigir::kinds::{ComputedKeyKind, FieldKind, IndexKind};
 use super::Lowerer;
 
 impl Lowerer {
+    /// Shorthand to construct `IrExpr::FieldAccess { object, field, field_kind }`
+    /// with the standard object-lowering and field-name conversion.
+    fn make_field_access(
+        &mut self,
+        mem: &StaticMemberExpression,
+        field_kind: FieldKind,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+        IrExpr::FieldAccess {
+            object: Box::new(self.lower_expr(&mem.object)),
+            field: mem.property.name.as_str().to_string(),
+            field_kind,
+        }
+    }
+
     /// Lower a static member expression (`obj.field`).
     ///
     /// Determines the FieldKind based on:
@@ -32,27 +47,18 @@ impl Lowerer {
         // ── Math constants: Math.PI, Math.E, etc. ──
         if let Expression::Identifier(id) = &mem.object {
             if id.name.as_str() == "Math" {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::MathConstant(field_name.to_string()),
-                };
+                return self
+                    .make_field_access(mem, FieldKind::MathConstant(field_name.to_string()));
             }
             // ── Number constants: Number.MAX_VALUE, Number.NaN, etc. ──
             if id.name.as_str() == "Number" {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::NumberConstant(field_name.to_string()),
-                };
+                return self
+                    .make_field_access(mem, FieldKind::NumberConstant(field_name.to_string()));
             }
             // ── Symbol well-known: Symbol.iterator, etc. ──
             if id.name.as_str() == "Symbol" {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::SymbolWellKnown(field_name.to_string()),
-                };
+                return self
+                    .make_field_access(mem, FieldKind::SymbolWellKnown(field_name.to_string()));
             }
             // ── TypedArray properties ──
             if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
@@ -62,31 +68,22 @@ impl Lowerer {
                         && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
                     {
                         let type_suffix = Self::typedarray_type_suffix(name).map(|s| s.to_string());
-                        return IrExpr::FieldAccess {
-                            object: Box::new(self.lower_expr(&mem.object)),
-                            field: field_name.to_string(),
-                            field_kind: FieldKind::TypedArrayProp {
+                        return self.make_field_access(
+                            mem,
+                            FieldKind::TypedArrayProp {
                                 prop: field_name.to_string(),
                                 type_suffix,
                             },
-                        };
+                        );
                     }
                     // ── Map/Set .size ──
                     if matches!(name.as_str(), "Map" | "Set") && field_name == "size" {
-                        return IrExpr::FieldAccess {
-                            object: Box::new(self.lower_expr(&mem.object)),
-                            field: field_name.to_string(),
-                            field_kind: FieldKind::MapSetSize,
-                        };
+                        return self.make_field_access(mem, FieldKind::MapSetSize);
                     }
                 }
                 // ── ArrayList .length → .items.len ──
                 if matches!(zig_type, ZigType::ArrayList(_)) && field_name == "length" {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::ArrayListLen,
-                    };
+                    return self.make_field_access(mem, FieldKind::ArrayListLen);
                 }
             }
         }
@@ -97,72 +94,28 @@ impl Lowerer {
             if let Expression::Identifier(id) = &mem.object
                 && let Some(zig_type) = self.type_info.var_types.get(id.name.as_str())
             {
-                // String → utf16Len
                 if matches!(zig_type, ZigType::Str) {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::StringLen,
-                    };
+                    return self.make_field_access(mem, FieldKind::StringLen);
                 }
-                // ArrayList → items.len (should have been caught above, but just in case)
                 if matches!(zig_type, ZigType::ArrayList(_)) {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::ArrayListLen,
-                    };
+                    return self.make_field_access(mem, FieldKind::ArrayListLen);
                 }
                 // NamedStruct (TypedArray, Map, Set, etc.) or other types → slice .len
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::SliceLen,
-                };
+                return self.make_field_access(mem, FieldKind::SliceLen);
             }
             // No var_types entry: try infer_expr_type for non-Identifier objects
-            // (e.g., str.match(...).length, someCall().length)
             if !matches!(&mem.object, Expression::Identifier(_)) {
                 if let Some(inferred) = self.infer_expr_type(&mem.object) {
                     if matches!(inferred, ZigType::Str) {
-                        return IrExpr::FieldAccess {
-                            object: Box::new(self.lower_expr(&mem.object)),
-                            field: field_name.to_string(),
-                            field_kind: FieldKind::StringLen,
-                        };
+                        return self.make_field_access(mem, FieldKind::StringLen);
                     }
-                    // Any non-string inferred type → SliceLen
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::SliceLen,
-                    };
+                    return self.make_field_access(mem, FieldKind::SliceLen);
                 }
-                // infer_expr_type returned None: check NewExpression pattern
-                if let Expression::CallExpression(call) = &mem.object
-                    && let Expression::NewExpression(_) = &call.callee
-                {
-                    return IrExpr::FieldAccess {
-                        object: Box::new(self.lower_expr(&mem.object)),
-                        field: field_name.to_string(),
-                        field_kind: FieldKind::SliceLen,
-                    };
-                }
-                // Truly unknown non-Identifier: default to SliceLen since
-                // string .length on a call result is rare, and SliceLen
-                // produces a more actionable compile error if wrong
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::SliceLen,
-                };
+                // No type info at all — default to SliceLen
+                return self.make_field_access(mem, FieldKind::SliceLen);
             }
             // Identifier with no type info: default to StringLen
-            return IrExpr::FieldAccess {
-                object: Box::new(self.lower_expr(&mem.object)),
-                field: field_name.to_string(),
-                field_kind: FieldKind::StringLen,
-            };
+            return self.make_field_access(mem, FieldKind::StringLen);
         }
 
         // ── RegExp properties: .source, .flags, .global ──
@@ -172,13 +125,12 @@ impl Lowerer {
                 && ctx.regexp_vars.contains(var_name)
                 && matches!(field_name, "source" | "flags" | "global")
             {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::RegExpProp {
+                return self.make_field_access(
+                    mem,
+                    FieldKind::RegExpProp {
                         prop: field_name.to_string(),
                     },
-                };
+                );
             }
         }
 
@@ -188,17 +140,18 @@ impl Lowerer {
             if let Some(static_fields) = self.class_static_fields.get(obj_name)
                 && static_fields.contains(field_name)
             {
-                return IrExpr::FieldAccess {
-                    object: Box::new(self.lower_expr(&mem.object)),
-                    field: field_name.to_string(),
-                    field_kind: FieldKind::StaticField {
+                return self.make_field_access(
+                    mem,
+                    FieldKind::StaticField {
                         class_name: obj_name.to_string(),
                     },
-                };
+                );
             }
         }
 
         // ── Static block: this.field → StaticField kind (same as ClassName.field) ──
+        // Note: this uses a different object (class_name instead of lowered this), so
+        // we can't use make_field_access here.
         if matches!(&mem.object, Expression::ThisExpression(_))
             && self.in_static_block
             && let Some(ref class_name) = self.current_class
@@ -215,11 +168,7 @@ impl Lowerer {
         }
 
         // ── Default: struct field access ──
-        IrExpr::FieldAccess {
-            object: Box::new(self.lower_expr(&mem.object)),
-            field: field_name.to_string(),
-            field_kind: FieldKind::StructField,
-        }
+        self.make_field_access(mem, FieldKind::StructField)
     }
 
     /// Lower a computed member expression (`obj[key]`).
@@ -307,35 +256,41 @@ impl Lowerer {
         }
     }
 
+    /// Look up the ZigType of an identifier by name.
+    /// Checks special globals, then var_types (exact, qualified, suffix-based).
+    fn infer_ident_type(&self, name: &str) -> Option<ZigType> {
+        // Special globals
+        match name {
+            "Infinity" | "NaN" => return Some(ZigType::F64),
+            "undefined" => return Some(ZigType::JsAny),
+            _ => {}
+        }
+        // Exact match
+        if let Some(ty) = self.type_info.var_types.get(name) {
+            return Some(ty.clone());
+        }
+        // Qualified match (fn_name::var_name)
+        if let Some(ctx) = self.fn_ctx.as_ref() {
+            let qualified = format!("{}::{}", ctx.name, name);
+            if let Some(ty) = self.type_info.var_types.get(&qualified) {
+                return Some(ty.clone());
+            }
+        }
+        // Suffix match (any_key::var_name)
+        let suffix = format!("::{}", name);
+        for (k, v) in &self.type_info.var_types {
+            if k.ends_with(&suffix) {
+                return Some(v.clone());
+            }
+        }
+        None
+    }
+
     /// Infer the ZigType of an expression based on type_info and expression structure.
     /// Enhanced version that covers literal types, member access, calls, and more.
     pub(super) fn infer_expr_type(&self, expr: &Expression) -> Option<ZigType> {
         match expr {
-            Expression::Identifier(id) => {
-                // Special globals
-                match id.name.as_str() {
-                    "Infinity" | "NaN" => return Some(ZigType::F64),
-                    "undefined" => return Some(ZigType::JsAny),
-                    _ => {}
-                }
-                // Try exact match, then qualified, then suffix-based
-                if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
-                    return Some(ty.clone());
-                }
-                if let Some(ctx) = self.fn_ctx.as_ref() {
-                    let qualified = format!("{}::{}", ctx.name, id.name);
-                    if let Some(ty) = self.type_info.var_types.get(&qualified) {
-                        return Some(ty.clone());
-                    }
-                }
-                let suffix = format!("::{}", id.name);
-                for (k, v) in &self.type_info.var_types {
-                    if k.ends_with(&suffix) {
-                        return Some(v.clone());
-                    }
-                }
-                None
-            }
+            Expression::Identifier(id) => self.infer_ident_type(id.name.as_str()),
             Expression::NumericLiteral(nl) => {
                 // Distinguish I64 vs F64 based on presence of decimal point / exponent
                 let s = nl.value.to_string();
@@ -544,42 +499,10 @@ impl Lowerer {
         use oxc_ast::ast::SimpleAssignmentTarget;
         match target {
             SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
-                match id.name.as_str() {
-                    "Infinity" | "NaN" => return Some(ZigType::F64),
-                    "undefined" => return Some(ZigType::JsAny),
-                    _ => {}
-                }
-                if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
-                    return Some(ty.clone());
-                }
-                if let Some(ctx) = self.fn_ctx.as_ref() {
-                    let qualified = format!("{}::{}", ctx.name, id.name);
-                    if let Some(ty) = self.type_info.var_types.get(&qualified) {
-                        return Some(ty.clone());
-                    }
-                }
-                let suffix = format!("::{}", id.name);
-                for (k, v) in &self.type_info.var_types {
-                    if k.ends_with(&suffix) {
-                        return Some(v.clone());
-                    }
-                }
-                None
+                self.infer_ident_type(id.name.as_str())
             }
             SimpleAssignmentTarget::StaticMemberExpression(mem) => {
-                if let Expression::Identifier(id) = &mem.object {
-                    let obj_name = id.name.as_str();
-                    let field_name = mem.property.name.as_str();
-                    if let Some(static_fields) = self.class_static_fields.get(obj_name)
-                        && static_fields.contains(field_name)
-                    {
-                        let var_key = format!("__{}_{}", obj_name, field_name);
-                        if let Some(ty) = self.type_info.var_types.get(&var_key) {
-                            return Some(ty.clone());
-                        }
-                    }
-                }
-                self.infer_expr_type(&mem.object)
+                self.infer_static_member_type(mem)
             }
             _ => None,
         }
@@ -591,50 +514,30 @@ impl Lowerer {
         use oxc_ast::ast::AssignmentTarget;
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                // Reuse the same logic as infer_expr_type for identifiers
-                match id.name.as_str() {
-                    "Infinity" | "NaN" => return Some(ZigType::F64),
-                    "undefined" => return Some(ZigType::JsAny),
-                    _ => {}
-                }
-                if let Some(ty) = self.type_info.var_types.get(id.name.as_str()) {
-                    return Some(ty.clone());
-                }
-                if let Some(ctx) = self.fn_ctx.as_ref() {
-                    let qualified = format!("{}::{}", ctx.name, id.name);
-                    if let Some(ty) = self.type_info.var_types.get(&qualified) {
-                        return Some(ty.clone());
-                    }
-                }
-                let suffix = format!("::{}", id.name);
-                for (k, v) in &self.type_info.var_types {
-                    if k.ends_with(&suffix) {
-                        return Some(v.clone());
-                    }
-                }
-                None
+                self.infer_ident_type(id.name.as_str())
             }
-            AssignmentTarget::StaticMemberExpression(mem) => {
-                // Try to infer the field type for static class fields.
-                // For `ClassName.field`, look up `__ClassName_field` in var_types.
-                if let Expression::Identifier(id) = &mem.object {
-                    let obj_name = id.name.as_str();
-                    let field_name = mem.property.name.as_str();
-                    // Check if this is a known static field
-                    if let Some(static_fields) = self.class_static_fields.get(obj_name)
-                        && static_fields.contains(field_name)
-                    {
-                        let var_key = format!("__{}_{}", obj_name, field_name);
-                        if let Some(ty) = self.type_info.var_types.get(&var_key) {
-                            return Some(ty.clone());
-                        }
-                    }
-                }
-                // Fallback: return the object's type
-                self.infer_expr_type(&mem.object)
-            }
+            AssignmentTarget::StaticMemberExpression(mem) => self.infer_static_member_type(mem),
             _ => None,
         }
+    }
+
+    /// Shared logic for inferring the type of a static member expression
+    /// used as an assignment target (`obj.field = ...` or `obj.field++`).
+    /// Checks static class field type, then falls back to object type.
+    fn infer_static_member_type(&self, mem: &StaticMemberExpression) -> Option<ZigType> {
+        if let Expression::Identifier(id) = &mem.object {
+            let obj_name = id.name.as_str();
+            let field_name = mem.property.name.as_str();
+            if let Some(static_fields) = self.class_static_fields.get(obj_name)
+                && static_fields.contains(field_name)
+            {
+                let var_key = format!("__{}_{}", obj_name, field_name);
+                if let Some(ty) = self.type_info.var_types.get(&var_key) {
+                    return Some(ty.clone());
+                }
+            }
+        }
+        self.infer_expr_type(&mem.object)
     }
 
     /// Determine FieldKind for a member assignment target (`obj.field = ...`).
