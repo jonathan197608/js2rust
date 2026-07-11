@@ -562,35 +562,15 @@ mod tests {
     use std::collections::HashMap;
 
     fn empty_type_info() -> TypeCheckResult {
-        TypeCheckResult {
-            var_types: HashMap::new(),
-            array_element_types: HashMap::new(),
-            fn_return_types: HashMap::new(),
-            fn_param_types: HashMap::new(),
-            mutated_vars: HashSet::new(),
-            reassigned_vars: HashSet::new(),
-            set_vars: HashSet::new(),
-            used_names: HashSet::new(),
-            has_json_parse_types: HashSet::new(),
-            errors: Vec::new(),
-            is_async: HashMap::new(),
-            class_field_types: HashMap::new(),
-            host_return_types: HashMap::new(),
-        }
+        empty_type_info_base()
     }
 
     #[test]
     fn test_lowerer_new() {
         let type_info = empty_type_info();
-        let jsdoc_data = JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
         let lowerer = Lowerer::new(
             type_info,
-            jsdoc_data,
+            make_jsdoc_data(),
             None,
             HashSet::new(),
             "let x = 1;".to_string(),
@@ -604,15 +584,9 @@ mod tests {
     #[test]
     fn test_lowerer_empty_program() {
         let type_info = empty_type_info();
-        let jsdoc_data = JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
         let mut lowerer = Lowerer::new(
             type_info,
-            jsdoc_data,
+            make_jsdoc_data(),
             None,
             HashSet::new(),
             String::new(),
@@ -636,15 +610,9 @@ mod tests {
     #[test]
     fn test_fn_context_enter_exit() {
         let type_info = empty_type_info();
-        let jsdoc_data = JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
         let mut lowerer = Lowerer::new(
             type_info,
-            jsdoc_data,
+            make_jsdoc_data(),
             None,
             HashSet::new(),
             String::new(),
@@ -669,15 +637,9 @@ mod tests {
     #[test]
     fn test_fn_context_nesting() {
         let type_info = empty_type_info();
-        let jsdoc_data = JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
         let mut lowerer = Lowerer::new(
             type_info,
-            jsdoc_data,
+            make_jsdoc_data(),
             None,
             HashSet::new(),
             String::new(),
@@ -710,18 +672,12 @@ mod tests {
     #[test]
     fn test_is_export_fn() {
         let type_info = empty_type_info();
-        let jsdoc_data = JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
         let mut exported = HashSet::new();
         exported.insert("greet".to_string());
 
         let lowerer = Lowerer::new(
             type_info,
-            jsdoc_data,
+            make_jsdoc_data(),
             Some(exported),
             HashSet::new(),
             String::new(),
@@ -741,6 +697,31 @@ mod tests {
             type_annotations: HashMap::new(),
             return_types: HashMap::new(),
             param_types: HashMap::new(),
+        }
+    }
+
+    fn make_type_info(var_types: HashMap<String, ZigType>) -> TypeCheckResult {
+        TypeCheckResult {
+            var_types,
+            ..empty_type_info_base()
+        }
+    }
+
+    fn empty_type_info_base() -> TypeCheckResult {
+        TypeCheckResult {
+            var_types: HashMap::new(),
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
+            set_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
         }
     }
 
@@ -808,21 +789,7 @@ mod tests {
     fn test_infer_imports_jsany() {
         let mut var_types = HashMap::new();
         var_types.insert("data".to_string(), ZigType::JsAny);
-        let type_info = TypeCheckResult {
-            var_types,
-            array_element_types: HashMap::new(),
-            fn_return_types: HashMap::new(),
-            fn_param_types: HashMap::new(),
-            mutated_vars: HashSet::new(),
-            reassigned_vars: HashSet::new(),
-            set_vars: HashSet::new(),
-            used_names: HashSet::new(),
-            has_json_parse_types: HashSet::new(),
-            errors: Vec::new(),
-            is_async: HashMap::new(),
-            class_field_types: HashMap::new(),
-            host_return_types: HashMap::new(),
-        };
+        let type_info = make_type_info(var_types);
         let lowerer = Lowerer::new(
             type_info,
             make_jsdoc_data(),
@@ -850,21 +817,7 @@ mod tests {
         let mut var_types = HashMap::new();
         var_types.insert("d".to_string(), ZigType::NamedStruct("Date".to_string()));
         var_types.insert("m".to_string(), ZigType::NamedStruct("Map".to_string()));
-        let type_info = TypeCheckResult {
-            var_types,
-            array_element_types: HashMap::new(),
-            fn_return_types: HashMap::new(),
-            fn_param_types: HashMap::new(),
-            mutated_vars: HashSet::new(),
-            reassigned_vars: HashSet::new(),
-            set_vars: HashSet::new(),
-            used_names: HashSet::new(),
-            has_json_parse_types: HashSet::new(),
-            errors: Vec::new(),
-            is_async: HashMap::new(),
-            class_field_types: HashMap::new(),
-            host_return_types: HashMap::new(),
-        };
+        let type_info = make_type_info(var_types);
         let lowerer = Lowerer::new(
             type_info,
             make_jsdoc_data(),
@@ -897,21 +850,7 @@ mod tests {
         let mut var_types = HashMap::new();
         var_types.insert("a".to_string(), ZigType::JsAny);
         var_types.insert("b".to_string(), ZigType::JsSymbol);
-        let type_info = TypeCheckResult {
-            var_types,
-            array_element_types: HashMap::new(),
-            fn_return_types: HashMap::new(),
-            fn_param_types: HashMap::new(),
-            mutated_vars: HashSet::new(),
-            reassigned_vars: HashSet::new(),
-            set_vars: HashSet::new(),
-            used_names: HashSet::new(),
-            has_json_parse_types: HashSet::new(),
-            errors: Vec::new(),
-            is_async: HashMap::new(),
-            class_field_types: HashMap::new(),
-            host_return_types: HashMap::new(),
-        };
+        let type_info = make_type_info(var_types);
         let lowerer = Lowerer::new(
             type_info,
             make_jsdoc_data(),
