@@ -313,10 +313,7 @@ pub fn for_each_expr_child(
 
 /// Visit direct children of an `IrAssignTarget`.
 #[allow(dead_code)]
-pub fn for_each_target_child(
-    target: &IrAssignTarget,
-    on_expr: &mut impl FnMut(&IrExpr),
-) {
+pub fn for_each_target_child(target: &IrAssignTarget, on_expr: &mut impl FnMut(&IrExpr)) {
     match target {
         IrAssignTarget::Member { object, .. } => on_expr(object),
         IrAssignTarget::Index { object, index, .. } => {
