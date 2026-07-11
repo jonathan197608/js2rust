@@ -165,10 +165,15 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // (including transitive dependencies not listed in js2rust.toml).
     // These directives take effect in subsequent builds — Cargo stores them
     // and uses them to decide whether to re-run the build script.
-    for group in &groups {
-        for member in &group.members {
-            let member_path = Path::new(&in_dir).join(member);
-            println!("cargo:rerun-if-changed={}", member_path.display());
+    // Only emit when called from build.rs (emit_cargo_directives=true);
+    // proc-macros cannot use these directives and their stdout would leak
+    // noise to the terminal.
+    if config.emit_cargo_directives {
+        for group in &groups {
+            for member in &group.members {
+                let member_path = Path::new(&in_dir).join(member);
+                println!("cargo:rerun-if-changed={}", member_path.display());
+            }
         }
     }
 

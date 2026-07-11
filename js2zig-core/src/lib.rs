@@ -118,6 +118,11 @@ pub struct ProjectConfig {
     /// Valid values: `"Debug"`, `"ReleaseSafe"`, `"ReleaseFast"`, `"ReleaseSmall"`.
     /// If `None`, the caller should infer from the Cargo profile automatically.
     pub zig_optimize: Option<String>,
+    /// When true, emit `cargo:rerun-if-changed` directives to stdout for every
+    /// JS file discovered (including transitive deps).  Should only be set when
+    /// called from a build.rs context — proc-macros cannot use these directives
+    /// and their stdout would leak noise to the terminal.
+    pub emit_cargo_directives: bool,
 }
 
 impl Default for ProjectConfig {
@@ -130,6 +135,7 @@ impl Default for ProjectConfig {
             force_rebuild: false,
             run_zig_build: false,
             zig_optimize: None,
+            emit_cargo_directives: false,
         }
     }
 }

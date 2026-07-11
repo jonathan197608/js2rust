@@ -146,6 +146,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
         zig_optimize: Some(zig_optimize),
+        emit_cargo_directives: false, // proc-macro context — cannot emit rerun-if-changed
     };
 
     // Transpile!

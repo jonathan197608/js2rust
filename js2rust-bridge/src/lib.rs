@@ -108,6 +108,7 @@ pub fn build() {
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
         zig_optimize: Some(zig_optimize),
+        emit_cargo_directives: true, // build.rs context — can emit rerun-if-changed
     };
     match js2zig_core::transpile_project(&project_config) {
         Ok(_result) => {
