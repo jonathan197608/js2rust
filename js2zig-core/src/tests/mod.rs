@@ -10,4 +10,5 @@ mod destructure_class_arrays;
 mod not_implemented_and_fixes;
 mod objects_and_types;
 mod phase1;
+mod shadowing_chaining_array;
 mod try_catch_and_closures;

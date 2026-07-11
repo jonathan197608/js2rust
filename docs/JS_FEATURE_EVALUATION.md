@@ -1,7 +1,18 @@
+﻿---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '70b114d9-7005-48c9-8e94-54fbd0ba283f'
+  PropagateID: '70b114d9-7005-48c9-8e94-54fbd0ba283f'
+  ReservedCode1: '39b5225a-11db-40be-aba7-9d22ae1acae5'
+  ReservedCode2: '39b5225a-11db-40be-aba7-9d22ae1acae5'
+---
+
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 497 个 Rust 测试 (497 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 498 个 Rust 测试 (498 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -13,7 +24,7 @@
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 497 个 Rust 测试 (497 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 498 个 Rust 测试 (498 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -1167,16 +1178,16 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 497 个测试 (497 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 498 个测试 (498 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（9 个文件） | 368 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `tests/` 子模块（10 个文件） | 368 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
 | 源文件内联测试 | 129 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、sourcemap |
 
 ### 7.2 测试覆盖情况
 
-497 个 Rust 测试全部通过（497 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+498 个 Rust 测试全部通过（498 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
@@ -1195,3 +1206,5 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | Fragment | 类型 | 差异原因 | 状态 |
 |----------|------|----------|------|
 | `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+
+> AI生成

@@ -1,3 +1,14 @@
+﻿---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '40f94572-d6f4-4945-8ba3-4c6740e9099d'
+  PropagateID: '40f94572-d6f4-4945-8ba3-4c6740e9099d'
+  ReservedCode1: 'dc4445ca-feba-46b4-a7f0-c2af165f6231'
+  ReservedCode2: 'dc4445ca-feba-46b4-a7f0-c2af165f6231'
+---
+
 # js2rust 测试说明文档
 
 > 本文档描述项目的测试体系、运行方式与回归验证流程，供代码重构或优化时参考。
@@ -8,13 +19,13 @@
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（9 子模块）+ 内联测试 | 368 + 129 = 497 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 368 + 130 = 498 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~202 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-10）
 
-- Rust 单元测试：**497 passed, 0 failed**（368 在 `tests/` 子模块 + 129 内联在源文件中）
+- Rust 单元测试：**498 passed, 0 failed**（368 在 `tests/` 子模块 + 130 内联在源文件中）
 - Zig runtime 测试：**~202 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 35、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
 - Clippy：**0 warnings**
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
@@ -30,20 +41,21 @@
 
 ```
 js2zig-core/src/tests/
-├── mod.rs                          # 模块入口，声明 9 个子模块
+├── mod.rs                          # 模块入口，声明 10 个子模块
 ├── common.rs                       # 共享 helper 函数（0 个测试）
 ├── basic.rs                        # 基础转译：运算符/控制流/循环/switch（29 个测试）
 ├── builtins_basic.rs               # 内置方法基础：Math/Array/String/JSON（31 个测试）
 ├── advanced_builtins.rs            # 高级内置：Number/Map/Set/URI/RegExp/Symbol（69 个测试）
 ├── destructure_class_arrays.rs     # 解构/Class/String 方法/Array 高阶（51 个测试）
-├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复/影子变量/方法链/flatMap/sort（96 个测试）
+├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复（63 个测试）
+├── shadowing_chaining_array.rs     # 变量遮蔽/方法链/Array 高阶方法/flatMap/sort（33 个测试）
 ├── objects_and_types.rs            # 对象/JSDoc/类型签名/JSON E2E（20 个测试）
 ├── phase1.rs                       # P1 特性：in/instanceof/Date/Object/spread（40 个测试）
 ├── collision.rs                    # 标识符冲突/保留字转义（3 个测试）
 └── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（29 个测试）
 ```
 
-另有 **129 个内联测试**分布在源文件中：
+另有 **130 个内联测试**分布在源文件中：
 
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
@@ -63,7 +75,7 @@ js2zig-core/src/tests/
 | `sourcemap.rs` | 4 | Source map 测试 |
 | 其他 | 13 | lower/idents、lower/helpers、builtins、ops、testgen |
 
-**总计：497 个测试**（368 + 129）
+**总计：498 个测试**（368 + 130）
 
 ### 2.2 测试分类
 
@@ -360,7 +372,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（497 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（498 passed）
 cargo clippy -p js2zig-core -- -D warnings                           # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -392,7 +404,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 497 passed, 0 failed | 497 passed |
+| `cargo test -p js2zig-core --lib` | 498 passed, 0 failed | 498 passed |
 | `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 203（不低于基线） | 203 |
@@ -444,4 +456,6 @@ zig version
 
 ### Q: 测试文件如何导航？
 
-测试已拆分为 8 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+测试已拆分为 10 个子模块，每个聚焦一个功能域。用 IDE 的结构视图或搜索 `fn test_` 快速定位。各子模块按功能组织，不再按添加时间排列。
+
+> AI生成
