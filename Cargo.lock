@@ -170,6 +170,7 @@ dependencies = [
  "fancy-regex",
  "js2rust-bridge-macro",
  "js2zig-core",
+ "serde_json",
 ]
 
 [[package]]

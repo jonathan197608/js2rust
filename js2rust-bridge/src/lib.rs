@@ -79,6 +79,15 @@ pub fn build() {
         println!("cargo:rerun-if-changed={}", p.display());
     }
     println!("cargo:rerun-if-changed={}/js2rust.toml", manifest_dir);
+    // Watch the diagnostics tracking file so Cargo re-runs the build script
+    // when it is first created or changes.  This ensures the build script
+    // produces a CLEAN output (no cargo:warning) on the next run after the
+    // initial diagnostic emission, preventing Cargo from replaying stale
+    // warnings on cached builds.
+    println!(
+        "cargo:rerun-if-changed={}/.js2zig-cache/.last_emitted_diagnostics.json",
+        manifest_dir
+    );
 
     let js_file_path = js_file_paths.remove(0);
     let additional_js_paths = js_file_paths;
@@ -112,16 +121,42 @@ pub fn build() {
     };
     match js2zig_core::transpile_project(&project_config) {
         Ok(result) => {
-            // Emit compile errors as cargo:warning so they are always visible.
-            // Cargo hides build script stderr by default; cargo:warning is
-            // the only guaranteed way to surface messages to the user.
-            // Only emit COMPILE_ERROR-level diagnostics — Rule 8 warnings
-            // and other non-critical messages are too noisy for every build.
-            for diag in &result.diagnostics {
-                if diag.contains("COMPILE_ERROR") {
+            // Emit compile errors as cargo:warning — but only when they CHANGE.
+            // Cargo replays cargo:warning from the previous build script run,
+            // so if we always emit them the user sees the same warnings on every
+            // build.  By tracking the last-emitted set and only emitting new/
+            // changed diagnostics, we produce a clean build script output once
+            // the diagnostics stabilize, and Cargo will replay that clean output
+            // on subsequent cached builds.
+            let compile_errors: Vec<&str> = result
+                .diagnostics
+                .iter()
+                .filter(|d| d.contains("COMPILE_ERROR"))
+                .map(|s| s.as_str())
+                .collect();
+
+            let last_emitted_path = cache_dir.join(".last_emitted_diagnostics.json");
+            let last_emitted: Vec<String> = std::fs::read_to_string(&last_emitted_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+
+            // Only emit warnings for diagnostics that differ from the last emission
+            if compile_errors
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                != last_emitted
+            {
+                for diag in &compile_errors {
                     println!("cargo:warning=js2zig: {diag}");
                 }
+                // Persist current set so the next build can compare
+                if let Ok(json) = serde_json::to_string_pretty(&compile_errors) {
+                    let _ = std::fs::write(&last_emitted_path, json);
+                }
             }
+
             link_from_cache(&cache_dir);
         }
         Err(e) => {

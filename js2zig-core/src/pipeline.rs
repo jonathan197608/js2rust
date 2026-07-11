@@ -119,6 +119,16 @@ fn write_build_cache(out_dir: &Path, cache: &HashMap<String, String>) {
     }
 }
 
+/// Save per-group diagnostics to `out/<group>/diagnostics.json`.
+/// On cache hit, these are loaded back so the caller always sees
+/// consistent diagnostic output without re-transpiling.
+fn save_diagnostics(out_dir: &Path, group_name: &str, diagnostics: &[String]) {
+    let path = Path::new(out_dir).join(group_name).join("diagnostics.json");
+    if let Ok(json) = serde_json::to_string_pretty(diagnostics) {
+        let _ = fs::write(path, json);
+    }
+}
+
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     let ws = workspace_dir();
 
@@ -300,11 +310,22 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 .join(&group.core_name)
                 .join("cabi_exports.json");
             let cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
+
+            // Load cached diagnostics so the caller always sees consistent output.
+            // Re-transpilation saves to this file; cache hit loads from it.
+            let diag_path = Path::new(&out_dir)
+                .join(&group.core_name)
+                .join("diagnostics.json");
+            let cached_diagnostics: Vec<String> = fs::read_to_string(&diag_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+
             group_results.push(crate::GroupResult {
                 name: group.core_name.clone(),
                 is_test: is_test_group,
                 cabi_exports_json: cabi_json,
-                diagnostics: Vec::new(), // incremental cache — no diagnostics needed
+                diagnostics: cached_diagnostics,
                 output_files: Vec::new(),
             });
             continue;
@@ -756,6 +777,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 diagnostics: file_diagnostics.clone(),
                 output_files: Vec::new(),
             });
+
+            // Persist diagnostics so cache-hit builds can reload them
+            // instead of returning empty and causing spurious cargo:warning replay.
+            save_diagnostics(Path::new(&out_dir), &group.core_name, &file_diagnostics);
 
             // Write test_cases.json for test groups (used by bridge test generation)
         }
