@@ -529,7 +529,6 @@ fn is_c_safe_type(ty: &ZigType) -> bool {
 mod tests {
     use super::*;
     use crate::zigir::ident::IrIdent;
-    use crate::zigir::ops::BinOp;
     use crate::zigir::types::{IrBlock, IrCapture, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl};
 
     #[test]

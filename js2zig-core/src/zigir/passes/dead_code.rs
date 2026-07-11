@@ -154,17 +154,10 @@ fn is_terminator(stmt: &IrStmt) -> bool {
 
 /// Whether an expression may have side effects (function calls, assignments, etc.).
 fn expr_has_side_effects(expr: &IrExpr) -> bool {
+    if expr.is_leaf() {
+        return false;
+    }
     match expr {
-        IrExpr::IntLiteral(_)
-        | IrExpr::FloatLiteral(_)
-        | IrExpr::StringLiteral(_)
-        | IrExpr::BoolLiteral(_)
-        | IrExpr::BigIntLiteral(_)
-        | IrExpr::Null
-        | IrExpr::Undefined
-        | IrExpr::Ident(_)
-        | IrExpr::This => false,
-
         IrExpr::Call(_) | IrExpr::BuiltinCall(_) | IrExpr::HostCall(_) => true,
         IrExpr::Assign { .. } | IrExpr::Update { .. } => true,
         IrExpr::New(_) => true,
@@ -229,6 +222,8 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             expr_has_side_effects(base) || expr_has_side_effects(exp)
         }
         IrExpr::CompileError { .. } => true,
+        // Leaf expressions handled by is_leaf() early return above
+        _ => false,
     }
 }
 
@@ -609,17 +604,9 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
         IrExpr::PowExpr { base, exp, .. } => {
             eliminate_unreachable_in_expr(base) | eliminate_unreachable_in_expr(exp)
         }
-        // Leaf expressions
-        IrExpr::IntLiteral(_)
-        | IrExpr::FloatLiteral(_)
-        | IrExpr::StringLiteral(_)
-        | IrExpr::BoolLiteral(_)
-        | IrExpr::BigIntLiteral(_)
-        | IrExpr::Null
-        | IrExpr::Undefined
-        | IrExpr::Ident(_)
-        | IrExpr::This
-        | IrExpr::CompileError { .. } => false,
+        IrExpr::CompileError { .. } => false,
+        // All remaining variants are leaf expressions (IntLiteral, FloatLiteral, etc.)
+        _ => false,
     }
 }
 
@@ -632,8 +619,7 @@ mod tests {
     use super::*;
     use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
-    use crate::zigir::ops::BinOp;
-    use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrParam, IrStmt, IrVarDecl};
+    use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrStmt, IrVarDecl};
 
     #[test]
     fn test_remove_unreachable_after_return() {
