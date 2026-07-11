@@ -140,7 +140,7 @@ fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Toke
             const s = switch (token) {
                 .number => |n| n,
                 .allocated_number => |n| n,
-                else => unreachable,
+                else => return JSONError.UnexpectedToken,
             };
             return parseNumber(s);
         },
@@ -148,7 +148,7 @@ fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Toke
             const s = switch (token) {
                 .string => |str| str,
                 .allocated_string => |str| str,
-                else => unreachable,
+                else => return JSONError.UnexpectedToken,
             };
             return JsAny.fromString(try alloc.dupe(u8, s));
         },
@@ -168,7 +168,7 @@ fn parseObject(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
                 const key_raw = switch (token) {
                     .string => |s| s,
                     .allocated_string => |s| s,
-                    else => unreachable,
+                    else => return JSONError.UnexpectedToken,
                 };
 
                 const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));

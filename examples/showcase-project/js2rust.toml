@@ -8,6 +8,8 @@ js_files = [
     "js_src/test_classes.js",
     "js_src/test_static_fields.js",
     "js_src/test_dynamic_index.js",
+    "js_src/test_optional.js",
+    "js_src/for_in_struct.js",
 ]
 
 [build]

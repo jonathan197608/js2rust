@@ -116,7 +116,7 @@ impl Lowerer {
 
             // ©¤©¤ Function control ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             Statement::ReturnStatement(rs) => {
-                if let Some(fn_ctx) = self.fn_ctx_mut() {
+                if let Some(fn_ctx) = self.fn_ctx.as_mut() {
                     fn_ctx.seen_return = true;
                 }
                 let value = rs.argument.as_ref().map(|expr| self.lower_expr(expr));

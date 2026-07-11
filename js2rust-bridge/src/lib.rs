@@ -48,7 +48,8 @@ use std::path::PathBuf;
 /// is read from the `[build]` section of `js2rust.toml`.
 pub fn build() {
     let config = Js2rustConfig::from_manifest_dir();
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
     // All JS files are resolved from js_files (first = entry, rest = additional roots)
@@ -106,7 +107,8 @@ pub fn build() {
 /// Fallback: scan `.js2zig-cache/` and emit link directives without running
 /// transpilation or zig build.  Used when the proc-macro already did the work.
 pub fn link() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
     link_from_cache(&cache_dir);
 }

@@ -644,7 +644,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     println!(
                         "  Generated: {}/{}",
                         out_dir,
-                        host_zig_path.file_name().unwrap().to_string_lossy()
+                        host_zig_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
                     );
                 }
             }

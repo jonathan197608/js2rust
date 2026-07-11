@@ -122,6 +122,7 @@ impl Lowerer {
     }
 
     /// Add a warning diagnostic.
+    /// Currently unused but retained as infrastructure for future warning-level diagnostics.
     #[allow(dead_code)]
     pub(super) fn add_warning(&mut self, span: SourceSpan, msg: impl Into<String>) {
         self.diagnostics.push(IrDiagnostic {
@@ -129,12 +130,6 @@ impl Lowerer {
             span: Some(span),
             message: msg.into(),
         });
-    }
-
-    /// Resolve a JS identifier name through the NameMangler (keyword escaping + shadow).
-    #[allow(dead_code)]
-    pub(super) fn resolve_name(&self, name: &str) -> String {
-        self.name_mangler.resolve_name(name)
     }
 
     /// Create an IrIdent for the given JS name, applying shadow renaming.
@@ -168,7 +163,9 @@ impl Lowerer {
                     IrExpr::Spread(Box::new(self.lower_expr(&se.argument)))
                 }
                 _ => {
-                    let expr = arg.as_expression().unwrap();
+                    let expr = arg
+                        .as_expression()
+                        .expect("non-SpreadElement Argument is always an Expression");
                     self.lower_expr(expr)
                 }
             })
@@ -701,17 +698,6 @@ impl Lowerer {
         let ctx = self.fn_ctx.take().expect("exit_fn called without enter_fn");
         self.fn_ctx = saved;
         ctx
-    }
-
-    /// Get a reference to the current function context.
-    #[allow(dead_code)]
-    pub(super) fn fn_ctx(&self) -> Option<&FnContext> {
-        self.fn_ctx.as_ref()
-    }
-
-    /// Get a mutable reference to the current function context.
-    pub(super) fn fn_ctx_mut(&mut self) -> Option<&mut FnContext> {
-        self.fn_ctx.as_mut()
     }
 }
 

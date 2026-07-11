@@ -10,31 +10,79 @@
 import { add, mathSqrt, compareLt, withDefault, hexNum } from './utils.js';
 
 // ── Classes (S6.4) ──────────────────────────────────────
-// NOTE: Classes are not yet supported in native_proto mode.
-// Stub implementations return 0 to allow compilation.
-// TODO: Enable after class support is added.
 
 /** @returns {i64} */
-export function testClassBasic() { return 12; }       // Rectangle(3,4).area() = 12
+export function testClassBasic() {
+    class Rectangle {
+        constructor(w, h) { this.width = w; this.height = h; }
+        area() { return this.width * this.height; }
+    }
+    const r = new Rectangle(3, 4);
+    return r.area();
+}
+
 /** @returns {i64} */
-export function testClassSettings() { return 50; }     // Settings().getVolume() = 50
+export function testClassSettings() {
+    class Settings {
+        constructor() { this.width = 5; this.height = 10; }
+        getVolume() { return this.width * this.height; }
+    }
+    const s = new Settings();
+    return s.getVolume();
+}
+
 /** @returns {i64} */
-export function testClassVec2() { return 10; }        // Vec2(3,7).sum() = 10
+export function testClassVec2() {
+    class Vec2 {
+        constructor(x, y) { this.x = x; this.y = y; }
+        sum() { return this.x + this.y; }
+    }
+    const v = new Vec2(3, 7);
+    return v.sum();
+}
+
 /** @returns {i64} */
-export function testClassVec2Product() { return 30; }  // Vec2(5,6).product() = 30
+export function testClassVec2Product() {
+    class Vec2 {
+        constructor(x, y) { this.x = x; this.y = y; }
+        product() { return this.x * this.y; }
+    }
+    const v = new Vec2(5, 6);
+    return v.product();
+}
+
 /** @returns {i64} */
-export function testClassStatic() { return 30; }       // PointFactory.create(10,20) getX+getY = 30
+export function testClassStatic() {
+    class Point {
+        constructor(x, y) { this.x = x; this.y = y; }
+        getX() { return this.x; }
+        getY() { return this.y; }
+    }
+    class PointFactory {
+        static create(x, y) { return new Point(x, y); }
+    }
+    const p = PointFactory.create(10, 20);
+    return p.getX() + p.getY();
+}
 
 // ── Closures (S8) ───────────────────────────────────────
-// NOTE: Closures with captures are not yet fully supported.
-// Stub implementations return constant values.
 
 /** @returns {i64} */
-export function makeAdder(x) { return x + 10; }       // stub: adder(10) = x+10
+export function makeAdder(x) {
+    return function(y) { return x + y; }(10);
+}
+
 /** @returns {i64} */
-export function makeScaler(factor, offset) { return factor * 5 + offset; }  // stub: scale(5) = factor*5+offset
+export function makeScaler(factor, offset) {
+    return function(val) { return factor * val + offset; }(5);
+}
+
 /** @returns {i64} */
-export function nestedClosure(a) { return a * 4; }     // stub: inner(4) = a*4
+export function nestedClosure(a) {
+    return function(b) {
+        return function(c) { return a * b + c; }(1);
+    }(4);
+}
 
 // ── Object literal (S4.1) ───────────────────────────────────
 

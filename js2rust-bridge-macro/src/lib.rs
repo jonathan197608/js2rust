@@ -449,7 +449,7 @@ fn generate_host_stubs(host_fns: &[HostFnToml], group_suffix: &str) -> Option<St
         } else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() {
             quote! { () }
         } else {
-            host_type_to_rust_cabi_ffi(hf.returns.as_deref().unwrap())
+            host_type_to_rust_cabi_ffi(hf.returns.as_deref().expect("checked is_none above"))
         };
 
         // Doc comment
@@ -600,7 +600,10 @@ fn build_host_stub_doc(hf: &HostFnToml) -> String {
     } else if hf.returns.as_deref() == Some("void") || hf.returns.is_none() {
         "void".to_string()
     } else {
-        hf.returns.as_deref().unwrap().to_string()
+        hf.returns
+            .as_deref()
+            .expect("checked is_none above")
+            .to_string()
     };
 
     let sdk_note = if hf.params.contains(&"str".to_string())
@@ -789,7 +792,9 @@ fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
 
 fn convert_safe_to_ffi(zig_type: &str, ident: &syn::Ident) -> proc_macro2::TokenStream {
     match zig_type {
-        "[]const u8" => quote! { std::ffi::CString::new(#ident).unwrap().into_raw() },
+        "[]const u8" => {
+            quote! { std::ffi::CString::new(#ident).expect("input string contains NUL byte").into_raw() }
+        }
         _ => quote! { #ident },
     }
 }

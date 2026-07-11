@@ -8,6 +8,7 @@ pub mod destructure_assign;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string};
 use crate::zigir::types::{IrBlock, IrStmt};
+use control_flow::{ForOfInfo, TryInfo};
 
 impl Emitter {
     /// Emit all statements in a block (without the label — label is emitted by the caller).
@@ -68,16 +69,16 @@ impl Emitter {
                 is_async,
                 label,
             } => {
-                self.emit_for_of_stmt(
+                self.emit_for_of_stmt(&ForOfInfo {
                     var,
                     destructure_vars,
                     iterable,
-                    *iterable_is_arraylist,
+                    iterable_is_arraylist: *iterable_is_arraylist,
                     body,
                     kind,
-                    *is_async,
+                    is_async: *is_async,
                     label,
-                );
+                });
             }
 
             IrStmt::Switch { expr, cases } => {
@@ -93,15 +94,15 @@ impl Emitter {
                 has_throw,
                 has_nested_try,
             } => {
-                self.emit_try_stmt(
+                self.emit_try_stmt(&TryInfo {
                     try_block,
                     catch_var,
-                    *catch_var_referenced,
+                    catch_var_referenced: *catch_var_referenced,
                     finally,
-                    *has_throw,
-                    *has_nested_try,
+                    has_throw: *has_throw,
+                    has_nested_try: *has_nested_try,
                     catch_block,
-                );
+                });
             }
 
             IrStmt::Throw { value, error_name } => {

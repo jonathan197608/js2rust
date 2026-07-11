@@ -4,7 +4,30 @@
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::EmitterHelpers;
 use crate::zigir::ident::IrIdent;
-use crate::zigir::types::{IrBlock, IrForInKind, IrForOfKind, IrStmt, IrSwitchCase};
+use crate::zigir::types::{IrBlock, IrExpr, IrForInKind, IrForOfKind, IrStmt, IrSwitchCase};
+
+/// Parameters for `emit_for_of_stmt`, bundled to avoid too-many-arguments.
+pub(super) struct ForOfInfo<'a> {
+    pub var: &'a IrIdent,
+    pub destructure_vars: &'a [IrIdent],
+    pub iterable: &'a IrExpr,
+    pub iterable_is_arraylist: bool,
+    pub body: &'a IrBlock,
+    pub kind: &'a IrForOfKind,
+    pub is_async: bool,
+    pub label: &'a Option<String>,
+}
+
+/// Parameters for `emit_try_stmt`, bundled to avoid too-many-arguments.
+pub(super) struct TryInfo<'a> {
+    pub try_block: &'a IrBlock,
+    pub catch_var: &'a Option<IrIdent>,
+    pub catch_var_referenced: bool,
+    pub finally: &'a Option<IrBlock>,
+    pub has_throw: bool,
+    pub has_nested_try: bool,
+    pub catch_block: &'a IrBlock,
+}
 
 impl Emitter {
     /// Emit label prefix if present: `lbl: ` (used by while/do-while/for/for-in/for-of).
@@ -247,18 +270,16 @@ impl Emitter {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn emit_for_of_stmt(
-        &mut self,
-        var: &IrIdent,
-        destructure_vars: &[IrIdent],
-        iterable: &crate::zigir::types::IrExpr,
-        iterable_is_arraylist: bool,
-        body: &IrBlock,
-        kind: &IrForOfKind,
-        is_async: bool,
-        label: &Option<String>,
-    ) {
+    pub(super) fn emit_for_of_stmt(&mut self, info: &ForOfInfo<'_>) {
+        let var = info.var;
+        let destructure_vars = info.destructure_vars;
+        let iterable = info.iterable;
+        let iterable_is_arraylist = info.iterable_is_arraylist;
+        let body = info.body;
+        let kind = info.kind;
+        let is_async = info.is_async;
+        let label = info.label;
+
         if is_async {
             self.writeln("@compileError(\"for-await-of is not supported\");");
             return;
@@ -356,17 +377,15 @@ impl Emitter {
         self.writeln("}");
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn emit_try_stmt(
-        &mut self,
-        try_block: &IrBlock,
-        catch_var: &Option<IrIdent>,
-        catch_var_referenced: bool,
-        finally: &Option<IrBlock>,
-        has_throw: bool,
-        has_nested_try: bool,
-        catch_block: &IrBlock,
-    ) {
+    pub(super) fn emit_try_stmt(&mut self, info: &TryInfo<'_>) {
+        let try_block = info.try_block;
+        let catch_var = info.catch_var;
+        let catch_var_referenced = info.catch_var_referenced;
+        let finally = info.finally;
+        let has_throw = info.has_throw;
+        let has_nested_try = info.has_nested_try;
+        let catch_block = info.catch_block;
+
         let needs_catch = catch_var.is_some();
 
         // ── B1: No throw, no catch, no nested try → inline body + finally ──

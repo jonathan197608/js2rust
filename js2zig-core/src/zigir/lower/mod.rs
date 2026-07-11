@@ -624,7 +624,7 @@ mod tests {
         assert!(saved.is_none()); // No previous context
         assert!(lowerer.fn_ctx.is_some());
 
-        let ctx = lowerer.fn_ctx().unwrap();
+        let ctx = lowerer.fn_ctx.as_ref().unwrap();
         assert_eq!(ctx.name, "foo");
         assert!(ctx.is_export);
 
@@ -661,7 +661,7 @@ mod tests {
 
         // Outer context restored
         assert!(lowerer.fn_ctx.is_some());
-        assert_eq!(lowerer.fn_ctx().unwrap().name, "outer");
+        assert_eq!(lowerer.fn_ctx.as_ref().unwrap().name, "outer");
 
         // Exit outer
         let outer_ctx = lowerer.exit_fn(saved_outer);

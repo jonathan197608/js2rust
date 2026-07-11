@@ -6,21 +6,18 @@
 // the caller decides whether and how to recurse.
 //
 // Callback categories:
-//   on_block  — IrBlock children (If.then/else_, While.body, etc.)
-//   on_stmt   — IrStmt children (For.init/update, DestructureDecl body, etc.)
-//   on_expr   — IrExpr children (conditions, init values, call args, etc.)
-//   on_target — IrAssignTarget children (Assign.target)
+//   on_block  鈥?IrBlock children (If.then/else_, While.body, etc.)
+//   on_stmt   鈥?IrStmt children (For.init/update, DestructureDecl body, etc.)
+//   on_expr   鈥?IrExpr children (conditions, init values, call args, etc.)
+//   on_target 鈥?IrAssignTarget children (Assign.target)
 
 use crate::zigir::types::{
     IrAssignTarget, IrBlock, IrDecl, IrDestructureBindingDecl, IrExpr, IrStmt,
 };
 
-// ═══════════════════════════════════════════════════════
-//  Read-only traversals
-// ═══════════════════════════════════════════════════════
-
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?//  Read-only traversals
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 /// Visit direct children of an `IrDecl`.
-#[allow(dead_code)]
 pub fn for_each_decl_child(
     decl: &IrDecl,
     on_block: &mut impl FnMut(&IrBlock),
@@ -52,7 +49,6 @@ pub fn for_each_decl_child(
 }
 
 /// Visit direct children of an `IrStmt`.
-#[allow(dead_code)]
 pub fn for_each_stmt_child(
     stmt: &IrStmt,
     on_block: &mut impl FnMut(&IrBlock),
@@ -162,7 +158,6 @@ pub fn for_each_stmt_child(
 }
 
 /// Visit direct children of an `IrExpr`.
-#[allow(dead_code)]
 pub fn for_each_expr_child(
     expr: &IrExpr,
     on_block: &mut impl FnMut(&IrBlock),
@@ -312,7 +307,6 @@ pub fn for_each_expr_child(
 }
 
 /// Visit direct children of an `IrAssignTarget`.
-#[allow(dead_code)]
 pub fn for_each_target_child(target: &IrAssignTarget, on_expr: &mut impl FnMut(&IrExpr)) {
     match target {
         IrAssignTarget::Member { object, .. } => on_expr(object),
@@ -331,12 +325,9 @@ pub fn for_each_target_child(target: &IrAssignTarget, on_expr: &mut impl FnMut(&
     }
 }
 
-// ═══════════════════════════════════════════════════════
-//  Mutable traversals
-// ═══════════════════════════════════════════════════════
-
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?//  Mutable traversals
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 /// Visit direct children of a mutable `IrDecl`.
-#[allow(dead_code)]
 pub fn for_each_decl_child_mut(
     decl: &mut IrDecl,
     on_block: &mut impl FnMut(&mut IrBlock),
@@ -368,7 +359,6 @@ pub fn for_each_decl_child_mut(
 }
 
 /// Visit direct children of a mutable `IrStmt`.
-#[allow(dead_code)]
 pub fn for_each_stmt_child_mut(
     stmt: &mut IrStmt,
     on_block: &mut impl FnMut(&mut IrBlock),
@@ -478,7 +468,6 @@ pub fn for_each_stmt_child_mut(
 }
 
 /// Visit direct children of a mutable `IrExpr`.
-#[allow(dead_code)]
 pub fn for_each_expr_child_mut(
     expr: &mut IrExpr,
     on_block: &mut impl FnMut(&mut IrBlock),
@@ -627,7 +616,6 @@ pub fn for_each_expr_child_mut(
 }
 
 /// Visit direct children of a mutable `IrAssignTarget`.
-#[allow(dead_code)]
 pub fn for_each_target_child_mut(
     target: &mut IrAssignTarget,
     on_expr: &mut impl FnMut(&mut IrExpr),
@@ -649,10 +637,8 @@ pub fn for_each_target_child_mut(
     }
 }
 
-// ═══════════════════════════════════════════════════════
-//  Private helpers
-// ═══════════════════════════════════════════════════════
-
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?//  Private helpers
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 fn visit_destructure_binding_decl(
     binding: &IrDestructureBindingDecl,
     on_expr: &mut impl FnMut(&IrExpr),

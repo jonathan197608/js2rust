@@ -182,7 +182,9 @@ fn host_regex_match_all_inner(pattern: HostStr, text: HostStr) -> (String, usize
         }
         match_count += 1;
         // Advance past this match
-        let full_match = caps.get(0).unwrap();
+        let full_match = caps
+            .get(0)
+            .expect("full match group is guaranteed by captures_from_pos returning Some");
         search_start = full_match.end();
         // If empty match, advance by 1 to avoid infinite loop
         if full_match.start() == full_match.end() {
