@@ -347,6 +347,34 @@ impl Lowerer {
                 }
                 Self::collect_idents_from_expr(&ce.callee, captured, seen, local_names, type_info);
             }
+            // Function/arrow expressions: recurse into the body to find
+            // identifiers that the inner function references from the
+            // enclosing scope (transitive capture).
+            Expression::FunctionExpression(fe) => {
+                if let Some(body) = &fe.body {
+                    // Add this function's parameter names to local_names
+                    let mut inner_locals = local_names.clone();
+                    for param in &fe.params.items {
+                        if let Some(pname) = crate::infer::binding_name(&param.pattern) {
+                            inner_locals.insert(pname.to_string());
+                        }
+                    }
+                    for stmt in &body.statements {
+                        Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
+                    }
+                }
+            }
+            Expression::ArrowFunctionExpression(af) => {
+                let mut inner_locals = local_names.clone();
+                for param in &af.params.items {
+                    if let Some(pname) = crate::infer::binding_name(&param.pattern) {
+                        inner_locals.insert(pname.to_string());
+                    }
+                }
+                for stmt in &af.body.statements {
+                    Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
+                }
+            }
             _ => {}
         }
     }
@@ -451,13 +479,6 @@ impl Lowerer {
             .unwrap_or(ZigType::Void)
     }
 
-    /// Best-effort type inference for arrow body expressions.
-    /// Delegates to `infer_arrow_expr_type_with_captures` with an empty capture list.
-    #[allow(dead_code)]
-    pub(super) fn infer_arrow_expr_type(&self, expr: &Expression) -> Option<ZigType> {
-        self.infer_arrow_expr_type_with_captures(expr, &[])
-    }
-
     /// Best-effort type inference with captured variable fallback.
     /// When a captured variable's type isn't in `var_types` (e.g., the variable
     /// derives from an `anytype` parameter), we can look it up from the capture
@@ -502,13 +523,28 @@ impl Lowerer {
                 self.infer_arrow_expr_type_with_captures(&ue.argument, captured)
             }
             Expression::CallExpression(ce) => {
-                if let Expression::Identifier(id) = &ce.callee {
-                    self.type_info
-                        .fn_return_types
-                        .get(id.name.as_str())
-                        .cloned()
-                } else {
-                    None
+                match &ce.callee {
+                    Expression::Identifier(id) => {
+                        self.type_info
+                            .fn_return_types
+                            .get(id.name.as_str())
+                            .cloned()
+                    }
+                    // IIFE: function(c){...}(1) — infer from the function body
+                    Expression::FunctionExpression(fe) => fe
+                        .body
+                        .as_ref()
+                        .map(|body| {
+                            self.scan_return_type_from_stmts(
+                                &body.statements,
+                                captured,
+                                ZigType::Void,
+                            )
+                        }),
+                    Expression::ArrowFunctionExpression(af) => Some(
+                        self.infer_arrow_return_type(af, captured),
+                    ),
+                    _ => None,
                 }
             }
             Expression::StaticMemberExpression(sme) => {

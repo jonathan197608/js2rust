@@ -9,7 +9,6 @@ use crate::zigir::ops::LogicalOp;
 use crate::zigir::source_span::SourceSpan;
 
 use super::Lowerer;
-use super::cabi::expr_type_name;
 
 pub mod call;
 pub mod container;
@@ -273,7 +272,7 @@ impl Lowerer {
             // ── Fallback ──────────────────────────────────────────────────────
             _ => IrExpr::CompileError {
                 span: SourceSpan::default(),
-                msg: format!("unsupported expression type: {}", expr_type_name(expr)),
+                msg: format!("unsupported expression type: {expr:?}"),
             },
         }
     }

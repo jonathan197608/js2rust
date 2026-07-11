@@ -726,14 +726,6 @@ impl Lowerer {
         }
     }
 
-    /// Check if a statement contains a `throw` (directly, not inside a
-    /// nested try-catch — those throws are caught by the inner catch).
-    #[allow(dead_code)]
-    pub(super) fn stmt_has_throw_any(stmt: &Statement) -> bool {
-        use super::helpers::{ThrowWalkMode, stmt_has_throw as walk};
-        walk(stmt, ThrowWalkMode::SkipTry)
-    }
-
     /// Lower a labeled statement.
     ///
     /// For loops, the label is attached to the loop body.

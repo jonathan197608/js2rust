@@ -1,4 +1,4 @@
-// zigir/lower/cabi.rs
+﻿// zigir/lower/cabi.rs
 // C ABI export metadata and utility/query methods.
 
 use oxc_ast::ast::*;
@@ -6,6 +6,7 @@ use oxc_ast::ast::*;
 use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
+use crate::zigir::kinds::FieldKind;
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic, SourceSpan};
 use crate::zigir::types::{IrCabiExport, IrDecl, IrExpr, IrParam};
 
@@ -139,16 +140,45 @@ impl Lowerer {
 
     /// Build IrCapture list from raw capture tuples (name, zig_type, is_mut).
     /// Shared by closure.rs, decl.rs, and function.rs.
+    ///
+    /// For each captured variable, the `init_expr` is resolved:
+    /// - If the variable is in `current_captured` (i.e. it is a field of the
+    ///   enclosing closure), the init expression uses `self.field_name`.
+    /// - Otherwise the bare identifier is used (parameter or local variable).
     pub(super) fn make_ir_captures(
         &self,
         captures: Vec<(String, ZigType, bool)>,
     ) -> Vec<crate::zigir::types::IrCapture> {
+        use crate::zigir::types::IrExpr;
+
         captures
             .into_iter()
-            .map(|(name, zig_type, is_mut)| crate::zigir::types::IrCapture {
-                name: self.make_ident(&name),
-                zig_type,
-                is_mut,
+            .map(|(name, zig_type, is_mut)| {
+                let ident = self.make_ident(&name);
+                let init_expr =
+                    if self
+                        .closure_mgr
+                        .current_captured
+                        .iter()
+                        .any(|(n, _, _)| n == &name)
+                    {
+                        // Variable is a captured field on the enclosing closure
+                        // → reference via self.field_name
+                        IrExpr::FieldAccess {
+                            object: Box::new(IrExpr::Ident(IrIdent::new("self"))),
+                            field: ident.zig_name.clone(),
+                            field_kind: FieldKind::StructField,
+                        }
+                    } else {
+                        // Parameter or local → bare identifier
+                        IrExpr::Ident(IrIdent::new(&ident.zig_name))
+                    };
+                crate::zigir::types::IrCapture {
+                    name: ident,
+                    zig_type,
+                    is_mut,
+                    init_expr,
+                }
             })
             .collect()
     }
@@ -1223,71 +1253,6 @@ pub fn builtin_call_to_ir(
         // RegExp
         BuiltinCall::RegExpTest => (BuiltinModule::JsRegExp, "test".into(), ZigType::Bool),
         BuiltinCall::RegExpExec => (BuiltinModule::JsRegExp, "exec".into(), ZigType::JsAny),
-    }
-}
-
-#[allow(dead_code)]
-pub fn stmt_type_name(stmt: &Statement) -> &'static str {
-    match stmt {
-        Statement::BlockStatement(_) => "BlockStatement",
-        Statement::BreakStatement(_) => "BreakStatement",
-        Statement::ContinueStatement(_) => "ContinueStatement",
-        Statement::DebuggerStatement(_) => "DebuggerStatement",
-        Statement::DoWhileStatement(_) => "DoWhileStatement",
-        Statement::EmptyStatement(_) => "EmptyStatement",
-        Statement::ExpressionStatement(_) => "ExpressionStatement",
-        Statement::ForInStatement(_) => "ForInStatement",
-        Statement::ForOfStatement(_) => "ForOfStatement",
-        Statement::ForStatement(_) => "ForStatement",
-        Statement::FunctionDeclaration(_) => "FunctionDeclaration",
-        Statement::IfStatement(_) => "IfStatement",
-        Statement::LabeledStatement(_) => "LabeledStatement",
-        Statement::ReturnStatement(_) => "ReturnStatement",
-        Statement::SwitchStatement(_) => "SwitchStatement",
-        Statement::ThrowStatement(_) => "ThrowStatement",
-        Statement::TryStatement(_) => "TryStatement",
-        Statement::VariableDeclaration(_) => "VariableDeclaration",
-        Statement::WhileStatement(_) => "WhileStatement",
-        Statement::WithStatement(_) => "WithStatement",
-        Statement::ClassDeclaration(_) => "ClassDeclaration",
-        Statement::ExportNamedDeclaration(_) => "ExportNamedDeclaration",
-        Statement::ExportDefaultDeclaration(_) => "ExportDefaultDeclaration",
-        Statement::ImportDeclaration(_) => "ImportDeclaration",
-        _ => "Unknown",
-    }
-}
-
-#[allow(dead_code)]
-pub fn expr_type_name(expr: &Expression) -> &'static str {
-    match expr {
-        Expression::NumericLiteral(_) => "NumericLiteral",
-        Expression::StringLiteral(_) => "StringLiteral",
-        Expression::BooleanLiteral(_) => "BooleanLiteral",
-        Expression::NullLiteral(_) => "NullLiteral",
-        Expression::RegExpLiteral(_) => "RegExpLiteral",
-        Expression::BigIntLiteral(_) => "BigIntLiteral",
-        Expression::Identifier(_) => "Identifier",
-        Expression::ThisExpression(_) => "ThisExpression",
-        Expression::BinaryExpression(_) => "BinaryExpression",
-        Expression::LogicalExpression(_) => "LogicalExpression",
-        Expression::UnaryExpression(_) => "UnaryExpression",
-        Expression::UpdateExpression(_) => "UpdateExpression",
-        Expression::AssignmentExpression(_) => "AssignmentExpression",
-        Expression::CallExpression(_) => "CallExpression",
-        Expression::NewExpression(_) => "NewExpression",
-        Expression::StaticMemberExpression(_) => "StaticMemberExpression",
-        Expression::ComputedMemberExpression(_) => "ComputedMemberExpression",
-        Expression::ArrayExpression(_) => "ArrayExpression",
-        Expression::ObjectExpression(_) => "ObjectExpression",
-        Expression::ArrowFunctionExpression(_) => "ArrowFunctionExpression",
-        Expression::FunctionExpression(_) => "FunctionExpression",
-        Expression::TemplateLiteral(_) => "TemplateLiteral",
-        Expression::ParenthesizedExpression(_) => "ParenthesizedExpression",
-        Expression::ConditionalExpression(_) => "ConditionalExpression",
-        Expression::SequenceExpression(_) => "SequenceExpression",
-        Expression::AwaitExpression(_) => "AwaitExpression",
-        Expression::PrivateFieldExpression(_) => "PrivateFieldExpression",
-        _ => "Unknown",
     }
 }
 

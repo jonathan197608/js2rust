@@ -219,9 +219,6 @@ pub(crate) enum ThrowWalkMode {
     /// Recurse into the try-block only (catch/finally ignored). Used by
     /// `closure.rs::has_throw_in_stmt`.
     TryBlockOnly,
-    /// Skip `TryStatement` entirely — throws inside a nested try are caught
-    /// by its own catch. Used by `stmt.rs::stmt_has_throw_any`.
-    SkipTry,
 }
 
 /// Check whether a statement contains a `throw`, recursing into
@@ -251,7 +248,6 @@ pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement, mode: ThrowWalkMode
         Statement::TryStatement(ts) => match mode {
             ThrowWalkMode::TryImpliesThrow => true,
             ThrowWalkMode::TryBlockOnly => ts.block.body.iter().any(|s| stmt_has_throw(s, mode)),
-            ThrowWalkMode::SkipTry => false,
         },
         _ => false,
     }

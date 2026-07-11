@@ -27,14 +27,6 @@ pub fn collect_block_idents(block: &IrBlock, names: &mut HashSet<String>) {
     }
 }
 
-/// Collect all identifier names referenced in a slice of statements.
-#[allow(dead_code)]
-pub fn collect_stmts_idents(stmts: &[IrStmt], names: &mut HashSet<String>) {
-    for stmt in stmts {
-        collect_stmt_idents(stmt, names);
-    }
-}
-
 /// Collect all identifier names referenced in a statement.
 pub fn collect_stmt_idents(stmt: &IrStmt, names: &mut HashSet<String>) {
     match stmt {
