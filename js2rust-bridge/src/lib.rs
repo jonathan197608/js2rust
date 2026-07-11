@@ -71,6 +71,14 @@ pub fn build() {
 
     // Emit cargo:rerun-if-changed so Cargo re-runs the build script when
     // any JS source file or the config file changes.
+    //
+    // We watch the entire JS source directory rather than individual files
+    // because transitive dependencies (e.g. helpers.js imported by app.js)
+    // may not be listed in project.js_files but still affect output.
+    if let Some(js_dir) = js_file_paths.first().and_then(|p| p.parent()) {
+        println!("cargo:rerun-if-changed={}", js_dir.display());
+    }
+    // Also watch explicitly listed files in case they reside in different directories.
     for p in &js_file_paths {
         println!("cargo:rerun-if-changed={}", p.display());
     }
