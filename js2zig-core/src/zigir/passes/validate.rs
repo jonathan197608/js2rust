@@ -12,7 +12,9 @@ use crate::zigir::passes::{IrPass, PassResult};
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
 use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrFnDecl, IrModule, IrStmt};
 
-use super::collect_idents;
+use std::cell::RefCell;
+
+use super::{collect_idents, walk};
 
 /// Validation pass: checks structural integrity of the IR.
 ///
@@ -152,29 +154,16 @@ impl ValidatePass {
     }
 
     fn check_closure_refs_in_decl(&mut self, decl: &IrDecl) {
-        match decl {
-            IrDecl::Fn(f) => self.check_closure_refs_in_block(&f.body),
-            IrDecl::Var(v) => {
-                if let Some(expr) = &v.init {
-                    self.check_closure_refs_in_expr(expr);
-                }
-            }
-            IrDecl::Class(c) => {
-                if let Some(ctor) = &c.constructor {
-                    self.check_closure_refs_in_block(&ctor.body);
-                }
-                for m in &c.methods {
-                    self.check_closure_refs_in_block(&m.body);
-                }
-                for (_name, init, _ty) in &c.static_inits {
-                    self.check_closure_refs_in_expr(init);
-                }
-                for block in &c.static_blocks {
-                    self.check_closure_refs_in_block(block);
-                }
-            }
-            IrDecl::CompileError { .. } => {}
-        }
+        let this = RefCell::new(&mut *self);
+        walk::for_each_decl_child(
+            decl,
+            &mut |block| {
+                this.borrow_mut().check_closure_refs_in_block(block);
+            },
+            &mut |expr| {
+                this.borrow_mut().check_closure_refs_in_expr(expr);
+            },
+        );
     }
 
     fn check_closure_refs_in_block(&mut self, block: &IrBlock) {
@@ -184,298 +173,82 @@ impl ValidatePass {
     }
 
     fn check_closure_refs_in_stmt(&mut self, stmt: &IrStmt) {
-        match stmt {
-            IrStmt::VarDecl(v) => {
-                if let Some(expr) = &v.init {
-                    self.check_closure_refs_in_expr(expr);
+        // Special case: NestedFnDecl — check struct body + capture names (not closure body)
+        if let IrStmt::NestedFnDecl {
+            struct_def,
+            instance,
+        } = stmt
+        {
+            self.check_closure_refs_in_block(&struct_def.body);
+            if let Some(closure) = instance {
+                for cap in &closure.captured {
+                    self.check_closure_refs_in_expr(&IrExpr::Ident(cap.name.clone()));
                 }
             }
-            IrStmt::Assign { value, .. } => {
-                self.check_closure_refs_in_expr(value);
-            }
-            IrStmt::If { cond, then, else_ } => {
-                self.check_closure_refs_in_expr(cond);
-                self.check_closure_refs_in_block(then);
-                if let Some(e) = else_ {
-                    self.check_closure_refs_in_block(e);
-                }
-            }
-            IrStmt::While { cond, body, .. } => {
-                self.check_closure_refs_in_expr(cond);
-                self.check_closure_refs_in_block(body);
-            }
-            IrStmt::DoWhile { body, cond, .. } => {
-                self.check_closure_refs_in_block(body);
-                self.check_closure_refs_in_expr(cond);
-            }
-            IrStmt::For {
-                init,
-                cond,
-                update,
-                body,
-                ..
-            } => {
-                if let Some(i) = init {
-                    self.check_closure_refs_in_stmt(i);
-                }
-                if let Some(c) = cond {
-                    self.check_closure_refs_in_expr(c);
-                }
-                if let Some(u) = update {
-                    self.check_closure_refs_in_stmt(u);
-                }
-                self.check_closure_refs_in_block(body);
-            }
-            IrStmt::ForIn { iterable, body, .. } => {
-                self.check_closure_refs_in_expr(iterable);
-                self.check_closure_refs_in_block(body);
-            }
-            IrStmt::ForOf { iterable, body, .. } => {
-                self.check_closure_refs_in_expr(iterable);
-                self.check_closure_refs_in_block(body);
-            }
-            IrStmt::Switch { expr, cases } => {
-                self.check_closure_refs_in_expr(expr);
-                for case in cases {
-                    for s in &case.body {
-                        self.check_closure_refs_in_stmt(s);
-                    }
-                }
-            }
-            IrStmt::Try {
-                try_block,
-                catch_block,
-                finally,
-                ..
-            } => {
-                self.check_closure_refs_in_block(try_block);
-                self.check_closure_refs_in_block(catch_block);
-                if let Some(f) = finally {
-                    self.check_closure_refs_in_block(f);
-                }
-            }
-            IrStmt::Throw { value, .. } => {
-                self.check_closure_refs_in_expr(value);
-            }
-            IrStmt::Return { value } => {
-                if let Some(v) = value {
-                    self.check_closure_refs_in_expr(v);
-                }
-            }
-            IrStmt::Break { .. } | IrStmt::Continue { .. } => {}
-            IrStmt::Expr(e) => {
-                self.check_closure_refs_in_expr(e);
-            }
-            IrStmt::Block(b) => {
-                self.check_closure_refs_in_block(b);
-            }
-            IrStmt::CompileError { .. } | IrStmt::Comment(_) => {}
-            IrStmt::DestructureDecl(data) => {
-                self.check_closure_refs_in_expr(&data.init);
-                for binding in &data.bindings {
-                    if let Some(d) = &binding.default {
-                        self.check_closure_refs_in_expr(d);
-                    }
-                }
-            }
-            IrStmt::NestedFnDecl {
-                struct_def,
-                instance,
-            } => {
-                self.check_closure_refs_in_block(&struct_def.body);
-                if let Some(closure) = instance {
-                    for cap in &closure.captured {
-                        self.check_closure_refs_in_expr(&IrExpr::Ident(cap.name.clone()));
-                    }
-                }
-            }
+            return;
         }
+
+        // Standard walk; on_target is no-op because validate at stmt level
+        // does not visit Assign.target (that's done at expr level)
+        let this = RefCell::new(&mut *self);
+        walk::for_each_stmt_child(
+            stmt,
+            &mut |block| {
+                this.borrow_mut().check_closure_refs_in_block(block);
+            },
+            &mut |s| {
+                this.borrow_mut().check_closure_refs_in_stmt(s);
+            },
+            &mut |expr| {
+                this.borrow_mut().check_closure_refs_in_expr(expr);
+            },
+            &mut |_| {},
+        );
     }
 
     fn check_closure_refs_in_expr(&mut self, expr: &IrExpr) {
-        match expr {
-            IrExpr::Closure(closure) => {
-                let referenced = {
-                    let mut names = std::collections::HashSet::new();
-                    collect_idents::collect_block_idents(&closure.body, &mut names);
-                    names
-                };
-                for capture in &closure.captured {
-                    if !referenced.contains(&capture.name.zig_name) {
-                        self.warn(format!(
-                            "closure '{}' captures '{}' but it is not referenced in the body",
-                            closure.struct_name.zig_name, capture.name.zig_name
-                        ));
-                    }
+        // Special case: Closure — check capture references (don't recurse into body)
+        if let IrExpr::Closure(closure) = expr {
+            let referenced = {
+                let mut names = std::collections::HashSet::new();
+                collect_idents::collect_block_idents(&closure.body, &mut names);
+                names
+            };
+            for capture in &closure.captured {
+                if !referenced.contains(&capture.name.zig_name) {
+                    self.warn(format!(
+                        "closure '{}' captures '{}' but it is not referenced in the body",
+                        closure.struct_name.zig_name, capture.name.zig_name
+                    ));
                 }
             }
-            // Recurse into sub-expressions
-            IrExpr::Binary { left, right, .. } => {
-                self.check_closure_refs_in_expr(left);
-                self.check_closure_refs_in_expr(right);
-            }
-            IrExpr::Unary { operand, .. } => {
-                self.check_closure_refs_in_expr(operand);
-            }
-            IrExpr::Logical { left, right, .. } => {
-                self.check_closure_refs_in_expr(left);
-                self.check_closure_refs_in_expr(right);
-            }
-            IrExpr::Call(call) => {
-                self.check_closure_refs_in_expr(&call.callee);
-                for arg in &call.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::BuiltinCall(bc) => {
-                for arg in &bc.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::HostCall(hc) => {
-                for arg in &hc.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::FieldAccess { object, .. } => {
-                self.check_closure_refs_in_expr(object);
-            }
-            IrExpr::IndexAccess { object, index, .. } => {
-                self.check_closure_refs_in_expr(object);
-                self.check_closure_refs_in_expr(index);
-            }
-            IrExpr::ComputedField { object, key, .. } => {
-                self.check_closure_refs_in_expr(object);
-                self.check_closure_refs_in_expr(key);
-            }
-            IrExpr::Conditional { cond, then, else_ } => {
-                self.check_closure_refs_in_expr(cond);
-                self.check_closure_refs_in_expr(then);
-                self.check_closure_refs_in_expr(else_);
-            }
-            IrExpr::TemplateLiteral { exprs, .. } => {
-                for e in exprs {
-                    self.check_closure_refs_in_expr(e);
-                }
-            }
-            IrExpr::ArrayLiteral(arr) => {
-                for e in &arr.elements {
-                    self.check_closure_refs_in_expr(e);
-                }
-            }
-            IrExpr::ObjectLiteral(obj) => {
-                use crate::zigir::types::IrObjectItem;
-                for item in &obj.items {
-                    match item {
-                        IrObjectItem::Field(f) => {
-                            self.check_closure_refs_in_expr(&f.value);
-                        }
-                        IrObjectItem::Spread(e) => {
-                            self.check_closure_refs_in_expr(e);
-                        }
-                    }
-                }
-            }
-            IrExpr::Assign { target, value, .. } => {
-                self.check_closure_refs_in_assign_target(target);
-                self.check_closure_refs_in_expr(value);
-            }
-            IrExpr::Update { target, .. } => {
-                self.check_closure_refs_in_assign_target(target);
-            }
-            IrExpr::Await(a) => {
-                self.check_closure_refs_in_expr(&a.callee);
-                for arg in &a.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::New(n) => {
-                for arg in &n.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::BlockExpr { body, result, .. } => {
-                for s in body {
-                    self.check_closure_refs_in_stmt(s);
-                }
-                self.check_closure_refs_in_expr(result);
-            }
-            IrExpr::AllocPrint { args, .. } => {
-                for a in args {
-                    self.check_closure_refs_in_expr(a);
-                }
-            }
-            IrExpr::Spread(e) | IrExpr::Typeof(e) | IrExpr::Void(e) | IrExpr::Paren(e) => {
-                self.check_closure_refs_in_expr(e);
-            }
-            IrExpr::Sequence(exprs) => {
-                for e in exprs {
-                    self.check_closure_refs_in_expr(e);
-                }
-            }
-            IrExpr::ArrowFn(af) => {
-                self.check_closure_refs_in_block(&af.body);
-            }
-            IrExpr::FnExpr(fe) => {
-                self.check_closure_refs_in_block(&fe.body);
-            }
-            IrExpr::ArrayCallbackInline(inline_data) => {
-                if let Some(obj_expr) = &inline_data.obj_expr {
-                    self.check_closure_refs_in_expr(obj_expr);
-                }
-                for stmt in &inline_data.body {
-                    self.check_closure_refs_in_stmt(stmt);
-                }
-            }
-            IrExpr::ArrayMethodInline(inline_data) => {
-                if let Some(obj_expr) = &inline_data.obj_expr {
-                    self.check_closure_refs_in_expr(obj_expr);
-                }
-                for arg in &inline_data.args {
-                    self.check_closure_refs_in_expr(arg);
-                }
-            }
-            IrExpr::OptionalChain { object, body, .. } => {
-                self.check_closure_refs_in_expr(object);
-                self.check_closure_refs_in_expr(body);
-            }
-            IrExpr::PowExpr { base, exp, .. } => {
-                self.check_closure_refs_in_expr(base);
-                self.check_closure_refs_in_expr(exp);
-            }
-            // Leaf expressions: no sub-expressions to check
-            IrExpr::IntLiteral(_)
-            | IrExpr::FloatLiteral(_)
-            | IrExpr::StringLiteral(_)
-            | IrExpr::BoolLiteral(_)
-            | IrExpr::BigIntLiteral(_)
-            | IrExpr::Null
-            | IrExpr::Undefined
-            | IrExpr::Ident(_)
-            | IrExpr::This
-            | IrExpr::CompileError { .. } => {}
+            return;
         }
+
+        let this = RefCell::new(&mut *self);
+        walk::for_each_expr_child(
+            expr,
+            &mut |block| {
+                this.borrow_mut().check_closure_refs_in_block(block);
+            },
+            &mut |s| {
+                this.borrow_mut().check_closure_refs_in_stmt(s);
+            },
+            &mut |expr| {
+                this.borrow_mut().check_closure_refs_in_expr(expr);
+            },
+            &mut |target| {
+                this.borrow_mut()
+                    .check_closure_refs_in_assign_target(target);
+            },
+        );
     }
 
     fn check_closure_refs_in_assign_target(&mut self, target: &IrAssignTarget) {
-        match target {
-            IrAssignTarget::Ident(_) => {}
-            IrAssignTarget::Member { object, .. } => {
-                self.check_closure_refs_in_expr(object);
-            }
-            IrAssignTarget::Index { object, index, .. } => {
-                self.check_closure_refs_in_expr(object);
-                self.check_closure_refs_in_expr(index);
-            }
-            IrAssignTarget::Destructure(bindings) => {
-                for b in bindings {
-                    if let Some(d) = &b.default {
-                        self.check_closure_refs_in_expr(d);
-                    }
-                }
-            }
-            IrAssignTarget::CompileError { .. } => {}
-        }
+        let this = RefCell::new(&mut *self);
+        walk::for_each_target_child(target, &mut |expr| {
+            this.borrow_mut().check_closure_refs_in_expr(expr);
+        });
     }
 }
 
