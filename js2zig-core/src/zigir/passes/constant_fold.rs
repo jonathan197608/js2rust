@@ -11,7 +11,11 @@
 
 use crate::zigir::ops::{BinOp, LogicalOp, UnaOp};
 use crate::zigir::passes::{IrPass, PassResult};
-use crate::zigir::types::{IrExpr, IrModule};
+use crate::zigir::types::{IrAssignTarget, IrBlock, IrExpr, IrModule, IrStmt};
+
+use std::cell::RefCell;
+
+use super::walk;
 
 /// Constant folding pass.
 ///
@@ -25,7 +29,11 @@ impl ConstantFoldPass {
     }
 
     /// Try to fold an expression into a simpler constant form.
-    /// Returns Some(folded_expr) if a fold was possible, None otherwise.
+    /// Returns true if any change was made.
+    ///
+    /// Note: this uses selective traversal (not walk.rs) because folding inside
+    /// Call/BuiltinCall args can change how the emitter handles string content,
+    /// causing regressions (e.g. embedded quotes in console.log args).
     fn try_fold(expr: &mut IrExpr) -> bool {
         match expr {
             IrExpr::Binary {
@@ -170,132 +178,36 @@ impl ConstantFoldPass {
     }
 
     /// Fold constants in a statement.
-    fn fold_stmt(stmt: &mut crate::zigir::types::IrStmt) -> bool {
-        match stmt {
-            crate::zigir::types::IrStmt::VarDecl(v) => {
-                if let Some(e) = &mut v.init {
-                    Self::try_fold(e)
-                } else {
-                    false
-                }
-            }
-            crate::zigir::types::IrStmt::Assign { value, .. } => Self::try_fold(value),
-            crate::zigir::types::IrStmt::If { cond, then, else_ } => {
-                let mut changed = Self::try_fold(cond);
-                if Self::fold_block(then) {
-                    changed = true;
-                }
-                if let Some(e) = else_
-                    && Self::fold_block(e)
-                {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::While { cond, body, .. } => {
-                let mut changed = Self::try_fold(cond);
-                if Self::fold_block(body) {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::DoWhile { body, cond, .. } => {
-                let mut changed = Self::fold_block(body);
-                if Self::try_fold(cond) {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::For {
-                init,
-                cond,
-                update,
-                body,
-                ..
-            } => {
-                let mut changed = false;
-                if let Some(i) = init
-                    && Self::fold_stmt(i)
-                {
-                    changed = true;
-                }
-                if let Some(c) = cond
-                    && Self::try_fold(c)
-                {
-                    changed = true;
-                }
-                if let Some(u) = update
-                    && Self::fold_stmt(u)
-                {
-                    changed = true;
-                }
-                if Self::fold_block(body) {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::Switch { expr, cases } => {
-                let mut changed = Self::try_fold(expr);
-                for case in cases {
-                    for s in &mut case.body {
-                        if Self::fold_stmt(s) {
-                            changed = true;
-                        }
-                    }
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::Try {
-                try_block,
-                catch_block,
-                finally,
-                ..
-            } => {
-                let mut changed = Self::fold_block(try_block);
-                if Self::fold_block(catch_block) {
-                    changed = true;
-                }
-                if let Some(f) = finally
-                    && Self::fold_block(f)
-                {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::Throw { value, .. } => Self::try_fold(value),
-            crate::zigir::types::IrStmt::Return { value } => {
-                if let Some(v) = value {
-                    Self::try_fold(v)
-                } else {
-                    false
-                }
-            }
-            crate::zigir::types::IrStmt::Expr(e) => Self::try_fold(e),
-            crate::zigir::types::IrStmt::Block(b) => Self::fold_block(b),
-            crate::zigir::types::IrStmt::ForIn { iterable, body, .. } => {
-                let mut changed = Self::try_fold(iterable);
-                if Self::fold_block(body) {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::ForOf { iterable, body, .. } => {
-                let mut changed = Self::try_fold(iterable);
-                if Self::fold_block(body) {
-                    changed = true;
-                }
-                changed
-            }
-            crate::zigir::types::IrStmt::Break { .. }
-            | crate::zigir::types::IrStmt::Continue { .. }
-            | crate::zigir::types::IrStmt::CompileError { .. }
-            | crate::zigir::types::IrStmt::Comment(_)
-            | crate::zigir::types::IrStmt::DestructureDecl(_)
-            | crate::zigir::types::IrStmt::NestedFnDecl { .. } => false,
-        }
+    fn fold_stmt(stmt: &mut IrStmt) -> bool {
+        let changed = RefCell::new(false);
+        walk::for_each_stmt_child_mut(
+            stmt,
+            &mut |block| {
+                *changed.borrow_mut() |= Self::fold_block(block);
+            },
+            &mut |s| {
+                *changed.borrow_mut() |= Self::fold_stmt(s);
+            },
+            &mut |e| {
+                *changed.borrow_mut() |= Self::try_fold(e);
+            },
+            &mut |t| {
+                *changed.borrow_mut() |= Self::fold_target(t);
+            },
+        );
+        changed.into_inner()
     }
 
-    fn fold_block(block: &mut crate::zigir::types::IrBlock) -> bool {
+    /// Fold constants inside an assign target's sub-expressions.
+    fn fold_target(target: &mut IrAssignTarget) -> bool {
+        let mut changed = false;
+        walk::for_each_target_child_mut(target, &mut |e| {
+            changed |= Self::try_fold(e);
+        });
+        changed
+    }
+
+    fn fold_block(block: &mut IrBlock) -> bool {
         let mut changed = false;
         for stmt in &mut block.stmts {
             if Self::fold_stmt(stmt) {
@@ -320,42 +232,18 @@ impl IrPass for ConstantFoldPass {
 
         // Fold in all declarations
         for decl in &mut module.declarations {
-            match decl {
-                crate::zigir::types::IrDecl::Fn(f) => {
-                    if Self::fold_block(&mut f.body) {
-                        changed = true;
-                    }
-                }
-                crate::zigir::types::IrDecl::Var(v) => {
-                    if let Some(e) = &mut v.init
-                        && Self::try_fold(e)
-                    {
-                        changed = true;
-                    }
-                }
-                crate::zigir::types::IrDecl::Class(c) => {
-                    if let Some(ctor) = &mut c.constructor
-                        && Self::fold_block(&mut ctor.body)
-                    {
-                        changed = true;
-                    }
-                    for m in &mut c.methods {
-                        if Self::fold_block(&mut m.body) {
-                            changed = true;
-                        }
-                    }
-                    for (_name, init, _ty) in &mut c.static_inits {
-                        if Self::try_fold(init) {
-                            changed = true;
-                        }
-                    }
-                    for block in &mut c.static_blocks {
-                        if Self::fold_block(block) {
-                            changed = true;
-                        }
-                    }
-                }
-                crate::zigir::types::IrDecl::CompileError { .. } => {}
+            let ch = RefCell::new(false);
+            walk::for_each_decl_child_mut(
+                decl,
+                &mut |block| {
+                    *ch.borrow_mut() |= Self::fold_block(block);
+                },
+                &mut |e| {
+                    *ch.borrow_mut() |= Self::try_fold(e);
+                },
+            );
+            if ch.into_inner() {
+                changed = true;
             }
         }
 
