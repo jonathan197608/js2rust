@@ -679,9 +679,9 @@ impl Lowerer {
                 .map(|p| {
                     crate::zigir::types::IrExpr::Call(crate::zigir::types::IrCallExpr {
                         callee: Box::new(crate::zigir::types::IrExpr::FieldAccess {
-                            object: Box::new(crate::zigir::types::IrExpr::Ident(
-                                crate::zigir::ident::IrIdent::new("JsAny"),
-                            )),
+                            object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new(
+                                "JsAny",
+                            ))),
                             field: "from".to_string(),
                             field_kind: crate::zigir::kinds::FieldKind::StructField,
                         }),
@@ -690,22 +690,21 @@ impl Lowerer {
                     })
                 })
                 .collect();
-            let arguments_init =
-                crate::zigir::types::IrStmt::VarDecl(crate::zigir::types::IrVarDecl {
-                    name: crate::zigir::ident::IrIdent::new("__arguments"),
-                    is_const: true,
-                    zig_type: None,
-                    init: Some(crate::zigir::types::IrExpr::ArrayLiteral(
-                        crate::zigir::types::IrArrayLiteral {
-                            elements: args_exprs,
-                            spread_indices: vec![],
-                        },
-                    )),
-                    is_json_parse: false,
-                    needs_var_suppression: false,
-                    needs_const_suppression: false,
-                    needs_deinit: false,
-                });
+            let arguments_init = crate::zigir::types::IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new("__arguments"),
+                is_const: true,
+                zig_type: None,
+                init: Some(crate::zigir::types::IrExpr::ArrayLiteral(
+                    crate::zigir::types::IrArrayLiteral {
+                        elements: args_exprs,
+                        spread_indices: vec![],
+                    },
+                )),
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_const_suppression: false,
+                needs_deinit: false,
+            });
             scope.body.stmts.insert(0, arguments_init);
         }
 

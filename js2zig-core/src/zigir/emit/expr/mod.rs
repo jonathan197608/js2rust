@@ -7,6 +7,7 @@ pub mod container;
 pub mod template_new;
 
 use crate::zigir::emit::Emitter;
+use crate::zigir::emit::helpers as emit_helpers;
 use crate::zigir::emit::helpers::{
     EmitterHelpers, escape_zig_string, logical_op_to_zig, update_op_to_zig,
 };
@@ -572,11 +573,10 @@ impl Emitter {
 
             crate::zigir::types::IrExpr::CompileError { span, msg } => {
                 let loc = format!("{}:{}", span.js_line, span.js_col);
-                self.write(&format!(
-                    "@compileError(\"{} (at {})\")",
-                    escape_zig_string(msg),
-                    loc
-                ));
+                self.write(&emit_helpers::compile_error(&format!(
+                    "{} (at {})",
+                    msg, loc
+                )));
             }
         }
     }

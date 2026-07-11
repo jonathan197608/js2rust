@@ -32,7 +32,7 @@ impl Emitter {
     }
 
     pub(super) fn emit_new_expr(&mut self, new_expr: &crate::zigir::types::IrNewExpr) {
-        use crate::zigir::emit::helpers::escape_zig_string;
+        use crate::zigir::emit::helpers;
         match &new_expr.constructor {
             NewConstructor::Map => {
                 self.write("js_collections.JsMap.init(js_allocator.allocator())");
@@ -46,47 +46,29 @@ impl Emitter {
                 }
                 DateConstructorKind::FromMillis => {
                     self.write("js_date.JsDate.fromMillis(");
-                    if let Some(arg) = new_expr.args.first() {
-                        self.emit_expr(arg);
-                    }
+                    self.emit_first_arg_or_default(&new_expr.args, "");
                     self.write(")");
                 }
                 DateConstructorKind::FromString => {
                     // new Date("2024-01-01") → js_date.JsDate.fromMillis(js_date.parse("2024-01-01"))
                     self.write("js_date.JsDate.fromMillis(js_date.parse(");
-                    if let Some(arg) = new_expr.args.first() {
-                        self.emit_expr(arg);
-                    }
+                    self.emit_first_arg_or_default(&new_expr.args, "");
                     self.write("))");
                 }
                 DateConstructorKind::FromComponents => {
                     // new Date(y, m, d, h, min, s, ms)
-                    // Defaults for missing args: d=1, h=0, min=0, s=0, ms=0
+                    // Defaults: d=1, h=0, min=0, s=0, ms=0
                     self.write("js_date.JsDate.fromComponents(");
-                    let n_args = new_expr.args.len();
-                    let defaults = ["1", "0", "0", "0", "0"]; // d, h, min, s, ms
-                    // First two args (y, m) are always required
-                    for (i, arg) in new_expr.args.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        self.emit_expr(arg);
-                    }
-                    // Fill remaining with defaults
-                    for i in n_args..7 {
-                        self.write(&format!(", {}", defaults[i - 2]));
-                    }
+                    // y and m are always required; provide defaults for all 7 slots
+                    let defaults = ["0", "0", "1", "0", "0", "0", "0"];
+                    self.emit_args_with_defaults(&new_expr.args, 7, &defaults);
                     self.write(")");
                 }
             },
             NewConstructor::RegExp => {
                 // new RegExp(pat, flags?) → try js_regexp.JsRegExp.init(alloc, pat, flags_or_empty)
                 self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
-                if let Some(pat) = new_expr.args.first() {
-                    self.emit_expr(pat);
-                } else {
-                    self.write("\"\"");
-                }
+                self.emit_first_arg_or_default(&new_expr.args, "\"\"");
                 self.write(", ");
                 if new_expr.args.len() >= 2 {
                     self.emit_expr(&new_expr.args[1]);
@@ -104,30 +86,25 @@ impl Emitter {
                 let elem_type = if is_float { "f64" } else { "i64" };
                 self.write(&format!("{}.{}(&[_]{}{{", module, init_fn, elem_type));
                 // Emit array elements
-                if let Some(arg) = new_expr.args.first() {
-                    // The arg is typically an IrExpr::ArrayLiteral or similar
-                    self.emit_expr(arg);
-                }
+                self.emit_first_arg_or_default(&new_expr.args, "");
                 self.write("})");
             }
             NewConstructor::Class(class_name) => {
                 self.write(&format!("{}.init(", class_name));
-                for (i, arg) in new_expr.args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
+                self.emit_inline_args(&new_expr.args);
                 self.write(")");
             }
             NewConstructor::Error(msg) => {
-                self.write(&format!("JsAny.fromError(\"{}\")", escape_zig_string(msg)));
+                self.write(&format!(
+                    "JsAny.fromError(\"{}\")",
+                    helpers::escape_zig_string(msg)
+                ));
             }
             NewConstructor::Unsupported(name) => {
-                self.write(&format!(
-                    "@compileError(\"new {}() is not supported\")",
+                self.write(&helpers::compile_error(&format!(
+                    "new {}() is not supported",
                     name
-                ));
+                )));
             }
         }
     }

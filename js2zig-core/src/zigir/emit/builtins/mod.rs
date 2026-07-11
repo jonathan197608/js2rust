@@ -114,12 +114,47 @@ pub(super) fn resolve_chain_receiver(
 // ═══════════════════════════════════════════════════════
 
 impl Emitter {
-    fn emit_inline_args(&mut self, args: &[crate::zigir::types::IrExpr]) {
+    pub(super) fn emit_inline_args(&mut self, args: &[crate::zigir::types::IrExpr]) {
         for (i, arg) in args.iter().enumerate() {
             if i > 0 {
                 self.write(", ");
             }
             self.emit_expr(arg);
+        }
+    }
+
+    /// Emit the first argument if present, otherwise emit `default`.
+    pub(super) fn emit_first_arg_or_default(
+        &mut self,
+        args: &[crate::zigir::types::IrExpr],
+        default: &str,
+    ) {
+        if let Some(arg) = args.first() {
+            self.emit_expr(arg);
+        } else {
+            self.write(default);
+        }
+    }
+
+    /// Emit `total_slots` comma-separated values, filling missing args with defaults.
+    /// `defaults[i]` is the default for slot `i` when `i >= args.len()`.
+    pub(super) fn emit_args_with_defaults(
+        &mut self,
+        args: &[crate::zigir::types::IrExpr],
+        total_slots: usize,
+        defaults: &[&str],
+    ) {
+        let n_args = args.len();
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..total_slots {
+            if i > 0 {
+                self.write(", ");
+            }
+            if i < n_args {
+                self.emit_expr(&args[i]);
+            } else if let Some(default) = defaults.get(i) {
+                self.write(default);
+            }
         }
     }
 

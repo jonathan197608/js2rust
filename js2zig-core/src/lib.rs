@@ -55,7 +55,7 @@ impl HostFunction {
     /// Derive a PascalCase struct name from the function name.
     /// e.g. "fetch_user" → "FetchUserResult"
     pub fn struct_zig_name(&self) -> String {
-        format!("{}Result", crate::toml_config::pascal_case(&self.name))
+        format!("{}Result", toml_config::pascal_case(&self.name))
     }
 
     /// Derive the C ABI extern struct name.

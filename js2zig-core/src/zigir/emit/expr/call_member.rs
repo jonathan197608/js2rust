@@ -15,12 +15,7 @@ impl Emitter {
             CallKind::Closure => {
                 self.emit_expr(&call.callee);
                 self.write(".call(");
-                for (i, arg) in call.args.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.emit_expr(arg);
-                }
+                self.emit_inline_args(&call.args);
                 self.write(")");
             }
         }
@@ -35,8 +30,7 @@ impl Emitter {
         match kind {
             // Direct field access: obj.field (same for StructField, Namespace, Private)
             FieldKind::StructField | FieldKind::Namespace | FieldKind::Private => {
-                self.emit_expr(object);
-                self.write(&format!(".{}", field));
+                self.emit_dot_access(object, field);
             }
             FieldKind::ArrayListLen => {
                 self.emit_expr(object);
@@ -120,8 +114,7 @@ impl Emitter {
                     self.emit_expr(object);
                     self.write(")");
                 } else {
-                    self.emit_expr(object);
-                    self.write(&format!(".{}", prop));
+                    self.emit_dot_access(object, prop);
                 }
             }
             FieldKind::PointerDeref => {
@@ -131,11 +124,9 @@ impl Emitter {
             FieldKind::RegExpProp { prop } => {
                 // regex.source → regex.pattern; others map directly (regex.flags → .flags, etc.)
                 if prop == "source" {
-                    self.emit_expr(object);
-                    self.write(".pattern");
+                    self.emit_dot_access(object, "pattern");
                 } else {
-                    self.emit_expr(object);
-                    self.write(&format!(".{}", prop));
+                    self.emit_dot_access(object, prop);
                 }
             }
             FieldKind::StaticField { class_name } => {
@@ -167,7 +158,7 @@ impl Emitter {
         key: &crate::zigir::types::IrExpr,
         kind: &ComputedKeyKind,
     ) {
-        use crate::zigir::emit::helpers::escape_zig_string;
+        use crate::zigir::emit::helpers;
         match kind {
             ComputedKeyKind::StructField => {
                 self.write("@field(");
@@ -200,13 +191,19 @@ impl Emitter {
                 self.write(")))");
             }
             ComputedKeyKind::CompileError(msg) => {
-                self.write(&format!("@compileError(\"{}\")", escape_zig_string(msg)));
+                self.write(&helpers::compile_error(msg));
             }
         }
     }
 
     // ── Shared index/field helpers ────────────────────────
     // Used by emit_index_access, emit_computed_field, and emit_assign_target_inner.
+
+    /// Emit `object.field` — dot-access on an expression.
+    pub(super) fn emit_dot_access(&mut self, object: &crate::zigir::types::IrExpr, field: &str) {
+        self.emit_expr(object);
+        self.write(&format!(".{}", field));
+    }
 
     /// Emit `object.items[@as(usize, @intCast(index))]` — ArrayList element access.
     pub(super) fn emit_arraylist_item(

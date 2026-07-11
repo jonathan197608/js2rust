@@ -201,6 +201,11 @@ pub(crate) fn escape_zig_format_string(s: &str) -> String {
     result
 }
 
+/// Format a `@compileError("...")` with proper string escaping.
+pub(crate) fn compile_error(msg: &str) -> String {
+    format!("@compileError(\"{}\")", escape_zig_string(msg))
+}
+
 // ═══════════════════════════════════════════════════════
 //  Tests
 // ═══════════════════════════════════════════════════════

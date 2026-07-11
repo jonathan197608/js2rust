@@ -42,19 +42,9 @@ impl Emitter {
             // etc.
             "utc" => {
                 self.write("js_date.utc(");
-                let n_args = args.len();
                 // Defaults: [y=1970, m=0, d=1, h=0, min=0, s=0, ms=0]
                 let defaults = ["1970", "0", "1", "0", "0", "0", "0"];
-                for (i, default) in defaults.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    if i < n_args {
-                        self.emit_expr(&args[i]);
-                    } else {
-                        self.write(default);
-                    }
-                }
+                self.emit_args_with_defaults(args, 7, &defaults);
                 self.write(")");
             }
             _ => {
