@@ -136,8 +136,19 @@ impl Lowerer {
             Expression::NewExpression(ne) => self.lower_new(ne),
 
             // ── Member access ─────────────────────────────────────────────────
-            Expression::StaticMemberExpression(mem) => self.lower_static_member(mem),
-            Expression::ComputedMemberExpression(mem) => self.lower_computed_member(mem),
+            Expression::StaticMemberExpression(mem) => {
+                // Handle optional member access (?.) via the optional chain path
+                if mem.optional {
+                    return self.lower_optional_sme_chain(mem);
+                }
+                self.lower_static_member(mem)
+            }
+            Expression::ComputedMemberExpression(mem) => {
+                if mem.optional {
+                    return self.lower_optional_cme_chain(mem);
+                }
+                self.lower_computed_member(mem)
+            }
 
             // ── Array / Object literals ──────────────────────────────────────
             Expression::ArrayExpression(ae) => self.lower_array_expr(ae),

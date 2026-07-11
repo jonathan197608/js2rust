@@ -360,7 +360,13 @@ impl Lowerer {
                         }
                     }
                     for stmt in &body.statements {
-                        Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
+                        Self::collect_idents_from_stmt(
+                            stmt,
+                            captured,
+                            seen,
+                            &inner_locals,
+                            type_info,
+                        );
                     }
                 }
             }
@@ -524,26 +530,18 @@ impl Lowerer {
             }
             Expression::CallExpression(ce) => {
                 match &ce.callee {
-                    Expression::Identifier(id) => {
-                        self.type_info
-                            .fn_return_types
-                            .get(id.name.as_str())
-                            .cloned()
-                    }
+                    Expression::Identifier(id) => self
+                        .type_info
+                        .fn_return_types
+                        .get(id.name.as_str())
+                        .cloned(),
                     // IIFE: function(c){...}(1) — infer from the function body
-                    Expression::FunctionExpression(fe) => fe
-                        .body
-                        .as_ref()
-                        .map(|body| {
-                            self.scan_return_type_from_stmts(
-                                &body.statements,
-                                captured,
-                                ZigType::Void,
-                            )
-                        }),
-                    Expression::ArrowFunctionExpression(af) => Some(
-                        self.infer_arrow_return_type(af, captured),
-                    ),
+                    Expression::FunctionExpression(fe) => fe.body.as_ref().map(|body| {
+                        self.scan_return_type_from_stmts(&body.statements, captured, ZigType::Void)
+                    }),
+                    Expression::ArrowFunctionExpression(af) => {
+                        Some(self.infer_arrow_return_type(af, captured))
+                    }
                     _ => None,
                 }
             }

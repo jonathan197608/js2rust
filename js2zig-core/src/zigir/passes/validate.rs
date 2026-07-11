@@ -93,6 +93,16 @@ impl ValidatePass {
             }
         }
         for export in &module.cabi_exports {
+            // Skip exports with Anytype params/return — they'll be const-aliased,
+            // not real C ABI exports, so C-safety validation doesn't apply.
+            let has_anytype = matches!(export.return_type, ZigType::Anytype)
+                || export
+                    .params
+                    .iter()
+                    .any(|p| matches!(p.zig_type, ZigType::Anytype));
+            if has_anytype {
+                continue;
+            }
             if !is_c_safe_type(&export.return_type) {
                 self.error(format!(
                     "C ABI export '{}' has non-C-safe return type: {:?}",
@@ -389,7 +399,6 @@ mod tests {
                     name: IrIdent::new("unused_var"),
                     zig_type: ZigType::I64,
                     is_mut: false,
-                    init_expr: IrExpr::Ident(IrIdent::new("unused_var")),
                 }],
                 fn_params: vec![IrParam {
                     name: IrIdent::new("x"),

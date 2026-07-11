@@ -602,7 +602,7 @@ impl Lowerer {
                     } else {
                         match self.infer_expr_type(op) {
                             Some(ty) => helpers::format_specifier_for_type(&ty),
-                            None => "{}",
+                            None => "{any}",
                         }
                     };
                     fmt.push_str(placeholder);

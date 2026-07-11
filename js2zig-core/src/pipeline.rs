@@ -1252,11 +1252,17 @@ pub fn write_cabi_metadata(
 ) {
     let project_dir = out_dir.join(group_name);
 
-    // cabi_exports.json — filter out JsAny returns (no C ABI export generated)
+    // cabi_exports.json — filter out exports with Anytype returns or params (no C ABI export generated)
     let exports_path = project_dir.join("cabi_exports.json");
     let mut exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
-        .filter(|(_, exp)| exp.ret_type != crate::types::ZigType::Anytype)
+        .filter(|(_, exp)| {
+            exp.ret_type != crate::types::ZigType::Anytype
+                && !exp
+                    .params
+                    .iter()
+                    .any(|(_, ty)| *ty == crate::types::ZigType::Anytype)
+        })
         .map(|(mod_name, exp)| {
             // Build params list
             let params: Vec<serde_json::Value> = exp

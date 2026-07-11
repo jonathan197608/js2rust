@@ -1,4 +1,4 @@
-﻿// zigir/lower/cabi.rs
+// zigir/lower/cabi.rs
 // C ABI export metadata and utility/query methods.
 
 use oxc_ast::ast::*;
@@ -6,7 +6,6 @@ use oxc_ast::ast::*;
 use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
-use crate::zigir::kinds::FieldKind;
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic, SourceSpan};
 use crate::zigir::types::{IrCabiExport, IrDecl, IrExpr, IrParam};
 
@@ -28,12 +27,11 @@ impl Lowerer {
             if let IrDecl::Fn(f) = decl
                 && f.is_export
             {
-                // Filter out Anytype params (e.g., async `io` parameter) —
-                // they are Zig compile-time generics, not valid in C ABI.
+                // Keep all params including Anytype — pipeline will detect them
+                // and route to emit_const_alias instead of C ABI wrapper.
                 let params: Vec<IrParam> = f
                     .params
                     .iter()
-                    .filter(|p| !matches!(p.zig_type, ZigType::Anytype))
                     .map(|p| IrParam {
                         name: p.name.clone(),
                         zig_type: p.zig_type.clone(),
@@ -140,46 +138,35 @@ impl Lowerer {
 
     /// Build IrCapture list from raw capture tuples (name, zig_type, is_mut).
     /// Shared by closure.rs, decl.rs, and function.rs.
-    ///
-    /// For each captured variable, the `init_expr` is resolved:
-    /// - If the variable is in `current_captured` (i.e. it is a field of the
-    ///   enclosing closure), the init expression uses `self.field_name`.
-    /// - Otherwise the bare identifier is used (parameter or local variable).
     pub(super) fn make_ir_captures(
         &self,
         captures: Vec<(String, ZigType, bool)>,
     ) -> Vec<crate::zigir::types::IrCapture> {
-        use crate::zigir::types::IrExpr;
-
         captures
             .into_iter()
-            .map(|(name, zig_type, is_mut)| {
-                let ident = self.make_ident(&name);
-                let init_expr =
-                    if self
-                        .closure_mgr
-                        .current_captured
-                        .iter()
-                        .any(|(n, _, _)| n == &name)
-                    {
-                        // Variable is a captured field on the enclosing closure
-                        // → reference via self.field_name
-                        IrExpr::FieldAccess {
-                            object: Box::new(IrExpr::Ident(IrIdent::new("self"))),
-                            field: ident.zig_name.clone(),
-                            field_kind: FieldKind::StructField,
-                        }
-                    } else {
-                        // Parameter or local → bare identifier
-                        IrExpr::Ident(IrIdent::new(&ident.zig_name))
-                    };
-                crate::zigir::types::IrCapture {
-                    name: ident,
-                    zig_type,
-                    is_mut,
-                    init_expr,
-                }
+            .map(|(name, zig_type, is_mut)| crate::zigir::types::IrCapture {
+                name: self.make_ident(&name),
+                zig_type,
+                is_mut,
             })
+            .collect()
+    }
+
+    /// Detect nested closure capture: returns the names of captured variables
+    /// that are fields on the enclosing closure (i.e. in `current_captured`).
+    pub(super) fn detect_nested_captures(
+        &self,
+        captures: &[(String, ZigType, bool)],
+    ) -> Vec<String> {
+        captures
+            .iter()
+            .filter(|(name, _, _)| {
+                self.closure_mgr
+                    .current_captured
+                    .iter()
+                    .any(|(n, _, _)| n == name)
+            })
+            .map(|(name, _, _)| name.clone())
             .collect()
     }
 

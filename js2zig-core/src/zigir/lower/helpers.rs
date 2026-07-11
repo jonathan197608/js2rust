@@ -64,6 +64,9 @@ pub struct FnContext {
     pub current_nested_fn_name: Option<String>,
     /// Variable names in current function scope (shadow detection).
     pub fn_scope_vars: HashSet<String>,
+    /// Per-function local variable types (takes priority over global var_types).
+    /// Populated during lowering when VarDecl is processed.
+    pub fn_local_types: HashMap<String, ZigType>,
     /// Variables holding TypedArray instances (name → element type suffix).
     pub typedarray_vars: HashMap<String, String>,
     /// Variables holding RegExp instances.
@@ -93,6 +96,7 @@ impl FnContext {
             nested_fn_names: HashSet::new(),
             current_nested_fn_name: None,
             fn_scope_vars: HashSet::new(),
+            fn_local_types: HashMap::new(),
             typedarray_vars: HashMap::new(),
             regexp_vars: HashSet::new(),
             compile_time_referenced_idents: HashSet::new(),
@@ -255,12 +259,14 @@ pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement, mode: ThrowWalkMode
 
 /// Determine the Zig format specifier for a given type.
 /// Used by string concatenation and template literal lowering.
+/// Note: `{any}` is used as the catch-all because Zig 0.16 does not
+/// allow `{}` for slice types (`[]const u8`); `{any}` works for all types.
 pub(crate) fn format_specifier_for_type(ty: &ZigType) -> &'static str {
     match ty {
         ZigType::Str => "{s}",
         ZigType::I64 => "{d}",
         ZigType::F64 => "{d:.15}",
         ZigType::Bool => "{}",
-        _ => "{}",
+        _ => "{any}",
     }
 }

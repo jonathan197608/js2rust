@@ -288,7 +288,7 @@ impl Lowerer {
 
     /// Infer the ZigType of an expression based on type_info and expression structure.
     /// Enhanced version that covers literal types, member access, calls, and more.
-    pub(super) fn infer_expr_type(&self, expr: &Expression) -> Option<ZigType> {
+    pub(crate) fn infer_expr_type(&self, expr: &Expression) -> Option<ZigType> {
         match expr {
             Expression::Identifier(id) => self.infer_ident_type(id.name.as_str()),
             Expression::NumericLiteral(nl) => {
@@ -430,6 +430,33 @@ impl Lowerer {
                     }
                 }
                 None
+            }
+            // Object literal → infer as Struct with field types
+            Expression::ObjectExpression(oe) => {
+                let mut fields = Vec::new();
+                for prop in &oe.properties {
+                    if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(op) = prop {
+                        let field_name = match &op.key {
+                            oxc_ast::ast::PropertyKey::StaticIdentifier(id) => {
+                                id.name.as_str().to_string()
+                            }
+                            oxc_ast::ast::PropertyKey::StringLiteral(s) => s.value.to_string(),
+                            _ => continue,
+                        };
+                        let field_ty = self.infer_expr_type(&op.value).unwrap_or(ZigType::I64);
+                        fields.push((field_name, field_ty));
+                    }
+                }
+                Some(ZigType::Struct(fields))
+            }
+            // Array literal → ArrayList of element type
+            Expression::ArrayExpression(ae) => {
+                let elem_ty = ae
+                    .elements
+                    .iter()
+                    .find_map(|el| el.as_expression().and_then(|e| self.infer_expr_type(e)))
+                    .unwrap_or(ZigType::I64);
+                Some(ZigType::ArrayList(Box::new(elem_ty)))
             }
             // Could add more patterns here
             _ => None,

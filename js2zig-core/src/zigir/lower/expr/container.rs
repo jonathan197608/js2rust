@@ -131,7 +131,7 @@ impl Lowerer {
                 } else {
                     match self.infer_expr_type(expr) {
                         Some(ty) => helpers::format_specifier_for_type(&ty).to_string(),
-                        None => "{}".to_string(),
+                        None => "{any}".to_string(),
                     }
                 }
             })

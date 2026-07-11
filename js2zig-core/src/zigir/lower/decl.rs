@@ -304,6 +304,21 @@ impl Lowerer {
         // Type from inference
         let zig_type = self.type_info.var_types.get(js_name).cloned();
 
+        // Record local variable type in fn_ctx for per-function scoping.
+        // This gives priority to the current function's variable types over
+        // global var_types (which can have stale entries from other functions).
+        // Use the init expression to infer type when var_types is unreliable.
+        let local_type: Option<ZigType> = if let Some(init_expr) = &decl.init {
+            self.infer_expr_type(init_expr).or(zig_type.clone())
+        } else {
+            zig_type.clone()
+        };
+        if let Some(ty) = local_type {
+            self.fn_ctx
+                .as_mut()
+                .map(|ctx| ctx.fn_local_types.insert(js_name.to_string(), ty));
+        }
+
         // JSON.parse special case
         let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
 

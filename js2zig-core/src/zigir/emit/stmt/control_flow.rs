@@ -50,12 +50,7 @@ impl Emitter {
         })
     }
 
-    pub(super) fn emit_if_stmt(
-        &mut self,
-        cond: &IrExpr,
-        then: &IrBlock,
-        else_: &Option<IrBlock>,
-    ) {
+    pub(super) fn emit_if_stmt(&mut self, cond: &IrExpr, then: &IrBlock, else_: &Option<IrBlock>) {
         self.write_indent();
         self.write("if (");
         self.emit_expr_as_bool(cond);
@@ -341,11 +336,7 @@ impl Emitter {
         }
     }
 
-    pub(super) fn emit_switch_stmt(
-        &mut self,
-        expr: &IrExpr,
-        cases: &[IrSwitchCase],
-    ) {
+    pub(super) fn emit_switch_stmt(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
         self.write_indent();
         self.write("switch (");
         self.emit_expr(expr);

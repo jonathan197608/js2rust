@@ -27,7 +27,7 @@ impl TypeInferrer {
             Expression::StringLiteral(_) => InferResult::Definite(ZigType::Str),
             Expression::TemplateLiteral(_) => InferResult::Definite(ZigType::Str),
             Expression::BooleanLiteral(_) => InferResult::Definite(ZigType::Bool),
-            Expression::NullLiteral(_) => InferResult::Indeterminate,
+            Expression::NullLiteral(_) => InferResult::Definite(ZigType::JsAny),
             // RegExp literal (/pattern/) → NamedStruct("RegExp")
             Expression::RegExpLiteral(_) => {
                 InferResult::Definite(ZigType::NamedStruct("RegExp".to_string()))

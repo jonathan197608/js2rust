@@ -35,6 +35,25 @@ impl Lowerer {
         use crate::zigir::types::IrExpr;
 
         let inner = self.lower_optional_chain_object(&sme.object);
+        let field_name = sme.property.name.as_str();
+
+        // When the object type is JsAny, use obj.get("prop") which returns
+        // .undefined_value for null/undefined — exactly matching ?. semantics.
+        // This avoids generating (if (obj) |oc| oc.prop else null) which
+        // doesn't compile because JsAny is a union, not an optional.
+        if self.expr_type_is_jsany(&sme.object) {
+            return IrExpr::Call(crate::zigir::types::IrCallExpr {
+                callee: Box::new(IrExpr::FieldAccess {
+                    object: Box::new(inner),
+                    field: "get".to_string(),
+                    field_kind: FieldKind::StructField,
+                }),
+                args: vec![IrExpr::StringLiteral(field_name.to_string())],
+                call_kind: CallKind::Method {
+                    object_type: crate::zigir::kinds::MethodObjectKind::JsAny,
+                },
+            });
+        }
 
         let capture_var = self.name_mangler.next_name("_oc");
         let needs_null_check = self.expr_might_be_null(&sme.object);
@@ -45,7 +64,7 @@ impl Lowerer {
         };
         let body = IrExpr::FieldAccess {
             object: Box::new(access_target),
-            field: sme.property.name.to_string(),
+            field: field_name.to_string(),
             field_kind: FieldKind::StructField,
         };
 
@@ -105,21 +124,18 @@ impl Lowerer {
         let needs_null_check = receiver_name
             .as_ref()
             .map(|name| {
-                self.type_info
-                    .var_types
-                    .get(name.as_str())
-                    .is_none_or(|ty| {
-                        !matches!(
-                            ty,
-                            ZigType::Struct(_)
-                                | ZigType::I64
-                                | ZigType::F64
-                                | ZigType::Bool
-                                | ZigType::Str
-                                | ZigType::ArrayList(_)
-                                | ZigType::NamedStruct(_)
-                        )
-                    })
+                self.get_var_type(name.as_str()).is_none_or(|ty| {
+                    !matches!(
+                        ty,
+                        ZigType::Struct(_)
+                            | ZigType::I64
+                            | ZigType::F64
+                            | ZigType::Bool
+                            | ZigType::Str
+                            | ZigType::ArrayList(_)
+                            | ZigType::NamedStruct(_)
+                    )
+                })
             })
             .unwrap_or(true);
 
@@ -226,7 +242,7 @@ impl Lowerer {
             Expression::NullLiteral(_) => true,
 
             Expression::Identifier(id) => {
-                let ty = self.type_info.var_types.get(id.name.as_str());
+                let ty = self.get_var_type(id.name.as_str());
                 match ty {
                     Some(
                         ZigType::Struct(_)
@@ -254,5 +270,38 @@ impl Lowerer {
             // Conservative: assume everything else might be null
             _ => true,
         }
+    }
+
+    /// Check if an expression's inferred type is JsAny.
+    /// Used to decide whether optional chaining should use obj.get() instead
+    /// of (if (obj) |oc| oc.prop else null), since JsAny is a union not an optional.
+    pub(super) fn expr_type_is_jsany(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::NullLiteral(_) => true,
+            Expression::Identifier(id) => {
+                matches!(self.get_var_type(id.name.as_str()), Some(ZigType::JsAny))
+            }
+            Expression::CallExpression(_) => {
+                // Many runtime calls return JsAny; be conservative
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Get the type of a variable, checking fn_local_types (per-function) first,
+    /// then falling back to global var_types. This fixes the scoping issue where
+    /// var_names from different functions collide in the flat var_types map.
+    fn get_var_type(&self, name: &str) -> Option<ZigType> {
+        // Per-function local types take priority
+        if let Some(ty) = self
+            .fn_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.fn_local_types.get(name))
+        {
+            return Some(ty.clone());
+        }
+        // Fall back to global var_types
+        self.type_info.var_types.get(name).cloned()
     }
 }

@@ -1,4 +1,4 @@
-﻿// Private fields, not-implemented, regression fixes, shadowing, method chaining
+// Private fields, not-implemented, regression fixes, shadowing, method chaining
 
 use super::common::*;
 
@@ -1291,4 +1291,3 @@ export function boolEqNum(b, n) {
         zig
     );
 }
-

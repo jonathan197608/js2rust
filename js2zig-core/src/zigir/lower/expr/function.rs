@@ -47,6 +47,13 @@ impl Lowerer {
     /// Build an `IrClosure` (struct + instance) from closure lowering results.
     ///
     /// Also registers the closure struct definition in `pending_arrow_structs`.
+    ///
+    /// Two scenarios produce `@compileError`:
+    /// 1. Any captured variable is itself a field on the enclosing closure.
+    /// 2. A nested `IrExpr::Closure` in the body initializes one of its
+    ///    captured fields with a name that overlaps with THIS closure's
+    ///    own captured fields — the emitter would use a bare name instead
+    ///    of `self.field`, so we reject it explicitly.
     fn build_closure_expr(
         &mut self,
         captured: Vec<(String, ZigType, bool)>,
@@ -58,11 +65,54 @@ impl Lowerer {
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::{IrClosure, IrExpr};
 
-        let ir_captures = self.make_ir_captures(captured.into_iter().collect());
+        let ir_captures = self.make_ir_captures(captured.clone().into_iter().collect());
 
         self.closure_mgr
             .closure_instances
             .insert(instance_name.zig_name.clone());
+
+        let mut body = body;
+
+        // Check 1: nested closure capture (variable captured from enclosing
+        // closure's fields).
+        let nested = self.detect_nested_captures(&captured);
+
+        // Check 2: body contains a Closure whose init values overlap with
+        // our own captured field names.  The emitter writes bare names for
+        // init values, but inside our call() method those need `self.`
+        // prefix — unsupported, so emit @compileError.
+        let own_capture_names: Vec<String> = ir_captures
+            .iter()
+            .map(|c| c.name.zig_name.clone())
+            .collect();
+        let overlap = Self::find_nested_closure_capture_overlap(&body, &own_capture_names);
+
+        if !nested.is_empty() || !overlap.is_empty() {
+            let mut parts = Vec::new();
+            if !nested.is_empty() {
+                parts.push(format!(
+                    "variable(s) {} captured from enclosing closure",
+                    nested.join(", ")
+                ));
+            }
+            if !overlap.is_empty() {
+                parts.push(format!(
+                    "nested closure init uses own captured field(s) {}",
+                    overlap.join(", ")
+                ));
+            }
+            let msg = format!(
+                "nested closure capture is not supported: {}",
+                parts.join("; ")
+            );
+            body.stmts.insert(
+                0,
+                crate::zigir::types::IrStmt::CompileError {
+                    span: crate::zigir::source_span::SourceSpan::default(),
+                    msg,
+                },
+            );
+        }
 
         self.pending_arrow_structs
             .push(crate::zigir::types::IrClosureStruct {
@@ -82,6 +132,201 @@ impl Lowerer {
             body,
             instance_name,
         })
+    }
+
+    /// Recursively scan an IR block for `IrExpr::Closure` nodes whose
+    /// captured field names overlap with `own_capture_names`.  Returns
+    /// the names that appear in both sets.
+    fn find_nested_closure_capture_overlap(
+        block: &IrBlock,
+        own_capture_names: &[String],
+    ) -> Vec<String> {
+        let mut overlap = std::collections::HashSet::new();
+        for stmt in &block.stmts {
+            Self::scan_stmt_for_closure_overlap(stmt, own_capture_names, &mut overlap);
+        }
+        let mut result: Vec<String> = overlap.into_iter().collect();
+        result.sort();
+        result
+    }
+
+    fn scan_stmt_for_closure_overlap(
+        stmt: &crate::zigir::types::IrStmt,
+        own: &[String],
+        overlap: &mut std::collections::HashSet<String>,
+    ) {
+        use crate::zigir::types::IrStmt;
+        match stmt {
+            IrStmt::Expr(expr) | IrStmt::Return { value: Some(expr) } => {
+                Self::scan_expr_for_closure_overlap(expr, own, overlap);
+            }
+            IrStmt::VarDecl(vd) => {
+                if let Some(init) = &vd.init {
+                    Self::scan_expr_for_closure_overlap(init, own, overlap);
+                }
+            }
+            IrStmt::Assign { value, .. } => {
+                Self::scan_expr_for_closure_overlap(value, own, overlap);
+            }
+            IrStmt::If { then, else_, .. } => {
+                for s in &then.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+                if let Some(eb) = else_ {
+                    for s in &eb.stmts {
+                        Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                    }
+                }
+            }
+            IrStmt::Block(inner) => {
+                for s in &inner.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+            }
+            IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
+                for s in &body.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+            }
+            IrStmt::For { body, .. } | IrStmt::ForOf { body, .. } => {
+                for s in &body.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+            }
+            IrStmt::Switch { cases, .. } => {
+                for case in cases {
+                    for s in &case.body {
+                        Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                    }
+                }
+            }
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                for s in &try_block.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+                for s in &catch_block.stmts {
+                    Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                }
+                if let Some(fb) = finally {
+                    for s in &fb.stmts {
+                        Self::scan_stmt_for_closure_overlap(s, own, overlap);
+                    }
+                }
+            }
+            IrStmt::NestedFnDecl { .. } => {
+                // Nested fn decl contains its own closure — scan the instance
+                if let crate::zigir::types::IrStmt::NestedFnDecl {
+                    instance: Some(cl), ..
+                } = stmt
+                {
+                    for cap in &cl.captured {
+                        if own.contains(&cap.name.zig_name) {
+                            overlap.insert(cap.name.zig_name.clone());
+                        }
+                    }
+                }
+            }
+            // Return None, Throw, Break, Continue, DestructureDecl, CompileError, Comment — no expr
+            _ => {}
+        }
+    }
+
+    fn scan_expr_for_closure_overlap(
+        expr: &crate::zigir::types::IrExpr,
+        own: &[String],
+        overlap: &mut std::collections::HashSet<String>,
+    ) {
+        use crate::zigir::types::IrExpr;
+        match expr {
+            IrExpr::Closure(c) => {
+                for cap in &c.captured {
+                    if own.contains(&cap.name.zig_name) {
+                        overlap.insert(cap.name.zig_name.clone());
+                    }
+                }
+                // Also scan the closure body for deeper nesting
+                for stmt in &c.body.stmts {
+                    Self::scan_stmt_for_closure_overlap(stmt, own, overlap);
+                }
+            }
+            IrExpr::Binary { left, right, .. } => {
+                Self::scan_expr_for_closure_overlap(left, own, overlap);
+                Self::scan_expr_for_closure_overlap(right, own, overlap);
+            }
+            IrExpr::Call(call) => {
+                Self::scan_expr_for_closure_overlap(&call.callee, own, overlap);
+                for arg in &call.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::FieldAccess { object, .. } | IrExpr::IndexAccess { object, .. } => {
+                Self::scan_expr_for_closure_overlap(object, own, overlap);
+            }
+            IrExpr::ArrowFn(af) => {
+                for stmt in &af.body.stmts {
+                    Self::scan_stmt_for_closure_overlap(stmt, own, overlap);
+                }
+            }
+            IrExpr::FnExpr(fe) => {
+                for stmt in &fe.body.stmts {
+                    Self::scan_stmt_for_closure_overlap(stmt, own, overlap);
+                }
+            }
+            IrExpr::ArrayLiteral(arr) => {
+                for el in &arr.elements {
+                    Self::scan_expr_for_closure_overlap(el, own, overlap);
+                }
+            }
+            IrExpr::Conditional { cond, then, else_ } => {
+                Self::scan_expr_for_closure_overlap(cond, own, overlap);
+                Self::scan_expr_for_closure_overlap(then, own, overlap);
+                Self::scan_expr_for_closure_overlap(else_, own, overlap);
+            }
+            IrExpr::Paren(inner)
+            | IrExpr::Spread(inner)
+            | IrExpr::Typeof(inner)
+            | IrExpr::Void(inner) => {
+                Self::scan_expr_for_closure_overlap(inner, own, overlap);
+            }
+            IrExpr::Unary { operand, .. } => {
+                Self::scan_expr_for_closure_overlap(operand, own, overlap);
+            }
+            // Update target is IrAssignTarget — no nested Closure possible
+            IrExpr::Logical { left, right, .. } => {
+                Self::scan_expr_for_closure_overlap(left, own, overlap);
+                Self::scan_expr_for_closure_overlap(right, own, overlap);
+            }
+            IrExpr::ObjectLiteral(obj) => {
+                for item in &obj.items {
+                    match item {
+                        crate::zigir::types::IrObjectItem::Field(f) => {
+                            Self::scan_expr_for_closure_overlap(&f.value, own, overlap);
+                        }
+                        crate::zigir::types::IrObjectItem::Spread(expr) => {
+                            Self::scan_expr_for_closure_overlap(expr, own, overlap);
+                        }
+                    }
+                }
+            }
+            IrExpr::TemplateLiteral { exprs, .. } => {
+                for e in exprs {
+                    Self::scan_expr_for_closure_overlap(e, own, overlap);
+                }
+            }
+            IrExpr::BlockExpr { body, result, .. } => {
+                for stmt in body {
+                    Self::scan_stmt_for_closure_overlap(stmt, own, overlap);
+                }
+                Self::scan_expr_for_closure_overlap(result, own, overlap);
+            }
+            // Literals, Ident, This, Null, Undefined, etc. — safe to skip
+            _ => {}
+        }
     }
 
     /// Lower an arrow function expression.
