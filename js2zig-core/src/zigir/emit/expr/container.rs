@@ -89,16 +89,20 @@ impl Emitter {
             .iter()
             .any(|item| matches!(item, IrObjectItem::Spread(_)));
 
+        // Extract inline fields once — reused in both branches below
+        let inline_fields: Vec<_> = obj
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                IrObjectItem::Field(f) => Some(f),
+                _ => None,
+            })
+            .collect();
+
         if !has_spread {
             // Pure inline properties — emit directly as .{ ... }
             self.write(".{ ");
-            self.emit_object_fields(obj.items.iter().filter_map(|item| {
-                if let IrObjectItem::Field(f) = item {
-                    Some(f)
-                } else {
-                    None
-                }
-            }));
+            self.emit_object_fields(inline_fields.iter().copied());
             self.write(" }");
             return;
         }
@@ -111,53 +115,35 @@ impl Emitter {
         //   { ...a, ...b, c: 1 }           → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
 
         // Collect spread expression texts
-        let mut spread_texts: Vec<String> = Vec::new();
-        for item in &obj.items {
-            if let IrObjectItem::Spread(expr) = item {
-                spread_texts.push(self.expr_to_string(expr));
-            }
-        }
-
-        // Collect inline fields as .{ .key = val } string
-        let inline_fields: Vec<_> = obj
+        let mut parts: Vec<String> = obj
             .items
             .iter()
-            .filter_map(|item| {
-                if let IrObjectItem::Field(f) = item {
-                    Some(f)
-                } else {
-                    None
-                }
+            .filter_map(|item| match item {
+                IrObjectItem::Spread(expr) => Some(self.expr_to_string(expr)),
+                _ => None,
             })
             .collect();
 
-        let inline_text = if inline_fields.is_empty() {
-            None
-        } else {
+        // Append inline fields as a single .{ .key = val } text, if any
+        if !inline_fields.is_empty() {
             let saved_output = std::mem::take(&mut self.output);
             self.write(".{ ");
             self.emit_object_fields(inline_fields.iter().copied());
             self.write(" }");
             let text = std::mem::take(&mut self.output);
             self.output = saved_output;
-            Some(text)
-        };
+            parts.push(text);
+        }
 
-        match (spread_texts.len(), &inline_text) {
-            (0, _) => unreachable!(), // has_spread is true, so spread_texts is non-empty
-            (1, None) => {
-                // Single spread, no inline → identity
-                self.write(&spread_texts[0]);
+        match parts.len() {
+            0 => unreachable!(), // has_spread is true, so parts is non-empty
+            1 => {
+                self.write(&parts[0]);
             }
             _ => {
-                // Multi-spread or spread + inline → build spreadMerge chain
-                let mut result = spread_texts[0].clone();
-                for text in &spread_texts[1..] {
-                    result = format!("js_runtime.spreadMerge({}, {})", result, text);
-                }
-                if let Some(ref inline) = inline_text {
-                    result = format!("js_runtime.spreadMerge({}, {})", result, inline);
-                }
+                let result = parts[1..].iter().fold(parts[0].clone(), |acc, next| {
+                    format!("js_runtime.spreadMerge({}, {})", acc, next)
+                });
                 self.write(&result);
             }
         }
