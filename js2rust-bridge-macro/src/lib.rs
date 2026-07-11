@@ -146,7 +146,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
         zig_optimize: Some(zig_optimize),
-        emit_cargo_directives: false, // proc-macro context — cannot emit rerun-if-changed
+        is_build_script: false, // proc-macro context — suppress all stdout/stderr
     };
 
     // Transpile!
@@ -826,8 +826,7 @@ fn cabi_type_to_rust_ffi(cabi_type: &str) -> proc_macro2::TokenStream {
             quote! { js2rust_bridge::sdk::JsStrField }
         }
         _ => {
-            // Debug: print unknown cabi_type
-            eprintln!("Unknown cabi_type: '{}'", cabi_type);
+            // Unknown cabi_type — fallback to opaque pointer
             quote! { *mut std::ffi::c_void }
         }
     }

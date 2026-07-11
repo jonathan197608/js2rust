@@ -142,6 +142,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let in_dir = in_path.to_string_lossy().to_string();
     let out_dir: String = config.out_dir.to_string_lossy().to_string();
     let force_rebuild = config.force_rebuild;
+    let verbose = config.is_build_script; // only print progress in build.rs context
 
     // Ensure output directory exists.
     fs::create_dir_all(&out_dir)
@@ -165,10 +166,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // (including transitive dependencies not listed in js2rust.toml).
     // These directives take effect in subsequent builds — Cargo stores them
     // and uses them to decide whether to re-run the build script.
-    // Only emit when called from build.rs (emit_cargo_directives=true);
+    // Only emit when called from build.rs (is_build_script=true);
     // proc-macros cannot use these directives and their stdout would leak
     // noise to the terminal.
-    if config.emit_cargo_directives {
+    if config.is_build_script {
         for group in &groups {
             for member in &group.members {
                 let member_path = Path::new(&in_dir).join(member);
@@ -179,12 +180,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
     let groups_json_path = Path::new(&out_dir).join("groups.json");
     if let Err(e) = fs::write(&groups_json_path, &groups_json) {
-        eprintln!(
-            "warning: could not write '{}': {}",
-            groups_json_path.display(),
-            e
-        );
-    } else {
+        if verbose {
+            eprintln!(
+                "warning: could not write '{}': {}",
+                groups_json_path.display(),
+                e
+            );
+        }
+    } else if verbose {
         println!("Wrote: {}/groups.json", out_dir);
     }
 
@@ -273,13 +276,15 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
     for (group_idx, group) in groups.iter().enumerate() {
         let is_test_group = group.core_name.starts_with("test_");
-        println!(
-            "\n=== {} ({} member{}) {}===",
-            group.core_name,
-            group.members.len(),
-            if group.members.len() == 1 { "" } else { "s" },
-            if is_test_group { "[test] " } else { "" }
-        );
+        if verbose {
+            println!(
+                "\n=== {} ({} member{}) {}===",
+                group.core_name,
+                group.members.len(),
+                if group.members.len() == 1 { "" } else { "s" },
+                if is_test_group { "[test] " } else { "" }
+            );
+        }
 
         // --- Incremental check ---
         let current_hash = compute_group_hash(&in_path, group, &runtime_path);
@@ -287,7 +292,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             && let Some(cached_hash) = build_cache.get(&group.core_name)
             && *cached_hash == current_hash
         {
-            println!("  unchanged (cache hit)");
+            if verbose {
+                println!("  unchanged (cache hit)");
+            }
             // Still collect the cabi_exports_json for the result
             let cabi_path = Path::new(&out_dir)
                 .join(&group.core_name)
@@ -305,8 +312,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
         // Hash mismatch (or force_rebuild) — re-transpile this group.
         if force_rebuild {
-            println!("  force rebuild");
-        } else {
+            if verbose {
+                println!("  force rebuild");
+            }
+        } else if verbose {
             println!("  source changed, re-transpiling");
         }
 
@@ -351,13 +360,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let src = match group.file_sources.get(member) {
                     Some(s) => s.clone(),
                     None => {
-                        eprintln!("  skip '{}': no cached source", member);
+                        if verbose {
+                            eprintln!("  skip '{}': no cached source", member);
+                        }
                         continue;
                     }
                 };
 
                 if src.trim().is_empty() {
-                    eprintln!("  skip '{}': empty source", member);
+                    if verbose {
+                        eprintln!("  skip '{}': empty source", member);
+                    }
                     continue;
                 }
 
@@ -389,7 +402,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let program = match group.parsed_programs.get(member) {
                     Some(p) => p,
                     None => {
-                        eprintln!("  skip '{}': no parsed program in group", member);
+                        if verbose {
+                            eprintln!("  skip '{}': no parsed program in group", member);
+                        }
                         continue;
                     }
                 };
@@ -430,13 +445,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             // so we surface them here instead.
                             let compile_errors = result.compile_errors;
                             if !compile_errors.is_empty() {
-                                eprintln!(
-                                    "  '{}': {} unsupported feature(s):",
-                                    member,
-                                    compile_errors.len()
-                                );
+                                if verbose {
+                                    eprintln!(
+                                        "  '{}': {} unsupported feature(s):",
+                                        member,
+                                        compile_errors.len()
+                                    );
+                                    for msg in &compile_errors {
+                                        eprintln!("    @compileError: {}", msg);
+                                    }
+                                }
                                 for msg in &compile_errors {
-                                    eprintln!("    @compileError: {}", msg);
                                     file_diagnostics
                                         .push(format!("{}: COMPILE_ERROR - {}", member, msg));
                                 }
@@ -491,14 +510,22 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     .partition(|d| !d.message.contains("(Rule 8)"));
                 if !hard_errors.is_empty() {
                     let err_count = hard_errors.len();
-                    eprintln!("  skip '{}': {} transpile error(s)", member, err_count);
+                    if verbose {
+                        eprintln!("  skip '{}': {} transpile error(s)", member, err_count);
+                        for diag in &hard_errors {
+                            eprintln!("    {}", diag.message.as_str());
+                        }
+                    }
                     for diag in &hard_errors {
-                        eprintln!("    {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
                     }
                     // Also report soft Rule 8 errors for visibility
+                    if verbose {
+                        for diag in &soft_errors {
+                            eprintln!("    [Rule 8] {}", diag.message.as_str());
+                        }
+                    }
                     for diag in &soft_errors {
-                        eprintln!("    [Rule 8] {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
                     }
                     has_error = true;
@@ -508,21 +535,29 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
                 // Only Rule 8 errors — don't skip the file, but report as warnings
                 if !soft_errors.is_empty() {
-                    eprintln!(
-                        "  '{}': {} Rule 8 diagnostic(s) (non-blocking)",
-                        member,
-                        soft_errors.len()
-                    );
+                    if verbose {
+                        eprintln!(
+                            "  '{}': {} Rule 8 diagnostic(s) (non-blocking)",
+                            member,
+                            soft_errors.len()
+                        );
+                        for diag in &soft_errors {
+                            eprintln!("    {}", diag.message.as_str());
+                        }
+                    }
                     for diag in &soft_errors {
-                        eprintln!("    {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
                     }
                 }
 
                 if !diagnostics.is_empty() {
-                    eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
+                    if verbose {
+                        eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
+                        for diag in &diagnostics {
+                            eprintln!("    {}", diag.message.as_str());
+                        }
+                    }
                     for diag in &diagnostics {
-                        eprintln!("    {}", diag.message.as_str());
                         file_diagnostics.push(format!("{}: {}", member, diag.message));
                     }
                 }
@@ -577,15 +612,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // Only skip the group if NO files succeeded transpilation.
             // Individual file errors are logged above; successful files still get compiled.
             if per_file_modules.is_empty() {
-                if has_error {
-                    eprintln!("  skip: all files failed transpilation");
-                } else {
-                    eprintln!("  skip: no valid modules after transpilation");
+                if verbose {
+                    if has_error {
+                        eprintln!("  skip: all files failed transpilation");
+                    } else {
+                        eprintln!("  skip: no valid modules after transpilation");
+                    }
                 }
                 continue;
             }
 
-            if has_error {
+            if has_error && verbose {
                 eprintln!(
                     "  warning: {} file(s) had transpile errors, continuing with {} successful file(s)",
                     group.members.len() - per_file_modules.len(),
@@ -656,9 +693,15 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             };
 
             match crate::project::generate(&project_opts) {
-                Ok(()) => println!("  Generated: {}/{}", out_dir, group.core_name),
+                Ok(()) => {
+                    if verbose {
+                        println!("  Generated: {}/{}", out_dir, group.core_name);
+                    }
+                }
                 Err(e) => {
-                    eprintln!("  FAIL ({})", e);
+                    if verbose {
+                        eprintln!("  FAIL ({})", e);
+                    }
                     continue;
                 }
             }
@@ -668,8 +711,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 let host_zig_path = Path::new(&out_dir).join(&group.core_name).join("host.zig");
                 let host_zig_content = host_fns.generate_zig_header();
                 if let Err(e) = fs::write(&host_zig_path, &host_zig_content) {
-                    eprintln!("  warning: failed to write host.zig: {}", e);
-                } else {
+                    if verbose {
+                        eprintln!("  warning: failed to write host.zig: {}", e);
+                    }
+                } else if verbose {
                     println!(
                         "  Generated: {}/{}",
                         out_dir,
@@ -753,19 +798,27 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         let build_result = build_cmd.current_dir(&project_path).output();
         match build_result {
             Ok(result) if result.status.success() => {
-                println!("  zig build: OK");
+                if verbose {
+                    println!("  zig build: OK");
+                }
                 build_ok = true;
             }
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                eprintln!("  zig build FAILED:\n{}", stderr);
+                if verbose {
+                    eprintln!("  zig build FAILED:\n{}", stderr);
+                }
                 return Err(format!(
                     "zig build failed for group '{}':\n{}",
                     group.core_name,
                     stderr.lines().take(20).collect::<Vec<_>>().join("\n")
                 ));
             }
-            Err(_) => eprintln!("  warning: zig not found — skipping build"),
+            Err(_) => {
+                if verbose {
+                    eprintln!("  warning: zig not found — skipping build");
+                }
+            }
         }
 
         // === Zig tests ===
@@ -777,7 +830,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         let has_host_deps = !host_fns.is_empty() || has_host_zig;
         let mut test_ok = false;
         if has_host_deps {
-            println!("  zig test: SKIPPED (project has host function dependencies)");
+            if verbose {
+                println!("  zig test: SKIPPED (project has host function dependencies)");
+            }
             test_ok = true; // don't block cache update
         } else {
             let test_result = Command::new("zig")
@@ -787,12 +842,16 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 .output();
             match test_result {
                 Ok(result) if result.status.success() => {
-                    println!("  zig test: PASSED");
+                    if verbose {
+                        println!("  zig test: PASSED");
+                    }
                     test_ok = true;
                 }
                 Ok(result) => {
-                    let stderr = String::from_utf8_lossy(&result.stderr);
-                    eprintln!("  zig test FAILED:\n{}", stderr);
+                    if verbose {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        eprintln!("  zig test FAILED:\n{}", stderr);
+                    }
                 }
                 Err(_) => {}
             }

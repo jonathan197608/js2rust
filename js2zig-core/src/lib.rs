@@ -118,11 +118,16 @@ pub struct ProjectConfig {
     /// Valid values: `"Debug"`, `"ReleaseSafe"`, `"ReleaseFast"`, `"ReleaseSmall"`.
     /// If `None`, the caller should infer from the Cargo profile automatically.
     pub zig_optimize: Option<String>,
-    /// When true, emit `cargo:rerun-if-changed` directives to stdout for every
-    /// JS file discovered (including transitive deps).  Should only be set when
-    /// called from a build.rs context — proc-macros cannot use these directives
-    /// and their stdout would leak noise to the terminal.
-    pub emit_cargo_directives: bool,
+    /// When true, the caller is a Cargo build script (`build.rs`).
+    /// This controls two behaviors:
+    /// 1. Emits `cargo:rerun-if-changed` directives for every JS file discovered
+    ///    (including transitive deps) so Cargo re-runs the build script on changes.
+    /// 2. Prints progress messages to stdout/stderr (groups, diagnostics, etc.)
+    ///    which Cargo filters and prefixes with `[package]`.
+    ///
+    /// When false (proc-macro context), all stdout/stderr output is suppressed
+    /// because proc-macro stdout leaks directly to the terminal unfiltered.
+    pub is_build_script: bool,
 }
 
 impl Default for ProjectConfig {
@@ -135,7 +140,7 @@ impl Default for ProjectConfig {
             force_rebuild: false,
             run_zig_build: false,
             zig_optimize: None,
-            emit_cargo_directives: false,
+            is_build_script: false,
         }
     }
 }
