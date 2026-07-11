@@ -1,9 +1,11 @@
 // zigir/passes/dead_code.rs
 // DeadCodeElimPass — removes unreachable code and unused top-level declarations.
 //
-// Two elimination strategies:
+// Three elimination strategies:
 //   1. Unreachable code after Return/Break/Continue/Throw in a block
-//   2. Unused top-level variable declarations (const with no references)
+//   2. After @compileError: keep subsequent @compileError statements, remove the rest
+//   3. VarDecl with CompileError init → convert to IrStmt::CompileError
+//   4. Unused top-level variable declarations (const with no references)
 
 use crate::zigir::passes::{IrPass, PassResult};
 use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrModule, IrStmt};
@@ -16,6 +18,8 @@ use super::{collect_idents, walk};
 ///
 /// Removes:
 /// - Statements after Return/Break/Continue/Throw in blocks
+/// - After @compileError: keeps subsequent @compileError, removes other statements
+/// - VarDecl with CompileError init → IrStmt::CompileError
 /// - Unused top-level const variable declarations
 pub struct DeadCodeElimPass;
 
@@ -33,6 +37,96 @@ fn truncate_after_terminator(stmts: &mut Vec<IrStmt>) -> bool {
     false
 }
 
+/// After the first `IrStmt::CompileError`, merge any subsequent `IrStmt::CompileError`
+/// messages into the first one and remove all other statements. This eliminates
+/// "unreachable code" noise in the generated Zig output — Zig treats ALL code
+/// after `@compileError` as unreachable, even another `@compileError`.
+///
+/// Returns true if any statements were removed or merged.
+fn truncate_after_compile_error(stmts: &mut Vec<IrStmt>) -> bool {
+    let first_ce_idx = stmts.iter().position(is_compile_error_stmt);
+    if let Some(idx) = first_ce_idx {
+        let original_len = stmts.len();
+        if idx + 1 >= original_len {
+            return false; // nothing after the first compile error
+        }
+        // Collect additional messages from subsequent CompileError statements
+        let mut extra_msgs: Vec<String> = Vec::new();
+        for stmt in stmts.iter().skip(idx + 1) {
+            if let IrStmt::CompileError { msg, .. } = stmt {
+                extra_msgs.push(msg.clone());
+            }
+        }
+        // Merge extra messages into the first CompileError
+        if !extra_msgs.is_empty()
+            && let IrStmt::CompileError { msg, .. } = &mut stmts[idx]
+        {
+            msg.push_str("\n\nAlso: ");
+            msg.push_str(&extra_msgs.join("\nAlso: "));
+        }
+        // Truncate: keep only up to and including the first CompileError
+        stmts.truncate(idx + 1);
+        true
+    } else {
+        false
+    }
+}
+
+/// Check if a statement is `IrStmt::CompileError`.
+fn is_compile_error_stmt(stmt: &IrStmt) -> bool {
+    matches!(stmt, IrStmt::CompileError { .. })
+}
+
+/// Check if an expression is `IrExpr::CompileError`.
+fn is_compile_error_expr(expr: &IrExpr) -> bool {
+    matches!(expr, IrExpr::CompileError { .. })
+}
+
+/// Convert `IrStmt::VarDecl` with a `CompileError` init into `IrStmt::CompileError`.
+/// This handles patterns like `const r = @compileError("Unsupported NewExpression")`
+/// which would otherwise emit `const r = @compileError(...)` — valid Zig but produces
+/// "unreachable code" noise for subsequent statements referencing the variable.
+///
+/// Returns true if any conversions were made.
+fn convert_vardecl_compile_error(stmts: &mut [IrStmt]) -> bool {
+    use crate::zigir::source_span::SourceSpan;
+
+    // Phase 1: identify indices of VarDecls with CompileError init
+    let indices: Vec<usize> = stmts
+        .iter()
+        .enumerate()
+        .filter_map(|(i, stmt)| {
+            if let IrStmt::VarDecl(vd) = stmt
+                && vd.init.as_ref().is_some_and(is_compile_error_expr)
+            {
+                return Some(i);
+            }
+            None
+        })
+        .collect();
+
+    if indices.is_empty() {
+        return false;
+    }
+
+    // Phase 2: convert those VarDecls to IrStmt::CompileError
+    for i in indices {
+        let old_stmt = std::mem::replace(
+            &mut stmts[i],
+            IrStmt::CompileError {
+                span: SourceSpan::default(),
+                msg: String::new(),
+            },
+        );
+        if let IrStmt::VarDecl(vd) = old_stmt
+            && let Some(IrExpr::CompileError { span, msg }) = vd.init
+        {
+            stmts[i] = IrStmt::CompileError { span, msg };
+        }
+    }
+    true
+}
+
 impl DeadCodeElimPass {
     pub fn new() -> Self {
         Self
@@ -43,7 +137,17 @@ impl DeadCodeElimPass {
     fn eliminate_unreachable_in_block(block: &mut IrBlock) -> bool {
         let mut changed = false;
 
-        // Find and truncate after the first terminator
+        // Phase 1: Convert VarDecl with CompileError init → IrStmt::CompileError
+        if convert_vardecl_compile_error(&mut block.stmts) {
+            changed = true;
+        }
+
+        // Phase 2: After a CompileError, keep subsequent CompileError stmts only
+        if truncate_after_compile_error(&mut block.stmts) {
+            changed = true;
+        }
+
+        // Phase 3: Find and truncate after the first traditional terminator
         if truncate_after_terminator(&mut block.stmts) {
             changed = true;
         }

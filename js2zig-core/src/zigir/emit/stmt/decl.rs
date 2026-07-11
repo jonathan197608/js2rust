@@ -5,7 +5,8 @@ use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{EmitterHelpers, format_param_with_rest, format_return_type};
 use crate::zigir::types::{
-    IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrFnDecl, IrTypedef, IrVarDecl,
+    IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrFnDecl, IrStmt, IrTypedef,
+    IrVarDecl,
 };
 
 impl Emitter {
@@ -83,6 +84,14 @@ impl Emitter {
             }
         }
 
+        // When the body is only @compileError, prefix params with `_` to suppress
+        // Zig's "unused function parameter" error — the function will never run.
+        let body_is_compile_error = cs
+            .body
+            .stmts
+            .iter()
+            .all(|s| matches!(s, IrStmt::CompileError { .. }));
+
         // Call method signature
         // Arrow fn (no captures): pub fn call(x: i64) i64 {
         // Closure (has captures): pub fn call(self: *@This(), x: i64) i64 {
@@ -90,18 +99,32 @@ impl Emitter {
         let has_self = !cs.captured.is_empty();
         let mut need_comma = false;
         if has_self {
-            sig.push_str("self: *@This()");
+            if body_is_compile_error {
+                sig.push_str("_: *@This()");
+            } else {
+                sig.push_str("self: *@This()");
+            }
             need_comma = true;
         }
         for param in &cs.fn_params {
             if need_comma {
                 sig.push_str(", ");
             }
-            sig.push_str(&format_param_with_rest(
-                &param.name,
-                &param.zig_type,
-                param.is_rest,
-            ));
+            if body_is_compile_error {
+                // Use bare `_` to suppress "unused parameter" error in Zig
+                let type_str = if param.is_rest {
+                    "[]const JsAny".to_string()
+                } else {
+                    param.zig_type.to_zig_type()
+                };
+                sig.push_str(&format!("_: {}", type_str));
+            } else {
+                sig.push_str(&format_param_with_rest(
+                    &param.name,
+                    &param.zig_type,
+                    param.is_rest,
+                ));
+            }
             need_comma = true;
         }
         // Return type: use @TypeOf(expr) for AnytypeReturn, else normal type
