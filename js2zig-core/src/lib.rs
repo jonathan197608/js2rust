@@ -119,14 +119,17 @@ pub struct ProjectConfig {
     /// If `None`, the caller should infer from the Cargo profile automatically.
     pub zig_optimize: Option<String>,
     /// When true, the caller is a Cargo build script (`build.rs`).
-    /// This controls two behaviors:
-    /// 1. Emits `cargo:rerun-if-changed` directives for every JS file discovered
-    ///    (including transitive deps) so Cargo re-runs the build script on changes.
-    /// 2. Prints progress messages to stdout/stderr (groups, diagnostics, etc.)
-    ///    which Cargo filters and prefixes with `[package]`.
+    /// This controls progress output only (group headers, cache status,
+    /// "Generated:" paths, "zig build: OK", etc.) which Cargo filters
+    /// and prefixes with `[package]`.
     ///
-    /// When false (proc-macro context), all stdout/stderr output is suppressed
-    /// because proc-macro stdout leaks directly to the terminal unfiltered.
+    /// Diagnostic output (errors, warnings, @compileError messages) is
+    /// always shown regardless of this flag, so users see actionable
+    /// information even in proc-macro context.
+    ///
+    /// When false (proc-macro context), only diagnostics are emitted;
+    /// progress noise is suppressed because proc-macro stdout leaks
+    /// directly to the terminal unfiltered.
     pub is_build_script: bool,
 }
 
