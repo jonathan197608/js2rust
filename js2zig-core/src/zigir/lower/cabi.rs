@@ -7,7 +7,7 @@ use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic, SourceSpan};
-use crate::zigir::types::{IrCabiExport, IrDecl, IrParam};
+use crate::zigir::types::{IrCabiExport, IrDecl, IrExpr, IrParam};
 
 use super::Lowerer;
 use super::helpers::FnContext;
@@ -112,6 +112,15 @@ impl Lowerer {
         });
     }
 
+    /// Build an IrExpr::CompileError from a Span and message.
+    /// Convenience wrapper that converts Span → SourceSpan automatically.
+    pub(super) fn compile_error_expr(&self, span: Span, msg: impl Into<String>) -> IrExpr {
+        IrExpr::CompileError {
+            span: self.span_to_source_span(span),
+            msg: msg.into(),
+        }
+    }
+
     /// Add a warning diagnostic.
     #[allow(dead_code)]
     pub(super) fn add_warning(&mut self, span: SourceSpan, msg: impl Into<String>) {
@@ -131,6 +140,39 @@ impl Lowerer {
     /// Create an IrIdent for the given JS name, applying shadow renaming.
     pub(super) fn make_ident(&self, js_name: &str) -> IrIdent {
         self.name_mangler.make_ident(js_name)
+    }
+
+    /// Build IrCapture list from raw capture tuples (name, zig_type, is_mut).
+    /// Shared by closure.rs, decl.rs, and function.rs.
+    pub(super) fn make_ir_captures(
+        &self,
+        captures: Vec<(String, ZigType, bool)>,
+    ) -> Vec<crate::zigir::types::IrCapture> {
+        captures
+            .into_iter()
+            .map(|(name, zig_type, is_mut)| crate::zigir::types::IrCapture {
+                name: self.make_ident(&name),
+                zig_type,
+                is_mut,
+            })
+            .collect()
+    }
+
+    pub(super) fn lower_args<'a>(
+        &mut self,
+        args: &oxc_allocator::Vec<'a, Argument<'a>>,
+    ) -> Vec<IrExpr> {
+        args.iter()
+            .map(|arg| match arg {
+                Argument::SpreadElement(se) => {
+                    IrExpr::Spread(Box::new(self.lower_expr(&se.argument)))
+                }
+                _ => {
+                    let expr = arg.as_expression().unwrap();
+                    self.lower_expr(expr)
+                }
+            })
+            .collect()
     }
 
     /// Try to inline an array non-callback method (includes, indexOf, lastIndexOf,

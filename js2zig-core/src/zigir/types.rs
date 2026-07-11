@@ -422,6 +422,28 @@ pub enum IrAssignTarget {
     CompileError { msg: String },
 }
 
+impl IrAssignTarget {
+    /// Build a read-side IrExpr from this assignment target.
+    /// Returns `Some(IrExpr::Ident)` or `Some(IrExpr::FieldAccess)` for
+    /// supported targets; `None` for Index, Destructure, and CompileError.
+    pub fn to_read_expr(&self) -> Option<IrExpr> {
+        match self {
+            IrAssignTarget::Ident(name) => Some(IrExpr::Ident(name.clone())),
+            IrAssignTarget::Member {
+                object,
+                field,
+                field_kind,
+                ..
+            } => Some(IrExpr::FieldAccess {
+                object: object.clone(),
+                field: field.clone(),
+                field_kind: field_kind.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IrDestructureBinding {
     pub pattern: IrIdent,
@@ -680,6 +702,25 @@ pub enum IrExpr {
     ArrayMethodInline(Box<IrArrayMethodInline>),
 }
 
+impl IrExpr {
+    /// Returns true if this expression has no sub-expressions.
+    /// Used by tree-walking passes to short-circuit at leaf nodes.
+    pub fn is_leaf(&self) -> bool {
+        matches!(
+            self,
+            Self::IntLiteral(_)
+                | Self::FloatLiteral(_)
+                | Self::StringLiteral(_)
+                | Self::BoolLiteral(_)
+                | Self::BigIntLiteral(_)
+                | Self::Null
+                | Self::Undefined
+                | Self::Ident(_)
+                | Self::This
+        )
+    }
+}
+
 // ── Call types ─────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -723,6 +764,30 @@ pub struct IrBuiltinCall {
     /// Type suffix for TypedArray methods (e.g., "I32" for `bufferI32`, `setI32`).
     /// `None` for all other builtin calls.
     pub ta_type_suffix: Option<String>,
+}
+
+impl IrBuiltinCall {
+    /// Build a minimal IrBuiltinCall with `regex_info: None` and `ta_type_suffix: None`.
+    /// Use this for all builtin calls that don't need regex or TypedArray suffix info.
+    pub fn simple(
+        module: BuiltinModule,
+        method: impl Into<String>,
+        obj_name: Option<String>,
+        obj_expr: Option<Box<IrExpr>>,
+        args: Vec<IrExpr>,
+        return_type: ZigType,
+    ) -> Self {
+        Self {
+            module,
+            method: method.into(),
+            obj_name,
+            obj_expr,
+            args,
+            return_type,
+            regex_info: None,
+            ta_type_suffix: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

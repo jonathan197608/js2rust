@@ -56,16 +56,9 @@ impl Lowerer {
         struct_name: IrIdent,
         instance_name: IrIdent,
     ) -> crate::zigir::types::IrExpr {
-        use crate::zigir::types::{IrCapture, IrClosure, IrExpr};
+        use crate::zigir::types::{IrClosure, IrExpr};
 
-        let ir_captures: Vec<IrCapture> = captured
-            .into_iter()
-            .map(|(name, zig_type, is_mut)| IrCapture {
-                name: self.make_ident(&name),
-                zig_type,
-                is_mut,
-            })
-            .collect();
+        let ir_captures = self.make_ir_captures(captured.into_iter().collect());
 
         self.closure_mgr
             .closure_instances

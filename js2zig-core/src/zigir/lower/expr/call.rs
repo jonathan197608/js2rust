@@ -69,29 +69,10 @@ impl Lowerer {
 
         // ── Step 0: Check for unsupported global objects ──
         if let Some(err_msg) = self.check_unsupported_call(ce) {
-            return IrExpr::CompileError {
-                span: self.span_to_source_span(ce.span),
-                msg: err_msg,
-            };
+            return self.compile_error_expr(ce.span, err_msg);
         }
 
-        let args: Vec<IrExpr> = ce
-            .arguments
-            .iter()
-            .map(|arg| {
-                match arg {
-                    Argument::SpreadElement(se) => {
-                        IrExpr::Spread(Box::new(self.lower_expr(&se.argument)))
-                    }
-                    // Argument inherits all Expression variants
-                    _ => {
-                        // All Expression variants are directly accessible
-                        let expr = arg.as_expression().unwrap();
-                        self.lower_expr(expr)
-                    }
-                }
-            })
-            .collect();
+        let args = self.lower_args(&ce.arguments);
 
         // ── Step 1: Builtin detection ──
         if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
@@ -107,10 +88,7 @@ impl Lowerer {
 
             // ── Step 1c: eval() → compile error ──
             if matches!(builtin, crate::native_builtins::BuiltinCall::Eval) {
-                return IrExpr::CompileError {
-                    span: self.span_to_source_span(ce.span),
-                    msg: "eval() is not supported (security risk, cannot dynamically execute at compile time)".to_string(),
-                };
+                return self.compile_error_expr(ce.span, "eval() is not supported (security risk, cannot dynamically execute at compile time)");
             }
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
@@ -159,7 +137,6 @@ impl Lowerer {
             } else {
                 (module, method, return_type)
             };
-            let obj_name = Self::extract_callee_object_name_static(&ce.callee);
 
             // ── Extract regex metadata for match/matchAll/search ──
             let regex_info = Self::extract_regex_info(ce, &builtin);
@@ -629,34 +606,19 @@ impl Lowerer {
                 }
                 other => {
                     let span = oxc_span::GetSpan::span(ne);
-                    return crate::zigir::types::IrExpr::CompileError {
-                        span: self.span_to_source_span(span),
-                        msg: format!("Unsupported NewExpression: new {}()", other),
-                    };
+                    return self.compile_error_expr(
+                        span,
+                        format!("Unsupported NewExpression: new {}()", other),
+                    );
                 }
             },
             _ => {
                 let span = oxc_span::GetSpan::span(ne);
-                return crate::zigir::types::IrExpr::CompileError {
-                    span: self.span_to_source_span(span),
-                    msg: "Unsupported NewExpression".to_string(),
-                };
+                return self.compile_error_expr(span, "Unsupported NewExpression");
             }
         };
 
-        let args: Vec<crate::zigir::types::IrExpr> = ne
-            .arguments
-            .iter()
-            .map(|arg| match arg {
-                Argument::SpreadElement(se) => {
-                    crate::zigir::types::IrExpr::Spread(Box::new(self.lower_expr(&se.argument)))
-                }
-                _ => {
-                    let expr = arg.as_expression().unwrap();
-                    self.lower_expr(expr)
-                }
-            })
-            .collect();
+        let args = self.lower_args(&ne.arguments);
 
         let result_type = match &constructor {
             NewConstructor::Map => ZigType::NamedStruct("Map".to_string()),

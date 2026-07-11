@@ -814,6 +814,15 @@ fn emit_comptime_export(out: &mut String, name: &str) {
     ));
 }
 
+fn emit_const_alias(out: &mut String, name: &str, bare_name: &str, module: &str) {
+    out.push_str(&format!(
+        "pub const {name} = {mod}.{bare};\n\n",
+        name = name,
+        bare = bare_name,
+        mod = module,
+    ));
+}
+
 /// Disambiguate a name by appending the module name if it collides.
 fn disambiguate_name(name: &str, module: &str, is_colliding: impl Fn(&str) -> bool) -> String {
     if is_colliding(name) {
@@ -881,12 +890,7 @@ pub fn gen_cabi_wrappers(
         // JsAny/ArrayList returns: re-export as const alias (no CABI export).
         // This lets Zig test code call the function, but no C ABI symbol is emitted.
         if ret_is_js_any || ret_is_arraylist {
-            out.push_str(&format!(
-                "pub const {name} = {mod}.{bare};\n\n",
-                name = name,
-                bare = bare_name,
-                mod = module,
-            ));
+            emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
 
@@ -895,13 +899,7 @@ pub fn gen_cabi_wrappers(
             *ty == crate::types::ZigType::Void || *ty == crate::types::ZigType::Anytype
         });
         if has_js_obj_param {
-            // Re-export as const alias (no C ABI export)
-            out.push_str(&format!(
-                "pub const {name} = {mod}.{bare};\n\n",
-                name = name,
-                bare = bare_name,
-                mod = module,
-            ));
+            emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
 

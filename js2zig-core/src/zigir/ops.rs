@@ -93,6 +93,24 @@ impl AssignOp {
             AssignOp::Nullish => "orelse=",
         }
     }
+
+    /// For compound assignments on BigInt, convert to the equivalent BinOp.
+    /// Returns None for non-arithmetic ops (Assign, LogicAnd, LogicOr, Nullish).
+    pub fn to_bin_op(&self) -> Option<BinOp> {
+        match self {
+            Self::Add => Some(BinOp::Add),
+            Self::Sub => Some(BinOp::Sub),
+            Self::Mul => Some(BinOp::Mul),
+            Self::Div => Some(BinOp::Div),
+            Self::Mod => Some(BinOp::Mod),
+            Self::Shl => Some(BinOp::Shl),
+            Self::Shr => Some(BinOp::Shr),
+            Self::BitAnd => Some(BinOp::BitAnd),
+            Self::BitOr => Some(BinOp::BitOr),
+            Self::BitXor => Some(BinOp::BitXor),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

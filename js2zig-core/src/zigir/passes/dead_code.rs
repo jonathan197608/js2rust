@@ -17,6 +17,20 @@ use super::collect_idents;
 /// - Unused top-level const variable declarations
 pub struct DeadCodeElimPass;
 
+/// Remove statements after the first terminator in a list.
+/// Returns true if any statements were removed.
+fn truncate_after_terminator(stmts: &mut Vec<IrStmt>) -> bool {
+    let terminator_idx = stmts.iter().position(is_terminator);
+    if let Some(idx) = terminator_idx {
+        let remaining = stmts.len() - idx - 1;
+        if remaining > 0 {
+            stmts.truncate(idx + 1);
+            return true;
+        }
+    }
+    false
+}
+
 impl DeadCodeElimPass {
     pub fn new() -> Self {
         Self
@@ -27,16 +41,9 @@ impl DeadCodeElimPass {
     fn eliminate_unreachable_in_block(block: &mut IrBlock) -> bool {
         let mut changed = false;
 
-        // Find the first terminator in the block
-        let terminator_idx = block.stmts.iter().position(is_terminator);
-
-        if let Some(idx) = terminator_idx {
-            // Remove everything after the terminator
-            let remaining = block.stmts.len() - idx - 1;
-            if remaining > 0 {
-                block.stmts.truncate(idx + 1);
-                changed = true;
-            }
+        // Find and truncate after the first terminator
+        if truncate_after_terminator(&mut block.stmts) {
+            changed = true;
         }
 
         // Recurse into sub-blocks
@@ -374,13 +381,8 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
             let mut changed = false;
             for case in cases {
                 // Cases use Vec<IrStmt>, not IrBlock
-                let terminator_idx = case.body.iter().position(is_terminator);
-                if let Some(idx) = terminator_idx {
-                    let remaining = case.body.len() - idx - 1;
-                    if remaining > 0 {
-                        case.body.truncate(idx + 1);
-                        changed = true;
-                    }
+                if truncate_after_terminator(&mut case.body) {
+                    changed = true;
                 }
                 for s in &mut case.body {
                     if eliminate_unreachable_in_stmt(s) {
@@ -438,13 +440,8 @@ fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
         IrExpr::BlockExpr { body, .. } => {
             let mut changed = false;
             // Find terminator in block body
-            let terminator_idx = body.iter().position(is_terminator);
-            if let Some(idx) = terminator_idx {
-                let remaining = body.len() - idx - 1;
-                if remaining > 0 {
-                    body.truncate(idx + 1);
-                    changed = true;
-                }
+            if truncate_after_terminator(body) {
+                changed = true;
             }
             for s in body {
                 if eliminate_unreachable_in_stmt(s) {

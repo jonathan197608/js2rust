@@ -125,18 +125,9 @@ impl Lowerer {
 
         match ue.operator {
             UnaryOperator::UnaryNegation => {
-                // BigInt cannot use Zig's `-` operator — expand to .neg() method call
                 if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
-                    return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                        module: BuiltinModule::JsBigInt,
-                        method: "bigIntNeg".to_string(),
-                        obj_name: None,
-                        obj_expr: Some(Box::new(self.lower_expr(&ue.argument))),
-                        args: vec![],
-                        return_type: ZigType::BigInt,
-                        ta_type_suffix: None,
-                        regex_info: None,
-                    });
+                    let operand = self.lower_expr(&ue.argument);
+                    return self.bigint_unary_builtin("bigIntNeg", operand);
                 }
                 IrExpr::Unary {
                     op: UnaOp::Neg,
@@ -152,18 +143,9 @@ impl Lowerer {
                 operand: Box::new(self.lower_expr(&ue.argument)),
             },
             UnaryOperator::BitwiseNot => {
-                // BigInt cannot use Zig's `~` operator — expand to .bitwiseNot() method call
                 if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
-                    return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                        module: BuiltinModule::JsBigInt,
-                        method: "bigIntBitwiseNot".to_string(),
-                        obj_name: None,
-                        obj_expr: Some(Box::new(self.lower_expr(&ue.argument))),
-                        args: vec![],
-                        return_type: ZigType::BigInt,
-                        ta_type_suffix: None,
-                        regex_info: None,
-                    });
+                    let operand = self.lower_expr(&ue.argument);
+                    return self.bigint_unary_builtin("bigIntBitwiseNot", operand);
                 }
                 IrExpr::Unary {
                     op: UnaOp::BitNot,
@@ -171,43 +153,24 @@ impl Lowerer {
                 }
             }
             UnaryOperator::Typeof => {
-                // Use inferred Zig type to emit the JS typeof string at compile time.
-                // For dynamic types (JsAny/Anytype), call the runtime jsTypeof() helper.
-                if let Some(ty) = self.infer_expr_type(&ue.argument) {
-                    if let Some(js_typeof) = ty.to_js_typeof() {
-                        // Compile-time resolution: the argument is not included in the IR.
-                        // Track its identifiers so unused-param detection doesn't
-                        // falsely mark them as unused.
-                        let mut idents = HashSet::new();
-                        Self::collect_ast_expr_idents(&ue.argument, &mut idents);
-                        if let Some(ctx) = self.fn_ctx.as_mut() {
-                            ctx.compile_time_referenced_idents.extend(idents);
-                        }
-                        IrExpr::StringLiteral(js_typeof.to_string())
-                    } else {
-                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                            module: BuiltinModule::JsRuntime,
-                            method: "jsTypeof".to_string(),
-                            obj_name: None,
-                            obj_expr: None,
-                            args: vec![self.lower_expr(&ue.argument)],
-                            return_type: ZigType::Str,
-                            regex_info: None,
-                            ta_type_suffix: None,
-                        })
+                if let Some(ty) = self.infer_expr_type(&ue.argument)
+                    && let Some(js_typeof) = ty.to_js_typeof()
+                {
+                    let mut idents = HashSet::new();
+                    Self::collect_ast_expr_idents(&ue.argument, &mut idents);
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.compile_time_referenced_idents.extend(idents);
                     }
-                } else {
-                    IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                        module: BuiltinModule::JsRuntime,
-                        method: "jsTypeof".to_string(),
-                        obj_name: None,
-                        obj_expr: None,
-                        args: vec![self.lower_expr(&ue.argument)],
-                        return_type: ZigType::Str,
-                        regex_info: None,
-                        ta_type_suffix: None,
-                    })
+                    return IrExpr::StringLiteral(js_typeof.to_string());
                 }
+                IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
+                    BuiltinModule::JsRuntime,
+                    "jsTypeof",
+                    None,
+                    None,
+                    vec![self.lower_expr(&ue.argument)],
+                    ZigType::Str,
+                ))
             }
             UnaryOperator::Void => IrExpr::Void(Box::new(self.lower_expr(&ue.argument))),
             UnaryOperator::Delete => {
@@ -219,18 +182,16 @@ impl Lowerer {
                             Expression::Identifier(id) => Some(id.name.as_str().to_string()),
                             _ => None,
                         };
-                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                            module: BuiltinModule::JsRuntime,
-                            method: "deleteKey".to_string(),
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
+                            BuiltinModule::JsRuntime,
+                            "deleteKey",
                             obj_name,
-                            obj_expr: None,
-                            args: vec![IrExpr::StringLiteral(
+                            None,
+                            vec![IrExpr::StringLiteral(
                                 mem.property.name.as_str().to_string(),
                             )],
-                            return_type: ZigType::Bool,
-                            regex_info: None,
-                            ta_type_suffix: None,
-                        })
+                            ZigType::Bool,
+                        ))
                     }
                     Expression::ComputedMemberExpression(mem) => {
                         let obj_name = if let Expression::Identifier(id) = &mem.object {
@@ -238,23 +199,17 @@ impl Lowerer {
                         } else {
                             None
                         };
-                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
-                            module: BuiltinModule::JsRuntime,
-                            method: "deleteByKey".to_string(),
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
+                            BuiltinModule::JsRuntime,
+                            "deleteByKey",
                             obj_name,
-                            obj_expr: None,
-                            args: vec![self.lower_expr(&mem.expression)],
-                            return_type: ZigType::Bool,
-                            regex_info: None,
-                            ta_type_suffix: None,
-                        })
+                            None,
+                            vec![self.lower_expr(&mem.expression)],
+                            ZigType::Bool,
+                        ))
                     }
                     _ => {
-                        // Unsupported delete target — emit compile error
-                        IrExpr::CompileError {
-                            span: self.span_to_source_span(ue.span),
-                            msg: "delete operator requires property access".to_string(),
-                        }
+                        self.compile_error_expr(ue.span, "delete operator requires property access")
                     }
                 }
             }
@@ -271,31 +226,16 @@ impl Lowerer {
         let target_type = self.infer_simple_assign_target_type(&ue.argument);
         if target_type == Some(ZigType::BigInt) {
             let target = self.lower_simple_assign_target(&ue.argument);
-            // Build read-side expression
-            let read_expr = match &target {
-                crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
-                crate::zigir::types::IrAssignTarget::Member {
-                    object,
-                    field,
-                    field_kind,
-                    ..
-                } => IrExpr::FieldAccess {
-                    object: object.clone(),
-                    field: field.clone(),
-                    field_kind: field_kind.clone(),
-                },
-                _ => {
-                    // Fallback for unsupported target types (index, destructure)
-                    return IrExpr::Update {
-                        op: if ue.operator == UpdateOperator::Increment {
-                            UpdateOp::Increment
-                        } else {
-                            UpdateOp::Decrement
-                        },
-                        target: Box::new(target),
-                        is_expr_stmt: self.in_expr_stmt,
-                    };
-                }
+            let Some(read_expr) = target.to_read_expr() else {
+                return IrExpr::Update {
+                    op: if ue.operator == UpdateOperator::Increment {
+                        UpdateOp::Increment
+                    } else {
+                        UpdateOp::Decrement
+                    },
+                    target: Box::new(target),
+                    is_expr_stmt: self.in_expr_stmt,
+                };
             };
             let bin_op = if ue.operator == UpdateOperator::Increment {
                 BinOp::Add
@@ -342,23 +282,9 @@ impl Lowerer {
             let target = self.lower_assign_target(&ae.left);
             let value = Box::new(self.lower_expr(&ae.right));
             let target_type = self.infer_assign_target_type(&ae.left);
-            // Build read-side expression from the assignment target
-            let base_expr = match &target {
-                crate::zigir::types::IrAssignTarget::Ident(name) => IrExpr::Ident(name.clone()),
-                crate::zigir::types::IrAssignTarget::Member {
-                    object,
-                    field,
-                    field_kind,
-                    ..
-                } => IrExpr::FieldAccess {
-                    object: object.clone(),
-                    field: field.clone(),
-                    field_kind: field_kind.clone(),
-                },
-                _ => IrExpr::Ident(IrIdent::new("__target")),
-            };
-            // BigInt **= : use IrExpr::Binary with BinOp::Pow so emit_bigint_binary
-            // generates .pow() method call.
+            let base_expr = target
+                .to_read_expr()
+                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
             if target_type == Some(ZigType::BigInt) {
                 return IrExpr::Assign {
                     op: AssignOp::Assign,
@@ -411,24 +337,7 @@ impl Lowerer {
             if target_type == Some(ZigType::BigInt) {
                 let target = self.lower_assign_target(&ae.left);
                 let value = Box::new(self.lower_expr(&ae.right));
-                // Build the read-side expression for the target.
-                let read_expr = match &target {
-                    crate::zigir::types::IrAssignTarget::Ident(name) => {
-                        Some(IrExpr::Ident(name.clone()))
-                    }
-                    crate::zigir::types::IrAssignTarget::Member {
-                        object,
-                        field,
-                        field_kind,
-                        ..
-                    } => Some(IrExpr::FieldAccess {
-                        object: object.clone(),
-                        field: field.clone(),
-                        field_kind: field_kind.clone(),
-                    }),
-                    _ => None,
-                };
-                if let Some(read) = read_expr {
+                if let Some(read) = target.to_read_expr() {
                     let bin_op = match ae.operator {
                         AssignmentOperator::Addition => BinOp::Add,
                         AssignmentOperator::Subtraction => BinOp::Sub,
@@ -754,11 +663,10 @@ impl Lowerer {
         let type_name = if let Expression::Identifier(ident) = &be.right {
             ident.name.to_string()
         } else {
-            return IrExpr::CompileError {
-                span: self.span_to_source_span(be.span),
-                msg: "instanceof: right operand must be an identifier (constructor name)"
-                    .to_string(),
-            };
+            return self.compile_error_expr(
+                be.span,
+                "instanceof: right operand must be an identifier (constructor name)",
+            );
         };
 
         // ── Strategy 1: Error types → .name comparison ──
@@ -797,16 +705,14 @@ impl Lowerer {
 
         // ── Strategy 3: Runtime instanceof check ──
         let left_expr = self.lower_expr(&be.left);
-        IrExpr::BuiltinCall(IrBuiltinCall {
-            module: BuiltinModule::JsRuntime,
-            method: "instanceOf".to_string(),
-            obj_name: None,
-            obj_expr: Some(Box::new(left_expr)),
-            args: vec![IrExpr::StringLiteral(type_name)],
-            return_type: ZigType::Bool,
-            regex_info: None,
-            ta_type_suffix: None,
-        })
+        IrExpr::BuiltinCall(IrBuiltinCall::simple(
+            BuiltinModule::JsRuntime,
+            "instanceOf",
+            None,
+            Some(Box::new(left_expr)),
+            vec![IrExpr::StringLiteral(type_name)],
+            ZigType::Bool,
+        ))
     }
 
     /// Resolve `instanceof` at compile time when the left operand's type is known.
@@ -884,5 +790,20 @@ impl Lowerer {
             // Other types: conservatively say we can't resolve
             _ => None,
         }
+    }
+
+    fn bigint_unary_builtin(
+        &mut self,
+        method: &str,
+        operand: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
+        crate::zigir::types::IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
+            BuiltinModule::JsBigInt,
+            method,
+            None,
+            Some(Box::new(operand)),
+            vec![],
+            ZigType::BigInt,
+        ))
     }
 }

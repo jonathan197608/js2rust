@@ -115,23 +115,9 @@ impl ConstantFoldPass {
                 }
                 changed
             }
-            IrExpr::Sequence(exprs) => {
-                let mut changed = false;
-                for e in exprs {
-                    if Self::try_fold(e) {
-                        changed = true;
-                    }
-                }
-                changed
-            }
+            IrExpr::Sequence(exprs) => Self::try_fold_iter(exprs),
             IrExpr::AllocPrint { fmt, args } => {
-                let mut changed = false;
-                for a in args.iter_mut() {
-                    if Self::try_fold(a) {
-                        changed = true;
-                    }
-                }
-                // If allocPrint has zero interpolation args, it's just a string literal
+                let changed = Self::try_fold_iter(args);
                 if args.is_empty() {
                     let s = fmt.clone();
                     *expr = IrExpr::StringLiteral(s);
@@ -150,46 +136,37 @@ impl ConstantFoldPass {
                 changed
             }
             // Recurse into compound expressions
-            IrExpr::ArrayLiteral(arr) => {
-                let mut changed = false;
-                for e in &mut arr.elements {
-                    if Self::try_fold(e) {
-                        changed = true;
-                    }
-                }
-                changed
-            }
-            IrExpr::ObjectLiteral(obj) => {
-                use crate::zigir::types::IrObjectItem;
-                let mut changed = false;
-                for item in &mut obj.items {
-                    match item {
-                        IrObjectItem::Field(f) => {
-                            if Self::try_fold(&mut f.value) {
-                                changed = true;
-                            }
-                        }
-                        IrObjectItem::Spread(e) => {
-                            if Self::try_fold(e) {
-                                changed = true;
-                            }
-                        }
-                    }
-                }
-                changed
-            }
-            IrExpr::TemplateLiteral { exprs, .. } => {
-                let mut changed = false;
-                for e in exprs {
-                    if Self::try_fold(e) {
-                        changed = true;
-                    }
-                }
-                changed
-            }
+            IrExpr::ArrayLiteral(arr) => Self::try_fold_iter(&mut arr.elements),
+            IrExpr::ObjectLiteral(obj) => Self::try_fold_object_items(&mut obj.items),
+            IrExpr::TemplateLiteral { exprs, .. } => Self::try_fold_iter(exprs),
             IrExpr::Spread(e) | IrExpr::Void(e) => Self::try_fold(e),
             _ => false,
         }
+    }
+
+    fn try_fold_iter(exprs: &mut [IrExpr]) -> bool {
+        let mut changed = false;
+        for e in exprs {
+            if Self::try_fold(e) {
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn try_fold_object_items(items: &mut [crate::zigir::types::IrObjectItem]) -> bool {
+        use crate::zigir::types::IrObjectItem;
+        let mut changed = false;
+        for item in items {
+            let expr = match item {
+                IrObjectItem::Field(f) => &mut f.value,
+                IrObjectItem::Spread(e) => e,
+            };
+            if Self::try_fold(expr) {
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// Fold constants in a statement.

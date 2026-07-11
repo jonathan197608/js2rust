@@ -34,18 +34,28 @@ impl Lowerer {
             .unwrap_or("__toplevel__")
     }
 
-    /// Check whether a variable is recorded as "mutated" in the current scope.
+    fn qualified_var_key(&self, var_name: &str) -> String {
+        format!("{}::{}", self.fn_prefix(), var_name)
+    }
+
+    fn lookup_fn_return_type(&self, name: &str) -> crate::types::ZigType {
+        self.type_info
+            .fn_return_types
+            .get(name)
+            .cloned()
+            .unwrap_or(crate::types::ZigType::Void)
+    }
+
     fn is_var_mutated(&self, var_name: &str) -> bool {
         self.type_info
             .mutated_vars
-            .contains(&format!("{}::{}", self.fn_prefix(), var_name))
+            .contains(&self.qualified_var_key(var_name))
     }
 
-    /// Check whether a variable is directly reassigned (x = ..., not x.y = ...).
     fn is_var_reassigned(&self, var_name: &str) -> bool {
         self.type_info
             .reassigned_vars
-            .contains(&format!("{}::{}", self.fn_prefix(), var_name))
+            .contains(&self.qualified_var_key(var_name))
     }
 
     /// Check if a toplevel binding should be skipped.
@@ -657,12 +667,7 @@ impl Lowerer {
         let is_async = self.type_info.is_async.get(name).copied().unwrap_or(false);
 
         // Return type from inference
-        let return_type = self
-            .type_info
-            .fn_return_types
-            .get(name)
-            .cloned()
-            .unwrap_or(ZigType::Void);
+        let return_type = self.lookup_fn_return_type(name);
 
         // Enter function context and lower params + body
         let mut scope = self.enter_fn_body(fd, name, is_export, &return_type);
@@ -763,7 +768,7 @@ impl Lowerer {
     /// `const _name_type = struct { x: i64, pub fn call(self: *@This(), ...) ... };`
     /// `const name = _name_type{ .x = x };`
     pub(super) fn lower_nested_fn_decl(&mut self, fd: &Function) -> crate::zigir::types::IrStmt {
-        use crate::zigir::types::{IrCapture, IrClosure, IrClosureStruct, IrStmt};
+        use crate::zigir::types::{IrClosure, IrClosureStruct, IrStmt};
 
         let fn_name = fd
             .id
@@ -775,12 +780,7 @@ impl Lowerer {
         let captures = self.detect_fn_body_captures(fd);
 
         // Return type from inference
-        let return_type = self
-            .type_info
-            .fn_return_types
-            .get(fn_name)
-            .cloned()
-            .unwrap_or(ZigType::Void);
+        let return_type = self.lookup_fn_return_type(fn_name);
 
         // Enter function context and lower params + body, then exit
         let scope = self.enter_fn_body(fd, fn_name, false, &return_type);
@@ -802,14 +802,7 @@ impl Lowerer {
             let type_ident = IrIdent::with_zig_name(fn_name, type_name.clone());
             let instance_ident = fn_ident;
 
-            let ir_captures: Vec<IrCapture> = captures
-                .into_iter()
-                .map(|(name, zig_type, is_mut)| IrCapture {
-                    name: self.make_ident(&name),
-                    zig_type,
-                    is_mut,
-                })
-                .collect();
+            let ir_captures = self.make_ir_captures(captures.into_iter().collect());
 
             // Create the struct definition (emitted inline in function body)
             let closure_struct = IrClosureStruct {

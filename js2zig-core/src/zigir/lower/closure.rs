@@ -26,14 +26,12 @@ impl Lowerer {
             .closure_vars
             .iter()
             .map(|(struct_name, captured)| {
-                let ir_captures: Vec<crate::zigir::types::IrCapture> = captured
-                    .iter()
-                    .map(|(name, zig_type, is_mut)| crate::zigir::types::IrCapture {
-                        name: self.make_ident(name),
-                        zig_type: zig_type.clone(),
-                        is_mut: *is_mut,
-                    })
-                    .collect();
+                let ir_captures = self.make_ir_captures(
+                    captured
+                        .iter()
+                        .map(|(name, zig_type, is_mut)| (name.clone(), zig_type.clone(), *is_mut))
+                        .collect(),
+                );
                 crate::zigir::types::IrClosureStruct {
                     name: self.make_ident(struct_name),
                     captured: ir_captures,
@@ -405,13 +403,32 @@ impl Lowerer {
         }
     }
 
+    /// Scan statements for the first ReturnStatement and infer its type.
+    fn scan_return_type_from_stmts(
+        &self,
+        stmts: &[oxc_ast::ast::Statement],
+        captured: &[(String, ZigType, bool)],
+        default_type: ZigType,
+    ) -> ZigType {
+        for stmt in stmts {
+            if let oxc_ast::ast::Statement::ReturnStatement(rs) = stmt {
+                if let Some(ref arg) = rs.argument {
+                    return self
+                        .infer_arrow_expr_type_with_captures(arg, captured)
+                        .unwrap_or(default_type);
+                }
+                return ZigType::Void;
+            }
+        }
+        ZigType::Void
+    }
+
     /// Infer the return type of an arrow function.
     pub(super) fn infer_arrow_return_type(
         &self,
         arrow: &ArrowFunctionExpression,
         captured: &[(String, ZigType, bool)],
     ) -> ZigType {
-        // Single-expression arrow: type is the expression's type
         if arrow.body.statements.len() == 1
             && let Statement::ExpressionStatement(es) = &arrow.body.statements[0]
         {
@@ -419,41 +436,19 @@ impl Lowerer {
                 .infer_arrow_expr_type_with_captures(&es.expression, captured)
                 .unwrap_or(ZigType::I64);
         }
-        // Block body: scan return statements
-        for stmt in &arrow.body.statements {
-            if let Statement::ReturnStatement(rs) = stmt {
-                if let Some(ref arg) = rs.argument {
-                    return self
-                        .infer_arrow_expr_type_with_captures(arg, captured)
-                        .unwrap_or(ZigType::I64);
-                }
-                return ZigType::Void; // bare `return;` means void
-            }
-        }
-        ZigType::Void // no return ¡ú void
+        self.scan_return_type_from_stmts(&arrow.body.statements, captured, ZigType::I64)
     }
 
     /// Infer the return type of a function expression by scanning return statements.
-    /// `captured` provides a fallback type lookup for captured variables that might
-    /// not be in `var_types` (e.g., when the variable's type is `anytype`-derived).
     pub(super) fn infer_fn_expr_return_type(
         &self,
         fe: &Function,
         captured: &[(String, ZigType, bool)],
     ) -> ZigType {
-        if let Some(body) = &fe.body {
-            for stmt in &body.statements {
-                if let Statement::ReturnStatement(rs) = stmt {
-                    if let Some(ref arg) = rs.argument {
-                        return self
-                            .infer_arrow_expr_type_with_captures(arg, captured)
-                            .unwrap_or(ZigType::Void);
-                    }
-                    return ZigType::Void;
-                }
-            }
-        }
-        ZigType::Void
+        fe.body
+            .as_ref()
+            .map(|body| self.scan_return_type_from_stmts(&body.statements, captured, ZigType::Void))
+            .unwrap_or(ZigType::Void)
     }
 
     /// Best-effort type inference for arrow body expressions.
