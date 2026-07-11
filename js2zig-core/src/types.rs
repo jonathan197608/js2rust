@@ -241,6 +241,10 @@ pub struct TranspileResult {
     pub errors: Vec<String>,
     /// Non-fatal warnings (try-catch limitations, etc.) — do NOT block file generation.
     pub warnings: Vec<String>,
+    /// @compileError nodes in the generated IR — not blocking, but inform the user
+    /// which JS features are unsupported.  Zig's lazy analysis may never trigger
+    /// these at compile time, so we surface them at transpile time instead.
+    pub compile_errors: Vec<String>,
     /// Exported functions: (name, param_types, return_type).
     pub exports: Vec<ExportedFunction>,
     /// Inferred variable types (for cross-file type propagation, future use).

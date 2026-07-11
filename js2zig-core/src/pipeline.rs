@@ -413,6 +413,24 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                                 }
                             }));
 
+                            // Convert @compileError nodes to warnings (non-blocking)
+                            // These are JS features the transpiler does not support.
+                            // Zig's lazy analysis may never trigger them at compile time,
+                            // so we surface them here instead.
+                            let compile_errors = result.compile_errors;
+                            if !compile_errors.is_empty() {
+                                eprintln!(
+                                    "  '{}': {} unsupported feature(s):",
+                                    member,
+                                    compile_errors.len()
+                                );
+                                for msg in &compile_errors {
+                                    eprintln!("    @compileError: {}", msg);
+                                    file_diagnostics
+                                        .push(format!("{}: COMPILE_ERROR - {}", member, msg));
+                                }
+                            }
+
                             // Extract cabi_exports from result
                             let cabi_exports = result.cabi_exports;
 

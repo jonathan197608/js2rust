@@ -11,7 +11,7 @@ pub use crate::types::{
 
 use oxc_ast::ast::Program;
 
-use crate::zigir::types::IrDecl;
+use crate::zigir::types::{IrDecl, IrExpr, IrStmt};
 
 pub use crate::infer::TypeCheckResult;
 
@@ -41,6 +41,80 @@ pub fn transpile_js(
         host_fns,
         module_name,
     )
+}
+
+/// Collect all `@compileError` messages from the IR tree.
+///
+/// Walks the entire `IrModule` — declarations, closure structs, typedefs —
+/// and extracts messages from `IrDecl::CompileError`, `IrStmt::CompileError`,
+/// and `IrExpr::CompileError` nodes.
+///
+/// These correspond to JS features that the transpiler does not support.
+/// Zig's lazy analysis may never trigger the generated `@compileError`,
+/// so we surface them at transpile time as non-blocking warnings.
+fn collect_compile_errors(module: &crate::zigir::types::IrModule) -> Vec<String> {
+    use crate::zigir::passes::walk;
+    use std::cell::RefCell;
+
+    let results = RefCell::new(Vec::new());
+
+    fn push_msg(msg: &str, results: &RefCell<Vec<String>>) {
+        // Split merged messages (joined with "\n\nAlso: ") into individual entries
+        for part in msg.split("\n\nAlso: ") {
+            results.borrow_mut().push(part.to_string());
+        }
+    }
+
+    fn collect_from_block(block: &crate::zigir::types::IrBlock, results: &RefCell<Vec<String>>) {
+        for stmt in &block.stmts {
+            collect_from_stmt(stmt, results);
+        }
+    }
+
+    fn collect_from_stmt(stmt: &IrStmt, results: &RefCell<Vec<String>>) {
+        match stmt {
+            IrStmt::CompileError { msg, .. } => push_msg(msg, results),
+            _ => walk::for_each_stmt_child(
+                stmt,
+                &mut |block| collect_from_block(block, results),
+                &mut |s| collect_from_stmt(s, results),
+                &mut |expr| collect_from_expr(expr, results),
+                &mut |_| {},
+            ),
+        }
+    }
+
+    fn collect_from_expr(expr: &IrExpr, results: &RefCell<Vec<String>>) {
+        match expr {
+            IrExpr::CompileError { msg, .. } => push_msg(msg, results),
+            _ => walk::for_each_expr_child(
+                expr,
+                &mut |block| collect_from_block(block, results),
+                &mut |s| collect_from_stmt(s, results),
+                &mut |expr| collect_from_expr(expr, results),
+                &mut |_| {},
+            ),
+        }
+    }
+
+    // Top-level declarations
+    for decl in &module.declarations {
+        match decl {
+            IrDecl::CompileError { msg, .. } => push_msg(msg, &results),
+            _ => walk::for_each_decl_child(
+                decl,
+                &mut |block| collect_from_block(block, &results),
+                &mut |expr| collect_from_expr(expr, &results),
+            ),
+        }
+    }
+
+    // Closure structs (their body may contain CompileError)
+    for cs in &module.closure_structs {
+        collect_from_block(&cs.body, &results);
+    }
+
+    results.into_inner()
 }
 
 /// Internal helper: transpile JS AST to Zig, returning TranspileResult.
@@ -100,6 +174,11 @@ fn transpile_js_inner(
     // ── Step 3: Optimization passes ──
     let mut pipeline = crate::zigir::passes::PassPipeline::default_pipeline();
     let _pipeline_result = pipeline.run(&mut ir_module);
+
+    // ── Step 3.5: Collect @compileError messages from IR ──
+    // Zig's lazy analysis may never trigger these at compile time,
+    // so we surface them as transpile-time diagnostics instead.
+    let compile_errors = collect_compile_errors(&ir_module);
 
     // ── Step 4: Emit Zig source ──
     use crate::zigir::emit::Emitter;
@@ -165,8 +244,87 @@ fn transpile_js_inner(
         zig_code,
         errors,
         warnings,
+        compile_errors,
         exports,
         var_types,
         cabi_exports,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collect_compile_errors_from_ir() {
+        use crate::types::ZigType;
+        use crate::zigir::ident::IrIdent;
+        use crate::zigir::source_span::SourceSpan;
+        use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrModule, IrStmt};
+
+        let mut module = IrModule::new("test".to_string());
+
+        // Add a CompileError declaration
+        module.declarations.push(IrDecl::CompileError {
+            span: SourceSpan::new(1, 1),
+            msg: "unsupported import".to_string(),
+        });
+
+        // Add a function with a CompileError statement
+        module.declarations.push(IrDecl::Fn(IrFnDecl {
+            name: IrIdent::new("testFn"),
+            params: vec![],
+            return_type: ZigType::Void,
+            body: IrBlock::new(vec![IrStmt::CompileError {
+                span: SourceSpan::new(5, 10),
+                msg: "nested class not supported".to_string(),
+            }]),
+            is_export: false,
+            is_async: false,
+            can_throw: false,
+            is_cabi: false,
+            typeof_return_body: None,
+        }));
+
+        let results = collect_compile_errors(&module);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().any(|m| m.contains("unsupported import")));
+        assert!(
+            results
+                .iter()
+                .any(|m| m.contains("nested class not supported"))
+        );
+    }
+
+    #[test]
+    fn test_collect_compile_errors_splits_merged() {
+        use crate::types::ZigType;
+        use crate::zigir::ident::IrIdent;
+        use crate::zigir::source_span::SourceSpan;
+        use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrModule, IrStmt};
+
+        let mut module = IrModule::new("test".to_string());
+
+        // Simulate a merged CompileError (from Scheme B)
+        module.declarations.push(IrDecl::Fn(IrFnDecl {
+            name: IrIdent::new("testFn"),
+            params: vec![],
+            return_type: ZigType::Void,
+            body: IrBlock::new(vec![IrStmt::CompileError {
+                span: SourceSpan::new(1, 1),
+                msg: "error 1\n\nAlso: error 2\n\nAlso: error 3".to_string(),
+            }]),
+            is_export: false,
+            is_async: false,
+            can_throw: false,
+            is_cabi: false,
+            typeof_return_body: None,
+        }));
+
+        let results = collect_compile_errors(&module);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], "error 1");
+        assert_eq!(results[1], "error 2");
+        assert_eq!(results[2], "error 3");
+    }
 }
