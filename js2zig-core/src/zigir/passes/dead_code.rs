@@ -6,9 +6,11 @@
 //   2. Unused top-level variable declarations (const with no references)
 
 use crate::zigir::passes::{IrPass, PassResult};
-use crate::zigir::types::{IrBlock, IrDecl, IrExpr, IrModule, IrStmt};
+use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrModule, IrStmt};
 
-use super::collect_idents;
+use std::cell::RefCell;
+
+use super::{collect_idents, walk};
 
 /// Dead code elimination pass.
 ///
@@ -291,41 +293,25 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
 }
 
 fn eliminate_unreachable_in_decl(decl: &mut IrDecl) -> bool {
-    match decl {
-        IrDecl::Fn(f) => DeadCodeElimPass::eliminate_unreachable_in_block(&mut f.body),
-        IrDecl::Var(v) => {
-            if let Some(e) = &mut v.init {
-                eliminate_unreachable_in_expr(e)
-            } else {
-                false
-            }
-        }
-        IrDecl::Class(c) => {
-            let mut changed = false;
-            if let Some(ctor) = &mut c.constructor
-                && DeadCodeElimPass::eliminate_unreachable_in_block(&mut ctor.body)
-            {
-                changed = true;
-            }
-            for m in &mut c.methods {
-                if DeadCodeElimPass::eliminate_unreachable_in_block(&mut m.body) {
-                    changed = true;
-                }
-            }
-            for (_name, init, _ty) in &mut c.static_inits {
-                if eliminate_unreachable_in_expr(init) {
-                    changed = true;
-                }
-            }
-            for block in &mut c.static_blocks {
-                if DeadCodeElimPass::eliminate_unreachable_in_block(block) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrDecl::CompileError { .. } => false,
-    }
+    let changed = RefCell::new(false);
+    walk::for_each_decl_child_mut(
+        decl,
+        &mut |block| {
+            *changed.borrow_mut() |= DeadCodeElimPass::eliminate_unreachable_in_block(block);
+        },
+        &mut |expr| {
+            *changed.borrow_mut() |= eliminate_unreachable_in_expr(expr);
+        },
+    );
+    changed.into_inner()
+}
+
+fn eliminate_unreachable_in_target(target: &mut IrAssignTarget) -> bool {
+    let mut changed = false;
+    walk::for_each_target_child_mut(target, &mut |expr| {
+        changed |= eliminate_unreachable_in_expr(expr);
+    });
+    changed
 }
 
 fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
@@ -428,186 +414,44 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
 }
 
 fn eliminate_unreachable_in_expr(expr: &mut IrExpr) -> bool {
-    match expr {
-        IrExpr::Closure(c) => DeadCodeElimPass::eliminate_unreachable_in_block(&mut c.body),
-        IrExpr::ArrowFn(af) => DeadCodeElimPass::eliminate_unreachable_in_block(&mut af.body),
-        IrExpr::FnExpr(fe) => DeadCodeElimPass::eliminate_unreachable_in_block(&mut fe.body),
-        IrExpr::BlockExpr { body, .. } => {
-            let mut changed = false;
-            // Find terminator in block body
-            if truncate_after_terminator(body) {
+    // Special case: BlockExpr needs truncate_before recursion + result visit
+    if let IrExpr::BlockExpr { body, result, .. } = expr {
+        let mut changed = false;
+        if truncate_after_terminator(body) {
+            changed = true;
+        }
+        for s in &mut *body {
+            if eliminate_unreachable_in_stmt(s) {
                 changed = true;
             }
-            for s in body {
-                if eliminate_unreachable_in_stmt(s) {
-                    changed = true;
-                }
-            }
-            changed
         }
-        // For other expression types, recurse into sub-expressions
-        IrExpr::Binary { left, right, .. } => {
-            eliminate_unreachable_in_expr(left) || eliminate_unreachable_in_expr(right)
+        if eliminate_unreachable_in_expr(result) {
+            changed = true;
         }
-        IrExpr::Unary { operand, .. } => eliminate_unreachable_in_expr(operand),
-        IrExpr::Logical { left, right, .. } => {
-            eliminate_unreachable_in_expr(left) || eliminate_unreachable_in_expr(right)
-        }
-        IrExpr::Conditional { cond, then, else_ } => {
-            eliminate_unreachable_in_expr(cond)
-                || eliminate_unreachable_in_expr(then)
-                || eliminate_unreachable_in_expr(else_)
-        }
-        IrExpr::Call(call) => {
-            let mut changed = eliminate_unreachable_in_expr(&mut call.callee);
-            for arg in &mut call.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::BuiltinCall(bc) => {
-            let mut changed = false;
-            for arg in &mut bc.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::HostCall(hc) => {
-            let mut changed = false;
-            for arg in &mut hc.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::ArrayLiteral(arr) => {
-            let mut changed = false;
-            for e in &mut arr.elements {
-                if eliminate_unreachable_in_expr(e) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::ObjectLiteral(obj) => {
-            use crate::zigir::types::IrObjectItem;
-            let mut changed = false;
-            for item in &mut obj.items {
-                match item {
-                    IrObjectItem::Field(f) => {
-                        if eliminate_unreachable_in_expr(&mut f.value) {
-                            changed = true;
-                        }
-                    }
-                    IrObjectItem::Spread(e) => {
-                        if eliminate_unreachable_in_expr(e) {
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            changed
-        }
-        IrExpr::TemplateLiteral { exprs, .. } => {
-            let mut changed = false;
-            for e in exprs {
-                if eliminate_unreachable_in_expr(e) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::AllocPrint { args, .. } => {
-            let mut changed = false;
-            for a in args {
-                if eliminate_unreachable_in_expr(a) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::FieldAccess { object, .. } => eliminate_unreachable_in_expr(object),
-        IrExpr::IndexAccess { object, index, .. } => {
-            eliminate_unreachable_in_expr(object) || eliminate_unreachable_in_expr(index)
-        }
-        IrExpr::ComputedField { object, key, .. } => {
-            eliminate_unreachable_in_expr(object) || eliminate_unreachable_in_expr(key)
-        }
-        IrExpr::Assign { value, .. } => eliminate_unreachable_in_expr(value),
-        IrExpr::Spread(e) | IrExpr::Typeof(e) | IrExpr::Void(e) | IrExpr::Paren(e) => {
-            eliminate_unreachable_in_expr(e)
-        }
-        IrExpr::Sequence(exprs) => {
-            let mut changed = false;
-            for e in exprs {
-                if eliminate_unreachable_in_expr(e) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::Await(a) => {
-            let mut changed = eliminate_unreachable_in_expr(&mut a.callee);
-            for arg in &mut a.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::New(n) => {
-            let mut changed = false;
-            for arg in &mut n.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::Update { .. } => false,
-        IrExpr::ArrayCallbackInline(inline_data) => {
-            let mut changed = false;
-            for stmt in &mut inline_data.body {
-                if eliminate_unreachable_in_stmt(stmt) {
-                    changed = true;
-                }
-            }
-            if let Some(obj_expr) = &mut inline_data.obj_expr
-                && eliminate_unreachable_in_expr(obj_expr)
-            {
-                changed = true;
-            }
-            changed
-        }
-        IrExpr::ArrayMethodInline(inline_data) => {
-            let mut changed = false;
-            if let Some(obj_expr) = &mut inline_data.obj_expr
-                && eliminate_unreachable_in_expr(obj_expr)
-            {
-                changed = true;
-            }
-            for arg in &mut inline_data.args {
-                if eliminate_unreachable_in_expr(arg) {
-                    changed = true;
-                }
-            }
-            changed
-        }
-        IrExpr::OptionalChain { object, body, .. } => {
-            eliminate_unreachable_in_expr(object) | eliminate_unreachable_in_expr(body)
-        }
-        IrExpr::PowExpr { base, exp, .. } => {
-            eliminate_unreachable_in_expr(base) | eliminate_unreachable_in_expr(exp)
-        }
-        IrExpr::CompileError { .. } => false,
-        // All remaining variants are leaf expressions (IntLiteral, FloatLiteral, etc.)
-        _ => false,
+        return changed;
     }
+
+    // Standard walk for all other variants.
+    // Note: walk.rs visits BuiltinCall.obj_expr, ArrayCallbackInline.reduce_init,
+    // and Assign/Update targets — these were previously missed; visiting them
+    // is a correctness improvement (eliminates unreachable code in those sub-trees).
+    let changed = RefCell::new(false);
+    walk::for_each_expr_child_mut(
+        expr,
+        &mut |block| {
+            *changed.borrow_mut() |= DeadCodeElimPass::eliminate_unreachable_in_block(block);
+        },
+        &mut |stmt| {
+            *changed.borrow_mut() |= eliminate_unreachable_in_stmt(stmt);
+        },
+        &mut |expr| {
+            *changed.borrow_mut() |= eliminate_unreachable_in_expr(expr);
+        },
+        &mut |target| {
+            *changed.borrow_mut() |= eliminate_unreachable_in_target(target);
+        },
+    );
+    changed.into_inner()
 }
 
 // ═══════════════════════════════════════════════════════
