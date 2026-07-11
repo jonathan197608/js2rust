@@ -69,25 +69,16 @@ pub fn build() {
         panic!("js2rust_bridge::build: project.js_files is empty in js2rust.toml");
     }
 
-    // Emit cargo:rerun-if-changed so Cargo re-runs the build script when
-    // any JS source file or the config file changes.
-    //
-    // We watch the entire JS source directory rather than individual files
-    // because transitive dependencies (e.g. helpers.js imported by app.js)
-    // may not be listed in project.js_files but still affect output.
-    if let Some(js_dir) = js_file_paths.first().and_then(|p| p.parent()) {
-        println!("cargo:rerun-if-changed={}", js_dir.display());
-    }
-    // Also watch explicitly listed files in case they reside in different directories.
+    // Emit cargo:rerun-if-changed for explicitly listed JS files and config.
+    // Note: js2zig-core::transpile_project() additionally emits rerun-if-changed
+    // for every JS file it discovers via import analysis (including transitive
+    // dependencies like helpers.js).  Those directives take effect in subsequent
+    // builds because Cargo stores all rerun-if-changed paths from the previous
+    // build script run.
     for p in &js_file_paths {
         println!("cargo:rerun-if-changed={}", p.display());
     }
     println!("cargo:rerun-if-changed={}/js2rust.toml", manifest_dir);
-    // Also watch the build cache so cache invalidation triggers a rebuild.
-    let build_cache = cache_dir.join(".build_cache.json");
-    if build_cache.exists() {
-        println!("cargo:rerun-if-changed={}", build_cache.display());
-    }
 
     let js_file_path = js_file_paths.remove(0);
     let additional_js_paths = js_file_paths;

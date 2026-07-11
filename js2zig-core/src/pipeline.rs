@@ -142,10 +142,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let in_dir = in_path.to_string_lossy().to_string();
     let out_dir: String = config.out_dir.to_string_lossy().to_string();
     let force_rebuild = config.force_rebuild;
-    eprintln!(
-        "DEBUG transpile_project: name='{}', force_rebuild={}, run_zig_build={}, zig_optimize={:?}",
-        config.name, force_rebuild, config.run_zig_build, config.zig_optimize
-    );
 
     // Ensure output directory exists.
     fs::create_dir_all(&out_dir)
@@ -164,6 +160,17 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         })
         .collect();
     let (groups, groups_json) = analyze_single_group(&in_dir, &core_file, &additional_js_files);
+
+    // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
+    // (including transitive dependencies not listed in js2rust.toml).
+    // These directives take effect in subsequent builds — Cargo stores them
+    // and uses them to decide whether to re-run the build script.
+    for group in &groups {
+        for member in &group.members {
+            let member_path = Path::new(&in_dir).join(member);
+            println!("cargo:rerun-if-changed={}", member_path.display());
+        }
+    }
 
     let groups_json_path = Path::new(&out_dir).join("groups.json");
     if let Err(e) = fs::write(&groups_json_path, &groups_json) {
@@ -271,19 +278,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
         // --- Incremental check ---
         let current_hash = compute_group_hash(&in_path, group, &runtime_path);
-        eprintln!(
-            "DEBUG: group={}, force_rebuild={}, has_cache={}, hash_len={}",
-            group.core_name,
-            force_rebuild,
-            build_cache.contains_key(&group.core_name),
-            current_hash.len()
-        );
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&group.core_name)
             && *cached_hash == current_hash
         {
-            eprintln!("DEBUG: SKIPPING (cache HIT)");
-            println!("  unchanged, skipping (use --force to rebuild)");
+            println!("  unchanged (cache hit)");
             // Still collect the cabi_exports_json for the result
             let cabi_path = Path::new(&out_dir)
                 .join(&group.core_name)
@@ -297,6 +296,13 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 output_files: Vec::new(),
             });
             continue;
+        }
+
+        // Hash mismatch (or force_rebuild) — re-transpile this group.
+        if force_rebuild {
+            println!("  force rebuild");
+        } else {
+            println!("  source changed, re-transpiling");
         }
 
         {
