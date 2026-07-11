@@ -16,6 +16,10 @@
 //
 // Both `js2rust_bridge!()` and `build()` read from a single `js2rust.toml`
 // in the crate root — no duplicated configuration.
+//
+// `build()` emits `cargo:rerun-if-changed` directives for every JS source
+// file, the `js2rust.toml` config, and the build cache, so Cargo automatically
+// re-runs the build script when any input changes.
 
 mod config;
 pub mod native_regex;
@@ -65,6 +69,18 @@ pub fn build() {
         panic!("js2rust_bridge::build: project.js_files is empty in js2rust.toml");
     }
 
+    // Emit cargo:rerun-if-changed so Cargo re-runs the build script when
+    // any JS source file or the config file changes.
+    for p in &js_file_paths {
+        println!("cargo:rerun-if-changed={}", p.display());
+    }
+    println!("cargo:rerun-if-changed={}/js2rust.toml", manifest_dir);
+    // Also watch the build cache so cache invalidation triggers a rebuild.
+    let build_cache = cache_dir.join(".build_cache.json");
+    if build_cache.exists() {
+        println!("cargo:rerun-if-changed={}", build_cache.display());
+    }
+
     let js_file_path = js_file_paths.remove(0);
     let additional_js_paths = js_file_paths;
 
@@ -106,10 +122,19 @@ pub fn build() {
 
 /// Fallback: scan `.js2zig-cache/` and emit link directives without running
 /// transpilation or zig build.  Used when the proc-macro already did the work.
+///
+/// Emits `cargo:rerun-if-changed` for the cache directory so Cargo re-runs
+/// the build script when the compiled libraries change.
 pub fn link() {
     let manifest_dir =
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
+
+    // Re-run when compiled libraries appear or change.
+    if cache_dir.exists() {
+        println!("cargo:rerun-if-changed={}", cache_dir.display());
+    }
+
     link_from_cache(&cache_dir);
 }
 
