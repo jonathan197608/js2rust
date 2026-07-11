@@ -38,12 +38,12 @@ impl Lowerer {
         format!("{}::{}", self.fn_prefix(), var_name)
     }
 
-    fn lookup_fn_return_type(&self, name: &str) -> crate::types::ZigType {
+    fn lookup_fn_return_type(&self, name: &str) -> ZigType {
         self.type_info
             .fn_return_types
             .get(name)
             .cloned()
-            .unwrap_or(crate::types::ZigType::Void)
+            .unwrap_or(ZigType::Void)
     }
 
     fn is_var_mutated(&self, var_name: &str) -> bool {

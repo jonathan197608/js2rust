@@ -262,40 +262,7 @@ mod tests {
 
     #[test]
     fn test_emit_fn_decl() {
-        let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Fn(IrFnDecl {
-            name: IrIdent::new("add"),
-            params: vec![
-                IrParam {
-                    name: IrIdent::new("a"),
-                    zig_type: ZigType::I64,
-                    is_unused: false,
-                    is_rest: false,
-                },
-                IrParam {
-                    name: IrIdent::new("b"),
-                    zig_type: ZigType::I64,
-                    is_unused: false,
-                    is_rest: false,
-                },
-            ],
-            return_type: ZigType::I64,
-            body: IrBlock::new(vec![IrStmt::Return {
-                value: Some(crate::zigir::types::IrExpr::Binary {
-                    op: crate::zigir::ops::BinOp::Add,
-                    left: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("a"))),
-                    right: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new("b"))),
-                    left_type: None,
-                    right_type: None,
-                }),
-            }]),
-            is_export: true,
-            is_async: false,
-            can_throw: false,
-            is_cabi: false,
-            typeof_return_body: None,
-        }));
-
+        let module = crate::zigir::passes::make_clean_add_module();
         let output = Emitter::emit_module(&module);
         assert!(output.contains("pub fn add(a: i64, b: i64) i64"));
     }

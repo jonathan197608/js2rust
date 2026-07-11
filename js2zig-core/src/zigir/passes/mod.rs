@@ -235,7 +235,6 @@ pub(crate) fn make_clean_add_module() -> IrModule {
 mod tests {
     use super::*;
     use crate::types::ZigType;
-    use crate::zigir::ident::IrIdent;
     use crate::zigir::types::{IrDecl, IrVarDecl};
 
     /// A no-op pass for testing the pipeline infrastructure.

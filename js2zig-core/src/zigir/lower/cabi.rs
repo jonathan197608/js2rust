@@ -67,7 +67,7 @@ type CallbackInlineParts = (
     bool,
     String,
     Vec<crate::zigir::types::IrStmt>,
-    Option<crate::zigir::types::IrExpr>,
+    Option<IrExpr>,
 );
 
 impl Lowerer {
@@ -182,8 +182,8 @@ impl Lowerer {
         &self,
         ce: &CallExpression,
         builtin: &crate::native_builtins::BuiltinCall,
-        args: &[crate::zigir::types::IrExpr],
-    ) -> Option<crate::zigir::types::IrExpr> {
+        args: &[IrExpr],
+    ) -> Option<IrExpr> {
         use crate::zigir::types::{IrArrayMethodInline, IrExpr};
 
         // Never inline array methods for string variables — these should go through
@@ -361,7 +361,7 @@ impl Lowerer {
         &mut self,
         ce: &CallExpression,
         builtin: &crate::native_builtins::BuiltinCall,
-    ) -> Option<crate::zigir::types::IrExpr> {
+    ) -> Option<IrExpr> {
         use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
         let kind = Self::resolve_callback_kind(builtin)?;
@@ -419,8 +419,8 @@ impl Lowerer {
         ce: &CallExpression,
         builtin: &crate::native_builtins::BuiltinCall,
         elem_type: &ZigType,
-        inner_expr: &crate::zigir::types::IrExpr,
-    ) -> Option<crate::zigir::types::IrExpr> {
+        inner_expr: &IrExpr,
+    ) -> Option<IrExpr> {
         use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
         let kind = Self::resolve_callback_kind(builtin)?;
@@ -451,10 +451,10 @@ impl Lowerer {
         &mut self,
         _ce: &CallExpression,
         builtin: &crate::native_builtins::BuiltinCall,
-        args: &[crate::zigir::types::IrExpr],
+        args: &[IrExpr],
         elem_type: &ZigType,
-        inner_expr: &crate::zigir::types::IrExpr,
-    ) -> Option<crate::zigir::types::IrExpr> {
+        inner_expr: &IrExpr,
+    ) -> Option<IrExpr> {
         use crate::zigir::types::{IrArrayMethodInline, IrExpr};
 
         let kind = Self::resolve_method_kind(builtin)?;

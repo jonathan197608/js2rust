@@ -406,12 +406,12 @@ impl Lowerer {
     /// Scan statements for the first ReturnStatement and infer its type.
     fn scan_return_type_from_stmts(
         &self,
-        stmts: &[oxc_ast::ast::Statement],
+        stmts: &[Statement],
         captured: &[(String, ZigType, bool)],
         default_type: ZigType,
     ) -> ZigType {
         for stmt in stmts {
-            if let oxc_ast::ast::Statement::ReturnStatement(rs) = stmt {
+            if let Statement::ReturnStatement(rs) = stmt {
                 if let Some(ref arg) = rs.argument {
                     return self
                         .infer_arrow_expr_type_with_captures(arg, captured)
