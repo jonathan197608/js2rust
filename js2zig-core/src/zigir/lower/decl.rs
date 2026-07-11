@@ -12,6 +12,20 @@ use super::Lowerer;
 use super::cabi::{init_may_have_side_effects, property_key_name};
 use super::helpers::FnContext;
 
+/// Extract the binding name and whether it has a default value from a
+/// `BindingPattern`. Returns `None` for patterns we don't handle
+/// (e.g. nested destructuring).
+fn binding_name_and_default<'a>(pattern: &'a BindingPattern<'a>) -> Option<(&'a str, bool)> {
+    match pattern {
+        BindingPattern::BindingIdentifier(id) => Some((id.name.as_str(), false)),
+        BindingPattern::AssignmentPattern(ap) => {
+            let name = crate::infer::binding_name(&ap.left)?;
+            Some((name, true))
+        }
+        _ => None,
+    }
+}
+
 /// Intermediate result of entering a function context and lowering
 /// its parameters and body. Callers can inspect/modify the params
 /// and body while still inside the fn context, then call
@@ -445,15 +459,9 @@ impl Lowerer {
                         None => continue,
                     };
 
-                    let (bind_name, has_default) = match &prop.value {
-                        BindingPattern::BindingIdentifier(id) => (id.name.as_str(), false),
-                        BindingPattern::AssignmentPattern(ap) => {
-                            let Some(name) = crate::infer::binding_name(&ap.left) else {
-                                continue;
-                            };
-                            (name, true)
-                        }
-                        _ => continue,
+                    let (bind_name, has_default) = match binding_name_and_default(&prop.value) {
+                        Some(pair) => pair,
+                        None => continue,
                     };
 
                     let is_const = !self.is_var_mutated(bind_name);
@@ -558,15 +566,9 @@ impl Lowerer {
                         continue; // skip holes
                     };
 
-                    let (bind_name, has_default) = match pattern {
-                        BindingPattern::BindingIdentifier(id) => (id.name.as_str(), false),
-                        BindingPattern::AssignmentPattern(ap_inner) => {
-                            let Some(name) = crate::infer::binding_name(&ap_inner.left) else {
-                                continue;
-                            };
-                            (name, true)
-                        }
-                        _ => continue,
+                    let (bind_name, has_default) = match binding_name_and_default(pattern) {
+                        Some(pair) => pair,
+                        None => continue,
                     };
 
                     let is_const = !self.is_var_mutated(bind_name);

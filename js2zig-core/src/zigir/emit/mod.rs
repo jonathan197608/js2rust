@@ -210,9 +210,7 @@ mod tests {
     use super::*;
     use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
-    use crate::zigir::types::{
-        IrBlock, IrDecl, IrFnDecl, IrParam, IrStmt, IrTypedef, IrTypedefField, IrVarDecl,
-    };
+    use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrTypedef, IrTypedefField, IrVarDecl};
 
     #[test]
     fn test_emit_empty_module() {

@@ -261,11 +261,10 @@ try {
     println!("=== Nested try-catch (inner catch) ===\n{}", zig);
     // Each try-catch generates `= _js_try_N:` and `= _js_try_body_N:`
     let result_count = zig.matches("= _js_try_").count(); // = _js_try_0, =_js_try_body_0
-    assert!(
-        result_count == 4,
+    assert_eq!(
+        result_count, 4,
         "Expected 4 '= _js_try_' assignments for 2 nested try-catch, got {}:\n{}",
-        result_count,
-        zig
+        result_count, zig
     );
     // Inner catch handler: e unused in body, so |_| not |__catch_err|
     assert!(
@@ -304,11 +303,10 @@ try {
     // Each try-catch generates `= _js_try_N:` (result) + `= _js_try_body_N:` (body)
     // 2 nested = 4 total.
     let result_count = zig.matches("= _js_try_").count();
-    assert!(
-        result_count == 4,
+    assert_eq!(
+        result_count, 4,
         "Expected 4 '= _js_try_' assignments for nested try-catch rethrow, got {}:\n{}",
-        result_count,
-        zig
+        result_count, zig
     );
     // Should have rethrow pattern: inner catch throws, break inner body block with error
     assert!(
