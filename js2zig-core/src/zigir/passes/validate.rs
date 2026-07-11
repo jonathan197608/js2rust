@@ -548,26 +548,16 @@ mod tests {
     fn test_validate_duplicate_names() {
         let mut module = IrModule::new("test".to_string());
         // Add two variables with the same name
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("x"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::IntLiteral(1)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("x"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::IntLiteral(2)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "x",
+            Some(ZigType::I64),
+            Some(IrExpr::IntLiteral(1)),
+        )));
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "x",
+            Some(ZigType::I64),
+            Some(IrExpr::IntLiteral(2)),
+        )));
 
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);

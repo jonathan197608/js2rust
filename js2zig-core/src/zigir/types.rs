@@ -136,6 +136,23 @@ pub struct IrVarDecl {
     pub needs_deinit: bool,
 }
 
+impl IrVarDecl {
+    /// Create a const variable declaration with all flag fields defaulted to false.
+    /// Covers the most common pattern in tests and simple variable declarations.
+    pub fn new_const(name: &str, zig_type: Option<ZigType>, init: Option<IrExpr>) -> Self {
+        Self {
+            name: IrIdent::new(name),
+            is_const: true,
+            zig_type,
+            init,
+            is_json_parse: false,
+            needs_var_suppression: false,
+            needs_const_suppression: false,
+            needs_deinit: false,
+        }
+    }
+}
+
 // ── Function declaration ──────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -1028,16 +1045,7 @@ mod tests {
 
     #[test]
     fn test_ir_var_decl() {
-        let v = IrVarDecl {
-            name: IrIdent::new("x"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::IntLiteral(42)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        };
+        let v = IrVarDecl::new_const("x", Some(ZigType::I64), Some(IrExpr::IntLiteral(42)));
         assert_eq!(v.name.zig_name, "x");
         assert!(v.is_const);
         assert!(!v.needs_deinit);
@@ -1250,16 +1258,11 @@ mod tests {
     fn test_ir_for_loop() {
         let for_stmt = IrStmt::For {
             label: None,
-            init: Some(Box::new(IrStmt::VarDecl(IrVarDecl {
-                name: IrIdent::new("i"),
-                is_const: true,
-                zig_type: Some(ZigType::I64),
-                init: Some(IrExpr::IntLiteral(0)),
-                is_json_parse: false,
-                needs_var_suppression: false,
-                needs_const_suppression: false,
-                needs_deinit: false,
-            }))),
+            init: Some(Box::new(IrStmt::VarDecl(IrVarDecl::new_const(
+                "i",
+                Some(ZigType::I64),
+                Some(IrExpr::IntLiteral(0)),
+            )))),
             cond: Some(IrExpr::Binary {
                 op: BinOp::Lt,
                 left: Box::new(IrExpr::Ident(IrIdent::new("i"))),

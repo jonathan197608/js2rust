@@ -654,16 +654,11 @@ mod tests {
     #[test]
     fn test_remove_unused_const() {
         let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("unused"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::IntLiteral(42)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "unused",
+            Some(ZigType::I64),
+            Some(IrExpr::IntLiteral(42)),
+        )));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
             params: vec![],
@@ -686,16 +681,11 @@ mod tests {
     #[test]
     fn test_keep_used_const() {
         let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("x"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::IntLiteral(42)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "x",
+            Some(ZigType::I64),
+            Some(IrExpr::IntLiteral(42)),
+        )));
         module.declarations.push(IrDecl::Fn(IrFnDecl {
             name: IrIdent::new("main"),
             params: vec![],
@@ -719,20 +709,15 @@ mod tests {
     #[test]
     fn test_keep_const_with_side_effects() {
         let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("result"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(IrExpr::Call(crate::zigir::types::IrCallExpr {
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "result",
+            Some(ZigType::I64),
+            Some(IrExpr::Call(crate::zigir::types::IrCallExpr {
                 callee: Box::new(IrExpr::Ident(IrIdent::new("compute"))),
                 args: vec![],
                 call_kind: crate::zigir::kinds::CallKind::Direct,
             })),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
+        )));
 
         let mut pass = DeadCodeElimPass::new();
         let result = pass.run(&mut module);

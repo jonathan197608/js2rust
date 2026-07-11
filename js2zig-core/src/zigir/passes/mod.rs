@@ -185,7 +185,7 @@ impl Default for PassPipeline {
 // ═══════════════════════════════════════════════════════
 
 #[cfg(test)]
-pub(crate) fn make_clean_add_module() -> crate::zigir::types::IrModule {
+pub(crate) fn make_clean_add_module() -> IrModule {
     use crate::types::ZigType;
     use crate::zigir::ident::IrIdent;
     use crate::zigir::ops::BinOp;
@@ -279,16 +279,11 @@ mod tests {
             "adds a variable"
         }
         fn run(&mut self, module: &mut IrModule) -> PassResult {
-            module.declarations.push(IrDecl::Var(IrVarDecl {
-                name: IrIdent::new("__test_added"),
-                is_const: true,
-                zig_type: Some(ZigType::I64),
-                init: Some(crate::zigir::types::IrExpr::IntLiteral(0)),
-                is_json_parse: false,
-                needs_var_suppression: false,
-                needs_const_suppression: false,
-                needs_deinit: false,
-            }));
+            module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+                "__test_added",
+                Some(ZigType::I64),
+                Some(crate::zigir::types::IrExpr::IntLiteral(0)),
+            )));
             PassResult::changed()
         }
     }

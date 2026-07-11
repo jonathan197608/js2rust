@@ -251,16 +251,11 @@ mod tests {
     #[test]
     fn test_emit_var_decl() {
         let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Var(IrVarDecl {
-            name: IrIdent::new("x"),
-            is_const: true,
-            zig_type: Some(ZigType::I64),
-            init: Some(crate::zigir::types::IrExpr::IntLiteral(42)),
-            is_json_parse: false,
-            needs_var_suppression: false,
-            needs_const_suppression: false,
-            needs_deinit: false,
-        }));
+        module.declarations.push(IrDecl::Var(IrVarDecl::new_const(
+            "x",
+            Some(ZigType::I64),
+            Some(crate::zigir::types::IrExpr::IntLiteral(42)),
+        )));
         let output = Emitter::emit_module(&module);
         assert!(output.contains("const x = 42"));
     }
