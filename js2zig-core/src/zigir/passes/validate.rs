@@ -534,39 +534,7 @@ mod tests {
 
     #[test]
     fn test_validate_clean_module() {
-        let mut module = IrModule::new("test".to_string());
-        module.declarations.push(IrDecl::Fn(IrFnDecl {
-            name: IrIdent::new("add"),
-            params: vec![
-                IrParam {
-                    name: IrIdent::new("a"),
-                    zig_type: ZigType::I64,
-                    is_unused: false,
-                    is_rest: false,
-                },
-                IrParam {
-                    name: IrIdent::new("b"),
-                    zig_type: ZigType::I64,
-                    is_unused: false,
-                    is_rest: false,
-                },
-            ],
-            return_type: ZigType::I64,
-            body: IrBlock::new(vec![IrStmt::Return {
-                value: Some(IrExpr::Binary {
-                    op: BinOp::Add,
-                    left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
-                    right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
-                    left_type: None,
-                    right_type: None,
-                }),
-            }]),
-            is_export: true,
-            is_async: false,
-            can_throw: false,
-            is_cabi: false,
-            typeof_return_body: None,
-        }));
+        let mut module = super::super::make_clean_add_module();
 
         let mut pass = ValidatePass::new();
         let result = pass.run(&mut module);
