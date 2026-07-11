@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '40f94572-d6f4-4945-8ba3-4c6740e9099d'
-  PropagateID: '40f94572-d6f4-4945-8ba3-4c6740e9099d'
-  ReservedCode1: 'dc4445ca-feba-46b4-a7f0-c2af165f6231'
-  ReservedCode2: 'dc4445ca-feba-46b4-a7f0-c2af165f6231'
+  ProduceID: '15e5336a-246b-4ca7-8e97-0c93c52d25e5'
+  PropagateID: '15e5336a-246b-4ca7-8e97-0c93c52d25e5'
+  ReservedCode1: 'd3898b12-955c-49bc-b962-8248ad9e0c1a'
+  ReservedCode2: 'd3898b12-955c-49bc-b962-8248ad9e0c1a'
 ---
 
 # js2rust 测试说明文档
@@ -19,19 +19,28 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 368 + 130 = 498 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 370 + 130 = 500 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
 | **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~202 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
-### 基线指标（2026-07-10）
+### 基线指标（2026-07-12）
 
-- Rust 单元测试：**498 passed, 0 failed**（368 在 `tests/` 子模块 + 130 内联在源文件中）
+- Rust 单元测试：**500 passed, 0 failed**（370 在 `tests/` 子模块 + 130 内联在源文件中）
 - Zig runtime 测试：**~202 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 35、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
-- Clippy：**0 warnings**
+- Clippy：**0 warnings**（全 workspace）
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
 - 1 个 mismatch 为已知限制，详见下方表格
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
+- 编译诊断：`cargo build` 可见 `@compileError` 信息（通过 `cargo:warning` 输出）
 - UTF-16/UTF-8 差异处理：String `.length`/`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 已正确实现 UTF-16 索引语义（`.length` → `utf16Len()`，切片 → `utf16IndexToByteOffset()`，查找 → `byteOffsetToUtf16Index()`）
+
+### 版本（2026-07-12）
+
+| Crate | 版本 | 说明 |
+|-------|------|------|
+| js2zig-core | 0.11.0 | 核心转译库 |
+| js2rust-bridge | 0.12.0 | Bridge facade（build.rs + proc-macro） |
+| js2rust-bridge-macro | 0.12.0 | Proc-macro 实现 |
 
 ---
 
@@ -75,7 +84,7 @@ js2zig-core/src/tests/
 | `sourcemap.rs` | 4 | Source map 测试 |
 | 其他 | 13 | lower/idents、lower/helpers、builtins、ops、testgen |
 
-**总计：498 个测试**（368 + 130）
+**总计：500 个测试**（370 + 130）
 
 ### 2.2 测试分类
 
@@ -372,8 +381,8 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（498 passed）
-cargo clippy -p js2zig-core -- -D warnings                           # 零警告
+cargo test -p js2zig-core --lib                                      # 应全绿（500 passed）
+cargo clippy -p js2zig-core -p js2rust-bridge -p js2rust-bridge-macro -- -D warnings  # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
 ```
@@ -384,8 +393,8 @@ cargo run -p mdn-test-project -- --all                                # 记录 m
 # 1. Rust 单元测试 — 必须全绿
 cargo test -p js2zig-core --lib
 
-# 2. Clippy — 必须零警告
-cargo clippy -p js2zig-core -- -D warnings
+# 2. Clippy — 必须零警告（检查所有 crate）
+cargo clippy -p js2zig-core -p js2rust-bridge -p js2rust-bridge-macro -- -D warnings
 
 # 3. 代码格式化
 cargo fmt -p js2zig-core -- --check
@@ -398,14 +407,18 @@ cargo run -- --all                  # 运行对比（exit code 恒为 0，需检
 cd examples/test-lib-project && cargo test    # 2 tests passed
 cd examples/test-bin-project && cargo run     # assert_eq! 断言通过
 cd examples/showcase-project && cargo run     # 185 个函数输出正确
+
+# 6. 增量编译验证 — 修改 JS 文件后重新编译应触发转译
+# 手动验证：修改 showcase js_src/helpers.js（如加一行注释），然后 cargo build
+# 应看到 cargo:warning 诊断信息，且编译完成后再次 cargo build 无重复输出
 ```
 
 ### 5.3 验收标准
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 498 passed, 0 failed | 498 passed |
-| `cargo clippy -p js2zig-core -- -D warnings` | 0 warnings | 0 warnings |
+| `cargo test -p js2zig-core --lib` | 500 passed, 0 failed | 500 passed |
+| `cargo clippy` （全 workspace） | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 203（不低于基线） | 203 |
 | MDN mismatch 数 | <= 1（不增加已知 mismatch） | 1 |
@@ -413,6 +426,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
 | showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | PASS — 0 codegen errors |
+| showcase `cargo build` 诊断 | 修改 JS 后可见 `cargo:warning=js2zig: ... COMPILE_ERROR` | PASS |
 
 #### MDN 已知 mismatch（1 个）
 
@@ -420,7 +434,19 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 |----------|------|------|--------|
 | `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
 
-### 5.4 新增测试
+### 5.4 编译诊断机制
+
+`transpile_project()` 被调用两次（build.rs + proc-macro），输出策略如下：
+
+| 输出类型 | build.rs (`is_build_script=true`) | proc-macro (`is_build_script=false`) |
+|----------|------|------|
+| 进度信息（group header, cache hit, Generated, zig OK） | `println!` → Cargo 过滤后显示 | 静默 |
+| 诊断信息（@compileError, 转译错误, Rule 8） | `eprintln!` → Cargo 默认隐藏 | `eprintln!` → 直接到终端（但 proc-macro 总是 cache hit） |
+| COMPILE_ERROR 级别诊断 | `cargo:warning=` → **始终可见** | 无（cache hit 路径不产生诊断） |
+
+用户日常 `cargo build` 通过 `cargo:warning` 看到 `@compileError` 信息，无需加 `-vv` 标志。
+
+### 5.5 新增测试
 
 重构时如果发现未覆盖的边界情况：
 
@@ -445,6 +471,14 @@ zig version
 ### Q: MDN 测试构建失败（Zig 编译错误）？
 
 自 2026-07-01 起，Zig 构建失败不再静默吞掉。`js2rust-bridge/src/lib.rs` 的 `build()` 在 `transpile_project` 返回 `Err` 时会 `panic!`，暴露 codegen bug。检查 `cargo build` 的完整错误信息。
+
+### Q: 为什么 `cargo build` 能看到 `@compileError` 信息？
+
+`build()` 函数在 `transpile_project()` 成功后，将 `COMPILE_ERROR` 级别的诊断通过 `cargo:warning=` 输出。Cargo 保证 warning 消息始终可见（不受 `-vv` 标志影响）。这是唯一可靠的从 build script 向用户展示信息的方式——build script 的 stderr 默认被 Cargo 隐藏。
+
+### Q: 为什么修改 JS 文件后第二次 `cargo build` 没有触发重新转译？
+
+`cargo:rerun-if-changed` 指令在 `transpile_project()` 内部发出，每棵依赖树中所有 JS 文件（包括传递依赖如 `helpers.js`）都会被注册。Cargo 存储这些路径并在后续构建中检测变化。如果没有触发，可能是 Cargo 缓存了 build script 结果——尝试 `cargo clean` 或 `touch <JS文件>`。
 
 ### Q: MDN 测试运行时 Node.js 不在 PATH？
 

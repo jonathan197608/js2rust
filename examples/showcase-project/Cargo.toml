@@ -6,7 +6,7 @@ authors = ["jonathan197608"]
 description = "Showcase project for js2rust �?for-in static struct integration demo"
 
 [dependencies]
-js2rust-bridge = { version = "0.11", path = "../../js2rust-bridge" }
+js2rust-bridge = { version = "0.12", path = "../../js2rust-bridge" }
 
 [build-dependencies]
-js2rust-bridge = { version = "0.11", path = "../../js2rust-bridge", features = ["stub-allocator"] }
+js2rust-bridge = { version = "0.12", path = "../../js2rust-bridge", features = ["stub-allocator"] }
