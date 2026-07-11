@@ -21,7 +21,7 @@ pub fn parse_with_name<'a>(
     let source_type = SourceType::default().with_module(true);
     let ret = Parser::new(allocator, source, source_type).parse();
 
-    for err in &ret.errors {
+    for err in &ret.diagnostics {
         eprintln!("Parse error [{}]: {:?}", debug_name, err);
     }
 
