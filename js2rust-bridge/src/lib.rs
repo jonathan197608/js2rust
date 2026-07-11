@@ -111,7 +111,17 @@ pub fn build() {
         is_build_script: true, // build.rs context — show progress + emit rerun-if-changed
     };
     match js2zig_core::transpile_project(&project_config) {
-        Ok(_result) => {
+        Ok(result) => {
+            // Emit compile errors as cargo:warning so they are always visible.
+            // Cargo hides build script stderr by default; cargo:warning is
+            // the only guaranteed way to surface messages to the user.
+            // Only emit COMPILE_ERROR-level diagnostics — Rule 8 warnings
+            // and other non-critical messages are too noisy for every build.
+            for diag in &result.diagnostics {
+                if diag.contains("COMPILE_ERROR") {
+                    println!("cargo:warning=js2zig: {diag}");
+                }
+            }
             link_from_cache(&cache_dir);
         }
         Err(e) => {
