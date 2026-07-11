@@ -143,8 +143,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let out_dir: String = config.out_dir.to_string_lossy().to_string();
     let force_rebuild = config.force_rebuild;
     eprintln!(
-        "DEBUG transpile_project: name='{}', force_rebuild={}, run_zig_build={}",
-        config.name, force_rebuild, config.run_zig_build
+        "DEBUG transpile_project: name='{}', force_rebuild={}, run_zig_build={}, zig_optimize={:?}",
+        config.name, force_rebuild, config.run_zig_build, config.zig_optimize
     );
 
     // Ensure output directory exists.
@@ -713,10 +713,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
         let project_path = Path::new(&out_dir).join(&group.core_name);
         let mut build_ok = false;
-        let build_result = Command::new("zig")
-            .arg("build")
-            .current_dir(&project_path)
-            .output();
+        let mut build_cmd = Command::new("zig");
+        build_cmd.arg("build");
+        if let Some(ref opt) = config.zig_optimize {
+            build_cmd.arg(format!("-Doptimize={}", opt));
+        }
+        let build_result = build_cmd.current_dir(&project_path).output();
         match build_result {
             Ok(result) if result.status.success() => {
                 println!("  zig build: OK");

@@ -43,6 +43,13 @@ pub struct BuildSection {
     /// Whether to run `zig build` after transpilation. Default: false.
     #[serde(default)]
     pub run_zig_build: bool,
+    /// Zig optimization level passed as `-Doptimize=...` to `zig build`.
+    ///
+    /// Valid values: `"Debug"`, `"ReleaseSafe"`, `"ReleaseFast"`, `"ReleaseSmall"`.
+    /// When set, this overrides the automatic inference from the Cargo profile.
+    /// Default: `None` (auto-detect from Cargo profile).
+    #[serde(default)]
+    pub zig_optimize: Option<String>,
 }
 
 /// A single `[[host_functions]]` entry.

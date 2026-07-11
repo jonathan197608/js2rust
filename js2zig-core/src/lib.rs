@@ -113,6 +113,11 @@ pub struct ProjectConfig {
     pub force_rebuild: bool,
     /// Whether to run `zig build` after transpilation.
     pub run_zig_build: bool,
+    /// Zig optimization level passed as `-Doptimize=...` to `zig build`.
+    ///
+    /// Valid values: `"Debug"`, `"ReleaseSafe"`, `"ReleaseFast"`, `"ReleaseSmall"`.
+    /// If `None`, the caller should infer from the Cargo profile automatically.
+    pub zig_optimize: Option<String>,
 }
 
 impl Default for ProjectConfig {
@@ -124,6 +129,7 @@ impl Default for ProjectConfig {
             host_config: None,
             force_rebuild: false,
             run_zig_build: false,
+            zig_optimize: None,
         }
     }
 }

@@ -70,6 +70,16 @@ pub fn build() {
     let group_name = config.group_name();
     let host_config = config.to_host_config();
 
+    // Determine Zig optimization level: TOML override > Cargo PROFILE auto-detect.
+    let zig_optimize = config.build.zig_optimize.clone().unwrap_or_else(|| {
+        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+        if profile == "release" {
+            "ReleaseSafe".into()
+        } else {
+            "Debug".into()
+        }
+    });
+
     let project_config = js2zig_core::ProjectConfig {
         name: group_name,
         js_files: {
@@ -81,6 +91,7 @@ pub fn build() {
         host_config,
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
+        zig_optimize: Some(zig_optimize),
     };
     match js2zig_core::transpile_project(&project_config) {
         Ok(_result) => {

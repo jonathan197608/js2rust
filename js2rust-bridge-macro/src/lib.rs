@@ -119,6 +119,20 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     // Convert host function declarations — now uses js2zig_core canonical implementation
     let host_config = config.to_host_config();
 
+    // Determine Zig optimization level: TOML override > CARGO_CFG_DEBUG_ASSERTIONS auto-detect.
+    // In proc-macro context, `PROFILE` is not available, but `CARGO_CFG_DEBUG_ASSERTIONS`
+    // is set to "true" for debug builds and unset for release builds.
+    let zig_optimize = config.build.zig_optimize.clone().unwrap_or_else(|| {
+        let is_debug = std::env::var("CARGO_CFG_DEBUG_ASSERTIONS")
+            .map(|v| v == "true")
+            .unwrap_or(true);
+        if is_debug {
+            "Debug".into()
+        } else {
+            "ReleaseSafe".into()
+        }
+    });
+
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
         name: group.clone(),
@@ -131,6 +145,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         host_config,
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
+        zig_optimize: Some(zig_optimize),
     };
 
     // Transpile!
@@ -191,10 +206,12 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             .join(format!("lib{}.a", &group))
             .exists();
     if zig_project_dir.join("build.zig").exists() && !lib_exists {
-        let _ = std::process::Command::new("zig")
-            .arg("build")
-            .current_dir(&zig_project_dir)
-            .status();
+        let mut cmd = std::process::Command::new("zig");
+        cmd.arg("build");
+        if let Some(ref opt) = project_config.zig_optimize {
+            cmd.arg(format!("-Doptimize={}", opt));
+        }
+        let _ = cmd.current_dir(&zig_project_dir).status();
     }
 
     // Generate Rust FFI bindings
