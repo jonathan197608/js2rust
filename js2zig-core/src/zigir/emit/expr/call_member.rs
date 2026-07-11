@@ -13,7 +13,15 @@ impl Emitter {
                 self.emit_args(&call.args);
             }
             CallKind::Closure => {
-                self.emit_expr(&call.callee);
+                // Struct literal + method call needs parentheses in Zig:
+                // (StructName{ .field = val }).call(args)
+                if matches!(*call.callee, crate::zigir::types::IrExpr::Closure(_)) {
+                    self.write("(");
+                    self.emit_expr(&call.callee);
+                    self.write(")");
+                } else {
+                    self.emit_expr(&call.callee);
+                }
                 self.write(".call(");
                 self.emit_inline_args(&call.args);
                 self.write(")");

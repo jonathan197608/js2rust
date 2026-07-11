@@ -391,11 +391,11 @@ impl Emitter {
                     if i > 0 {
                         self.write(", ");
                     }
+                    self.write(&format!(".{} = ", cap.name.zig_name));
                     if cap.is_mut {
-                        self.write(&format!(".{} = &{}", cap.name.zig_name, cap.name.zig_name));
-                    } else {
-                        self.write(&format!(".{} = {}", cap.name.zig_name, cap.name.zig_name));
+                        self.write("&");
                     }
+                    self.emit_expr(&cap.init_expr);
                 }
                 self.write(" }");
             }

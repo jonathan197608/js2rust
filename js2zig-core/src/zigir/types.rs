@@ -843,6 +843,11 @@ pub struct IrCapture {
     pub name: IrIdent,
     pub zig_type: ZigType,
     pub is_mut: bool,
+    /// Expression used to initialise this field in the struct instance.
+    /// Outside closures this is just `IrExpr::Ident(name)`;
+    /// inside another closure's body where the variable is itself a
+    /// captured field, this becomes `IrExpr::FieldAccess(self, name)`.
+    pub init_expr: IrExpr,
 }
 
 // ── Arrow function ─────────────────────────────────────
@@ -1149,6 +1154,7 @@ mod tests {
                 name: IrIdent::new("a"),
                 zig_type: ZigType::I64,
                 is_mut: false,
+                init_expr: IrExpr::Ident(IrIdent::new("a")),
             }],
             fn_params: vec![IrParam {
                 name: IrIdent::new("b"),
