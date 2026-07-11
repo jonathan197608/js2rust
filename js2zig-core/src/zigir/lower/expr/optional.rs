@@ -140,21 +140,7 @@ impl Lowerer {
             object.clone()
         };
 
-        let args: Vec<IrExpr> = call_ce
-            .arguments
-            .iter()
-            .map(|arg| match arg {
-                Argument::SpreadElement(se) => {
-                    IrExpr::Spread(Box::new(self.lower_expr(&se.argument)))
-                }
-                _ => {
-                    let expr = arg
-                        .as_expression()
-                        .expect("non-SpreadElement Argument is always an Expression");
-                    self.lower_expr(expr)
-                }
-            })
-            .collect();
+        let args = self.lower_args(&call_ce.arguments);
 
         let body = if let Some(name) = method_name {
             IrExpr::Call(crate::zigir::types::IrCallExpr {

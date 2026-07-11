@@ -52,7 +52,7 @@ impl Emitter {
 
     pub(super) fn emit_if_stmt(
         &mut self,
-        cond: &crate::zigir::types::IrExpr,
+        cond: &IrExpr,
         then: &IrBlock,
         else_: &Option<IrBlock>,
     ) {
@@ -97,7 +97,7 @@ impl Emitter {
 
     pub(super) fn emit_while_stmt(
         &mut self,
-        cond: &crate::zigir::types::IrExpr,
+        cond: &IrExpr,
         body: &IrBlock,
         label: &Option<String>,
     ) {
@@ -115,7 +115,7 @@ impl Emitter {
     pub(super) fn emit_do_while_stmt(
         &mut self,
         body: &IrBlock,
-        cond: &crate::zigir::types::IrExpr,
+        cond: &IrExpr,
         label: &Option<String>,
     ) {
         self.write_indent();
@@ -135,7 +135,7 @@ impl Emitter {
     pub(super) fn emit_for_stmt(
         &mut self,
         init: &Option<Box<IrStmt>>,
-        cond: &Option<crate::zigir::types::IrExpr>,
+        cond: &Option<IrExpr>,
         update: &Option<Box<IrStmt>>,
         body: &IrBlock,
         label: &Option<String>,
@@ -171,7 +171,7 @@ impl Emitter {
                 IrStmt::Expr(expr) => {
                     // For Update expressions (i++, i--), force statement-level
                     // output (no wrapping parentheses).
-                    if let crate::zigir::types::IrExpr::Update { op, target, .. } = expr {
+                    if let IrExpr::Update { op, target, .. } = expr {
                         self.emit_assign_target_inner(target);
                         self.write(&format!(
                             " {}",
@@ -209,7 +209,7 @@ impl Emitter {
     pub(super) fn emit_for_in_stmt(
         &mut self,
         var: &IrIdent,
-        iterable: &crate::zigir::types::IrExpr,
+        iterable: &IrExpr,
         body: &IrBlock,
         kind: &IrForInKind,
         label: &Option<String>,
@@ -343,7 +343,7 @@ impl Emitter {
 
     pub(super) fn emit_switch_stmt(
         &mut self,
-        expr: &crate::zigir::types::IrExpr,
+        expr: &IrExpr,
         cases: &[IrSwitchCase],
     ) {
         self.write_indent();

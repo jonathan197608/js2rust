@@ -157,6 +157,23 @@ pub fn for_each_stmt_child(
     }
 }
 
+/// Leaf `IrExpr` variants that carry no children. Used by both read-only and
+/// mutable traversal match arms to avoid repeating the exhaustive list.
+macro_rules! leaf_expr_variants {
+    () => {
+        IrExpr::IntLiteral(_)
+            | IrExpr::FloatLiteral(_)
+            | IrExpr::StringLiteral(_)
+            | IrExpr::BoolLiteral(_)
+            | IrExpr::BigIntLiteral(_)
+            | IrExpr::Null
+            | IrExpr::Undefined
+            | IrExpr::Ident(_)
+            | IrExpr::This
+            | IrExpr::CompileError { .. }
+    };
+}
+
 /// Visit direct children of an `IrExpr`.
 pub fn for_each_expr_child(
     expr: &IrExpr,
@@ -293,16 +310,7 @@ pub fn for_each_expr_child(
             on_expr(exp);
         }
         // Leaf nodes and CompileError have no children
-        IrExpr::IntLiteral(_)
-        | IrExpr::FloatLiteral(_)
-        | IrExpr::StringLiteral(_)
-        | IrExpr::BoolLiteral(_)
-        | IrExpr::BigIntLiteral(_)
-        | IrExpr::Null
-        | IrExpr::Undefined
-        | IrExpr::Ident(_)
-        | IrExpr::This
-        | IrExpr::CompileError { .. } => {}
+        leaf_expr_variants!() => {}
     }
 }
 
@@ -602,16 +610,7 @@ pub fn for_each_expr_child_mut(
             on_expr(base);
             on_expr(exp);
         }
-        IrExpr::IntLiteral(_)
-        | IrExpr::FloatLiteral(_)
-        | IrExpr::StringLiteral(_)
-        | IrExpr::BoolLiteral(_)
-        | IrExpr::BigIntLiteral(_)
-        | IrExpr::Null
-        | IrExpr::Undefined
-        | IrExpr::Ident(_)
-        | IrExpr::This
-        | IrExpr::CompileError { .. } => {}
+        leaf_expr_variants!() => {}
     }
 }
 
