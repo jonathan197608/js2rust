@@ -2,6 +2,37 @@
 
 use super::common::*;
 
+/// Write `zig_code` to a temp file named `file_name`, run `zig ast-check`, and
+/// return the temp path (for reuse in e.g. `zig build-exe`).
+/// Panics if ast-check fails. Returns `None` if `zig.exe` is not available.
+fn zig_ast_check(zig_code: &str, file_name: &str) -> Option<std::path::PathBuf> {
+    let tmp_dir = std::env::temp_dir();
+    let zig_path = tmp_dir.join(file_name);
+    std::fs::write(&zig_path, zig_code).unwrap();
+
+    let check_output = std::process::Command::new("zig.exe")
+        .args(["ast-check", zig_path.to_str().unwrap()])
+        .output();
+
+    match check_output {
+        Ok(o) => {
+            if !o.status.success() {
+                eprintln!("=== zig ast-check failed ===");
+                eprintln!("Generated code:\n{}", zig_code);
+                eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
+                panic!("zig ast-check failed");
+            } else {
+                println!("=== zig ast-check passed ===");
+                Some(zig_path)
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to run zig ast-check: {}", e);
+            None
+        }
+    }
+}
+
 #[test]
 fn test_native_proto_object_struct() {
     // Scheme C: Only static access →anonymous struct.
@@ -278,30 +309,7 @@ return a * b;
     assert!(zig.contains("return a * b;"));
 
     // Run zig ast-check to verify the code is syntactically correct
-    let tmp_dir = std::env::temp_dir();
-    let zig_path = tmp_dir.join("param_e2e_test.zig");
-    std::fs::write(&zig_path, &zig).unwrap();
-
-    let check_output = std::process::Command::new("zig.exe")
-        .args(["ast-check", zig_path.to_str().unwrap()])
-        .output();
-
-    match check_output {
-        Ok(o) => {
-            if !o.status.success() {
-                eprintln!("=== zig ast-check failed ===");
-                eprintln!("Generated code:\n{}", zig);
-                eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
-                panic!("zig ast-check failed");
-            } else {
-                println!("=== zig ast-check passed ===");
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to run zig ast-check: {}", e);
-            // Skip if zig not available
-        }
-    }
+    zig_ast_check(&zig, "param_e2e_test.zig");
 }
 
 #[test]
@@ -709,38 +717,17 @@ std.debug.print("Parsed: {{s}} is {{d}} years old\n", .{{parsed.name, parsed.age
 
     println!("=== Complete Zig program ===\n{}", zig_full);
 
-    // Step 3: write to temp file and compile
-    let tmp_dir = std::env::temp_dir();
-    let zig_path = tmp_dir.join("e2e_json_test.zig");
-    std::fs::write(&zig_path, &zig_full).unwrap();
-
-    // Run `zig ast-check` first
-    let check_output = std::process::Command::new("zig.exe")
-        .args(["ast-check", zig_path.to_str().unwrap()])
-        .output();
-
-    match check_output {
-        Ok(o) => {
-            if !o.status.success() {
-                eprintln!("=== zig ast-check failed ===");
-                eprintln!("Generated code:\n{}", zig_full);
-                eprintln!("stderr: {}", String::from_utf8_lossy(&o.stderr));
-                panic!("zig ast-check failed");
-            } else {
-                println!("=== zig ast-check passed ===");
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to run zig ast-check: {}", e);
-            return; // skip if zig not available
-        }
-    }
+    // Step 3: write to temp file, run ast-check
+    let Some(zig_path) = zig_ast_check(&zig_full, "e2e_json_test.zig") else {
+        return; // zig not available
+    };
 
     // Step 4: compile with `zig build-exe`
+    let tmp_dir = zig_path.parent().unwrap();
     let exe_path = tmp_dir.join("e2e_json_test.exe");
     let compile_output = std::process::Command::new("zig.exe")
         .args(["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
-        .current_dir(&tmp_dir)
+        .current_dir(tmp_dir)
         .output();
 
     match compile_output {

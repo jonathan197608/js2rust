@@ -578,20 +578,16 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 |name: &str| -> bool { bare_name_counts.get(name).copied().unwrap_or(0) > 1 };
 
             // cabi_rename: maps cabi_name (possibly disambiguated) → bare_name
+            // name_to_module: maps cabi_name → source module name
             let mut cabi_rename: HashMap<String, String> = HashMap::new();
+            let mut name_to_module: HashMap<String, String> = HashMap::new();
             for (exp_name, mod_name) in &all_module_exports {
                 let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
                 cabi_rename
-                    .entry(cabi_name)
+                    .entry(cabi_name.clone())
                     .or_insert_with(|| exp_name.clone());
-            }
-
-            // --- Generate C ABI wrapper code for lib.zig ---
-            let mut name_to_module: HashMap<String, String> = HashMap::new();
-            for (exp_name, mod_name) in &all_module_exports {
-                let key = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
                 name_to_module
-                    .entry(key)
+                    .entry(cabi_name)
                     .or_insert_with(|| mod_name.clone());
             }
             let mut name_to_cabi: HashMap<String, &crate::types::NativeCabiExport> = HashMap::new();

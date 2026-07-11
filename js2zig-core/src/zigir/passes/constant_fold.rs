@@ -574,6 +574,16 @@ mod tests {
     use crate::zigir::ident::IrIdent;
     use crate::zigir::types::{IrBlock, IrDecl, IrFnDecl, IrStmt};
 
+    fn first_return_value(module: &IrModule) -> &IrExpr {
+        let IrDecl::Fn(f) = &module.declarations[0] else {
+            panic!("expected FnDecl at declarations[0]");
+        };
+        let IrStmt::Return { value: Some(expr) } = &f.body.stmts[0] else {
+            panic!("expected Return with value at stmts[0]");
+        };
+        expr
+    }
+
     #[test]
     fn test_fold_int_add() {
         let mut module = make_module_with_body(vec![IrStmt::Return {
@@ -588,15 +598,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::IntLiteral(n)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(*n, 3);
-            } else {
-                panic!("expected IntLiteral(3)");
-            }
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(n) => assert_eq!(*n, 3),
+            other => panic!("expected IntLiteral(3), got {:?}", other),
         }
     }
 
@@ -614,15 +618,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::FloatLiteral(n)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(*n, 3.0);
-            } else {
-                panic!("expected FloatLiteral(3.0)");
-            }
+        match first_return_value(&module) {
+            IrExpr::FloatLiteral(n) => assert_eq!(*n, 3.0),
+            other => panic!("expected FloatLiteral(3.0), got {:?}", other),
         }
     }
 
@@ -640,15 +638,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::StringLiteral(s)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(s, "Hello, world!");
-            } else {
-                panic!("expected StringLiteral");
-            }
+        match first_return_value(&module) {
+            IrExpr::StringLiteral(s) => assert_eq!(s, "Hello, world!"),
+            other => panic!("expected StringLiteral, got {:?}", other),
         }
     }
 
@@ -663,15 +655,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::IntLiteral(n)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(*n, -42);
-            } else {
-                panic!("expected IntLiteral(-42)");
-            }
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(n) => assert_eq!(*n, -42),
+            other => panic!("expected IntLiteral(-42), got {:?}", other),
         }
     }
 
@@ -686,15 +672,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::BoolLiteral(b)),
-            } = &f.body.stmts[0]
-            {
-                assert!(!b);
-            } else {
-                panic!("expected BoolLiteral(false)");
-            }
+        match first_return_value(&module) {
+            IrExpr::BoolLiteral(b) => assert!(!b),
+            other => panic!("expected BoolLiteral(false), got {:?}", other),
         }
     }
 
@@ -710,15 +690,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::IntLiteral(n)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(*n, 1);
-            } else {
-                panic!("expected IntLiteral(1)");
-            }
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(n) => assert_eq!(*n, 1),
+            other => panic!("expected IntLiteral(1), got {:?}", other),
         }
     }
 
@@ -734,15 +708,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::BoolLiteral(b)),
-            } = &f.body.stmts[0]
-            {
-                assert!(!b);
-            } else {
-                panic!("expected BoolLiteral(false)");
-            }
+        match first_return_value(&module) {
+            IrExpr::BoolLiteral(b) => assert!(!b),
+            other => panic!("expected BoolLiteral(false), got {:?}", other),
         }
     }
 
@@ -754,15 +722,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::StringLiteral(s)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(s, "number");
-            } else {
-                panic!("expected StringLiteral(\"number\")");
-            }
+        match first_return_value(&module) {
+            IrExpr::StringLiteral(s) => assert_eq!(s, "number"),
+            other => panic!("expected StringLiteral(\"number\"), got {:?}", other),
         }
     }
 
@@ -809,15 +771,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::IntLiteral(n)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(*n, 10);
-            } else {
-                panic!("expected IntLiteral(10)");
-            }
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(n) => assert_eq!(*n, 10),
+            other => panic!("expected IntLiteral(10), got {:?}", other),
         }
     }
 
@@ -832,15 +788,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::StringLiteral(s)),
-            } = &f.body.stmts[0]
-            {
-                assert_eq!(s, "hello");
-            } else {
-                panic!("expected StringLiteral(\"hello\")");
-            }
+        match first_return_value(&module) {
+            IrExpr::StringLiteral(s) => assert_eq!(s, "hello"),
+            other => panic!("expected StringLiteral(\"hello\"), got {:?}", other),
         }
     }
 
@@ -858,15 +808,9 @@ mod tests {
         let mut pass = ConstantFoldPass::new();
         let result = pass.run(&mut module);
         assert!(result.changed);
-        if let IrDecl::Fn(f) = &module.declarations[0] {
-            if let IrStmt::Return {
-                value: Some(IrExpr::BoolLiteral(b)),
-            } = &f.body.stmts[0]
-            {
-                assert!(b);
-            } else {
-                panic!("expected BoolLiteral(true)");
-            }
+        match first_return_value(&module) {
+            IrExpr::BoolLiteral(b) => assert!(b),
+            other => panic!("expected BoolLiteral(true), got {:?}", other),
         }
     }
 
