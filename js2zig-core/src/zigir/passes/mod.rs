@@ -8,6 +8,7 @@ mod collect_idents;
 mod constant_fold;
 mod dead_code;
 mod validate;
+pub(crate) mod walk;
 
 pub use constant_fold::ConstantFoldPass;
 pub use dead_code::DeadCodeElimPass;
