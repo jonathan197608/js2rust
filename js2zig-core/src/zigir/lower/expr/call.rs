@@ -473,15 +473,16 @@ impl Lowerer {
 
         // Check if this is an async host function call
         if let Expression::CallExpression(call) = &ae.argument {
+            let args: Vec<_> = call
+                .arguments
+                .iter()
+                .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
+                .collect();
+
+            // Host async: callee is an identifier found in async_host_fns
             if let Expression::Identifier(id) = &call.callee {
                 let name = id.name.as_str();
                 if self.async_host_fns.contains(name) {
-                    // Host async function: emit as host.{name}_async
-                    let args: Vec<_> = call
-                        .arguments
-                        .iter()
-                        .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
-                        .collect();
                     return crate::zigir::types::IrExpr::Await(crate::zigir::types::IrAwaitExpr {
                         task_var,
                         callee: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new(name))),
@@ -491,13 +492,9 @@ impl Lowerer {
                     });
                 }
             }
+
             // Regular async call (non-host)
             let callee = self.lower_expr(&call.callee);
-            let args: Vec<_> = call
-                .arguments
-                .iter()
-                .filter_map(|a| a.as_expression().map(|e| self.lower_expr(e)))
-                .collect();
             return crate::zigir::types::IrExpr::Await(crate::zigir::types::IrAwaitExpr {
                 task_var,
                 callee: Box::new(callee),
