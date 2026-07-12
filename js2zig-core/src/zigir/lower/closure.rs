@@ -181,6 +181,27 @@ impl Lowerer {
         );
     }
 
+    /// Helper: collect identifiers from a function body (params + statements).
+    /// Shared by FunctionExpression and ArrowFunctionExpression to avoid duplication.
+    fn collect_idents_from_fn_body(
+        params: &oxc_allocator::Vec<'_, FormalParameter>,
+        stmts: &oxc_allocator::Vec<'_, Statement>,
+        captured: &mut Vec<(String, ZigType, bool)>,
+        seen: &mut HashSet<String>,
+        local_names: &HashSet<String>,
+        type_info: &crate::infer::TypeCheckResult,
+    ) {
+        let mut inner_locals = local_names.clone();
+        for param in params {
+            if let Some(pname) = crate::infer::binding_name(&param.pattern) {
+                inner_locals.insert(pname.to_string());
+            }
+        }
+        for stmt in stmts {
+            Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
+        }
+    }
+
     /// Helper: collect identifiers from a statement that reference variables
     /// in an enclosing scope (possible captures).
     ///
@@ -272,33 +293,25 @@ impl Lowerer {
             }
             Expression::FunctionExpression(fe) => {
                 if let Some(body) = &fe.body {
-                    let mut inner_locals = local_names.clone();
-                    for param in &fe.params.items {
-                        if let Some(pname) = crate::infer::binding_name(&param.pattern) {
-                            inner_locals.insert(pname.to_string());
-                        }
-                    }
-                    for stmt in &body.statements {
-                        Self::collect_idents_from_stmt(
-                            stmt,
-                            captured,
-                            seen,
-                            &inner_locals,
-                            type_info,
-                        );
-                    }
+                    Self::collect_idents_from_fn_body(
+                        &fe.params.items,
+                        &body.statements,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
                 }
             }
             Expression::ArrowFunctionExpression(af) => {
-                let mut inner_locals = local_names.clone();
-                for param in &af.params.items {
-                    if let Some(pname) = crate::infer::binding_name(&param.pattern) {
-                        inner_locals.insert(pname.to_string());
-                    }
-                }
-                for stmt in &af.body.statements {
-                    Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
-                }
+                Self::collect_idents_from_fn_body(
+                    &af.params.items,
+                    &af.body.statements,
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
             }
             _ => {}
         }
