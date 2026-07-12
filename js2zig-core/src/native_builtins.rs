@@ -612,7 +612,12 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "sort" => Some(BuiltinCall::ArraySort),
             "join" => Some(BuiltinCall::ArrayJoin),
             "splice" => Some(BuiltinCall::ArraySplice),
-            "forEach" => Some(BuiltinCall::ArrayForEach),
+            "forEach" => {
+                // Could be Array.forEach(), Map.forEach() or Set.forEach()
+                // Default to ArrayForEach; the Lowerer resolves the actual
+                // CollectionKind from var_types at callback-inline time.
+                Some(BuiltinCall::ArrayForEach)
+            }
             "map" => Some(BuiltinCall::ArrayMap),
             "filter" => Some(BuiltinCall::ArrayFilter),
             "reduce" => Some(BuiltinCall::ArrayReduce),
@@ -768,7 +773,6 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::MathFround => Some(ZigType::F64),
 
         // Math max/min/hypot — all return f64
-        BuiltinCall::MathMax | BuiltinCall::MathMin => None, // depends on args
         BuiltinCall::MathHypot => Some(ZigType::F64),
 
         // String methods
@@ -807,7 +811,6 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::MapGet => Some(ZigType::JsAny), // JsMap.get() returns JsAny (undefined if not found)
         BuiltinCall::MapHas => Some(ZigType::Bool),
         BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
-        BuiltinCall::MapValues | BuiltinCall::MapEntries => None,
         // Set methods
         BuiltinCall::SetKeys | BuiltinCall::SetValues => {
             Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
@@ -867,11 +870,16 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::DateSetTime => Some(ZigType::I64),
 
         // Object methods
-        BuiltinCall::ObjectKeys | BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
+        BuiltinCall::ObjectKeys | BuiltinCall::ObjectGetOwnPropertyNames => {
             Some(ZigType::ArrayList(Box::new(ZigType::Str)))
         }
+        BuiltinCall::ObjectValues | BuiltinCall::ObjectEntries => {
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+        }
         BuiltinCall::ObjectHasOwn | BuiltinCall::ObjectIs => Some(ZigType::Bool),
-        BuiltinCall::ObjectGetOwnPropertyNames => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+        // Object.freeze/assign return the first argument — type depends on
+        // what was passed, so we cannot determine it statically.
+        BuiltinCall::ObjectFreeze | BuiltinCall::ObjectAssign => None,
         // Object methods that return complex types or the input object
         BuiltinCall::ObjectSeal | BuiltinCall::ObjectPreventExtensions | BuiltinCall::ObjectCreate | BuiltinCall::ObjectFromEntries | BuiltinCall::ObjectDefineProperty | BuiltinCall::ObjectGetPrototypeOf | BuiltinCall::ObjectDefineProperties | BuiltinCall::ObjectGetOwnPropertyDescriptor | BuiltinCall::ObjectSetPrototypeOf => None,
         BuiltinCall::ObjectIsSealed
@@ -931,6 +939,23 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::BooleanConstructor => Some(ZigType::Bool),
         BuiltinCall::BigIntConstructor => Some(ZigType::BigInt),
         BuiltinCall::ObjectConstructor => Some(ZigType::JsAny),
+
+        // Math methods — always return Number
+        BuiltinCall::MathMax | BuiltinCall::MathMin => Some(ZigType::F64),
+
+        // Array mutation methods that return a known scalar type
+        BuiltinCall::ArrayPush | BuiltinCall::ArrayUnshift => Some(ZigType::I64), // new length
+        BuiltinCall::ArrayJoin => Some(ZigType::Str),
+
+        // String methods with deterministic return types
+        BuiltinCall::StringCharCodeAt => Some(ZigType::F64),     // Number (0-65535 or NaN)
+        BuiltinCall::StringLocaleCompare => Some(ZigType::I64),  // Number (negative/0/positive)
+        BuiltinCall::StringNormalize => Some(ZigType::Str),      // Returns string (stub: pass-through)
+
+        // Map/Set methods
+        BuiltinCall::MapDelete => Some(ZigType::Bool),           // Returns whether element was removed
+        BuiltinCall::MapValues => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
+        BuiltinCall::MapEntries => Some(ZigType::ArrayList(Box::new(ZigType::ArrayList(Box::new(ZigType::JsAny))))),
 
         // Methods that return void or complex types — can't infer
         _ => None,

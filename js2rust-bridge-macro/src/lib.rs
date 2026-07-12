@@ -632,12 +632,25 @@ fn generate_safe_wrapper(
     let wrapper_name = fn_name.clone();
     let mut safe_params = Vec::new();
     let mut ffi_args = Vec::new();
+    let mut cstr_bindings = Vec::new();
 
     for param in &exp.params {
         let param_ident = format_ident!("{}", param.name);
         let safe_ty = zig_type_to_rust_safe_type(&param.zig_type);
         safe_params.push(quote! { #param_ident: #safe_ty });
-        ffi_args.push(convert_safe_to_ffi(&param.zig_type, &param_ident));
+        if param.zig_type == "[]const u8" {
+            // Bind CString to a local variable so it outlives the FFI call,
+            // then pass its pointer. This avoids the memory leak from into_raw()
+            // where ownership was transferred to the caller but never reclaimed.
+            let cstr_ident = format_ident!("_cstr_{}", param.name);
+            cstr_bindings.push(quote! {
+                let #cstr_ident = std::ffi::CString::new(#param_ident)
+                    .expect("input string contains NUL byte");
+            });
+            ffi_args.push(quote! { #cstr_ident.as_ptr() });
+        } else {
+            ffi_args.push(quote! { #param_ident });
+        }
     }
 
     // Struct return: use out-pointer
@@ -646,6 +659,7 @@ fn generate_safe_wrapper(
         let ret_ty = quote! { #raw_mod::#struct_ident };
         let call_expr = quote! {
             {
+                #(#cstr_bindings)*
                 let mut result: #raw_mod::#struct_ident = unsafe { std::mem::zeroed() };
                 unsafe { super::#raw_mod::#fn_name(#(#ffi_args),* , &mut result) };
                 result
@@ -669,6 +683,7 @@ fn generate_safe_wrapper(
             quote! { Result<String, String> },
             quote! {
                 {
+                    #(#cstr_bindings)*
                     let ret: #raw_mod::__JsStr = unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) };
                     if ret.len < 0 {
                         let err_len = (-ret.len) as usize;
@@ -706,6 +721,7 @@ fn generate_safe_wrapper(
             rust_ret_wrapped,
             quote! {
                 {
+                    #(#cstr_bindings)*
                     let mut err_ptr: *const std::ffi::c_char = std::ptr::null();
                     let result = unsafe { super::#raw_mod::#fn_name(#(#all_ffi_args),*) };
                     if !err_ptr.is_null() {
@@ -721,7 +737,7 @@ fn generate_safe_wrapper(
         (
             rust_ret,
             quote! {
-                unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) }
+                { #(#cstr_bindings)* unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) } }
             },
         )
     };
@@ -771,15 +787,6 @@ fn zig_type_to_rust_safe_type(zig_type: &str) -> proc_macro2::TokenStream {
         "f64" => quote! { f64 },
         "bool" => quote! { bool },
         _ => quote! { *mut std::ffi::c_void },
-    }
-}
-
-fn convert_safe_to_ffi(zig_type: &str, ident: &syn::Ident) -> proc_macro2::TokenStream {
-    match zig_type {
-        "[]const u8" => {
-            quote! { std::ffi::CString::new(#ident).expect("input string contains NUL byte").into_raw() }
-        }
-        _ => quote! { #ident },
     }
 }
 

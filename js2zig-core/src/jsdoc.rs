@@ -91,7 +91,7 @@ pub fn parse_jsdoc(comment: &str) -> ParsedJSDoc {
             // Parse @param {type} paramName
             let rest = stripped.strip_prefix("@param").unwrap_or("").trim();
             if rest.starts_with('{') {
-                let brace_end = rest.find('}').unwrap_or(rest.len());
+                let brace_end = find_matching_brace(rest).unwrap_or(rest.len());
                 let ty = rest[1..brace_end].trim().to_string();
                 let after_brace = rest[brace_end + 1..].trim();
                 let param_name = after_brace
@@ -287,28 +287,35 @@ fn extract_typedef_name(s: &str) -> String {
         .to_string()
 }
 
+/// Find the index of the matching closing brace for the opening brace at
+/// the start of `s`. Returns `None` if `s` doesn't start with `{` or no
+/// matching `}` is found.
+fn find_matching_brace(s: &str) -> Option<usize> {
+    if !s.starts_with('{') {
+        return None;
+    }
+    let mut depth = 0;
+    for (i, c) in s.chars().enumerate() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 从 {...} 中提取类型名
 /// For @type {{name: string, age: number}}, returns "{name: string, age: number}"
 /// (preserves the inner braces for anonymous object types)
 fn extract_braced_type(s: &str) -> String {
     let s = s.trim();
-    if s.starts_with('{') {
-        // Find matching closing brace (handle nested braces)
-        let mut depth = 0;
-        let mut end = 0;
-        for (i, c) in s.chars().enumerate() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
+    if let Some(end) = find_matching_brace(s) {
         // Check if this is an anonymous object type (contains ":")
         let inner = &s[1..end];
         if inner.contains(':') {
@@ -342,7 +349,7 @@ fn parse_property(s: &str) -> TypedefField {
 
     // 尝试格式：{type} name 或 {type} [name]
     if rest.starts_with('{') {
-        let brace_end = rest.find('}').unwrap_or(rest.len());
+        let brace_end = find_matching_brace(rest).unwrap_or(rest.len());
         let ty = rest[1..brace_end].trim().to_string();
         let after_brace = rest[brace_end + 1..].trim();
 

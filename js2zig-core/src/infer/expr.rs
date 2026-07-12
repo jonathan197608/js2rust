@@ -111,6 +111,17 @@ impl TypeInferrer {
                 }
             }
 
+            // LogicalExpression (&&, ||, ??): always inferred as Bool.
+            //
+            // KNOWN SEMANTIC DEVIATION: In JS, logical operators are value-returning
+            // (e.g., `x || default` returns the value of x or default, not a bool).
+            // The transpiler flattens them to `isTruthy(a) and/or isTruthy(b)`,
+            // which always produces a Zig bool. This correctly reflects what the
+            // generated Zig code actually does.
+            //
+            // TODO(future): Preserve JS value-returning semantics by emitting
+            // if-expressions instead of Zig `and`/`or`, and introducing a union
+            // type or JsAny wrapper for the result. This is a design-level change.
             Expression::LogicalExpression(_) => InferResult::Definite(ZigType::Bool),
 
             Expression::UnaryExpression(ue) => match ue.operator {
@@ -159,6 +170,8 @@ impl TypeInferrer {
                             | "RegExp"
                     ) {
                         InferResult::Definite(ZigType::NamedStruct(name.to_string()))
+                    } else if name == "Error" {
+                        InferResult::Definite(ZigType::JsError)
                     } else if name == "Boolean" {
                         InferResult::Definite(ZigType::Bool)
                     } else if name == "String" {
@@ -636,13 +649,13 @@ impl TypeInferrer {
             ZigType::NamedStruct(name) => {
                 match name.as_str() {
                     "Map" => match method {
-                        "set" => InferResult::Indeterminate,            // void/mutating
+                        "set" => InferResult::Definite(ZigType::NamedStruct("Map".into())),
                         "get" => InferResult::Definite(ZigType::JsAny), // Map.get() returns JsAny
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
                         _ => InferResult::Indeterminate,
                     },
                     "Set" => match method {
-                        "add" => InferResult::Indeterminate, // void/mutating
+                        "add" => InferResult::Definite(ZigType::NamedStruct("Set".into())),
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
                         "keys" | "values" => {
                             InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))

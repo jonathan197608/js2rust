@@ -231,7 +231,7 @@ impl Lowerer {
         use crate::native_builtins::BuiltinCall as BC;
         use crate::zigir::types::ArrayCallbackKind;
         match builtin {
-            BC::ArrayForEach => Some(ArrayCallbackKind::ForEach),
+            BC::ArrayForEach | BC::SetForEach => Some(ArrayCallbackKind::ForEach),
             BC::ArraySome => Some(ArrayCallbackKind::Some),
             BC::ArrayEvery => Some(ArrayCallbackKind::Every),
             BC::ArrayFilter => Some(ArrayCallbackKind::Filter),
@@ -1023,7 +1023,11 @@ pub fn builtin_call_to_ir(
         ),
 
         // Map/Set
-        BuiltinCall::MapSet => (BuiltinModule::JsCollections, "set".into(), ZigType::Void),
+        BuiltinCall::MapSet => (
+            BuiltinModule::JsCollections,
+            "set".into(),
+            ZigType::NamedStruct("Map".into()),
+        ),
         BuiltinCall::MapGet => (BuiltinModule::JsCollections, "get".into(), ZigType::JsAny),
         BuiltinCall::MapHas => (BuiltinModule::JsCollections, "has".into(), ZigType::Bool),
         BuiltinCall::MapDelete => (BuiltinModule::JsCollections, "delete".into(), ZigType::Bool),
@@ -1043,7 +1047,11 @@ pub fn builtin_call_to_ir(
             ZigType::ArrayList(Box::new(ZigType::JsAny)),
         ),
         BuiltinCall::MapClear => (BuiltinModule::JsCollections, "clear".into(), ZigType::Void),
-        BuiltinCall::SetAdd => (BuiltinModule::JsCollections, "add".into(), ZigType::Void),
+        BuiltinCall::SetAdd => (
+            BuiltinModule::JsCollections,
+            "add".into(),
+            ZigType::NamedStruct("Set".into()),
+        ),
         BuiltinCall::SetForEach => (
             BuiltinModule::JsCollections,
             "forEach".into(),
@@ -1172,8 +1180,8 @@ pub fn builtin_call_to_ir(
             "fromEntries".into(),
             ZigType::JsAny,
         ),
-        BuiltinCall::ObjectAssign => (BuiltinModule::JsObject, "assign".into(), ZigType::Void),
-        BuiltinCall::ObjectFreeze => (BuiltinModule::JsObject, "freeze".into(), ZigType::Void),
+        BuiltinCall::ObjectAssign => (BuiltinModule::JsObject, "assign".into(), ZigType::JsAny),
+        BuiltinCall::ObjectFreeze => (BuiltinModule::JsObject, "freeze".into(), ZigType::JsAny),
         BuiltinCall::ObjectSeal => (BuiltinModule::JsObject, "seal".into(), ZigType::Void),
         BuiltinCall::ObjectPreventExtensions => (
             BuiltinModule::JsObject,

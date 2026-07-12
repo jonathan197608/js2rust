@@ -10,6 +10,32 @@ use oxc_ast::ast::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+/// Split a string by commas that are at the top level (not inside nested braces).
+/// This allows correct parsing of nested anonymous object types like:
+///   "a: string, b: {c: number, d: boolean}"
+/// which should split into ["a: string", "b: {c: number, d: boolean}"]
+/// rather than ["a: string", "b: {c: number", "d: boolean}"].
+fn split_at_top_level_commas(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    for (i, c) in s.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < s.len() {
+        parts.push(&s[start..]);
+    }
+    parts
+}
+
 impl TypeInferrer {
     // ============================================================
     // walk_fn_for_types — shared by FunctionDeclaration and
@@ -534,8 +560,9 @@ impl TypeInferrer {
         let inner = &s[1..s.len() - 1]; // Remove surrounding braces
         let mut fields = Vec::new();
 
-        // Split by comma, but be careful with nested objects
-        for part in inner.split(',') {
+        // Split by comma, respecting nested braces so that
+        // {a: string, b: {c: number, d: boolean}} splits correctly.
+        for part in split_at_top_level_commas(inner) {
             let part = part.trim();
             if part.is_empty() {
                 continue;

@@ -555,8 +555,21 @@ impl TypeInferrer {
                     // Check if this is JSON.parse(@type)
                     if let Some(type_name) = self.get_json_parse_type(name, init) {
                         self.has_json_parse_types.insert(name.to_string());
-                        self.var_types
-                            .insert(name.to_string(), ZigType::NamedStruct(type_name));
+                        // Validate that the @type name refers to a known type
+                        let is_known = self.class_names.contains(&type_name)
+                            || self.host_struct_fields.contains_key(&type_name)
+                            || self
+                                .jsdoc_data
+                                .as_ref()
+                                .is_some_and(|d| d.typedefs.contains_key(&type_name));
+                        let zig_type = if is_known {
+                            ZigType::NamedStruct(type_name)
+                        } else {
+                            // Unknown type name — fall back to JsAny to avoid
+                            // Zig compile errors from referencing undefined structs
+                            ZigType::JsAny
+                        };
+                        self.var_types.insert(name.to_string(), zig_type);
                         continue;
                     }
 
