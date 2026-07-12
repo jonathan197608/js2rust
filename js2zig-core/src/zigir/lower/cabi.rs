@@ -909,8 +909,8 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ArrayPop => (BuiltinModule::JsArray, "pop".into(), ZigType::JsAny),
         BuiltinCall::ArrayShift => (BuiltinModule::JsArray, "shift".into(), ZigType::JsAny),
         BuiltinCall::ArrayUnshift => (BuiltinModule::JsArray, "unshift".into(), ZigType::I64),
-        BuiltinCall::ArrayReverse => (BuiltinModule::JsArray, "reverse".into(), ZigType::Void),
-        BuiltinCall::ArraySort => (BuiltinModule::JsArray, "sort".into(), ZigType::Void),
+        BuiltinCall::ArrayReverse => (BuiltinModule::JsArray, "reverse".into(), ZigType::JsAny),
+        BuiltinCall::ArraySort => (BuiltinModule::JsArray, "sort".into(), ZigType::JsAny),
         BuiltinCall::ArrayIndexOf => (BuiltinModule::JsArray, "indexOf".into(), ZigType::I64),
         BuiltinCall::ArrayIncludes => (BuiltinModule::JsArray, "includes".into(), ZigType::Bool),
         BuiltinCall::ArrayJoin => (BuiltinModule::JsArray, "join".into(), ZigType::Str),
@@ -934,7 +934,7 @@ pub fn builtin_call_to_ir(
             (BuiltinModule::JsArray, "lastIndexOf".into(), ZigType::I64)
         }
         BuiltinCall::ArrayCopyWithin => {
-            (BuiltinModule::JsArray, "copyWithin".into(), ZigType::Void)
+            (BuiltinModule::JsArray, "copyWithin".into(), ZigType::JsAny)
         }
         BuiltinCall::ArrayForEach => (BuiltinModule::JsArray, "forEach".into(), ZigType::Void),
         BuiltinCall::ArrayMap => (
@@ -969,7 +969,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ArrayReduceRight => {
             (BuiltinModule::JsArray, "reduceRight".into(), ZigType::JsAny)
         }
-        BuiltinCall::ArrayFill => (BuiltinModule::JsArray, "fill".into(), ZigType::Void),
+        BuiltinCall::ArrayFill => (BuiltinModule::JsArray, "fill".into(), ZigType::JsAny),
         BuiltinCall::ArrayWith => (
             BuiltinModule::JsArray,
             "with".into(),
@@ -1182,11 +1182,11 @@ pub fn builtin_call_to_ir(
         ),
         BuiltinCall::ObjectAssign => (BuiltinModule::JsObject, "assign".into(), ZigType::JsAny),
         BuiltinCall::ObjectFreeze => (BuiltinModule::JsObject, "freeze".into(), ZigType::JsAny),
-        BuiltinCall::ObjectSeal => (BuiltinModule::JsObject, "seal".into(), ZigType::Void),
+        BuiltinCall::ObjectSeal => (BuiltinModule::JsObject, "seal".into(), ZigType::JsAny),
         BuiltinCall::ObjectPreventExtensions => (
             BuiltinModule::JsObject,
             "preventExtensions".into(),
-            ZigType::Void,
+            ZigType::JsAny,
         ),
         BuiltinCall::ObjectHasOwn => (BuiltinModule::JsObject, "hasOwn".into(), ZigType::Bool),
         BuiltinCall::ObjectIs => (BuiltinModule::JsObject, "is".into(), ZigType::Bool),
@@ -1199,7 +1199,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ObjectDefineProperty => (
             BuiltinModule::JsObject,
             "defineProperty".into(),
-            ZigType::Void,
+            ZigType::JsAny,
         ),
         BuiltinCall::ObjectGetPrototypeOf => (
             BuiltinModule::JsObject,
@@ -1209,7 +1209,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ObjectDefineProperties => (
             BuiltinModule::JsObject,
             "defineProperties".into(),
-            ZigType::Void,
+            ZigType::JsAny,
         ),
         BuiltinCall::ObjectGetOwnPropertyDescriptor => (
             BuiltinModule::JsObject,
@@ -1219,7 +1219,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ObjectSetPrototypeOf => (
             BuiltinModule::JsObject,
             "setPrototypeOf".into(),
-            ZigType::Void,
+            ZigType::JsAny,
         ),
         BuiltinCall::ObjectIsSealed => (BuiltinModule::JsObject, "isSealed".into(), ZigType::Bool),
         BuiltinCall::ObjectIsFrozen => (BuiltinModule::JsObject, "isFrozen".into(), ZigType::Bool),

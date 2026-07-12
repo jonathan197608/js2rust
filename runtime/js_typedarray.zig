@@ -242,7 +242,7 @@ pub fn subarrayF64(arr: []const f64, start: i64, end: i64) []const f64 {
 
 // ── copyWithin() — copy sequence within array ──
 
-pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) void {
+pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) []i8 {
     const len: i64 = @intCast(arr.len);
     const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
@@ -251,13 +251,14 @@ pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e or t >= arr.len) return;
+    if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
     std.mem.copyForwards(i8, arr[t..t + count], arr[s..s + count]);
+    return arr;
 }
 
-pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) void {
+pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) []u8 {
     const len: i64 = @intCast(arr.len);
     const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
@@ -266,13 +267,14 @@ pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e or t >= arr.len) return;
+    if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
     std.mem.copyForwards(u8, arr[t..t + count], arr[s..s + count]);
+    return arr;
 }
 
-pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) void {
+pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) []i32 {
     const len: i64 = @intCast(arr.len);
     const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
@@ -281,13 +283,14 @@ pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e or t >= arr.len) return;
+    if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
     std.mem.copyForwards(i32, arr[t..t + count], arr[s..s + count]);
+    return arr;
 }
 
-pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) void {
+pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) []f64 {
     const len: i64 = @intCast(arr.len);
     const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
@@ -296,15 +299,16 @@ pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e or t >= arr.len) return;
+    if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
     std.mem.copyForwards(f64, arr[t..t + count], arr[s..s + count]);
+    return arr;
 }
 
-// ── fill() — fill array with value ──
+// ── fill() — fill array with value, returns arr (JS chaining semantics) ──
 
-pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) void {
+pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) []i8 {
     const len: i64 = @intCast(arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
     const e = if (end == std.math.maxInt(i64))
@@ -312,11 +316,12 @@ pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e) return;
+    if (s >= e) return arr;
     @memset(arr[s..e], value);
+    return arr;
 }
 
-pub fn fillU8(arr: []u8, value: u8, start: i64, end: i64) void {
+pub fn fillU8(arr: []u8, value: u8, start: i64, end: i64) []u8 {
     const len: i64 = @intCast(arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
     const e = if (end == std.math.maxInt(i64))
@@ -324,11 +329,12 @@ pub fn fillU8(arr: []u8, value: u8, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e) return;
+    if (s >= e) return arr;
     @memset(arr[s..e], value);
+    return arr;
 }
 
-pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) void {
+pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) []i32 {
     const len: i64 = @intCast(arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
     const e = if (end == std.math.maxInt(i64))
@@ -336,13 +342,14 @@ pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e) return;
+    if (s >= e) return arr;
     for (arr[s..e]) |*item| {
         item.* = value;
     }
+    return arr;
 }
 
-pub fn fillF64(arr: []f64, value: f64, start: i64, end: i64) void {
+pub fn fillF64(arr: []f64, value: f64, start: i64, end: i64) []f64 {
     const len: i64 = @intCast(arr.len);
     const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
     const e = if (end == std.math.maxInt(i64))
@@ -350,10 +357,11 @@ pub fn fillF64(arr: []f64, value: f64, start: i64, end: i64) void {
     else
         @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
 
-    if (s >= e) return;
+    if (s >= e) return arr;
     for (arr[s..e]) |*item| {
         item.* = value;
     }
+    return arr;
 }
 
 // ── buffer() — reinterpret slice as underlying byte buffer ──

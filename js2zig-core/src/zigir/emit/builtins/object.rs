@@ -27,10 +27,10 @@ impl Emitter {
 
     pub(super) fn emit_object_builtin(&mut self, method: &str, args: &[IrExpr]) {
         match method {
-            // ── No-op methods (Zig is immutable by default) ──
+            // ── No-op methods (Zig is immutable by default) — return first arg per JS spec ──
             "freeze" | "seal" | "preventExtensions" => {
-                // Object.freeze(obj) → obj (no-op, Zig structs are immutable)
-                // Emit the first argument directly
+                // Object.freeze/seal/preventExtensions(obj) → obj
+                // Zig structs are immutable, so these are no-ops that return the input.
                 if let Some(arg) = args.first() {
                     self.emit_expr(arg);
                 } else {
@@ -38,6 +38,20 @@ impl Emitter {
                     self.emit_inline_args(args);
                     self.write(")");
                 }
+            }
+            // ── Mutating methods that return obj per JS spec ──
+            // Runtime functions have been updated to return the receiver pointer.
+            "defineProperty" | "defineProperties" => {
+                // Object.defineProperty/defineProperties(obj, ...) → obj
+                // Runtime returns !*JsValueHashMap — must catch error.
+                self.write(&format!("js_object.{}(", method));
+                self.emit_inline_args(args);
+                self.write(&format!(") catch @panic(\"OOM: Object.{}\")", method));
+            }
+            "setPrototypeOf" => {
+                // Object.setPrototypeOf(obj, proto) → obj
+                // Runtime returns *JsValueHashMap (no error possible).
+                self.emit_module_call("js_object", method, args);
             }
             // ── Always-true / Always-false (Zig is sealed/frozen by default) ──
             "isSealed" | "isFrozen" => {

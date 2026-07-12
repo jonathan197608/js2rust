@@ -176,9 +176,10 @@ pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
 }
 
 /// Object.defineProperty(obj, key, descriptor) — define a property.
-/// Simplified: just set the value (ignore descriptor).
-pub fn defineProperty(obj: *JsValueHashMap, key: []const u8, value: JsValue) !void {
+/// Simplified: just set the value (ignore descriptor). Returns obj per JS spec.
+pub fn defineProperty(obj: *JsValueHashMap, key: []const u8, value: JsValue) !*JsValueHashMap {
     try obj.put(key, value);
+    return obj;
 }
 
 /// Object.getPrototypeOf(obj) — get prototype (simplified: always null).
@@ -189,12 +190,13 @@ pub fn getPrototypeOf(obj: *const JsValueHashMap) ?*const JsValueHashMap {
 }
 
 /// Object.defineProperties(obj, props) — define multiple properties.
-/// Simplified: copy all entries from props to obj (ignore descriptors).
-pub fn defineProperties(obj: *JsValueHashMap, props: *const JsValueHashMap) !void {
+/// Simplified: copy all entries from props to obj (ignore descriptors). Returns obj per JS spec.
+pub fn defineProperties(obj: *JsValueHashMap, props: *const JsValueHashMap) !*JsValueHashMap {
     var iter = props.iterator();
     while (iter.next()) |entry| {
         try obj.put(entry.key_ptr.*, entry.value_ptr.*);
     }
+    return obj;
 }
 
 /// Object.getOwnPropertyDescriptor(obj, key) — get property descriptor.
@@ -219,10 +221,11 @@ pub fn getOwnPropertyDescriptor(
 
 /// Object.setPrototypeOf(obj, proto) — set prototype (simplified: no-op).
 /// In our implementation, objects don't have prototype chains.
-pub fn setPrototypeOf(obj: *JsValueHashMap, proto: ?*const JsValueHashMap) void {
-    _ = obj;
+/// Returns obj per JS spec.
+pub fn setPrototypeOf(obj: *JsValueHashMap, proto: ?*const JsValueHashMap) *JsValueHashMap {
     _ = proto;
     // No-op: our object model does not support prototype chains
+    return obj;
 }
 
 // ── Tests for new Object methods (Phase 5) ──

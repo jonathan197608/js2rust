@@ -375,15 +375,12 @@ impl Emitter {
 
     // ── fill ───────────────────────────────────────────
     // for (obj.items[@intCast(start)..@intCast(end)]) |*elem| { elem.* = val; }
-    // When chaining, wraps in a block so the const binding is scoped.
+    // Returns receiver for JS chaining semantics (arr.fill(v) === arr).
+    // Wraps in labeled block so the const binding is scoped and receiver is returned.
     pub(super) fn emit_fill_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
-        // When chaining, wrap in a block so the const binding is scoped.
-        if let Some(b) = &binding {
-            self.write("{ ");
-            self.write(b);
-        }
+        let blk = self.begin_labeled_block(&binding);
         self.write(&format!("for ({}.items", receiver));
         match data.args.len() {
             0 => {
@@ -417,9 +414,7 @@ impl Emitter {
                 self.write("; }");
             }
         }
-        if binding.is_some() {
-            self.write(" }");
-        }
+        self.write(&format!(" break :{} {}; }})", blk, receiver));
     }
 
     // ── with ───────────────────────────────────────────

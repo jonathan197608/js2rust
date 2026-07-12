@@ -101,20 +101,16 @@ pub fn unshift(alloc: Allocator, arr: []const i64, val: i64) ![]const i64 {
     return result;
 }
 
-/// Array.reverse — return new reversed slice.
-pub fn reverse(alloc: Allocator, arr: []const i64) ![]const i64 {
-    const result = try alloc.alloc(i64, arr.len);
-    for (arr, 0..) |_, i| {
-        result[i] = arr[arr.len - 1 - i];
-    }
-    return result;
+/// Array.reverse — reverse in-place and return the original array (JS spec).
+pub fn reverse(arr: []i64) []i64 {
+    std.mem.reverse(i64, arr);
+    return arr;
 }
 
-/// Array.sort — return new ascending-sorted slice.
-pub fn sort(alloc: Allocator, arr: []const i64) ![]const i64 {
-    const result = try alloc.dupe(i64, arr);
-    std.mem.sort(i64, result, {}, comptime std.sort.asc(i64));
-    return result;
+/// Array.sort — sort in-place and return the original array (JS spec).
+pub fn sort(arr: []i64) []i64 {
+    std.mem.sort(i64, arr, {}, comptime std.sort.asc(i64));
+    return arr;
 }
 
 /// Array.flat — for uniform-typed arrays (i64, f64, etc.) this is an identity
