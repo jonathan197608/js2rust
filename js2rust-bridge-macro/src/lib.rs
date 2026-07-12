@@ -9,7 +9,7 @@
 //! The macro reads `js2rust.toml` from the crate root, transpiles JS to Zig,
 //! writes output to `.js2zig-cache/{project_name}/`, and generates Rust FFI bindings.
 //! The project name is derived from the file name (sanitized for Zig identifiers).
-//! A minimal `build.rs` only needs `js2rust_bridge::build(false)`.
+//! A minimal `build.rs` only needs `js2rust_bridge::build()`.
 
 use indexmap::IndexMap;
 use js2zig_core::toml_config::HostFnToml;
@@ -138,7 +138,6 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
-        name: project_name.clone(),
         entry_file: entry_file.clone(),
         additional_roots,
         out_dir: cache_dir.clone(),

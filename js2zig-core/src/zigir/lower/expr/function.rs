@@ -417,10 +417,6 @@ impl Lowerer {
             .cloned()
             .unwrap_or_else(|| self.infer_fn_expr_return_type(fe, &captured));
 
-        let _has_throw = fe
-            .body
-            .as_ref()
-            .is_some_and(|b| Self::has_throw_in_stmts(&b.statements));
         let params = self.lower_fn_params(fe, &name);
 
         // Enter fn context with captured vars set up

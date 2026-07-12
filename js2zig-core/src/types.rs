@@ -195,9 +195,6 @@ pub struct NativeCabiExport {
     /// For async functions returning a struct: the struct name (e.g., "FetchUserResult").
     /// Set when `ret_type` is `ZigType::NamedStruct(name)`.
     pub ret_struct_name: Option<String>,
-    /// For async functions returning a struct: the struct fields as (name, zig_type) pairs.
-    /// Used by js2rust-bridge-macro to generate the #[repr(C)] struct.
-    pub ret_struct_fields: Option<Vec<(String, String)>>,
 }
 
 // ── Transpile result ─────────────────────────────────────

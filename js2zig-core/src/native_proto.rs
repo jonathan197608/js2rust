@@ -81,7 +81,11 @@ pub fn transpile_js(
 
     // ── Step 3: Optimization passes ──
     let mut pipeline = crate::zigir::passes::PassPipeline::default_pipeline();
-    let _pipeline_result = pipeline.run(&mut ir_module);
+    let pass_result = pipeline.run(&mut ir_module);
+    // Merge validation diagnostics from passes into the module
+    if !pass_result.diagnostics.is_empty() {
+        ir_module.diagnostics.extend(pass_result.diagnostics);
+    }
 
     // ── Step 3.5: Collect @compileError messages from IR ──
     let compile_errors = collect_compile_errors(&ir_module);
@@ -122,7 +126,6 @@ pub fn transpile_js(
             is_async: ce.is_async,
             can_throw: ce.can_throw,
             ret_struct_name: ce.ret_struct_name.clone(),
-            ret_struct_fields: None, // populated from host_fns in pipeline.rs
         })
         .collect();
 

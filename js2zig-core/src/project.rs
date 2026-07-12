@@ -1,5 +1,5 @@
 /// Generate a complete Zig library project from translated JS code.
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -51,10 +51,6 @@ pub struct ProjectOptions {
     /// standard library references this symbol and Windows COFF doesn't
     /// support weak linkage across object files.
     pub include_windows_stub: bool,
-    /// Maps disambiguated CABI names → bare function names.
-    /// When export names collide across modules, the CABI name becomes
-    /// `{fn}_{module}` while the internal per-file function keeps its bare name.
-    pub export_rename: HashMap<String, String>,
 }
 
 /// Generate the full Zig library project.

@@ -558,12 +558,4 @@ impl Lowerer {
             _ => None,
         }
     }
-
-    /// Check whether a list of statements contains a `throw`.
-    pub(super) fn has_throw_in_stmts(stmts: &oxc_allocator::Vec<'_, Statement>) -> bool {
-        use super::helpers::{ThrowWalkMode, stmt_has_throw};
-        stmts
-            .iter()
-            .any(|s| stmt_has_throw(s, ThrowWalkMode::TryBlockOnly))
-    }
 }

@@ -941,9 +941,7 @@ impl Lowerer {
     /// This is needed to determine whether the return type should be an
     /// error union (`!T` vs `T`).
     pub(super) fn has_throw_in_body(body: &FunctionBody) -> bool {
-        use super::helpers::{ThrowWalkMode, stmt_has_throw};
-        body.statements
-            .iter()
-            .any(|s| stmt_has_throw(s, ThrowWalkMode::TryImpliesThrow))
+        use super::helpers::stmt_has_throw;
+        body.statements.iter().any(|s| stmt_has_throw(s))
     }
 }

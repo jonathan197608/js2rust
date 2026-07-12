@@ -214,45 +214,30 @@ mod tests {
 //  Throw detection — unified AST walker
 // ═══════════════════════════════════════════════════════
 
-/// Strategy for walking `TryStatement` inside [`stmt_has_throw`].
-#[derive(Clone, Copy)]
-pub(crate) enum ThrowWalkMode {
-    /// `TryStatement` counts as containing throw (conservative — any try
-    /// implies potential throw). Used by `decl.rs::has_throw_in_body`.
-    TryImpliesThrow,
-    /// Recurse into the try-block only (catch/finally ignored). Used by
-    /// `closure.rs::has_throw_in_stmt`.
-    TryBlockOnly,
-}
-
 /// Check whether a statement contains a `throw`, recursing into
-/// blocks / if / loops / switch according to `mode`.
-pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement, mode: ThrowWalkMode) -> bool {
+/// blocks / if / loops / switch.
+/// TryStatement counts as containing throw (conservative — any try
+/// implies potential throw).
+pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement) -> bool {
     use oxc_ast::ast::Statement;
     match stmt {
         Statement::ThrowStatement(_) => true,
-        Statement::BlockStatement(bs) => bs.body.iter().any(|s| stmt_has_throw(s, mode)),
+        Statement::BlockStatement(bs) => bs.body.iter().any(|s| stmt_has_throw(s)),
         Statement::IfStatement(is) => {
-            stmt_has_throw(&is.consequent, mode)
-                || is
-                    .alternate
-                    .as_ref()
-                    .is_some_and(|a| stmt_has_throw(a, mode))
+            stmt_has_throw(&is.consequent)
+                || is.alternate.as_ref().is_some_and(|a| stmt_has_throw(a))
         }
-        Statement::WhileStatement(ws) => stmt_has_throw(&ws.body, mode),
-        Statement::DoWhileStatement(dws) => stmt_has_throw(&dws.body, mode),
-        Statement::ForStatement(fs) => stmt_has_throw(&fs.body, mode),
-        Statement::ForOfStatement(fos) => stmt_has_throw(&fos.body, mode),
-        Statement::ForInStatement(fis) => stmt_has_throw(&fis.body, mode),
-        Statement::LabeledStatement(ls) => stmt_has_throw(&ls.body, mode),
+        Statement::WhileStatement(ws) => stmt_has_throw(&ws.body),
+        Statement::DoWhileStatement(dws) => stmt_has_throw(&dws.body),
+        Statement::ForStatement(fs) => stmt_has_throw(&fs.body),
+        Statement::ForOfStatement(fos) => stmt_has_throw(&fos.body),
+        Statement::ForInStatement(fis) => stmt_has_throw(&fis.body),
+        Statement::LabeledStatement(ls) => stmt_has_throw(&ls.body),
         Statement::SwitchStatement(ss) => ss
             .cases
             .iter()
-            .any(|c| c.consequent.iter().any(|s| stmt_has_throw(s, mode))),
-        Statement::TryStatement(ts) => match mode {
-            ThrowWalkMode::TryImpliesThrow => true,
-            ThrowWalkMode::TryBlockOnly => ts.block.body.iter().any(|s| stmt_has_throw(s, mode)),
-        },
+            .any(|c| c.consequent.iter().any(|s| stmt_has_throw(s))),
+        Statement::TryStatement(_) => true,
         _ => false,
     }
 }

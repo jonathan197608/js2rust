@@ -95,7 +95,6 @@ pub fn build() {
         (entry, paths)
     };
 
-    let project_name = config.project_name();
     let host_config = config.to_host_config();
 
     // Determine Zig optimization level: TOML override > Cargo PROFILE auto-detect.
@@ -109,7 +108,6 @@ pub fn build() {
     });
 
     let project_config = js2zig_core::ProjectConfig {
-        name: project_name,
         entry_file,
         additional_roots,
         out_dir: cache_dir.clone(),

@@ -214,22 +214,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 );
             }
         }
-    } else {
-        // Fallback: load from host_config.json file
-        let config_path = ws.join("host_config.json");
-        if config_path.exists() {
-            match crate::host::HostFnRegistry::load_from_file(&config_path) {
-                Ok(registry) => {
-                    host_fns = registry;
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-        } else {
-            // No host_config.json found — this is normal for projects that don't use host functions.
-        }
-    };
+    }
 
     let host_header = host_fns.generate_zig_header();
     let async_host_fn_names: Vec<String> = host_fns.async_fn_names();
@@ -614,7 +599,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 },
                 async_host_fn_names: async_host_fn_names.clone(),
                 include_windows_stub: true,
-                export_rename: cabi_rename.clone(),
             };
 
             match crate::project::generate(&project_opts) {

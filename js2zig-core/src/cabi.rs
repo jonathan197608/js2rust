@@ -524,12 +524,9 @@ pub fn write_cabi_metadata(
                 };
 
             // Use disambiguated name if this export collides across modules
-            let disambiguated = format!("{}_{}", exp.name, mod_name);
-            let export_name = if cabi_rename.contains_key(&disambiguated) {
-                disambiguated
-            } else {
-                exp.name.clone()
-            };
+            let export_name = disambiguate_name(&exp.name, mod_name, |n| {
+                cabi_rename.contains_key(&format!("{}_{}", n, mod_name))
+            });
 
             let mut json_obj = serde_json::json!({
                 "name": export_name,

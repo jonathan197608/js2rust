@@ -294,33 +294,3 @@ pub extern "C" fn js_allocator_alloc(size: usize) -> *mut u8 {
         ptr
     }
 }
-
-// ── StrRet helper (used by macro-generated safe wrappers) ──────────
-
-/// Internal helper to convert a `JsStr` to `Result<String, String>`,
-/// respecting the sign-bit error convention.
-///
-/// - `len >= 0` → success, bytes at `ptr[0..len]`
-/// - `len < 0`  → error, bytes at `ptr[0..|len|]`
-///
-/// # Safety
-///
-/// `ptr` must be valid for reads up to `len.abs()` bytes.
-#[doc(hidden)]
-pub unsafe fn js_str_to_result(ptr: *const u8, len: isize) -> Result<String, String> {
-    if len < 0 {
-        let err_len = (-len) as usize;
-        let err_msg = if err_len > 0 && !ptr.is_null() {
-            let slice = unsafe { std::slice::from_raw_parts(ptr, err_len) };
-            String::from_utf8_lossy(slice).into_owned()
-        } else {
-            "unknown error".to_string()
-        };
-        return Err(err_msg);
-    }
-    if ptr.is_null() || len == 0 {
-        return Ok(String::new());
-    }
-    let slice = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
-    Ok(String::from_utf8_lossy(slice).into_owned())
-}

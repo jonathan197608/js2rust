@@ -4,7 +4,6 @@ pub mod analyzer;
 pub mod host;
 pub mod parser;
 pub mod project;
-pub mod sourcemap;
 pub mod testgen;
 pub mod toml_config;
 pub mod types;
@@ -103,8 +102,6 @@ pub struct HostConfig {
 /// Multi-file project configuration.
 #[derive(Debug, Clone)]
 pub struct ProjectConfig {
-    /// Project name (also used as Zig library name).
-    pub name: String,
     /// Primary JS entry point file path.
     pub entry_file: PathBuf,
     /// Additional root JS files (multi-root mode). These are treated as
@@ -141,7 +138,6 @@ pub struct ProjectConfig {
 impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
-            name: "js2zig_lib".into(),
             entry_file: PathBuf::from("main.js"),
             additional_roots: Vec::new(),
             out_dir: PathBuf::from("out"),

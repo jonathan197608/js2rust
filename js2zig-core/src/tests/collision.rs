@@ -17,7 +17,6 @@ fn make_export(name: &str, ret: ZigType) -> NativeCabiExport {
         is_async: false,
         can_throw: false,
         ret_struct_name: None,
-        ret_struct_fields: None,
     }
 }
 
