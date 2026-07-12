@@ -664,6 +664,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     Ok(result) => {
                         let stderr = String::from_utf8_lossy(&result.stderr);
                         eprintln!("  zig build FAILED:\n{}", stderr);
+                        // Persist cache before returning — the transpiled Zig files
+                        // are already on disk; re-transpiling on next build is wasteful.
+                        write_build_cache(&out_dir, &build_cache);
                         return Err(format!(
                             "zig build failed for project '{}':\n{}",
                             project_name,
@@ -678,9 +681,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // === Zig tests ===
                 // Skip zig test when host functions are present — they require Rust-side
                 // symbol resolution and cannot be linked by zig test standalone.
-                let has_host_zig = project_path.join("src").join("host.zig").exists();
-                let has_host_deps = !host_fns.is_empty() || has_host_zig;
-                if has_host_deps {
+                // Note: host.zig always exists on disk (contains regex declarations even
+                // when no host functions are registered), so checking for its existence
+                // would always be true. Rely solely on host_fns.is_empty().
+                if !host_fns.is_empty() {
                     if verbose {
                         println!("  zig test: SKIPPED (project has host function dependencies)");
                     }
