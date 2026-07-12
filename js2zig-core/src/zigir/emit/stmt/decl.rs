@@ -191,16 +191,11 @@ impl Emitter {
 
         self.write(";\n");
 
-        // Var/const usage suppression for ArrayList/Map/Set or JS-const variables
+        // Var usage suppression for ArrayList/Map/Set variables
         // whose value may not be read after compilation transforms.
-        if vd.needs_var_suppression || vd.needs_const_suppression {
-            let kind = if vd.needs_var_suppression {
-                "var"
-            } else {
-                "const"
-            };
+        if vd.needs_var_suppression {
             self.write_indent();
-            self.write(&format!("_ = &{}; // {} usage\n", vd.name.zig_name, kind));
+            self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
         }
 
         // Auto-cleanup: defer deinit for Map/Set variables and class instances

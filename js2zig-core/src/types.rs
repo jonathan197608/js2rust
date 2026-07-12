@@ -151,7 +151,7 @@ impl ZigType {
             "anytype" => ZigType::Anytype,
             // Host JSON config uses "string" and "any" as type names
             "string" => ZigType::Str,
-            "any" | "jsvalue" => ZigType::Void,
+            "any" | "jsvalue" => ZigType::JsAny,
             // struct: prefix from host JSON config
             other if other.starts_with("struct:") => ZigType::NamedStruct(other[7..].to_string()),
             // Named struct (fallback for types not in typedefs — no spaces or brackets)

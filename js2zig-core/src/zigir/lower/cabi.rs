@@ -120,17 +120,6 @@ impl Lowerer {
         }
     }
 
-    /// Add a warning diagnostic.
-    /// Currently unused but retained as infrastructure for future warning-level diagnostics.
-    #[allow(dead_code)]
-    pub(super) fn add_warning(&mut self, span: SourceSpan, msg: impl Into<String>) {
-        self.diagnostics.push(IrDiagnostic {
-            level: DiagnosticLevel::Warning,
-            span: Some(span),
-            message: msg.into(),
-        });
-    }
-
     /// Create an IrIdent for the given JS name, applying shadow renaming.
     pub(super) fn make_ident(&self, js_name: &str) -> IrIdent {
         self.name_mangler.make_ident(js_name)

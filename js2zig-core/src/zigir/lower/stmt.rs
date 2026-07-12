@@ -322,7 +322,7 @@ impl Lowerer {
         let (var, destructure_vars) = self.extract_for_of_vars(&fos.left);
 
         // Determine iteration kind
-        let (kind, iterable_is_arraylist) = self.detect_for_of_kind(&fos.right, &destructure_vars);
+        let (kind, iterable_is_arraylist) = self.detect_for_of_kind(&fos.right);
 
         if matches!(kind, IrForOfKind::AsyncUnsupported) {
             return crate::zigir::types::IrStmt::CompileError {
@@ -452,15 +452,7 @@ impl Lowerer {
     }
 
     /// Detect for-of iteration kind based on the right-hand expression type.
-    /// Note: `destructure_vars` is not used for kind detection (it's stored
-    /// in the ForOf node for the Emitter to use), but kept for future use
-    /// (e.g. distinguishing single-var vs destructure patterns).
-    #[allow(unused_variables)]
-    pub(super) fn detect_for_of_kind(
-        &self,
-        right: &Expression,
-        _destructure_vars: &[IrIdent],
-    ) -> (IrForOfKind, bool) {
+    pub(super) fn detect_for_of_kind(&self, right: &Expression) -> (IrForOfKind, bool) {
         match right {
             Expression::Identifier(id) => {
                 if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {

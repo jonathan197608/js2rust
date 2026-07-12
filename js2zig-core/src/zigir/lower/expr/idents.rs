@@ -497,7 +497,6 @@ mod tests {
                 init: None,
                 is_json_parse: false,
                 needs_var_suppression: false,
-                needs_const_suppression: false,
                 needs_deinit: true,
             }),
             IrStmt::Return {
@@ -543,7 +542,6 @@ mod tests {
             init: None,
             is_json_parse: false,
             needs_var_suppression: false,
-            needs_const_suppression: false,
             needs_deinit: true,
         })]);
         let names = Lowerer::collect_returned_var_zig_names_in_block(&block);

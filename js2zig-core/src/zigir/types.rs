@@ -126,9 +126,6 @@ pub struct IrVarDecl {
     pub init: Option<IrExpr>,
     pub is_json_parse: bool,
     pub needs_var_suppression: bool,
-    /// Suppress "unused local constant" error by emitting `_ = varname;`.
-    /// Used for JS-const variables whose reassignment is replaced by a throw.
-    pub needs_const_suppression: bool,
     /// Whether this variable should get `defer varname.deinit(alloc)` auto-cleanup.
     /// Set to true by default for Map/Set types and class instances with needs_deinit,
     /// but can be set to false by the Emitter for variables that are returned
@@ -147,7 +144,6 @@ impl IrVarDecl {
             init,
             is_json_parse: false,
             needs_var_suppression: false,
-            needs_const_suppression: false,
             needs_deinit: false,
         }
     }
@@ -1060,7 +1056,6 @@ mod tests {
             init: None,
             is_json_parse: false,
             needs_var_suppression: true,
-            needs_const_suppression: false,
             needs_deinit: true,
         };
         assert!(v.needs_deinit);

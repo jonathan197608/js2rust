@@ -78,16 +78,15 @@ pub fn build() {
     for p in &js_file_paths {
         println!("cargo:rerun-if-changed={}", p.display());
     }
-    println!("cargo:rerun-if-changed={}/js2rust.toml", manifest_dir);
+    let config_toml = PathBuf::from(&manifest_dir).join("js2rust.toml");
+    println!("cargo:rerun-if-changed={}", config_toml.display());
     // Watch the diagnostics tracking file so Cargo re-runs the build script
     // when it is first created or changes.  This ensures the build script
     // produces a CLEAN output (no cargo:warning) on the next run after the
     // initial diagnostic emission, preventing Cargo from replaying stale
     // warnings on cached builds.
-    println!(
-        "cargo:rerun-if-changed={}/.js2zig-cache/.last_emitted_diagnostics.json",
-        manifest_dir
-    );
+    let diagnostics_file = cache_dir.join(".last_emitted_diagnostics.json");
+    println!("cargo:rerun-if-changed={}", diagnostics_file.display());
 
     let (entry_file, additional_roots) = {
         let mut paths = js_file_paths;

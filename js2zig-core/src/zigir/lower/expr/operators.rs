@@ -794,19 +794,10 @@ impl Lowerer {
             }
             // String primitives: NOT instanceof String in JS (only String objects are)
             ZigType::Str => Some(IrExpr::BoolLiteral(false)),
-            // Numeric/Boolean primitives: NOT instanceof their wrapper types
-            ZigType::I64 | ZigType::F64 => {
-                if type_name == "Number" {
-                    return Some(IrExpr::BoolLiteral(false)); // primitives aren't objects
-                }
-                Some(IrExpr::BoolLiteral(false))
-            }
-            ZigType::Bool => {
-                if type_name == "Boolean" {
-                    return Some(IrExpr::BoolLiteral(false)); // primitives aren't objects
-                }
-                Some(IrExpr::BoolLiteral(false))
-            }
+            // Numeric/Boolean primitives are never `instanceof` their wrapper types
+            // in JS (primitives lack [[Prototype]]).  Both branches always return false
+            // regardless of the right-hand type_name.
+            ZigType::I64 | ZigType::F64 | ZigType::Bool => Some(IrExpr::BoolLiteral(false)),
             // For JsAny / Anytype, we can't resolve at compile time
             ZigType::JsAny | ZigType::Anytype => None,
             // Other types: conservatively say we can't resolve

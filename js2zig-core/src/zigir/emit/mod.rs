@@ -367,7 +367,6 @@ mod tests {
             init: None,
             is_json_parse: false,
             needs_var_suppression: true,
-            needs_const_suppression: false,
             needs_deinit: true,
         }));
         let output = Emitter::emit_module(&module);
@@ -386,7 +385,6 @@ mod tests {
             init: None,
             is_json_parse: false,
             needs_var_suppression: false,
-            needs_const_suppression: false,
             needs_deinit: false, // cleared by ownership transfer pass
         }));
         let output = Emitter::emit_module(&module);

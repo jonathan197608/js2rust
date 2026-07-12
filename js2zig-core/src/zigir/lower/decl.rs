@@ -333,10 +333,6 @@ impl Lowerer {
             ))
             || is_js_const_reassigned;
 
-        // Needs const suppression: not needed anymore — we keep `var` and use
-        // var suppression instead.  Kept as always-false for struct field compat.
-        let needs_const_suppression = false;
-
         // Lower initializer expression
         let init = match decl.init.as_ref() {
             Some(expr) => {
@@ -410,7 +406,6 @@ impl Lowerer {
             init,
             is_json_parse,
             needs_var_suppression,
-            needs_const_suppression,
             needs_deinit,
         })
     }
@@ -724,7 +719,6 @@ impl Lowerer {
                 )),
                 is_json_parse: false,
                 needs_var_suppression: false,
-                needs_const_suppression: false,
                 needs_deinit: false,
             });
             scope.body.stmts.insert(0, arguments_init);
