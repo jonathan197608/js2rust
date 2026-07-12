@@ -97,15 +97,11 @@ impl fmt::Debug for AnalysisResult {
 ///
 /// Only processes the specified entry file(s) and the files they import,
 /// rather than scanning an entire directory.
-///
-/// # Returns
-/// - `AnalysisResult`: all parsed ASTs, source texts, and metadata.
-/// - `groups_json`: JSON-serializable summary for `out/groups.json`.
 pub fn analyze_project(
     in_dir: &str,
     core_file: &str,
     additional_core_files: &[String],
-) -> (AnalysisResult, String) {
+) -> AnalysisResult {
     let in_path = Path::new(in_dir);
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
@@ -184,8 +180,8 @@ pub fn analyze_project(
         .cloned()
         .unwrap_or_else(|| sanitize_name(core_file));
 
-    let result = AnalysisResult {
-        core_name: core_name.clone(),
+    AnalysisResult {
+        core_name,
         core_file: core_file.to_string(),
         members,
         name_map: sanitzed,
@@ -194,18 +190,7 @@ pub fn analyze_project(
         all_fn_names,
         file_sources,
         parsed_programs,
-    };
-
-    // Serialize project summary to JSON.
-    let groups_json = serde_json::to_string_pretty(&serde_json::json!([{
-        "name": &result.core_name,
-        "core_file": &result.core_file,
-        "member_count": result.members.len(),
-        "members": &result.members,
-    }]))
-    .expect("Failed to serialize groups.json");
-
-    (result, groups_json)
+    }
 }
 
 /// Compute transitive dependencies starting from multiple root files.

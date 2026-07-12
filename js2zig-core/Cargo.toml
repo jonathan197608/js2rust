@@ -1,6 +1,6 @@
 [package]
 name = "js2zig-core"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 authors = ["jonathan197608"]
 description = "Core JS-to-Zig transpiler library"

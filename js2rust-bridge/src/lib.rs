@@ -200,13 +200,13 @@ fn link_from_cache(cache_dir: &std::path::Path) {
             let lib_dir = group_dir.join("zig-out").join("lib");
 
             if lib_dir.exists()
-                && let Some(group_name) = entry.file_name().to_str()
+                && let Some(dir_name) = entry.file_name().to_str()
             {
-                if group_name == "host.zig" || group_name == "groups.json" {
+                if dir_name == "host.zig" {
                     continue;
                 }
                 println!("cargo:rustc-link-search=native={}", lib_dir.display());
-                println!("cargo:rustc-link-lib=static={}", group_name);
+                println!("cargo:rustc-link-lib=static={}", dir_name);
                 found = true;
             }
         }

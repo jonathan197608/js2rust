@@ -143,7 +143,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 .map(|s| s.to_string())
         })
         .collect();
-    let (analysis, groups_json) = analyze_project(&in_dir, &core_file, &additional_js_files);
+    let analysis = analyze_project(&in_dir, &core_file, &additional_js_files);
 
     // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
     // (including transitive dependencies not listed in js2rust.toml).
@@ -157,19 +157,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let member_path = Path::new(&in_dir).join(member);
             println!("cargo:rerun-if-changed={}", member_path.display());
         }
-    }
-
-    let groups_json_path = Path::new(&out_dir).join("groups.json");
-    if let Err(e) = fs::write(&groups_json_path, &groups_json) {
-        if verbose {
-            eprintln!(
-                "warning: could not write '{}': {}",
-                groups_json_path.display(),
-                e
-            );
-        }
-    } else if verbose {
-        println!("Wrote: {}/groups.json", out_dir);
     }
 
     if analysis.members.is_empty() {
