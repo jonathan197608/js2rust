@@ -220,7 +220,7 @@ impl Lowerer {
             }
             IrStmt::NestedFnDecl { .. } => {
                 // Nested fn decl contains its own closure — scan the instance
-                if let crate::zigir::types::IrStmt::NestedFnDecl {
+                if let IrStmt::NestedFnDecl {
                     instance: Some(cl), ..
                 } = stmt
                 {

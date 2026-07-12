@@ -435,12 +435,10 @@ impl Lowerer {
             Expression::ObjectExpression(oe) => {
                 let mut fields = Vec::new();
                 for prop in &oe.properties {
-                    if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(op) = prop {
+                    if let ObjectPropertyKind::ObjectProperty(op) = prop {
                         let field_name = match &op.key {
-                            oxc_ast::ast::PropertyKey::StaticIdentifier(id) => {
-                                id.name.as_str().to_string()
-                            }
-                            oxc_ast::ast::PropertyKey::StringLiteral(s) => s.value.to_string(),
+                            PropertyKey::StaticIdentifier(id) => id.name.as_str().to_string(),
+                            PropertyKey::StringLiteral(s) => s.value.to_string(),
                             _ => continue,
                         };
                         let field_ty = self.infer_expr_type(&op.value).unwrap_or(ZigType::I64);

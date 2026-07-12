@@ -2,6 +2,8 @@
 // Closure struct lowering and capture analysis.
 
 use oxc_ast::ast::*;
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use crate::types::ZigType;
 use crate::zigir::types::{IrBlock, IrParam};
@@ -75,9 +77,7 @@ impl Lowerer {
     }
 
     /// Extract parameter names from a parameter list.
-    fn collect_param_names(
-        params: &oxc_allocator::Vec<'_, FormalParameter>,
-    ) -> std::collections::HashSet<String> {
+    fn collect_param_names(params: &oxc_allocator::Vec<'_, FormalParameter>) -> HashSet<String> {
         params
             .iter()
             .filter_map(|p| crate::infer::binding_name(&p.pattern))
@@ -88,12 +88,12 @@ impl Lowerer {
     /// Core capture-collection logic shared by arrow and regular functions.
     fn collect_captures_from_body(
         &self,
-        param_names: &std::collections::HashSet<String>,
+        param_names: &HashSet<String>,
         stmts: &oxc_allocator::Vec<'_, Statement>,
         include_local_decls: bool,
     ) -> Vec<(String, ZigType, bool)> {
         let mut captured = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
 
         let mut local_names = param_names.clone();
         if include_local_decls {
@@ -122,8 +122,8 @@ impl Lowerer {
     /// These variables (const/let/var in the function body) are NOT captures.
     pub(super) fn collect_local_declarations(
         stmts: &oxc_allocator::Vec<'_, Statement>,
-    ) -> std::collections::HashSet<String> {
-        let mut names = std::collections::HashSet::new();
+    ) -> HashSet<String> {
+        let mut names = HashSet::new();
         for stmt in stmts.iter() {
             if let Statement::VariableDeclaration(var_decl) = stmt {
                 for declarator in &var_decl.declarations {
@@ -137,143 +137,63 @@ impl Lowerer {
     }
 
     /// Detect which variables are mutated (assigned to or updated) in a list of statements.
-    pub(super) fn detect_mutated_vars_in_stmts(
-        stmts: &[Statement],
-    ) -> std::collections::HashSet<String> {
-        let mut mutated = std::collections::HashSet::new();
+    pub(super) fn detect_mutated_vars_in_stmts(stmts: &[Statement]) -> HashSet<String> {
+        let mutated = RefCell::new(HashSet::new());
         for stmt in stmts {
-            Self::detect_mutated_in_stmt(stmt, &mut mutated);
+            Self::detect_mutated_in_stmt(stmt, &mutated);
         }
-        mutated
+        mutated.into_inner()
     }
 
-    pub(super) fn detect_mutated_in_stmt(
-        stmt: &Statement,
-        mutated: &mut std::collections::HashSet<String>,
-    ) {
-        match stmt {
-            Statement::ExpressionStatement(es) => {
-                Self::detect_mutated_in_expr(&es.expression, mutated);
-            }
-            Statement::ReturnStatement(rs) => {
-                if let Some(expr) = &rs.argument {
-                    Self::detect_mutated_in_expr(expr, mutated);
-                }
-            }
-            Statement::BlockStatement(bs) => {
-                for s in &bs.body {
-                    Self::detect_mutated_in_stmt(s, mutated);
-                }
-            }
-            Statement::IfStatement(is) => {
-                Self::detect_mutated_in_expr(&is.test, mutated);
-                Self::detect_mutated_in_stmt(&is.consequent, mutated);
-                if let Some(alt) = &is.alternate {
-                    Self::detect_mutated_in_stmt(alt, mutated);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                Self::detect_mutated_in_expr(&ws.test, mutated);
-                Self::detect_mutated_in_stmt(&ws.body, mutated);
-            }
-            Statement::ForStatement(fs) => {
-                if let Some(test) = &fs.test {
-                    Self::detect_mutated_in_expr(test, mutated);
-                }
-                if let Some(update) = &fs.update {
-                    Self::detect_mutated_in_expr(update, mutated);
-                }
-                Self::detect_mutated_in_stmt(&fs.body, mutated);
-            }
-            Statement::ForOfStatement(fos) => {
-                Self::detect_mutated_in_expr(&fos.right, mutated);
-                Self::detect_mutated_in_stmt(&fos.body, mutated);
-            }
-            Statement::ForInStatement(fis) => {
-                Self::detect_mutated_in_expr(&fis.right, mutated);
-                Self::detect_mutated_in_stmt(&fis.body, mutated);
-            }
-            Statement::SwitchStatement(ss) => {
-                Self::detect_mutated_in_expr(&ss.discriminant, mutated);
-                for case in &ss.cases {
-                    for s in &case.consequent {
-                        Self::detect_mutated_in_stmt(s, mutated);
-                    }
-                }
-            }
-            Statement::TryStatement(ts) => {
-                for s in &ts.block.body {
-                    Self::detect_mutated_in_stmt(s, mutated);
-                }
-                if let Some(handler) = &ts.handler {
-                    for s in &handler.body.body {
-                        Self::detect_mutated_in_stmt(s, mutated);
-                    }
-                }
-                if let Some(finalizer) = &ts.finalizer {
-                    for s in &finalizer.body {
-                        Self::detect_mutated_in_stmt(s, mutated);
-                    }
-                }
-            }
-            _ => {}
-        }
+    pub(super) fn detect_mutated_in_stmt(stmt: &Statement, mutated: &RefCell<HashSet<String>>) {
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::detect_mutated_in_stmt(s, mutated),
+            &mut |e| Self::detect_mutated_in_expr(e, mutated),
+            &mut |_vd| {
+                // VariableDeclaration inits are not mutation targets; skip.
+            },
+        );
     }
 
-    pub(super) fn detect_mutated_in_expr(
-        expr: &Expression,
-        mutated: &mut std::collections::HashSet<String>,
-    ) {
-        match expr {
-            Expression::AssignmentExpression(ae) => {
-                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
-                    mutated.insert(id.name.to_string());
+    pub(super) fn detect_mutated_in_expr(expr: &Expression, mutated: &RefCell<HashSet<String>>) {
+        crate::infer::ast_walk::for_each_expr_child(
+            expr,
+            &mut |e| Self::detect_mutated_in_expr(e, mutated),
+            &mut |_| {}, // on_ident: identifiers are not mutations
+            &mut |target| {
+                // AssignmentExpression left-hand side
+                if let AssignmentTarget::AssignmentTargetIdentifier(id) = target {
+                    mutated.borrow_mut().insert(id.name.to_string());
                 }
-                Self::detect_mutated_in_expr(&ae.right, mutated);
-            }
-            Expression::UpdateExpression(ue) => {
-                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
-                    mutated.insert(id.name.to_string());
+            },
+            &mut |simple_target| {
+                // UpdateExpression target (i++, ++i, etc.)
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = simple_target {
+                    mutated.borrow_mut().insert(id.name.to_string());
                 }
-            }
-            Expression::BinaryExpression(be) => {
-                Self::detect_mutated_in_expr(&be.left, mutated);
-                Self::detect_mutated_in_expr(&be.right, mutated);
-            }
-            Expression::CallExpression(ce) => {
-                Self::detect_mutated_in_expr(&ce.callee, mutated);
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        Self::detect_mutated_in_expr(e, mutated);
-                    }
-                }
-            }
-            Expression::LogicalExpression(le) => {
-                Self::detect_mutated_in_expr(&le.left, mutated);
-                Self::detect_mutated_in_expr(&le.right, mutated);
-            }
-            Expression::ConditionalExpression(ce) => {
-                Self::detect_mutated_in_expr(&ce.test, mutated);
-                Self::detect_mutated_in_expr(&ce.consequent, mutated);
-                Self::detect_mutated_in_expr(&ce.alternate, mutated);
-            }
-            Expression::UnaryExpression(ue) => {
-                Self::detect_mutated_in_expr(&ue.argument, mutated);
-            }
-            Expression::AwaitExpression(ae) => {
-                Self::detect_mutated_in_expr(&ae.argument, mutated);
-            }
-            _ => {}
-        }
+            },
+            &mut |_params, _stmts| {
+                // Function/arrow scope boundary — stop recursing.
+                // Mutations inside nested functions don't affect the
+                // enclosing scope's variable set.
+            },
+        );
     }
 
     /// Helper: collect identifiers from a statement that reference variables
     /// in an enclosing scope (possible captures).
+    ///
+    /// Note: This intentionally handles only a limited set of statement types
+    /// (ExpressionStatement, ReturnStatement, VariableDeclaration). Other
+    /// statement types (If, While, For, etc.) are not recursed because the
+    /// caller already iterates top-level statements and the arrow function
+    /// bodies we analyze rarely have complex control flow.
     pub(super) fn collect_idents_from_stmt(
         stmt: &Statement,
         captured: &mut Vec<(String, ZigType, bool)>,
-        seen: &mut std::collections::HashSet<String>,
-        local_names: &std::collections::HashSet<String>,
+        seen: &mut HashSet<String>,
+        local_names: &HashSet<String>,
         type_info: &crate::infer::TypeCheckResult,
     ) {
         match stmt {
@@ -292,8 +212,6 @@ impl Lowerer {
                 }
             }
             Statement::VariableDeclaration(var_decl) => {
-                // Process init expressions (right-hand side) ¡ª they may reference
-                // outer variables that need to be captured.
                 for declarator in &var_decl.declarations {
                     if let Some(init) = &declarator.init {
                         Self::collect_idents_from_expr(
@@ -312,11 +230,16 @@ impl Lowerer {
 
     /// Helper: collect identifiers from an expression that reference variables
     /// in an enclosing scope.
+    ///
+    /// Note: This intentionally handles a limited set of expression types to
+    /// match the original behavior. Expanding coverage (e.g., handling
+    /// AssignmentExpression, StaticMemberExpression) would change capture
+    /// detection and affect the generated closure code.
     pub(super) fn collect_idents_from_expr(
         expr: &Expression,
         captured: &mut Vec<(String, ZigType, bool)>,
-        seen: &mut std::collections::HashSet<String>,
-        local_names: &std::collections::HashSet<String>,
+        seen: &mut HashSet<String>,
+        local_names: &HashSet<String>,
         type_info: &crate::infer::TypeCheckResult,
     ) {
         match expr {
@@ -347,12 +270,8 @@ impl Lowerer {
                 }
                 Self::collect_idents_from_expr(&ce.callee, captured, seen, local_names, type_info);
             }
-            // Function/arrow expressions: recurse into the body to find
-            // identifiers that the inner function references from the
-            // enclosing scope (transitive capture).
             Expression::FunctionExpression(fe) => {
                 if let Some(body) = &fe.body {
-                    // Add this function's parameter names to local_names
                     let mut inner_locals = local_names.clone();
                     for param in &fe.params.items {
                         if let Some(pname) = crate::infer::binding_name(&param.pattern) {

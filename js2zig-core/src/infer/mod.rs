@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use crate::types::JSDocData;
 use crate::types::ZigType;
 
+pub mod ast_walk;
 pub mod expr;
 pub mod fn_types;
 pub mod helpers;

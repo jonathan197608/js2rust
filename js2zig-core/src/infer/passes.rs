@@ -6,6 +6,7 @@ use super::helpers::binding_name;
 use super::{InferResult, TypeInferrer};
 use crate::types::ZigType;
 use oxc_ast::ast::*;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 impl TypeInferrer {
@@ -253,22 +254,24 @@ impl TypeInferrer {
 
     pub(crate) fn collect_used_names(&mut self, program: &Program) {
         self.used_names.clear();
+        let names = RefCell::new(HashSet::new());
         for stmt in &program.body {
             match stmt {
                 Statement::FunctionDeclaration(fd) => {
-                    Self::collect_idents_from_function(fd, &mut self.used_names);
+                    Self::collect_idents_from_function(fd, &names);
                 }
                 Statement::ExportNamedDeclaration(export_decl) => {
                     if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
-                        Self::collect_idents_from_function(fd.as_ref(), &mut self.used_names);
+                        Self::collect_idents_from_function(fd.as_ref(), &names);
                     }
                 }
                 _ => {}
             }
         }
+        self.used_names = names.into_inner();
     }
 
-    pub(crate) fn collect_idents_from_function(fd: &Function, names: &mut HashSet<String>) {
+    pub(crate) fn collect_idents_from_function(fd: &Function, names: &RefCell<HashSet<String>>) {
         if let Some(body) = &fd.body {
             for stmt in &body.statements {
                 Self::collect_idents_from_stmt(stmt, names);
@@ -276,163 +279,37 @@ impl TypeInferrer {
         }
     }
 
-    pub(crate) fn collect_idents_from_vardecl(
-        vd: &VariableDeclaration,
-        names: &mut HashSet<String>,
-    ) {
-        for decl in &vd.declarations {
-            if let Some(init) = &decl.init {
-                Self::collect_idents_from_expr(init, names);
-            }
-        }
+    pub(crate) fn collect_idents_from_stmt(stmt: &Statement, names: &RefCell<HashSet<String>>) {
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::collect_idents_from_stmt(s, names),
+            &mut |e| Self::collect_idents_from_expr(e, names),
+            &mut |vd| {
+                crate::infer::ast_walk::for_each_var_decl_init(vd, &mut |init| {
+                    Self::collect_idents_from_expr(init, names);
+                });
+            },
+        );
     }
 
-    pub(crate) fn collect_idents_from_stmt(stmt: &Statement, names: &mut HashSet<String>) {
-        match stmt {
-            Statement::ExpressionStatement(es) => {
-                Self::collect_idents_from_expr(&es.expression, names);
-            }
-            Statement::ReturnStatement(rs) => {
-                if let Some(arg) = &rs.argument {
-                    Self::collect_idents_from_expr(arg, names);
+    pub(crate) fn collect_idents_from_expr(expr: &Expression, names: &RefCell<HashSet<String>>) {
+        crate::infer::ast_walk::for_each_expr_child(
+            expr,
+            &mut |e| Self::collect_idents_from_expr(e, names),
+            &mut |name| {
+                names.borrow_mut().insert(name.to_string());
+            },
+            &mut |target| {
+                // Assignment target identifiers count as "used"
+                if let AssignmentTarget::AssignmentTargetIdentifier(id) = target {
+                    names.borrow_mut().insert(id.name.to_string());
                 }
-            }
-            Statement::IfStatement(is) => {
-                Self::collect_idents_from_expr(&is.test, names);
-                Self::collect_idents_from_stmt(&is.consequent, names);
-                if let Some(alt) = &is.alternate {
-                    Self::collect_idents_from_stmt(alt, names);
-                }
-            }
-            Statement::WhileStatement(ws) => {
-                Self::collect_idents_from_expr(&ws.test, names);
-                Self::collect_idents_from_stmt(&ws.body, names);
-            }
-            Statement::DoWhileStatement(dws) => {
-                Self::collect_idents_from_stmt(&dws.body, names);
-                Self::collect_idents_from_expr(&dws.test, names);
-            }
-            Statement::ForStatement(fs) => {
-                if let Some(init) = &fs.init {
-                    if let ForStatementInit::VariableDeclaration(vd) = init {
-                        Self::collect_idents_from_vardecl(vd, names);
-                    } else if let Some(expr) = init.as_expression() {
-                        Self::collect_idents_from_expr(expr, names);
-                    }
-                }
-                if let Some(test) = &fs.test {
-                    Self::collect_idents_from_expr(test, names);
-                }
-                if let Some(update) = &fs.update {
-                    Self::collect_idents_from_expr(update, names);
-                }
-                Self::collect_idents_from_stmt(&fs.body, names);
-            }
-            Statement::ForOfStatement(fos) => {
-                if let ForStatementLeft::VariableDeclaration(vd) = &fos.left {
-                    Self::collect_idents_from_vardecl(vd, names);
-                }
-                Self::collect_idents_from_expr(&fos.right, names);
-                Self::collect_idents_from_stmt(&fos.body, names);
-            }
-            Statement::ForInStatement(fis) => {
-                Self::collect_idents_from_expr(&fis.right, names);
-                Self::collect_idents_from_stmt(&fis.body, names);
-            }
-            Statement::TryStatement(ts) => {
-                for s in &ts.block.body {
-                    Self::collect_idents_from_stmt(s, names);
-                }
-                if let Some(handler) = &ts.handler {
-                    for s in &handler.body.body {
-                        Self::collect_idents_from_stmt(s, names);
-                    }
-                }
-                if let Some(finalizer) = &ts.finalizer {
-                    for s in &finalizer.body {
-                        Self::collect_idents_from_stmt(s, names);
-                    }
-                }
-            }
-            Statement::SwitchStatement(ss) => {
-                Self::collect_idents_from_expr(&ss.discriminant, names);
-                for case in &ss.cases {
-                    if let Some(test) = &case.test {
-                        Self::collect_idents_from_expr(test, names);
-                    }
-                    for s in &case.consequent {
-                        Self::collect_idents_from_stmt(s, names);
-                    }
-                }
-            }
-            Statement::BlockStatement(bs) => {
-                for s in &bs.body {
-                    Self::collect_idents_from_stmt(s, names);
-                }
-            }
-            Statement::VariableDeclaration(vd) => {
-                for decl in &vd.declarations {
-                    if let Some(init) = &decl.init {
-                        Self::collect_idents_from_expr(init, names);
-                    }
-                }
-            }
-            Statement::LabeledStatement(ls) => {
-                Self::collect_idents_from_stmt(&ls.body, names);
-            }
-            _ => {}
-        }
-    }
-
-    pub(crate) fn collect_idents_from_expr(expr: &Expression, names: &mut HashSet<String>) {
-        match expr {
-            Expression::Identifier(id) => {
-                names.insert(id.name.to_string());
-            }
-            Expression::BinaryExpression(be) => {
-                Self::collect_idents_from_expr(&be.left, names);
-                Self::collect_idents_from_expr(&be.right, names);
-            }
-            Expression::CallExpression(ce) => {
-                Self::collect_idents_from_expr(&ce.callee, names);
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        Self::collect_idents_from_expr(e, names);
-                    }
-                }
-            }
-            Expression::AssignmentExpression(ae) => {
-                if let AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left {
-                    names.insert(id.name.to_string());
-                }
-                Self::collect_idents_from_expr(&ae.right, names);
-            }
-            Expression::UnaryExpression(ue) => {
-                Self::collect_idents_from_expr(&ue.argument, names);
-            }
-            Expression::LogicalExpression(le) => {
-                Self::collect_idents_from_expr(&le.left, names);
-                Self::collect_idents_from_expr(&le.right, names);
-            }
-            Expression::ParenthesizedExpression(pe) => {
-                Self::collect_idents_from_expr(&pe.expression, names);
-            }
-            Expression::ConditionalExpression(ce) => {
-                Self::collect_idents_from_expr(&ce.test, names);
-                Self::collect_idents_from_expr(&ce.consequent, names);
-                Self::collect_idents_from_expr(&ce.alternate, names);
-            }
-            // Static member access: obj.prop — collect obj
-            Expression::StaticMemberExpression(mem) => {
-                Self::collect_idents_from_expr(&mem.object, names);
-            }
-            // Computed member access: obj[key] — collect obj and key
-            Expression::ComputedMemberExpression(mem) => {
-                Self::collect_idents_from_expr(&mem.object, names);
-                Self::collect_idents_from_expr(&mem.expression, names);
-            }
-            _ => {}
-        }
+            },
+            &mut |_| {}, // on_simple_target: update targets handled via on_ident
+            &mut |_, _| {
+                // Function/arrow scope boundary — stop at function scope boundary
+            },
+        );
     }
 
     // ============================================================
