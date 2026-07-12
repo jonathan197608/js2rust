@@ -6,7 +6,6 @@ use crate::types::ZigType;
 use crate::zigir::ident::IrIdent;
 use crate::zigir::ops::AssignOp;
 use crate::zigir::ops::BinOp;
-use crate::zigir::ops::LogicalOp;
 use crate::zigir::ops::UnaOp;
 use crate::zigir::ops::UpdateOp;
 
@@ -97,15 +96,6 @@ pub fn una_op_to_zig(op: UnaOp) -> &'static str {
         UnaOp::TypeOf => "typeof", // handled specially at emit time
         UnaOp::Void => "void",     // handled specially at emit time
         UnaOp::Delete => "delete", // handled specially at emit time
-    }
-}
-
-/// Logical operator → Zig operator string.
-pub fn logical_op_to_zig(op: LogicalOp) -> &'static str {
-    match op {
-        LogicalOp::And => "and",
-        LogicalOp::Or => "or",
-        LogicalOp::Nullish => "orelse",
     }
 }
 
@@ -264,13 +254,6 @@ mod tests {
         assert_eq!(bin_op_to_zig(BinOp::Add), "+");
         assert_eq!(bin_op_to_zig(BinOp::Le), "<=");
         assert_eq!(bin_op_to_zig(BinOp::StrictEq), "==");
-    }
-
-    #[test]
-    fn test_logical_op_to_zig() {
-        assert_eq!(logical_op_to_zig(LogicalOp::And), "and");
-        assert_eq!(logical_op_to_zig(LogicalOp::Or), "or");
-        assert_eq!(logical_op_to_zig(LogicalOp::Nullish), "orelse");
     }
 
     #[test]

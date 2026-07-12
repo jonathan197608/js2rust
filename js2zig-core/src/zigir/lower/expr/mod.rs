@@ -96,10 +96,18 @@ impl Lowerer {
                     LogicalOperator::Or => LogicalOp::Or,
                     LogicalOperator::Coalesce => LogicalOp::Nullish,
                 };
+                let left_type = self
+                    .infer_expr_type(&le.left)
+                    .unwrap_or(crate::types::ZigType::JsAny);
+                let right_type = self
+                    .infer_expr_type(&le.right)
+                    .unwrap_or(crate::types::ZigType::JsAny);
                 IrExpr::Logical {
                     op,
                     left: Box::new(self.lower_expr(&le.left)),
                     right: Box::new(self.lower_expr(&le.right)),
+                    left_type: Some(left_type),
+                    right_type: Some(right_type),
                 }
             }
 

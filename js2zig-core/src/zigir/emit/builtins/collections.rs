@@ -168,11 +168,12 @@ impl Emitter {
         match method {
             // ── Map instance methods (use receiver) ──
             "set" => {
-                // map.set(key, val) → map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation")
+                // map.set(key, val) → (blk: { map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation"); break :blk map })
+                // Returns the map object for chaining (JS semantics).
                 if let Some(name) = obj {
-                    self.write(&format!("{}.set(", name));
+                    self.write(&format!("(blk: {{ {}.set(", name));
                 } else {
-                    self.write("js_collections.set(");
+                    self.write("(blk: { js_collections.set(");
                 }
                 if let Some(key) = args.first() {
                     self.write("JsAny.from(");
@@ -184,7 +185,14 @@ impl Emitter {
                     self.emit_expr(&args[1]);
                     self.write(")");
                 }
-                self.write(") catch @panic(\"OOM: allocation\")");
+                self.write(") catch @panic(\"OOM: allocation\"); ");
+                if let Some(name) = obj {
+                    self.write(&format!("break :blk {}; }})", name));
+                } else {
+                    // Degenerate path: no receiver name, cannot return the map.
+                    // Emit as a non-chaining call (result ignored).
+                    self.write("})");
+                }
             }
             "get" | "has" => {
                 // map.get(key)/map.has(key) → map.method(JsAny.from(key))
@@ -234,18 +242,25 @@ impl Emitter {
             }
             // ── Set instance methods ──
             "add" => {
-                // set.add(val) → set.add(JsAny.from(val)) catch @panic("OOM: allocation")
+                // set.add(val) → (blk: { set.add(JsAny.from(val)) catch @panic("OOM: allocation"); break :blk set })
+                // Returns the set object for chaining (JS semantics).
                 if let Some(name) = obj {
-                    self.write(&format!("{}.add(", name));
+                    self.write(&format!("(blk: {{ {}.add(", name));
                 } else {
-                    self.write("js_collections.add(");
+                    self.write("(blk: { js_collections.add(");
                 }
                 if let Some(val) = args.first() {
                     self.write("JsAny.from(");
                     self.emit_expr(val);
                     self.write(")");
                 }
-                self.write(") catch @panic(\"OOM: allocation\")");
+                self.write(") catch @panic(\"OOM: allocation\"); ");
+                if let Some(name) = obj {
+                    self.write(&format!("break :blk {}; }})", name));
+                } else {
+                    // Degenerate path: no receiver name, cannot return the set.
+                    self.write("})");
+                }
             }
             // ── forEach — handled by IrArrayCallbackInline, not here ──
             "forEach" => {

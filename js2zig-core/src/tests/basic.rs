@@ -151,8 +151,11 @@ return true;
 }
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_logical");
-    assert!(zig.contains("and"));
-    assert!(zig.contains("or"));
+    // Value-returning: `a > 0 && b > 0` emits a labeled-block if-expression,
+    // not Zig `and`. Verify the if-expression structure is present.
+    assert!(zig.contains("isTruthy(_lv_"));
+    // `||` is also emitted as an if-expression with isTruthy.
+    assert!(zig.contains("break :blk_"));
 }
 
 #[test]

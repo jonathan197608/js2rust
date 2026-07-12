@@ -8,9 +8,7 @@ pub mod template_new;
 
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers as emit_helpers;
-use crate::zigir::emit::helpers::{
-    EmitterHelpers, escape_zig_string, logical_op_to_zig, update_op_to_zig,
-};
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, update_op_to_zig};
 
 // ═══════════════════════════════════════════════════════
 //  Expression dispatch
@@ -299,14 +297,89 @@ impl Emitter {
                 }
             }
 
-            crate::zigir::types::IrExpr::Logical { op, left, right } => {
-                // Zig `and`/`or` require bool operands. Coerce operands with
-                // truthiness if they are not already bool.
-                self.write("(");
-                self.emit_expr_as_bool(left);
-                self.write(&format!(" {} ", logical_op_to_zig(*op)));
-                self.emit_expr_as_bool(right);
-                self.write(")");
+            crate::zigir::types::IrExpr::Logical {
+                op,
+                left,
+                right,
+                left_type,
+                right_type,
+            } => {
+                // Value-returning logical operators (JS semantics):
+                //   a && b → returns a if falsy, else b
+                //   a || b → returns a if truthy, else b
+                //   a ?? b → returns a if not null/undefined, else b
+                //
+                // Emitted as a Zig labeled-block if-expression so the result
+                // preserves the operand type instead of flattening to bool.
+                let id = self.peek_label_id();
+                let blk = self.next_label();
+                let lt = left_type.as_ref();
+                let rt = right_type.as_ref();
+                let same_type = lt.is_some() && rt.is_some() && lt == rt;
+
+                self.write(&format!("({blk}: {{ const _lv_{id} = "));
+                self.emit_expr(left);
+                self.write("; ");
+
+                match op {
+                    crate::zigir::ops::LogicalOp::And => {
+                        // a && b: if truthy(a) → b, else → a
+                        self.write("if (js_runtime.isTruthy(_lv_");
+                        self.write(&format!("{id}))"));
+                        self.write(&format!(" break :{blk} "));
+                        if same_type {
+                            self.emit_expr(right);
+                        } else {
+                            self.write("JsAny.from(");
+                            self.emit_expr(right);
+                            self.write(")");
+                        }
+                        self.write(&format!(" else break :{blk} "));
+                        if same_type {
+                            self.write(&format!("_lv_{id}"));
+                        } else {
+                            self.write(&format!("JsAny.from(_lv_{id})"));
+                        }
+                    }
+                    crate::zigir::ops::LogicalOp::Or => {
+                        // a || b: if truthy(a) → a, else → b
+                        self.write("if (js_runtime.isTruthy(_lv_");
+                        self.write(&format!("{id}))"));
+                        self.write(&format!(" break :{blk} "));
+                        if same_type {
+                            self.write(&format!("_lv_{id}"));
+                        } else {
+                            self.write(&format!("JsAny.from(_lv_{id})"));
+                        }
+                        self.write(&format!(" else break :{blk} "));
+                        if same_type {
+                            self.emit_expr(right);
+                        } else {
+                            self.write("JsAny.from(");
+                            self.emit_expr(right);
+                            self.write(")");
+                        }
+                    }
+                    crate::zigir::ops::LogicalOp::Nullish => {
+                        // a ?? b: if a is not null/undefined → a, else → b
+                        self.write(&format!("if (!_lv_{id}.isNullish())"));
+                        self.write(&format!(" break :{blk} "));
+                        if same_type {
+                            self.write(&format!("_lv_{id}"));
+                        } else {
+                            self.write(&format!("JsAny.from(_lv_{id})"));
+                        }
+                        self.write(&format!(" else break :{blk} "));
+                        if same_type {
+                            self.emit_expr(right);
+                        } else {
+                            self.write("JsAny.from(");
+                            self.emit_expr(right);
+                            self.write(")");
+                        }
+                    }
+                }
+                self.write("; })");
             }
 
             crate::zigir::types::IrExpr::Update {
@@ -753,7 +826,9 @@ impl Emitter {
 
         match expr {
             IrExpr::BoolLiteral(_) => true,
-            IrExpr::Logical { .. } => true,
+            // Logical expressions are value-returning in JS, not bool.
+            // They use if-expressions at emit time, producing the operand type or JsAny.
+            IrExpr::Logical { .. } => false,
             IrExpr::Unary {
                 op: crate::zigir::ops::UnaOp::Not | crate::zigir::ops::UnaOp::Delete,
                 ..

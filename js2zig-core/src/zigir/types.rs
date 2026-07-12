@@ -579,6 +579,10 @@ pub enum IrExpr {
         op: LogicalOp,
         left: Box<IrExpr>,
         right: Box<IrExpr>,
+        /// Inferred type of the left operand, used for value-returning emission.
+        left_type: Option<ZigType>,
+        /// Inferred type of the right operand.
+        right_type: Option<ZigType>,
     },
     Update {
         op: UpdateOp,

@@ -64,7 +64,9 @@ impl ConstantFoldPass {
                     changed
                 }
             }
-            IrExpr::Logical { op, left, right } => {
+            IrExpr::Logical {
+                op, left, right, ..
+            } => {
                 let mut changed = false;
                 if Self::try_fold(left) {
                     changed = true;
@@ -591,6 +593,8 @@ mod tests {
                 op: LogicalOp::And,
                 left: Box::new(IrExpr::BoolLiteral(false)),
                 right: Box::new(IrExpr::Ident(IrIdent::new("x"))),
+                left_type: Some(crate::types::ZigType::Bool),
+                right_type: None,
             }),
         }]);
         let mut pass = ConstantFoldPass::new();

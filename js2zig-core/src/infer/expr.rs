@@ -111,18 +111,29 @@ impl TypeInferrer {
                 }
             }
 
-            // LogicalExpression (&&, ||, ??): always inferred as Bool.
+            // LogicalExpression (&&, ||, ??): value-returning semantics.
             //
-            // KNOWN SEMANTIC DEVIATION: In JS, logical operators are value-returning
-            // (e.g., `x || default` returns the value of x or default, not a bool).
-            // The transpiler flattens them to `isTruthy(a) and/or isTruthy(b)`,
-            // which always produces a Zig bool. This correctly reflects what the
-            // generated Zig code actually does.
+            // In JS, logical operators return one of their operands, not a bool:
+            //   - `a && b`: returns a if falsy, else returns b
+            //   - `a || b`: returns a if truthy, else returns b
+            //   - `a ?? b`: returns a if not null/undefined, else returns b
             //
-            // TODO(future): Preserve JS value-returning semantics by emitting
-            // if-expressions instead of Zig `and`/`or`, and introducing a union
-            // type or JsAny wrapper for the result. This is a design-level change.
-            Expression::LogicalExpression(_) => InferResult::Definite(ZigType::Bool),
+            // If both operands infer to the same type, the result is that type.
+            // If types differ or are indeterminate, the result is JsAny.
+            Expression::LogicalExpression(le) => {
+                let left_ty = self.infer_expr_type(&le.left);
+                let right_ty = self.infer_expr_type(&le.right);
+                match (left_ty, right_ty) {
+                    (InferResult::Definite(l), InferResult::Definite(r)) => {
+                        if l == r {
+                            InferResult::Definite(l)
+                        } else {
+                            InferResult::Definite(ZigType::JsAny)
+                        }
+                    }
+                    _ => InferResult::Definite(ZigType::JsAny),
+                }
+            }
 
             Expression::UnaryExpression(ue) => match ue.operator {
                 UnaryOperator::LogicalNot => InferResult::Definite(ZigType::Bool),
