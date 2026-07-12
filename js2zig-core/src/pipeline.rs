@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// Resolve paths relative to the workspace root (parent of core crate).
 fn workspace_dir() -> PathBuf {
@@ -688,15 +688,20 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         println!("  zig test: SKIPPED (project has host function dependencies)");
                     }
                 } else {
-                    // NOTE: Zig 0.16.0's test runner uses --listen=- IPC on
-                    // stdout.  Using Command::output() captures stdout and
-                    // breaks the IPC, falsely reporting test failure even when
-                    // all tests pass.  Use .status() instead so the IPC pipe
-                    // is inherited from the parent process.
+                    // NOTE: Zig 0.16.0's test runner uses --listen=- IPC between
+                    // the zig-build process and the test executable.  Since the
+                    // IPC happens *between* those two, our Rust side only needs
+                    // the final exit code.  Suppress stdout/stderr so the test
+                    // output doesn't leak into the cargo build log.  We cannot
+                    // use Command::output() because capturing stdout would break
+                    // the --listen=- IPC pipe in the old approach; instead use
+                    // .stdout(Stdio::null()).stderr(Stdio::null()) + .status().
                     let test_result = Command::new("zig")
                         .arg("build")
                         .arg("test")
                         .current_dir(&project_path)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
                         .status();
                     match test_result {
                         Ok(status) if status.success() => {
