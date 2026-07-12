@@ -15,6 +15,9 @@ pub mod native_proto;
 // Pipeline module: transpile_project() orchestration.
 pub mod pipeline;
 
+// C ABI wrapper generation and metadata.
+pub mod cabi;
+
 /// ZigIR — structured intermediate representation between AST and Zig source.
 pub mod zigir;
 
@@ -183,4 +186,4 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     pipeline::transpile_project(config)
 }
 
-pub use pipeline::write_cabi_metadata;
+pub use cabi::write_cabi_metadata;

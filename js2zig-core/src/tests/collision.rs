@@ -4,7 +4,7 @@
 // the pipeline should rename the CABI symbol to {fn}_{module}
 // while keeping the internal per-file function name unchanged.
 
-use crate::pipeline::gen_cabi_wrappers;
+use crate::cabi::gen_cabi_wrappers;
 use crate::types::{NativeCabiExport, ZigType};
 use std::collections::HashMap;
 
