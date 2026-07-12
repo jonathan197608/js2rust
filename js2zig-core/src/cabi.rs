@@ -123,19 +123,33 @@ pub fn gen_cabi_wrappers(
 
         // Non-C-ABI-safe returns (Anytype/JsAny/JsSymbol/ArrayList): re-export as const alias.
         // These types cannot cross the C ABI boundary, so no pub export fn is emitted.
-        if ret_is_non_cabi || ret_is_arraylist {
+        // Async functions with NamedStruct returns are excluded — they use out-pointer C ABI wrappers.
+        let skip_for_ret = ret_is_non_cabi || ret_is_arraylist;
+        let skip_for_async_struct = exp.is_async && matches!(exp.ret_type, ZigType::NamedStruct(_));
+        if skip_for_ret && !skip_for_async_struct {
             emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
 
-        // Skip functions with non-C-ABI-safe parameters (Anytype/JsAny/JsSymbol)
+        // Skip functions with non-C-ABI-safe parameters (Anytype/JsAny/JsSymbol),
+        // except async functions where the Anytype 'io' param is handled internally.
         let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
             matches!(
                 ty,
                 ZigType::Void | ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
             )
         });
-        if has_js_obj_param {
+        if has_js_obj_param && !exp.is_async {
+            emit_const_alias(&mut out, name, bare_name, &module);
+            continue;
+        }
+        // Async functions with remaining non-C-ABI-safe params (beyond 'io'): still skip
+        if exp.is_async
+            && exp
+                .params
+                .iter()
+                .any(|(_, ty)| matches!(ty, ZigType::Void | ZigType::JsAny | ZigType::JsSymbol))
+        {
             emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
@@ -147,6 +161,11 @@ pub fn gen_cabi_wrappers(
         let mut cabi_to_zig_conversions: Vec<String> = Vec::new();
 
         for (pname, ptype) in &exp.params {
+            // Async functions: skip the injected 'io: Anytype' parameter —
+            // C ABI wrappers obtain it via js_runtime.getIo() internally.
+            if exp.is_async && matches!(ptype, ZigType::Anytype) {
+                continue;
+            }
             arg_names.push(pname.clone());
             if *ptype == ZigType::Str {
                 cabi_params.push(format!("{}: [*:0]const u8", pname));
@@ -167,6 +186,7 @@ pub fn gen_cabi_wrappers(
         let cabi_call_args: String = exp
             .params
             .iter()
+            .filter(|(_, ptype)| !(exp.is_async && matches!(ptype, ZigType::Anytype)))
             .map(|(pname, ptype)| {
                 if *ptype == ZigType::Str {
                     format!("{}_slice", pname)
@@ -474,19 +494,26 @@ pub fn write_cabi_metadata(
         .filter(|(_, exp)| {
             // Only include exports with C-ABI-safe return types and parameter types.
             // Anytype/JsAny/JsSymbol are Zig-only types that cannot cross the C ABI boundary.
-            !matches!(
+            // Async functions: the Anytype 'io' param is handled internally and should not
+            // block the export; NamedStruct returns use out-pointer C ABI wrappers.
+            let ret_ok = !matches!(
                 exp.ret_type,
                 ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
-            ) && !exp
+            ) || (exp.is_async && matches!(exp.ret_type, ZigType::NamedStruct(_)));
+            let param_ok = !exp
                 .params
                 .iter()
-                .any(|(_, ty)| matches!(ty, ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol))
+                // For async functions, skip the 'io: Anytype' parameter
+                .filter(|(_, ty)| !(exp.is_async && matches!(ty, ZigType::Anytype)))
+                .any(|(_, ty)| matches!(ty, ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol));
+            ret_ok && param_ok
         })
         .map(|(mod_name, exp)| {
-            // Build params list
+            // Build params list — exclude injected 'io: Anytype' for async functions
             let params: Vec<serde_json::Value> = exp
                 .params
                 .iter()
+                .filter(|(_, ty)| !(exp.is_async && matches!(ty, ZigType::Anytype)))
                 .map(|(name, ty)| {
                     serde_json::json!({
                         "name": name,
