@@ -178,16 +178,16 @@ pub fn entries(alloc: Allocator, arr: *const std.ArrayList(JsAny)) !std.ArrayLis
 // ── Tests ──
 
 test "reverse" {
-    const result = try reverse(std.testing.allocator, &[_]i64{ 1, 2, 3 });
-    defer std.testing.allocator.free(result);
+    var arr = [_]i64{ 1, 2, 3 };
+    const result = reverse(&arr);
     try std.testing.expectEqual(@as(i64, 3), result[0]);
     try std.testing.expectEqual(@as(i64, 2), result[1]);
     try std.testing.expectEqual(@as(i64, 1), result[2]);
 }
 
 test "sort" {
-    const result = try sort(std.testing.allocator, &[_]i64{ 3, 1, 4, 1, 5 });
-    defer std.testing.allocator.free(result);
+    var arr = [_]i64{ 3, 1, 4, 1, 5 };
+    const result = sort(&arr);
     try std.testing.expectEqual(@as(i64, 1), result[0]);
     try std.testing.expectEqual(@as(i64, 5), result[4]);
 }

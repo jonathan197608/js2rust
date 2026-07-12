@@ -255,7 +255,7 @@ test "defineProperty" {
     var obj = JsValueHashMap.init(alloc);
     defer obj.deinit();
 
-    try defineProperty(&obj, "name", JsValue{ .string = "zig" });
+    _ = try defineProperty(&obj, "name", JsValue{ .string = "zig" });
     try std.testing.expectEqualStrings("zig", obj.get("name").?.string);
 }
 
@@ -280,7 +280,7 @@ test "defineProperties" {
     try props.put("name", JsValue{ .string = "zig" });
     try props.put("version", JsValue{ .int = 1 });
 
-    try defineProperties(&obj, &props);
+    _ = try defineProperties(&obj, &props);
     try std.testing.expectEqualStrings("zig", obj.get("name").?.string);
     try std.testing.expectEqual(@as(i64, 1), obj.get("version").?.int);
 }
@@ -318,7 +318,7 @@ test "setPrototypeOf is no-op" {
     var proto = JsValueHashMap.init(alloc);
     defer proto.deinit();
 
-    setPrototypeOf(&obj, &proto); // Should not panic or error
+    _ = setPrototypeOf(&obj, &proto); // Returns obj (no-op in our model)
     // After no-op setPrototypeOf, getPrototypeOf still returns null
     const p = getPrototypeOf(&obj);
     try std.testing.expect(p == null);
