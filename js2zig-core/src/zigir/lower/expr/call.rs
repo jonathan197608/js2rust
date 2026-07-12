@@ -547,7 +547,8 @@ impl Lowerer {
                 }
                 "RegExp" => NewConstructor::RegExp,
                 "Int8Array" | "Uint8Array" | "Uint8ClampedArray" | "Int16Array" | "Uint16Array"
-                | "Int32Array" | "Uint32Array" | "Float32Array" | "Float64Array" => {
+                | "Int32Array" | "Uint32Array" | "Float32Array" | "Float64Array"
+                | "BigInt64Array" | "BigUint64Array" => {
                     let kind = match id.name.as_str() {
                         "Int8Array" => crate::zigir::kinds::TypedArrayKind::Int8Array,
                         "Uint8Array" => crate::zigir::kinds::TypedArrayKind::Uint8Array,
@@ -560,6 +561,8 @@ impl Lowerer {
                         "Uint32Array" => crate::zigir::kinds::TypedArrayKind::Uint32Array,
                         "Float32Array" => crate::zigir::kinds::TypedArrayKind::Float32Array,
                         "Float64Array" => crate::zigir::kinds::TypedArrayKind::Float64Array,
+                        "BigInt64Array" => crate::zigir::kinds::TypedArrayKind::BigInt64Array,
+                        "BigUint64Array" => crate::zigir::kinds::TypedArrayKind::BigUint64Array,
                         _ => crate::zigir::kinds::TypedArrayKind::Float64Array,
                     };
                     NewConstructor::TypedArray(kind)

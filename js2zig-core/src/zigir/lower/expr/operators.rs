@@ -320,6 +320,29 @@ impl Lowerer {
                 }),
             };
         }
+        // >>>= → a = a >>> b (unsigned right shift cannot use >>= which is signed)
+        // Expand early, same pattern as **=, so the emitter uses the UrShr path.
+        if ae.operator == AssignmentOperator::ShiftRightZeroFill {
+            let target = self.lower_assign_target(&ae.left);
+            let value = Box::new(self.lower_expr(&ae.right));
+            let target_type = self.infer_assign_target_type(&ae.left);
+            let base_type = target_type.unwrap_or(ZigType::I64);
+            let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
+            let base_expr = target
+                .to_read_expr()
+                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+            return IrExpr::Assign {
+                op: AssignOp::Assign,
+                target: Box::new(target),
+                value: Box::new(IrExpr::Binary {
+                    op: BinOp::UrShr,
+                    left: Box::new(base_expr),
+                    right: value,
+                    left_type: Some(base_type),
+                    right_type: Some(right_type),
+                }),
+            };
+        }
         // &&= / ||= / ??= → use AssignOp, Emitter will expand
 
         // ── BigInt compound assignment expansion ──
@@ -378,7 +401,6 @@ impl Lowerer {
             AssignmentOperator::Remainder => AssignOp::Mod,
             AssignmentOperator::ShiftLeft => AssignOp::Shl,
             AssignmentOperator::ShiftRight => AssignOp::Shr,
-            AssignmentOperator::ShiftRightZeroFill => AssignOp::Shr,
             AssignmentOperator::BitwiseAnd => AssignOp::BitAnd,
             AssignmentOperator::BitwiseOR => AssignOp::BitOr,
             AssignmentOperator::BitwiseXOR => AssignOp::BitXor,

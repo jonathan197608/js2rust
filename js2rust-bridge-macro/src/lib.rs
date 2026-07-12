@@ -163,8 +163,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     })?;
 
     // Parse cabi_exports_json
-    let exports: Vec<CabiExport> =
-        serde_json::from_str(&project_result.cabi_exports_json).map_err(|e| {
+    let exports: Vec<CabiExport> = serde_json::from_str(&project_result.cabi_exports_json)
+        .map_err(|e| {
             syn::Error::new(
                 proc_macro2::Span::call_site(),
                 format!(
@@ -191,7 +191,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             .join("lib")
             .join(format!("lib{}.a", &project_name))
             .exists();
-    if zig_project_dir.join("build.zig").exists() && !lib_exists {
+    if config.build.run_zig_build && zig_project_dir.join("build.zig").exists() && !lib_exists {
         let mut cmd = std::process::Command::new("zig");
         cmd.arg("build");
         if let Some(ref opt) = project_config.zig_optimize {

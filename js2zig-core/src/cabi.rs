@@ -115,21 +115,26 @@ pub fn gen_cabi_wrappers(
         let name = cabi_name.as_str();
 
         let returns_string = exp.ret_type == ZigType::Str;
-        let ret_is_js_any = exp.ret_type == ZigType::Anytype;
+        let ret_is_non_cabi = matches!(
+            exp.ret_type,
+            ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
+        );
         let ret_is_arraylist = matches!(exp.ret_type, ZigType::ArrayList(_));
 
-        // JsAny/ArrayList returns: re-export as const alias (no CABI export).
-        // This lets Zig test code call the function, but no C ABI symbol is emitted.
-        if ret_is_js_any || ret_is_arraylist {
+        // Non-C-ABI-safe returns (Anytype/JsAny/JsSymbol/ArrayList): re-export as const alias.
+        // These types cannot cross the C ABI boundary, so no pub export fn is emitted.
+        if ret_is_non_cabi || ret_is_arraylist {
             emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
 
-        // Skip functions with JsValue/JsAny parameters (C ABI doesn't support unions)
-        let has_js_obj_param = exp
-            .params
-            .iter()
-            .any(|(_, ty)| *ty == ZigType::Void || *ty == ZigType::Anytype);
+        // Skip functions with non-C-ABI-safe parameters (Anytype/JsAny/JsSymbol)
+        let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
+            matches!(
+                ty,
+                ZigType::Void | ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
+            )
+        });
         if has_js_obj_param {
             emit_const_alias(&mut out, name, bare_name, &module);
             continue;
@@ -340,7 +345,6 @@ pub fn gen_cabi_wrappers(
             emit_comptime_export(&mut out, name);
         } else {
             let ret_zig = exp.ret_type.to_cabi_str();
-            let exp_ret_is_js_value = exp.ret_type == ZigType::Void;
 
             // Build C ABI param list: add _err out-param for can_throw non-string exports
             let mut cabi_params_with_err = cabi_params.clone();
@@ -411,27 +415,6 @@ pub fn gen_cabi_wrappers(
                         args = cabi_call_args,
                     ));
                 }
-            } else if exp_ret_is_js_value {
-                // JsValue: extract .int for C ABI (i64)
-                if exp.can_throw {
-                    out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}{call_expr}\n    return _result.int;\n}}\n",
-                        name = name,
-                        params = cabi_params_str,
-                        conv = conversions,
-                        call_expr = call_expr,
-                    ));
-                } else {
-                    out.push_str(&format!(
-                        "pub export fn {name}({params}) i64 {{\n{conv}    const _result = {mod}.{bare}({args});\n    return _result.int;\n}}\n",
-                        name = name,
-                        bare = bare_name,
-                        params = cabi_params_str,
-                        conv = conversions,
-                        mod = module,
-                        args = cabi_call_args,
-                    ));
-                }
             } else {
                 // Use type-appropriate zero value for void fallback
                 let rz = if ret_zig == "bool" { "false" } else { "0" };
@@ -489,8 +472,15 @@ pub fn write_cabi_metadata(
     let mut exports_value: Vec<serde_json::Value> = cabi_exports
         .iter()
         .filter(|(_, exp)| {
-            exp.ret_type != ZigType::Anytype
-                && !exp.params.iter().any(|(_, ty)| *ty == ZigType::Anytype)
+            // Only include exports with C-ABI-safe return types and parameter types.
+            // Anytype/JsAny/JsSymbol are Zig-only types that cannot cross the C ABI boundary.
+            !matches!(
+                exp.ret_type,
+                ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
+            ) && !exp
+                .params
+                .iter()
+                .any(|(_, ty)| matches!(ty, ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol))
         })
         .map(|(mod_name, exp)| {
             // Build params list
