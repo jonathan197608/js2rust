@@ -18,7 +18,7 @@ pub use crate::infer::TypeCheckResult;
 ///
 /// Accepts a pre-parsed `&Program` plus the original source text
 /// (needed for JSDoc extraction).  The caller should obtain the `Program` from
-/// `analyze_single_group` so that the AST is only built once.
+/// `analyze_project` so that the AST is only built once.
 ///
 /// Returns full `TranspileResult` with generated code AND metadata
 /// (diagnostics, cabi_exports, etc.).

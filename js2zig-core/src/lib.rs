@@ -124,7 +124,7 @@ pub struct ProjectConfig {
     /// If `None`, the caller should infer from the Cargo profile automatically.
     pub zig_optimize: Option<String>,
     /// When true, the caller is a Cargo build script (`build.rs`).
-    /// This controls progress output only (group headers, cache status,
+    /// This controls progress output only (project headers, cache status,
     /// "Generated:" paths, "zig build: OK", etc.) which Cargo filters
     /// and prefixes with `[package]`.
     ///
@@ -154,12 +154,12 @@ impl Default for ProjectConfig {
     }
 }
 
-/// Result of transpiling a single group.
-#[derive(Debug, Clone)]
-pub struct GroupResult {
-    /// Group name (e.g. "main", "utils").
-    pub name: String,
-    /// Whether this is a test group.
+/// Result of transpiling a project.
+#[derive(Debug, Default)]
+pub struct ProjectResult {
+    /// Sanitized project name (derived from entry file stem).
+    pub project_name: String,
+    /// Whether this is a test project (entry file starts with "test_").
     pub is_test: bool,
     /// C ABI export metadata (serialized JSON).
     pub cabi_exports_json: String,
@@ -167,20 +167,11 @@ pub struct GroupResult {
     pub diagnostics: Vec<String>,
 }
 
-/// Result of transpiling a project (all groups).
-#[derive(Debug, Default)]
-pub struct ProjectResult {
-    /// Per-group results.
-    pub groups: Vec<GroupResult>,
-    /// Global diagnostic messages.
-    pub diagnostics: Vec<String>,
-}
-
 // ── Public API ───────────────────────────────────────────────────
 
-/// Multi-file project transpilation: JS core file → Zig project + cabi_exports.json.
+/// Multi-file project transpilation: JS entry file → Zig project + cabi_exports.json.
 ///
-/// The core JS file and its transitive imports form a single group.
+/// The entry JS file and its transitive imports form a single project.
 /// Does NOT run `zig build` (unless `config.run_zig_build == true`).
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     pipeline::transpile_project(config)

@@ -100,8 +100,8 @@ impl Js2rustConfig {
         })
     }
 
-    /// Derive the Zig group name from the first `js_files` entry's file stem.
-    pub fn group_name(&self) -> String {
+    /// Derive the Zig project name from the first `js_files` entry's file stem.
+    pub fn project_name(&self) -> String {
         let default = "main.js".to_string();
         let first = self.project.js_files.first().unwrap_or(&default);
         let stem = std::path::Path::new(first)

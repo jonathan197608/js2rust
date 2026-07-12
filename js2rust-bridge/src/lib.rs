@@ -47,7 +47,7 @@ use std::path::PathBuf;
 /// }
 /// ```
 ///
-/// The group name is derived automatically from the file stem of the first
+/// The project name is derived automatically from the file stem of the first
 /// entry in `project.js_files`. Build behavior (force_rebuild, run_zig_build)
 /// is read from the `[build]` section of `js2rust.toml`.
 pub fn build() {
@@ -95,7 +95,7 @@ pub fn build() {
         (entry, paths)
     };
 
-    let group_name = config.group_name();
+    let project_name = config.project_name();
     let host_config = config.to_host_config();
 
     // Determine Zig optimization level: TOML override > Cargo PROFILE auto-detect.
@@ -109,7 +109,7 @@ pub fn build() {
     });
 
     let project_config = js2zig_core::ProjectConfig {
-        name: group_name,
+        name: project_name,
         entry_file,
         additional_roots,
         out_dir: cache_dir.clone(),

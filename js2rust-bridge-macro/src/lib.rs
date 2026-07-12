@@ -7,8 +7,8 @@
 //! ```
 //!
 //! The macro reads `js2rust.toml` from the crate root, transpiles JS to Zig,
-//! writes output to `.js2zig-cache/{group}/`, and generates Rust FFI bindings.
-//! The group name is derived from the file name (sanitized for Zig identifiers).
+//! writes output to `.js2zig-cache/{project_name}/`, and generates Rust FFI bindings.
+//! The project name is derived from the file name (sanitized for Zig identifiers).
 //! A minimal `build.rs` only needs `js2rust_bridge::build(false)`.
 
 use indexmap::IndexMap;
@@ -100,8 +100,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         .to_compile_error());
     }
 
-    // Derive group name from first js_files entry stem
-    let group = config.group_name();
+    // Derive project name from first js_files entry stem
+    let project_name = config.project_name();
 
     // Resolve all JS file paths
     let js_file_paths: Vec<std::path::PathBuf> = config
@@ -138,7 +138,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
-        name: group.clone(),
+        name: project_name.clone(),
         entry_file: entry_file.clone(),
         additional_roots,
         out_dir: cache_dir.clone(),
@@ -149,7 +149,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         is_build_script: false, // proc-macro context — suppress all stdout/stderr
     };
 
-    // Transpile!
+    // Access transpilation results directly (flat structure, no group Vec)
     let project_result = js2zig_core::transpile_project(&project_config).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
@@ -162,40 +162,25 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         .to_compile_error()
     })?;
 
-    // Find the group result
-    let group_result = project_result.groups.first().ok_or_else(|| {
-        let mut msg = format!(
-            "js2rust_bridge: no groups found in transpilation result for '{}'.",
-            entry_file.display()
-        );
-        if !project_result.diagnostics.is_empty() {
-            msg.push_str("\n\nTranspilation diagnostics:");
-            for diag in &project_result.diagnostics {
-                msg.push_str(&format!("\n  - {}", diag));
-            }
-        }
-        syn::Error::new(proc_macro2::Span::call_site(), msg).to_compile_error()
-    })?;
-
     // Parse cabi_exports_json
     let exports: Vec<CabiExport> =
-        serde_json::from_str(&group_result.cabi_exports_json).map_err(|e| {
+        serde_json::from_str(&project_result.cabi_exports_json).map_err(|e| {
             syn::Error::new(
                 proc_macro2::Span::call_site(),
                 format!(
-                    "js2rust_bridge: failed to parse cabi_exports for group '{}': {}",
-                    group_result.name, e
+                    "js2rust_bridge: failed to parse cabi_exports for project '{}': {}",
+                    project_result.project_name, e
                 ),
             )
             .to_compile_error()
         })?;
 
     // Optionally run zig build (side effect)
-    let zig_project_dir = cache_dir.join(&group);
+    let zig_project_dir = cache_dir.join(&project_name);
     let lib_path = zig_project_dir.join("zig-out").join("lib").join(format!(
         "{}.lib",
         if cfg!(target_os = "windows") {
-            &group
+            &project_name
         } else {
             "lib"
         }
@@ -204,7 +189,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         || zig_project_dir
             .join("zig-out")
             .join("lib")
-            .join(format!("lib{}.a", &group))
+            .join(format!("lib{}.a", &project_name))
             .exists();
     if zig_project_dir.join("build.zig").exists() && !lib_exists {
         let mut cmd = std::process::Command::new("zig");
@@ -216,11 +201,11 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     }
 
     // Generate Rust FFI bindings
-    let mut generated = generate_bindings(&exports, &group);
+    let mut generated = generate_bindings(&exports, &project_name);
 
     // Generate host function stub documentation
     if !config.host_functions.is_empty() {
-        if let Some(host_stubs) = generate_host_stubs(&config.host_functions, &group) {
+        if let Some(host_stubs) = generate_host_stubs(&config.host_functions, &project_name) {
             generated.push('\n');
             generated.push_str(&host_stubs);
         }

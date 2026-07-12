@@ -1,9 +1,8 @@
 //! Dependency analyzer — scan all JS files, build import graph,
-//! and partition files into groups (one core file + its transitive deps).
+//! and collect analysis results for the transpiler pipeline.
 //!
-//! A "core file" is a file that is NOT imported by any other file.
-//! Each core file becomes the root of a group. Non-core files can
-//! belong to multiple groups.
+//! The entry JS file and its transitive dependencies form a single
+//! project. Non-entry files can be imported by multiple dependents.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Write};
@@ -43,13 +42,14 @@ fn sanitize_name(filename: &str) -> String {
     sanitize_module_name(stem)
 }
 
-/// A file group: one core file + all files transitively imported by it.
-pub struct FileGroup {
-    /// Sanitized core file name (used as Zig project name).
+/// Analysis result: the entry file + all its transitive dependencies,
+/// with parsed ASTs and import/export metadata.
+pub struct AnalysisResult {
+    /// Sanitized entry file name (used as Zig project name).
     pub core_name: String,
-    /// Original .js filename of the core file (e.g. "main.js").
+    /// Original .js filename of the entry file (e.g. "main.js").
     pub core_file: String,
-    /// All .js filenames in this group (including core, in topological order).
+    /// All .js filenames in this project (including entry, in topological order).
     pub members: Vec<String>,
     /// Map: original filename → sanitzed Zig module name.
     pub name_map: HashMap<String, String>,
@@ -70,9 +70,9 @@ pub struct FileGroup {
 }
 
 // Manual Debug: skip parsed_programs (AST is huge, not useful for debug output).
-impl fmt::Debug for FileGroup {
+impl fmt::Debug for AnalysisResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FileGroup")
+        f.debug_struct("AnalysisResult")
             .field("core_name", &self.core_name)
             .field("core_file", &self.core_file)
             .field("members", &self.members)
@@ -92,20 +92,20 @@ impl fmt::Debug for FileGroup {
     }
 }
 
-/// Analyze a single core JS file (and optional additional roots) and their
-/// transitive dependencies, merging everything into one group.
+/// Analyze a JS entry file (and optional additional roots) and their
+/// transitive dependencies, returning all data needed for transpilation.
 ///
-/// Only processes the specified core file(s) and the files they import,
+/// Only processes the specified entry file(s) and the files they import,
 /// rather than scanning an entire directory.
 ///
 /// # Returns
-/// - `groups`: Vec containing a single FileGroup.
+/// - `AnalysisResult`: all parsed ASTs, source texts, and metadata.
 /// - `groups_json`: JSON-serializable summary for `out/groups.json`.
-pub fn analyze_single_group(
+pub fn analyze_project(
     in_dir: &str,
     core_file: &str,
     additional_core_files: &[String],
-) -> (FileGroup, String) {
+) -> (AnalysisResult, String) {
     let in_path = Path::new(in_dir);
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
@@ -174,7 +174,7 @@ pub fn analyze_single_group(
         parsed_programs.insert(cur, program);
     }
 
-    // Build the single group — all files from all roots merged.
+    // Build the result — all files from all roots merged.
     let all_roots: Vec<String> = std::iter::once(core_file.to_string())
         .chain(additional_core_files.iter().cloned())
         .collect();
@@ -184,7 +184,7 @@ pub fn analyze_single_group(
         .cloned()
         .unwrap_or_else(|| sanitize_name(core_file));
 
-    let group = FileGroup {
+    let result = AnalysisResult {
         core_name: core_name.clone(),
         core_file: core_file.to_string(),
         members,
@@ -196,17 +196,16 @@ pub fn analyze_single_group(
         parsed_programs,
     };
 
-    // Serialize to JSON before moving `group` into the return tuple.
-    // Matches the format produced by groups_to_json().
+    // Serialize project summary to JSON.
     let groups_json = serde_json::to_string_pretty(&serde_json::json!([{
-        "name": &group.core_name,
-        "core_file": &group.core_file,
-        "member_count": group.members.len(),
-        "members": &group.members,
+        "name": &result.core_name,
+        "core_file": &result.core_file,
+        "member_count": result.members.len(),
+        "members": &result.members,
     }]))
     .expect("Failed to serialize groups.json");
 
-    (group, groups_json)
+    (result, groups_json)
 }
 
 /// Compute transitive dependencies starting from multiple root files.

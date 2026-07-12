@@ -467,7 +467,7 @@ pub fn gen_cabi_wrappers(
     out
 }
 
-/// Write C ABI exports/imports JSON metadata for a single group project.
+/// Write C ABI exports/imports JSON metadata.
 ///
 /// `cabi_exports` is a list of (module_name, export) pairs.
 /// `cabi_rename` maps disambiguated CABI names → bare function names.
@@ -476,13 +476,13 @@ pub fn gen_cabi_wrappers(
 /// unique Rust function definitions.
 pub fn write_cabi_metadata(
     out_dir: &Path,
-    group_name: &str,
+    project_name: &str,
     cabi_exports: &[(String, NativeCabiExport)],
     host_fns: &HostFnRegistry,
     include_init: bool,
     cabi_rename: &HashMap<String, String>,
 ) {
-    let project_dir = out_dir.join(group_name);
+    let project_dir = out_dir.join(project_name);
 
     // cabi_exports.json — filter out exports with Anytype returns or params (no C ABI export generated)
     let exports_path = project_dir.join("cabi_exports.json");
@@ -572,7 +572,7 @@ pub fn write_cabi_metadata(
         });
     }
 
-    // Only include js2rust_init and js2rust_deinit for the first non-test group
+    // Only include js2rust_init and js2rust_deinit for non-test projects
     if include_init {
         exports_value.push(serde_json::json!({
             "name": "js2rust_init",

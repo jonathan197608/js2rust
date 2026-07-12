@@ -47,7 +47,7 @@ pub struct ProjectOptions {
     /// Names of async host functions (used to generate aliases in per-file modules)
     pub async_host_fn_names: Vec<String>,
     /// Whether to include the Windows LdrRegisterDllNotification stub.
-    /// Must be `true` for exactly one group (the first one), because Zig's
+    /// Must be `true` because Zig's standard library references this symbol
     /// standard library references this symbol and Windows COFF doesn't
     /// support weak linkage across object files.
     pub include_windows_stub: bool,
@@ -400,7 +400,7 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
         out.push('\n');
     }
 
-    // Windows stub (needed for Zig std.debug on Windows; only in one group)
+    // Windows stub (needed for Zig std.debug on Windows)
     // Uses platform-independent types so it compiles on all targets (native, WASM).
     if opts.include_windows_stub {
         out.push_str("// Windows stub for Zig std.debug.SelfInfo.Windows\n");
@@ -455,7 +455,6 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     }
     out.push_str("}\n\n");
     // C ABI compatible init/deinit (callable from Rust via FFI)
-    // Only generate in one group to avoid duplicate symbols when linking multiple groups.
     if opts.include_windows_stub {
         out.push_str("/// Initialize with ArenaAllocator (lock-free, thread-safe).\n");
         out.push_str(
