@@ -159,8 +159,6 @@ pub struct GroupResult {
     pub cabi_exports_json: String,
     /// Diagnostic messages.
     pub diagnostics: Vec<String>,
-    /// Generated file paths.
-    pub output_files: Vec<PathBuf>,
 }
 
 /// Result of transpiling a project (all groups).
@@ -182,22 +180,4 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     pipeline::transpile_project(config)
 }
 
-/// Write C ABI metadata for a single group project.
-/// (Kept for backward compatibility; called from `pipeline.rs`.)
-pub fn write_cabi_metadata(
-    out_dir: &std::path::Path,
-    group_name: &str,
-    cabi_exports: &[(String, native_proto::NativeCabiExport)],
-    host_fns: &host::HostFnRegistry,
-    include_init: bool,
-    cabi_rename: &std::collections::HashMap<String, String>,
-) {
-    pipeline::write_cabi_metadata(
-        out_dir,
-        group_name,
-        cabi_exports,
-        host_fns,
-        include_init,
-        cabi_rename,
-    )
-}
+pub use pipeline::write_cabi_metadata;

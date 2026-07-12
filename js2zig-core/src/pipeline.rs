@@ -36,31 +36,6 @@ fn build_dep_imports(filename: &str, group: &crate::analyzer::FileGroup) -> Vec<
         .collect()
 }
 
-/// Extract all top-level function names from JS source text.
-/// Scan zig_code for all `pub fn xxx(` and `pub export fn xxx(` declarations.
-/// Returns the function names so the orchestrator can re-export them.
-fn scan_pub_functions(zig_code: &str) -> Vec<String> {
-    let mut fns = Vec::new();
-    for line in zig_code.lines() {
-        let trimmed = line.trim();
-        let rest = if let Some(r) = trimmed.strip_prefix("pub export fn ") {
-            r
-        } else if let Some(r) = trimmed.strip_prefix("pub fn ") {
-            r
-        } else {
-            continue;
-        };
-        if let Some(paren) = rest.find('(') {
-            let name = rest[..paren].trim().to_string();
-            // Skip infrastructure functions that shouldn't be re-exported
-            if name != "init_js2rust" && name != "deinit_js2rust" {
-                fns.push(name);
-            }
-        }
-    }
-    fns
-}
-
 /// Compute a content hash for a file group.
 /// Hashes all member JS files + runtime .zig files so any change triggers rebuild.
 fn compute_group_hash(
@@ -170,7 +145,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 .map(|s| s.to_string())
         })
         .collect();
-    let (groups, groups_json) = analyze_single_group(&in_dir, &core_file, &additional_js_files);
+    let (group, groups_json) = analyze_single_group(&in_dir, &core_file, &additional_js_files);
 
     // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
     // (including transitive dependencies not listed in js2rust.toml).
@@ -180,11 +155,9 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // proc-macros cannot use these directives and their stdout would leak
     // noise to the terminal.
     if config.is_build_script {
-        for group in &groups {
-            for member in &group.members {
-                let member_path = Path::new(&in_dir).join(member);
-                println!("cargo:rerun-if-changed={}", member_path.display());
-            }
+        for member in &group.members {
+            let member_path = Path::new(&in_dir).join(member);
+            println!("cargo:rerun-if-changed={}", member_path.display());
         }
     }
 
@@ -201,8 +174,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         println!("Wrote: {}/groups.json", out_dir);
     }
 
-    if groups.is_empty() {
-        return Err(format!("no groups derived from core file '{}'", core_file));
+    if group.members.is_empty() {
+        return Err(format!("no members derived from core file '{}'", core_file));
     }
 
     // === Load host function registry ===
@@ -282,9 +255,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let runtime_path = ws.join("runtime");
     let mut group_results: Vec<crate::GroupResult> = Vec::new();
 
-    // === Phase 2: Generate Zig project per group ===
+    // === Phase 2: Generate Zig project ===
     // Always uses multi-file mode: one .zig per JS file + orchestrator lib.zig.
-    for (group_idx, group) in groups.iter().enumerate() {
+    'group_block: {
+        let group_idx = 0;
         let is_test_group = group.core_name.starts_with("test_");
         if verbose {
             println!(
@@ -297,7 +271,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
 
         // --- Incremental check ---
-        let current_hash = compute_group_hash(&in_path, group, &runtime_path);
+        let current_hash = compute_group_hash(&in_path, &group, &runtime_path);
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&group.core_name)
             && *cached_hash == current_hash
@@ -326,538 +300,487 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 is_test: is_test_group,
                 cabi_exports_json: cabi_json,
                 diagnostics: cached_diagnostics,
-                output_files: Vec::new(),
             });
-            continue;
-        }
-
-        // Hash mismatch (or force_rebuild) — re-transpile this group.
-        if force_rebuild {
-            if verbose {
-                println!("  force rebuild");
-            }
-        } else if verbose {
-            println!("  source changed, re-transpiling");
-        }
-
-        {
-            let mut per_file_modules: Vec<crate::project::PerFileModule> = Vec::new();
-            let mut all_module_exports: Vec<(String, String)> = Vec::new();
-            let mut all_test_code = String::new();
-            let mut combined_zig = String::new();
-            let mut all_cabi_exports: Vec<(String, crate::types::NativeCabiExport)> = Vec::new();
-            let mut all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
-            let mut has_error = false;
-            let mut file_diagnostics: Vec<String> = Vec::new();
-
-            // --- Transpile pass (all metadata from group AST, no source scanning) ---
-            let core_exports = group
-                .exported_names
-                .get(&group.core_file)
-                .cloned()
-                .unwrap_or_default();
-
-            // --- Compute re-exported names per dependency ---
-            let core_imports = group
-                .imported_names
-                .get(&group.core_file)
-                .cloned()
-                .unwrap_or_default();
-            let mut dep_re_exports: HashMap<String, HashSet<String>> = HashMap::new();
-            for (imported_name, source_file) in &core_imports {
-                if core_exports.contains(imported_name) {
-                    dep_re_exports
-                        .entry(source_file.clone())
-                        .or_default()
-                        .insert(imported_name.clone());
+        } else {
+            // Hash mismatch (or force_rebuild) — re-transpile this group.
+            if force_rebuild {
+                if verbose {
+                    println!("  force rebuild");
                 }
+            } else if verbose {
+                println!("  source changed, re-transpiling");
             }
 
-            // Additional core files (multi-root): treat their exports as CABI-exportable too.
-            let additional_core_set: HashSet<String> =
-                additional_js_files.iter().cloned().collect();
+            {
+                let mut per_file_modules: Vec<crate::project::PerFileModule> = Vec::new();
+                let mut all_module_exports: Vec<(String, String)> = Vec::new();
+                let mut all_test_code = String::new();
+                let combined_zig = String::new();
+                let mut all_cabi_exports: Vec<(String, crate::types::NativeCabiExport)> =
+                    Vec::new();
+                let all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
+                let has_error = false;
+                let mut file_diagnostics: Vec<String> = Vec::new();
 
-            for member in &group.members {
-                let src = match group.file_sources.get(member) {
-                    Some(s) => s.clone(),
-                    None => {
-                        eprintln!("  skip '{}': no cached source", member);
-                        continue;
+                // --- Transpile pass (all metadata from group AST, no source scanning) ---
+                let core_exports = group
+                    .exported_names
+                    .get(&group.core_file)
+                    .cloned()
+                    .unwrap_or_default();
+
+                // --- Compute re-exported names per dependency ---
+                let core_imports = group
+                    .imported_names
+                    .get(&group.core_file)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut dep_re_exports: HashMap<String, HashSet<String>> = HashMap::new();
+                for (imported_name, source_file) in &core_imports {
+                    if core_exports.contains(imported_name) {
+                        dep_re_exports
+                            .entry(source_file.clone())
+                            .or_default()
+                            .insert(imported_name.clone());
                     }
-                };
-
-                if src.trim().is_empty() {
-                    eprintln!("  skip '{}': empty source", member);
-                    continue;
                 }
 
-                let module_name = group.name_map.get(member).cloned().unwrap_or_else(|| {
-                    let stem = member.strip_suffix(".js").unwrap_or(member);
-                    sanitize_module_name(stem)
-                });
+                // Additional core files (multi-root): treat their exports as CABI-exportable too.
+                let additional_core_set: HashSet<String> =
+                    additional_js_files.iter().cloned().collect();
 
-                // For test groups: ALL toplevel functions → C ABI.
-                // For normal groups: core file's JS exports → C ABI;
-                //                    additional core files → C ABI (full exports);
-                //                    dependency file: only re-exported names → C ABI.
-                let transpile_exports: HashSet<String> = if is_test_group {
-                    group.all_fn_names.get(member).cloned().unwrap_or_default()
-                } else if *member == group.core_file || additional_core_set.contains(member) {
-                    group
-                        .exported_names
-                        .get(member)
-                        .cloned()
-                        .unwrap_or_default()
-                } else {
-                    dep_re_exports.get(member).cloned().unwrap_or_default()
-                };
+                for member in &group.members {
+                    let src = match group.file_sources.get(member) {
+                        Some(s) => s.clone(),
+                        None => {
+                            eprintln!("  skip '{}': no cached source", member);
+                            continue;
+                        }
+                    };
 
-                // Use native_proto (strict static type system) — pre-parsed AST
-                // from analyze_single_group, no re-parsing of source text.
-                let exports_for_all_modules = transpile_exports.clone();
-
-                let program = match group.parsed_programs.get(member) {
-                    Some(p) => p,
-                    None => {
-                        eprintln!("  skip '{}': no parsed program in group", member);
+                    if src.trim().is_empty() {
+                        eprintln!("  skip '{}': empty source", member);
                         continue;
                     }
-                };
 
-                let transpile_result = crate::native_proto::transpile_js(
-                    program,
-                    &src,
-                    Some(transpile_exports),
-                    Some(&host_fns),
-                    member,
-                );
+                    let module_name = group.name_map.get(member).cloned().unwrap_or_else(|| {
+                        let stem = member.strip_suffix(".js").unwrap_or(member);
+                        sanitize_module_name(stem)
+                    });
 
-                let (zig_code, diagnostics, closure_fns, fn_return_types, cabi_exports, source_map) =
-                    match transpile_result {
+                    // For test groups: ALL toplevel functions → C ABI.
+                    // For normal groups: core file's JS exports → C ABI;
+                    //                    additional core files → C ABI (full exports);
+                    //                    dependency file: only re-exported names → C ABI.
+                    let transpile_exports: HashSet<String> = if is_test_group {
+                        group.all_fn_names.get(member).cloned().unwrap_or_default()
+                    } else if *member == group.core_file || additional_core_set.contains(member) {
+                        group
+                            .exported_names
+                            .get(member)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        dep_re_exports.get(member).cloned().unwrap_or_default()
+                    };
+
+                    let exports_for_all_modules = transpile_exports.clone();
+
+                    let program = match group.parsed_programs.get(member) {
+                        Some(p) => p,
+                        None => {
+                            eprintln!("  skip '{}': no parsed program in group", member);
+                            continue;
+                        }
+                    };
+
+                    let transpile_result = crate::native_proto::transpile_js(
+                        program,
+                        &src,
+                        Some(transpile_exports),
+                        Some(&host_fns),
+                        member,
+                    );
+
+                    let (zig_code, cabi_exports, has_error) = match transpile_result {
                         Ok(result) => {
-                            // Convert errors to diagnostics
-                            let mut diagnostics: Vec<crate::types::Diagnostic> = result
-                                .errors
-                                .iter()
-                                .map(|err| crate::types::Diagnostic {
-                                    kind: crate::types::DiagnosticKind::Error,
-                                    span: None,
-                                    message: err.clone(),
-                                })
-                                .collect();
-                            // Convert warnings to diagnostics (non-fatal)
-                            diagnostics.extend(result.warnings.iter().map(|w| {
-                                crate::types::Diagnostic {
-                                    kind: crate::types::DiagnosticKind::Warning,
-                                    span: None,
-                                    message: w.clone(),
-                                }
-                            }));
-
-                            // Convert @compileError nodes to warnings (non-blocking)
-                            // These are JS features the transpiler does not support.
-                            // Zig's lazy analysis may never trigger them at compile time,
-                            // so we surface them here instead.
-                            let compile_errors = result.compile_errors;
-                            if !compile_errors.is_empty() {
+                            // @compileError diagnostics (non-blocking)
+                            if !result.compile_errors.is_empty() {
                                 eprintln!(
                                     "  '{}': {} unsupported feature(s):",
                                     member,
-                                    compile_errors.len()
+                                    result.compile_errors.len()
                                 );
-                                for msg in &compile_errors {
+                                for msg in &result.compile_errors {
                                     eprintln!("    @compileError: {}", msg);
                                 }
-                                for msg in &compile_errors {
+                                for msg in &result.compile_errors {
                                     file_diagnostics
                                         .push(format!("{}: COMPILE_ERROR - {}", member, msg));
                                 }
                             }
 
-                            // Extract cabi_exports from result
-                            let cabi_exports = result.cabi_exports;
-
-                            // closure_fns: not supported in native_proto yet, use empty
-                            let closure_fns: HashSet<String> = HashSet::new();
-
-                            // fn_return_types: use var_types (native_proto::ZigType)
-                            let fn_return_types: HashMap<String, crate::types::ZigType> = result
-                                .var_types
+                            // Hard errors — block file generation
+                            let hard_errors: Vec<&str> = result
+                                .errors
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .filter(|m| !m.contains("(Rule 8)"))
+                                .map(|s| s.as_str())
+                                .collect();
+                            // Rule 8 soft errors — non-blocking warnings
+                            let rule8_errors: Vec<&str> = result
+                                .errors
+                                .iter()
+                                .filter(|m| m.contains("(Rule 8)"))
+                                .map(|s| s.as_str())
                                 .collect();
 
-                            // source_map: not generated by native_proto yet
-                            let source_map = crate::sourcemap::SourceMap::new("");
+                            if !hard_errors.is_empty() {
+                                eprintln!(
+                                    "  skip '{}': {} transpile error(s)",
+                                    member,
+                                    hard_errors.len()
+                                );
+                                for msg in &hard_errors {
+                                    eprintln!("    {}", msg);
+                                }
+                                for msg in &hard_errors {
+                                    file_diagnostics.push(format!("{}: ERROR - {}", member, msg));
+                                }
+                                // Also report Rule 8 for visibility
+                                for msg in &rule8_errors {
+                                    eprintln!("    [Rule 8] {}", msg);
+                                }
+                                for msg in &rule8_errors {
+                                    file_diagnostics.push(format!("{}: WARNING - {}", member, msg));
+                                }
+                                // Warnings (non-error diagnostics)
+                                for msg in &result.warnings {
+                                    eprintln!("    {}", msg);
+                                    file_diagnostics.push(format!("{}: {}", member, msg));
+                                }
+                                (String::new(), Vec::new(), true)
+                            } else {
+                                // Rule 8 soft errors — non-blocking
+                                if !rule8_errors.is_empty() {
+                                    eprintln!(
+                                        "  '{}': {} Rule 8 diagnostic(s) (non-blocking)",
+                                        member,
+                                        rule8_errors.len()
+                                    );
+                                    for msg in &rule8_errors {
+                                        eprintln!("    {}", msg);
+                                    }
+                                    for msg in &rule8_errors {
+                                        file_diagnostics
+                                            .push(format!("{}: WARNING - {}", member, msg));
+                                    }
+                                }
+                                // Other warnings
+                                if !result.warnings.is_empty() {
+                                    eprintln!(
+                                        "  '{}': {} diagnostic(s)",
+                                        member,
+                                        result.warnings.len()
+                                    );
+                                    for msg in &result.warnings {
+                                        eprintln!("    {}", msg);
+                                    }
+                                    for msg in &result.warnings {
+                                        file_diagnostics.push(format!("{}: {}", member, msg));
+                                    }
+                                }
 
-                            (
-                                result.zig_code,
-                                diagnostics,
-                                closure_fns,
-                                fn_return_types,
-                                cabi_exports,
-                                source_map,
-                            )
+                                let cabi_exports = result.cabi_exports;
+
+                                // Collect var_types for test code generation
+                                if is_test_group {
+                                    let test_cases =
+                                        crate::testgen::extract_test_cases(program, &src);
+                                    let ret_type_map: HashMap<String, String> = result
+                                        .var_types
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.to_zig_type()))
+                                        .collect();
+                                    let file_test_code = crate::testgen::generate_test_code(
+                                        &test_cases,
+                                        &HashSet::new(), // closure_fns not supported yet
+                                        &ret_type_map,
+                                    );
+                                    all_test_code.push_str(&file_test_code);
+                                }
+
+                                (result.zig_code, cabi_exports, false)
+                            }
                         }
                         Err(e) => {
-                            // Return error as diagnostic
-                            let diagnostics = vec![crate::types::Diagnostic {
-                                kind: crate::types::DiagnosticKind::Error,
-                                span: None,
-                                message: e,
-                            }];
-                            (
-                                String::new(),
-                                diagnostics,
-                                HashSet::new(),
-                                HashMap::new(),
-                                Vec::<crate::types::NativeCabiExport>::new(),
-                                crate::sourcemap::SourceMap::new(""),
-                            )
+                            eprintln!("  skip '{}': transpile error", member);
+                            file_diagnostics.push(format!("{}: ERROR - {}", member, e));
+                            (String::new(), Vec::new(), true)
                         }
                     };
 
-                let (hard_errors, soft_errors): (Vec<_>, Vec<_>) = diagnostics
-                    .iter()
-                    .filter(|d| d.kind == crate::types::DiagnosticKind::Error)
-                    .partition(|d| !d.message.contains("(Rule 8)"));
-                if !hard_errors.is_empty() {
-                    let err_count = hard_errors.len();
-                    eprintln!("  skip '{}': {} transpile error(s)", member, err_count);
-                    for diag in &hard_errors {
-                        eprintln!("    {}", diag.message.as_str());
+                    if has_error {
+                        continue;
                     }
-                    for diag in &hard_errors {
-                        file_diagnostics.push(format!("{}: ERROR - {}", member, diag.message));
+
+                    // Collect export names from exports_for_all_modules (JS-level) +
+                    // cabi_exports (IR-level) for module re-export mapping.
+                    for exp in &exports_for_all_modules {
+                        all_module_exports.push((exp.clone(), module_name.clone()));
                     }
-                    // Also report soft Rule 8 errors for visibility
-                    for diag in &soft_errors {
-                        eprintln!("    [Rule 8] {}", diag.message.as_str());
+                    // Also add names from cabi_exports that aren't in exports_for_all_modules
+                    // (e.g. functions generated by the IR that weren't in the JS export set).
+                    for ce in &cabi_exports {
+                        if !exports_for_all_modules.contains(&ce.name) {
+                            all_module_exports.push((ce.name.clone(), module_name.clone()));
+                        }
                     }
-                    for diag in &soft_errors {
-                        file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
-                    }
-                    has_error = true;
-                    // Continue to next file instead of breaking — log errors for all files
-                    // before deciding whether to skip the group.
-                    continue;
-                }
-                // Only Rule 8 errors — don't skip the file, but report as warnings
-                if !soft_errors.is_empty() {
-                    eprintln!(
-                        "  '{}': {} Rule 8 diagnostic(s) (non-blocking)",
-                        member,
-                        soft_errors.len()
-                    );
-                    for diag in &soft_errors {
-                        eprintln!("    {}", diag.message.as_str());
-                    }
-                    for diag in &soft_errors {
-                        file_diagnostics.push(format!("{}: WARNING - {}", member, diag.message));
+
+                    let dep_imports = build_dep_imports(member, &group);
+
+                    per_file_modules.push(crate::project::PerFileModule {
+                        mod_name: module_name.clone(),
+                        zig_code,
+                        dep_imports,
+                    });
+
+                    // Always collect CABI exports for all groups (paired with module name)
+                    for export in cabi_exports {
+                        all_cabi_exports.push((module_name.clone(), export));
                     }
                 }
 
-                if !diagnostics.is_empty() {
-                    eprintln!("  '{}': {} diagnostic(s)", member, diagnostics.len());
-                    for diag in &diagnostics {
-                        eprintln!("    {}", diag.message.as_str());
+                // Only skip the group if NO files succeeded transpilation.
+                // Individual file errors are logged above; successful files still get compiled.
+                if per_file_modules.is_empty() {
+                    if has_error {
+                        eprintln!("  skip: all files failed transpilation");
+                    } else {
+                        eprintln!("  skip: no valid modules after transpilation");
                     }
-                    for diag in &diagnostics {
-                        file_diagnostics.push(format!("{}: {}", member, diag.message));
-                    }
+                    break 'group_block;
                 }
 
-                for exp in &exports_for_all_modules {
-                    all_module_exports.push((exp.clone(), module_name.clone()));
-                }
-                // Also scan all pub fn / pub export fn for test re-export
-                for fn_name in scan_pub_functions(&zig_code) {
-                    if !exports_for_all_modules.contains(&fn_name) {
-                        all_module_exports.push((fn_name, module_name.clone()));
-                    }
-                }
-
-                let dep_imports = build_dep_imports(member, group);
-
-                per_file_modules.push(crate::project::PerFileModule {
-                    mod_name: module_name.clone(),
-                    zig_code: zig_code.to_string(),
-                    dep_imports,
-                });
-
-                combined_zig.push_str(&zig_code);
-                if !source_map.mappings.is_empty() {
-                    all_source_maps.push(source_map);
-                }
-
-                // Always collect CABI exports for all groups (paired with module name)
-                for export in cabi_exports {
-                    all_cabi_exports.push((module_name.clone(), export));
-                }
-
-                if is_test_group {
-                    // Test groups: also generate Zig test code
-                    // (reuses the already-parsed program from group.parsed_programs)
-                    let test_cases = crate::testgen::extract_test_cases(program, &src);
-                    let closure_fn_refs: HashSet<&str> =
-                        closure_fns.iter().map(|s| s.as_str()).collect();
-                    let ret_type_map: HashMap<String, String> = fn_return_types
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.to_zig_type()))
-                        .collect();
-                    let file_test_code = crate::testgen::generate_test_code(
-                        &test_cases,
-                        &closure_fn_refs,
-                        &ret_type_map,
-                    );
-                    all_test_code.push_str(&file_test_code);
-                }
-            }
-
-            // Only skip the group if NO files succeeded transpilation.
-            // Individual file errors are logged above; successful files still get compiled.
-            if per_file_modules.is_empty() {
                 if has_error {
-                    eprintln!("  skip: all files failed transpilation");
-                } else {
-                    eprintln!("  skip: no valid modules after transpilation");
-                }
-                continue;
-            }
-
-            if has_error {
-                eprintln!(
-                    "  warning: {} file(s) had transpile errors, continuing with {} successful file(s)",
-                    group.members.len() - per_file_modules.len(),
-                    per_file_modules.len()
-                );
-            }
-
-            // --- Detect export name collisions and build rename map ---
-            // If two modules export a function with the same bare name,
-            // disambiguate by appending _{module_name} to the CABI/public name.
-            let bare_name_counts: HashMap<&str, usize> = {
-                let mut counts: HashMap<&str, usize> = HashMap::new();
-                for (exp_name, _) in &all_module_exports {
-                    *counts.entry(exp_name.as_str()).or_insert(0) += 1;
-                }
-                counts
-            };
-            let is_colliding =
-                |name: &str| -> bool { bare_name_counts.get(name).copied().unwrap_or(0) > 1 };
-
-            // cabi_rename: maps cabi_name (possibly disambiguated) → bare_name
-            // name_to_module: maps cabi_name → source module name
-            let mut cabi_rename: HashMap<String, String> = HashMap::new();
-            let mut name_to_module: HashMap<String, String> = HashMap::new();
-            for (exp_name, mod_name) in &all_module_exports {
-                let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
-                cabi_rename
-                    .entry(cabi_name.clone())
-                    .or_insert_with(|| exp_name.clone());
-                name_to_module
-                    .entry(cabi_name)
-                    .or_insert_with(|| mod_name.clone());
-            }
-            let mut name_to_cabi: HashMap<String, &crate::types::NativeCabiExport> = HashMap::new();
-            for (mod_name, exp) in &all_cabi_exports {
-                let key = disambiguate_name(&exp.name, mod_name, |n| is_colliding(n));
-                name_to_cabi.entry(key).or_insert(exp);
-            }
-            let cabi_wrapper_code = gen_cabi_wrappers(&name_to_module, &name_to_cabi, &cabi_rename);
-            let cabi_names: HashSet<String> = name_to_cabi.keys().cloned().collect();
-
-            // Build disambiguated external_exports: Vec<(cabi_name, module_name, bare_name)>
-            let disambiguated_exports: Vec<(String, String, String)> = all_module_exports
-                .iter()
-                .map(|(exp_name, mod_name)| {
-                    let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
-                    (cabi_name, mod_name.clone(), exp_name.clone())
-                })
-                .collect();
-
-            let project_opts = crate::project::ProjectOptions {
-                name: group.core_name.clone(),
-                out_dir: out_dir.clone(),
-                per_file_code: per_file_modules,
-                external_exports: disambiguated_exports,
-                cabi_wrapper_code,
-                cabi_names,
-                test_code: all_test_code,
-                runtime_dir: Some(runtime_dir.clone()),
-                host_header: if combined_zig.contains("host.") || !async_host_fn_names.is_empty() {
-                    host_header.clone()
-                } else {
-                    String::new()
-                },
-                async_host_fn_names: async_host_fn_names.clone(),
-                include_windows_stub: group_idx == 0,
-                export_rename: cabi_rename.clone(),
-            };
-
-            match crate::project::generate(&project_opts) {
-                Ok(()) => {
-                    if verbose {
-                        println!("  Generated: {}/{}", out_dir, group.core_name);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("  FAIL ({})", e);
-                    continue;
-                }
-            }
-
-            // Generate host.zig if host functions are registered
-            if !host_fns.is_empty() {
-                let host_zig_path = Path::new(&out_dir).join(&group.core_name).join("host.zig");
-                let host_zig_content = host_fns.generate_zig_header();
-                if let Err(e) = fs::write(&host_zig_path, &host_zig_content) {
-                    eprintln!("  warning: failed to write host.zig: {}", e);
-                } else if verbose {
-                    println!(
-                        "  Generated: {}/{}",
-                        out_dir,
-                        host_zig_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default()
+                    eprintln!(
+                        "  warning: {} file(s) had transpile errors, continuing with {} successful file(s)",
+                        group.members.len() - per_file_modules.len(),
+                        per_file_modules.len()
                     );
                 }
-            }
 
-            // Write source map JSON
-            if !all_source_maps.is_empty() {
-                let sm_path = Path::new(&out_dir)
+                // --- Detect export name collisions and build rename map ---
+                // If two modules export a function with the same bare name,
+                // disambiguate by appending _{module_name} to the CABI/public name.
+                let bare_name_counts: HashMap<&str, usize> = {
+                    let mut counts: HashMap<&str, usize> = HashMap::new();
+                    for (exp_name, _) in &all_module_exports {
+                        *counts.entry(exp_name.as_str()).or_insert(0) += 1;
+                    }
+                    counts
+                };
+                let is_colliding =
+                    |name: &str| -> bool { bare_name_counts.get(name).copied().unwrap_or(0) > 1 };
+
+                // cabi_rename: maps cabi_name (possibly disambiguated) → bare_name
+                // name_to_module: maps cabi_name → source module name
+                let mut cabi_rename: HashMap<String, String> = HashMap::new();
+                let mut name_to_module: HashMap<String, String> = HashMap::new();
+                for (exp_name, mod_name) in &all_module_exports {
+                    let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
+                    cabi_rename
+                        .entry(cabi_name.clone())
+                        .or_insert_with(|| exp_name.clone());
+                    name_to_module
+                        .entry(cabi_name)
+                        .or_insert_with(|| mod_name.clone());
+                }
+                let mut name_to_cabi: HashMap<String, &crate::types::NativeCabiExport> =
+                    HashMap::new();
+                for (mod_name, exp) in &all_cabi_exports {
+                    let key = disambiguate_name(&exp.name, mod_name, |n| is_colliding(n));
+                    name_to_cabi.entry(key).or_insert(exp);
+                }
+                let cabi_wrapper_code =
+                    gen_cabi_wrappers(&name_to_module, &name_to_cabi, &cabi_rename);
+                let cabi_names: HashSet<String> = name_to_cabi.keys().cloned().collect();
+
+                // Build disambiguated external_exports: Vec<(cabi_name, module_name, bare_name)>
+                let disambiguated_exports: Vec<(String, String, String)> = all_module_exports
+                    .iter()
+                    .map(|(exp_name, mod_name)| {
+                        let cabi_name = disambiguate_name(exp_name, mod_name, |n| is_colliding(n));
+                        (cabi_name, mod_name.clone(), exp_name.clone())
+                    })
+                    .collect();
+
+                let project_opts = crate::project::ProjectOptions {
+                    name: group.core_name.clone(),
+                    out_dir: out_dir.clone(),
+                    per_file_code: per_file_modules,
+                    external_exports: disambiguated_exports,
+                    cabi_wrapper_code,
+                    cabi_names,
+                    test_code: all_test_code,
+                    runtime_dir: Some(runtime_dir.clone()),
+                    host_header: if combined_zig.contains("host.")
+                        || !async_host_fn_names.is_empty()
+                    {
+                        host_header.clone()
+                    } else {
+                        String::new()
+                    },
+                    async_host_fn_names: async_host_fn_names.clone(),
+                    include_windows_stub: group_idx == 0,
+                    export_rename: cabi_rename.clone(),
+                };
+
+                match crate::project::generate(&project_opts) {
+                    Ok(()) => {
+                        if verbose {
+                            println!("  Generated: {}/{}", out_dir, group.core_name);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  FAIL ({})", e);
+                        break 'group_block;
+                    }
+                }
+
+                // Write source map JSON
+                if !all_source_maps.is_empty() {
+                    let sm_path = Path::new(&out_dir)
+                        .join(&group.core_name)
+                        .join("source_map.json");
+                    let sm_json = serde_json::json!({
+                        "version": 1,
+                        "generator": "js2rustc",
+                        "files": all_source_maps
+                            .iter()
+                            .map(|sm| serde_json::json!({
+                                "source": sm.source_file,
+                                "mappings": sm.mappings.iter().map(|m| serde_json::json!({
+                                    "zig_line": m.zig_line,
+                                    "js_file": m.js_file,
+                                    "js_line": m.js_line,
+                                    "js_col": m.js_col,
+                                    "kind": m.kind,
+                                })).collect::<Vec<_>>()
+                            }))
+                            .collect::<Vec<_>>()
+                    });
+                    if let Ok(json_str) = serde_json::to_string_pretty(&sm_json) {
+                        let _ = fs::write(&sm_path, json_str);
+                    }
+                }
+
+                // Write CABI metadata for all groups
+                // Only include init/deinit for the first non-test group
+                let include_init = !is_test_group && group_idx == 0;
+                write_cabi_metadata(
+                    Path::new(&out_dir),
+                    &group.core_name,
+                    &all_cabi_exports,
+                    &host_fns,
+                    include_init,
+                    &cabi_rename,
+                );
+
+                // Collect cabi_exports_json for the result
+                let cabi_path = Path::new(&out_dir)
                     .join(&group.core_name)
-                    .join("source_map.json");
-                let sm_json = serde_json::json!({
-                    "version": 1,
-                    "generator": "js2rustc",
-                    "files": all_source_maps
-                        .iter()
-                        .map(|sm| serde_json::json!({
-                            "source": sm.source_file,
-                            "mappings": sm.mappings.iter().map(|m| serde_json::json!({
-                                "zig_line": m.zig_line,
-                                "js_file": m.js_file,
-                                "js_line": m.js_line,
-                                "js_col": m.js_col,
-                                "kind": m.kind,
-                            })).collect::<Vec<_>>()
-                        }))
-                        .collect::<Vec<_>>()
+                    .join("cabi_exports.json");
+                let cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
+
+                group_results.push(crate::GroupResult {
+                    name: group.core_name.clone(),
+                    is_test: is_test_group,
+                    cabi_exports_json: cabi_json,
+                    diagnostics: file_diagnostics.clone(),
                 });
-                if let Ok(json_str) = serde_json::to_string_pretty(&sm_json) {
-                    let _ = fs::write(&sm_path, json_str);
-                }
+
+                // Persist diagnostics so cache-hit builds can reload them
+                // instead of returning empty and causing spurious cargo:warning replay.
+                save_diagnostics(Path::new(&out_dir), &group.core_name, &file_diagnostics);
+
+                // Write test_cases.json for test groups (used by bridge test generation)
             }
 
-            // Write CABI metadata for all groups
-            // Only include init/deinit for the first non-test group
-            let include_init = !is_test_group && group_idx == 0;
-            write_cabi_metadata(
-                Path::new(&out_dir),
-                &group.core_name,
-                &all_cabi_exports,
-                &host_fns,
-                include_init,
-                &cabi_rename,
-            );
-
-            // Collect cabi_exports_json for the result
-            let cabi_path = Path::new(&out_dir)
-                .join(&group.core_name)
-                .join("cabi_exports.json");
-            let cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
-
-            group_results.push(crate::GroupResult {
-                name: group.core_name.clone(),
-                is_test: is_test_group,
-                cabi_exports_json: cabi_json,
-                diagnostics: file_diagnostics.clone(),
-                output_files: Vec::new(),
-            });
-
-            // Persist diagnostics so cache-hit builds can reload them
-            // instead of returning empty and causing spurious cargo:warning replay.
-            save_diagnostics(Path::new(&out_dir), &group.core_name, &file_diagnostics);
-
-            // Write test_cases.json for test groups (used by bridge test generation)
-        }
-
-        // === Zig build ===
-        if !config.run_zig_build {
-            // Skip zig build/test — caller handles compilation (e.g. proc-macro)
-            continue;
-        }
-
-        let project_path = Path::new(&out_dir).join(&group.core_name);
-        let mut build_ok = false;
-        let mut build_cmd = Command::new("zig");
-        build_cmd.arg("build");
-        if let Some(ref opt) = config.zig_optimize {
-            build_cmd.arg(format!("-Doptimize={}", opt));
-        }
-        let build_result = build_cmd.current_dir(&project_path).output();
-        match build_result {
-            Ok(result) if result.status.success() => {
-                if verbose {
-                    println!("  zig build: OK");
-                }
-                build_ok = true;
+            // === Zig build ===
+            if !config.run_zig_build {
+                // Skip zig build/test — caller handles compilation (e.g. proc-macro)
+                break 'group_block;
             }
-            Ok(result) => {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                eprintln!("  zig build FAILED:\n{}", stderr);
-                return Err(format!(
-                    "zig build failed for group '{}':\n{}",
-                    group.core_name,
-                    stderr.lines().take(20).collect::<Vec<_>>().join("\n")
-                ));
-            }
-            Err(_) => {
-                eprintln!("  warning: zig not found — skipping build");
-            }
-        }
 
-        // === Zig tests ===
-        // Skip zig test when host functions are present — they require Rust-side
-        // symbol resolution and cannot be linked by zig test standalone.
-        // Check both: (1) registered host_fns from toml, and (2) host.zig with
-        // extern declarations (auto-injected for regex etc.).
-        let has_host_zig = project_path.join("src").join("host.zig").exists();
-        let has_host_deps = !host_fns.is_empty() || has_host_zig;
-        let mut test_ok = false;
-        if has_host_deps {
-            if verbose {
-                println!("  zig test: SKIPPED (project has host function dependencies)");
+            let project_path = Path::new(&out_dir).join(&group.core_name);
+            let mut build_ok = false;
+            let mut build_cmd = Command::new("zig");
+            build_cmd.arg("build");
+            if let Some(ref opt) = config.zig_optimize {
+                build_cmd.arg(format!("-Doptimize={}", opt));
             }
-            test_ok = true; // don't block cache update
-        } else {
-            let test_result = Command::new("zig")
-                .arg("build")
-                .arg("test")
-                .current_dir(&project_path)
-                .output();
-            match test_result {
+            let build_result = build_cmd.current_dir(&project_path).output();
+            match build_result {
                 Ok(result) if result.status.success() => {
                     if verbose {
-                        println!("  zig test: PASSED");
+                        println!("  zig build: OK");
                     }
-                    test_ok = true;
+                    build_ok = true;
                 }
                 Ok(result) => {
                     let stderr = String::from_utf8_lossy(&result.stderr);
-                    eprintln!("  zig test FAILED:\n{}", stderr);
+                    eprintln!("  zig build FAILED:\n{}", stderr);
+                    return Err(format!(
+                        "zig build failed for group '{}':\n{}",
+                        group.core_name,
+                        stderr.lines().take(20).collect::<Vec<_>>().join("\n")
+                    ));
                 }
-                Err(_) => {}
+                Err(_) => {
+                    eprintln!("  warning: zig not found — skipping build");
+                }
             }
-        }
 
-        // === Update build cache on success ===
-        if build_ok && test_ok {
-            build_cache.insert(group.core_name.clone(), current_hash.clone());
-        }
+            // === Zig tests ===
+            // Skip zig test when host functions are present — they require Rust-side
+            // symbol resolution and cannot be linked by zig test standalone.
+            // Check both: (1) registered host_fns from toml, and (2) host.zig with
+            // extern declarations (auto-injected for regex etc.).
+            let has_host_zig = project_path.join("src").join("host.zig").exists();
+            let has_host_deps = !host_fns.is_empty() || has_host_zig;
+            let mut test_ok = false;
+            if has_host_deps {
+                if verbose {
+                    println!("  zig test: SKIPPED (project has host function dependencies)");
+                }
+                test_ok = true; // don't block cache update
+            } else {
+                let test_result = Command::new("zig")
+                    .arg("build")
+                    .arg("test")
+                    .current_dir(&project_path)
+                    .output();
+                match test_result {
+                    Ok(result) if result.status.success() => {
+                        if verbose {
+                            println!("  zig test: PASSED");
+                        }
+                        test_ok = true;
+                    }
+                    Ok(result) => {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        eprintln!("  zig test FAILED:\n{}", stderr);
+                    }
+                    Err(_) => {}
+                }
+            }
+
+            // === Update build cache on success ===
+            if build_ok && test_ok {
+                build_cache.insert(group.core_name.clone(), current_hash.clone());
+            }
+        } // else (re-transpile path)
     }
 
     // === Write build cache ===

@@ -179,16 +179,6 @@ impl From<crate::HostType> for ZigType {
 
 // ── Export metadata ──────────────────────────────────────
 
-/// An exported function from a JS file.
-#[derive(Debug, Clone)]
-pub struct ExportedFunction {
-    pub name: String,
-    pub params: Vec<ZigType>,
-    pub return_type: ZigType,
-    /// Whether this function contains throw/try-catch statements.
-    pub can_throw: bool,
-}
-
 /// C ABI export metadata for a single function.
 /// Used by pipeline.rs to generate C ABI wrappers.
 #[derive(Debug, Clone)]
@@ -210,24 +200,6 @@ pub struct NativeCabiExport {
     pub ret_struct_fields: Option<Vec<(String, String)>>,
 }
 
-// ── Diagnostics ──────────────────────────────────────────
-
-/// Diagnostic severity level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiagnosticKind {
-    Error,
-    Warning,
-}
-
-/// A single diagnostic message (compile error/warning).
-#[derive(Debug, Clone)]
-pub struct Diagnostic {
-    pub kind: DiagnosticKind,
-    /// (line, col) in JS source — None for non-location errors.
-    pub span: Option<(usize, usize)>,
-    pub message: String,
-}
-
 // ── Transpile result ─────────────────────────────────────
 
 /// Result of transpiling a JS file to Zig.
@@ -245,8 +217,6 @@ pub struct TranspileResult {
     /// which JS features are unsupported.  Zig's lazy analysis may never trigger
     /// these at compile time, so we surface them at transpile time instead.
     pub compile_errors: Vec<String>,
-    /// Exported functions: (name, param_types, return_type).
-    pub exports: Vec<ExportedFunction>,
     /// Inferred variable types (for cross-file type propagation, future use).
     pub var_types: std::collections::HashMap<String, ZigType>,
     /// C ABI exports metadata (for bridge macro to generate Rust FFI bindings).

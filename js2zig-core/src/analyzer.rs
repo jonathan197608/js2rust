@@ -105,7 +105,7 @@ pub fn analyze_single_group(
     in_dir: &str,
     core_file: &str,
     additional_core_files: &[String],
-) -> (Vec<FileGroup>, String) {
+) -> (FileGroup, String) {
     let in_path = Path::new(in_dir);
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
@@ -196,11 +196,17 @@ pub fn analyze_single_group(
         parsed_programs,
     };
 
-    let groups = vec![group];
-    let groups_json = serde_json::to_string_pretty(&groups_to_json(&groups))
-        .expect("Failed to serialize groups.json");
+    // Serialize to JSON before moving `group` into the return tuple.
+    // Matches the format produced by groups_to_json().
+    let groups_json = serde_json::to_string_pretty(&serde_json::json!([{
+        "name": &group.core_name,
+        "core_file": &group.core_file,
+        "member_count": group.members.len(),
+        "members": &group.members,
+    }]))
+    .expect("Failed to serialize groups.json");
 
-    (groups, groups_json)
+    (group, groups_json)
 }
 
 /// Compute transitive dependencies starting from multiple root files.
@@ -399,20 +405,4 @@ fn extract_module_exports(es: &ExpressionStatement) -> Option<Vec<String>> {
         }
         _ => None,
     }
-}
-
-/// Convert groups to JSON-serializable map.
-fn groups_to_json(groups: &[FileGroup]) -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = groups
-        .iter()
-        .map(|g| {
-            serde_json::json!({
-                "name": g.core_name,
-                "core_file": g.core_file,
-                "member_count": g.members.len(),
-                "members": g.members,
-            })
-        })
-        .collect();
-    serde_json::Value::Array(entries)
 }
