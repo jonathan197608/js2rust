@@ -196,8 +196,8 @@ fn link_from_cache(cache_dir: &std::path::Path) {
     let mut found = false;
     if let Ok(entries) = std::fs::read_dir(cache_dir) {
         for entry in entries.flatten() {
-            let group_dir = entry.path();
-            let lib_dir = group_dir.join("zig-out").join("lib");
+            let project_dir = entry.path();
+            let lib_dir = project_dir.join("zig-out").join("lib");
 
             if lib_dir.exists()
                 && let Some(dir_name) = entry.file_name().to_str()

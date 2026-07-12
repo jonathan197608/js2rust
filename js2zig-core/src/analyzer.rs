@@ -51,14 +51,14 @@ pub struct AnalysisResult {
     pub core_file: String,
     /// All .js filenames in this project (including entry, in topological order).
     pub members: Vec<String>,
-    /// Map: original filename → sanitzed Zig module name.
+    /// Map: original filename → sanitized Zig module name.
     pub name_map: HashMap<String, String>,
     /// Map: original filename → Vec<(imported_name, source_filename)>.
     /// e.g. "main.js" → [("add","math.js"), ("multiply","math.js"), ("greet","string_utils.js")]
     pub imported_names: HashMap<String, Vec<(String, String)>>,
     /// Map: original filename → exported function/var/class names (from AST).
     pub exported_names: HashMap<String, HashSet<String>>,
-    /// Map: original filename → ALL toplevel function names (from AST, for test groups).
+    /// Map: original filename → ALL toplevel function names (from AST, for test projects).
     pub all_fn_names: HashMap<String, HashSet<String>>,
     /// Cached source text per file (eliminates repeated I/O in the transpiler pipeline).
     pub file_sources: HashMap<String, String>,
@@ -121,7 +121,7 @@ pub fn analyze_project(
     let mut all_fn_names: HashMap<String, HashSet<String>> = HashMap::new();
     let mut file_sources: HashMap<String, String> = HashMap::new();
     let mut parsed_programs: HashMap<String, Program<'static>> = HashMap::new();
-    let mut sanitzed: HashMap<String, String> = HashMap::new();
+    let mut sanitized: HashMap<String, String> = HashMap::new();
 
     while let Some(cur) = stack.pop() {
         if !visited.insert(cur.clone()) {
@@ -161,7 +161,7 @@ pub fn analyze_project(
             }
         }
 
-        sanitzed.insert(cur.clone(), sanitize_name(&cur));
+        sanitized.insert(cur.clone(), sanitize_name(&cur));
         imports.insert(cur.clone(), info.imported_files);
         imported_names.insert(cur.clone(), info.imported_names);
         exported_names.insert(cur.clone(), info.exported_names);
@@ -175,7 +175,7 @@ pub fn analyze_project(
         .chain(additional_core_files.iter().cloned())
         .collect();
     let members = transitive_deps_multi(&all_roots, &imports);
-    let core_name = sanitzed
+    let core_name = sanitized
         .get(core_file)
         .cloned()
         .unwrap_or_else(|| sanitize_name(core_file));
@@ -184,7 +184,7 @@ pub fn analyze_project(
         core_name,
         core_file: core_file.to_string(),
         members,
-        name_map: sanitzed,
+        name_map: sanitized,
         imported_names,
         exported_names,
         all_fn_names,

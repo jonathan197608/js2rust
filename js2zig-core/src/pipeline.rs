@@ -58,7 +58,7 @@ fn compute_content_hash(
         }
     }
 
-    // Hash runtime .zig files (changes here affect all groups)
+    // Hash runtime .zig files (changes here affect the output)
     if let Ok(entries) = fs::read_dir(runtime_dir) {
         let mut rt_files: Vec<PathBuf> = entries
             .filter_map(|e| e.ok())
@@ -294,9 +294,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             let mut per_file_modules: Vec<crate::project::PerFileModule> = Vec::new();
             let mut all_module_exports: Vec<(String, String)> = Vec::new();
             let mut all_test_code = String::new();
-            let combined_zig = String::new();
             let mut all_cabi_exports: Vec<(String, crate::types::NativeCabiExport)> = Vec::new();
-            let all_source_maps: Vec<crate::sourcemap::SourceMap> = Vec::new();
             let mut file_diagnostics: Vec<String> = Vec::new();
 
             // --- Transpile pass (all metadata from analysis, no source scanning) ---
@@ -609,7 +607,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 cabi_names,
                 test_code: all_test_code,
                 runtime_dir: Some(runtime_dir.clone()),
-                host_header: if combined_zig.contains("host.") || !async_host_fn_names.is_empty() {
+                host_header: if !host_fns.is_empty() {
                     host_header.clone()
                 } else {
                     String::new()
@@ -634,33 +632,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         cabi_exports_json: String::new(),
                         diagnostics: file_diagnostics,
                     });
-                }
-            }
-
-            // Write source map JSON
-            if !all_source_maps.is_empty() {
-                let sm_path = Path::new(&out_dir)
-                    .join(&project_name)
-                    .join("source_map.json");
-                let sm_json = serde_json::json!({
-                    "version": 1,
-                    "generator": "js2rustc",
-                    "files": all_source_maps
-                        .iter()
-                        .map(|sm| serde_json::json!({
-                            "source": sm.source_file,
-                            "mappings": sm.mappings.iter().map(|m| serde_json::json!({
-                                "zig_line": m.zig_line,
-                                "js_file": m.js_file,
-                                "js_line": m.js_line,
-                                "js_col": m.js_col,
-                                "kind": m.kind,
-                            })).collect::<Vec<_>>()
-                        }))
-                        .collect::<Vec<_>>()
-                });
-                if let Ok(json_str) = serde_json::to_string_pretty(&sm_json) {
-                    let _ = fs::write(&sm_path, json_str);
                 }
             }
 

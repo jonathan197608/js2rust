@@ -149,7 +149,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         is_build_script: false, // proc-macro context — suppress all stdout/stderr
     };
 
-    // Access transpilation results directly (flat structure, no group Vec)
+    // Parse transpilation results (flat ProjectResult structure)
     let project_result = js2zig_core::transpile_project(&project_config).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
@@ -226,14 +226,14 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
 // ── FFI bindings generation ───────────────────────────────────────
 
-fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
+fn generate_bindings(exports: &[CabiExport], project_suffix: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
     let mut struct_defs = Vec::new();
     let mut needs_jsstr = false;
 
-    let raw_mod = format_ident!("__js2rust_ffi_raw_{group_suffix}");
-    let safe_mod = format_ident!("__js2rust_ffi_safe_{group_suffix}");
+    let raw_mod = format_ident!("__js2rust_ffi_raw_{project_suffix}");
+    let safe_mod = format_ident!("__js2rust_ffi_safe_{project_suffix}");
 
     // Collect struct definitions from ret_struct_name/ret_struct_fields
     for exp in exports {
@@ -388,12 +388,12 @@ fn generate_bindings(exports: &[CabiExport], group_suffix: &str) -> String {
 ///
 /// Async functions that return a struct get the struct definition with
 /// `JsStrField` fields, already `#[repr(C)]`-compatible.
-fn generate_host_stubs(host_fns: &[HostFnToml], group_suffix: &str) -> Option<String> {
+fn generate_host_stubs(host_fns: &[HostFnToml], project_suffix: &str) -> Option<String> {
     if host_fns.is_empty() {
         return None;
     }
 
-    let stub_mod = format_ident!("__js2rust_host_stubs_{group_suffix}");
+    let stub_mod = format_ident!("__js2rust_host_stubs_{project_suffix}");
 
     let mut async_struct_defs = Vec::new();
     let mut extern_fns = Vec::new();
