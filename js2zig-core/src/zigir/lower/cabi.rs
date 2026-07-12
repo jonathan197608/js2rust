@@ -213,7 +213,7 @@ impl Lowerer {
             .array_element_types
             .get(obj_name.as_str())
             .cloned()
-            .unwrap_or(ZigType::I64);
+            .unwrap_or(ZigType::JsAny);
 
         Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
             kind,
@@ -377,7 +377,7 @@ impl Lowerer {
             .array_element_types
             .get(obj_name.as_str())
             .cloned()
-            .unwrap_or(ZigType::I64);
+            .unwrap_or(ZigType::JsAny);
 
         // Determine collection kind based on variable type
         let collection_kind = self

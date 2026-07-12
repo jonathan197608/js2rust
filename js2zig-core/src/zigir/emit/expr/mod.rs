@@ -277,23 +277,15 @@ impl Emitter {
                         self.emit_expr(operand);
                         self.write("))");
                     }
-                    crate::zigir::ops::UnaOp::TypeOf => {
-                        // Dead branch: the lowerer resolves typeof to either
-                        // IrExpr::StringLiteral (static types) or
-                        // IrExpr::BuiltinCall { JsRuntime, "jsTypeof" } (dynamic types)
-                        // at lowering time. This branch should never be reached.
-                        unreachable!("typeof should be resolved at lower time");
-                    }
                     crate::zigir::ops::UnaOp::Void => {
                         // void expr → evaluate and discard
                         self.emit_expr(operand);
                     }
-                    crate::zigir::ops::UnaOp::Delete => {
-                        // Dead branch: the lowerer resolves delete to either
-                        // IrExpr::BuiltinCall { JsRuntime, "deleteKey"/"deleteByKey" }
-                        // or IrExpr::CompileError at lowering time.
-                        unreachable!("delete should be resolved at lower time");
-                    }
+                    // TypeOf and Delete are resolved by the lowerer into
+                    // StringLiteral / BuiltinCall / CompileError before
+                    // reaching the emit layer.  These arms are unreachable
+                    // but must exist for exhaustive match coverage.
+                    _ => unreachable!("typeof/delete should be resolved at lower time"),
                 }
             }
 
@@ -838,7 +830,7 @@ impl Emitter {
             // They use if-expressions at emit time, producing the operand type or JsAny.
             IrExpr::Logical { .. } => false,
             IrExpr::Unary {
-                op: crate::zigir::ops::UnaOp::Not | crate::zigir::ops::UnaOp::Delete,
+                op: crate::zigir::ops::UnaOp::Not,
                 ..
             } => true,
             IrExpr::Binary { op, .. } => matches!(

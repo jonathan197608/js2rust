@@ -368,7 +368,7 @@ impl TypeInferrer {
                     let elem_ty = match self.infer_expr_type(&fos.right) {
                         InferResult::Definite(ZigType::ArrayList(box_elem)) => *box_elem,
                         InferResult::Definite(ZigType::Str) => ZigType::Str,
-                        _ => ZigType::I64,
+                        _ => ZigType::JsAny,
                     };
                     for decl in &vd.declarations {
                         if let Some(name) = binding_name(&decl.id) {
@@ -434,10 +434,10 @@ impl TypeInferrer {
                             let field_ty = if let Some(init) = &pd.value {
                                 match self.infer_expr_type(init) {
                                     InferResult::Definite(ty) => ty,
-                                    InferResult::Indeterminate => ZigType::I64,
+                                    InferResult::Indeterminate => ZigType::JsAny,
                                 }
                             } else {
-                                ZigType::I64
+                                ZigType::JsAny
                             };
                             field_types.insert(field_name.to_string(), field_ty);
                         }
@@ -492,10 +492,10 @@ impl TypeInferrer {
                                         .insert(format!("{}.{}", class_name, method_name), ty);
                                 }
                                 InferResult::Indeterminate => {
-                                    // Default to I64 for methods that can't infer
+                                    // Default to JsAny for methods that can't infer
                                     self.fn_return_types.insert(
                                         format!("{}.{}", class_name, method_name),
-                                        ZigType::I64,
+                                        ZigType::JsAny,
                                     );
                                 }
                             }
@@ -526,7 +526,7 @@ impl TypeInferrer {
                         field_types.entry(fname).or_insert_with(|| {
                             match self.infer_expr_type(&ae.right) {
                                 InferResult::Definite(ty) => ty,
-                                InferResult::Indeterminate => ZigType::I64,
+                                InferResult::Indeterminate => ZigType::JsAny,
                             }
                         });
                     }

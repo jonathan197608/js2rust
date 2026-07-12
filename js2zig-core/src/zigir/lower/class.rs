@@ -88,7 +88,7 @@ impl Lowerer {
                                     .get(&class_name)
                                     .and_then(|m| m.get(&name))
                                     .cloned()
-                                    .unwrap_or(ZigType::I64);
+                                    .unwrap_or(ZigType::JsAny);
                                 // Register static field type in var_types for Member target type inference
                                 let var_key = format!("__{}_{}", class_name, name);
                                 self.type_info.var_types.insert(var_key, field_ty.clone());
@@ -101,7 +101,7 @@ impl Lowerer {
                                 .get(&class_name)
                                 .and_then(|m| m.get(&name))
                                 .cloned()
-                                .unwrap_or(ZigType::I64);
+                                .unwrap_or(ZigType::JsAny);
                             let default = pd.value.as_ref().map(|v| self.lower_expr(v));
                             field_names.push(name.clone());
                             fields.push(IrClassField {
@@ -232,7 +232,7 @@ impl Lowerer {
                                 .get(class_name)
                                 .and_then(|m| m.get(&fname))
                                 .cloned()
-                                .unwrap_or(ZigType::I64);
+                                .unwrap_or(ZigType::JsAny);
                             field_names.push(fname.clone());
                             fields.push(crate::zigir::types::IrClassField {
                                 name: fname,

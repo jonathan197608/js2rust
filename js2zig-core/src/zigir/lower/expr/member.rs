@@ -441,7 +441,7 @@ impl Lowerer {
                             PropertyKey::StringLiteral(s) => s.value.to_string(),
                             _ => continue,
                         };
-                        let field_ty = self.infer_expr_type(&op.value).unwrap_or(ZigType::I64);
+                        let field_ty = self.infer_expr_type(&op.value).unwrap_or(ZigType::JsAny);
                         fields.push((field_name, field_ty));
                     }
                 }
@@ -453,7 +453,7 @@ impl Lowerer {
                     .elements
                     .iter()
                     .find_map(|el| el.as_expression().and_then(|e| self.infer_expr_type(e)))
-                    .unwrap_or(ZigType::I64);
+                    .unwrap_or(ZigType::JsAny);
                 Some(ZigType::ArrayList(Box::new(elem_ty)))
             }
             // Could add more patterns here

@@ -223,11 +223,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
     let host_header = host_fns.generate_zig_header();
     let async_host_fn_names: Vec<String> = host_fns.async_fn_names();
-    let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
+    let runtime_dir = ws.join("runtime");
 
     // === Incremental compilation: load build cache ===
     let mut build_cache = read_build_cache(&out_dir);
-    let runtime_path = ws.join("runtime");
     let project_name = analysis.core_name.clone();
     let is_test = project_name.starts_with("test_");
 
@@ -250,7 +249,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
 
         // --- Incremental check ---
-        let current_hash = compute_content_hash(&in_dir, &analysis, &runtime_path);
+        let current_hash = compute_content_hash(&in_dir, &analysis, &runtime_dir);
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&project_name)
             && *cached_hash == current_hash

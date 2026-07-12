@@ -275,7 +275,7 @@ impl Lowerer {
                         .var_types
                         .get(name)
                         .cloned()
-                        .unwrap_or(ZigType::I64);
+                        .unwrap_or(ZigType::JsAny);
                     captured.push((name.to_string(), ztype, false));
                 }
             }
@@ -400,9 +400,9 @@ impl Lowerer {
         {
             return self
                 .infer_arrow_expr_type_with_captures(&es.expression, captured)
-                .unwrap_or(ZigType::I64);
+                .unwrap_or(ZigType::JsAny);
         }
-        self.scan_return_type_from_stmts(&arrow.body.statements, captured, ZigType::I64)
+        self.scan_return_type_from_stmts(&arrow.body.statements, captured, ZigType::JsAny)
     }
 
     /// Infer the return type of a function expression by scanning return statements.

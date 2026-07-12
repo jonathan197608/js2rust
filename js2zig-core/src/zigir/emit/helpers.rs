@@ -6,7 +6,6 @@ use crate::types::ZigType;
 use crate::zigir::ident::IrIdent;
 use crate::zigir::ops::AssignOp;
 use crate::zigir::ops::BinOp;
-use crate::zigir::ops::UnaOp;
 use crate::zigir::ops::UpdateOp;
 
 // ═══════════════════════════════════════════════════════
@@ -84,18 +83,6 @@ pub fn bin_op_to_zig(op: BinOp) -> &'static str {
         BinOp::UrShr => ">>", // Zig logical right shift needs @as + @truncate
         BinOp::In => "==",    // JS `in` → Zig field existence check (handled at call site)
         BinOp::InstanceOf => "==", // Simplified
-    }
-}
-
-/// Unary operator → Zig operator string.
-pub fn una_op_to_zig(op: UnaOp) -> &'static str {
-    match op {
-        UnaOp::Neg => "-",
-        UnaOp::Not => "!",
-        UnaOp::BitNot => "~",
-        UnaOp::TypeOf => "typeof", // handled specially at emit time
-        UnaOp::Void => "void",     // handled specially at emit time
-        UnaOp::Delete => "delete", // handled specially at emit time
     }
 }
 

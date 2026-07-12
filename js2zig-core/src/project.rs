@@ -1,7 +1,7 @@
 /// Generate a complete Zig library project from translated JS code.
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// A single per-file Zig module with its dependency info.
@@ -41,7 +41,7 @@ pub struct ProjectOptions {
     /// Auto-generated test code (from testgen)
     pub test_code: String,
     /// Runtime source directory (relative to project root, e.g. "runtime")
-    pub runtime_dir: Option<String>,
+    pub runtime_dir: Option<PathBuf>,
     /// Host function extern "c" declarations (from host::HostFnRegistry)
     pub host_header: String,
     /// Names of async host functions (used to generate aliases in per-file modules)
@@ -160,18 +160,18 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
         .map_err(|e| format!("write host_regex_stubs.zig: {}", e))?;
 
     // 4. Copy runtime/ if it exists (always overwrite to pick up runtime changes)
-    if let Some(ref rt_dir) = opts.runtime_dir {
-        let rt_src = Path::new(rt_dir);
-        if rt_src.exists() && rt_src.is_dir() {
-            let rt_dst = src_dir.join("js_runtime");
-            // Always re-copy runtime files to pick up changes (e.g. js_console.zig updates)
-            let _ = fs::remove_dir_all(&rt_dst);
-            if let Err(e) = copy_dir_recursive(rt_src, &rt_dst) {
-                // If copy fails (e.g. concurrent process has the file), check if
-                // another process already completed the copy.
-                if !rt_dst.join("js_runtime.zig").exists() {
-                    return Err(format!("copy {}: {}", rt_dst.display(), e));
-                }
+    if let Some(ref rt_dir) = opts.runtime_dir
+        && rt_dir.exists()
+        && rt_dir.is_dir()
+    {
+        let rt_dst = src_dir.join("js_runtime");
+        // Always re-copy runtime files to pick up changes (e.g. js_console.zig updates)
+        let _ = fs::remove_dir_all(&rt_dst);
+        if let Err(e) = copy_dir_recursive(rt_dir, &rt_dst) {
+            // If copy fails (e.g. concurrent process has the file), check if
+            // another process already completed the copy.
+            if !rt_dst.join("js_runtime.zig").exists() {
+                return Err(format!("copy {}: {}", rt_dst.display(), e));
             }
         }
     }
