@@ -872,11 +872,11 @@ impl Lowerer {
             .copied()
             .unwrap_or(false);
 
-        // Async functions get `io: anytype` as the first parameter
+        // Async functions get `io: AsyncIo` as the first parameter
         if is_async {
             params.push(IrParam {
                 name: self.make_ident("io"),
-                zig_type: ZigType::Anytype,
+                zig_type: ZigType::AsyncIo,
                 is_unused: false,
                 is_rest: false,
             });

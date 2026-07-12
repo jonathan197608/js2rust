@@ -131,25 +131,16 @@ pub fn gen_cabi_wrappers(
             continue;
         }
 
-        // Skip functions with non-C-ABI-safe parameters (Anytype/JsAny/JsSymbol),
-        // except async functions where the Anytype 'io' param is handled internally.
+        // Skip functions with non-C-ABI-safe parameters (Anytype/JsAny/JsSymbol/Void).
+        // AsyncIo params are handled separately — they're filtered from C ABI param lists
+        // and obtained via js_runtime.getIo() internally.
         let has_js_obj_param = exp.params.iter().any(|(_, ty)| {
             matches!(
                 ty,
                 ZigType::Void | ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
             )
         });
-        if has_js_obj_param && !exp.is_async {
-            emit_const_alias(&mut out, name, bare_name, &module);
-            continue;
-        }
-        // Async functions with remaining non-C-ABI-safe params (beyond 'io'): still skip
-        if exp.is_async
-            && exp
-                .params
-                .iter()
-                .any(|(_, ty)| matches!(ty, ZigType::Void | ZigType::JsAny | ZigType::JsSymbol))
-        {
+        if has_js_obj_param {
             emit_const_alias(&mut out, name, bare_name, &module);
             continue;
         }
@@ -161,9 +152,9 @@ pub fn gen_cabi_wrappers(
         let mut cabi_to_zig_conversions: Vec<String> = Vec::new();
 
         for (pname, ptype) in &exp.params {
-            // Async functions: skip the injected 'io: Anytype' parameter —
+            // Skip the injected 'io: AsyncIo' parameter —
             // C ABI wrappers obtain it via js_runtime.getIo() internally.
-            if exp.is_async && matches!(ptype, ZigType::Anytype) {
+            if matches!(ptype, ZigType::AsyncIo) {
                 continue;
             }
             arg_names.push(pname.clone());
@@ -186,7 +177,7 @@ pub fn gen_cabi_wrappers(
         let cabi_call_args: String = exp
             .params
             .iter()
-            .filter(|(_, ptype)| !(exp.is_async && matches!(ptype, ZigType::Anytype)))
+            .filter(|(_, ptype)| !matches!(ptype, ZigType::AsyncIo))
             .map(|(pname, ptype)| {
                 if *ptype == ZigType::Str {
                     format!("{}_slice", pname)
@@ -494,8 +485,8 @@ pub fn write_cabi_metadata(
         .filter(|(_, exp)| {
             // Only include exports with C-ABI-safe return types and parameter types.
             // Anytype/JsAny/JsSymbol are Zig-only types that cannot cross the C ABI boundary.
-            // Async functions: the Anytype 'io' param is handled internally and should not
-            // block the export; NamedStruct returns use out-pointer C ABI wrappers.
+            // AsyncIo params are filtered from exports (obtained via js_runtime.getIo()).
+            // NamedStruct returns for async functions use out-pointer C ABI wrappers.
             let ret_ok = !matches!(
                 exp.ret_type,
                 ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol
@@ -503,17 +494,16 @@ pub fn write_cabi_metadata(
             let param_ok = !exp
                 .params
                 .iter()
-                // For async functions, skip the 'io: Anytype' parameter
-                .filter(|(_, ty)| !(exp.is_async && matches!(ty, ZigType::Anytype)))
+                .filter(|(_, ty)| !matches!(ty, ZigType::AsyncIo))
                 .any(|(_, ty)| matches!(ty, ZigType::Anytype | ZigType::JsAny | ZigType::JsSymbol));
             ret_ok && param_ok
         })
         .map(|(mod_name, exp)| {
-            // Build params list — exclude injected 'io: Anytype' for async functions
+            // Build params list — exclude injected 'io: AsyncIo' (handled internally)
             let params: Vec<serde_json::Value> = exp
                 .params
                 .iter()
-                .filter(|(_, ty)| !(exp.is_async && matches!(ty, ZigType::Anytype)))
+                .filter(|(_, ty)| !matches!(ty, ZigType::AsyncIo))
                 .map(|(name, ty)| {
                     serde_json::json!({
                         "name": name,

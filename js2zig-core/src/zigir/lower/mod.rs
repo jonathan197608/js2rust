@@ -429,6 +429,9 @@ impl Lowerer {
                     );
                 }
             }
+            ZigType::AsyncIo => {
+                *needs_js_runtime = true;
+            }
             ZigType::Void
             | ZigType::I64
             | ZigType::F64

@@ -462,10 +462,10 @@ return x * 2;
     exports.insert("asyncDouble".to_string());
     let zig = transpile_and_check_with_exports(js, "test_native_proto_await", exports);
 
-    // Step2: verify async function signature has `io: anytype`
+    // Step2: verify async function signature has `io: js_runtime.Io`
     assert!(
-        zig.contains("io: anytype"),
-        "Expected 'io: anytype' in async function signature, got:\n{}",
+        zig.contains("io: js_runtime.Io"),
+        "Expected 'io: js_runtime.Io' in async function signature, got:\n{}",
         zig
     );
 

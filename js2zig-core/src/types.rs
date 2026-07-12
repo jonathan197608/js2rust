@@ -48,6 +48,11 @@ pub enum ZigType {
     /// This allows Zig to infer the return type at compile time from the
     /// actual concrete types of anytype parameters.
     AnytypeReturn,
+    /// Async runtime I/O handle (js_runtime.Io in generated code).
+    /// Injected as the first parameter of async export functions by the lowerer.
+    /// Never crosses the C ABI boundary — C ABI wrappers obtain it via
+    /// `js_runtime.getIo()` internally.
+    AsyncIo,
 }
 
 impl ZigType {
@@ -88,6 +93,7 @@ impl ZigType {
             ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
             ZigType::JsError => "js_error.JsError".to_string(),
             ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Emitter replaces with @TypeOf
+            ZigType::AsyncIo => "js_runtime.Io".to_string(),
         }
     }
 
@@ -108,6 +114,7 @@ impl ZigType {
             ZigType::BigInt => "i64".to_string(),        // C ABI: degrade to i64
             ZigType::JsError => "i64".to_string(),       // C ABI: degrade to i64
             ZigType::AnytypeReturn => "i64".to_string(), // C ABI: shouldn't be used (exports can't be AnytypeReturn)
+            ZigType::AsyncIo => "void".to_string(),      // AsyncIo never crosses the C ABI boundary
         }
     }
 
@@ -124,7 +131,7 @@ impl ZigType {
             ZigType::BigInt => Some("bigint"),
             ZigType::JsError => Some("object"),
             // Dynamic types — need runtime typeof helper
-            ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn => None,
+            ZigType::JsAny | ZigType::Anytype | ZigType::AnytypeReturn | ZigType::AsyncIo => None,
         }
     }
 

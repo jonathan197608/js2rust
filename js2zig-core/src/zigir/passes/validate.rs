@@ -93,14 +93,14 @@ impl ValidatePass {
             }
         }
         for export in &module.cabi_exports {
-            // Skip exports with Anytype params/return — they'll be const-aliased,
-            // not real C ABI exports, so C-safety validation doesn't apply.
-            let has_anytype = matches!(export.return_type, ZigType::Anytype)
+            // Skip exports with Anytype/AsyncIo params/return — they'll be const-aliased
+            // or have AsyncIo filtered from C ABI wrappers, so C-safety validation doesn't apply.
+            let skip_type = matches!(export.return_type, ZigType::Anytype | ZigType::AsyncIo)
                 || export
                     .params
                     .iter()
-                    .any(|p| matches!(p.zig_type, ZigType::Anytype));
-            if has_anytype {
+                    .any(|p| matches!(p.zig_type, ZigType::Anytype | ZigType::AsyncIo));
+            if skip_type {
                 continue;
             }
             // Async exports with NamedStruct returns use out-pointer C ABI wrappers
@@ -124,45 +124,26 @@ impl ValidatePass {
     }
 
     fn check_cabi_fn(&mut self, f: &IrFnDecl) {
-        // Async functions: the 'io' parameter (Anytype) is injected for the
-        // async runtime and replaced by js_runtime.getIo() in C ABI wrappers.
-        // NamedStruct returns are handled via out-pointer C ABI wrappers.
-        // Both are safe to allow.
-        if !f.is_async {
-            if !is_c_safe_type(&f.return_type) {
+        // The 'io: AsyncIo' parameter is injected by the lowerer for async functions
+        // and replaced by js_runtime.getIo() in C ABI wrappers — skip it.
+        // NamedStruct/Str returns for async functions use out-pointer/String C ABI wrappers.
+        let async_ret_exempt =
+            f.is_async && matches!(f.return_type, ZigType::NamedStruct(_) | ZigType::Str);
+        if !is_c_safe_type(&f.return_type) && !async_ret_exempt {
+            self.error(format!(
+                "C ABI function '{}' has non-C-safe return type: {:?}",
+                f.name.zig_name, f.return_type
+            ));
+        }
+        for param in &f.params {
+            if matches!(param.zig_type, ZigType::AsyncIo) {
+                continue;
+            }
+            if !is_c_safe_type(&param.zig_type) {
                 self.error(format!(
-                    "C ABI function '{}' has non-C-safe return type: {:?}",
-                    f.name.zig_name, f.return_type
+                    "C ABI function '{}' has non-C-safe parameter '{}': {:?}",
+                    f.name.zig_name, param.name.zig_name, param.zig_type
                 ));
-            }
-            for param in &f.params {
-                if !is_c_safe_type(&param.zig_type) {
-                    self.error(format!(
-                        "C ABI function '{}' has non-C-safe parameter '{}': {:?}",
-                        f.name.zig_name, param.name.zig_name, param.zig_type
-                    ));
-                }
-            }
-        } else {
-            // For async functions, only validate non-io params and non-struct return
-            let ret = &f.return_type;
-            if !is_c_safe_type(ret) && !matches!(ret, ZigType::NamedStruct(_) | ZigType::Str) {
-                self.error(format!(
-                    "C ABI async function '{}' has non-C-safe return type: {:?}",
-                    f.name.zig_name, f.return_type
-                ));
-            }
-            for param in &f.params {
-                // Skip 'io' parameter (Anytype) injected by async lowering
-                if matches!(param.zig_type, ZigType::Anytype) {
-                    continue;
-                }
-                if !is_c_safe_type(&param.zig_type) {
-                    self.error(format!(
-                        "C ABI async function '{}' has non-C-safe parameter '{}': {:?}",
-                        f.name.zig_name, param.name.zig_name, param.zig_type
-                    ));
-                }
             }
         }
     }
