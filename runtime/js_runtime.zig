@@ -2,7 +2,7 @@
 //! Provides JS-like APIs for generated Zig code.
 
 const std = @import("std");
-const Io = std.Io;
+pub const Io = std.Io;
 
 pub const js_string = @import("js_string.zig");
 pub const js_console = @import("js_console.zig");

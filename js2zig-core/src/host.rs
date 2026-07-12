@@ -178,7 +178,7 @@ impl HostFnRegistry {
         out.push_str("// These symbols are defined in Rust with #[no_mangle] pub extern \"C\".\n");
         out.push_str("// Allocator: uses the global allocator from the runtime.\n");
         out.push_str("const std = @import(\"std\");\n");
-        out.push_str("const Io = std.Io;\n");
+        out.push_str("pub const Io = std.Io;\n");
         out.push_str("const js_allocator = @import(\"js_runtime/js_allocator.zig\");\n");
         out.push_str("const StrRet = @import(\"js_runtime/string.zig\").StrRet;\n\n");
 
