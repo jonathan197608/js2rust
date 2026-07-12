@@ -679,32 +679,37 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
 
                 // === Zig tests ===
-                // Skip zig test when host functions are present — they require Rust-side
-                // symbol resolution and cannot be linked by zig test standalone.
-                // Note: host.zig always exists on disk (contains regex declarations even
-                // when no host functions are registered), so checking for its existence
-                // would always be true. Rely solely on host_fns.is_empty().
+                // Skip zig test when user host functions are present — they require
+                // Rust-side symbol resolution and cannot be linked by zig test standalone.
+                // Runtime-level C ABI deps (host_regex_*) are resolved via
+                // host_regex_stubs.zig linked in build.zig's test step.
                 if !host_fns.is_empty() {
                     if verbose {
                         println!("  zig test: SKIPPED (project has host function dependencies)");
                     }
                 } else {
+                    // NOTE: Zig 0.16.0's test runner uses --listen=- IPC on
+                    // stdout.  Using Command::output() captures stdout and
+                    // breaks the IPC, falsely reporting test failure even when
+                    // all tests pass.  Use .status() instead so the IPC pipe
+                    // is inherited from the parent process.
                     let test_result = Command::new("zig")
                         .arg("build")
                         .arg("test")
                         .current_dir(&project_path)
-                        .output();
+                        .status();
                     match test_result {
-                        Ok(result) if result.status.success() => {
+                        Ok(status) if status.success() => {
                             if verbose {
                                 println!("  zig test: PASSED");
                             }
                         }
-                        Ok(result) => {
-                            let stderr = String::from_utf8_lossy(&result.stderr);
-                            eprintln!("  zig test FAILED:\n{}", stderr);
+                        Ok(_) => {
+                            eprintln!("  zig test FAILED");
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            eprintln!("  zig test: failed to execute: {}", e);
+                        }
                     }
                 }
             }

@@ -153,6 +153,12 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
     fs::write(src_dir.join("host.zig"), &host_content)
         .map_err(|e| format!("write host.zig: {}", e))?;
 
+    // 3.6 src/host_regex_stubs.zig — stub host regex C ABI implementations
+    // for zig test (real implementations are in js2rust-bridge, linked by Rust).
+    let stub_content = generate_host_regex_stubs();
+    fs::write(src_dir.join("host_regex_stubs.zig"), stub_content)
+        .map_err(|e| format!("write host_regex_stubs.zig: {}", e))?;
+
     // 4. Copy runtime/ if it exists (always overwrite to pick up runtime changes)
     if let Some(ref rt_dir) = opts.runtime_dir {
         let rt_src = Path::new(rt_dir);
@@ -222,6 +228,95 @@ fn generate_zon(name: &str, fingerprint: Option<&str>) -> String {
     )
 }
 
+/// Generate `host_regex_stubs.zig` — stub implementations of the host C ABI
+/// regex functions so that `zig build test` can link a standalone test binary.
+/// The real implementations live in `js2rust-bridge` (native_regex.rs) and are
+/// linked when Rust drives the final executable build.
+pub fn generate_host_regex_stubs() -> String {
+    r#"//! Stub implementations of host C ABI regex functions for zig test.
+//! These provide linkable symbols so that zig test can produce a standalone
+//! test binary without the Rust-side implementations.  The real implementations
+//! live in js2rust-bridge (native_regex.rs) and are linked when Rust drives
+//! the final executable build.  These stubs are only used by `zig build test`.
+
+const JsStr = extern struct { ptr: [*]const u8, len: isize };
+
+export fn host_regex_test(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+) callconv(.c) bool {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    return false;
+}
+
+export fn host_regex_search(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+) callconv(.c) i64 {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    return -1;
+}
+
+export fn host_regex_match(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_count: *usize,
+) callconv(.c) JsStr {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    out_count.* = 0;
+    return .{ .ptr = undefined, .len = 0 };
+}
+
+export fn host_regex_match_global(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_count: *usize,
+) callconv(.c) JsStr {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    out_count.* = 0;
+    return .{ .ptr = undefined, .len = 0 };
+}
+
+export fn host_regex_match_all(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    out_match_count: *usize,
+    out_group_count: *usize,
+) callconv(.c) JsStr {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    out_match_count.* = 0;
+    out_group_count.* = 0;
+    return .{ .ptr = undefined, .len = 0 };
+}
+"#
+    .to_string()
+}
+
 pub fn generate_build_zig(lib_name: &str) -> String {
     format!(
         r#"const std = @import("std");
@@ -250,9 +345,35 @@ pub fn build(b: *std.Build) void {{
     lib.bundle_compiler_rt = true;
     b.installArtifact(lib);
 
+    // Stub library: provides host_regex_* C ABI symbols for zig test.
+    // When Rust drives the final executable build it links its own real
+    // implementations (js2rust-bridge native_regex.rs).  The stubs only
+    // exist so `zig build test` can produce a standalone test binary.
+    const stub_mod = b.createModule(.{{
+        .root_source_file = b.path("src/host_regex_stubs.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }});
+    const stub_lib = b.addLibrary(.{{
+        .name = "host_regex_stubs",
+        .linkage = .static,
+        .root_module = stub_mod,
+    }});
+
     // Test step
+    // Create a test-only module that links the stub library, so the stub
+    // symbols (host_regex_*) are available during `zig build test` but
+    // do NOT pollute the main library artifact linked by Rust.
+    const test_mod = b.createModule(.{{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }});
+    test_mod.linkLibrary(stub_lib);
     const tests = b.addTest(.{{
-        .root_module = lib_mod,
+        .root_module = test_mod,
     }});
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run all library tests");
