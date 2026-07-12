@@ -46,11 +46,6 @@ pub struct ProjectOptions {
     pub host_header: String,
     /// Names of async host functions (used to generate aliases in per-file modules)
     pub async_host_fn_names: Vec<String>,
-    /// Whether to include the Windows LdrRegisterDllNotification stub.
-    /// Must be `true` because Zig's standard library references this symbol
-    /// standard library references this symbol and Windows COFF doesn't
-    /// support weak linkage across object files.
-    pub include_windows_stub: bool,
 }
 
 /// Generate the full Zig library project.
@@ -398,24 +393,22 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
 
     // Windows stub (needed for Zig std.debug on Windows)
     // Uses platform-independent types so it compiles on all targets (native, WASM).
-    if opts.include_windows_stub {
-        out.push_str("// Windows stub for Zig std.debug.SelfInfo.Windows\n");
-        out.push_str(
-            "// Uses raw types (u32/i32) to avoid importing std.os.windows on non-Windows.\n",
-        );
-        out.push_str("pub export fn LdrRegisterDllNotification(\n");
-        out.push_str("    Flags: u32,\n");
-        out.push_str("    NotificationFunction: ?*const anyopaque,\n");
-        out.push_str("    Context: ?*anyopaque,\n");
-        out.push_str("    Cookie: *?*anyopaque,\n");
-        out.push_str(") callconv(.c) i32 {\n");
-        out.push_str("    _ = Flags;\n");
-        out.push_str("    _ = NotificationFunction;\n");
-        out.push_str("    _ = Context;\n");
-        out.push_str("    Cookie.* = @ptrFromInt(1);\n");
-        out.push_str("    return 0; // STATUS_SUCCESS\n");
-        out.push_str("}\n\n");
-    }
+    // Always included because Zig's standard library references this symbol and
+    // Windows COFF doesn't support weak linkage across object files.
+    out.push_str("// Windows stub for Zig std.debug.SelfInfo.Windows\n");
+    out.push_str("// Uses raw types (u32/i32) to avoid importing std.os.windows on non-Windows.\n");
+    out.push_str("pub export fn LdrRegisterDllNotification(\n");
+    out.push_str("    Flags: u32,\n");
+    out.push_str("    NotificationFunction: ?*const anyopaque,\n");
+    out.push_str("    Context: ?*anyopaque,\n");
+    out.push_str("    Cookie: *?*anyopaque,\n");
+    out.push_str(") callconv(.c) i32 {\n");
+    out.push_str("    _ = Flags;\n");
+    out.push_str("    _ = NotificationFunction;\n");
+    out.push_str("    _ = Context;\n");
+    out.push_str("    Cookie.* = @ptrFromInt(1);\n");
+    out.push_str("    return 0; // STATUS_SUCCESS\n");
+    out.push_str("}\n\n");
 
     // Async host function aliases (if any) — lets orchestrator call async wrappers
     if !opts.async_host_fn_names.is_empty() {
@@ -451,43 +444,37 @@ fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     }
     out.push_str("}\n\n");
     // C ABI compatible init/deinit (callable from Rust via FFI)
-    if opts.include_windows_stub {
-        out.push_str("/// Initialize with ArenaAllocator (lock-free, thread-safe).\n");
-        out.push_str(
-            "/// Call this from Rust via C ABI before using any function that allocates.\n",
-        );
-        out.push_str("pub export fn js2rust_init() void {\n");
-        out.push_str("    init_js2rust() catch @panic(\"init_js2rust failed\");\n");
-        out.push_str("}\n\n");
-        out.push_str("/// Release global resources. Call this when done.\n");
-        out.push_str("pub export fn js2rust_deinit() void {\n");
-        out.push_str("    deinit_js2rust();\n");
-        out.push_str("}\n\n");
-        out.push_str(
-            "/// Allocate memory in Zig's Arena for zero-copy string returns from Rust host functions.\n",
-        );
-        out.push_str(
-            "/// Called from Rust via extern \"C\" { fn js_allocator_alloc(size: usize) -> ?*mut u8; }\n",
-        );
-        out.push_str("/// Memory is managed by the multi-arena allocator — no free needed.\n");
-        out.push_str("/// Returns null on OOM instead of panicking.\n");
-        out.push_str("pub export fn js_allocator_alloc(size: usize) ?[*]u8 {\n");
-        out.push_str("    const buf = js_allocator.allocBytes(size) catch return null;\n");
-        out.push_str("    return buf.ptr;\n");
-        out.push_str("}\n\n");
-        out.push_str(
-            "/// Allocate + copy in Zig Arena — single call for zero-copy string returns.\n",
-        );
-        out.push_str(
-            "/// Called from Rust via extern \"C\" { fn js_allocator_dupe(src: *const u8, len: usize) -> ?*mut u8; }\n",
-        );
-        out.push_str("/// Prefer this over js_allocator_alloc + manual copy — avoids a separate memcpy in Rust.\n");
-        out.push_str("/// Returns null on OOM instead of panicking.\n");
-        out.push_str("pub export fn js_allocator_dupe(src: [*]const u8, len: usize) ?[*]u8 {\n");
-        out.push_str("    const buf = js_allocator.dupeBytes(src[0..len]) catch return null;\n");
-        out.push_str("    return buf.ptr;\n");
-        out.push_str("}\n\n");
-    }
+    out.push_str("/// Initialize with ArenaAllocator (lock-free, thread-safe).\n");
+    out.push_str("/// Call this from Rust via C ABI before using any function that allocates.\n");
+    out.push_str("pub export fn js2rust_init() void {\n");
+    out.push_str("    init_js2rust() catch @panic(\"init_js2rust failed\");\n");
+    out.push_str("}\n\n");
+    out.push_str("/// Release global resources. Call this when done.\n");
+    out.push_str("pub export fn js2rust_deinit() void {\n");
+    out.push_str("    deinit_js2rust();\n");
+    out.push_str("}\n\n");
+    out.push_str(
+        "/// Allocate memory in Zig's Arena for zero-copy string returns from Rust host functions.\n",
+    );
+    out.push_str(
+        "/// Called from Rust via extern \"C\" { fn js_allocator_alloc(size: usize) -> ?*mut u8; }\n",
+    );
+    out.push_str("/// Memory is managed by the multi-arena allocator — no free needed.\n");
+    out.push_str("/// Returns null on OOM instead of panicking.\n");
+    out.push_str("pub export fn js_allocator_alloc(size: usize) ?[*]u8 {\n");
+    out.push_str("    const buf = js_allocator.allocBytes(size) catch return null;\n");
+    out.push_str("    return buf.ptr;\n");
+    out.push_str("}\n\n");
+    out.push_str("/// Allocate + copy in Zig Arena — single call for zero-copy string returns.\n");
+    out.push_str(
+        "/// Called from Rust via extern \"C\" { fn js_allocator_dupe(src: *const u8, len: usize) -> ?*mut u8; }\n",
+    );
+    out.push_str("/// Prefer this over js_allocator_alloc + manual copy — avoids a separate memcpy in Rust.\n");
+    out.push_str("/// Returns null on OOM instead of panicking.\n");
+    out.push_str("pub export fn js_allocator_dupe(src: [*]const u8, len: usize) ?[*]u8 {\n");
+    out.push_str("    const buf = js_allocator.dupeBytes(src[0..len]) catch return null;\n");
+    out.push_str("    return buf.ptr;\n");
+    out.push_str("}\n\n");
     out.push_str("/// Release global resources allocated via init_js2rust.\n");
     out.push_str("pub fn deinit_js2rust() void {\n");
     out.push_str("    js_runtime.deinitIo();\n");

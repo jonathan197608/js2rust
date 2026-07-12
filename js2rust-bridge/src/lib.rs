@@ -140,12 +140,7 @@ pub fn build() {
                 .unwrap_or_default();
 
             // Only emit warnings for diagnostics that differ from the last emission
-            if compile_errors
-                .iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-                != last_emitted
-            {
+            if !compile_errors.iter().eq(last_emitted.iter()) {
                 for diag in &compile_errors {
                     println!("cargo:warning=js2zig: {diag}");
                 }

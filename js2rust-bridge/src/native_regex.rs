@@ -223,7 +223,6 @@ pub unsafe extern "C" fn host_regex_match_all(
     }
 }
 
-/// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.
 /// # Safety
 ///
 /// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.

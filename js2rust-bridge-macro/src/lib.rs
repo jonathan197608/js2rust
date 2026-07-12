@@ -65,7 +65,6 @@ struct CabiStructField {
 
 #[derive(Debug, Deserialize)]
 struct CabiParam {
-    #[allow(dead_code)]
     name: String,
     zig_type: String,
 }
@@ -225,14 +224,14 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
 // ── FFI bindings generation ───────────────────────────────────────
 
-fn generate_bindings(exports: &[CabiExport], project_suffix: &str) -> String {
+fn generate_bindings(exports: &[CabiExport], project_name: &str) -> String {
     let mut extern_fns = Vec::new();
     let mut safe_wrappers = Vec::new();
     let mut struct_defs = Vec::new();
     let mut needs_jsstr = false;
 
-    let raw_mod = format_ident!("__js2rust_ffi_raw_{project_suffix}");
-    let safe_mod = format_ident!("__js2rust_ffi_safe_{project_suffix}");
+    let raw_mod = format_ident!("__js2rust_ffi_raw_{project_name}");
+    let safe_mod = format_ident!("__js2rust_ffi_safe_{project_name}");
 
     // Collect struct definitions from ret_struct_name/ret_struct_fields
     for exp in exports {
@@ -387,12 +386,12 @@ fn generate_bindings(exports: &[CabiExport], project_suffix: &str) -> String {
 ///
 /// Async functions that return a struct get the struct definition with
 /// `JsStrField` fields, already `#[repr(C)]`-compatible.
-fn generate_host_stubs(host_fns: &[HostFnToml], project_suffix: &str) -> Option<String> {
+fn generate_host_stubs(host_fns: &[HostFnToml], project_name: &str) -> Option<String> {
     if host_fns.is_empty() {
         return None;
     }
 
-    let stub_mod = format_ident!("__js2rust_host_stubs_{project_suffix}");
+    let stub_mod = format_ident!("__js2rust_host_stubs_{project_name}");
 
     let mut async_struct_defs = Vec::new();
     let mut extern_fns = Vec::new();
@@ -663,7 +662,7 @@ fn generate_safe_wrapper(
 
     // Non-struct returns
     let needs_jsstr = exp.ret_type == "StrRet";
-    let has_err_out = exp.can_throw && exp.ret_type != "StrRet" && exp.ret_struct_name.is_none();
+    let has_err_out = exp.can_throw && exp.ret_type != "StrRet";
 
     let (ret_ty, call_expr) = if needs_jsstr {
         (
@@ -720,7 +719,7 @@ fn generate_safe_wrapper(
     } else {
         let rust_ret = zig_ret_type_to_rust_safe(&exp.ret_type);
         (
-            rust_ret.clone(),
+            rust_ret,
             quote! {
                 unsafe { super::#raw_mod::#fn_name(#(#ffi_args),*) }
             },

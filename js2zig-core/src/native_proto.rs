@@ -3,16 +3,12 @@
 // Native-type system transpilation module.
 // Pipeline: AST → Lowerer → ZigIR → PassPipeline → Emitter → Zig source.
 
-// Re-export types from the dedicated types module.
-pub use crate::types::{
-    ClosureManager, JSDocData, NameGen, NativeCabiExport, TranspileResult, ZigType,
-};
+// Transpile function lives here; type definitions are in crate::types.
+use crate::types::{JSDocData, NativeCabiExport, TranspileResult};
 
 use oxc_ast::ast::Program;
 
 use crate::zigir::types::{IrDecl, IrExpr, IrStmt};
-
-pub use crate::infer::TypeCheckResult;
 
 /// Transpile JS source text to Zig (native type system).
 ///
