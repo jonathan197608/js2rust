@@ -124,14 +124,19 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         .ok_or_else(|| format!("invalid file name in '{}'", js_file.display()))?
         .to_string();
 
-    let in_dir = in_path.to_string_lossy().to_string();
-    let out_dir: String = config.out_dir.to_string_lossy().to_string();
+    let in_dir = in_path;
+    let out_dir = config.out_dir.clone();
     let force_rebuild = config.force_rebuild;
     let verbose = config.is_build_script; // only print progress in build.rs context
 
     // Ensure output directory exists.
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("cannot create output directory '{}': {}", out_dir, e))?;
+    fs::create_dir_all(&out_dir).map_err(|e| {
+        format!(
+            "cannot create output directory '{}': {}",
+            out_dir.display(),
+            e
+        )
+    })?;
 
     // === Phase 1: Analyze project (entry file + transitive deps) ===
     let additional_js_files: Vec<String> = config
@@ -154,7 +159,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // noise to the terminal.
     if config.is_build_script {
         for member in &analysis.members {
-            let member_path = Path::new(&in_dir).join(member);
+            let member_path = in_dir.join(member);
             println!("cargo:rerun-if-changed={}", member_path.display());
         }
     }
@@ -221,7 +226,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     let runtime_dir = ws.join("runtime").to_string_lossy().to_string();
 
     // === Incremental compilation: load build cache ===
-    let mut build_cache = read_build_cache(Path::new(&out_dir));
+    let mut build_cache = read_build_cache(&out_dir);
     let runtime_path = ws.join("runtime");
     let project_name = analysis.core_name.clone();
     let is_test = project_name.starts_with("test_");
@@ -245,7 +250,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
 
         // --- Incremental check ---
-        let current_hash = compute_content_hash(&in_path, &analysis, &runtime_path);
+        let current_hash = compute_content_hash(&in_dir, &analysis, &runtime_path);
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&project_name)
             && *cached_hash == current_hash
@@ -253,15 +258,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             if verbose {
                 println!("  unchanged (cache hit)");
             }
-            let cabi_path = Path::new(&out_dir)
-                .join(&project_name)
-                .join("cabi_exports.json");
+            let cabi_path = out_dir.join(&project_name).join("cabi_exports.json");
             result_cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
 
             // Load cached diagnostics so the caller always sees consistent output.
-            let diag_path = Path::new(&out_dir)
-                .join(&project_name)
-                .join("diagnostics.json");
+            let diag_path = out_dir.join(&project_name).join("diagnostics.json");
             result_diagnostics = fs::read_to_string(&diag_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -525,7 +526,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     eprintln!("  skip: no valid modules after transpilation");
                 }
                 // Write build cache and return empty result
-                write_build_cache(Path::new(&out_dir), &build_cache);
+                write_build_cache(&out_dir, &build_cache);
                 return Ok(ProjectResult {
                     project_name,
                     is_test,
@@ -603,12 +604,12 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             match crate::project::generate(&project_opts) {
                 Ok(()) => {
                     if verbose {
-                        println!("  Generated: {}/{}", out_dir, project_name);
+                        println!("  Generated: {}/{}", out_dir.display(), project_name);
                     }
                 }
                 Err(e) => {
                     eprintln!("  FAIL ({})", e);
-                    write_build_cache(Path::new(&out_dir), &build_cache);
+                    write_build_cache(&out_dir, &build_cache);
                     return Ok(ProjectResult {
                         project_name,
                         is_test,
@@ -621,7 +622,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // Write CABI metadata — always include init/deinit for non-test projects
             let include_init = !is_test;
             write_cabi_metadata(
-                Path::new(&out_dir),
+                &out_dir,
                 &project_name,
                 &all_cabi_exports,
                 &host_fns,
@@ -630,20 +631,24 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             );
 
             // Collect cabi_exports_json for the result
-            let cabi_path = Path::new(&out_dir)
-                .join(&project_name)
-                .join("cabi_exports.json");
+            let cabi_path = out_dir.join(&project_name).join("cabi_exports.json");
             result_cabi_json = fs::read_to_string(&cabi_path).unwrap_or_default();
 
             // Persist diagnostics so cache-hit builds can reload them
             // instead of returning empty and causing spurious cargo:warning replay.
-            save_diagnostics(Path::new(&out_dir), &project_name, &file_diagnostics);
+            save_diagnostics(&out_dir, &project_name, &file_diagnostics);
             result_diagnostics = file_diagnostics;
+
+            // Cache the transpilation result immediately — regardless of whether
+            // zig build succeeds.  The Zig files are already written to disk;
+            // re-transpiling the same input would produce identical output.
+            // Without this, a missing `zig` binary blocks cache updates and causes
+            // full re-transpilation on every build.
+            build_cache.insert(project_name.clone(), current_hash.clone());
 
             // === Zig build ===
             if config.run_zig_build {
-                let project_path = Path::new(&out_dir).join(&project_name);
-                let mut build_ok = false;
+                let project_path = out_dir.join(&project_name);
                 let mut build_cmd = Command::new("zig");
                 build_cmd.arg("build");
                 if let Some(ref opt) = config.zig_optimize {
@@ -655,7 +660,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         if verbose {
                             println!("  zig build: OK");
                         }
-                        build_ok = true;
                     }
                     Ok(result) => {
                         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -676,12 +680,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 // symbol resolution and cannot be linked by zig test standalone.
                 let has_host_zig = project_path.join("src").join("host.zig").exists();
                 let has_host_deps = !host_fns.is_empty() || has_host_zig;
-                let mut test_ok = false;
                 if has_host_deps {
                     if verbose {
                         println!("  zig test: SKIPPED (project has host function dependencies)");
                     }
-                    test_ok = true; // don't block cache update
                 } else {
                     let test_result = Command::new("zig")
                         .arg("build")
@@ -693,7 +695,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                             if verbose {
                                 println!("  zig test: PASSED");
                             }
-                            test_ok = true;
                         }
                         Ok(result) => {
                             let stderr = String::from_utf8_lossy(&result.stderr);
@@ -702,18 +703,13 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         Err(_) => {}
                     }
                 }
-
-                // === Update build cache on success ===
-                if build_ok && test_ok {
-                    build_cache.insert(project_name.clone(), current_hash.clone());
-                }
             }
         }
         (result_diagnostics, result_cabi_json, build_cache)
     };
 
     // === Write build cache ===
-    write_build_cache(Path::new(&out_dir), &build_cache);
+    write_build_cache(&out_dir, &build_cache);
 
     Ok(ProjectResult {
         project_name,

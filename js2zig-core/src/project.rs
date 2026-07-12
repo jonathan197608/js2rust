@@ -21,7 +21,7 @@ pub struct ProjectOptions {
     /// Name of the Zig library (also the output directory name)
     pub name: String,
     /// Output directory (e.g. "out")
-    pub out_dir: String,
+    pub out_dir: std::path::PathBuf,
     /// Per-file Zig modules. Each entry is written as `{mod_name}.zig`, and lib.zig
     /// becomes a thin orchestrator that imports all per-file modules.
     pub per_file_code: Vec<PerFileModule>,
@@ -50,7 +50,7 @@ pub struct ProjectOptions {
 
 /// Generate the full Zig library project.
 pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
-    let project_dir = Path::new(&opts.out_dir).join(&opts.name);
+    let project_dir = opts.out_dir.join(&opts.name);
     let src_dir = project_dir.join("src");
 
     // Create directories

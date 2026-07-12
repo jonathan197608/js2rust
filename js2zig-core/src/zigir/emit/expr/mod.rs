@@ -280,17 +280,21 @@ impl Emitter {
                         self.write("))");
                     }
                     crate::zigir::ops::UnaOp::TypeOf => {
-                        // typeof expr → simplified; real impl depends on type
-                        self.write("\"undefined\""); // placeholder
-                        let _ = operand; // suppress warning
+                        // Dead branch: the lowerer resolves typeof to either
+                        // IrExpr::StringLiteral (static types) or
+                        // IrExpr::BuiltinCall { JsRuntime, "jsTypeof" } (dynamic types)
+                        // at lowering time. This branch should never be reached.
+                        unreachable!("typeof should be resolved at lower time");
                     }
                     crate::zigir::ops::UnaOp::Void => {
                         // void expr → evaluate and discard
                         self.emit_expr(operand);
                     }
                     crate::zigir::ops::UnaOp::Delete => {
-                        // delete is a no-op in this context
-                        let _ = operand;
+                        // Dead branch: the lowerer resolves delete to either
+                        // IrExpr::BuiltinCall { JsRuntime, "deleteKey"/"deleteByKey" }
+                        // or IrExpr::CompileError at lowering time.
+                        unreachable!("delete should be resolved at lower time");
                     }
                 }
             }

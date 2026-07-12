@@ -98,12 +98,10 @@ impl fmt::Debug for AnalysisResult {
 /// Only processes the specified entry file(s) and the files they import,
 /// rather than scanning an entire directory.
 pub fn analyze_project(
-    in_dir: &str,
+    in_dir: &Path,
     core_file: &str,
     additional_core_files: &[String],
 ) -> AnalysisResult {
-    let in_path = Path::new(in_dir);
-
     // Single DFS pass: read + parse each file ONCE, extract import/export
     // metadata straight from the AST, and cache both the source text and the
     // parsed Program for Lowerer reuse (eliminates double-parsing).
@@ -128,7 +126,7 @@ pub fn analyze_project(
             continue;
         }
 
-        let src = std::fs::read_to_string(in_path.join(&cur))
+        let src = std::fs::read_to_string(in_dir.join(&cur))
             .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
 
         // Parse ONCE: leak source for 'static lifetime, so the Program can be

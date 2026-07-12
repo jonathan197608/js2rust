@@ -158,7 +158,7 @@ impl ZigType {
             other if !other.contains(' ') && !other.contains('[') => {
                 ZigType::NamedStruct(other.to_string())
             }
-            _ => ZigType::I64, // default fallback
+            _ => ZigType::Anytype, // default fallback for unknown types
         }
     }
 }
