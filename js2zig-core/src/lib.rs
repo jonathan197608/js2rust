@@ -102,9 +102,11 @@ pub struct HostConfig {
 pub struct ProjectConfig {
     /// Project name (also used as Zig library name).
     pub name: String,
-    /// JS source file paths. The first element is the entry point;
-    /// additional elements are extra root files (multi-root mode).
-    pub js_files: Vec<PathBuf>,
+    /// Primary JS entry point file path.
+    pub entry_file: PathBuf,
+    /// Additional root JS files (multi-root mode). These are treated as
+    /// extra entry points whose exports become C ABI-exportable.
+    pub additional_roots: Vec<PathBuf>,
     /// Output directory path (typically $OUT_DIR).
     pub out_dir: PathBuf,
     /// Host function configuration (optional).
@@ -137,7 +139,8 @@ impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
             name: "js2zig_lib".into(),
-            js_files: vec![PathBuf::from("main.js")],
+            entry_file: PathBuf::from("main.js"),
+            additional_roots: Vec::new(),
             out_dir: PathBuf::from("out"),
             host_config: None,
             force_rebuild: false,

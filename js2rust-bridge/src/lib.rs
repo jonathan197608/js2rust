@@ -56,8 +56,8 @@ pub fn build() {
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
-    // All JS files are resolved from js_files (first = entry, rest = additional roots)
-    let mut js_file_paths: Vec<PathBuf> = config
+    // All JS files are resolved from config (entry + additional roots)
+    let js_file_paths: Vec<PathBuf> = config
         .project
         .js_files
         .iter()
@@ -89,8 +89,11 @@ pub fn build() {
         manifest_dir
     );
 
-    let js_file_path = js_file_paths.remove(0);
-    let additional_js_paths = js_file_paths;
+    let (entry_file, additional_roots) = {
+        let mut paths = js_file_paths;
+        let entry = paths.remove(0);
+        (entry, paths)
+    };
 
     let group_name = config.group_name();
     let host_config = config.to_host_config();
@@ -107,11 +110,8 @@ pub fn build() {
 
     let project_config = js2zig_core::ProjectConfig {
         name: group_name,
-        js_files: {
-            let mut all = vec![js_file_path];
-            all.extend(additional_js_paths);
-            all
-        },
+        entry_file,
+        additional_roots,
         out_dir: cache_dir.clone(),
         host_config,
         force_rebuild: config.build.force_rebuild,

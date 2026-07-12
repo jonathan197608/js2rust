@@ -104,14 +104,17 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     let group = config.group_name();
 
     // Resolve all JS file paths
-    let mut js_file_paths: Vec<std::path::PathBuf> = config
+    let js_file_paths: Vec<std::path::PathBuf> = config
         .project
         .js_files
         .iter()
         .map(|f| std::path::Path::new(&manifest_dir).join(f))
         .collect();
-    let js_file_path = js_file_paths.remove(0);
-    let additional_js_paths = js_file_paths;
+    let (entry_file, additional_roots) = {
+        let mut paths = js_file_paths;
+        let entry = paths.remove(0);
+        (entry, paths)
+    };
 
     // Resolve cache directory
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
@@ -136,11 +139,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
         name: group.clone(),
-        js_files: {
-            let mut all = vec![js_file_path.clone()];
-            all.extend(additional_js_paths);
-            all
-        },
+        entry_file: entry_file.clone(),
+        additional_roots,
         out_dir: cache_dir.clone(),
         host_config,
         force_rebuild: config.build.force_rebuild,
@@ -155,7 +155,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             proc_macro2::Span::call_site(),
             format!(
                 "js2rust_bridge: transpilation failed for '{}': {}",
-                js_file_path.display(),
+                entry_file.display(),
                 e
             ),
         )
@@ -166,7 +166,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     let group_result = project_result.groups.first().ok_or_else(|| {
         let mut msg = format!(
             "js2rust_bridge: no groups found in transpilation result for '{}'.",
-            js_file_path.display()
+            entry_file.display()
         );
         if !project_result.diagnostics.is_empty() {
             msg.push_str("\n\nTranspilation diagnostics:");
@@ -231,7 +231,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             proc_macro2::Span::call_site(),
             format!(
                 "js2rust_bridge: internal error generating bindings for '{}': {}",
-                js_file_path.display(),
+                entry_file.display(),
                 e
             ),
         )
