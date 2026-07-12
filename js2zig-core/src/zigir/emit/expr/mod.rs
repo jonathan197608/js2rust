@@ -317,7 +317,15 @@ impl Emitter {
                 let rt = right_type.as_ref();
                 let same_type = lt.is_some() && rt.is_some() && lt == rt;
 
-                self.write(&format!("({blk}: {{ const _lv_{id} = "));
+                // When same_type, add an explicit type annotation to the temp var
+                // so that comptime_int / comptime_float values are materialized
+                // as proper runtime types (e.g., i64, f64). Without this, Zig
+                // rejects comptime-only values in runtime control flow branches.
+                self.write(&format!("({blk}: {{ const _lv_{id}"));
+                if same_type {
+                    self.write(&format!(": {}", lt.unwrap().to_zig_type()));
+                }
+                self.write(" = ");
                 self.emit_expr(left);
                 self.write("; ");
 
