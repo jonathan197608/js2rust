@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'b7f72416-6dfc-4ac2-b9a4-37ceba14dc41'
-  PropagateID: 'b7f72416-6dfc-4ac2-b9a4-37ceba14dc41'
-  ReservedCode1: 'a63cb475-db8f-4102-bf23-0c77e5b794d2'
-  ReservedCode2: 'a63cb475-db8f-4102-bf23-0c77e5b794d2'
+  ProduceID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
+  PropagateID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
+  ReservedCode1: '0dff4b71-03e3-4e8c-a6ee-c834f1326f53'
+  ReservedCode2: '0dff4b71-03e3-4e8c-a6ee-c834f1326f53'
 ---
 
 # JS 语言特性实现说明
@@ -54,10 +54,10 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | 203 | ~92% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
-| ⚠️ 简化实现 | 5 | ~2% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ BigInt ×1 |
+| ⚠️ 简化实现 | 1 | ~0.5% | BigInt ×1（混合类型受限） |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
-> **注**: ⚠️ 简化实现 5 个（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt，基本运算支持但混合类型受限）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
+> **注**: ⚠️ 简化实现 1 个（BigInt，基本运算支持但混合类型受限）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
 
 ### 1.5 三大类对比总览
 
@@ -65,7 +65,7 @@ AIGC:
 |------|------|---------|----------|-----------|--------|
 | **表达式** | 91 | 82 | 1 | 8 | **~92%** |
 | **语句** | 49 | 46 | 0 | 3 | **~94%** |
-| **内置对象** | 220 | 203 | 5 | 11 | **~94%** |
+| **内置对象** | 220 | 207 | 1 | 11 | **~95%** |
 | **语法合计** | 140 | 128 | 1 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -75,7 +75,7 @@ AIGC:
 | 标记 | 定义 |
 |------|------|
 | ✅ 完全实现 | 完整支持，测试通过 |
-| ⚠️ 简化实现 | 基本可用，有已知限制（如 ICU 依赖） |
+| ⚠️ 简化实现 | 基本可用，有已知限制（如 BigInt 混合类型受限） |
 | 🔘 不实现 | 很少用，或 Zig 有更好替代，或 JS 已废弃 |
 
 ---
@@ -541,11 +541,11 @@ AIGC:
 > const mapped = [1, 2].map(x => x * 2);      // [2, 4]
 > ```
 
-### 4.3 `String` — 27+4⚠️/32 (97%)
+### 4.3 `String` — 31/32 (97%)
 
-> **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
+> **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）+ `runtime/js_string_icu.zig`（ICU 依赖方法）
 > **UTF-16 语义**: 已完整实现 UTF-16/UTF-8 差异处理。`.length` → `utf16Len()`，`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 均使用 UTF-16 索引语义（补充字符计为 2 个 code unit）。运行时提供 `utf16Len()`/`utf16IndexToByteOffset()`/`byteOffsetToUtf16Index()`/`firstUtf16CodeUnits()`/`encodeCodeUnit()` 等辅助函数。
-> **⚠️ 简化实现**: 4 个 locale/Unicode 方法仅提供基础功能（字节序比较/ASCII 大小写/pass-through），完整实现需要 ICU 库，对 JS→Zig 转译器不值得。
+> **ICU 方法**: 4 个 locale/Unicode 方法（`localeCompare`/`normalize`/`toLocaleUpperCase`/`toLocaleLowerCase`）通过 `js_string_icu` 模块实现。默认提供简化版本（字节序比较/ASCII 大小写/pass-through）；启用 `icu` feature 后，自动替换为 ICU4X 完整实现（通过 C ABI host 函数调用 Rust 侧 ICU4X）。
 > **⚠️ Stub**: `.search(regexp)` 通过 `host.regex_search(pattern, str)` 调用 Rust 侧 host 函数实现，非 Zig runtime 函数。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
@@ -577,11 +577,11 @@ AIGC:
 | `.codePointAt(i)` | `str.codePointAt(pos)` | `pos: i64` | `u21 \| undefined` | ✅ | ✅ | ✅ | ✅ |
 | `String.fromCharCode(...c)` | 静态: `String.fromCharCode(num1, ...)` | `...u16` | `string` | ✅ | ✅ | ✅ | ✅ |
 | `String.fromCodePoint(...c)` | 静态: `String.fromCodePoint(num1, ...)` | `...u21` | `string` | ✅ | ✅ | ✅ | ✅ |
-| **— ⚠️ 简化实现 (4) —** | | | | | | | |
-| `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ⚠️ 仅字节序 | ⚠️ 简化（非 locale 感知，需 ICU） |
-| `.normalize(form)` | `str.normalize([form])` | `form?: "NFC"\|...` | 规范化字符串 | ✅ | ✅ | ⚠️ pass-through | ⚠️ 简化（零 Unicode 规范化，需 ICU） |
-| `.toLocaleUpperCase()` | locale 感知大写 | `locale?` | 新字符串 | ✅ | ✅ | ⚠️ ASCII only | ⚠️ 简化（仅 ASCII `toUpper`，需 ICU） |
-| `.toLocaleLowerCase()` | locale 感知小写 | `locale?` | 新字符串 | ✅ | ✅ | ⚠️ ASCII only | ⚠️ 简化（仅 ASCII `toLower`，需 ICU） |
+| **— ICU 依赖方法 (4) —** | | | | | | | |
+| `.localeCompare(s)` | `str.localeCompare(compareString)` | `compareString` | `i64` (-1/0/1) | ✅ | ✅ | ✅ ICU4X / ⚠️ 字节序 | ✅（icu feature）/ ⚠️ 简化（默认） |
+| `.normalize(form)` | `str.normalize([form])` | `form?: "NFC"\|...` | 规范化字符串 | ✅ | ✅ | ✅ ICU4X / ⚠️ pass-through | ✅（icu feature）/ ⚠️ 简化（默认） |
+| `.toLocaleUpperCase()` | locale 感知大写 | `locale?` | 新字符串 | ✅ | ✅ | ✅ ICU4X / ⚠️ ASCII only | ✅（icu feature）/ ⚠️ 简化（默认） |
+| `.toLocaleLowerCase()` | locale 感知小写 | `locale?` | 新字符串 | ✅ | ✅ | ✅ ICU4X / ⚠️ ASCII only | ✅（icu feature）/ ⚠️ 简化（默认） |
 | **— 其他 (2) —** | | | | | | | |
 | `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | ✅ | ✅ | ✅ | ✅ host_regex_match_all + matchAllString |
 | `String.raw\`...\`` | 静态: 标签模板字面量 | template | `string` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
@@ -907,7 +907,7 @@ AIGC:
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
 | Array | 35 | 35 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
-| String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
+| String | 32 | 31 | 97% | 1 | 4 个 ICU 方法通过 ICU4X 完整实现（可选 `icu` feature，默认简化版本），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
 | Date | 23 | 23 | 100% | — | ✅ 全覆盖 |
@@ -926,11 +926,11 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ✅ 完整实现（混合类型/`>>>` 运行时 TypeError，与 JS 规范一致） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **210** | **~95%** | **11** | 4⚠️: String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，需 ICU） |
+| **总计** | **220** | **214** | **~97%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）
+> - ⚠️ **简化实现**: 基础功能可用（BigInt 混合类型受限）
 > - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy）
 
 ---
