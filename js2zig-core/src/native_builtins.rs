@@ -269,12 +269,12 @@ pub enum BuiltinCall {
     StringSubstring,   // str.substring(start, end)
     StringAt,          // str.at(index) — negative index support
 
-    // String methods (P2 — not yet implemented)
+    // String methods (locale-sensitive / ICU-dependent)
     StringMatchAll, // str.matchAll(regex) — returns array of match arrays with capture groups
-    StringLocaleCompare, // str.localeCompare(other) — simplified (byte-wise comparison)
-    StringNormalize, // str.normalize(form) — stub (pass-through)
-    StringToLocaleUpperCase, // str.toLocaleUpperCase() — simplified (uses toUpper)
-    StringToLocaleLowerCase, // str.toLocaleLowerCase() — simplified (uses toLower)
+    StringLocaleCompare, // str.localeCompare(other) — ICU4X-backed when needs_icu, else simplified
+    StringNormalize, // str.normalize(form) — ICU4X-backed when needs_icu, else pass-through
+    StringToLocaleUpperCase, // str.toLocaleUpperCase() — ICU4X-backed when needs_icu, else simplified
+    StringToLocaleLowerCase, // str.toLocaleLowerCase() — ICU4X-backed when needs_icu, else simplified
 
     // Map/Set clear (shared variant like MapHas/MapDelete)
     MapClear, // map.clear() or set.clear()

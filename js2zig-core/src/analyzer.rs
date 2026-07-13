@@ -45,8 +45,8 @@ fn sanitize_name(filename: &str) -> String {
 /// Analysis result: the entry file + all its transitive dependencies,
 /// with parsed ASTs and import/export metadata.
 pub struct AnalysisResult {
-    /// Sanitized entry file name (used as Zig project name).
-    pub core_name: String,
+    /// Sanitized primary root file name (used as Zig project name).
+    pub entry_name: String,
     /// All .js filenames in this project (including entry, in topological order).
     pub members: Vec<String>,
     /// Map: original filename → sanitized Zig module name.
@@ -71,7 +71,7 @@ pub struct AnalysisResult {
 impl fmt::Debug for AnalysisResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AnalysisResult")
-            .field("core_name", &self.core_name)
+            .field("entry_name", &self.entry_name)
             .field("members", &self.members)
             .field("name_map", &self.name_map)
             .field("imported_names", &self.imported_names)
@@ -98,14 +98,14 @@ impl fmt::Debug for AnalysisResult {
 pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
     assert!(!js_files.is_empty(), "js_files must not be empty");
 
-    let core_file = &js_files[0];
+    let primary_root = &js_files[0];
 
     // Single DFS pass: read + parse each file ONCE, extract import/export
     // metadata straight from the AST, and cache both the source text and the
     // parsed Program for Lowerer reuse (eliminates double-parsing).
     let mut visited: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = js_files.to_vec();
-    // Reverse so the primary core_file is popped first (we parse it first).
+    // Reverse so the primary root is popped first (we parse it first).
     stack.reverse();
 
     let mut imports: HashMap<String, Vec<String>> = HashMap::new();
@@ -165,13 +165,13 @@ pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
 
     // Build the result — all files from all roots merged.
     let members = transitive_deps_multi(js_files, &imports);
-    let core_name = sanitized
-        .get(core_file)
+    let entry_name = sanitized
+        .get(primary_root)
         .cloned()
-        .unwrap_or_else(|| sanitize_name(core_file));
+        .unwrap_or_else(|| sanitize_name(primary_root));
 
     AnalysisResult {
-        core_name,
+        entry_name,
         members,
         name_map: sanitized,
         imported_names,

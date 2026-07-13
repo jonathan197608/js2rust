@@ -118,7 +118,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     if js_files.is_empty() {
         return Err("js2rust_bridge: project.js_files is empty in js2rust.toml".to_string());
     }
-    let core_file = &js_files[0];
+    let primary_root = &js_files[0];
     let out_dir = config.out_dir.clone();
     let force_rebuild = config.build.force_rebuild;
     let verbose = config.build.is_build_script; // only print progress in build.rs context
@@ -150,7 +150,10 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     }
 
     if analysis.members.is_empty() {
-        return Err(format!("no members derived from core file '{}'", core_file));
+        return Err(format!(
+            "no JS files discovered from primary root '{}'",
+            primary_root
+        ));
     }
 
     // === Load host function registry ===
@@ -212,7 +215,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
     // === Incremental compilation: load build cache ===
     let mut build_cache = read_build_cache(&out_dir);
-    let project_name = analysis.core_name.clone();
+    let project_name = analysis.entry_name.clone();
     let is_test = project_name.starts_with("test_");
 
     // === Phase 2: Generate Zig project ===
@@ -270,14 +273,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // --- Transpile pass (all metadata from analysis, no source scanning) ---
             let core_exports = analysis
                 .exported_names
-                .get(core_file)
+                .get(primary_root)
                 .cloned()
                 .unwrap_or_default();
 
             // --- Compute re-exported names per dependency ---
             let core_imports = analysis
                 .imported_names
-                .get(core_file)
+                .get(primary_root)
                 .cloned()
                 .unwrap_or_default();
             let mut dep_re_exports: HashMap<String, HashSet<String>> = HashMap::new();
@@ -324,7 +327,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         .get(member)
                         .cloned()
                         .unwrap_or_default()
-                } else if *member == *core_file || additional_core_set.contains(member) {
+                } else if *member == *primary_root || additional_core_set.contains(member) {
                     analysis
                         .exported_names
                         .get(member)

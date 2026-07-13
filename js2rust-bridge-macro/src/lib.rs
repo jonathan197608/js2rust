@@ -176,31 +176,6 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             .to_compile_error()
         })?;
 
-    // Optionally run zig build (side effect)
-    let zig_project_dir = cache_dir.join(&project_name);
-    let lib_path = zig_project_dir.join("zig-out").join("lib").join(format!(
-        "{}.lib",
-        if cfg!(target_os = "windows") {
-            &project_name
-        } else {
-            "lib"
-        }
-    ));
-    let lib_exists = lib_path.exists()
-        || zig_project_dir
-            .join("zig-out")
-            .join("lib")
-            .join(format!("lib{}.a", &project_name))
-            .exists();
-    if config.build.run_zig_build && zig_project_dir.join("build.zig").exists() && !lib_exists {
-        let mut cmd = std::process::Command::new("zig");
-        cmd.arg("build");
-        if let Some(ref opt) = project_config.build.zig_optimize {
-            cmd.arg(format!("-Doptimize={}", opt));
-        }
-        let _ = cmd.current_dir(&zig_project_dir).status();
-    }
-
     // Generate Rust FFI bindings
     let mut generated = generate_bindings(&exports, &project_name);
 

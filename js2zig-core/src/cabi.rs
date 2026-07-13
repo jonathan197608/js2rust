@@ -276,12 +276,7 @@ pub fn gen_cabi_wrappers(
                 );
 
                 // C ABI wrapper
-                let cabi_params_with_runtime = {
-                    let mut p = cabi_params.clone();
-                    p.push("js_runtime: *JSRuntime".to_string());
-                    p
-                };
-                let cabi_params_str = cabi_params_with_runtime.join(", ");
+                let cabi_params_str = cabi_params.join(", ");
 
                 let cabi_call = format!(
                     "{mod}.{bare}({args})",
