@@ -3,16 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '70b114d9-7005-48c9-8e94-54fbd0ba283f'
-  PropagateID: '70b114d9-7005-48c9-8e94-54fbd0ba283f'
-  ReservedCode1: '39b5225a-11db-40be-aba7-9d22ae1acae5'
-  ReservedCode2: '39b5225a-11db-40be-aba7-9d22ae1acae5'
+  ProduceID: '30e7c1e0-16f2-4fe7-82c3-3bc45361c090'
+  PropagateID: '30e7c1e0-16f2-4fe7-82c3-3bc45361c090'
+  ReservedCode1: 'eb6cbca6-efc2-4d09-ae1e-982dbeee5b46'
+  ReservedCode2: 'eb6cbca6-efc2-4d09-ae1e-982dbeee5b46'
 ---
 
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 498 个 Rust 测试 (498 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 495 个 Rust 测试 (495 pass + 0 ignore) + 201 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
 
 ---
 
@@ -24,7 +24,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 498 个 Rust 测试 (498 pass + 0 ignore) + 202 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 495 个 Rust 测试 (495 pass + 0 ignore) + 201 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -33,7 +33,7 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 81 | ~89% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta 等 |
+| ✅ 完全实现 | 82 | ~90% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta/私有字段 等 |
 | ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
 | 🔘 不实现 | 8 | ~9% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of` |
 
@@ -53,7 +53,7 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 204 | ~93% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
+| ✅ 完全实现 | 203 | ~92% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
 | ⚠️ 简化实现 | 5 | ~2% | String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase）+ BigInt ×1 |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
@@ -65,7 +65,7 @@ AIGC:
 |------|------|---------|----------|-----------|--------|
 | **表达式** | 91 | 82 | 1 | 8 | **~92%** |
 | **语句** | 49 | 46 | 0 | 3 | **~94%** |
-| **内置对象** | 220 | 204 | 5 | 11 | **~95%** |
+| **内置对象** | 220 | 203 | 5 | 11 | **~94%** |
 | **语法合计** | 140 | 128 | 1 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
@@ -414,7 +414,7 @@ AIGC:
 >
 > **MDN 参考标准**: [MDN Global Objects](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects)。
 > 各方法的签名、参数、返回值均对照 MDN 标准文档。
-> 测试用例须包含 MDN 官方示例，存放于 `examples/builtins-mdn-tests/js_src/`。
+> 测试用例须包含 MDN 官方示例，存放于 `examples/mdn-test-project/js_src/`。
 
 ### 4.1 `Math` — 39/39 (100%) ✅
 
@@ -478,7 +478,7 @@ AIGC:
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 35/35 (100%)
+### 4.2 `Array` — 34/35 (97%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
 > **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` — 已实现（inline clone + 修改副本）。`.sort(compareFn)` / `.toSorted(compareFn)` 的 `compareFn` 参数已支持（回调 inline 展开为 `lessThan` struct，无 compareFn 时默认升序）。
@@ -514,7 +514,7 @@ AIGC:
 | **— 已完成实例方法 (续) —** | | | | | | |
 | `.findLast(fn)` | `arr.findLast(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `T | undefined` | ✅ | ✅ | ✅ | ✅ |
 | `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ |
-| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ |
+| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ⚠️ | ⚠️ 运行时函数缺失，调用将导致链接错误 |
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ |
 | `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | ✅ | ✅ | ✅ | ✅ clone + 单元素替换 |
 | `.toReversed()` | `arr.toReversed()` (ES2023) | — | 新数组 | ✅ | ✅ | ✅ | ✅ clone + reverse |
@@ -546,7 +546,7 @@ AIGC:
 > **Runtime 文件**: `runtime/js_string.zig`（全部 25 方法已连线至 codegen）
 > **UTF-16 语义**: 已完整实现 UTF-16/UTF-8 差异处理。`.length` → `utf16Len()`，`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 均使用 UTF-16 索引语义（补充字符计为 2 个 code unit）。运行时提供 `utf16Len()`/`utf16IndexToByteOffset()`/`byteOffsetToUtf16Index()`/`firstUtf16CodeUnits()`/`encodeCodeUnit()` 等辅助函数。
 > **⚠️ 简化实现**: 4 个 locale/Unicode 方法仅提供基础功能（字节序比较/ASCII 大小写/pass-through），完整实现需要 ICU 库，对 JS→Zig 转译器不值得。
-> **⚠️ Stub**: `.search(regexp)` 运行时函数 `searchString` 始终返回 -1，正则搜索需 host 函数集成后方可用。
+> **⚠️ Stub**: `.search(regexp)` 通过 `host.regex_search(pattern, str)` 调用 Rust 侧 host 函数实现，非 Zig runtime 函数。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -601,7 +601,7 @@ AIGC:
 
 ### 4.4 `Map` — 11/12 (92%)
 
-> **Runtime 文件**: `runtime/js_map.zig`（已实现 clear/forEach/size）
+> **Runtime 文件**: `runtime/js_collections.zig`（Map 和 Set 由 `JsCollection` 泛型统一处理；forEach 通过 emit 层 inline for 循环实现，非 runtime 函数）
 
 | 方法/属性 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |----------|----------|------|--------|------|------|--------|------|
@@ -612,10 +612,10 @@ AIGC:
 | `.delete(k)` | `map.delete(key)` | `key: K` | `bool` | ✅ | ✅ | ✅ JsMap.delete | ✅ |
 | `.clear()` | `map.clear()` | — | `void` | ✅ | ✅ | ✅ | ✅ |
 | `.size` | 实例属性 `map.size` | — | `usize` | ✅ | ✅ | ✅ | ✅ |
-| `.forEach(fn)` | `map.forEach(callbackFn[, thisArg])` | `fn: (val,key,map)=>void` | `void` | ✅ | ✅ | ✅ runtime | ✅ |
-| `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
-| `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
-| `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_map.zig` | ✅ |
+| `.forEach(fn)` | `map.forEach(callbackFn[, thisArg])` | `fn: (val,key,map)=>void` | `void` | ✅ | ✅ | ✅ inline for-loop | ✅ |
+| `.keys()` | `map.keys()` | — | `JsArray([]const u8)` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
+| `.values()` | `map.values()` | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
+| `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
 | `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
@@ -630,7 +630,7 @@ AIGC:
 
 ### 4.5 `Set` — 8/9 (89%)
 
-> **Runtime 文件**: `runtime/js_set.zig`（已实现 has/delete/clear/size）
+> **Runtime 文件**: `runtime/js_collections.zig`（Map 和 Set 由 `JsCollection` 泛型统一处理）
 > **检测冲突**: `.has()`/`.delete()` 当前仅路由到 Map，需通过 receiver 类型区分 Set 变量。
 
 | 方法/属性 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
@@ -642,7 +642,7 @@ AIGC:
 | `.clear()` | `set.clear()` | — | `void` | ✅ | ✅ | ✅ | ✅ |
 | `.size` | 实例属性 `set.size` | — | `usize` | ✅ | ✅ | ✅ | ✅ |
 | `.forEach(fn)` | `set.forEach(callbackFn[, thisArg])` | `fn: (val,val,set)=>void` | `void` | ✅ | ✅ | ✅ inline for-loop | ✅ |
-| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_set.zig` | ✅ |
+| `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
 | `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | 🔘 | 🔘 | 🔘 | 🔘 不实现（ES2025 很新，使用较少） |
 
 > **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
@@ -760,8 +760,8 @@ AIGC:
 
 | 函数 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
-| `parseInt(s, radix?)` | `parseInt(string[, radix])` | `string, radix?: 2-36` | `i64` \| NaN | ✅ | ✅ | ✅ `js_number.parseInt` | ✅ |
-| `parseFloat(s)` | `parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `@floatCast` | ✅ |
+| `parseInt(s, radix?)` | `parseInt(string[, radix])` | `string, radix?: 2-36` | `f64` \| NaN | ✅ | ✅ | ✅ `js_uri.parseInt` | ✅ 返回 f64（可表示 NaN） |
+| `parseFloat(s)` | `parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `js_uri.parseFloat` | ✅ |
 | `isNaN(v)` | `isNaN(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ `js_number.isNaN` | ✅ |
 | `isFinite(v)` | `isFinite(value)` | `value: any` | `bool` | ✅ | ✅ | ✅ `js_number.isFinite` | ✅ |
 | `encodeURIComponent(s)` | `encodeURIComponent(uriComponent)` | `uriComponent: string` | `string` (百分号编码) | ✅ | ✅ | ✅ `js_uri.encode` | ✅ |
@@ -792,8 +792,8 @@ AIGC:
 | `Number.isNaN(v)` | `Number.isNaN(value)` (严格 NaN 检测) | `value` | `bool` | ✅ | ✅ | ✅ `js_number.isNaN` | ✅ |
 | `Number.isFinite(v)` | `Number.isFinite(value)` (严格有限数) | `value` | `bool` | ✅ | ✅ | ✅ `js_number.isFinite` | ✅ |
 | `Number.isInteger(v)` | `Number.isInteger(value)` | `value` | `bool` | ✅ | ✅ | ✅ `js_number.isInteger` | ✅ |
-| `Number.parseInt(s,r)` | `Number.parseInt(string[, radix])` | `string, radix?` | `i64` \| NaN | ✅ | ✅ | ✅ `std.fmt.parseInt` | ✅ |
-| `Number.parseFloat(s)` | `Number.parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `@floatCast` | ✅ |
+| `Number.parseInt(s,r)` | `Number.parseInt(string[, radix])` | `string, radix?` | `i64` \| NaN | ✅ | ✅ | ✅ `js_number.parseInt` | ✅ 返回 i64 |
+| `Number.parseFloat(s)` | `Number.parseFloat(string)` | `string` | `f64` \| NaN | ✅ | ✅ | ✅ `js_number.parseFloat` | ✅ |
 | `Number.isSafeInteger(v)` | `Number.isSafeInteger(testValue)` | `value` | `bool` | ✅ | ✅ | ✅ | ✅ |
 | **— 静态常量 (8) —** | | | | | | | |
 | `Number.MAX_VALUE` | JS 最大正数 (`~1.79e308`) | — | `f64` | ✅ | ✅ | — | ✅ |
@@ -906,7 +906,7 @@ AIGC:
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 35 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
+| Array | 35 | 34 | 97% | 0 | reduceRight 运行时函数缺失；map 回调 inline 展开 |
 | String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
@@ -926,7 +926,7 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **211** | **~96%** | **11** | 5⚠️: String ×4 + BigInt ×1 |
+| **总计** | **220** | **208** | **~95%** | **11** | 5⚠️: String ×4 + BigInt ×1；reduceRight 运行时缺失 |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1178,16 +1178,16 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 498 个测试 (498 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 495 个测试 (495 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
 | `tests/` 子模块（10 个文件） | 368 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
-| 源文件内联测试 | 129 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、sourcemap |
+| 源文件内联测试 | 127 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
 
 ### 7.2 测试覆盖情况
 
-498 个 Rust 测试全部通过（498 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+495 个 Rust 测试全部通过（495 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 

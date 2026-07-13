@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '15e5336a-246b-4ca7-8e97-0c93c52d25e5'
-  PropagateID: '15e5336a-246b-4ca7-8e97-0c93c52d25e5'
-  ReservedCode1: 'd3898b12-955c-49bc-b962-8248ad9e0c1a'
-  ReservedCode2: 'd3898b12-955c-49bc-b962-8248ad9e0c1a'
+  ProduceID: 'eef6d784-9b57-4fe9-bbbf-956daa1f2941'
+  PropagateID: 'eef6d784-9b57-4fe9-bbbf-956daa1f2941'
+  ReservedCode1: '31443027-9974-4b38-99d1-2d3c68efce82'
+  ReservedCode2: '31443027-9974-4b38-99d1-2d3c68efce82'
 ---
 
 # js2rust 测试说明文档
@@ -19,14 +19,14 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 370 + 130 = 500 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
-| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | ~202 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 368 + 127 = 495 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
+| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | 201 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
 
 ### 基线指标（2026-07-12）
 
-- Rust 单元测试：**500 passed, 0 failed**（370 在 `tests/` 子模块 + 130 内联在源文件中）
-- Zig runtime 测试：**~202 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 35、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
+- Rust 单元测试：**495 passed, 0 failed**（368 在 `tests/` 子模块 + 127 内联在源文件中）
+- Zig runtime 测试：**201 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 34、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
 - Clippy：**0 warnings**（全 workspace）
 - MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
 - 1 个 mismatch 为已知限制，详见下方表格
@@ -38,9 +38,9 @@ AIGC:
 
 | Crate | 版本 | 说明 |
 |-------|------|------|
-| js2zig-core | 0.11.0 | 核心转译库 |
-| js2rust-bridge | 0.12.0 | Bridge facade（build.rs + proc-macro） |
-| js2rust-bridge-macro | 0.12.0 | Proc-macro 实现 |
+| js2zig-core | 0.13.0 | 核心转译库 |
+| js2rust-bridge | 0.14.0 | Bridge facade（build.rs + proc-macro） |
+| js2rust-bridge-macro | 0.14.0 | Proc-macro 实现 |
 
 ---
 
@@ -64,7 +64,7 @@ js2zig-core/src/tests/
 └── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（29 个测试）
 ```
 
-另有 **130 个内联测试**分布在源文件中：
+另有 **127 个内联测试**分布在源文件中：
 
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
@@ -81,10 +81,14 @@ js2zig-core/src/tests/
 | `zigir/source_span.rs` | 4 | 源码位置测试 |
 | `jsdoc.rs` | 13 | JSDoc 解析测试 |
 | `parser.rs` | 7 | 解析器测试（无 `test_` 前缀） |
-| `sourcemap.rs` | 4 | Source map 测试 |
-| 其他 | 13 | lower/idents、lower/helpers、builtins、ops、testgen |
+| `zigir/lower/expr/idents.rs` | 4 | Lower 标识符测试 |
+| `zigir/lower/helpers.rs` | 3 | Lower helper 测试 |
+| `zigir/builtins.rs` | 1 | Builtins 基础测试 |
+| `zigir/ops.rs` | 2 | IR ops 测试 |
+| `native_proto.rs` | 2 | Native proto 测试 |
+| `testgen.rs` | 3 | Test 生成测试 |
 
-**总计：500 个测试**（370 + 130）
+**总计：495 个测试**（368 + 127）
 
 ### 2.2 测试分类
 
@@ -324,7 +328,7 @@ cargo run -- --all
 |------|------|------|----------|----------|
 | test-lib-project | `examples/test-lib-project/` | lib | `cargo test` | 基础库导出（C ABI → Rust lib），2 个单元测试（greet + add） |
 | test-bin-project | `examples/test-bin-project/` | bin | `cargo run` | sync/async host 函数、try-catch 嵌套、Date 方法，`assert_eq!` 断言 |
-| showcase-project | `examples/showcase-project/` | bin | `cargo run` | 185 个导出函数覆盖 Array/Math/String/Date/Object/Class/Spread/解构，println 对比 expected 值 |
+| showcase-project | `examples/showcase-project/` | bin | `cargo run` | 128 个导出函数覆盖 Array/Math/String/Date/Object/Class/Spread/解构，println 对比 expected 值 |
 
 ### 4.1 test-lib-project
 
@@ -353,25 +357,25 @@ cargo run     # 运行 main()，含 assert_eq! 断言
 
 ```bash
 cd examples/showcase-project
-cargo run     # 运行 main()，打印 185 个函数结果
+cargo run     # 运行 main()，打印 128 个函数结果
 ```
 
-覆盖范围最广的集成测试，10 个 JS 文件共 185 个导出函数：
+覆盖范围最广的集成测试，10 个 JS 文件共 128 个导出函数：
 
 | JS 文件 | 导出数 | 覆盖内容 |
 |---------|--------|----------|
 | `app.js` | 47 | C ABI 导出、循环、错误处理、集合(Map/Set)、位运算、解构默认值 |
-| `utils.js` | 41 | Math 内置、算术/位/比较/一元运算、String/Array 方法、类型推断 |
-| `helpers.js` | 29 | Class(stub)、闭包(stub)、对象字面量、模板字符串、控制流、import 使用 |
-| `phase5.js` | 13 | Array 高阶方法（pop/shift/reverse/sort/slice/map/filter/reduce/some/every/forEach） |
+| `phase5.js` | 15 | Array 高阶方法（pop/shift/reverse/sort/slice/map/filter/reduce/some/every/forEach） |
 | `phase6.js` | 37 | String 实例方法、Math 静态方法、Date 全量、parseInt、Object.keys、Spread merge |
 | `phase_memory.js` | 5 | Memory 压力测试（Map/Set/Array 突变 + Arena 轮转） |
 | `test_throw.js` | 5 | Throw/Error 传播、try-finally |
 | `test_classes.js` | 4 | Class 声明（Rectangle/User 构造器 + 方法） |
-| `test_optional.js` | 2 | Optional chaining（未纳入构建） |
-| `for_in_struct.js` | 2 | For-in static struct（未纳入构建） |
+| `test_static_fields.js` | 6 | 静态字段读写、静态初始化块 |
+| `test_dynamic_index.js` | 5 | 动态数组索引赋值 |
+| `test_optional.js` | 2 | Optional chaining |
+| `for_in_struct.js` | 2 | For-in static struct |
 
-> 注：`test_optional.js` 和 `for_in_struct.js` 存在于 `js_src/` 但未在 `js2rust.toml` 中声明，暂不参与构建。
+> 注：所有 10 个 JS 文件均在 `js2rust.toml` 中声明并参与构建。此外 `js_src/` 中还有 `utils.js`（56 个导出）和 `helpers.js`（29 个导出）存在但未在 `js2rust.toml` 中声明，暂不参与构建。
 
 ---
 
@@ -381,7 +385,7 @@ cargo run     # 运行 main()，打印 185 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（500 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（495 passed）
 cargo clippy -p js2zig-core -p js2rust-bridge -p js2rust-bridge-macro -- -D warnings  # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -406,7 +410,7 @@ cargo run -- --all                  # 运行对比（exit code 恒为 0，需检
 # 5. Example 项目 — 运行验证（非仅构建）
 cd examples/test-lib-project && cargo test    # 2 tests passed
 cd examples/test-bin-project && cargo run     # assert_eq! 断言通过
-cd examples/showcase-project && cargo run     # 185 个函数输出正确
+cd examples/showcase-project && cargo run     # 128 个函数输出正确
 
 # 6. 增量编译验证 — 修改 JS 文件后重新编译应触发转译
 # 手动验证：修改 showcase js_src/helpers.js（如加一行注释），然后 cargo build
@@ -417,7 +421,7 @@ cd examples/showcase-project && cargo run     # 185 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 500 passed, 0 failed | 500 passed |
+| `cargo test -p js2zig-core --lib` | 495 passed, 0 failed | 495 passed |
 | `cargo clippy` （全 workspace） | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
 | MDN match 数 | >= 203（不低于基线） | 203 |
