@@ -1130,8 +1130,6 @@ fn run_all(binary: &str) {
     }
 
     for (i, frag) in ALL_FRAGMENTS.iter().enumerate() {
-        eprint!("[{}/{}] {} ... ", i + 1, total, frag);
-
         // Run Zig binary as child process (crash isolation).
         // Note: Zig runtime uses std.debug.print which writes to stderr.
         let zig_result = Command::new(binary).arg(frag).output();
@@ -1142,7 +1140,7 @@ fn run_all(binary: &str) {
                     // Zig panic or non-zero exit.
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     errors += 1;
-                    eprintln!("CRASH ({})", stderr.lines().next().unwrap_or("unknown"));
+                    eprintln!("[{}/{}] {} ... CRASH ({})", i + 1, total, frag, stderr.lines().next().unwrap_or("unknown"));
                     continue;
                 }
                 // console.log goes to stderr via std.debug.print; stdout may also have output.
@@ -1156,7 +1154,7 @@ fn run_all(binary: &str) {
             }
             Err(e) => {
                 errors += 1;
-                eprintln!("ERROR (spawn): {}", e);
+                eprintln!("[{}/{}] {} ... ERROR (spawn): {}", i + 1, total, frag, e);
                 continue;
             }
         };
@@ -1191,10 +1189,9 @@ fn run_all(binary: &str) {
         // Compare (trim trailing whitespace/newlines).
         if zig_norm == node_norm {
             passed += 1;
-            eprintln!("PASS");
         } else {
             mismatched += 1;
-            eprintln!("MISMATCH");
+            eprintln!("[{}/{}] {} ... MISMATCH", i + 1, total, frag);
             mismatches.push((frag, node_output, zig_output));
         }
     }
