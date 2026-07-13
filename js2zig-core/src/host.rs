@@ -429,7 +429,7 @@ impl HostFnRegistry {
     fn get_c_abi_ret_type(ty: &ZigType) -> String {
         match ty {
             ZigType::Str => "StrRet".to_string(),
-            other => other.to_zig_type(),
+            other => other.to_zig_type().into_owned(),
         }
     }
 
@@ -442,7 +442,7 @@ impl HostFnRegistry {
                 (format!("{}_ptr", param_name), "[*]const u8".to_string()),
                 (format!("{}_len", param_name), "usize".to_string()),
             ],
-            other => vec![(param_name.to_string(), other.to_zig_type())],
+            other => vec![(param_name.to_string(), other.to_zig_type().into_owned())],
         }
     }
 

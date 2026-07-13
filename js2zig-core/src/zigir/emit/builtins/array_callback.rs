@@ -570,7 +570,7 @@ impl Emitter {
         &mut self,
         data: &crate::zigir::types::IrArrayCallbackInline,
     ) -> (String, String, String) {
-        let elem_type_str = data.elem_type.to_zig_type();
+        let elem_type_str = data.elem_type.to_zig_type().into_owned();
         let param_a = data.elem_param.clone();
         let param_b = if !data.idx_param.is_empty() && data.idx_param != "_" {
             data.idx_param.clone()

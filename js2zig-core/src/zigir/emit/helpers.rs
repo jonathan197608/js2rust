@@ -106,7 +106,7 @@ pub fn assign_op_to_zig(op: AssignOp) -> &'static str {
 /// Convert a ZigType to a Zig type annotation string for declarations.
 /// This wraps ZigType::to_zig_type() but handles Option<ZigType> (None = inferred).
 pub fn zig_type_annotation(ty: Option<&ZigType>) -> Option<String> {
-    ty.map(|t| t.to_zig_type())
+    ty.map(|t| t.to_zig_type().into_owned())
 }
 
 /// Format a function return type, considering async/throw modifiers.
@@ -116,7 +116,7 @@ pub fn zig_type_annotation(ty: Option<&ZigType>) -> Option<String> {
 pub fn format_return_type(ret_type: &ZigType, is_async: bool, can_throw: bool) -> String {
     let base = match ret_type {
         ZigType::NamedStruct(name) if is_async => format!("host.{}", name),
-        _ => ret_type.to_zig_type(),
+        _ => ret_type.to_zig_type().into_owned(),
     };
     if (is_async || can_throw) && base != "void" {
         format!("!{}", base)
@@ -138,7 +138,7 @@ pub fn format_param_with_rest(name: &IrIdent, ty: &ZigType, is_rest: bool) -> St
     let type_str = if is_rest {
         "[]const JsAny".to_string()
     } else {
-        ty.to_zig_type()
+        ty.to_zig_type().into_owned()
     };
     format!("{}: {}", name.zig_name, type_str)
 }

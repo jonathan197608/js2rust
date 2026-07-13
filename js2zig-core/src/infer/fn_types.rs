@@ -130,17 +130,17 @@ impl TypeInferrer {
         let ret_ty = self.infer_fn_return_type(fd, fn_name, is_export);
         match &ret_ty {
             InferResult::Definite(ty) => {
-                // anytype is not valid as a Zig return type; default to I64
+                // anytype is not valid as a Zig return type; default to JsAny
                 if *ty == ZigType::Anytype {
                     self.fn_return_types
-                        .insert(fn_name.to_string(), ZigType::I64);
+                        .insert(fn_name.to_string(), ZigType::JsAny);
                 } else {
                     self.fn_return_types.insert(fn_name.to_string(), ty.clone());
                 }
             }
             InferResult::Indeterminate => {
                 self.fn_return_types
-                    .insert(fn_name.to_string(), ZigType::I64); // default
+                    .insert(fn_name.to_string(), ZigType::JsAny);
             }
         }
     }

@@ -624,7 +624,7 @@ impl TypeInferrer {
             BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
             | BinaryOperator::ShiftRightZeroFill => ZigType::I64,
-            _ => ZigType::I64,
+            _ => ZigType::JsAny,
         }
     }
 
@@ -642,8 +642,8 @@ impl TypeInferrer {
             "some" | "every" | "includes" => InferResult::Definite(ZigType::Bool),
             // Methods returning index or length
             "indexOf" | "lastIndexOf" | "findIndex" => InferResult::Definite(ZigType::I64),
-            // reduce: returns accumulator type (default i64)
-            "reduce" | "reduceRight" => InferResult::Definite(ZigType::I64),
+            // reduce: returns accumulator type (default JsAny since accumulator can be any type)
+            "reduce" | "reduceRight" => InferResult::Definite(ZigType::JsAny),
             // pop/shift: return element type
             "pop" | "shift" | "find" => InferResult::Definite(elem_ty.clone()),
             // join: returns string

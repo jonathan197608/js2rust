@@ -2,6 +2,8 @@
 // Shared type definitions used across the crate.
 // Extracted from native_proto.rs to reduce coupling and improve discoverability.
 
+use std::borrow::Cow;
+
 // ── Zig type system ──────────────────────────────────────
 
 /// Zig type representation for type inference.
@@ -60,19 +62,19 @@ impl ZigType {
     /// NOTE: This method does NOT add "host." prefix for NamedStruct.
     /// If the type refers to a host-defined struct, the caller must add "host."
     /// prefix manually (e.g., in the Emitter when generating non-host module code).
-    pub fn to_zig_type(&self) -> String {
+    pub fn to_zig_type(&self) -> Cow<'static, str> {
         match self {
-            ZigType::Void => "void".to_string(),
-            ZigType::I64 => "i64".to_string(),
-            ZigType::F64 => "f64".to_string(),
-            ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "[]const u8".to_string(),
+            ZigType::Void => Cow::Borrowed("void"),
+            ZigType::I64 => Cow::Borrowed("i64"),
+            ZigType::F64 => Cow::Borrowed("f64"),
+            ZigType::Bool => Cow::Borrowed("bool"),
+            ZigType::Str => Cow::Borrowed("[]const u8"),
             ZigType::ArrayList(inner) => {
-                format!("std.ArrayList({})", inner.to_zig_type())
+                Cow::Owned(format!("std.ArrayList({})", inner.to_zig_type()))
             }
             ZigType::Struct(fields) => {
                 // Generate anonymous struct type.
-                let mut s = ".{ ".to_string();
+                let mut s = String::from(".{ ");
                 for (i, (name, ty)) in fields.iter().enumerate() {
                     if i > 0 {
                         s.push_str(", ");
@@ -80,41 +82,37 @@ impl ZigType {
                     s.push_str(&format!(".{} = {}", name, ty.to_zig_type()));
                 }
                 s.push_str(" }");
-                s
+                Cow::Owned(s)
             }
-            ZigType::NamedStruct(name) => {
-                // Do NOT add "host." prefix here.
-                // The caller is responsible for adding it if needed.
-                name.clone()
-            }
-            ZigType::Anytype => "anytype".to_string(),
-            ZigType::JsAny => "JsAny".to_string(),
-            ZigType::JsSymbol => "JsSymbol".to_string(),
-            ZigType::BigInt => "js_bigint.JsBigInt".to_string(),
-            ZigType::JsError => "js_error.JsError".to_string(),
-            ZigType::AnytypeReturn => "anytype".to_string(), // placeholder — Emitter replaces with @TypeOf
-            ZigType::AsyncIo => "js_runtime.Io".to_string(),
+            ZigType::NamedStruct(name) => Cow::Owned(name.clone()),
+            ZigType::Anytype => Cow::Borrowed("anytype"),
+            ZigType::JsAny => Cow::Borrowed("JsAny"),
+            ZigType::JsSymbol => Cow::Borrowed("JsSymbol"),
+            ZigType::BigInt => Cow::Borrowed("js_bigint.JsBigInt"),
+            ZigType::JsError => Cow::Borrowed("js_error.JsError"),
+            ZigType::AnytypeReturn => Cow::Borrowed("anytype"), // placeholder — Emitter replaces with @TypeOf
+            ZigType::AsyncIo => Cow::Borrowed("js_runtime.Io"),
         }
     }
 
     /// Get the Zig type string for C ABI wrapper generation.
-    pub fn to_cabi_str(&self) -> String {
+    pub fn to_cabi_str(&self) -> Cow<'static, str> {
         match self {
-            ZigType::Void => "void".to_string(),
-            ZigType::I64 => "i64".to_string(),
-            ZigType::F64 => "f64".to_string(),
-            ZigType::Bool => "bool".to_string(),
-            ZigType::Str => "StrRet".to_string(), // C ABI: extern struct { ptr, len }
-            ZigType::ArrayList(_) => "void".to_string(), // ArrayLists cannot be directly exported via C ABI
-            ZigType::Struct(_) => "struct".to_string(), // Anonymous struct - not directly supported in C ABI
-            ZigType::NamedStruct(_) => "struct".to_string(), // Named struct - C ABI name depends on HostStructDef
-            ZigType::Anytype => "i64".to_string(), // Default for anytype (not used in C ABI)
-            ZigType::JsAny => "JsAny".to_string(), // JsAny is not directly supported in C ABI
-            ZigType::JsSymbol => "JsSymbol".to_string(), // JsSymbol is not directly supported in C ABI
-            ZigType::BigInt => "i64".to_string(),        // C ABI: degrade to i64
-            ZigType::JsError => "i64".to_string(),       // C ABI: degrade to i64
-            ZigType::AnytypeReturn => "i64".to_string(), // C ABI: shouldn't be used (exports can't be AnytypeReturn)
-            ZigType::AsyncIo => "void".to_string(),      // AsyncIo never crosses the C ABI boundary
+            ZigType::Void => Cow::Borrowed("void"),
+            ZigType::I64 => Cow::Borrowed("i64"),
+            ZigType::F64 => Cow::Borrowed("f64"),
+            ZigType::Bool => Cow::Borrowed("bool"),
+            ZigType::Str => Cow::Borrowed("StrRet"), // C ABI: extern struct { ptr, len }
+            ZigType::ArrayList(_) => Cow::Borrowed("void"), // ArrayLists cannot be directly exported via C ABI
+            ZigType::Struct(_) => Cow::Borrowed("struct"), // Anonymous struct - not directly supported in C ABI
+            ZigType::NamedStruct(_) => Cow::Borrowed("struct"), // Named struct - C ABI name depends on HostStructDef
+            ZigType::Anytype => Cow::Borrowed("i64"), // Default for anytype (not used in C ABI)
+            ZigType::JsAny => Cow::Borrowed("JsAny"), // JsAny is not directly supported in C ABI
+            ZigType::JsSymbol => Cow::Borrowed("JsSymbol"), // JsSymbol is not directly supported in C ABI
+            ZigType::BigInt => Cow::Borrowed("i64"),        // C ABI: degrade to i64
+            ZigType::JsError => Cow::Borrowed("i64"),       // C ABI: degrade to i64
+            ZigType::AnytypeReturn => Cow::Borrowed("i64"), // C ABI: shouldn't be used (exports can't be AnytypeReturn)
+            ZigType::AsyncIo => Cow::Borrowed("void"), // AsyncIo never crosses the C ABI boundary
         }
     }
 

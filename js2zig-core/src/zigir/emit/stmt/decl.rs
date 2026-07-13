@@ -115,7 +115,7 @@ impl Emitter {
                 let type_str = if param.is_rest {
                     "[]const JsAny".to_string()
                 } else {
-                    param.zig_type.to_zig_type()
+                    param.zig_type.to_zig_type().into_owned()
                 };
                 sig.push_str(&format!("_: {}", type_str));
             } else {
@@ -154,7 +154,7 @@ impl Emitter {
                 .as_ref()
                 .map(|t| match t {
                     ZigType::NamedStruct(n) => n.clone(),
-                    other => other.to_zig_type(),
+                    other => other.to_zig_type().into_owned(),
                 })
                 .unwrap_or_else(|| "i64".to_string());
             self.write(&format!(
@@ -229,7 +229,7 @@ impl Emitter {
             let type_str = if param.is_rest {
                 "[]const JsAny".to_string()
             } else {
-                param.zig_type.to_zig_type()
+                param.zig_type.to_zig_type().into_owned()
             };
             if param.is_unused {
                 // Output `_name: Type` for unused params to suppress Zig's unused-variable warning

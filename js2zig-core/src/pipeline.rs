@@ -464,7 +464,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                                 let ret_type_map: HashMap<String, String> = result
                                     .var_types
                                     .iter()
-                                    .map(|(k, v)| (k.clone(), v.to_zig_type()))
+                                    .map(|(k, v)| (k.clone(), v.to_zig_type().into_owned()))
                                     .collect();
                                 let file_test_code = crate::testgen::generate_test_code(
                                     &test_cases,
