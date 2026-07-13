@@ -114,10 +114,12 @@ pub fn build() {
         additional_roots,
         out_dir: cache_dir.clone(),
         host_config,
-        force_rebuild: config.build.force_rebuild,
-        run_zig_build: config.build.run_zig_build,
-        zig_optimize: Some(zig_optimize),
-        is_build_script: true, // build.rs context — show progress + emit rerun-if-changed
+        build: js2zig_core::BuildConfig {
+            force_rebuild: config.build.force_rebuild,
+            run_zig_build: config.build.run_zig_build,
+            zig_optimize: Some(zig_optimize),
+            is_build_script: true, // build.rs context — show progress + emit rerun-if-changed
+        },
     };
     match js2zig_core::transpile_project(&project_config) {
         Ok(result) => {

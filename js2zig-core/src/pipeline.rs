@@ -126,8 +126,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
     let in_dir = in_path;
     let out_dir = config.out_dir.clone();
-    let force_rebuild = config.force_rebuild;
-    let verbose = config.is_build_script; // only print progress in build.rs context
+    let force_rebuild = config.build.force_rebuild;
+    let verbose = config.build.is_build_script; // only print progress in build.rs context
 
     // Ensure output directory exists.
     fs::create_dir_all(&out_dir).map_err(|e| {
@@ -157,7 +157,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     // Only emit when called from build.rs (is_build_script=true);
     // proc-macros cannot use these directives and their stdout would leak
     // noise to the terminal.
-    if config.is_build_script {
+    if config.build.is_build_script {
         for member in &analysis.members {
             let member_path = in_dir.join(member);
             println!("cargo:rerun-if-changed={}", member_path.display());
@@ -669,11 +669,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             build_cache.insert(project_name.clone(), current_hash.clone());
 
             // === Zig build ===
-            if config.run_zig_build {
+            if config.build.run_zig_build {
                 let project_path = out_dir.join(&project_name);
                 let mut build_cmd = Command::new("zig");
                 build_cmd.arg("build");
-                if let Some(ref opt) = config.zig_optimize {
+                if let Some(ref opt) = config.build.zig_optimize {
                     build_cmd.arg(format!("-Doptimize={}", opt));
                 }
                 let build_result = build_cmd.current_dir(&project_path).output();

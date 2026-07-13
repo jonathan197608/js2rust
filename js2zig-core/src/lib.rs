@@ -99,18 +99,9 @@ pub struct HostConfig {
     pub functions: Vec<HostFunction>,
 }
 
-/// Multi-file project configuration.
-#[derive(Debug, Clone)]
-pub struct ProjectConfig {
-    /// Primary JS entry point file path.
-    pub entry_file: PathBuf,
-    /// Additional root JS files (multi-root mode). These are treated as
-    /// extra entry points whose exports become C ABI-exportable.
-    pub additional_roots: Vec<PathBuf>,
-    /// Output directory path (typically $OUT_DIR).
-    pub out_dir: PathBuf,
-    /// Host function configuration (optional).
-    pub host_config: Option<HostConfig>,
+/// Build behavior configuration.
+#[derive(Debug, Clone, Default)]
+pub struct BuildConfig {
     /// Force rebuild (skip incremental cache).
     pub force_rebuild: bool,
     /// Whether to run `zig build` after transpilation.
@@ -135,6 +126,22 @@ pub struct ProjectConfig {
     pub is_build_script: bool,
 }
 
+/// Multi-file project configuration.
+#[derive(Debug, Clone)]
+pub struct ProjectConfig {
+    /// Primary JS entry point file path.
+    pub entry_file: PathBuf,
+    /// Additional root JS files (multi-root mode). These are treated as
+    /// extra entry points whose exports become C ABI-exportable.
+    pub additional_roots: Vec<PathBuf>,
+    /// Output directory path (typically $OUT_DIR).
+    pub out_dir: PathBuf,
+    /// Host function configuration (optional).
+    pub host_config: Option<HostConfig>,
+    /// Build behavior configuration.
+    pub build: BuildConfig,
+}
+
 impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
@@ -142,10 +149,7 @@ impl Default for ProjectConfig {
             additional_roots: Vec::new(),
             out_dir: PathBuf::from("out"),
             host_config: None,
-            force_rebuild: false,
-            run_zig_build: false,
-            zig_optimize: None,
-            is_build_script: false,
+            build: BuildConfig::default(),
         }
     }
 }
@@ -168,7 +172,7 @@ pub struct ProjectResult {
 /// Multi-file project transpilation: JS entry file → Zig project + cabi_exports.json.
 ///
 /// The entry JS file and its transitive imports form a single project.
-/// Does NOT run `zig build` (unless `config.run_zig_build == true`).
+/// Does NOT run `zig build` (unless `config.build.run_zig_build == true`).
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     pipeline::transpile_project(config)
 }

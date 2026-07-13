@@ -141,10 +141,12 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         additional_roots,
         out_dir: cache_dir.clone(),
         host_config,
-        force_rebuild: config.build.force_rebuild,
-        run_zig_build: config.build.run_zig_build,
-        zig_optimize: Some(zig_optimize),
-        is_build_script: false, // proc-macro context — suppress all stdout/stderr
+        build: js2zig_core::BuildConfig {
+            force_rebuild: config.build.force_rebuild,
+            run_zig_build: config.build.run_zig_build,
+            zig_optimize: Some(zig_optimize),
+            is_build_script: false, // proc-macro context — suppress all stdout/stderr
+        },
     };
 
     // Parse transpilation results (flat ProjectResult structure)
@@ -192,7 +194,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     if config.build.run_zig_build && zig_project_dir.join("build.zig").exists() && !lib_exists {
         let mut cmd = std::process::Command::new("zig");
         cmd.arg("build");
-        if let Some(ref opt) = project_config.zig_optimize {
+        if let Some(ref opt) = project_config.build.zig_optimize {
             cmd.arg(format!("-Doptimize={}", opt));
         }
         let _ = cmd.current_dir(&zig_project_dir).status();
