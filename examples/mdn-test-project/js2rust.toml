@@ -216,3 +216,4 @@ js_files = [
 [build]
 force_rebuild = true
 run_zig_build = true
+icu = true

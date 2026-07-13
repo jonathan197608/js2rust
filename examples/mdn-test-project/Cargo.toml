@@ -6,7 +6,7 @@ authors = ["jonathan197608"]
 description = "MDN JS Reference test project for js2rust auto-generated tests from MDN examples"
 
 [dependencies]
-js2rust-bridge = { version = "0.14", path = "../../js2rust-bridge", features = ["regex"] }
+js2rust-bridge = { version = "0.14", path = "../../js2rust-bridge", features = ["regex", "icu"] }
 
 [build-dependencies]
-js2rust-bridge = { version = "0.14", path = "../../js2rust-bridge", features = ["stub-allocator", "regex"] }
+js2rust-bridge = { version = "0.14", path = "../../js2rust-bridge", features = ["stub-allocator", "regex", "icu"] }
