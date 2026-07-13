@@ -134,11 +134,12 @@ impl Emitter {
         args: &[crate::zigir::types::IrExpr],
     ) {
         match method {
-            // BigInt(x) → js_bigint.JsBigInt.fromI64(allocator, x) catch @panic("OOM: BigInt fromI64")
+            // BigInt(x) → js_bigint.JsBigInt.fromValue(allocator, x) catch @panic("OOM: BigInt fromValue")
+            // fromValue uses comptime dispatch: string → init(), i64 → fromI64()
             "bigIntConstructor" => {
-                self.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
+                self.write("(js_bigint.JsBigInt.fromValue(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
-                self.write(") catch @panic(\"OOM: BigInt fromI64\"))");
+                self.write(") catch @panic(\"OOM: BigInt fromValue\"))");
             }
             "bigIntNeg" | "bigIntBitwiseNot" => {
                 // (-expr).method(allocator) catch @panic(...)
@@ -155,6 +156,45 @@ impl Emitter {
                     ".{}(js_allocator.allocator()) catch @panic(\"{}\"))",
                     zig_method, panic_ctx
                 ));
+            }
+            "toString" | "toLocaleString" => {
+                // bigint.toString() / bigint.toLocaleString() → bigint.toString(allocator) catch @panic(...)
+                // toLocaleString without locale args is equivalent to toString per JS spec.
+                self.write("(");
+                if let Some(o) = obj {
+                    self.write(o);
+                } else if !args.is_empty() {
+                    self.emit_expr(&args[0]);
+                }
+                self.write(
+                    ".toString(js_allocator.allocator()) catch @panic(\"OOM: BigInt toString\"))",
+                );
+            }
+            "valueOf" => {
+                // bigint.valueOf() → returns self (identity)
+                if let Some(o) = obj {
+                    self.write(o);
+                } else if !args.is_empty() {
+                    self.emit_expr(&args[0]);
+                }
+            }
+            "asIntN" | "asUintN" => {
+                // BigInt.asIntN(width, bigint) / BigInt.asUintN(width, bigint)
+                // → js_bigint.asIntN(width, &bigint, allocator) / js_bigint.asUintN(...)
+                let zig_method = if method == "asIntN" {
+                    "asIntN"
+                } else {
+                    "asUintN"
+                };
+                self.write(&format!("(js_bigint.{}(", zig_method));
+                if args.len() >= 2 {
+                    self.emit_expr(&args[0]);
+                    self.write(", &");
+                    self.emit_expr(&args[1]);
+                }
+                self.write(", js_allocator.allocator()) catch @panic(\"OOM: BigInt ");
+                self.write(zig_method);
+                self.write("\"))");
             }
             _ => {
                 self.emit_module_call("js_bigint", method, args);

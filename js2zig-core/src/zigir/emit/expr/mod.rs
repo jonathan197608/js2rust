@@ -107,6 +107,14 @@ impl Emitter {
                 if left_is_bigint && right_is_bigint {
                     self.emit_bigint_binary(*op, left, right);
                 }
+                // ── String + BigInt concatenation ──
+                // JS spec: "hello" + 5n → "hello5", 5n + "hello" → "5hello"
+                // Only the Add operator allows String+BigInt; all other mixed ops throw TypeError.
+                else if *op == BinOp::Add
+                    && ((left_is_str && right_is_bigint) || (left_is_bigint && right_is_str))
+                {
+                    self.emit_bigint_string_concat(left, right, left_is_str);
+                }
                 // ── BigInt × Number non-comparison ops: JS throws TypeError ──
                 // e.g. 1n + 2, 3n & x, 2n ** 3 where x: number
                 // JS spec: "Cannot mix BigInt and other types, consider explicit conversions"

@@ -254,7 +254,64 @@ impl Lowerer {
             });
         }
 
-        // ── Step 1.5: RegExp variable method interception ──
+        // ── Step 1.5: BigInt variable method interception ──
+        // `b.toString()` or `b.valueOf()` where `b` is a known BigInt variable.
+        // detect_builtin_call routes `.toString()` to DateToString by default.
+        // For BigInt-typed variables, we intercept here using type lookup.
+        if let Expression::StaticMemberExpression(sme) = &ce.callee
+            && let Expression::Identifier(id) = &sme.object
+        {
+            let var_name = id.name.as_str();
+            let var_type = self.type_info.var_types.get(var_name).cloned().or_else(|| {
+                self.fn_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.fn_local_types.get(var_name).cloned())
+            });
+            if let Some(ZigType::BigInt) = var_type {
+                let method = sme.property.name.as_str();
+                match method {
+                    "toString" => {
+                        return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: BuiltinModule::JsBigInt,
+                            method: "toString".into(),
+                            obj_name: Some(var_name.to_string()),
+                            obj_expr: None,
+                            args,
+                            return_type: ZigType::Str,
+                            regex_info: None,
+                            ta_type_suffix: None,
+                        });
+                    }
+                    "valueOf" => {
+                        return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: BuiltinModule::JsBigInt,
+                            method: "valueOf".into(),
+                            obj_name: Some(var_name.to_string()),
+                            obj_expr: None,
+                            args,
+                            return_type: ZigType::BigInt,
+                            regex_info: None,
+                            ta_type_suffix: None,
+                        });
+                    }
+                    "toLocaleString" => {
+                        return IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall {
+                            module: BuiltinModule::JsBigInt,
+                            method: "toLocaleString".into(),
+                            obj_name: Some(var_name.to_string()),
+                            obj_expr: None,
+                            args,
+                            return_type: ZigType::Str,
+                            regex_info: None,
+                            ta_type_suffix: None,
+                        });
+                    }
+                    _ => {} // other methods fall through
+                }
+            }
+        }
+
+        // ── Step 1.6: RegExp variable method interception ──
         // `r.test(s)` or `r.exec(s)` where `r` is a known RegExp variable.
         // detect_builtin_call only identifies RegExpTest/RegExpExec for RegExpLiteral receivers.
         // For variable receivers, we intercept here using regexp_vars tracking.

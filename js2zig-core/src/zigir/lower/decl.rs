@@ -290,11 +290,12 @@ impl Lowerer {
             };
         }
 
-        // Force 'var' for Map/Set/ArrayList types (mutated via methods)
+        // Force 'var' for Map/Set/ArrayList/BigInt types (mutated via methods or needs deinit)
         let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(js_name) {
             match inferred_ty {
                 ZigType::ArrayList(_) => false,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
+                ZigType::BigInt => false,
                 _ => is_const,
             }
         } else {
@@ -391,13 +392,13 @@ impl Lowerer {
             ctx.add_regexp_var(&ident.zig_name);
         }
 
-        // needs_deinit: true for Map/Set types and will be checked for class
+        // needs_deinit: true for Map/Set/BigInt types and will be checked for class
         // instances by the Emitter using class_needs_deinit. Set to false for
         // types that don't own resources.
         let needs_deinit = matches!(
             zig_type,
             Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set"
-        );
+        ) || matches!(zig_type, Some(ZigType::BigInt));
 
         IrDecl::Var(IrVarDecl {
             name: ident,

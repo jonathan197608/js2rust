@@ -198,14 +198,15 @@ impl Emitter {
             self.write(&format!("_ = &{}; // var usage\n", vd.name.zig_name));
         }
 
-        // Auto-cleanup: defer deinit for Map/Set variables and class instances
-        // that contain Map/Set/ArrayList fields, to prevent memory leaks.
+        // Auto-cleanup: defer deinit for Map/Set/BigInt variables and class instances
+        // that contain Map/Set/ArrayList/BigInt fields, to prevent memory leaks.
         if vd.needs_deinit
             || matches!(&vd.zig_type, Some(ZigType::NamedStruct(name))
                 if name != "Map" && name != "Set" && name != "JsDate"
                     && name != "JsBigInt" && name != "JsRegExp"
                     && name != "Error" && name != "JsError"
                     && self.class_needs_deinit.contains(name))
+            || matches!(&vd.zig_type, Some(ZigType::BigInt))
         {
             self.write_indent();
             self.write(&format!(
@@ -307,7 +308,8 @@ impl Emitter {
                 let needs_field_deinit = matches!(
                     &field.zig_type,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set"
-                ) || matches!(&field.zig_type, ZigType::ArrayList(_));
+                ) || matches!(&field.zig_type, ZigType::ArrayList(_))
+                    || matches!(&field.zig_type, ZigType::BigInt);
                 if needs_field_deinit {
                     self.writeln(&format!("self.{}.deinit(alloc);", field.name));
                 }
@@ -329,11 +331,12 @@ impl Emitter {
             self.emit_expr(init_expr);
             self.writeln(";");
 
-            // Register static Map/Set/ArrayList fields for deinit in deinit_js2rust()
+            // Register static Map/Set/ArrayList/BigInt fields for deinit in deinit_js2rust()
             let needs_static_deinit = matches!(
                 field_ty,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set"
-            ) || matches!(field_ty, ZigType::ArrayList(_));
+            ) || matches!(field_ty, ZigType::ArrayList(_))
+                || matches!(field_ty, ZigType::BigInt);
             if needs_static_deinit {
                 self.static_deinit_buffer.push_str(&format!(
                     "    {}.deinit(js_allocator.allocator());\n",

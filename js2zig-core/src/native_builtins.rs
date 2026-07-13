@@ -224,11 +224,16 @@ pub enum BuiltinCall {
     DecodeURI,          // decodeURI(s)
 
     // Global type constructors (used as functions)
-    NumberConstructor,  // Number(x) → f64
-    StringConstructor,  // String(x) → []const u8
-    BooleanConstructor, // Boolean(x) → bool
-    BigIntConstructor,  // BigInt(x) → BigInt
-    ObjectConstructor,  // Object(x) → JsAny (wrapping primitive to object)
+    NumberConstructor,    // Number(x) → f64
+    StringConstructor,    // String(x) → []const u8
+    BooleanConstructor,   // Boolean(x) → bool
+    BigIntConstructor,    // BigInt(x) → BigInt
+    BigIntToString,       // bigint.toString() → str
+    BigIntValueOf,        // bigint.valueOf() → BigInt
+    BigIntToLocaleString, // bigint.toLocaleString() → str
+    BigIntAsIntN,         // BigInt.asIntN(width, bigint) → BigInt
+    BigIntAsUintN,        // BigInt.asUintN(width, bigint) → BigInt
+    ObjectConstructor,    // Object(x) → JsAny (wrapping primitive to object)
 
     // Unsupported global functions (emit @compileError)
     Eval, // eval(s) — security risk, not supported
@@ -348,6 +353,17 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
 
         // Get method name
         let method_name = mem.property.name.as_str();
+
+        // Check if object is "BigInt" (for BigInt static methods)
+        if let Expression::Identifier(id) = obj_expr
+            && id.name.as_str() == "BigInt"
+        {
+            return match method_name {
+                "asIntN" => Some(BuiltinCall::BigIntAsIntN),
+                "asUintN" => Some(BuiltinCall::BigIntAsUintN),
+                _ => None,
+            };
+        }
 
         // Check if object is "Math" (for Math methods)
         if let Expression::Identifier(id) = obj_expr
@@ -926,6 +942,10 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringConstructor => Some(ZigType::Str),
         BuiltinCall::BooleanConstructor => Some(ZigType::Bool),
         BuiltinCall::BigIntConstructor => Some(ZigType::BigInt),
+        BuiltinCall::BigIntToString => Some(ZigType::Str),
+        BuiltinCall::BigIntValueOf => Some(ZigType::BigInt),
+        BuiltinCall::BigIntToLocaleString => Some(ZigType::Str),
+        BuiltinCall::BigIntAsIntN | BuiltinCall::BigIntAsUintN => Some(ZigType::BigInt),
         BuiltinCall::ObjectConstructor => Some(ZigType::JsAny),
 
         // Math methods — always return Number

@@ -310,7 +310,7 @@ impl Lowerer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::JSDocData;
+    use crate::types::{JSDocData, ZigType};
     use std::collections::HashMap;
 
     fn empty_type_info() -> TypeCheckResult {

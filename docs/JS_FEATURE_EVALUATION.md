@@ -3,6 +3,83 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '1692c856-cfaf-40ed-b4b3-755844464e73'
+  PropagateID: '1692c856-cfaf-40ed-b4b3-755844464e73'
+  ReservedCode1: 'af79aaa5-1fd1-4162-aa0d-2119b61ca786'
+  ReservedCode2: 'af79aaa5-1fd1-4162-aa0d-2119b61ca786'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3ab32c09-533d-4b74-a165-81d95f17a0a2'
+  PropagateID: '3ab32c09-533d-4b74-a165-81d95f17a0a2'
+  ReservedCode1: '97199062-a219-406e-b763-99d4b6e86b62'
+  ReservedCode2: '97199062-a219-406e-b763-99d4b6e86b62'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f68cd93f-d3fb-4a86-afd4-39dd11ebe1c7'
+  PropagateID: 'f68cd93f-d3fb-4a86-afd4-39dd11ebe1c7'
+  ReservedCode1: 'f8c54867-7375-4e4e-8671-7bdb43a455a9'
+  ReservedCode2: 'f8c54867-7375-4e4e-8671-7bdb43a455a9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9646106b-b2f8-4286-abd6-f76d493beaec'
+  PropagateID: '9646106b-b2f8-4286-abd6-f76d493beaec'
+  ReservedCode1: '7c580da8-75a9-42c5-9e80-796d99553347'
+  ReservedCode2: '7c580da8-75a9-42c5-9e80-796d99553347'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '2f2519fd-d141-4f09-bb9e-71434bbe1e00'
+  PropagateID: '2f2519fd-d141-4f09-bb9e-71434bbe1e00'
+  ReservedCode1: '0e2ce64f-a512-4c80-a75f-f572a27b213b'
+  ReservedCode2: '0e2ce64f-a512-4c80-a75f-f572a27b213b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '02546c6f-7790-4efd-9b9f-142167d93324'
+  PropagateID: '02546c6f-7790-4efd-9b9f-142167d93324'
+  ReservedCode1: '93af2015-2927-4f33-a237-7bf9769d0fe3'
+  ReservedCode2: '93af2015-2927-4f33-a237-7bf9769d0fe3'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '909645a0-a6c2-4eb9-a263-1e2b02c709a3'
+  PropagateID: '909645a0-a6c2-4eb9-a263-1e2b02c709a3'
+  ReservedCode1: '977c66e4-65b4-4e95-a90d-6d1350193b8c'
+  ReservedCode2: '977c66e4-65b4-4e95-a90d-6d1350193b8c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
   PropagateID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
   ReservedCode1: '0dff4b71-03e3-4e8c-a6ee-c834f1326f53'
@@ -53,20 +130,20 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 203 | ~92% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%) 等 |
-| ⚠️ 简化实现 | 1 | ~0.5% | BigInt ×1（混合类型受限） |
+| ✅ 完全实现 | 204 | ~93% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
+| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
-> **注**: ⚠️ 简化实现 1 个（BigInt，基本运算支持但混合类型受限）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
+> **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
 
 ### 1.5 三大类对比总览
 
 | 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
 |------|------|---------|----------|-----------|--------|
-| **表达式** | 91 | 82 | 1 | 8 | **~92%** |
+| **表达式** | 91 | 83 | 0 | 8 | **~91%** |
 | **语句** | 49 | 46 | 0 | 3 | **~94%** |
-| **内置对象** | 220 | 207 | 1 | 11 | **~95%** |
-| **语法合计** | 140 | 128 | 1 | 11 | **~92%** |
+| **内置对象** | 220 | 208 | 0 | 11 | **~95%** |
+| **语法合计** | 140 | 129 | 0 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -75,7 +152,7 @@ AIGC:
 | 标记 | 定义 |
 |------|------|
 | ✅ 完全实现 | 完整支持，测试通过 |
-| ⚠️ 简化实现 | 基本可用，有已知限制（如 BigInt 混合类型受限） |
+| ⚠️ 简化实现 | 基本可用，有已知限制 |
 | 🔘 不实现 | 很少用，或 Zig 有更好替代，或 JS 已废弃 |
 
 ---
@@ -94,7 +171,7 @@ AIGC:
 | `this` | ✅ | `self` | showcase-project |
 | `NaN` | ✅ | `std.math.nan(f64)` | 隐式测试 |
 | `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
-| BigInt 字面量 | ✅ | `js_bigint.JsBigInt.init(alloc, "9")` | 基本四则运算/位运算/比较已支持；混合类型运算/`>>>` 运行时 TypeError（与 JS 规范一致） |
+| BigInt 字面量 | ✅ | `js_bigint.JsBigInt.init(alloc, "9")` | 完整实现：四则/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型运算/`>>>` TypeError（与 JS 规范一致） |
 
 ### 2.2 算术运算符 (Arithmetic Operators) - ✅ 100% 实现
 
@@ -898,7 +975,7 @@ AIGC:
 | `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
 | `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
 | `Intl` | 🔘 不实现 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 | 低价值：国际化可调用 Zig/C 库 |
-| `BigInt` | ✅ | `js_bigint.JsBigInt`（基于 `std.math.big.int.Managed`） | 完整实现：基本四则/位运算/比较（含字面量 `123n` + 构造函数 `BigInt(n)`），混合类型运算/`>>>` 运行时 TypeError（与 JS 规范一致） |
+| `BigInt` | ✅ | `js_bigint.JsBigInt`（基于 `std.math.big.int.Managed`） | 完整实现：字面量 `123n` + 构造函数 `BigInt(n)` + 四则/位运算/比较 + toString/valueOf/asIntN/asUintN/toLocaleString + String+BigInt 拼接 + deinit 内存管理；混合类型运算/`>>>` 运行时 TypeError（与 JS 规范一致） |
 | `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
 ### 4.17 汇总
@@ -924,13 +1001,13 @@ AIGC:
 | WeakMap/WeakSet | 2 | 0 | 0% | 2 | 不实现（Zig 内存模型不同） |
 | Reflect | 1 | 0 | 0% | 1 | 不实现（Zig 不需要反射） |
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
-| BigInt | 1 | 1 | 100% | 0 | ✅ 完整实现（混合类型/`>>>` 运行时 TypeError，与 JS 规范一致） |
+| BigInt | 6 | 6 | 100% | 0 | ✅ 完整实现（字面量/构造函数/运算/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型/`>>>` TypeError 与 JS 规范一致） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **214** | **~97%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
+| **总计** | **225** | **219** | **~97%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用（BigInt 混合类型受限）
+> - ⚠️ **简化实现**: 基础功能可用
 > - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy）
 
 ---

@@ -801,6 +801,15 @@ pub fn builtin_call_to_ir(
             "bigIntConstructor".into(),
             ZigType::BigInt,
         ),
+        BuiltinCall::BigIntToString => (BuiltinModule::JsBigInt, "toString".into(), ZigType::Str),
+        BuiltinCall::BigIntValueOf => (BuiltinModule::JsBigInt, "valueOf".into(), ZigType::BigInt),
+        BuiltinCall::BigIntToLocaleString => (
+            BuiltinModule::JsBigInt,
+            "toLocaleString".into(),
+            ZigType::Str,
+        ),
+        BuiltinCall::BigIntAsIntN => (BuiltinModule::JsBigInt, "asIntN".into(), ZigType::BigInt),
+        BuiltinCall::BigIntAsUintN => (BuiltinModule::JsBigInt, "asUintN".into(), ZigType::BigInt),
         BuiltinCall::ObjectConstructor => (
             BuiltinModule::JsObject,
             "constructor".into(),

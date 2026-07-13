@@ -25,7 +25,24 @@ pub const JsBigInt = struct {
         return Self{ .value = managed };
     }
 
-    pub fn deinit(self: *Self) void {
+    /// Create from either a string or i64 value (for `BigInt(x)` constructor).
+    /// Uses comptime type detection to dispatch to `init` or `fromI64`.
+    pub fn fromValue(alloc: std.mem.Allocator, v: anytype) !Self {
+        const T = @TypeOf(v);
+        switch (@typeInfo(T)) {
+            .int => return fromI64(alloc, v),
+            .comptime_int => return fromI64(alloc, @as(i64, v)),
+            .pointer => |ptr| {
+                if (ptr.child == u8) return init(alloc, v);
+                @compileError("BigInt.fromValue: unsupported pointer type " ++ @typeName(T));
+            },
+            else => {
+                @compileError("BigInt.fromValue: unsupported type " ++ @typeName(T));
+            },
+        }
+    }
+
+    pub fn deinit(self: *Self, _: std.mem.Allocator) void {
         self.value.deinit();
     }
 
@@ -171,7 +188,79 @@ pub const JsBigInt = struct {
         return try self.value.toString(alloc, 10, .lower);
     }
 
+    /// BigInt.prototype.valueOf() — returns self (identity).
+    /// In JS, `bigint.valueOf()` returns the BigInt primitive value itself.
+    pub fn valueOf(self: *const Self) *const Self {
+        return self;
+    }
+
+    /// format outputs the decimal representation with trailing `n` suffix,
+    /// matching Node.js console.log output (e.g. `5n` instead of `5`).
     pub fn format(self: *const Self, writer: anytype) !void {
         try self.value.format(writer, 10, .lower);
+        try writer.writeAll("n");
     }
 };
+
+/// BigInt.asIntN(width, bigint) — clamp to signed N-bit integer.
+/// Wraps the BigInt value to a signed integer of `width` bits using two's complement.
+pub fn asIntN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsBigInt {
+    if (bits == 0) {
+        var zero = try std.math.big.int.Managed.init(alloc);
+        errdefer zero.deinit();
+        try zero.set(0);
+        return JsBigInt{ .value = zero };
+    }
+    // Compute 2^(bits-1) as the min/max bound for signed representation
+    var modulus = try std.math.big.int.Managed.init(alloc);
+    defer modulus.deinit();
+    var one = try std.math.big.int.Managed.init(alloc);
+    defer one.deinit();
+    try one.set(1);
+    try modulus.set(1);
+    try modulus.shiftLeft(&modulus, @intCast(bits - 1));
+    // modulus = 2^(bits-1)
+    // For asIntN: result = value mod 2^bits, then if >= 2^(bits-1), subtract 2^bits
+    var full_mod = try std.math.big.int.Managed.init(alloc);
+    defer full_mod.deinit();
+    try full_mod.set(1);
+    try full_mod.shiftLeft(&full_mod, @intCast(bits));
+    // full_mod = 2^bits
+    
+    var remainder = try std.math.big.int.Managed.init(alloc);
+    errdefer remainder.deinit();
+    var quotient = try std.math.big.int.Managed.init(alloc);
+    defer quotient.deinit();
+    try quotient.divTrunc(&remainder, &value.value, &full_mod);
+    // remainder is value mod 2^bits (always non-negative via divTrunc)
+    // If remainder >= 2^(bits-1), subtract 2^bits to get signed value
+    const order = remainder.order(modulus);
+    if (order != .lt) {
+        try remainder.sub(&remainder, &full_mod);
+    }
+    return JsBigInt{ .value = remainder };
+}
+
+/// BigInt.asUintN(width, bigint) — clamp to unsigned N-bit integer.
+/// Wraps the BigInt value to an unsigned integer of `width` bits.
+pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsBigInt {
+    if (bits == 0) {
+        var zero = try std.math.big.int.Managed.init(alloc);
+        errdefer zero.deinit();
+        try zero.set(0);
+        return JsBigInt{ .value = zero };
+    }
+    // Compute 2^bits as the modulus
+    var modulus = try std.math.big.int.Managed.init(alloc);
+    defer modulus.deinit();
+    try modulus.set(1);
+    try modulus.shiftLeft(&modulus, @intCast(bits));
+    
+    var remainder = try std.math.big.int.Managed.init(alloc);
+    errdefer remainder.deinit();
+    var quotient = try std.math.big.int.Managed.init(alloc);
+    defer quotient.deinit();
+    try quotient.divTrunc(&remainder, &value.value, &modulus);
+    // divTrunc remainder is always non-negative when modulus is positive
+    return JsBigInt{ .value = remainder };
+}

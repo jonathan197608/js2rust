@@ -910,8 +910,8 @@ return BigInt(123);
         "test_bigint_constructor",
     );
     assert!(
-        zig.contains("fromI64"),
-        "BigInt(123) should generate fromI64 code, got:\n{}",
+        zig.contains("fromValue"),
+        "BigInt(123) should generate fromValue code, got:\n{}",
         zig
     );
 }

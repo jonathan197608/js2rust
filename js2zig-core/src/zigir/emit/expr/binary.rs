@@ -353,4 +353,46 @@ impl Emitter {
             _ => unreachable!("emit_binary: unsupported BinOp {:?}", op),
         }
     }
+
+    /// Emit a String + BigInt concatenation.
+    /// JS spec: `"hello" + 5n` → `"hello5"`, `5n + "hello"` → `"5hello"`.
+    /// Converts the BigInt operand to its decimal string representation,
+    /// then concatenates with the String operand using `std.fmt.allocPrint`.
+    pub(super) fn emit_bigint_string_concat(
+        &mut self,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+        left_is_str: bool,
+    ) {
+        // Determine which side is string and which is BigInt
+        let (str_expr, bigint_expr) = if left_is_str {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        let str_on_left = left_is_str;
+
+        self.write("(blk: { var __buf = std.ArrayList(u8).init(js_allocator.allocator()); errdefer __buf.deinit(); ");
+        // Write the first part
+        if str_on_left {
+            self.write("__buf.writer().print(\"{s}\", .{");
+            self.emit_expr(str_expr);
+            self.write("}) catch @panic(\"OOM: string concat\"); ");
+        } else {
+            self.write("__buf.writer().print(\"{f}\", .{");
+            self.emit_expr(bigint_expr);
+            self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
+        }
+        // Write the second part
+        if str_on_left {
+            self.write("__buf.writer().print(\"{f}\", .{");
+            self.emit_expr(bigint_expr);
+            self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
+        } else {
+            self.write("__buf.writer().print(\"{s}\", .{");
+            self.emit_expr(str_expr);
+            self.write("}) catch @panic(\"OOM: string concat\"); ");
+        }
+        self.write("break :blk __buf.toOwnedSlice() catch @panic(\"OOM: string concat\"); })");
+    }
 }

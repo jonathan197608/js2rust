@@ -587,8 +587,25 @@ impl TypeInferrer {
 
     pub(crate) fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
         match op {
-            BinaryOperator::Addition
-            | BinaryOperator::Subtraction
+            BinaryOperator::Addition => {
+                // BigInt + BigInt → BigInt
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
+                // String + BigInt → String (JS spec: implicit toString)
+                // BigInt + String → String
+                if (left == ZigType::Str && right == ZigType::BigInt)
+                    || (left == ZigType::BigInt && right == ZigType::Str)
+                {
+                    return ZigType::Str;
+                }
+                if left == ZigType::F64 || right == ZigType::F64 {
+                    ZigType::F64
+                } else {
+                    ZigType::I64
+                }
+            }
+            BinaryOperator::Subtraction
             | BinaryOperator::Multiplication
             | BinaryOperator::Division
             | BinaryOperator::Remainder => {
@@ -707,6 +724,12 @@ impl TypeInferrer {
             ZigType::JsSymbol => match method {
                 // sym.toString() → "Symbol(description)" or "Symbol()"
                 "toString" => InferResult::Definite(ZigType::Str),
+                _ => InferResult::Indeterminate,
+            },
+            // BigInt methods
+            ZigType::BigInt => match method {
+                "toString" | "toLocaleString" => InferResult::Definite(ZigType::Str),
+                "valueOf" => InferResult::Definite(ZigType::BigInt),
                 _ => InferResult::Indeterminate,
             },
             _ => InferResult::Indeterminate,
