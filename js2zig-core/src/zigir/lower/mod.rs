@@ -27,11 +27,10 @@ use std::collections::{HashMap, HashSet};
 use oxc_ast::ast::*;
 
 use crate::infer::TypeCheckResult;
-use crate::types::{ClosureManager, JSDocData, ZigType};
-use crate::zigir::builtins::BuiltinModule;
+use crate::types::{ClosureManager, JSDocData};
 use crate::zigir::ident::NameMangler;
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
-use crate::zigir::types::{IrDecl, IrImport, IrModule, IrTypedef, IrTypedefField};
+use crate::zigir::types::{IrDecl, IrModule, IrTypedef, IrTypedefField};
 
 use helpers::FnContext;
 
@@ -163,13 +162,10 @@ impl Lowerer {
     pub fn lower(&mut self, program: &Program) -> IrModule {
         let module_name = self.module_name.clone();
 
-        // 1. Infer required imports from type info
-        let imports = self.infer_imports();
-
-        // 2. Lower JSDoc @typedef definitions
+        // 1. Lower JSDoc @typedef definitions
         let typedefs = self.lower_typedefs();
 
-        // 3. Lower top-level declarations
+        // 2. Lower top-level declarations
         //    (Also collects class names, closure structs, etc.)
         let mut declarations = Vec::new();
         for stmt in &program.body {
@@ -177,268 +173,21 @@ impl Lowerer {
             declarations.append(&mut stmt_decls);
         }
 
-        // 4. Collect deferred closure structs
+        // 3. Collect deferred closure structs
         let mut closure_structs = self.lower_closure_structs();
         // Also add arrow function struct definitions from var decl lowering
         closure_structs.append(&mut self.pending_arrow_structs);
 
-        // 5. Build CABI exports metadata
+        // 4. Build CABI exports metadata
         let cabi_exports = self.build_cabi_exports(&declarations);
 
         IrModule {
             name: module_name,
-            imports,
             typedefs,
             closure_structs,
             declarations,
             diagnostics: std::mem::take(&mut self.diagnostics),
             cabi_exports,
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════
-//  Import inference
-// ═══════════════════════════════════════════════════════
-
-impl Lowerer {
-    /// Infer required Zig imports from type-info and source analysis.
-    fn infer_imports(&self) -> Vec<IrImport> {
-        let mut imports = Vec::new();
-
-        // ── Track which runtime modules are needed ─────────
-        let mut needs_std = false;
-        let mut needs_js_allocator = false;
-        let mut needs_js_runtime = false;
-        let mut needs_jsany = false;
-        let mut runtime_modules: std::collections::BTreeSet<BuiltinModule> =
-            std::collections::BTreeSet::new();
-
-        // ── Heuristic: typedefs always need std (toJson) + js_allocator ──
-        if !self.jsdoc_data.typedefs.is_empty() {
-            needs_std = true;
-            needs_js_allocator = true;
-        }
-
-        // ── Heuristic: has_json_parse_types → std.json + js_json ────────
-        if !self.type_info.has_json_parse_types.is_empty() {
-            needs_std = true;
-            runtime_modules.insert(BuiltinModule::JsJson);
-        }
-
-        // ── Heuristic: async host functions → host import ───────────────
-        if !self.async_host_fns.is_empty() {
-            needs_js_allocator = true;
-        }
-
-        // ── Walk all ZigType values to detect runtime needs ─────────────
-        let mut all_types: Vec<&ZigType> = Vec::new();
-
-        for ty in self.type_info.var_types.values() {
-            all_types.push(ty);
-        }
-        for ty in self.type_info.fn_return_types.values() {
-            all_types.push(ty);
-        }
-        for params in self.type_info.fn_param_types.values() {
-            for (_name, ty) in params {
-                all_types.push(ty);
-            }
-        }
-        for fields in self.type_info.class_field_types.values() {
-            for ty in fields.values() {
-                all_types.push(ty);
-            }
-        }
-        for inner in self.type_info.array_element_types.values() {
-            all_types.push(inner);
-        }
-
-        for ty in &all_types {
-            self.zigtype_needs_imports(
-                ty,
-                &mut needs_std,
-                &mut needs_js_allocator,
-                &mut needs_js_runtime,
-                &mut needs_jsany,
-                &mut runtime_modules,
-            );
-        }
-
-        // ── Construct IrImport nodes ────────────────────────────────────
-
-        // 1. std import
-        if needs_std {
-            let mut std_items: Vec<(String, String)> = Vec::new();
-
-            if self
-                .type_info
-                .var_types
-                .values()
-                .any(|t| matches!(t, ZigType::ArrayList(_)))
-            {
-                std_items.push(("ArrayList".to_string(), "ArrayList".to_string()));
-            }
-
-            imports.push(IrImport {
-                module_name: "std".to_string(),
-                items: std_items,
-            });
-        }
-
-        // 2. js_allocator
-        if needs_js_allocator {
-            imports.push(IrImport {
-                module_name: "js_runtime/js_allocator.zig".to_string(),
-                items: vec![("js_allocator".to_string(), "js_allocator".to_string())],
-            });
-        }
-
-        // 3. js_runtime umbrella
-        if needs_js_runtime {
-            imports.push(IrImport {
-                module_name: "js_runtime/js_runtime.zig".to_string(),
-                items: vec![("js_runtime".to_string(), "js_runtime".to_string())],
-            });
-        }
-
-        // 4. Per-module runtime imports
-        for module in &runtime_modules {
-            let module_path = module.module_path().to_string();
-
-            match module {
-                BuiltinModule::JsMath => {
-                    // std.math is accessed via `std` import, not a separate import
-                }
-                BuiltinModule::JsConsole => {
-                    imports.push(IrImport {
-                        module_name: format!("js_runtime/{}.zig", module_path),
-                        items: vec![(module_path.clone(), module_path.clone())],
-                    });
-                }
-                BuiltinModule::JsSymbol => {
-                    imports.push(IrImport {
-                        module_name: format!("js_runtime/{}.zig", module_path),
-                        items: vec![
-                            (module_path.clone(), module_path.clone()),
-                            ("JsSymbol".to_string(), "JsSymbol".to_string()),
-                        ],
-                    });
-                }
-                BuiltinModule::JsBigInt => {
-                    imports.push(IrImport {
-                        module_name: format!("js_runtime/{}.zig", module_path),
-                        items: vec![(module_path.clone(), module_path.clone())],
-                    });
-                }
-                BuiltinModule::JsTypedArray => {
-                    imports.push(IrImport {
-                        module_name: "js_runtime/js_runtime.zig".to_string(),
-                        items: vec![("js_runtime".to_string(), "js_runtime".to_string())],
-                    });
-                }
-                _ => {
-                    imports.push(IrImport {
-                        module_name: format!("js_runtime/{}.zig", module_path),
-                        items: vec![(module_path.clone(), module_path.clone())],
-                    });
-                }
-            }
-        }
-
-        // 5. JsAny import
-        if needs_jsany {
-            imports.push(IrImport {
-                module_name: "js_runtime/jsany.zig".to_string(),
-                items: vec![("JsAny".to_string(), "JsAny".to_string())],
-            });
-        }
-
-        // ── Deduplicate ─────────────────────────────────────────────────
-        imports = Self::deduplicate_imports(imports);
-
-        imports
-    }
-
-    /// Merge imports with the same module_name, deduplicating their items.
-    fn deduplicate_imports(imports: Vec<IrImport>) -> Vec<IrImport> {
-        let mut map: std::collections::BTreeMap<String, Vec<(String, String)>> =
-            std::collections::BTreeMap::new();
-        for imp in imports {
-            let entry = map.entry(imp.module_name).or_default();
-            for item in imp.items {
-                if !entry.contains(&item) {
-                    entry.push(item);
-                }
-            }
-        }
-        map.into_iter()
-            .map(|(module_name, items)| IrImport { module_name, items })
-            .collect()
-    }
-
-    /// Recursively inspect a ZigType to determine which runtime imports it needs.
-    fn zigtype_needs_imports(
-        &self,
-        ty: &ZigType,
-        needs_std: &mut bool,
-        needs_js_allocator: &mut bool,
-        needs_js_runtime: &mut bool,
-        needs_jsany: &mut bool,
-        runtime_modules: &mut std::collections::BTreeSet<BuiltinModule>,
-    ) {
-        match ty {
-            ZigType::ArrayList(_) => {
-                *needs_std = true;
-            }
-            ZigType::JsAny => {
-                *needs_jsany = true;
-                *needs_js_runtime = true;
-            }
-            ZigType::JsSymbol => {
-                runtime_modules.insert(BuiltinModule::JsSymbol);
-            }
-            ZigType::BigInt => {
-                runtime_modules.insert(BuiltinModule::JsBigInt);
-                *needs_js_allocator = true;
-            }
-            ZigType::JsError => {
-                runtime_modules.insert(BuiltinModule::JsError);
-                *needs_js_allocator = true;
-            }
-            ZigType::NamedStruct(name) => match name.as_str() {
-                "Map" | "Set" => {
-                    runtime_modules.insert(BuiltinModule::JsCollections);
-                    *needs_js_allocator = true;
-                }
-                "Date" | "JsDate" => {
-                    runtime_modules.insert(BuiltinModule::JsDate);
-                    *needs_js_allocator = true;
-                }
-                _ => {}
-            },
-            ZigType::Struct(fields) => {
-                for (_, field_ty) in fields {
-                    self.zigtype_needs_imports(
-                        field_ty,
-                        needs_std,
-                        needs_js_allocator,
-                        needs_js_runtime,
-                        needs_jsany,
-                        runtime_modules,
-                    );
-                }
-            }
-            ZigType::AsyncIo => {
-                *needs_js_runtime = true;
-            }
-            ZigType::Void
-            | ZigType::I64
-            | ZigType::F64
-            | ZigType::Bool
-            | ZigType::Str
-            | ZigType::Anytype
-            | ZigType::AnytypeReturn => {}
         }
     }
 }
@@ -568,6 +317,32 @@ mod tests {
         empty_type_info_base()
     }
 
+    fn make_jsdoc_data() -> JSDocData {
+        JSDocData {
+            typedefs: HashMap::new(),
+            type_annotations: HashMap::new(),
+            return_types: HashMap::new(),
+            param_types: HashMap::new(),
+        }
+    }
+
+    fn empty_type_info_base() -> TypeCheckResult {
+        TypeCheckResult {
+            var_types: HashMap::new(),
+            array_element_types: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            fn_param_types: HashMap::new(),
+            mutated_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
+            used_names: HashSet::new(),
+            has_json_parse_types: HashSet::new(),
+            errors: Vec::new(),
+            is_async: HashMap::new(),
+            class_field_types: HashMap::new(),
+            host_return_types: HashMap::new(),
+        }
+    }
+
     #[test]
     fn test_lowerer_new() {
         let type_info = empty_type_info();
@@ -690,186 +465,5 @@ mod tests {
         assert!(lowerer.is_export_fn(Some("greet")));
         assert!(!lowerer.is_export_fn(Some("helper")));
         assert!(!lowerer.is_export_fn(None));
-    }
-
-    // ── infer_imports tests ─────────────────────────────────
-
-    fn make_jsdoc_data() -> JSDocData {
-        JSDocData {
-            typedefs: HashMap::new(),
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        }
-    }
-
-    fn make_type_info(var_types: HashMap<String, ZigType>) -> TypeCheckResult {
-        TypeCheckResult {
-            var_types,
-            ..empty_type_info_base()
-        }
-    }
-
-    fn empty_type_info_base() -> TypeCheckResult {
-        TypeCheckResult {
-            var_types: HashMap::new(),
-            array_element_types: HashMap::new(),
-            fn_return_types: HashMap::new(),
-            fn_param_types: HashMap::new(),
-            mutated_vars: HashSet::new(),
-            reassigned_vars: HashSet::new(),
-            used_names: HashSet::new(),
-            has_json_parse_types: HashSet::new(),
-            errors: Vec::new(),
-            is_async: HashMap::new(),
-            class_field_types: HashMap::new(),
-            host_return_types: HashMap::new(),
-        }
-    }
-
-    #[test]
-    fn test_infer_imports_empty() {
-        let lowerer = Lowerer::new(
-            empty_type_info(),
-            make_jsdoc_data(),
-            None,
-            HashSet::new(),
-            String::new(),
-            String::from("test"),
-        );
-        let imports = lowerer.infer_imports();
-        assert!(
-            imports.is_empty(),
-            "empty program should have no imports, got {:?}",
-            imports
-        );
-    }
-
-    #[test]
-    fn test_infer_imports_typedef() {
-        let mut td = HashMap::new();
-        td.insert(
-            "User".to_string(),
-            crate::jsdoc::TypedefDef {
-                name: "User".to_string(),
-                fields: vec![crate::jsdoc::TypedefField {
-                    name: "name".to_string(),
-                    ty: "string".to_string(),
-                    optional: false,
-                }],
-            },
-        );
-        let jsdoc_data = JSDocData {
-            typedefs: td,
-            type_annotations: HashMap::new(),
-            return_types: HashMap::new(),
-            param_types: HashMap::new(),
-        };
-        let lowerer = Lowerer::new(
-            empty_type_info(),
-            jsdoc_data,
-            None,
-            HashSet::new(),
-            String::new(),
-            String::from("test"),
-        );
-        let imports = lowerer.infer_imports();
-        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
-        assert!(
-            module_names.contains(&"std"),
-            "typedef should require std import, got {:?}",
-            module_names
-        );
-        assert!(
-            module_names.contains(&"js_runtime/js_allocator.zig"),
-            "typedef should require js_allocator, got {:?}",
-            module_names
-        );
-    }
-
-    #[test]
-    fn test_infer_imports_jsany() {
-        let mut var_types = HashMap::new();
-        var_types.insert("data".to_string(), ZigType::JsAny);
-        let type_info = make_type_info(var_types);
-        let lowerer = Lowerer::new(
-            type_info,
-            make_jsdoc_data(),
-            None,
-            HashSet::new(),
-            String::new(),
-            String::from("test"),
-        );
-        let imports = lowerer.infer_imports();
-        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
-        assert!(
-            module_names.contains(&"js_runtime/jsany.zig"),
-            "JsAny should require jsany.zig, got {:?}",
-            module_names
-        );
-        assert!(
-            module_names.contains(&"js_runtime/js_runtime.zig"),
-            "JsAny should require js_runtime, got {:?}",
-            module_names
-        );
-    }
-
-    #[test]
-    fn test_infer_imports_date_and_map() {
-        let mut var_types = HashMap::new();
-        var_types.insert("d".to_string(), ZigType::NamedStruct("Date".to_string()));
-        var_types.insert("m".to_string(), ZigType::NamedStruct("Map".to_string()));
-        let type_info = make_type_info(var_types);
-        let lowerer = Lowerer::new(
-            type_info,
-            make_jsdoc_data(),
-            None,
-            HashSet::new(),
-            String::new(),
-            String::from("test"),
-        );
-        let imports = lowerer.infer_imports();
-        let module_names: Vec<&str> = imports.iter().map(|i| i.module_name.as_str()).collect();
-        assert!(
-            module_names.contains(&"js_runtime/js_date.zig"),
-            "Date should require js_date, got {:?}",
-            module_names
-        );
-        assert!(
-            module_names.contains(&"js_runtime/js_collections.zig"),
-            "Map should require js_collections, got {:?}",
-            module_names
-        );
-        assert!(
-            module_names.contains(&"js_runtime/js_allocator.zig"),
-            "Date/Map should require js_allocator, got {:?}",
-            module_names
-        );
-    }
-
-    #[test]
-    fn test_infer_imports_deduplication() {
-        let mut var_types = HashMap::new();
-        var_types.insert("a".to_string(), ZigType::JsAny);
-        var_types.insert("b".to_string(), ZigType::JsSymbol);
-        let type_info = make_type_info(var_types);
-        let lowerer = Lowerer::new(
-            type_info,
-            make_jsdoc_data(),
-            None,
-            HashSet::new(),
-            String::new(),
-            String::from("test"),
-        );
-        let imports = lowerer.infer_imports();
-        let js_runtime_count = imports
-            .iter()
-            .filter(|i| i.module_name == "js_runtime/js_runtime.zig")
-            .count();
-        assert_eq!(
-            js_runtime_count, 1,
-            "js_runtime should appear exactly once, got {} times",
-            js_runtime_count
-        );
     }
 }

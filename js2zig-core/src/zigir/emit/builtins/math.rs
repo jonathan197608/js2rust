@@ -126,9 +126,21 @@ impl Emitter {
                 self.write(")");
             }
             "sign" => {
-                self.write("js_math.sign(");
-                self.emit_inline_args(args);
-                self.write(")");
+                // Math.sign(x) → block with cached value to avoid re-evaluation.
+                // JS semantics: +1 if x>0, -1 if x<0, 0 if x==0, NaN otherwise.
+                let blk = self.next_label();
+                self.write(&format!(
+                    "({}: {{ const __sign_v = @as(f64, @floatFromInt(",
+                    blk
+                ));
+                if let Some(a) = args.first() {
+                    self.emit_expr(a);
+                } else {
+                    self.write("0");
+                }
+                self.write(")); break :");
+                self.write(&blk);
+                self.write(" if (__sign_v > 0) @as(f64, 1.0) else if (__sign_v < 0) @as(f64, -1.0) else if (__sign_v == 0) @as(f64, 0.0) else std.math.nan(f64); }})");
             }
             // Global NaN constant → std.math.nan(f64)
             "nan_f64" => {
@@ -138,9 +150,11 @@ impl Emitter {
             "inf_f64" => {
                 self.write("std.math.inf(f64)");
             }
-            // random, sign, etc: fall through to js_math module
+            // Unknown Math method: emit compile error instead of referencing non-existent js_math module
             _ => {
-                self.emit_module_call("js_math", method, args);
+                self.write(&format!(
+                    "@compileError(\"Math.{method} is not implemented\")"
+                ));
             }
         }
     }

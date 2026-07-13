@@ -17,8 +17,6 @@ use crate::zigir::source_span::{IrDiagnostic, SourceSpan};
 pub struct IrModule {
     /// Module name (sanitized).
     pub name: String,
-    /// Dependency imports.
-    pub imports: Vec<IrImport>,
     /// JSDoc @typedef struct definitions.
     pub typedefs: Vec<IrTypedef>,
     /// Closure struct definitions (prepended before declarations in output).
@@ -35,7 +33,6 @@ impl IrModule {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            imports: Vec::new(),
             typedefs: Vec::new(),
             closure_structs: Vec::new(),
             declarations: Vec::new(),
@@ -43,15 +40,6 @@ impl IrModule {
             cabi_exports: Vec::new(),
         }
     }
-}
-
-/// Import declaration.
-#[derive(Debug, Clone)]
-pub struct IrImport {
-    /// Sanitized Zig module name (e.g. "js_array", "std.json").
-    pub module_name: String,
-    /// (imported_name, local_alias) pairs.
-    pub items: Vec<(String, String)>,
 }
 
 /// JSDoc @typedef struct definition.
@@ -1041,7 +1029,6 @@ mod tests {
     fn test_ir_module_construction() {
         let m = IrModule::new("main".to_string());
         assert_eq!(m.name, "main");
-        assert!(m.imports.is_empty());
         assert!(m.declarations.is_empty());
     }
 

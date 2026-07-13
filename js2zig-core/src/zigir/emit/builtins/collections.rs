@@ -78,7 +78,9 @@ impl Emitter {
             }
             self.write(")");
         } else {
-            self.emit_module_call("js_typedarray", method, args);
+            // No type suffix: use js_runtime.js_typedarray prefix (js_typedarray
+            // is not imported as a standalone module).
+            self.emit_module_call("js_runtime.js_typedarray", method, args);
         }
     }
     pub(super) fn emit_uri_builtin(
