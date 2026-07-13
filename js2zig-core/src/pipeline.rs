@@ -112,19 +112,12 @@ fn save_diagnostics(out_dir: &Path, project_name: &str, diagnostics: &[String]) 
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     let ws = workspace_dir();
 
-    // Derive input directory and core file name from the entry point.
-    let js_file = &config.entry_file;
-    let in_path = js_file
-        .parent()
-        .ok_or_else(|| format!("cannot get parent directory of '{}'", js_file.display()))?
-        .to_path_buf();
-    let core_file = js_file
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("invalid file name in '{}'", js_file.display()))?
-        .to_string();
-
-    let in_dir = in_path;
+    // js_dir is the source directory; js_files[0] is the primary entry.
+    let in_dir = &config.js_dir;
+    let core_file = config
+        .js_files
+        .first()
+        .ok_or_else(|| "js2rust_bridge: project.js_files is empty in js2rust.toml".to_string())?;
     let out_dir = config.out_dir.clone();
     let force_rebuild = config.build.force_rebuild;
     let verbose = config.build.is_build_script; // only print progress in build.rs context
@@ -139,16 +132,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     })?;
 
     // === Phase 1: Analyze project (entry file + transitive deps) ===
-    let additional_js_files: Vec<String> = config
-        .additional_roots
-        .iter()
-        .filter_map(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
-    let analysis = analyze_project(&in_dir, &core_file, &additional_js_files);
+    let additional_js_files: Vec<String> = config.js_files.iter().skip(1).cloned().collect();
+    let analysis = analyze_project(in_dir, core_file, &additional_js_files);
 
     // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
     // (including transitive dependencies not listed in js2rust.toml).
@@ -249,7 +234,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
         }
 
         // --- Incremental check ---
-        let current_hash = compute_content_hash(&in_dir, &analysis, &runtime_dir);
+        let current_hash = compute_content_hash(in_dir, &analysis, &runtime_dir);
         if !force_rebuild
             && let Some(cached_hash) = build_cache.get(&project_name)
             && *cached_hash == current_hash

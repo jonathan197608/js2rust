@@ -129,11 +129,12 @@ pub struct BuildConfig {
 /// Multi-file project configuration.
 #[derive(Debug, Clone)]
 pub struct ProjectConfig {
-    /// Primary JS entry point file path.
-    pub entry_file: PathBuf,
-    /// Additional root JS files (multi-root mode). These are treated as
-    /// extra entry points whose exports become C ABI-exportable.
-    pub additional_roots: Vec<PathBuf>,
+    /// Absolute path to the directory containing JS source files (e.g. `.../js_src/`).
+    pub js_dir: PathBuf,
+    /// JS entry file names (relative to `js_dir`).
+    /// The first entry is the primary root; additional entries are extra roots
+    /// whose exports become C ABI-exportable.
+    pub js_files: Vec<String>,
     /// Output directory path (typically $OUT_DIR).
     pub out_dir: PathBuf,
     /// Host function configuration (optional).
@@ -145,8 +146,8 @@ pub struct ProjectConfig {
 impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
-            entry_file: PathBuf::from("main.js"),
-            additional_roots: Vec::new(),
+            js_dir: PathBuf::from("."),
+            js_files: vec!["main.js".to_string()],
             out_dir: PathBuf::from("out"),
             host_config: None,
             build: BuildConfig::default(),
@@ -173,6 +174,10 @@ pub struct ProjectResult {
 ///
 /// The entry JS file and its transitive imports form a single project.
 /// Does NOT run `zig build` (unless `config.build.run_zig_build == true`).
+///
+/// `js_dir` is the absolute path to the directory containing JS source files.
+/// `js_files` are filenames relative to `js_dir`; the first entry is the
+/// primary entry point whose stem becomes the project name.
 pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String> {
     pipeline::transpile_project(config)
 }

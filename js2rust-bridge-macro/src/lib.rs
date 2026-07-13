@@ -109,11 +109,26 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         .iter()
         .map(|f| std::path::Path::new(&manifest_dir).join(f))
         .collect();
-    let (entry_file, additional_roots) = {
-        let mut paths = js_file_paths;
-        let entry = paths.remove(0);
-        (entry, paths)
-    };
+    // Derive js_dir and js_files for ProjectConfig.
+    // js_files in TOML are relative paths like "js_src/main.js";
+    // js_dir is the parent directory of the first entry (e.g. .../js_src/),
+    // js_files are plain filenames (e.g. "main.js").
+    let first_path = js_file_paths.first().expect("js_files must not be empty");
+    let js_dir = first_path
+        .parent()
+        .expect("js_file path must have a parent directory")
+        .to_path_buf();
+    let js_files: Vec<String> = config
+        .project
+        .js_files
+        .iter()
+        .filter_map(|p| {
+            std::path::Path::new(p)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
 
     // Resolve cache directory
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
@@ -137,8 +152,8 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
 
     // Build ProjectConfig
     let project_config = js2zig_core::ProjectConfig {
-        entry_file: entry_file.clone(),
-        additional_roots,
+        js_dir,
+        js_files,
         out_dir: cache_dir.clone(),
         host_config,
         build: js2zig_core::BuildConfig {
@@ -155,7 +170,15 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             proc_macro2::Span::call_site(),
             format!(
                 "js2rust_bridge: transpilation failed for '{}': {}",
-                entry_file.display(),
+                project_config
+                    .js_dir
+                    .join(
+                        project_config
+                            .js_files
+                            .first()
+                            .unwrap_or(&"unknown".to_string())
+                    )
+                    .display(),
                 e
             ),
         )
@@ -216,7 +239,15 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
             proc_macro2::Span::call_site(),
             format!(
                 "js2rust_bridge: internal error generating bindings for '{}': {}",
-                entry_file.display(),
+                project_config
+                    .js_dir
+                    .join(
+                        project_config
+                            .js_files
+                            .first()
+                            .unwrap_or(&"unknown".to_string())
+                    )
+                    .display(),
                 e
             ),
         )
