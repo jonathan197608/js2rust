@@ -4,10 +4,8 @@
 // Run with Node.js: node test_builtins_frag_225.node.js
 // Transpile with js2rust: cargo build -p mdn-test-project
 
-/**
- * @returns {string}
- */
 export function testBuiltins_frag_225() {
-        // toLocaleLowerCase: basic ASCII lowercasing
-        return "HELLO".toLocaleLowerCase();
-    }
+    // toLocaleLowerCase: basic ASCII lowercasing
+    console.log("HELLO".toLocaleLowerCase());
+    console.log("HeLLo WoRLd".toLocaleLowerCase());
+}

@@ -2547,6 +2547,30 @@
       "stderr": "",
       "status": 0,
       "timedOut": false
+    },
+    "223": {
+      "stdout": "-1\n1\n0\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "224": {
+      "stdout": "HELLO\nHELLO WORLD\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "225": {
+      "stdout": "hello\nhello world\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
+    },
+    "226": {
+      "stdout": "hello\ncafe\n",
+      "stderr": "",
+      "status": 0,
+      "timedOut": false
     }
   }
 }

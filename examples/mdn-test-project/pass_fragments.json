@@ -1,6 +1,6 @@
 {
-  "total": 204,
-  "totalGenerated": 204,
+  "total": 208,
+  "totalGenerated": 208,
   "statements": [
     "test_statements_frag_0",
     "test_statements_frag_11",
@@ -209,6 +209,10 @@
     "test_builtins_frag_169",
     "test_builtins_frag_172",
     "test_builtins_frag_175",
-    "test_builtins_frag_179"
+    "test_builtins_frag_179",
+    "test_builtins_frag_223",
+    "test_builtins_frag_224",
+    "test_builtins_frag_225",
+    "test_builtins_frag_226"
   ]
 }

@@ -7,10 +7,8 @@ function testBuiltins_frag_226() {
     try {
 
         // normalize: returns copy of input string
-        const r1 = "hello".normalize(); // 'hello' (default NFC)
-        const r2 = "cafe".normalize("NFD"); // 'cafe' (simplified impl returns input)
-
-        console.log(r1, r2);
+        console.log("hello".normalize());
+        console.log("cafe".normalize("NFD"));
         } catch (e) {
         console.error(`[testBuiltins_frag_226] error: ${e.message}`);
     }

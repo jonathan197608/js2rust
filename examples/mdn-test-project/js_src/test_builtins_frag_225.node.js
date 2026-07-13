@@ -7,10 +7,8 @@ function testBuiltins_frag_225() {
     try {
 
         // toLocaleLowerCase: basic ASCII lowercasing
-        const r1 = "HELLO".toLocaleLowerCase(); // 'hello'
-        const r2 = "HeLLo WoRLd".toLocaleLowerCase(); // 'hello world'
-
-        console.log(r1, r2);
+        console.log("HELLO".toLocaleLowerCase());
+        console.log("HeLLo WoRLd".toLocaleLowerCase());
         } catch (e) {
         console.error(`[testBuiltins_frag_225] error: ${e.message}`);
     }

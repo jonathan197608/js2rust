@@ -7,10 +7,8 @@ function testBuiltins_frag_224() {
     try {
 
         // toLocaleUpperCase: basic ASCII uppercasing
-        const r1 = "hello".toLocaleUpperCase(); // 'HELLO'
-        const r2 = "HeLLo WoRLd".toLocaleUpperCase(); // 'HELLO WORLD'
-
-        console.log(r1, r2);
+        console.log("hello".toLocaleUpperCase());
+        console.log("HeLLo WoRLd".toLocaleUpperCase());
         } catch (e) {
         console.error(`[testBuiltins_frag_224] error: ${e.message}`);
     }

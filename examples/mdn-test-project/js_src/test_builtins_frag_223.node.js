@@ -7,11 +7,9 @@ function testBuiltins_frag_223() {
     try {
 
         // localeCompare: basic ordering
-        const r1 = "a".localeCompare("b"); // -1
-        const r2 = "b".localeCompare("a"); // 1
-        const r3 = "a".localeCompare("a"); // 0
-
-        console.log(r1, r2, r3);
+        console.log("a".localeCompare("b"));
+        console.log("b".localeCompare("a"));
+        console.log("a".localeCompare("a"));
         } catch (e) {
         console.error(`[testBuiltins_frag_223] error: ${e.message}`);
     }

@@ -4,10 +4,8 @@
 // Run with Node.js: node test_builtins_frag_224.node.js
 // Transpile with js2rust: cargo build -p mdn-test-project
 
-/**
- * @returns {string}
- */
 export function testBuiltins_frag_224() {
-        // toLocaleUpperCase: basic ASCII uppercasing
-        return "hello".toLocaleUpperCase();
-    }
+    // toLocaleUpperCase: basic ASCII uppercasing
+    console.log("hello".toLocaleUpperCase());
+    console.log("HeLLo WoRLd".toLocaleUpperCase());
+}

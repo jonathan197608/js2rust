@@ -4,10 +4,9 @@
 // Run with Node.js: node test_builtins_frag_223.node.js
 // Transpile with js2rust: cargo build -p mdn-test-project
 
-/**
- * @returns {i64}
- */
 export function testBuiltins_frag_223() {
-        // localeCompare: "a" < "b" => -1
-        return "a".localeCompare("b");
-    }
+    // localeCompare: basic ordering
+    console.log("a".localeCompare("b"));
+    console.log("b".localeCompare("a"));
+    console.log("a".localeCompare("a"));
+}
