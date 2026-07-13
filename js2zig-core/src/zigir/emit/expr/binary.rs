@@ -65,7 +65,7 @@ impl Emitter {
             crate::zigir::ops::BinOp::Le => self.write(" != .gt)"),
             crate::zigir::ops::BinOp::Gt => self.write(" == .gt)"),
             crate::zigir::ops::BinOp::Ge => self.write(" != .lt)"),
-            _ => unreachable!(),
+            _ => unreachable!("emit_order_cmp: expected Lt/Le/Gt/Ge, got {:?}", op),
         }
     }
 
@@ -98,7 +98,7 @@ impl Emitter {
                     BinOp::BitXor => ("bitwiseXor", "xor"),
                     BinOp::Div => ("div", "div"),
                     BinOp::Mod => ("rem", "rem"),
-                    _ => unreachable!(),
+                    _ => unreachable!("emit_bigint_binary: unsupported BigInt op {:?}", op),
                 };
                 self.write("(");
                 self.emit_expr(left);
@@ -125,7 +125,7 @@ impl Emitter {
                 let (method, label) = match op {
                     BinOp::Shl => ("shiftLeft", "shl"),
                     BinOp::Shr => ("shiftRight", "shr"),
-                    _ => unreachable!(),
+                    _ => unreachable!("emit_bigint_binary: unsupported shift op {:?}", op),
                 };
                 self.write("(");
                 self.emit_expr(left);
@@ -350,7 +350,7 @@ impl Emitter {
                     emitter.write(")");
                 });
             }
-            _ => unreachable!(),
+            _ => unreachable!("emit_binary: unsupported BinOp {:?}", op),
         }
     }
 }

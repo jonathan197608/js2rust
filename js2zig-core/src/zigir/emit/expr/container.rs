@@ -136,7 +136,7 @@ impl Emitter {
         }
 
         match parts.len() {
-            0 => unreachable!(), // has_spread is true, so parts is non-empty
+            0 => unreachable!("emit_array_with_spread: parts is empty but has_spread=true"),
             1 => {
                 self.write(&parts[0]);
             }
