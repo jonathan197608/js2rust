@@ -46,6 +46,11 @@ pub struct ProjectOptions {
     pub host_header: String,
     /// Names of async host functions (used to generate aliases in per-file modules)
     pub async_host_fn_names: Vec<String>,
+    /// Whether the transpiled JS code uses RegExp/regex features
+    pub needs_regex: bool,
+    /// Whether the transpiled JS code uses ICU-dependent features
+    /// (localeCompare, normalize, toLocaleUpperCase, toLocaleLowerCase)
+    pub needs_icu: bool,
 }
 
 /// Generate the full Zig library project.
@@ -62,13 +67,13 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     fs::write(&zon_path, &zon_no_fp).map_err(|e| format!("write build.zig.zon: {}", e))?;
 
     // 2. build.zig
-    let build_zig = generate_build_zig(&opts.name);
+    let build_zig = generate_build_zig(&opts.name, opts.needs_regex);
     fs::write(project_dir.join("build.zig"), build_zig)
         .map_err(|e| format!("write build.zig: {}", e))?;
 
     // 3. Write per-file .zig files + orchestrator lib.zig
     for module in &opts.per_file_code {
-        let mod_zig = generate_module_zig(module, &opts.async_host_fn_names);
+        let mod_zig = generate_module_zig(module, &opts.async_host_fn_names, opts.needs_regex);
         let mod_path = src_dir.join(format!("{}.zig", module.mod_name));
         fs::write(&mod_path, mod_zig)
             .map_err(|e| format!("write {}.zig: {}", mod_path.display(), e))?;
@@ -78,13 +83,11 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     let lib_zig = generate_orchestrator_lib(opts);
     fs::write(src_dir.join("lib.zig"), lib_zig).map_err(|e| format!("write lib.zig: {}", e))?;
 
-    // 3.5 src/host.zig — host function extern "c" declarations.
-    // Always write it (even empty) — some generated modules import it for
-    // builtin transpilation that references host.* functions (e.g. host.regex_test).
-    let host_content = if opts.host_header.is_empty() {
-        // Minimum: always include regex_test and regex_search declarations
-        // since the Emitter may reference them.
-        r#"// Auto-generated host.zig — minimum declarations for builtin transpilation
+    // 3.5 src/host_regex.zig — regex host function extern "c" declarations.
+    // Only generated when the transpiled JS code uses RegExp/regex features.
+    if opts.needs_regex {
+        let host_regex_content = if opts.host_header.is_empty() {
+            r#"// Auto-generated host_regex.zig — regex host function declarations
 // These symbols are defined in Rust with #[no_mangle] pub extern "C".
 pub extern fn host_regex_test(
     pattern_ptr: [*]const u8, pattern_len: usize,
@@ -95,7 +98,7 @@ pub extern fn host_regex_search(
     subject_ptr: [*]const u8, subject_len: usize,
 ) callconv(.c) i64;
 
-// Wrapper functions: the Emitter generates host.regex_test(pattern, subject) (dot
+// Wrapper functions: the Emitter generates host_regex.regex_test(pattern, subject) (dot
 // notation, 2 args as []const u8 slices), but extern declarations use
 // host_regex_test with ptr+len pairs. These wrappers bridge the gap.
 pub fn regex_test(pattern: []const u8, subject: []const u8) bool {
@@ -105,59 +108,63 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
     return host_regex_search(pattern.ptr, pattern.len, subject.ptr, subject.len);
 }
 "#
-        .to_string()
-    } else {
-        let mut content = opts.host_header.clone();
-        // Ensure regex_test/regex_search are declared even if not in registered host fns
-        if !content.contains("host_regex_test") {
-            content.push_str(
-                r#"
+            .to_string()
+        } else {
+            let mut content = opts.host_header.clone();
+            // Ensure regex_test/regex_search are declared even if not in registered host fns
+            if !content.contains("host_regex_test") {
+                content.push_str(
+                    r#"
 pub extern fn host_regex_test(
     pattern_ptr: [*]const u8, pattern_len: usize,
     subject_ptr: [*]const u8, subject_len: usize,
 ) callconv(.c) bool;
 "#,
-            );
-        }
-        if !content.contains("host_regex_search") {
-            content.push_str(
-                r#"pub extern fn host_regex_search(
+                );
+            }
+            if !content.contains("host_regex_search") {
+                content.push_str(
+                    r#"pub extern fn host_regex_search(
     pattern_ptr: [*]const u8, pattern_len: usize,
     subject_ptr: [*]const u8, subject_len: usize,
 ) callconv(.c) i64;
 "#,
-            );
-        }
-        // Add wrapper functions so the Emitter's host.regex_test(...) (dot notation)
-        // resolves to the extern host_regex_test (underscore naming).
-        if !content.contains("pub fn regex_test(") {
-            content.push_str(
-                r#"
+                );
+            }
+            // Add wrapper functions so the Emitter's host_regex.regex_test(...) (dot notation)
+            // resolves to the extern host_regex_test (underscore naming).
+            if !content.contains("pub fn regex_test(") {
+                content.push_str(
+                    r#"
 pub fn regex_test(pattern: []const u8, subject: []const u8) bool {
     return host_regex_test(pattern.ptr, pattern.len, subject.ptr, subject.len);
 }
 "#,
-            );
-        }
-        if !content.contains("pub fn regex_search(") {
-            content.push_str(
-                r#"
+                );
+            }
+            if !content.contains("pub fn regex_search(") {
+                content.push_str(
+                    r#"
 pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
     return host_regex_search(pattern.ptr, pattern.len, subject.ptr, subject.len);
 }
 "#,
-            );
-        }
-        content
-    };
-    fs::write(src_dir.join("host.zig"), &host_content)
-        .map_err(|e| format!("write host.zig: {}", e))?;
+                );
+            }
+            content
+        };
+        fs::write(src_dir.join("host_regex.zig"), &host_regex_content)
+            .map_err(|e| format!("write host_regex.zig: {}", e))?;
+    }
 
     // 3.6 src/host_regex_stubs.zig — stub host regex C ABI implementations
     // for zig test (real implementations are in js2rust-bridge, linked by Rust).
-    let stub_content = generate_host_regex_stubs();
-    fs::write(src_dir.join("host_regex_stubs.zig"), stub_content)
-        .map_err(|e| format!("write host_regex_stubs.zig: {}", e))?;
+    // Only generated when regex features are used.
+    if opts.needs_regex {
+        let stub_content = generate_host_regex_stubs();
+        fs::write(src_dir.join("host_regex_stubs.zig"), stub_content)
+            .map_err(|e| format!("write host_regex_stubs.zig: {}", e))?;
+    }
 
     // 4. Copy runtime/ if it exists (always overwrite to pick up runtime changes)
     if let Some(ref rt_dir) = opts.runtime_dir
@@ -317,7 +324,35 @@ export fn host_regex_match_all(
     .to_string()
 }
 
-pub fn generate_build_zig(lib_name: &str) -> String {
+pub fn generate_build_zig(lib_name: &str, needs_regex: bool) -> String {
+    let regex_stub_section = if needs_regex {
+        r#"
+    // Stub library: provides host_regex_* C ABI symbols for zig test.
+    // When Rust drives the final executable build it links its own real
+    // implementations (js2rust-bridge native_regex.rs).  The stubs only
+    // exist so `zig build test` can produce a standalone test binary.
+    const stub_mod = b.createModule(.{
+        .root_source_file = b.path("src/host_regex_stubs.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const stub_lib = b.addLibrary(.{
+        .name = "host_regex_stubs",
+        .linkage = .static,
+        .root_module = stub_mod,
+    });
+"#.to_string()
+    } else {
+        String::new()
+    };
+
+    let test_link_stub = if needs_regex {
+        "    test_mod.linkLibrary(stub_lib);\n"
+    } else {
+        ""
+    };
+
     format!(
         r#"const std = @import("std");
 
@@ -344,23 +379,7 @@ pub fn build(b: *std.Build) void {{
     }});
     lib.bundle_compiler_rt = true;
     b.installArtifact(lib);
-
-    // Stub library: provides host_regex_* C ABI symbols for zig test.
-    // When Rust drives the final executable build it links its own real
-    // implementations (js2rust-bridge native_regex.rs).  The stubs only
-    // exist so `zig build test` can produce a standalone test binary.
-    const stub_mod = b.createModule(.{{
-        .root_source_file = b.path("src/host_regex_stubs.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    }});
-    const stub_lib = b.addLibrary(.{{
-        .name = "host_regex_stubs",
-        .linkage = .static,
-        .root_module = stub_mod,
-    }});
-
+{regex_stub_section}
     // Test step
     // Create a test-only module that links the stub library, so the stub
     // symbols (host_regex_*) are available during `zig build test` but
@@ -371,8 +390,7 @@ pub fn build(b: *std.Build) void {{
         .optimize = optimize,
         .link_libc = true,
     }});
-    test_mod.linkLibrary(stub_lib);
-    const tests = b.addTest(.{{
+{test_link_stub}    const tests = b.addTest(.{{
         .root_module = test_mod,
     }});
     const run_tests = b.addRunArtifact(tests);
@@ -403,7 +421,7 @@ pub fn build(b: *std.Build) void {{
 }
 
 /// Emit the standard runtime @import preamble (std, allocator, tier-3 runtime libs).
-fn push_runtime_imports(out: &mut String) {
+fn push_runtime_imports(out: &mut String, needs_regex: bool) {
     out.push_str("const std = @import(\"std\");\n");
     out.push_str("const builtin = @import(\"builtin\");\n");
     out.push_str("const Io = std.Io;\n");
@@ -423,7 +441,10 @@ fn push_runtime_imports(out: &mut String) {
     out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
     out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
     out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
-    out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
+    if needs_regex {
+        out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
+        out.push_str("const js_string_regex = @import(\"js_runtime/js_string_regex.zig\");\n");
+    }
     out.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");
     out.push_str("const js_symbol = @import(\"js_runtime/js_symbol.zig\");\n");
     out.push_str("const JsSymbol = @import(\"js_runtime/js_symbol.zig\").JsSymbol;\n");
@@ -448,15 +469,19 @@ fn push_runtime_imports(out: &mut String) {
 ///   ...
 ///   // Generated code
 ///   export fn add(...) ...
-fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -> String {
+fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String], needs_regex: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!("// Auto-generated from {}.js\n", module.mod_name));
-    push_runtime_imports(&mut out);
+    push_runtime_imports(&mut out, needs_regex);
 
     // Host function imports (if this module calls host functions or async fns exist)
-    if module.zig_code.contains("host.") || !async_host_fn_names.is_empty() {
+    if (needs_regex && module.zig_code.contains("host_regex."))
+        || !async_host_fn_names.is_empty()
+    {
         out.push_str("// Host functions (Rust via C ABI)\n");
-        out.push_str("const host = @import(\"host.zig\");\n");
+        if needs_regex && module.zig_code.contains("host_regex.") {
+            out.push_str("const host_regex = @import(\"host_regex.zig\");\n");
+        }
         // Async function aliases: lets generated code call host.{name}_async as {name}
         for name in async_host_fn_names {
             out.push_str(&format!("const {} = host.{}_async;\n", name, name));
@@ -503,12 +528,12 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String]) -
 fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     let mut out = String::new();
     out.push_str("// Auto-generated by js2rust (orchestrator)\n");
-    push_runtime_imports(&mut out);
+    push_runtime_imports(&mut out, opts.needs_regex);
 
-    // Host function declarations (if any — including when only async host fns exist)
-    if !opts.host_header.is_empty() || !opts.async_host_fn_names.is_empty() {
-        out.push_str("// Tier-4 host functions (Rust via C ABI)\n");
-        out.push_str("const host = @import(\"host.zig\");\n");
+    // Regex host function declarations
+    if opts.needs_regex {
+        out.push_str("// Tier-4 host regex functions (Rust via C ABI)\n");
+        out.push_str("const host_regex = @import(\"host_regex.zig\");\n");
         out.push('\n');
     }
 

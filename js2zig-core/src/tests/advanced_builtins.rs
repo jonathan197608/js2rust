@@ -862,7 +862,7 @@ return a && b && !c;
 
 #[test]
 fn test_p8_regex_test() {
-    // /pattern/.test(str) → host.regex_test("pattern", str)
+    // /pattern/.test(str) → host_regex.regex_test("pattern", str)
     let js = r#"
 export function hasDigit(s) {
 return /\d/.test(s);
@@ -871,15 +871,15 @@ return /\d/.test(s);
     let result = parse_and_transpile(js, None).unwrap();
     let zig = result.zig_code;
     assert!(
-        zig.contains(r#"host.regex_test("\\d", s)"#),
-        "Expected 'host.regex_test(\"\\d\", s)' in:\n{}",
+        zig.contains(r#"host_regex.regex_test("\\d", s)"#),
+        "Expected 'host_regex.regex_test(\"\\d\", s)' in:\n{}",
         zig
     );
 }
 
 #[test]
 fn test_p8_string_search() {
-    // str.search(/pattern/) → host.regex_search("pattern", str)
+    // str.search(/pattern/) → host_regex.regex_search("pattern", str)
     let js = r#"
 export function findDigit(s) {
 return s.search(/\d+/);
@@ -888,15 +888,15 @@ return s.search(/\d+/);
     let result = parse_and_transpile(js, None).unwrap();
     let zig = result.zig_code;
     assert!(
-        zig.contains(r#"host.regex_search("\\d+", s)"#),
-        "Expected 'host.regex_search(\"\\d+\", s)' in:\n{}",
+        zig.contains(r#"host_regex.regex_search("\\d+", s)"#),
+        "Expected 'host_regex.regex_search(\"\\d+\", s)' in:\n{}",
         zig
     );
 }
 
 #[test]
 fn test_p8_string_match_compile_error() {
-    // str.match(/pattern/) → js_string.matchString(alloc, str, "pattern")
+    // str.match(/pattern/) → js_string_regex.matchString(alloc, str, "pattern")
     let js = r#"
 export function getMatch(s) {
 return s.match(/hello/);
@@ -905,8 +905,8 @@ return s.match(/hello/);
     let result = parse_and_transpile(js, None).unwrap();
     let zig = result.zig_code;
     assert!(
-        zig.contains(r#"js_string.matchString(js_allocator.allocator(),"#),
-        "Expected 'js_string.matchString(js_allocator.allocator(),' for String.match() in:\n{}",
+        zig.contains(r#"js_string_regex.matchString(js_allocator.allocator(),"#),
+        "Expected 'js_string_regex.matchString(js_allocator.allocator(),' for String.match() in:\n{}",
         zig
     );
     assert!(
@@ -956,7 +956,7 @@ return r.test(s);
 
 #[test]
 fn test_p8_string_match_regexp_var() {
-    // str.match(regexpVar) → js_string.matchString(alloc, str, regexpVar.pattern)
+    // str.match(regexpVar) → js_string_regex.matchString(alloc, str, regexpVar.pattern)
     let js = r#"
 export function getMatch(s, r) {
 // r must be a RegExp variable initialized via new RegExp
@@ -976,7 +976,7 @@ return m;
 
 #[test]
 fn test_p8_string_search_regexp_var() {
-    // str.search(regexpVar) → host.regex_search(regexpVar.pattern, str)
+    // str.search(regexpVar) → host_regex.regex_search(regexpVar.pattern, str)
     let js = r#"
 export function findIndex(s) {
 const r = new RegExp("foo");
@@ -1460,7 +1460,7 @@ return s.match(/a*/g);
 
 #[test]
 fn test_p3_string_match_all_ast_check() {
-    // str.matchAll(/pattern/g) → js_string.matchAllString(alloc, str, "pattern")
+    // str.matchAll(/pattern/g) → js_string_regex.matchAllString(alloc, str, "pattern")
     let js = r#"
 export function matchAllTest(s) {
 return s.matchAll(/(\d)(\d)/g);
@@ -1477,7 +1477,7 @@ return s.matchAll(/(\d)(\d)/g);
 
 #[test]
 fn test_p3_string_match_all_regexp_var_ast_check() {
-    // str.matchAll(regexpVar) → js_string.matchAllString(alloc, str, regexpVar.pattern)
+    // str.matchAll(regexpVar) → js_string_regex.matchAllString(alloc, str, regexpVar.pattern)
     let js = r#"
 export function matchAllVarTest(s) {
 const re = new RegExp("(\\d)(\\d)", "g");

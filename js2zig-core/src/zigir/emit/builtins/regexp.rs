@@ -18,9 +18,9 @@ impl Emitter {
             "test" => {
                 if let Some(info) = regex_info {
                     if !info.is_var_ref {
-                        // Literal regex: /pattern/.test(str) → host.regex_test("pattern", str)
+                        // Literal regex: /pattern/.test(str) → host_regex.regex_test("pattern", str)
                         if let Some(pattern) = &info.pattern {
-                            self.write(&format!("host.regex_test(\"{}\", ", pattern));
+                            self.write(&format!("host_regex.regex_test(\"{}\", ", pattern));
                             self.emit_inline_args(args);
                             self.write(")");
                             return;

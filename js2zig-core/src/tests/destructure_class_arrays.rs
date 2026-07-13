@@ -1316,8 +1316,8 @@ return str.match(/hello/);
     let zig = transpile_and_assert(js, "test_native_proto_string_match_stub");
 
     assert!(
-        zig.contains("js_string.matchString(js_allocator.allocator(),"),
-        "Expected js_string.matchString(js_allocator.allocator(), for String.match() in:\n{}",
+        zig.contains("js_string_regex.matchString(js_allocator.allocator(),"),
+        "Expected js_string_regex.matchString(js_allocator.allocator(), for String.match() in:\n{}",
         zig
     );
     assert!(
@@ -1340,8 +1340,8 @@ return str.search(/world/);
     let zig = result.zig_code;
 
     assert!(
-        zig.contains("host.regex_search"),
-        "Expected 'host.regex_search' for String.search() in:\n{}",
+        zig.contains("host_regex.regex_search"),
+        "Expected 'host_regex.regex_search' for String.search() in:\n{}",
         zig
     );
 }

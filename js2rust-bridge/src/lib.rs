@@ -22,6 +22,7 @@
 // re-runs the build script when any input changes.
 
 mod config;
+#[cfg(feature = "regex")]
 pub mod native_regex;
 pub mod sdk;
 
@@ -194,7 +195,7 @@ fn link_from_cache(cache_dir: &std::path::Path) {
             if lib_dir.exists()
                 && let Some(dir_name) = entry.file_name().to_str()
             {
-                if dir_name == "host.zig" {
+                if dir_name == "host_regex.zig" {
                     continue;
                 }
                 println!("cargo:rustc-link-search=native={}", lib_dir.display());

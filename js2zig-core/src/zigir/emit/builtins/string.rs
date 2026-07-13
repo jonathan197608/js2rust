@@ -114,8 +114,8 @@ impl Emitter {
         self.write(")");
     }
 
-    /// Shared by match/matchAll: emit `js_string.{method}(js_allocator.allocator(), receiver, pattern_expr) catch @panic(...)`
-    /// for the is_var_ref and literal branches. The fallback branch uses js_string.{method}(receiver).
+    /// Shared by match/matchAll: emit `js_string_regex.{method}(js_allocator.allocator(), receiver, pattern_expr) catch @panic(...)`
+    /// for the is_var_ref and literal branches. The fallback branch uses js_string_regex.{method}(receiver).
     fn emit_string_match_like(
         &mut self,
         obj: Option<&str>,
@@ -127,7 +127,7 @@ impl Emitter {
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
                     self.write(&format!(
-                        "js_string.{}(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
+                        "js_string_regex.{}(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
                         method, receiver, var
                     ));
                 }
@@ -135,13 +135,13 @@ impl Emitter {
             Some(ri) => {
                 if let Some(pattern) = &ri.pattern {
                     self.write(&format!(
-                        "js_string.{}(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                        "js_string_regex.{}(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                         method, receiver, pattern
                     ));
                 }
             }
             None => {
-                self.write(&format!("js_string.{}({})", method, receiver));
+                self.write(&format!("js_string_regex.{}({})", method, receiver));
             }
         }
     }
@@ -160,7 +160,7 @@ impl Emitter {
         {
             let receiver = obj.unwrap_or("\"\"");
             self.write(&format!(
-                "js_string.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                "js_string_regex.matchStringGlobal(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                 receiver, pattern
             ));
             return;
@@ -188,21 +188,21 @@ impl Emitter {
         match regex_info {
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
-                    self.write(&format!("host.regex_search({}.pattern, {})", var, receiver));
+                    self.write(&format!("host_regex.regex_search({}.pattern, {})", var, receiver));
                 }
             }
             Some(ri) => {
                 if let Some(pattern) = &ri.pattern {
-                    self.write(&format!("host.regex_search(\"{}\", {})", pattern, receiver));
+                    self.write(&format!("host_regex.regex_search(\"{}\", {})", pattern, receiver));
                 }
             }
             None => {
                 // Non-regex argument: render the first arg as a string pattern
                 if let Some(arg) = args.first() {
                     let pattern = Self::emit_expr_inline(arg);
-                    self.write(&format!("host.regex_search({}, {})", pattern, receiver));
+                    self.write(&format!("host_regex.regex_search({}, {})", pattern, receiver));
                 } else {
-                    self.write(&format!("host.regex_search(\"\", {})", receiver));
+                    self.write(&format!("host_regex.regex_search(\"\", {})", receiver));
                 }
             }
         }

@@ -12,8 +12,10 @@ categories = ["development-tools", "external-ffi-bindings"]
 [dependencies]
 js2rust-bridge-macro = { version = "0.14.0", path = "../js2rust-bridge-macro" }
 js2zig-core = { version = "0.13.0", path = "../js2zig-core" }
-fancy-regex = "0.15"
+fancy-regex = { version = "0.18", optional = true }
 serde_json = "1"
 
 [features]
+default = []
 stub-allocator = []
+regex = ["fancy-regex"]

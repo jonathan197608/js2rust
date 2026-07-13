@@ -583,6 +583,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 })
                 .collect();
 
+            // Detect feature usage from emitted Zig code
+            let needs_regex = per_file_modules.iter().any(|m| {
+                m.zig_code.contains("host_regex.")
+                    || m.zig_code.contains("js_regexp.")
+                    || m.zig_code.contains("JsRegExp")
+                    || m.zig_code.contains("js_string_regex.")
+            });
+
             let project_opts = crate::project::ProjectOptions {
                 name: project_name.clone(),
                 out_dir: out_dir.clone(),
@@ -598,6 +606,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     String::new()
                 },
                 async_host_fn_names: async_host_fn_names.clone(),
+                needs_regex,
+                needs_icu: false, // TODO: implement ICU feature detection
             };
 
             match crate::project::generate(&project_opts) {
