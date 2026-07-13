@@ -114,10 +114,11 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
 
     // js_dir is the source directory; js_files[0] is the primary entry.
     let in_dir = &config.js_dir;
-    let core_file = config
-        .js_files
-        .first()
-        .ok_or_else(|| "js2rust_bridge: project.js_files is empty in js2rust.toml".to_string())?;
+    let js_files = &config.js_files;
+    if js_files.is_empty() {
+        return Err("js2rust_bridge: project.js_files is empty in js2rust.toml".to_string());
+    }
+    let core_file = &js_files[0];
     let out_dir = config.out_dir.clone();
     let force_rebuild = config.build.force_rebuild;
     let verbose = config.build.is_build_script; // only print progress in build.rs context
@@ -132,8 +133,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     })?;
 
     // === Phase 1: Analyze project (entry file + transitive deps) ===
-    let additional_js_files: Vec<String> = config.js_files.iter().skip(1).cloned().collect();
-    let analysis = analyze_project(in_dir, core_file, &additional_js_files);
+    let analysis = analyze_project(in_dir, js_files);
 
     // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
     // (including transitive dependencies not listed in js2rust.toml).
@@ -270,14 +270,14 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             // --- Transpile pass (all metadata from analysis, no source scanning) ---
             let core_exports = analysis
                 .exported_names
-                .get(&analysis.core_file)
+                .get(core_file)
                 .cloned()
                 .unwrap_or_default();
 
             // --- Compute re-exported names per dependency ---
             let core_imports = analysis
                 .imported_names
-                .get(&analysis.core_file)
+                .get(core_file)
                 .cloned()
                 .unwrap_or_default();
             let mut dep_re_exports: HashMap<String, HashSet<String>> = HashMap::new();
@@ -291,8 +291,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
             }
 
             // Additional core files (multi-root): treat their exports as CABI-exportable too.
-            let additional_core_set: HashSet<String> =
-                additional_js_files.iter().cloned().collect();
+            let additional_core_set: HashSet<String> = js_files.iter().skip(1).cloned().collect();
 
             let mut has_any_error = false;
 
@@ -325,7 +324,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         .get(member)
                         .cloned()
                         .unwrap_or_default()
-                } else if *member == analysis.core_file || additional_core_set.contains(member) {
+                } else if *member == *core_file || additional_core_set.contains(member) {
                     analysis
                         .exported_names
                         .get(member)

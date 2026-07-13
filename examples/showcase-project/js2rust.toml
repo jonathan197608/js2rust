@@ -1,15 +1,16 @@
 [project]
+js_dir = "js_src"
 js_files = [
-    "js_src/app.js",
-    "js_src/phase5.js",
-    "js_src/test_throw.js",
-    "js_src/phase_memory.js",
-    "js_src/phase6.js",
-    "js_src/test_classes.js",
-    "js_src/test_static_fields.js",
-    "js_src/test_dynamic_index.js",
-    "js_src/test_optional.js",
-    "js_src/for_in_struct.js",
+    "app.js",
+    "phase5.js",
+    "test_throw.js",
+    "phase_memory.js",
+    "phase6.js",
+    "test_classes.js",
+    "test_static_fields.js",
+    "test_dynamic_index.js",
+    "test_optional.js",
+    "for_in_struct.js",
 ]
 
 [build]

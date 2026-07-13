@@ -1,5 +1,6 @@
 [project]
-js_files = ["js_src/main.js"]
+js_dir = "js_src"
+js_files = ["main.js"]
 
 [build]
 run_zig_build = true

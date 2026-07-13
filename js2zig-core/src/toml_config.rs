@@ -29,9 +29,17 @@ pub struct Js2rustConfig {
 /// `[project]` section.
 #[derive(Debug, Deserialize)]
 pub struct ProjectSection {
-    /// JS source file paths (relative to crate root).
+    /// Directory containing JS source files (relative to crate root).
+    /// Default: `"js_src"`.
+    #[serde(default = "default_js_dir")]
+    pub js_dir: String,
+    /// JS source file names (plain filenames relative to `js_dir`).
     /// The first element is the entry point; additional elements are extra roots.
     pub js_files: Vec<String>,
+}
+
+fn default_js_dir() -> String {
+    "js_src".to_string()
 }
 
 /// `[build]` section — controls build.rs behavior.
@@ -84,7 +92,8 @@ impl Js2rustConfig {
                  Create a js2rust.toml in your crate root with:\n\
                  \n\
                  [project]\n\
-                 js_files = [\"js_src/main.js\"]\n",
+                 js_dir = \"js_src\"\n\
+                 js_files = [\"main.js\"]\n",
                 config_path.display(),
                 e
             );
@@ -104,6 +113,7 @@ impl Js2rustConfig {
     pub fn project_name(&self) -> String {
         let default = "main.js".to_string();
         let first = self.project.js_files.first().unwrap_or(&default);
+        // js_files are plain filenames (no directory prefix), so file_stem works directly.
         let stem = std::path::Path::new(first)
             .file_stem()
             .and_then(|s| s.to_str())

@@ -47,8 +47,6 @@ fn sanitize_name(filename: &str) -> String {
 pub struct AnalysisResult {
     /// Sanitized entry file name (used as Zig project name).
     pub core_name: String,
-    /// Original .js filename of the entry file (e.g. "main.js").
-    pub core_file: String,
     /// All .js filenames in this project (including entry, in topological order).
     pub members: Vec<String>,
     /// Map: original filename → sanitized Zig module name.
@@ -74,7 +72,6 @@ impl fmt::Debug for AnalysisResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AnalysisResult")
             .field("core_name", &self.core_name)
-            .field("core_file", &self.core_file)
             .field("members", &self.members)
             .field("name_map", &self.name_map)
             .field("imported_names", &self.imported_names)
@@ -92,24 +89,22 @@ impl fmt::Debug for AnalysisResult {
     }
 }
 
-/// Analyze a JS entry file (and optional additional roots) and their
-/// transitive dependencies, returning all data needed for transpilation.
+/// Analyze JS root files and their transitive dependencies, returning
+/// all data needed for transpilation.
 ///
-/// Only processes the specified entry file(s) and the files they import,
-/// rather than scanning an entire directory.
-pub fn analyze_project(
-    in_dir: &Path,
-    core_file: &str,
-    additional_core_files: &[String],
-) -> AnalysisResult {
+/// `js_files` must be non-empty; the first entry is the primary root whose
+/// sanitized stem becomes the project name. All entries are treated as
+/// starting points for dependency discovery.
+pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
+    assert!(!js_files.is_empty(), "js_files must not be empty");
+
+    let core_file = &js_files[0];
+
     // Single DFS pass: read + parse each file ONCE, extract import/export
     // metadata straight from the AST, and cache both the source text and the
     // parsed Program for Lowerer reuse (eliminates double-parsing).
     let mut visited: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = vec![core_file.to_string()];
-    for addl_file in additional_core_files {
-        stack.push(addl_file.clone());
-    }
+    let mut stack: Vec<String> = js_files.to_vec();
     // Reverse so the primary core_file is popped first (we parse it first).
     stack.reverse();
 
@@ -169,10 +164,7 @@ pub fn analyze_project(
     }
 
     // Build the result — all files from all roots merged.
-    let all_roots: Vec<String> = std::iter::once(core_file.to_string())
-        .chain(additional_core_files.iter().cloned())
-        .collect();
-    let members = transitive_deps_multi(&all_roots, &imports);
+    let members = transitive_deps_multi(js_files, &imports);
     let core_name = sanitized
         .get(core_file)
         .cloned()
@@ -180,7 +172,6 @@ pub fn analyze_project(
 
     AnalysisResult {
         core_name,
-        core_file: core_file.to_string(),
         members,
         name_map: sanitized,
         imported_names,

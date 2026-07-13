@@ -60,12 +60,8 @@ pub fn build() {
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
     // All JS files are resolved from config (entry + additional roots)
-    let js_file_paths: Vec<PathBuf> = config
-        .project
-        .js_files
-        .iter()
-        .map(|p| PathBuf::from(&manifest_dir).join(p))
-        .collect();
+    let js_dir: PathBuf = PathBuf::from(&manifest_dir).join(&config.project.js_dir);
+    let js_files = &config.project.js_files;
 
     // Emit cargo:rerun-if-changed for explicitly listed JS files and config.
     // Note: js2zig-core::transpile_project() additionally emits rerun-if-changed
@@ -73,7 +69,8 @@ pub fn build() {
     // dependencies like helpers.js).  Those directives take effect in subsequent
     // builds because Cargo stores all rerun-if-changed paths from the previous
     // build script run.
-    for p in &js_file_paths {
+    for f in js_files {
+        let p = js_dir.join(f);
         println!("cargo:rerun-if-changed={}", p.display());
     }
     let config_toml = PathBuf::from(&manifest_dir).join("js2rust.toml");
@@ -86,26 +83,11 @@ pub fn build() {
     let diagnostics_file = cache_dir.join(".last_emitted_diagnostics.json");
     println!("cargo:rerun-if-changed={}", diagnostics_file.display());
 
-    // Derive js_dir and js_files for ProjectConfig.
-    // js_files in TOML are relative paths like "js_src/main.js";
-    // js_dir is the parent directory of the first entry (e.g. .../js_src/),
-    // js_files are plain filenames (e.g. "main.js").
-    let first_path = js_file_paths.first().expect("js_files must not be empty");
-    let js_dir = first_path
-        .parent()
-        .expect("js_file path must have a parent directory")
-        .to_path_buf();
-    let js_files: Vec<String> = config
-        .project
-        .js_files
-        .iter()
-        .filter_map(|p| {
-            std::path::Path::new(p)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
+    // Derive js_dir and js_files for ProjectConfig from TOML fields.
+    // js_dir is an absolute path (manifest_dir + config.project.js_dir);
+    // js_files are plain filenames from TOML.
+    let js_dir_abs = js_dir.clone();
+    let js_files_vec: Vec<String> = js_files.clone();
 
     let host_config = config.to_host_config();
 
@@ -120,8 +102,8 @@ pub fn build() {
     });
 
     let project_config = js2zig_core::ProjectConfig {
-        js_dir,
-        js_files,
+        js_dir: js_dir_abs,
+        js_files: js_files_vec,
         out_dir: cache_dir.clone(),
         host_config,
         build: js2zig_core::BuildConfig {

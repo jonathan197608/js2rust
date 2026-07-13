@@ -102,33 +102,11 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     // Derive project name from first js_files entry stem
     let project_name = config.project_name();
 
-    // Resolve all JS file paths
-    let js_file_paths: Vec<std::path::PathBuf> = config
-        .project
-        .js_files
-        .iter()
-        .map(|f| std::path::Path::new(&manifest_dir).join(f))
-        .collect();
-    // Derive js_dir and js_files for ProjectConfig.
-    // js_files in TOML are relative paths like "js_src/main.js";
-    // js_dir is the parent directory of the first entry (e.g. .../js_src/),
-    // js_files are plain filenames (e.g. "main.js").
-    let first_path = js_file_paths.first().expect("js_files must not be empty");
-    let js_dir = first_path
-        .parent()
-        .expect("js_file path must have a parent directory")
-        .to_path_buf();
-    let js_files: Vec<String> = config
-        .project
-        .js_files
-        .iter()
-        .filter_map(|p| {
-            std::path::Path::new(p)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
+    // Resolve js_dir and js_files from TOML fields.
+    // js_dir is an absolute path; js_files are plain filenames.
+    let js_dir: std::path::PathBuf =
+        std::path::Path::new(&manifest_dir).join(&config.project.js_dir);
+    let js_files = config.project.js_files.clone();
 
     // Resolve cache directory
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
