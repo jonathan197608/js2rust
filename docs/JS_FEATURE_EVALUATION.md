@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '30e7c1e0-16f2-4fe7-82c3-3bc45361c090'
-  PropagateID: '30e7c1e0-16f2-4fe7-82c3-3bc45361c090'
-  ReservedCode1: 'eb6cbca6-efc2-4d09-ae1e-982dbeee5b46'
-  ReservedCode2: 'eb6cbca6-efc2-4d09-ae1e-982dbeee5b46'
+  ProduceID: 'b7f72416-6dfc-4ac2-b9a4-37ceba14dc41'
+  PropagateID: 'b7f72416-6dfc-4ac2-b9a4-37ceba14dc41'
+  ReservedCode1: 'a63cb475-db8f-4102-bf23-0c77e5b794d2'
+  ReservedCode2: 'a63cb475-db8f-4102-bf23-0c77e5b794d2'
 ---
 
 # JS 语言特性实现说明
@@ -33,8 +33,8 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 82 | ~90% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta/私有字段 等 |
-| ⚠️ 简化实现 | 1 | ~1% | BigInt 字面量（基本运算支持，混合类型受限） |
+| ✅ 完全实现 | 83 | ~91% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta/私有字段/BigInt 字面量 等 |
+| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | 8 | ~9% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
@@ -94,7 +94,7 @@ AIGC:
 | `this` | ✅ | `self` | showcase-project |
 | `NaN` | ✅ | `std.math.nan(f64)` | 隐式测试 |
 | `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
-| BigInt 字面量 | ⚠️ | `js_bigint.JsBigInt.init(alloc, "9")` | 基本四则运算/位运算/比较已支持，混合类型受限 |
+| BigInt 字面量 | ✅ | `js_bigint.JsBigInt.init(alloc, "9")` | 基本四则运算/位运算/比较已支持；混合类型运算/`>>>` 运行时 TypeError（与 JS 规范一致） |
 
 ### 2.2 算术运算符 (Arithmetic Operators) - ✅ 100% 实现
 
@@ -514,7 +514,7 @@ AIGC:
 | **— 已完成实例方法 (续) —** | | | | | | |
 | `.findLast(fn)` | `arr.findLast(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `T | undefined` | ✅ | ✅ | ✅ | ✅ |
 | `.findLastIndex(fn)` | `arr.findLastIndex(callbackFn[, thisArg])` | `fn: (elem,idx,arr)=>bool` | `i64` | ✅ | ✅ | ✅ | ✅ |
-| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ⚠️ | ⚠️ 运行时函数缺失，调用将导致链接错误 |
+| `.reduceRight(fn,init)` | `arr.reduceRight(callbackFn[, init])` | `fn: (acc,cur)=>T, init?: T` | 累积值 | ✅ | ✅ | ✅ | ✅ 内联展开（反向遍历 + 累加器，与 reduce 同模式） |
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | Iterator | ✅ | ✅ | ✅ | ✅ |
 | `.with(idx,val)` | `arr.with(index, value)` (ES2023) | `index: i64, val: T` | 新数组 | ✅ | ✅ | ✅ | ✅ clone + 单元素替换 |
 | `.toReversed()` | `arr.toReversed()` (ES2023) | — | 新数组 | ✅ | ✅ | ✅ | ✅ clone + reverse |
@@ -898,7 +898,7 @@ AIGC:
 | `WeakSet` | 🔘 不实现 | `WeakSet.add/has/delete` — 弱引用值 | 低价值：Zig 内存管理不同 |
 | `Reflect` | 🔘 不实现 | `Reflect.get/set/has/apply/construct` 等 (14 方法) | 低价值：反射 API，Zig 不需要 |
 | `Intl` | 🔘 不实现 | `Intl.NumberFormat/DateTimeFormat/Collator` 等 | 低价值：国际化可调用 Zig/C 库 |
-| `BigInt` | ⚠️ 简化实现 | `js_bigint.JsBigInt`（基于 `std.math.big.int.Managed`） | 基本四则/位运算/比较已支持（含字面量 `123n` + 构造函数 `BigInt(n)`），混合类型受限，不支持 `>>>` |
+| `BigInt` | ✅ | `js_bigint.JsBigInt`（基于 `std.math.big.int.Managed`） | 完整实现：基本四则/位运算/比较（含字面量 `123n` + 构造函数 `BigInt(n)`），混合类型运算/`>>>` 运行时 TypeError（与 JS 规范一致） |
 | `Atomics` | 🔘 不实现 | 共享内存原子操作 | 低价值：niche 场景 |
 
 ### 4.17 汇总
@@ -906,7 +906,7 @@ AIGC:
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 34 | 97% | 0 | reduceRight 运行时函数缺失；map 回调 inline 展开 |
+| Array | 35 | 35 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
 | String | 32 | 27+4⚠️ | 97% | 1 | 4 个简化实现（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase + search stub），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
@@ -924,13 +924,13 @@ AIGC:
 | WeakMap/WeakSet | 2 | 0 | 0% | 2 | 不实现（Zig 内存模型不同） |
 | Reflect | 1 | 0 | 0% | 1 | 不实现（Zig 不需要反射） |
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
-| BigInt | 1 | 1 | 100% | 0 | ⚠️ 简化实现（基本运算支持，混合类型受限） |
+| BigInt | 1 | 1 | 100% | 0 | ✅ 完整实现（混合类型/`>>>` 运行时 TypeError，与 JS 规范一致） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **220** | **208** | **~95%** | **11** | 5⚠️: String ×4 + BigInt ×1；reduceRight 运行时缺失 |
+| **总计** | **220** | **210** | **~95%** | **11** | 4⚠️: String ×4（localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，需 ICU） |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行；BigInt 基本运算支持但混合类型受限）
+> - ⚠️ **简化实现**: 基础功能可用（String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase，因 ICU 依赖不可行）
 > - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy）
 
 ---

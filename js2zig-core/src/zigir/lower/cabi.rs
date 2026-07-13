@@ -241,6 +241,7 @@ impl Lowerer {
             BC::ArrayFindLastIndex => Some(ArrayCallbackKind::FindLastIndex),
             BC::ArrayMap => Some(ArrayCallbackKind::Map),
             BC::ArrayReduce => Some(ArrayCallbackKind::Reduce),
+            BC::ArrayReduceRight => Some(ArrayCallbackKind::ReduceRight),
             BC::ArraySort => Some(ArrayCallbackKind::Sort),
             BC::ArrayToSorted => Some(ArrayCallbackKind::ToSorted),
             BC::ArrayFlatMap => Some(ArrayCallbackKind::FlatMap),
@@ -336,7 +337,7 @@ impl Lowerer {
             body.statements.iter().map(|s| self.lower_stmt(s)).collect();
 
         // Reduce init value
-        let reduce_init = if kind == ArrayCallbackKind::Reduce && ce.arguments.len() >= 2 {
+        let reduce_init = if matches!(kind, ArrayCallbackKind::Reduce | ArrayCallbackKind::ReduceRight) && ce.arguments.len() >= 2 {
             ce.arguments
                 .get(1)
                 .and_then(|a| a.as_expression())

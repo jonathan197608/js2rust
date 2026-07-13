@@ -924,6 +924,8 @@ pub enum ArrayCallbackKind {
     FindLastIndex,
     Map,
     Reduce,
+    /// arr.reduceRight(fn, init) — reverse-order reduce with accumulator
+    ReduceRight,
     /// arr.sort(compareFn) — in-place sort with custom comparator
     Sort,
     /// arr.toSorted(compareFn) — sort returning a new array with custom comparator

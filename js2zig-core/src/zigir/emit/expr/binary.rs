@@ -158,9 +158,11 @@ impl Emitter {
                     emitter.write(")");
                 });
             }
-            // >>> is not supported for BigInt (JS throws TypeError)
+            // >>> is not supported for BigInt (JS throws TypeError at runtime)
             BinOp::UrShr => {
-                self.write("@compileError(\"BigInt does not support unsigned right shift\")");
+                self.write(
+                    "@panic(\"TypeError: BigInt does not support unsigned right shift (>>>)\")",
+                );
             }
             _ => {
                 self.emit_default_binop(op, left, right);

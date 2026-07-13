@@ -130,6 +130,21 @@ export function testArrayReduce() {
     return -1;
 }
 
+// ── Array.reduceRight ──────────────────────────
+// reduceRight concatenates from right to left
+/**
+ * @returns {i64}
+ */
+export function testArrayReduceRight() {
+    const arr = [1, 2, 3, 4, 5];
+    const result = arr.reduceRight((acc, x) => acc * 10 + x, 0);
+    // Right-to-left: 0*10+5=5, 5*10+4=54, 54*10+3=543, 543*10+2=5432, 5432*10+1=54321
+    if (result === 54321) {
+        return 0;
+    }
+    return -1;
+}
+
 // ── Array.some ───────────────────────────────
 // check if any element > 3
 /**

@@ -107,15 +107,28 @@ impl Emitter {
                 if left_is_bigint && right_is_bigint {
                     self.emit_bigint_binary(*op, left, right);
                 }
-                // ── BigInt ** non-BigInt (e.g. 2n ** 2) ──
-                // BigInt .pow() expects u64 exponent, not &JsBigInt.
-                // Pure BigInt ** BigInt is handled by emit_bigint_binary above.
-                else if left_is_bigint && *op == BinOp::Pow {
-                    self.write("(");
-                    self.emit_expr(left);
-                    self.write(".pow(@as(u64, @intCast(");
-                    self.emit_expr(right);
-                    self.write(")), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                // ── BigInt × Number non-comparison ops: JS throws TypeError ──
+                // e.g. 1n + 2, 3n & x, 2n ** 3 where x: number
+                // JS spec: "Cannot mix BigInt and other types, consider explicit conversions"
+                else if (left_is_bigint || right_is_bigint)
+                    && matches!(
+                        op,
+                        BinOp::Add
+                            | BinOp::Sub
+                            | BinOp::Mul
+                            | BinOp::Div
+                            | BinOp::Mod
+                            | BinOp::Pow
+                            | BinOp::BitAnd
+                            | BinOp::BitOr
+                            | BinOp::BitXor
+                            | BinOp::Shl
+                            | BinOp::Shr
+                    )
+                {
+                    self.write(
+                        "@panic(\"TypeError: Cannot mix BigInt and other types, consider explicit conversions\")",
+                    );
                 }
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
@@ -209,6 +222,13 @@ impl Emitter {
                     }
                 }
                 // ── Unsigned right shift ──
+                // BigInt × any: JS throws TypeError at runtime
+                else if *op == BinOp::UrShr && (left_is_bigint || right_is_bigint) {
+                    self.write(
+                        "@panic(\"TypeError: BigInt does not support unsigned right shift (>>>)\")",
+                    );
+                }
+                // ── Unsigned right shift (non-BigInt) ──
                 else if *op == BinOp::UrShr {
                     self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
                     self.emit_expr(left);

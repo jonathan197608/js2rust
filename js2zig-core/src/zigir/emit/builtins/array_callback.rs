@@ -32,6 +32,7 @@ impl Emitter {
             K::FindLastIndex => self.emit_find_last_index_inline(data),
             K::Map => self.emit_map_inline(data),
             K::Reduce => self.emit_reduce_inline(data),
+            K::ReduceRight => self.emit_reduce_right_inline(data),
             K::Sort => self.emit_sort_callback_inline(data),
             K::ToSorted => self.emit_to_sorted_callback_inline(data),
             K::FlatMap => self.emit_flat_map_inline(data),
@@ -458,6 +459,74 @@ impl Emitter {
 
         // Bind elem_param to the accumulator when it differs from the loop variable
         // (i.e., when the callback has two params and elem_param is "acc")
+        if data.elem_param != "_" && data.elem_param != loop_var {
+            self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
+        }
+
+        let acc_name_clone = acc_name.clone();
+        self.emit_callback_body(&data.body, |emitter, expr| {
+            emitter.write(&format!("{} = ", acc_name_clone));
+            emitter.emit_expr(expr);
+            emitter.write(";");
+        });
+        self.indent_pop();
+        self.writeln("");
+        self.write("}");
+        self.write(&format!(" break :{} {}; }})", blk, acc_name));
+    }
+
+    // ── reduceRight ────────────────────────────────────
+    //
+    //  arr.reduceRight((acc, x) => acc + x, 0)
+    //
+    //  Same as reduce but iterates from right-to-left using the reverse loop pattern.
+    //
+    //  (blk_N: {
+    //      var _acc_N: i64 = 0;           // accumulator + init
+    //      var __i: usize = arr.items.len;
+    //      while (__i > 0) {
+    //          __i -= 1;
+    //          const x = arr.items[__i];
+    //          acc = <callback_body>;
+    //      }
+    //      break :blk_N acc;
+    //  })
+    //
+    pub(super) fn emit_reduce_right_inline(
+        &mut self,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+    ) {
+        let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+
+        let blk = self.begin_labeled_block(&binding);
+        let acc_name = format!("_acc_{}", self.peek_label_id());
+        // Determine init value and accumulator type
+        let init_expr_str = match &data.reduce_init {
+            Some(expr) => self.render_expr_to_string(expr),
+            None => "0".to_string(),
+        };
+        let acc_type = if init_expr_str.contains('.') {
+            "f64"
+        } else {
+            "i64"
+        };
+        self.write(&format!(
+            "var {}: {} = {}; ",
+            acc_name, acc_type, init_expr_str
+        ));
+
+        // Use reverse iteration (same pattern as findLast/findLastIndex).
+        // The loop variable is the current element.
+        let loop_var = if !data.idx_param.is_empty() && data.idx_param != "_" {
+            data.idx_param.clone()
+        } else {
+            data.elem_param.clone()
+        };
+        // Reverse loop header: var __i: usize = receiver.items.len; while (__i > 0) { __i -= 1; const loop_var = receiver.items[__i];
+        self.emit_reverse_loop_header(&receiver, &loop_var, "");
+        self.indent_push();
+
+        // Bind elem_param to the accumulator when it differs from the loop variable
         if data.elem_param != "_" && data.elem_param != loop_var {
             self.writeln(&format!("const {} = {};", data.elem_param, acc_name));
         }
