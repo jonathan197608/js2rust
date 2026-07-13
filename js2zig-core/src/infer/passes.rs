@@ -590,12 +590,6 @@ impl TypeInferrer {
                                 self.array_element_types
                                     .insert(name.to_string(), (**elem_ty).clone());
                             }
-                            // Track Set variables for future Set-specific dispatch.
-                            if let ZigType::NamedStruct(ref name_str) = ty
-                                && name_str == "Set"
-                            {
-                                self.set_vars.insert(name.to_string());
-                            }
                         }
                         InferResult::Indeterminate => {
                             // Function expressions and arrow functions: assign JsAny

@@ -718,7 +718,6 @@ mod tests {
             fn_param_types: HashMap::new(),
             mutated_vars: HashSet::new(),
             reassigned_vars: HashSet::new(),
-            set_vars: HashSet::new(),
             used_names: HashSet::new(),
             has_json_parse_types: HashSet::new(),
             errors: Vec::new(),
