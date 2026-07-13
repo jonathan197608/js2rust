@@ -1,5 +1,5 @@
 [project]
-js_dir = "js_src"
+# js_dir = "js_src"
 js_files = ["main.js"]
 
 # [build]
