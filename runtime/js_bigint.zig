@@ -33,7 +33,20 @@ pub const JsBigInt = struct {
             .int => return fromI64(alloc, v),
             .comptime_int => return fromI64(alloc, @as(i64, v)),
             .pointer => |ptr| {
-                if (ptr.child == u8) return init(alloc, v);
+                // []const u8 slice
+                if (ptr.size == .slice and ptr.child == u8) {
+                    return init(alloc, v);
+                }
+                // *const [N:0]u8 or *const [N]u8 string literal
+                if (ptr.size == .one) {
+                    const Child = ptr.child;
+                    if (@typeInfo(Child) == .array) {
+                        const arr = @typeInfo(Child).array;
+                        if (arr.child == u8) {
+                            return init(alloc, v[0..arr.len]);
+                        }
+                    }
+                }
                 @compileError("BigInt.fromValue: unsupported pointer type " ++ @typeName(T));
             },
             else => {
@@ -194,11 +207,13 @@ pub const JsBigInt = struct {
         return self;
     }
 
-    /// format outputs the decimal representation with trailing `n` suffix,
+    /// Format the BigInt value for display (implements Zig 0.16.0 std.fmt interface).
+    /// Outputs the decimal representation with trailing `n` suffix,
     /// matching Node.js console.log output (e.g. `5n` instead of `5`).
-    pub fn format(self: *const Self, writer: anytype) !void {
-        try self.value.format(writer, 10, .lower);
-        try writer.writeAll("n");
+    /// Invoked via the `{f}` format specifier.
+    pub fn format(self: *const Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try self.value.format(w);
+        try w.writeAll("n");
     }
 };
 

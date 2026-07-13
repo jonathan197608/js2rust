@@ -206,6 +206,12 @@ js_files = [
     "test_builtins_frag_172.js",
     "test_builtins_frag_175.js",
     "test_builtins_frag_179.js",
+    # --- builtins: BigInt ---
+    "test_builtins_frag_156.js",
+    "test_builtins_frag_212.js",
+    "test_builtins_frag_214.js",
+    "test_builtins_frag_219.js",
+    # --- builtins: ICU ---
     "test_builtins_frag_60.js",
     "test_builtins_frag_61.js",
     "test_builtins_frag_223.js",

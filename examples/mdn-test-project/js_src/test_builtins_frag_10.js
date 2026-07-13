@@ -5,38 +5,37 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_10() {
-
-        function isPrime(n) {
-          if (n < 2n) {
+    // BigInt isPrime / nthPrime
+    function isPrime(n) {
+        if (n < 2n) {
             return false;
-          }
-          if (n % 2n === 0n) {
-            return n === 2n;
-          }
-          for (let factor = 3n; factor * factor <= n; factor += 2n) {
-            if (n % factor === 0n) {
-              return false;
-            }
-          }
-          return true;
         }
+        if (n % 2n === 0n) {
+            return n === 2n;
+        }
+        for (let factor = 3n; factor * factor <= n; factor += 2n) {
+            if (n % factor === 0n) {
+                return false;
+            }
+        }
+        return true;
+    }
 
-        // Takes a BigInt value as an argument, returns nth prime number as a BigInt value
-        function nthPrime(nth) {
-          let maybePrime = 2n;
-          let prime = 0n;
+    function nthPrime(nth) {
+        let maybePrime = 2n;
+        let prime = 0n;
 
-          while (nth >= 0n) {
+        while (nth >= 0n) {
             if (isPrime(maybePrime)) {
-              nth--;
-              prime = maybePrime;
+                nth--;
+                prime = maybePrime;
             }
             maybePrime++;
-          }
-
-          return prime;
         }
 
-        nthPrime(20n);
-        // 73n
+        return prime;
     }
+
+    const result = nthPrime(20n);
+    console.log(result.toString());
+}

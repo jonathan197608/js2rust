@@ -5,7 +5,7 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_212() {
-
-        typeof 1n === "bigint"; // true
-        typeof BigInt("1") === "bigint"; // true
-    }
+    // typeof bigint
+    console.log(typeof 1n === "bigint");
+    console.log(typeof BigInt("1") === "bigint");
+}

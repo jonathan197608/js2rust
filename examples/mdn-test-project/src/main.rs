@@ -234,6 +234,11 @@ const ALL_FRAGMENTS: &[&str] = &[
     "test_builtins_frag_172",
     "test_builtins_frag_175",
     "test_builtins_frag_179",
+    // --- builtins: BigInt (4) ---
+    "test_builtins_frag_156",
+    "test_builtins_frag_212",
+    "test_builtins_frag_214",
+    "test_builtins_frag_219",
     // --- builtins: ICU (4) ---
     "test_builtins_frag_223",
     "test_builtins_frag_224",
@@ -1099,6 +1104,22 @@ fn run_fragment(frag: &str) -> bool {
         }
         "test_builtins_frag_179" => {
             let _ = testBuiltins_frag_179();
+            true
+        }
+        "test_builtins_frag_156" => {
+            let _ = testBuiltins_frag_156();
+            true
+        }
+        "test_builtins_frag_212" => {
+            let _ = testBuiltins_frag_212();
+            true
+        }
+        "test_builtins_frag_214" => {
+            let _ = testBuiltins_frag_214();
+            true
+        }
+        "test_builtins_frag_219" => {
+            let _ = testBuiltins_frag_219();
             true
         }
         "test_builtins_frag_223" => {

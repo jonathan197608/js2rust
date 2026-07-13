@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const js_error = @import("js_error.zig");
+const js_bigint = @import("js_bigint.zig");
 
 /// Check if a type is a string type ([]const u8, []u8, *const [N:0]u8, etc.)
 fn isStringType(comptime T: type) bool {
@@ -18,6 +19,15 @@ fn isStringType(comptime T: type) bool {
     };
 }
 
+/// Check if a type has a custom format method.
+fn hasFormatMethod(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info == .@"struct") {
+        return @hasDecl(T, "format");
+    }
+    return false;
+}
+
 /// Print a single value (no prefix, no newline) using the appropriate format specifier.
 fn printValue(msg: anytype) void {
     const T = @TypeOf(msg);
@@ -26,6 +36,10 @@ fn printValue(msg: anytype) void {
     } else if (comptime T == js_error.JsError) {
         // JsError: print "name: message" (e.g. "TypeError: Assignment to constant variable")
         std.debug.print("{s}: {s}", .{ msg.name, msg.message });
+    } else if (comptime hasFormatMethod(T)) {
+        // Types with a custom format method (e.g. JsBigInt)
+        // Use the {f} specifier which dispatches to value.format(writer)
+        std.debug.print("{f}", .{msg});
     } else {
         switch (@typeInfo(T)) {
             .int, .comptime_int => std.debug.print("{d}", .{msg}),
