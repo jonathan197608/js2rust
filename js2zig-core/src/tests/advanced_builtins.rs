@@ -354,8 +354,8 @@ return str.normalize("NFC");
 "#;
     let zig = transpile_and_check(js, "test_p6_string_normalize");
     assert!(
-        zig.contains("js_string.normalize(js_allocator.allocator()"),
-        "Expected 'js_string.normalize(js_allocator.allocator()' in:\n{}",
+        zig.contains("js_string_icu.normalize(js_allocator.allocator()"),
+        "Expected 'js_string_icu.normalize(js_allocator.allocator()' in:\n{}",
         zig
     );
 }
@@ -591,8 +591,8 @@ return str.toLocaleUpperCase();
 "#;
     let zig = transpile_and_check(js, "test_p6_string_to_locale_upper_case");
     assert!(
-        zig.contains("js_string.toLocaleUpper("),
-        "Expected 'js_string.toLocaleUpper(' in:\n{}",
+        zig.contains("js_string_icu.toLocaleUpper("),
+        "Expected 'js_string_icu.toLocaleUpper(' in:\n{}",
         zig
     );
 }
@@ -611,8 +611,8 @@ return str.toLocaleLowerCase();
 "#;
     let zig = transpile_and_check(js, "test_p6_string_to_locale_lower_case");
     assert!(
-        zig.contains("js_string.toLocaleLower("),
-        "Expected 'js_string.toLocaleLower(' in:\n{}",
+        zig.contains("js_string_icu.toLocaleLower("),
+        "Expected 'js_string_icu.toLocaleLower(' in:\n{}",
         zig
     );
 }
@@ -632,8 +632,8 @@ return str.localeCompare(other);
 "#;
     let zig = transpile_and_check(js, "test_p6_string_locale_compare");
     assert!(
-        zig.contains("js_string.localeCompare("),
-        "Expected 'js_string.localeCompare(' in:\n{}",
+        zig.contains("js_string_icu.localeCompare("),
+        "Expected 'js_string_icu.localeCompare(' in:\n{}",
         zig
     );
 }

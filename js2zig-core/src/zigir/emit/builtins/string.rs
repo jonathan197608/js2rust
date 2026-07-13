@@ -31,50 +31,56 @@ impl Emitter {
         }
 
         // Method dispatch: JS name → Zig runtime name + allocator + fallible.
-        let (zig_method, needs_allocator, is_fallible, min_args, max_args, opt_defaults): (
+        // ICU-dependent methods (localeCompare, normalize, toLocaleUpperCase,
+        // toLocaleLowerCase) are routed through js_string_icu instead of
+        // js_string. This module provides simplified implementations by default,
+        // and ICU4X-based implementations when needs_icu=true.
+        let (zig_method, needs_allocator, is_fallible, min_args, max_args, opt_defaults, module): (
             &str,
             bool,
             bool,
             usize,
             usize,
             &[&str],
+            &str,  // "js_string" or "js_string_icu"
         ) = match method {
             // ── No allocator, 0 args, non-fallible ──
-            "trim" => ("trim", false, false, 0, 0, &[]),
-            "trimStart" => ("trimStart", false, false, 0, 0, &[]),
-            "trimEnd" => ("trimEnd", false, false, 0, 0, &[]),
+            "trim" => ("trim", false, false, 0, 0, &[], "js_string"),
+            "trimStart" => ("trimStart", false, false, 0, 0, &[], "js_string"),
+            "trimEnd" => ("trimEnd", false, false, 0, 0, &[], "js_string"),
             // ── No allocator, 1 arg, non-fallible ──
-            "indexOf" => ("indexOf", false, false, 1, 1, &[]),
-            "includes" => ("includes", false, false, 1, 1, &[]),
-            "startsWith" => ("startsWith", false, false, 1, 1, &[]),
-            "endsWith" => ("endsWith", false, false, 1, 1, &[]),
-            "lastIndexOf" => ("lastIndexOf", false, false, 1, 1, &[]),
-            "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[]),
-            "codePointAt" => ("codePointAt", false, false, 1, 1, &[]),
+            "indexOf" => ("indexOf", false, false, 1, 1, &[], "js_string"),
+            "includes" => ("includes", false, false, 1, 1, &[], "js_string"),
+            "startsWith" => ("startsWith", false, false, 1, 1, &[], "js_string"),
+            "endsWith" => ("endsWith", false, false, 1, 1, &[], "js_string"),
+            "lastIndexOf" => ("lastIndexOf", false, false, 1, 1, &[], "js_string"),
+            "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[], "js_string"),
+            "codePointAt" => ("codePointAt", false, false, 1, 1, &[], "js_string"),
             // ── No allocator, 1-2 args, non-fallible ──
-            "slice" => ("slice", false, false, 1, 2, &["std.math.maxInt(i64)"]),
-            "substring" => ("substring", false, false, 1, 2, &["std.math.maxInt(i64)"]),
-            // ── No allocator, 0-1 arg, non-fallible ──
-            "localeCompare" => ("localeCompare", false, false, 0, 1, &[]),
+            "slice" => ("slice", false, false, 1, 2, &["std.math.maxInt(i64)"], "js_string"),
+            "substring" => ("substring", false, false, 1, 2, &["std.math.maxInt(i64)"], "js_string"),
+            // ── ICU-dependent: No allocator, 0-1 arg, non-fallible ──
+            "localeCompare" => ("localeCompare", false, false, 0, 1, &[], "js_string_icu"),
             // ── With allocator, 0 args, fallible ──
-            "toUpperCase" => ("toUpper", true, true, 0, 0, &[]),
-            "toLocaleUpperCase" => ("toLocaleUpper", true, true, 0, 0, &[]),
-            "toLowerCase" => ("toLower", true, true, 0, 0, &[]),
-            "toLocaleLowerCase" => ("toLocaleLower", true, true, 0, 0, &[]),
+            "toUpperCase" => ("toUpper", true, true, 0, 0, &[], "js_string"),
+            // ── ICU-dependent: With allocator, 0 args, fallible ──
+            "toLocaleUpperCase" => ("toLocaleUpper", true, true, 0, 0, &[], "js_string_icu"),
+            "toLowerCase" => ("toLower", true, true, 0, 0, &[], "js_string"),
+            "toLocaleLowerCase" => ("toLocaleLower", true, true, 0, 0, &[], "js_string_icu"),
             // ── With allocator, 1 arg, fallible ──
-            "charAt" => ("charAt", true, true, 1, 1, &[]),
-            "at" => ("at", true, true, 1, 1, &[]),
-            "concat" => ("concat", true, true, 1, 1, &[]),
-            "repeat" => ("repeat", true, true, 1, 1, &[]),
+            "charAt" => ("charAt", true, true, 1, 1, &[], "js_string"),
+            "at" => ("at", true, true, 1, 1, &[], "js_string"),
+            "concat" => ("concat", true, true, 1, 1, &[], "js_string"),
+            "repeat" => ("repeat", true, true, 1, 1, &[], "js_string"),
             // ── With allocator, 1 arg, fallible (returns ![][]const u8) ──
-            "split" => ("split", true, true, 1, 1, &[]),
+            "split" => ("split", true, true, 1, 1, &[], "js_string"),
             // ── With allocator, 2 args, fallible ──
-            "padStart" => ("padStart", true, true, 2, 2, &[]),
-            "padEnd" => ("padEnd", true, true, 2, 2, &[]),
-            "replace" => ("replace", true, true, 2, 2, &[]),
-            "replaceAll" => ("replaceAll", true, true, 2, 2, &[]),
-            // ── With allocator, 0-1 arg, fallible ──
-            "normalize" => ("normalize", true, true, 0, 1, &["\"NFC\""]),
+            "padStart" => ("padStart", true, true, 2, 2, &[], "js_string"),
+            "padEnd" => ("padEnd", true, true, 2, 2, &[], "js_string"),
+            "replace" => ("replace", true, true, 2, 2, &[], "js_string"),
+            "replaceAll" => ("replaceAll", true, true, 2, 2, &[], "js_string"),
+            // ── ICU-dependent: With allocator, 0-1 arg, fallible ──
+            "normalize" => ("normalize", true, true, 0, 1, &["\"NFC\""], "js_string_icu"),
             // ── Fallback ──
             _ => {
                 // Unknown string method — naive emission
@@ -83,11 +89,11 @@ impl Emitter {
             }
         };
 
-        // Emit: [try ]js_string.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])
+        // Emit: [try ]module.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])
         if is_fallible {
             self.write("try ");
         }
-        self.write(&format!("js_string.{}(", zig_method));
+        self.write(&format!("{}.{}(", module, zig_method));
         if needs_allocator {
             self.write("js_allocator.allocator(), ");
         }

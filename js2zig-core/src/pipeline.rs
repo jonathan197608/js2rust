@@ -591,6 +591,19 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                     || m.zig_code.contains("js_string_regex.")
             });
 
+            // ICU: detect calls to locale-sensitive String methods.
+            // The emitter generates js_string_icu.xxx calls for ICU-dependent
+            // methods (localeCompare, normalize, toLocaleUpper, toLocaleLower).
+            // When needs_icu=true, the ICU4X-based js_string_icu.zig (with host_icu_*
+            // extern fns) overwrites the simplified runtime version.
+            let needs_icu = per_file_modules.iter().any(|m| {
+                m.zig_code.contains("host_icu.")
+                    || m.zig_code.contains("js_string_icu.localeCompare")
+                    || m.zig_code.contains("js_string_icu.normalize")
+                    || m.zig_code.contains("js_string_icu.toLocaleUpper")
+                    || m.zig_code.contains("js_string_icu.toLocaleLower")
+            });
+
             let project_opts = crate::project::ProjectOptions {
                 name: project_name.clone(),
                 out_dir: out_dir.clone(),
@@ -607,7 +620,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 },
                 async_host_fn_names: async_host_fn_names.clone(),
                 needs_regex,
-                needs_icu: false, // TODO: implement ICU feature detection
+                needs_icu,
             };
 
             match crate::project::generate(&project_opts) {

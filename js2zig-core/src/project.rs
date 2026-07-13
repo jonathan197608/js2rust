@@ -21,7 +21,7 @@ pub struct ProjectOptions {
     /// Name of the Zig library (also the output directory name)
     pub name: String,
     /// Output directory (e.g. "out")
-    pub out_dir: std::path::PathBuf,
+    pub out_dir: PathBuf,
     /// Per-file Zig modules. Each entry is written as `{mod_name}.zig`, and lib.zig
     /// becomes a thin orchestrator that imports all per-file modules.
     pub per_file_code: Vec<PerFileModule>,
@@ -67,13 +67,13 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     fs::write(&zon_path, &zon_no_fp).map_err(|e| format!("write build.zig.zon: {}", e))?;
 
     // 2. build.zig
-    let build_zig = generate_build_zig(&opts.name, opts.needs_regex);
+    let build_zig = generate_build_zig(&opts.name, opts.needs_regex, opts.needs_icu);
     fs::write(project_dir.join("build.zig"), build_zig)
         .map_err(|e| format!("write build.zig: {}", e))?;
 
     // 3. Write per-file .zig files + orchestrator lib.zig
     for module in &opts.per_file_code {
-        let mod_zig = generate_module_zig(module, &opts.async_host_fn_names, opts.needs_regex);
+        let mod_zig = generate_module_zig(module, &opts.async_host_fn_names, opts.needs_regex, opts.needs_icu);
         let mod_path = src_dir.join(format!("{}.zig", module.mod_name));
         fs::write(&mod_path, mod_zig)
             .map_err(|e| format!("write {}.zig: {}", mod_path.display(), e))?;
@@ -166,6 +166,15 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
             .map_err(|e| format!("write host_regex_stubs.zig: {}", e))?;
     }
 
+    // 3.7 src/host_icu_stubs.zig — stub host ICU C ABI implementations
+    // for zig test (real implementations are in js2rust-bridge, linked by Rust).
+    // Only generated when ICU features are used.
+    if opts.needs_icu {
+        let stub_content = generate_host_icu_stubs();
+        fs::write(src_dir.join("host_icu_stubs.zig"), stub_content)
+            .map_err(|e| format!("write host_icu_stubs.zig: {}", e))?;
+    }
+
     // 4. Copy runtime/ if it exists (always overwrite to pick up runtime changes)
     if let Some(ref rt_dir) = opts.runtime_dir
         && rt_dir.exists()
@@ -180,6 +189,15 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
             if !rt_dst.join("js_runtime.zig").exists() {
                 return Err(format!("copy {}: {}", rt_dst.display(), e));
             }
+        }
+
+        // 4.1 When needs_icu=true, overwrite js_string_icu.zig with the
+        // ICU4X-based version (extern fn declarations + host function calls).
+        // The simplified version (copied from runtime/) is used when needs_icu=false.
+        if opts.needs_icu {
+            let icu_runtime = generate_js_string_icu_icu();
+            fs::write(rt_dst.join("js_string_icu.zig"), icu_runtime)
+                .map_err(|e| format!("write js_string_icu.zig: {}", e))?;
         }
     }
 
@@ -324,7 +342,7 @@ export fn host_regex_match_all(
     .to_string()
 }
 
-pub fn generate_build_zig(lib_name: &str, needs_regex: bool) -> String {
+pub fn generate_build_zig(lib_name: &str, needs_regex: bool, needs_icu: bool) -> String {
     let regex_stub_section = if needs_regex {
         r#"
     // Stub library: provides host_regex_* C ABI symbols for zig test.
@@ -347,8 +365,36 @@ pub fn generate_build_zig(lib_name: &str, needs_regex: bool) -> String {
         String::new()
     };
 
+    let icu_stub_section = if needs_icu {
+        r#"
+    // Stub library: provides host_icu_* C ABI symbols for zig test.
+    // When Rust drives the final executable build it links its own real
+    // implementations (js2rust-bridge native_icu.rs).  The stubs only
+    // exist so `zig build test` can produce a standalone test binary.
+    const icu_stub_mod = b.createModule(.{
+        .root_source_file = b.path("src/host_icu_stubs.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const icu_stub_lib = b.addLibrary(.{
+        .name = "host_icu_stubs",
+        .linkage = .static,
+        .root_module = icu_stub_mod,
+    });
+"#.to_string()
+    } else {
+        String::new()
+    };
+
     let test_link_stub = if needs_regex {
         "    test_mod.linkLibrary(stub_lib);\n"
+    } else {
+        ""
+    };
+
+    let test_link_icu_stub = if needs_icu {
+        "    test_mod.linkLibrary(icu_stub_lib);\n"
     } else {
         ""
     };
@@ -379,10 +425,10 @@ pub fn build(b: *std.Build) void {{
     }});
     lib.bundle_compiler_rt = true;
     b.installArtifact(lib);
-{regex_stub_section}
+{regex_stub_section}{icu_stub_section}
     // Test step
-    // Create a test-only module that links the stub library, so the stub
-    // symbols (host_regex_*) are available during `zig build test` but
+    // Create a test-only module that links the stub libraries, so the stub
+    // symbols (host_regex_*, host_icu_*) are available during `zig build test` but
     // do NOT pollute the main library artifact linked by Rust.
     const test_mod = b.createModule(.{{
         .root_source_file = b.path("src/lib.zig"),
@@ -390,7 +436,7 @@ pub fn build(b: *std.Build) void {{
         .optimize = optimize,
         .link_libc = true,
     }});
-{test_link_stub}    const tests = b.addTest(.{{
+{test_link_stub}{test_link_icu_stub}    const tests = b.addTest(.{{
         .root_module = test_mod,
     }});
     const run_tests = b.addRunArtifact(tests);
@@ -421,7 +467,7 @@ pub fn build(b: *std.Build) void {{
 }
 
 /// Emit the standard runtime @import preamble (std, allocator, tier-3 runtime libs).
-fn push_runtime_imports(out: &mut String, needs_regex: bool) {
+fn push_runtime_imports(out: &mut String, needs_regex: bool, _needs_icu: bool) {
     out.push_str("const std = @import(\"std\");\n");
     out.push_str("const builtin = @import(\"builtin\");\n");
     out.push_str("const Io = std.Io;\n");
@@ -433,6 +479,7 @@ fn push_runtime_imports(out: &mut String, needs_regex: bool) {
     out.push('\n');
     out.push_str("// Tier-3 runtime library imports\n");
     out.push_str("const js_string = @import(\"js_runtime/js_string.zig\");\n");
+    out.push_str("const js_string_icu = @import(\"js_runtime/js_string_icu.zig\");\n");
     out.push_str("const js_console = @import(\"js_runtime/js_console.zig\");\n");
     out.push_str("const js_json = @import(\"js_runtime/js_json.zig\");\n");
     out.push_str("const js_array = @import(\"js_runtime/js_array.zig\");\n");
@@ -469,10 +516,10 @@ fn push_runtime_imports(out: &mut String, needs_regex: bool) {
 ///   ...
 ///   // Generated code
 ///   export fn add(...) ...
-fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String], needs_regex: bool) -> String {
+fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String], needs_regex: bool, needs_icu: bool) -> String {
     let mut out = String::new();
     out.push_str(&format!("// Auto-generated from {}.js\n", module.mod_name));
-    push_runtime_imports(&mut out, needs_regex);
+    push_runtime_imports(&mut out, needs_regex, needs_icu);
 
     // Host function imports (if this module calls host functions or async fns exist)
     if (needs_regex && module.zig_code.contains("host_regex."))
@@ -528,7 +575,7 @@ fn generate_module_zig(module: &PerFileModule, async_host_fn_names: &[String], n
 fn generate_orchestrator_lib(opts: &ProjectOptions) -> String {
     let mut out = String::new();
     out.push_str("// Auto-generated by js2rust (orchestrator)\n");
-    push_runtime_imports(&mut out, opts.needs_regex);
+    push_runtime_imports(&mut out, opts.needs_regex, opts.needs_icu);
 
     // Regex host function declarations
     if opts.needs_regex {
@@ -733,4 +780,138 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Generate `host_icu_stubs.zig` — stub implementations of the host C ABI
+/// ICU functions so that `zig build test` can link a standalone test binary.
+/// The real implementations live in `js2rust-bridge` (native_icu.rs) and are
+/// linked when Rust drives the final executable build.
+pub fn generate_host_icu_stubs() -> String {
+    r#"//! Stub implementations of host C ABI ICU functions for zig test.
+//! These provide linkable symbols so that zig test can produce a standalone
+//! test binary without the Rust-side implementations.  The real implementations
+//! live in js2rust-bridge (native_icu.rs) and are linked when Rust drives
+//! the final executable build.  These stubs are only used by `zig build test`.
+
+const JsStr = extern struct { ptr: [*]const u8, len: isize };
+
+export fn host_icu_locale_compare(
+    a_ptr: [*]const u8,
+    a_len: usize,
+    b_ptr: [*]const u8,
+    b_len: usize,
+) callconv(.c) i64 {
+    _ = a_ptr;
+    _ = a_len;
+    _ = b_ptr;
+    _ = b_len;
+    return 0;
+}
+
+export fn host_icu_normalize(
+    input_ptr: [*]const u8,
+    input_len: usize,
+    form_ptr: [*]const u8,
+    form_len: usize,
+) callconv(.c) JsStr {
+    _ = input_ptr;
+    _ = input_len;
+    _ = form_ptr;
+    _ = form_len;
+    return .{ .ptr = undefined, .len = 0 };
+}
+
+export fn host_icu_to_locale_upper_case(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) callconv(.c) JsStr {
+    _ = input_ptr;
+    _ = input_len;
+    return .{ .ptr = undefined, .len = 0 };
+}
+
+export fn host_icu_to_locale_lower_case(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) callconv(.c) JsStr {
+    _ = input_ptr;
+    _ = input_len;
+    return .{ .ptr = undefined, .len = 0 };
+}
+"#
+    .to_string()
+}
+
+/// Generate the ICU4X-based `js_string_icu.zig` that uses host_icu_* C ABI
+/// functions for proper locale-sensitive string operations.
+/// This version overwrites the simplified runtime version when needs_icu=true.
+fn generate_js_string_icu_icu() -> String {
+    r#"//! JS String ICU-dependent method implementations for Zig (ICU4X version).
+//! These functions rely on host_icu_* C ABI symbols provided by
+//! js2rust-bridge (native_icu.rs) at link time.
+//!
+//! This file overwrites the simplified runtime version when needs_icu = true.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const JsAny = @import("jsany.zig").JsAny;
+
+// ── Host C ABI function declarations ──
+
+extern fn host_icu_locale_compare(
+    a_ptr: [*]const u8,
+    a_len: usize,
+    b_ptr: [*]const u8,
+    b_len: usize,
+) callconv(.c) i64;
+
+extern fn host_icu_normalize(
+    input_ptr: [*]const u8,
+    input_len: usize,
+    form_ptr: [*]const u8,
+    form_len: usize,
+) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
+
+extern fn host_icu_to_locale_upper_case(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
+
+extern fn host_icu_to_locale_lower_case(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
+
+/// Locale-sensitive string comparison via ICU4X Collator.
+/// Returns -1 if self < other, 0 if equal, 1 if self > other.
+pub fn localeCompare(a: []const u8, b: []const u8) i64 {
+    return host_icu_locale_compare(a.ptr, a.len, b.ptr, b.len);
+}
+
+/// Normalize Unicode string using ICU4X Normalizer.
+/// Supports NFC (default), NFD, NFKC, NFKD normalization forms.
+pub fn normalize(alloc: Allocator, s: []const u8, form: []const u8) ![]const u8 {
+    const result = host_icu_normalize(s.ptr, s.len, form.ptr, form.len);
+    if (result.len == 0) return &[0]u8{};
+    const bytes = result.ptr[0..@intCast(result.len)];
+    return try alloc.dupe(u8, bytes);
+}
+
+/// Convert string to locale-specific uppercase via ICU4X CaseMapper.
+pub fn toLocaleUpper(alloc: Allocator, s: []const u8) ![]const u8 {
+    const result = host_icu_to_locale_upper_case(s.ptr, s.len);
+    if (result.len == 0) return &[0]u8{};
+    const bytes = result.ptr[0..@intCast(result.len)];
+    return try alloc.dupe(u8, bytes);
+}
+
+/// Convert string to locale-specific lowercase via ICU4X CaseMapper.
+pub fn toLocaleLower(alloc: Allocator, s: []const u8) ![]const u8 {
+    const result = host_icu_to_locale_lower_case(s.ptr, s.len);
+    if (result.len == 0) return &[0]u8{};
+    const bytes = result.ptr[0..@intCast(result.len)];
+    return try alloc.dupe(u8, bytes);
+}
+"#
+    .to_string()
 }

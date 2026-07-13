@@ -24,6 +24,8 @@
 mod config;
 #[cfg(feature = "regex")]
 pub mod native_regex;
+#[cfg(feature = "icu")]
+pub mod native_icu;
 pub mod sdk;
 
 pub use js2rust_bridge_macro::{host_fn, js2rust_bridge};
@@ -195,7 +197,9 @@ fn link_from_cache(cache_dir: &std::path::Path) {
             if lib_dir.exists()
                 && let Some(dir_name) = entry.file_name().to_str()
             {
-                if dir_name == "host_regex.zig" {
+                if dir_name == "host_regex.zig" || dir_name == "host_icu.zig"
+                    || dir_name == "host_regex_stubs.zig" || dir_name == "host_icu_stubs.zig"
+                {
                     continue;
                 }
                 println!("cargo:rustc-link-search=native={}", lib_dir.display());

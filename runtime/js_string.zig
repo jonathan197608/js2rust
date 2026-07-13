@@ -761,40 +761,6 @@ test "padEnd no-op" {
     try std.testing.expectEqualStrings("abc", result);
 }
 
-/// Locale-sensitive string comparison (simplified: byte-wise comparison).
-/// Returns -1 if self < other, 0 if equal, 1 if self > other.
-/// Note: This is a simplified implementation that uses byte-wise comparison.
-/// For proper locale-sensitive comparison, an ICU library would be needed.
-pub fn localeCompare(self: []const u8, other: []const u8) i64 {
-    return switch (std.mem.order(u8, self, other)) {
-        .lt => -1,
-        .eq => 0,
-        .gt => 1,
-    };
-}
-
-/// Normalize Unicode string (stub: returns a copy of the input).
-/// In a full implementation, this would apply Unicode normalization form (NFC, NFD, NFKC, NFKD).
-/// Currently this is a pass-through stub.
-pub fn normalize(alloc: Allocator, s: []const u8, form: []const u8) ![]const u8 {
-    _ = form; // Ignore normalization form for now
-    return try alloc.dupe(u8, s);
-}
-
-/// Convert string to locale-specific uppercase (simplified: uses ASCII toUpper).
-/// Note: This is a simplified implementation. For proper locale-specific casing,
-/// an ICU library would be needed.
-pub fn toLocaleUpper(alloc: Allocator, s: []const u8) ![]const u8 {
-    return toUpper(alloc, s);
-}
-
-/// Convert string to locale-specific lowercase (simplified: uses ASCII toLower).
-/// Note: This is a simplified implementation. For proper locale-specific casing,
-/// an ICU library would be needed.
-pub fn toLocaleLower(alloc: Allocator, s: []const u8) ![]const u8 {
-    return toLower(alloc, s);
-}
-
 /// Replace all occurrences of old with new. Returns newly allocated string.
 pub fn replaceAll(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
     return std.mem.replaceOwned(u8, alloc, s, old, new);
@@ -878,30 +844,6 @@ pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
         }
     }
     return result;
-}
-
-test "localeCompare" {
-    try std.testing.expectEqual(@as(i64, -1), localeCompare("apple", "banana"));
-    try std.testing.expectEqual(@as(i64, 0), localeCompare("apple", "apple"));
-    try std.testing.expectEqual(@as(i64, 1), localeCompare("banana", "apple"));
-}
-
-test "normalize stub" {
-    const result = try normalize(std.testing.allocator, "café", "NFC");
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqualStrings("café", result);
-}
-
-test "toLocaleUpper" {
-    const result = try toLocaleUpper(std.testing.allocator, "hello");
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqualStrings("HELLO", result);
-}
-
-test "toLocaleLower" {
-    const result = try toLocaleLower(std.testing.allocator, "HELLO");
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqualStrings("hello", result);
 }
 
 test "replaceAll" {
