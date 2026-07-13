@@ -13,5 +13,6 @@ js_files = [
     "for_in_struct.js",
 ]
 
-[build]
-run_zig_build = true
+# [build]
+# force_rebuild = false
+# run_zig_build = true

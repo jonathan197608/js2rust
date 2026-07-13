@@ -2,8 +2,9 @@
 js_dir = "js_src"
 js_files = ["main.js"]
 
-[build]
-run_zig_build = true
+# [build]
+# force_rebuild = false
+# run_zig_build = true
 
 [[host_functions]]
 name = "host_add"

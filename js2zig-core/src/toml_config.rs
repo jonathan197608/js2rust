@@ -43,13 +43,13 @@ fn default_js_dir() -> String {
 }
 
 /// `[build]` section — controls build.rs behavior.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct BuildSection {
     /// Force rebuild (skip incremental cache). Default: false.
     #[serde(default)]
     pub force_rebuild: bool,
-    /// Whether to run `zig build` after transpilation. Default: false.
-    #[serde(default)]
+    /// Whether to run `zig build` after transpilation. Default: true.
+    #[serde(default = "default_run_zig_build")]
     pub run_zig_build: bool,
     /// Zig optimization level passed as `-Doptimize=...` to `zig build`.
     ///
@@ -58,6 +58,20 @@ pub struct BuildSection {
     /// Default: `None` (auto-detect from Cargo profile).
     #[serde(default)]
     pub zig_optimize: Option<String>,
+}
+
+fn default_run_zig_build() -> bool {
+    true
+}
+
+impl Default for BuildSection {
+    fn default() -> Self {
+        Self {
+            force_rebuild: false,
+            run_zig_build: true,
+            zig_optimize: None,
+        }
+    }
 }
 
 /// A single `[[host_functions]]` entry.
