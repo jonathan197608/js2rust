@@ -148,7 +148,9 @@ unsafe fn dupe_to_arena(s: &str) -> *mut u8 {
 pub struct JsStr {
     /// Pointer to the string data in Zig Arena.
     pub ptr: *const u8,
-    /// String length (non-negative for success).
+    /// String length (non-negative for success, negative = error message;
+    /// `isize` matches Zig's `extern struct` ABI for StrRet where the sign
+    /// bit distinguishes data from error).
     pub len: isize,
 }
 
@@ -219,7 +221,8 @@ impl JsStr {
 pub struct JsStrField {
     /// Pointer to the string data in Zig Arena.
     pub ptr: *const u8,
-    /// String length in bytes.
+    /// String length in bytes (`usize` — struct fields never carry error state,
+    /// unlike `JsStr.len` which uses `isize` for the sign-bit error convention).
     pub len: usize,
 }
 

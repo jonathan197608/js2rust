@@ -945,6 +945,41 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::MapValues => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
         BuiltinCall::MapEntries => Some(ZigType::ArrayList(Box::new(ZigType::ArrayList(Box::new(ZigType::JsAny))))),
 
+        // String padding methods
+        BuiltinCall::StringPadStart | BuiltinCall::StringPadEnd => Some(ZigType::Str),
+
+        // Map/Set mutation methods that return the receiver (for chaining)
+        BuiltinCall::MapSet | BuiltinCall::SetAdd => Some(ZigType::JsAny), // returns receiver
+
+        // Array methods returning the mutated array (JsAny — type depends on input)
+        BuiltinCall::ArrayReverse
+        | BuiltinCall::ArraySort
+        | BuiltinCall::ArrayCopyWithin
+        | BuiltinCall::ArrayFill => Some(ZigType::JsAny),
+
+        // Array methods returning a new array
+        BuiltinCall::ArraySlice | BuiltinCall::ArrayConcat => {
+            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+        }
+        BuiltinCall::ArraySplice => Some(ZigType::ArrayList(Box::new(ZigType::Anytype))), // deleted elements
+        BuiltinCall::ArrayFilter => Some(ZigType::ArrayList(Box::new(ZigType::Anytype))),
+        BuiltinCall::ArrayMap | BuiltinCall::ArrayFlatMap | BuiltinCall::ArrayFlat => {
+            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+        }
+
+        // Array methods returning an element or unknown type
+        BuiltinCall::ArrayPop | BuiltinCall::ArrayShift => Some(ZigType::JsAny),
+        BuiltinCall::ArrayAt | BuiltinCall::ArrayFind | BuiltinCall::ArrayFindLast => Some(ZigType::JsAny),
+        BuiltinCall::ArrayReduce | BuiltinCall::ArrayReduceRight => Some(ZigType::JsAny), // depends on callback
+
+        // ES2023 immutable array methods — return new array
+        BuiltinCall::ArrayWith | BuiltinCall::ArrayToReversed | BuiltinCall::ArrayToSorted | BuiltinCall::ArrayToSpliced => {
+            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+        }
+
+        // TypedArray view method
+        BuiltinCall::TypedArraySubarray => Some(ZigType::JsAny), // returns a view — type depends on input
+
         // Methods that return void or complex types — can't infer
         _ => None,
     }

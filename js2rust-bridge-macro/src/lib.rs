@@ -146,19 +146,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     let project_result = js2zig_core::transpile_project(&project_config).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!(
-                "js2rust_bridge: transpilation failed for '{}': {}",
-                project_config
-                    .js_dir
-                    .join(
-                        project_config
-                            .js_files
-                            .first()
-                            .unwrap_or(&"unknown".to_string())
-                    )
-                    .display(),
-                e
-            ),
+            format!("js2rust_bridge: transpilation failed for '{project_name}': {e}"),
         )
         .to_compile_error()
     })?;
@@ -190,19 +178,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     generated.parse::<TokenStream>().map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!(
-                "js2rust_bridge: internal error generating bindings for '{}': {}",
-                project_config
-                    .js_dir
-                    .join(
-                        project_config
-                            .js_files
-                            .first()
-                            .unwrap_or(&"unknown".to_string())
-                    )
-                    .display(),
-                e
-            ),
+            format!("js2rust_bridge: internal error generating bindings for '{project_name}': {e}"),
         )
         .to_compile_error()
     })

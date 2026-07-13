@@ -59,7 +59,7 @@ pub fn build() {
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by Cargo");
     let cache_dir = PathBuf::from(&manifest_dir).join(".js2zig-cache");
 
-    // All JS files are resolved from config (entry + additional roots)
+    // All JS files are resolved from config (js_dir + js_files)
     let js_dir: PathBuf = PathBuf::from(&manifest_dir).join(&config.project.js_dir);
     let js_files = &config.project.js_files;
 
@@ -83,12 +83,6 @@ pub fn build() {
     let diagnostics_file = cache_dir.join(".last_emitted_diagnostics.json");
     println!("cargo:rerun-if-changed={}", diagnostics_file.display());
 
-    // Derive js_dir and js_files for ProjectConfig from TOML fields.
-    // js_dir is an absolute path (manifest_dir + config.project.js_dir);
-    // js_files are plain filenames from TOML.
-    let js_dir_abs = js_dir.clone();
-    let js_files_vec: Vec<String> = js_files.clone();
-
     let host_config = config.to_host_config();
 
     // Determine Zig optimization level: TOML override > Cargo PROFILE auto-detect.
@@ -102,8 +96,8 @@ pub fn build() {
     });
 
     let project_config = js2zig_core::ProjectConfig {
-        js_dir: js_dir_abs,
-        js_files: js_files_vec,
+        js_dir,
+        js_files: js_files.clone(),
         out_dir: cache_dir.clone(),
         host_config,
         build: js2zig_core::BuildConfig {

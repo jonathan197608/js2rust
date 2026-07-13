@@ -293,9 +293,6 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 }
             }
 
-            // Additional core files (multi-root): treat their exports as CABI-exportable too.
-            let additional_core_set: HashSet<String> = js_files.iter().skip(1).cloned().collect();
-
             let mut has_any_error = false;
 
             for member in &analysis.members {
@@ -327,7 +324,8 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                         .get(member)
                         .cloned()
                         .unwrap_or_default()
-                } else if *member == *primary_root || additional_core_set.contains(member) {
+                } else if *member == *primary_root || js_files.iter().skip(1).any(|f| *f == *member)
+                {
                     analysis
                         .exported_names
                         .get(member)

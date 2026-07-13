@@ -158,9 +158,9 @@ impl Default for ProjectConfig {
 /// Result of transpiling a project.
 #[derive(Debug, Default)]
 pub struct ProjectResult {
-    /// Sanitized project name (derived from entry file stem).
+    /// Sanitized project name (derived from primary root file stem).
     pub project_name: String,
-    /// Whether this is a test project (entry file starts with "test_").
+    /// Whether this is a test project (primary root file starts with "test_").
     pub is_test: bool,
     /// C ABI export metadata (serialized JSON).
     pub cabi_exports_json: String,
