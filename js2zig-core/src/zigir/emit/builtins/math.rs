@@ -140,7 +140,7 @@ impl Emitter {
                 }
                 self.write(")); break :");
                 self.write(&blk);
-                self.write(" if (__sign_v > 0) @as(f64, 1.0) else if (__sign_v < 0) @as(f64, -1.0) else if (__sign_v == 0) @as(f64, 0.0) else std.math.nan(f64); }})");
+                self.write(" if (__sign_v > 0) @as(f64, 1.0) else if (__sign_v < 0) @as(f64, -1.0) else if (__sign_v == 0) @as(f64, 0.0) else std.math.nan(f64); })");
             }
             // Global NaN constant → std.math.nan(f64)
             "nan_f64" => {

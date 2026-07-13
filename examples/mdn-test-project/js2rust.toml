@@ -212,6 +212,7 @@ js_files = [
     "test_builtins_frag_224.js",
     "test_builtins_frag_225.js",
     "test_builtins_frag_226.js",
+    "test_builtins_frag_227.js",
 ]
 
 [build]
