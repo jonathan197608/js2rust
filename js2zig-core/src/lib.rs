@@ -120,9 +120,6 @@ pub struct ProjectConfig {
     /// Valid values: `"Debug"`, `"ReleaseSafe"`, `"ReleaseFast"`, `"ReleaseSmall"`.
     /// If `None`, the caller should infer from the Cargo profile automatically.
     pub zig_optimize: Option<String>,
-    /// Enable ICU4X-based implementations for ICU-dependent string methods.
-    /// When false (default), the simplified runtime version is used.
-    pub icu: bool,
     /// When true, the caller is a Cargo build script (`build.rs`).
     /// This controls progress output only (project headers, cache status,
     /// "Generated:" paths, "zig build: OK", etc.) which Cargo filters
@@ -148,7 +145,6 @@ impl Default for ProjectConfig {
             force_rebuild: false,
             run_zig_build: false,
             zig_optimize: None,
-            icu: false,
             is_build_script: false,
         }
     }

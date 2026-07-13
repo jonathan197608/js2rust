@@ -50,14 +50,6 @@ pub struct BuildSection {
     /// Default: `None` (auto-detect from Cargo profile).
     #[serde(default)]
     pub zig_optimize: Option<String>,
-    /// Enable ICU4X-based implementations for ICU-dependent string methods
-    /// (localeCompare, normalize, toLocaleUpperCase, toLocaleLowerCase).
-    /// When `true`, js_string_icu.zig is overwritten with the ICU4X version
-    /// that delegates to host_icu_* C ABI functions provided by js2rust-bridge.
-    /// When `false` (default), the simplified runtime version is used, which
-    /// provides locale-unaware fallbacks suitable for transpiler testing.
-    #[serde(default)]
-    pub icu: bool,
 }
 
 /// A single `[[host_functions]]` entry.
