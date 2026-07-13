@@ -22,10 +22,10 @@
 // re-runs the build script when any input changes.
 
 mod config;
-#[cfg(feature = "regex")]
-pub mod native_regex;
 #[cfg(feature = "icu")]
 pub mod native_icu;
+#[cfg(feature = "regex")]
+pub mod native_regex;
 pub mod sdk;
 
 pub use js2rust_bridge_macro::{host_fn, js2rust_bridge};
@@ -117,6 +117,7 @@ pub fn build() {
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
         zig_optimize: Some(zig_optimize),
+        icu: config.build.icu,
         is_build_script: true, // build.rs context — show progress + emit rerun-if-changed
     };
     match js2zig_core::transpile_project(&project_config) {
@@ -197,8 +198,10 @@ fn link_from_cache(cache_dir: &std::path::Path) {
             if lib_dir.exists()
                 && let Some(dir_name) = entry.file_name().to_str()
             {
-                if dir_name == "host_regex.zig" || dir_name == "host_icu.zig"
-                    || dir_name == "host_regex_stubs.zig" || dir_name == "host_icu_stubs.zig"
+                if dir_name == "host_regex.zig"
+                    || dir_name == "host_icu.zig"
+                    || dir_name == "host_regex_stubs.zig"
+                    || dir_name == "host_icu_stubs.zig"
                 {
                     continue;
                 }

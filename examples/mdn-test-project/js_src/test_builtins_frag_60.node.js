@@ -6,8 +6,11 @@
 function testBuiltins_frag_60() {
     try {
 
-        "foo".normalize("nfc"); // RangeError
-        "foo".normalize(" NFC "); // RangeError
+        // normalize: invalid form arguments (should throw RangeError in full impl)
+        const r1 = "foo".normalize("nfc"); // Node: throws RangeError
+        const r2 = "foo".normalize(" NFC "); // Node: throws RangeError
+
+        console.log(r1, r2);
         } catch (e) {
         console.error(`[testBuiltins_frag_60] error: ${e.message}`);
     }

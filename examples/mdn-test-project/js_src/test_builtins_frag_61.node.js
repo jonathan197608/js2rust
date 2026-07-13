@@ -6,7 +6,10 @@
 function testBuiltins_frag_61() {
     try {
 
-        "foo".normalize("NFC"); // 'foo'
+        // normalize: NFC form returns input string
+        const r1 = "foo".normalize("NFC"); // 'foo'
+
+        console.log(r1);
         } catch (e) {
         console.error(`[testBuiltins_frag_61] error: ${e.message}`);
     }

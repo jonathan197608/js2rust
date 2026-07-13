@@ -42,7 +42,7 @@ impl Emitter {
             usize,
             usize,
             &[&str],
-            &str,  // "js_string" or "js_string_icu"
+            &str, // "js_string" or "js_string_icu"
         ) = match method {
             // ── No allocator, 0 args, non-fallible ──
             "trim" => ("trim", false, false, 0, 0, &[], "js_string"),
@@ -57,8 +57,24 @@ impl Emitter {
             "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[], "js_string"),
             "codePointAt" => ("codePointAt", false, false, 1, 1, &[], "js_string"),
             // ── No allocator, 1-2 args, non-fallible ──
-            "slice" => ("slice", false, false, 1, 2, &["std.math.maxInt(i64)"], "js_string"),
-            "substring" => ("substring", false, false, 1, 2, &["std.math.maxInt(i64)"], "js_string"),
+            "slice" => (
+                "slice",
+                false,
+                false,
+                1,
+                2,
+                &["std.math.maxInt(i64)"],
+                "js_string",
+            ),
+            "substring" => (
+                "substring",
+                false,
+                false,
+                1,
+                2,
+                &["std.math.maxInt(i64)"],
+                "js_string",
+            ),
             // ── ICU-dependent: No allocator, 0-1 arg, non-fallible ──
             "localeCompare" => ("localeCompare", false, false, 0, 1, &[], "js_string_icu"),
             // ── With allocator, 0 args, fallible ──
@@ -89,10 +105,11 @@ impl Emitter {
             }
         };
 
-        // Emit: [try ]module.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])
-        if is_fallible {
-            self.write("try ");
-        }
+        // Emit: module.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])[ catch @panic("OOM: string method")]
+        // Fallible string methods use catch @panic instead of try, consistent with
+        // regex methods (match/matchAll/search), BigInt init, and Map/Set operations.
+        // try would require the enclosing function to return an error union, which
+        // the transpiler does not currently propagate from builtin calls.
         self.write(&format!("{}.{}(", module, zig_method));
         if needs_allocator {
             self.write("js_allocator.allocator(), ");
@@ -117,7 +134,11 @@ impl Emitter {
                 }
             }
         }
-        self.write(")");
+        if is_fallible {
+            self.write(") catch @panic(\"OOM: string method\")");
+        } else {
+            self.write(")");
+        }
     }
 
     /// Shared by match/matchAll: emit `js_string_regex.{method}(js_allocator.allocator(), receiver, pattern_expr) catch @panic(...)`
@@ -194,19 +215,28 @@ impl Emitter {
         match regex_info {
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
-                    self.write(&format!("host_regex.regex_search({}.pattern, {})", var, receiver));
+                    self.write(&format!(
+                        "host_regex.regex_search({}.pattern, {})",
+                        var, receiver
+                    ));
                 }
             }
             Some(ri) => {
                 if let Some(pattern) = &ri.pattern {
-                    self.write(&format!("host_regex.regex_search(\"{}\", {})", pattern, receiver));
+                    self.write(&format!(
+                        "host_regex.regex_search(\"{}\", {})",
+                        pattern, receiver
+                    ));
                 }
             }
             None => {
                 // Non-regex argument: render the first arg as a string pattern
                 if let Some(arg) = args.first() {
                     let pattern = Self::emit_expr_inline(arg);
-                    self.write(&format!("host_regex.regex_search({}, {})", pattern, receiver));
+                    self.write(&format!(
+                        "host_regex.regex_search({}, {})",
+                        pattern, receiver
+                    ));
                 } else {
                     self.write(&format!("host_regex.regex_search(\"\", {})", receiver));
                 }

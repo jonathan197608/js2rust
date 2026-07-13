@@ -144,6 +144,7 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
         force_rebuild: config.build.force_rebuild,
         run_zig_build: config.build.run_zig_build,
         zig_optimize: Some(zig_optimize),
+        icu: config.build.icu,
         is_build_script: false, // proc-macro context — suppress all stdout/stderr
     };
 

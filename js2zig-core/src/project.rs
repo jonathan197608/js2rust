@@ -51,6 +51,11 @@ pub struct ProjectOptions {
     /// Whether the transpiled JS code uses ICU-dependent features
     /// (localeCompare, normalize, toLocaleUpperCase, toLocaleLowerCase)
     pub needs_icu: bool,
+    /// Whether to use ICU4X-based implementations for ICU-dependent features.
+    /// When false (default), the simplified runtime version is used.
+    /// When true, js_string_icu.zig is overwritten with the ICU4X version
+    /// and host_icu_stubs.zig is generated for zig test.
+    pub icu: bool,
 }
 
 /// Generate the full Zig library project.
@@ -67,7 +72,7 @@ pub fn generate(opts: &ProjectOptions) -> Result<(), String> {
     fs::write(&zon_path, &zon_no_fp).map_err(|e| format!("write build.zig.zon: {}", e))?;
 
     // 2. build.zig
-    let build_zig = generate_build_zig(&opts.name, opts.needs_regex, opts.needs_icu);
+    let build_zig = generate_build_zig(&opts.name, opts.needs_regex, opts.icu);
     fs::write(project_dir.join("build.zig"), build_zig)
         .map_err(|e| format!("write build.zig: {}", e))?;
 
@@ -134,8 +139,8 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
 
     // 3.7 src/host_icu_stubs.zig — stub host ICU C ABI implementations
     // for zig test (real implementations are in js2rust-bridge, linked by Rust).
-    // Only generated when ICU features are used.
-    if opts.needs_icu {
+    // Only generated when ICU4X is explicitly enabled via [build] icu = true.
+    if opts.icu {
         let stub_content = generate_host_icu_stubs();
         fs::write(src_dir.join("host_icu_stubs.zig"), stub_content)
             .map_err(|e| format!("write host_icu_stubs.zig: {}", e))?;
@@ -157,10 +162,11 @@ pub fn regex_search(pattern: []const u8, subject: []const u8) i64 {
             }
         }
 
-        // 4.1 When needs_icu=true, overwrite js_string_icu.zig with the
+        // 4.1 When icu=true (explicit config), overwrite js_string_icu.zig with the
         // ICU4X-based version (extern fn declarations + host function calls).
-        // The simplified version (copied from runtime/) is used when needs_icu=false.
-        if opts.needs_icu {
+        // The simplified version (copied from runtime/) is used when icu=false (default),
+        // even if ICU methods are detected in the code.
+        if opts.icu {
             let icu_runtime = generate_js_string_icu_icu();
             fs::write(rt_dst.join("js_string_icu.zig"), icu_runtime)
                 .map_err(|e| format!("write js_string_icu.zig: {}", e))?;

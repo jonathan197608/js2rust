@@ -205,6 +205,12 @@ js_files = [
     "js_src/test_builtins_frag_172.js",
     "js_src/test_builtins_frag_175.js",
     "js_src/test_builtins_frag_179.js",
+    "js_src/test_builtins_frag_60.js",
+    "js_src/test_builtins_frag_61.js",
+    "js_src/test_builtins_frag_223.js",
+    "js_src/test_builtins_frag_224.js",
+    "js_src/test_builtins_frag_225.js",
+    "js_src/test_builtins_frag_226.js",
 ]
 
 [build]

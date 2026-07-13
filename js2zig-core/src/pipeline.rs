@@ -621,6 +621,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
                 async_host_fn_names: async_host_fn_names.clone(),
                 needs_regex,
                 needs_icu,
+                icu: config.icu,
             };
 
             match crate::project::generate(&project_opts) {
