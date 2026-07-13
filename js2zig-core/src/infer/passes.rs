@@ -590,8 +590,7 @@ impl TypeInferrer {
                                 self.array_element_types
                                     .insert(name.to_string(), (**elem_ty).clone());
                             }
-                            // Track Set variables so the Emitter can dispatch
-                            // MapKeys/MapValues/MapEntries → SetKeys/SetValues/SetEntries.
+                            // Track Set variables for future Set-specific dispatch.
                             if let ZigType::NamedStruct(ref name_str) = ty
                                 && name_str == "Set"
                             {

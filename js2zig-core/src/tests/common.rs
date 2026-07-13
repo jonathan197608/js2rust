@@ -39,6 +39,8 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
     let needs_js_symbol = zig_code.contains("js_symbol.") || zig_code.contains("JsSymbol");
     let needs_js_bigint = zig_code.contains("js_bigint.");
     let needs_js_error = zig_code.contains("js_error.");
+    let needs_js_string_icu = zig_code.contains("js_string_icu");
+    let needs_js_string_regex = zig_code.contains("js_string_regex");
     let any_runtime = needs_js_date
         || needs_js_object
         || needs_js_number
@@ -53,7 +55,9 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         || needs_js_regexp
         || needs_js_symbol
         || needs_js_bigint
-        || needs_js_error;
+        || needs_js_error
+        || needs_js_string_icu
+        || needs_js_string_regex;
 
     let wrapped = if needs_std || any_runtime {
         let mut w = String::new();
@@ -105,6 +109,12 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         }
         if needs_js_error {
             w.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
+        }
+        if needs_js_string_icu {
+            w.push_str("const js_string_icu = @import(\"js_runtime/js_string_icu.zig\");\n");
+        }
+        if needs_js_string_regex {
+            w.push_str("const js_string_regex = @import(\"js_runtime/js_string_regex.zig\");\n");
         }
         if needs_string_hashmap {
             w.push_str("const StringHashMap = std.StringHashMap;\n");

@@ -8,7 +8,6 @@ use crate::types::ZigType;
 
 /// Built-in call type
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)] // Some variants not yet produced by Lowerer; will be used as features are implemented
 pub enum BuiltinCall {
     // Math methods
     MathAbs,    // Math.abs(x)
@@ -133,11 +132,7 @@ pub enum BuiltinCall {
     MapEntries, // map.entries() → [string, any][]
 
     // Set methods (called on local Set variables)
-    SetAdd,     // set.add(value)
-    SetForEach, // set.forEach(fn)
-    SetKeys,    // set.keys() → K[] (same as values)
-    SetValues,  // set.values() → K[]
-    SetEntries, // set.entries() → [K, K][]
+    SetAdd, // set.add(value)
 
     // Date methods (static)
     DateNow,   // Date.now() → i64
@@ -811,13 +806,6 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::MapGet => Some(ZigType::JsAny), // JsMap.get() returns JsAny (undefined if not found)
         BuiltinCall::MapHas => Some(ZigType::Bool),
         BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
-        // Set methods
-        BuiltinCall::SetKeys | BuiltinCall::SetValues => {
-            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
-        }
-        BuiltinCall::SetEntries => {
-            Some(ZigType::ArrayList(Box::new(ZigType::ArrayList(Box::new(ZigType::JsAny)))))
-        }
 
         // Date static methods
         BuiltinCall::DateNow | BuiltinCall::DateParse | BuiltinCall::DateUTC => Some(ZigType::I64),

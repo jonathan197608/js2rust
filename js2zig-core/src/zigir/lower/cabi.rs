@@ -231,7 +231,7 @@ impl Lowerer {
         use crate::native_builtins::BuiltinCall as BC;
         use crate::zigir::types::ArrayCallbackKind;
         match builtin {
-            BC::ArrayForEach | BC::SetForEach => Some(ArrayCallbackKind::ForEach),
+            BC::ArrayForEach => Some(ArrayCallbackKind::ForEach),
             BC::ArraySome => Some(ArrayCallbackKind::Some),
             BC::ArrayEvery => Some(ArrayCallbackKind::Every),
             BC::ArrayFilter => Some(ArrayCallbackKind::Filter),
@@ -337,7 +337,11 @@ impl Lowerer {
             body.statements.iter().map(|s| self.lower_stmt(s)).collect();
 
         // Reduce init value
-        let reduce_init = if matches!(kind, ArrayCallbackKind::Reduce | ArrayCallbackKind::ReduceRight) && ce.arguments.len() >= 2 {
+        let reduce_init = if matches!(
+            kind,
+            ArrayCallbackKind::Reduce | ArrayCallbackKind::ReduceRight
+        ) && ce.arguments.len() >= 2
+        {
             ce.arguments
                 .get(1)
                 .and_then(|a| a.as_expression())
@@ -1052,26 +1056,6 @@ pub fn builtin_call_to_ir(
             BuiltinModule::JsCollections,
             "add".into(),
             ZigType::NamedStruct("Set".into()),
-        ),
-        BuiltinCall::SetForEach => (
-            BuiltinModule::JsCollections,
-            "forEach".into(),
-            ZigType::Void,
-        ),
-        BuiltinCall::SetKeys => (
-            BuiltinModule::JsCollections,
-            "keys".into(),
-            ZigType::ArrayList(Box::new(ZigType::JsAny)),
-        ),
-        BuiltinCall::SetValues => (
-            BuiltinModule::JsCollections,
-            "values".into(),
-            ZigType::ArrayList(Box::new(ZigType::JsAny)),
-        ),
-        BuiltinCall::SetEntries => (
-            BuiltinModule::JsCollections,
-            "entries".into(),
-            ZigType::ArrayList(Box::new(ZigType::JsAny)),
         ),
 
         // Date static
