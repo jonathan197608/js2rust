@@ -327,6 +327,9 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
         IrExpr::PowExpr { base, exp, .. } => {
             expr_has_side_effects(base) || expr_has_side_effects(exp)
         }
+        IrExpr::RemExpr { left, right, .. } => {
+            expr_has_side_effects(left) || expr_has_side_effects(right)
+        }
         IrExpr::CompileError { .. } => true,
         // Leaf expressions handled by is_leaf() early return above
         _ => false,

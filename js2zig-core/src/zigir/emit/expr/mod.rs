@@ -207,26 +207,32 @@ impl Emitter {
                     self.emit_jsany_comparison(*op, left, right, left_is_jsany, right_is_jsany);
                 }
                 // ── Division / Remainder ──
+                // Note: Integer `%` is handled by RemExpr node, not Binary(Mod).
+                // Binary(Mod) is only reached for Float and BigInt operands.
                 else if *op == BinOp::Div || *op == BinOp::Mod {
                     if left_is_float || right_is_float {
-                        self.write("(");
-                        self.emit_expr(left);
-                        self.write(&format!(" {} ", if *op == BinOp::Div { "/" } else { "%" }));
-                        self.emit_expr(right);
-                        self.write(")");
-                    } else {
-                        self.write(&format!(
-                            "{}(",
-                            if *op == BinOp::Div {
-                                "@divTrunc"
-                            } else {
-                                "@rem"
-                            }
-                        ));
+                        if *op == BinOp::Mod {
+                            self.write("@rem(");
+                            self.emit_expr(left);
+                            self.write(", ");
+                            self.emit_expr(right);
+                            self.write(")");
+                        } else {
+                            self.write("(");
+                            self.emit_expr(left);
+                            self.write(" / ");
+                            self.emit_expr(right);
+                            self.write(")");
+                        }
+                    } else if *op == BinOp::Div {
+                        self.write("@divTrunc(");
                         self.emit_expr(left);
                         self.write(", ");
                         self.emit_expr(right);
                         self.write(")");
+                    } else {
+                        // BigInt %: emit via bigint binary method
+                        self.emit_bigint_binary(BinOp::Mod, left, right);
                     }
                 }
                 // ── Unsigned right shift ──
@@ -283,6 +289,29 @@ impl Emitter {
                 ));
                 if let Some(crate::types::ZigType::I64) = result_type {
                     self.write("))");
+                }
+            }
+
+            crate::zigir::types::IrExpr::RemExpr {
+                left,
+                right,
+                result_type,
+            } => {
+                // JS `%` for integer operands: always uses jsRem which returns f64
+                // (preserves signed zero -0). When result_type is i64, wrap in
+                // @as(i64, @intFromFloat(...)) for assignment to i64 variable.
+                if let Some(crate::types::ZigType::I64) = result_type {
+                    self.write("@as(i64, @intFromFloat(js_runtime.jsRem(");
+                    self.emit_expr(left);
+                    self.write(", ");
+                    self.emit_expr(right);
+                    self.write(")))");
+                } else {
+                    self.write("js_runtime.jsRem(");
+                    self.emit_expr(left);
+                    self.write(", ");
+                    self.emit_expr(right);
+                    self.write(")");
                 }
             }
 
@@ -760,8 +789,9 @@ impl Emitter {
         }
     }
 
-    /// Emit a compound assignment (Mod/Div/LogicAnd/LogicOr/Nullish or simple op).
+    /// Emit a compound assignment (Div/LogicAnd/LogicOr/Nullish or simple op).
     /// Shared by IrExpr::Assign (expression context) and emit_assign_inline (statement context).
+    /// Note: Mod (%) is no longer handled here — it's expanded to RemExpr in the lowerer.
     pub(super) fn emit_compound_assign(
         &mut self,
         target: &crate::zigir::types::IrAssignTarget,
@@ -769,15 +799,7 @@ impl Emitter {
         value: &crate::zigir::types::IrExpr,
     ) {
         use crate::zigir::ops::AssignOp;
-        if op == AssignOp::Mod {
-            // Zig doesn't support % on signed integers; use x = @rem(x, y)
-            self.emit_assign_target_inner(target);
-            self.write(" = @rem(");
-            self.emit_assign_target_inner(target);
-            self.write(", ");
-            self.emit_expr(value);
-            self.write(")");
-        } else if op == AssignOp::Div {
+        if op == AssignOp::Div {
             // Zig signed integer division requires @divTrunc
             self.emit_assign_target_inner(target);
             self.write(" = @divTrunc(");

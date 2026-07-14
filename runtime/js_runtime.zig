@@ -102,6 +102,14 @@ pub fn isTruthy(value: anytype) bool {
     return true; // fallback: objects, struct instances are truthy
 }
 
+/// JS remainder operator: always uses f64 to preserve signed zero (-0).
+/// In JavaScript, `-4 % 2` produces `-0` (IEEE 754), but Zig's `@rem` on
+/// integers returns `0` (no signed zero concept). This helper ensures
+/// correct JS semantics by promoting to f64 before computing.
+pub fn jsRem(a: i64, b: i64) f64 {
+    return @rem(@as(f64, @floatFromInt(a)), @as(f64, @floatFromInt(b)));
+}
+
 // ── Object spread/merge helpers ─────────────────────────────────
 // These provide compile-time merging of anonymous structs,
 // used by the codegen for { ...a, ...b, c: 1 } syntax.

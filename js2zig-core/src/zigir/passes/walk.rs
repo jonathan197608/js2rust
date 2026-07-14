@@ -309,6 +309,10 @@ pub fn for_each_expr_child(
             on_expr(base);
             on_expr(exp);
         }
+        IrExpr::RemExpr { left, right, .. } => {
+            on_expr(left);
+            on_expr(right);
+        }
         // Leaf nodes and CompileError have no children
         leaf_expr_variants!() => {}
     }
@@ -609,6 +613,10 @@ pub fn for_each_expr_child_mut(
         IrExpr::PowExpr { base, exp, .. } => {
             on_expr(base);
             on_expr(exp);
+        }
+        IrExpr::RemExpr { left, right, .. } => {
+            on_expr(left);
+            on_expr(right);
         }
         leaf_expr_variants!() => {}
     }

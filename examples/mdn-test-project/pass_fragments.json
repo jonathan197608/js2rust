@@ -1,6 +1,6 @@
 {
-  "total": 237,
-  "totalGenerated": 237,
+  "total": 239,
+  "totalGenerated": 239,
   "statements": [
     "test_statements_frag_0",
     "test_statements_frag_11",
@@ -20,6 +20,7 @@
     "test_expressions_frag_106",
     "test_expressions_frag_109",
     "test_expressions_frag_111",
+    "test_expressions_frag_112",
     "test_expressions_frag_113",
     "test_expressions_frag_114",
     "test_expressions_frag_115",
@@ -189,6 +190,7 @@
     "test_builtins_frag_202",
     "test_builtins_frag_204",
     "test_builtins_frag_205",
+    "test_builtins_frag_209",
     "test_builtins_frag_210",
     "test_builtins_frag_211",
     "test_builtins_frag_212",

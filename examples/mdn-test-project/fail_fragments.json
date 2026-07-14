@@ -1,10 +1,6 @@
 {
-  "total": 2,
+  "total": 0,
   "statements": [],
-  "expressions": [
-    "test_expressions_frag_112"
-  ],
-  "builtins": [
-    "test_builtins_frag_209"
-  ]
+  "expressions": [],
+  "builtins": []
 }

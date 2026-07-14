@@ -76,7 +76,7 @@ pub const JsDate = struct {
 
     pub fn getTimezoneOffset(self: JsDate) i64 {
         _ = self;
-        return 0; // UTC only for now
+        return -localOffsetMinutes();
     }
 
     /// Returns ISO 8601 string: "YYYY-MM-DDTHH:mm:ss.sssZ"
@@ -374,6 +374,92 @@ fn milliTimestampPosix() i64 {
     return @as(i64, ts.sec) * 1000 + @divTrunc(@as(i64, ts.nsec), 1_000_000);
 }
 
+// ── Local timezone offset ──
+
+/// Returns the local timezone offset in minutes (e.g., +480 for UTC+8).
+/// Positive = east of UTC (local time is ahead of UTC).
+/// JS getTimezoneOffset() returns the negation: -480 for UTC+8.
+pub fn localOffsetMinutes() i64 {
+    return switch (builtin.os.tag) {
+        .windows => localOffsetMinutesWindows(),
+        else => localOffsetMinutesPosix(),
+    };
+}
+
+fn localOffsetMinutesWindows() i64 {
+    const SystemTime = extern struct {
+        wYear: u16,
+        wMonth: u16,
+        wDayOfWeek: u16,
+        wDay: u16,
+        wHour: u16,
+        wMinute: u16,
+        wSecond: u16,
+        wMilliseconds: u16,
+    };
+
+    const TimeZoneInformation = extern struct {
+        bias: i32,
+        standardName: [32]u16,
+        standardDate: SystemTime,
+        standardBias: i32,
+        daylightName: [32]u16,
+        daylightDate: SystemTime,
+        daylightBias: i32,
+    };
+
+    const kernel32 = struct {
+        extern "kernel32" fn GetTimeZoneInformation(
+            pTimeZoneInformation: *TimeZoneInformation,
+        ) callconv(.winapi) u32;
+    };
+
+    var tzi: TimeZoneInformation = undefined;
+    const result = kernel32.GetTimeZoneInformation(&tzi);
+    // result: 0=unknown, 1=standard, 2=daylight
+    // Bias is in minutes, positive = west of UTC (opposite of convention)
+    // UTC = local_time + bias, so bias = UTC - local_time
+    // We want: offset from UTC in minutes, where positive = east
+    // So offset = -bias (plus any DST adjustment)
+    if (result == 2) {
+        // Daylight time: total_bias = bias + daylightBias
+        return -(tzi.bias + tzi.daylightBias);
+    } else {
+        // Standard time or unknown: total_bias = bias + standardBias
+        return -(tzi.bias + tzi.standardBias);
+    }
+}
+
+fn localOffsetMinutesPosix() i64 {
+    var ts: std.posix.timespec = undefined;
+    if (std.posix.system.clock_gettime(.REALTIME, &ts) != 0) return 0;
+    const epoch_sec = ts.sec;
+
+    // Use localtime_r to convert epoch seconds to broken-down time
+    var tm: std.posix.tm = undefined;
+    const local_tm = std.posix.localtime_r(&epoch_sec, &tm) orelse return 0;
+
+    // tm_gmtoff is the offset from UTC in seconds, positive for east
+    // Not all POSIX systems expose tm_gmtoff, but major ones (Linux, macOS, BSD) do
+    if (@hasField(std.posix.tm, "tm_gmtoff")) {
+        return @divTrunc(local_tm.tm_gmtoff, 60);
+    }
+
+    // Fallback: compute from tm_hour/mday vs gmtime_r
+    var utc_tm: std.posix.tm = undefined;
+    const utc_ptr = std.posix.gmtime_r(&epoch_sec, &utc_tm) orelse return 0;
+
+    // Convert both to approximate seconds-since-epoch, then diff
+    // This is a rough approximation that ignores DST transitions within the year
+    const local_approx = local_tm.tm_yday * 86400 + local_tm.tm_hour * 3600 + local_tm.tm_min * 60 + local_tm.tm_sec;
+    const utc_approx = utc_ptr.tm_yday * 86400 + utc_ptr.tm_hour * 3600 + utc_ptr.tm_min * 60 + utc_ptr.tm_sec;
+    var diff = local_approx - utc_approx;
+    // Handle year boundary (yday wraps)
+    if (diff > 43200) diff -= 86400 * 7;
+    if (diff < -43200) diff += 86400 * 7;
+    return @divTrunc(diff, 60);
+}
+
 // ── Date math: millis ↔ civil date ──
 
 fn dayCount(millis: i64) i64 {
@@ -415,6 +501,8 @@ fn civilFromDays(days: i64) struct { y: i64, m: i64, d: i64 } {
 
 /// parse(dateString) — parse an ISO 8601 date string to milliseconds.
 /// Supports: "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss", "YYYY-MM-DDTHH:mm:ss.sss"
+/// Timezone indicators: "Z", "+HH:MM", "-HH:MM"
+/// Without a timezone indicator, the time is treated as local time.
 pub fn parse(s: []const u8) i64 {
     if (s.len < 10) return 0;
 
@@ -428,6 +516,7 @@ pub fn parse(s: []const u8) i64 {
     var minutes: i64 = 0;
     var seconds: i64 = 0;
     var millis: i64 = 0;
+    var end_pos: usize = 10; // tracks where the time portion ends
 
     if (s.len >= 19 and s[10] == 'T') {
         hours = parseDigits2(s[11..13]) orelse return 0;
@@ -436,6 +525,7 @@ pub fn parse(s: []const u8) i64 {
         if (s.len >= 19 and s[16] == ':') {
             seconds = parseDigits2(s[17..19]) orelse return 0;
         }
+        end_pos = 19;
         if (s.len >= 21 and s[19] == '.') {
             var frac: i64 = 0;
             var mult: i64 = 100;
@@ -446,11 +536,53 @@ pub fn parse(s: []const u8) i64 {
                 mult = @divTrunc(mult, 10);
             }
             millis = frac;
+            end_pos = i;
         }
+    } else if (s.len > 10) {
+        end_pos = 10;
     }
 
     const days = daysFromCivil(year, month, day);
-    return days * 86400 * 1000 + hours * 3600 * 1000 + minutes * 60 * 1000 + seconds * 1000 + millis;
+    var utc_millis = days * 86400 * 1000 + hours * 3600 * 1000 + minutes * 60 * 1000 + seconds * 1000 + millis;
+
+    // ── Handle timezone indicator ──
+    // Check for timezone starting at end_pos
+    if (end_pos < s.len) {
+        const tz_char = s[end_pos];
+        if (tz_char == 'Z') {
+            // UTC — no adjustment needed
+        } else if (tz_char == '+' or tz_char == '-') {
+            // Parse "+HH:MM" or "-HH:MM" (or "+HHMM" without colon)
+            if (end_pos + 5 > s.len) return 0;
+            const tz_hours = parseDigits2(s[end_pos + 1 .. end_pos + 3]) orelse return 0;
+            var tz_minutes: i64 = 0;
+            if (end_pos + 6 <= s.len and s[end_pos + 3] == ':') {
+                tz_minutes = parseDigits2(s[end_pos + 4 .. end_pos + 6]) orelse return 0;
+            } else if (end_pos + 5 <= s.len) {
+                tz_minutes = parseDigits2(s[end_pos + 3 .. end_pos + 5]) orelse return 0;
+            }
+            const tz_offset_ms = (tz_hours * 60 + tz_minutes) * 60 * 1000;
+            if (tz_char == '+') {
+                utc_millis -= tz_offset_ms; // e.g., +08:00 means local is ahead, subtract to get UTC
+            } else {
+                utc_millis += tz_offset_ms; // e.g., -05:00 means local is behind, add to get UTC
+            }
+        } else {
+            // No recognized timezone indicator → treat as local time
+            utc_millis -= localOffsetMinutes() * 60 * 1000;
+        }
+    } else {
+        // No timezone portion at all (e.g., "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm:ss" without tz)
+        // Per JS spec: date-only strings are UTC, datetime strings are local
+        // Simplified: if time is present, treat as local; if date-only, treat as UTC
+        if (s.len > 10 and s[10] == 'T') {
+            // Has time component → local time
+            utc_millis -= localOffsetMinutes() * 60 * 1000;
+        }
+        // Date-only string ("YYYY-MM-DD") → UTC, no adjustment
+    }
+
+    return utc_millis;
 }
 
 fn parseDigits4(s: []const u8) ?i64 {
@@ -551,8 +683,10 @@ test "JsDate getDay" {
 }
 
 test "JsDate getTimezoneOffset" {
-        try std.testing.expectEqual(@as(i64, 0), JsDate.init().getTimezoneOffset());
-    }
+    // On UTC+8 this returns -480; just verify it is within reasonable range
+    const offset = JsDate.init().getTimezoneOffset();
+    try std.testing.expect(offset >= -720 and offset <= 840);
+}
 
     test "JsDate fromComponents" {
         // new Date(2024, 5, 15, 12, 30, 45, 500) → June 15, 2024 12:30:45.500
@@ -601,14 +735,22 @@ test "parse ISO 8601 date" {
     try std.testing.expectEqual(expected2024, d2024);
 }
 
-test "parse ISO 8601 datetime" {
-    const t = parse("1970-01-01T01:02:03");
+test "parse ISO 8601 datetime with Z" {
+    const t = parse("1970-01-01T01:02:03Z");
     try std.testing.expectEqual(@as(i64, 3723000), t);
 }
 
-test "parse ISO 8601 with milliseconds" {
-    const t = parse("1970-01-01T00:00:00.123");
+test "parse ISO 8601 with milliseconds Z" {
+    const t = parse("1970-01-01T00:00:00.123Z");
     try std.testing.expectEqual(@as(i64, 123), t);
+}
+
+test "parse local datetime uses timezone offset" {
+    // "1970-01-01T00:00:00" without Z → treated as local time
+    // UTC millis = 0 - localOffsetMinutes() * 60 * 1000
+    const t = parse("1970-01-01T00:00:00");
+    const expected = -localOffsetMinutes() * 60 * 1000;
+    try std.testing.expectEqual(expected, t);
 }
 
 test "parse invalid string" {

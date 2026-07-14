@@ -607,8 +607,7 @@ impl TypeInferrer {
             }
             BinaryOperator::Subtraction
             | BinaryOperator::Multiplication
-            | BinaryOperator::Division
-            | BinaryOperator::Remainder => {
+            | BinaryOperator::Division => {
                 // BigInt arithmetic preserves BigInt type
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;
@@ -618,6 +617,15 @@ impl TypeInferrer {
                 } else {
                     ZigType::I64
                 }
+            }
+            // Remainder: JS % always uses f64 semantics (to preserve -0).
+            // The Emitter generates js_runtime.jsRem() for integer operands,
+            // which returns f64, so the inferred type must be F64.
+            BinaryOperator::Remainder => {
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
+                ZigType::F64
             }
             // Exponential: JS `**` always returns number (f64).
             // The Emitter generates std.math.pow(f64, ...) for all non-BigInt cases.

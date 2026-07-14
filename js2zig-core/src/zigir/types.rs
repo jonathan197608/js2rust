@@ -686,6 +686,20 @@ pub enum IrExpr {
         result_type: Option<ZigType>,
     },
 
+    // ── Remainder (JS %) ────────────────────────────────
+    /// JS `%` operator for integer operands.
+    /// Always emits `js_runtime.jsRem(left, right)` which returns f64
+    /// (to preserve signed zero -0). When `result_type` is `Some(I64)`,
+    /// the emitter wraps the result with `@as(i64, @intFromFloat(...))`
+    /// for assignment to an i64 variable.
+    RemExpr {
+        left: Box<IrExpr>,
+        right: Box<IrExpr>,
+        /// If the result needs to be converted from f64 (jsRem returns f64)
+        /// to a different type (e.g. i64), this is set. None means keep as f64.
+        result_type: Option<ZigType>,
+    },
+
     CompileError {
         span: SourceSpan,
         msg: String,

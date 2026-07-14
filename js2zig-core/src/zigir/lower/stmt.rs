@@ -119,7 +119,17 @@ impl Lowerer {
                 if let Some(fn_ctx) = self.fn_ctx.as_mut() {
                     fn_ctx.seen_return = true;
                 }
-                let value = rs.argument.as_ref().map(|expr| self.lower_expr(expr));
+                let value = rs.argument.as_ref().map(|expr| {
+                    let mut val = self.lower_expr(expr);
+                    // When the function return type is i64, RemExpr and PowExpr need
+                    // result_type = Some(I64) so the emitter wraps in @intFromFloat.
+                    if let Some(ref fn_ctx) = self.fn_ctx
+                        && fn_ctx.return_type == Some(ZigType::I64)
+                    {
+                        val = Self::coerce_i64_result_type(val);
+                    }
+                    val
+                });
                 crate::zigir::types::IrStmt::Return { value }
             }
             Statement::BreakStatement(bs) => crate::zigir::types::IrStmt::Break {
@@ -850,5 +860,38 @@ impl Lowerer {
         let ir_stmts: Vec<crate::zigir::types::IrStmt> =
             stmts.iter().map(|s| self.lower_stmt(s)).collect();
         IrBlock::new(ir_stmts)
+    }
+
+    /// When an i64-returning function contains a `return expr` where `expr`
+    /// is a RemExpr or PowExpr with `result_type: None`, set `result_type`
+    /// to `Some(I64)` so the emitter wraps the f64 result in
+    /// `@as(i64, @intFromFloat(...))`.
+    fn coerce_i64_result_type(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+        match expr {
+            IrExpr::RemExpr {
+                left,
+                right,
+                result_type: None,
+            } => IrExpr::RemExpr {
+                left,
+                right,
+                result_type: Some(ZigType::I64),
+            },
+            IrExpr::PowExpr {
+                base,
+                exp,
+                base_type,
+                exp_type,
+                result_type: None,
+            } => IrExpr::PowExpr {
+                base,
+                exp,
+                base_type,
+                exp_type,
+                result_type: Some(ZigType::I64),
+            },
+            other => other,
+        }
     }
 }

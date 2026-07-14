@@ -55,7 +55,41 @@ impl Lowerer {
             BinaryOperator::Subtraction => BinOp::Sub,
             BinaryOperator::Multiplication => BinOp::Mul,
             BinaryOperator::Division => BinOp::Div,
-            BinaryOperator::Remainder => BinOp::Mod,
+            BinaryOperator::Remainder => {
+                let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::I64);
+                let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::I64);
+                // BigInt % BigInt: use BinOp::Mod so emit_bigint_binary generates .rem() call.
+                if left_type == ZigType::BigInt || right_type == ZigType::BigInt {
+                    // BigInt modulo can throw RangeError — mark function as can_throw
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.has_bigint_div = true;
+                    }
+                    return IrExpr::Binary {
+                        op: BinOp::Mod,
+                        left: Box::new(self.lower_expr(&be.left)),
+                        right: Box::new(self.lower_expr(&be.right)),
+                        left_type: Some(left_type),
+                        right_type: Some(right_type),
+                    };
+                }
+                // Float % any: use BinOp::Mod so emit layer generates @rem(f64, f64).
+                if left_type == ZigType::F64 || right_type == ZigType::F64 {
+                    return IrExpr::Binary {
+                        op: BinOp::Mod,
+                        left: Box::new(self.lower_expr(&be.left)),
+                        right: Box::new(self.lower_expr(&be.right)),
+                        left_type: Some(left_type),
+                        right_type: Some(right_type),
+                    };
+                }
+                // Integer %: use RemExpr (jsRem returns f64, preserves signed zero).
+                // result_type is set later by lower_assignment when assigning to i64.
+                return IrExpr::RemExpr {
+                    left: Box::new(self.lower_expr(&be.left)),
+                    right: Box::new(self.lower_expr(&be.right)),
+                    result_type: None, // standalone `%` keeps f64 result
+                };
+            }
             BinaryOperator::Exponential => {
                 let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::F64);
                 let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::F64);
@@ -343,6 +377,35 @@ impl Lowerer {
                 }),
             };
         }
+        // %= → a = a % b  (non-BigInt: use RemExpr for jsRem with type conversion)
+        if ae.operator == AssignmentOperator::Remainder {
+            let target = self.lower_assign_target(&ae.left);
+            let target_type = self.infer_assign_target_type(&ae.left);
+            let value = Box::new(self.lower_expr(&ae.right));
+            // BigInt %= falls through to the BigInt compound expansion below
+            if target_type != Some(ZigType::BigInt) {
+                let base_expr = target
+                    .to_read_expr()
+                    .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+                // When assigning % result to an i64 variable, set result_type so
+                // the emit layer wraps in @as(i64, @intFromFloat(jsRem(...)))
+                let result_type = if target_type == Some(ZigType::I64) {
+                    Some(ZigType::I64)
+                } else {
+                    None
+                };
+                return IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::RemExpr {
+                        left: Box::new(base_expr),
+                        right: value,
+                        result_type,
+                    }),
+                };
+            }
+            // BigInt %=: fall through to BigInt compound expansion below
+        }
         // &&= / ||= / ??= → use AssignOp, Emitter will expand
 
         // ── BigInt compound assignment expansion ──
@@ -412,6 +475,53 @@ impl Lowerer {
         };
         let target = Box::new(self.lower_assign_target(&ae.left));
         let value = Box::new(self.lower_expr(&ae.right));
+
+        // ── Detect `target = expr % expr2` where target is i64 ──
+        // If the value is a RemExpr (integer %) and the target is i64,
+        // set result_type so the emitter wraps in @intFromFloat.
+        if op == AssignOp::Assign {
+            let target_type = self.infer_assign_target_type(&ae.left);
+            if target_type == Some(ZigType::I64)
+                && let IrExpr::RemExpr {
+                    result_type: None,
+                    left,
+                    right,
+                } = value.as_ref()
+            {
+                return IrExpr::Assign {
+                    op,
+                    target,
+                    value: Box::new(IrExpr::RemExpr {
+                        left: left.clone(),
+                        right: right.clone(),
+                        result_type: Some(ZigType::I64),
+                    }),
+                };
+            }
+            // Same for PowExpr: `x = base ** exp` when target is i64
+            if target_type == Some(ZigType::I64)
+                && let IrExpr::PowExpr {
+                    result_type: None,
+                    base,
+                    exp,
+                    base_type,
+                    exp_type,
+                } = value.as_ref()
+            {
+                return IrExpr::Assign {
+                    op,
+                    target,
+                    value: Box::new(IrExpr::PowExpr {
+                        base: base.clone(),
+                        exp: exp.clone(),
+                        base_type: base_type.clone(),
+                        exp_type: exp_type.clone(),
+                        result_type: Some(ZigType::I64),
+                    }),
+                };
+            }
+        }
+
         IrExpr::Assign { op, target, value }
     }
 
