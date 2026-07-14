@@ -36,6 +36,5 @@ export function testBuiltins_frag_10() {
         return prime;
     }
 
-    const result = nthPrime(20n);
-    console.log(result.toString());
+    console.log(nthPrime(20n));
 }

@@ -5,10 +5,9 @@
 
 function testBuiltins_frag_156() {
     try {
-
-        BigInt("900719925474099267");
-        // 900719925474099267n
-        } catch (e) {
+        const huge = BigInt("900719925474099267");
+        console.log(huge);
+    } catch (e) {
         console.error(`[testBuiltins_frag_156] error: ${e.message}`);
     }
 }

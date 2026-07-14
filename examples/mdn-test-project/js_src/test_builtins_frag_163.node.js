@@ -5,10 +5,8 @@
 
 function testBuiltins_frag_163() {
     try {
-
-        parseInt("900719925474099267n");
-        // 900719925474099300
-        } catch (e) {
+        console.log(parseInt("900719925474099267n"));
+    } catch (e) {
         console.error(`[testBuiltins_frag_163] error: ${e.message}`);
     }
 }

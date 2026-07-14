@@ -208,6 +208,8 @@ js_files = [
     "test_builtins_frag_179.js",
     # --- builtins: BigInt ---
     "test_builtins_frag_156.js",
+    "test_builtins_frag_164.js",
+    "test_builtins_frag_211.js",
     "test_builtins_frag_212.js",
     "test_builtins_frag_214.js",
     "test_builtins_frag_219.js",

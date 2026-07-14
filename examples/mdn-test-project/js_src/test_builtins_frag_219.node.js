@@ -5,21 +5,19 @@
 
 function testBuiltins_frag_219() {
     try {
-
         if (0n) {
-          console.log("Hello from the if!");
+            console.log("truthy");
         } else {
-          console.log("Hello from the else!");
+            console.log("falsy");
         }
-        // "Hello from the else!"
-
-        0n || 12n; // 12n
-        0n && 12n; // 0n
-        Boolean(0n); // false
-        Boolean(12n); // true
-        !12n; // false
-        !0n; // true
-        } catch (e) {
+        if (12n) {
+            console.log("truthy");
+        } else {
+            console.log("falsy");
+        }
+        console.log(!12n);
+        console.log(!0n);
+    } catch (e) {
         console.error(`[testBuiltins_frag_219] error: ${e.message}`);
     }
 }

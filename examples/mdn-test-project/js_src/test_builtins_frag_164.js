@@ -5,7 +5,7 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_164() {
-
-        BigInt("900719925474099267");
-        // 900719925474099267n
-    }
+    // BigInt constructor from decimal string
+    const huge = BigInt("900719925474099267");
+    console.log(huge);
+}

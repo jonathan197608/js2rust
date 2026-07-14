@@ -5,10 +5,9 @@
 
 function testBuiltins_frag_212() {
     try {
-
-        typeof 1n === "bigint"; // true
-        typeof BigInt("1") === "bigint"; // true
-        } catch (e) {
+        console.log(typeof 1n === "bigint");
+        console.log(typeof BigInt("1") === "bigint");
+    } catch (e) {
         console.error(`[testBuiltins_frag_212] error: ${e.message}`);
     }
 }

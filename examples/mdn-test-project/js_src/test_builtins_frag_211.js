@@ -5,23 +5,19 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_211() {
+    // BigInt constructor with number, decimal, hex, octal, binary
+    const alsoHuge = BigInt(9007199254740991);
+    console.log(alsoHuge);
 
-        const previouslyMaxSafeInteger = 9007199254740991n;
+    const hugeString = BigInt("9007199254740991");
+    console.log(hugeString);
 
-        const alsoHuge = BigInt(9007199254740991);
-        // 9007199254740991n
+    const hugeHex = BigInt("0x1fffffffffffff");
+    console.log(hugeHex);
 
-        const hugeString = BigInt("9007199254740991");
-        // 9007199254740991n
+    const hugeOctal = BigInt("0o377777777777777777");
+    console.log(hugeOctal);
 
-        const hugeHex = BigInt("0x1fffffffffffff");
-        // 9007199254740991n
-
-        const hugeOctal = BigInt("0o377777777777777777");
-        // 9007199254740991n
-
-        const hugeBin = BigInt(
-          "0b11111111111111111111111111111111111111111111111111111",
-        );
-        // 9007199254740991n
-    }
+    const hugeBin = BigInt("0b11111111111111111111111111111111111111111111111111111");
+    console.log(hugeBin);
+}

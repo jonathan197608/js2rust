@@ -8,12 +8,20 @@ pub const JsBigInt = struct {
     const Self = @This();
 
     /// Initialize from a decimal string (no trailing `n`).
+    /// Also supports hex (`0x`), octal (`0o`), and binary (`0b`) prefixes.
     /// Caller owns the returned JsBigInt; call `deinit()` when done.
     pub fn init(alloc: std.mem.Allocator, s: []const u8) !Self {
         var managed = try std.math.big.int.Managed.init(alloc);
         errdefer managed.deinit();
-        // `Managed.setString` supports base 10
-        try managed.setString(10, s);
+        // Detect base from prefix: 0x → 16, 0o → 8, 0b → 2, else 10
+        const base: u8 = if (s.len > 2 and s[0] == '0') switch (s[1]) {
+            'x', 'X' => 16,
+            'o', 'O' => 8,
+            'b', 'B' => 2,
+            else => 10,
+        } else 10;
+        const digits: []const u8 = if (base != 10) s[2..] else s;
+        try managed.setString(base, digits);
         return Self{ .value = managed };
     }
 

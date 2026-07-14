@@ -5,18 +5,26 @@
 
 function testBuiltins_frag_214() {
     try {
-
-        const previousMaxSafe = BigInt(Number.MAX_SAFE_INTEGER); // 9007199254740991n
-        const maxPlusOne = previousMaxSafe + 1n; // 9007199254740992n
-        const theFuture = previousMaxSafe + 2n; // 9007199254740993n, this works now!
-        const prod = previousMaxSafe * 2n; // 18014398509481982n
-        const diff = prod - 10n; // 18014398509481972n
-        const mod = prod % 10n; // 2n
-        const bigN = 2n ** 54n; // 18014398509481984n
-        bigN * -1n; // -18014398509481984n
-        const expected = 4n / 2n; // 2n
-        const truncated = 5n / 2n; // 2n, not 2.5n
-        } catch (e) {
+        const previousMaxSafe = BigInt(9007199254740991);
+        const maxPlusOne = previousMaxSafe + 1n;
+        const theFuture = previousMaxSafe + 2n;
+        const prod = previousMaxSafe * 2n;
+        const diff = prod - 10n;
+        const mod = prod % 10n;
+        const bigN = 2n ** 54n;
+        const neg = bigN * -1n;
+        const expected = 4n / 2n;
+        const truncated = 5n / 2n;
+        console.log(maxPlusOne);
+        console.log(theFuture);
+        console.log(prod);
+        console.log(diff);
+        console.log(mod);
+        console.log(bigN);
+        console.log(neg);
+        console.log(expected);
+        console.log(truncated);
+    } catch (e) {
         console.error(`[testBuiltins_frag_214] error: ${e.message}`);
     }
 }

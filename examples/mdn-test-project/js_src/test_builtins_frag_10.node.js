@@ -5,41 +5,38 @@
 
 function testBuiltins_frag_10() {
     try {
-
         function isPrime(n) {
-          if (n < 2n) {
-            return false;
-          }
-          if (n % 2n === 0n) {
-            return n === 2n;
-          }
-          for (let factor = 3n; factor * factor <= n; factor += 2n) {
-            if (n % factor === 0n) {
-              return false;
+            if (n < 2n) {
+                return false;
             }
-          }
-          return true;
+            if (n % 2n === 0n) {
+                return n === 2n;
+            }
+            for (let factor = 3n; factor * factor <= n; factor += 2n) {
+                if (n % factor === 0n) {
+                    return false;
+                }
+            }
+            return true;
         }
 
-        // Takes a BigInt value as an argument, returns nth prime number as a BigInt value
         function nthPrime(nth) {
-          let maybePrime = 2n;
-          let prime = 0n;
+            let maybePrime = 2n;
+            let prime = 0n;
 
-          while (nth >= 0n) {
-            if (isPrime(maybePrime)) {
-              nth--;
-              prime = maybePrime;
+            while (nth >= 0n) {
+                if (isPrime(maybePrime)) {
+                    nth--;
+                    prime = maybePrime;
+                }
+                maybePrime++;
             }
-            maybePrime++;
-          }
 
-          return prime;
+            return prime;
         }
 
-        nthPrime(20n);
-        // 73n
-        } catch (e) {
+        console.log(nthPrime(20n));
+    } catch (e) {
         console.error(`[testBuiltins_frag_10] error: ${e.message}`);
     }
 }

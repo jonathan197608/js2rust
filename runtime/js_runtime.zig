@@ -16,6 +16,7 @@ pub const js_collections = @import("js_collections.zig");
 pub const js_regexp = @import("js_regexp.zig");
 pub const js_symbol = @import("js_symbol.zig");
 pub const js_uri = @import("js_uri.zig");
+pub const js_bigint = @import("js_bigint.zig");
 pub const jsvalue = @import("jsvalue.zig");
 pub const jsany = @import("jsany.zig");
 
@@ -86,6 +87,7 @@ pub fn isTruthy(value: anytype) bool {
     if (T == comptime_int) return value != 0;
     if (T == []const u8) return value.len > 0;
     if (T == @TypeOf(null)) return false;
+    if (T == js_bigint.JsBigInt) return !value.isZero();
     // String literal: *const [N:0]u8 → check length via comptime type info
     switch (@typeInfo(T)) {
         .pointer => |p| if (p.size == .one) {
