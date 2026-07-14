@@ -4,15 +4,17 @@
 const std = @import("std");
 const js_allocator = @import("js_allocator.zig");
 const JsAny = @import("jsany.zig").JsAny;
+const js_date = @import("js_date.zig");
 
 /// Number(x) — convert a value to a number (f64).
-/// Simplified: handles string, i64, f64, bool, and JsAny inputs.
+/// Simplified: handles string, i64, f64, bool, JsDate, and JsAny inputs.
 pub fn constructor(value: anytype) f64 {
     const T = @TypeOf(value);
     if (T == f64) return value;
     if (T == i64) return @as(f64, @floatFromInt(value));
     if (T == bool) return if (value) 1.0 else 0.0;
     if (T == []const u8) return parseFloat(value);
+    if (T == js_date.JsDate) return @as(f64, @floatFromInt(value.valueOf()));
     // Fallback for JsAny or other types: return NaN
     return std.math.nan(f64);
 }

@@ -217,7 +217,7 @@ pub const JsBigInt = struct {
 
     /// Format the BigInt value for display (implements Zig 0.16.0 std.fmt interface).
     /// Outputs the decimal representation with trailing `n` suffix,
-    /// matching Node.js console.log output (e.g. `5n` instead of `5`).
+    /// matching Node.js console.log output (e.g. `5n`).
     /// Invoked via the `{f}` format specifier.
     pub fn format(self: *const Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
         try self.value.format(w);

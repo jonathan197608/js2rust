@@ -4,10 +4,7 @@
 // Run with Node.js: node test_builtins_frag_60.node.js
 // Transpile with js2rust: cargo build -p mdn-test-project
 
-/**
- * @returns {string}
- */
 export function testBuiltins_frag_60() {
-        // normalize: simplified impl ignores form, returns input copy
-        return "foo".normalize("NFD");
-    }
+    // normalize: NFD form returns input string (simplified impl)
+    console.log("foo".normalize("NFD"));
+}
