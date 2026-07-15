@@ -36,15 +36,16 @@ impl Lowerer {
                 return self.lower_instanceof(be);
             }
             BinaryOperator::In => {
-                // `key in obj` → obj.contains(key)
+                // `key in obj` → obj.has(key) for Map/Set, obj.contains(key) otherwise
                 let right_expr = self.lower_expr(&be.right);
                 let left_expr = self.lower_expr(&be.left);
+                let right_type = self.infer_expr_type(&be.right);
                 return IrExpr::Binary {
                     op: BinOp::In,
                     left: Box::new(left_expr),
                     right: Box::new(right_expr),
                     left_type: Some(ZigType::Str),
-                    right_type: None,
+                    right_type,
                 };
             }
             _ => {}
@@ -160,10 +161,9 @@ impl Lowerer {
             let is_mixed_bigint = left_is_bigint != right_is_bigint; // XOR: exactly one is BigInt
             let is_bigint_urshr = op == BinOp::UrShr && (left_is_bigint || right_is_bigint);
             // BigInt << >> BigInt: toI64() can fail for very large shift amounts → error.JsThrow
-            let is_bigint_shift = matches!(op, BinOp::Shl | BinOp::Shr)
-                && left_is_bigint
-                && right_is_bigint;
-            if (is_mixed_bigint
+            let is_bigint_shift =
+                matches!(op, BinOp::Shl | BinOp::Shr) && left_is_bigint && right_is_bigint;
+            if ((is_mixed_bigint
                 && matches!(
                     op,
                     BinOp::Add
@@ -179,11 +179,10 @@ impl Lowerer {
                         | BinOp::Shr
                 ))
                 || is_bigint_urshr
-                || is_bigint_shift
+                || is_bigint_shift)
+                && let Some(ctx) = self.fn_ctx.as_mut()
             {
-                if let Some(ctx) = self.fn_ctx.as_mut() {
-                    ctx.has_catchable_error = true;
-                }
+                ctx.has_catchable_error = true;
             }
         }
 

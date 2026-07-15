@@ -17,12 +17,65 @@ impl Emitter {
             "getTime" | "getFullYear" | "getMonth" | "getDate" | "getDay" | "getHours"
             | "getMinutes" | "getSeconds" | "getMilliseconds" | "getTimezoneOffset"
             | "getUTCFullYear" | "getUTCMonth" | "getUTCDate" | "getUTCDay" | "getUTCHours"
-            | "getUTCMinutes" | "getUTCSeconds" | "getUTCMilliseconds" | "setFullYear"
-            | "setMonth" | "setDate" | "setHours" | "setMinutes" | "setSeconds"
-            | "setMilliseconds" | "setUTCFullYear" | "setUTCMonth" | "setUTCDate"
-            | "setUTCHours" | "setUTCMinutes" | "setUTCSeconds" | "setUTCMilliseconds"
-            | "setTime" | "valueOf" => {
+            | "getUTCMinutes" | "getUTCSeconds" | "getUTCMilliseconds" | "setDate"
+            | "setMilliseconds" | "setUTCDate" | "setUTCMilliseconds" | "setTime" | "valueOf" => {
                 self.emit_receiver_or_module_call(obj, "js_date", method, args);
+            }
+            // Date setters with optional params — pad missing args with null:
+            // setFullYear(year, month?, date?) → 3 slots
+            "setFullYear" | "setUTCFullYear" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                let defaults = ["0", "null", "null"];
+                self.emit_args_with_defaults(args, 3, &defaults);
+                self.write(")");
+            }
+            // setMonth(month, date?) → 2 slots
+            "setMonth" | "setUTCMonth" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                let defaults = ["0", "null"];
+                self.emit_args_with_defaults(args, 2, &defaults);
+                self.write(")");
+            }
+            // setHours(hours, min?, sec?, ms?) → 4 slots
+            "setHours" | "setUTCHours" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                let defaults = ["0", "null", "null", "null"];
+                self.emit_args_with_defaults(args, 4, &defaults);
+                self.write(")");
+            }
+            // setMinutes(min, sec?, ms?) → 3 slots
+            "setMinutes" | "setUTCMinutes" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                let defaults = ["0", "null", "null"];
+                self.emit_args_with_defaults(args, 3, &defaults);
+                self.write(")");
+            }
+            // setSeconds(sec, ms?) → 2 slots
+            "setSeconds" | "setUTCSeconds" => {
+                if let Some(name) = obj {
+                    self.write(&format!("{}.{}(", name, method));
+                } else {
+                    self.write(&format!("js_date.{}(", method));
+                }
+                let defaults = ["0", "null"];
+                self.emit_args_with_defaults(args, 2, &defaults);
+                self.write(")");
             }
             // Instance methods that need allocator
             "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
@@ -340,6 +393,7 @@ impl Emitter {
             }
             "deleteByKey" => {
                 // obj.deleteByKey(expr, alloc) → true
+                // JsCollection.delete(alloc, JsAny.from(key)) returns bool
                 let blk = self.next_label();
                 self.write(&format!("{blk}: {{ const _dk = "));
                 if let Some(arg) = args.first() {
@@ -349,7 +403,9 @@ impl Emitter {
                 if let Some(name) = obj {
                     self.write(name);
                 }
-                self.write(&format!(".deleteByKey(_dk, alloc); break :{blk} true; }}"));
+                self.write(&format!(
+                    ".delete(js_allocator.allocator(), JsAny.from(_dk)); break :{blk} true; }}"
+                ));
             }
             "instanceOf" => {
                 // instanceOf(value, "TypeName") → js_runtime.instanceOf(value, "TypeName")

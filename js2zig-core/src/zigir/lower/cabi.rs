@@ -1240,9 +1240,11 @@ pub fn builtin_call_to_ir(
         | BuiltinCall::SetSymmetricDifference
         | BuiltinCall::SetIsSubsetOf
         | BuiltinCall::SetIsSupersetOf
-        | BuiltinCall::SetIsDisjointFrom => {
-            (BuiltinModule::JsCollections, "unsupported_es2025".into(), ZigType::JsAny)
-        }
+        | BuiltinCall::SetIsDisjointFrom => (
+            BuiltinModule::JsCollections,
+            "unsupported_es2025".into(),
+            ZigType::JsAny,
+        ),
     }
 }
 

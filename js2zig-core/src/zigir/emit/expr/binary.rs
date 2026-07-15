@@ -160,9 +160,7 @@ impl Emitter {
             }
             // >>> is not supported for BigInt (JS throws TypeError at runtime)
             BinOp::UrShr => {
-                self.write(
-                    "({ return error.JsThrow; })",
-                );
+                self.write("({ return error.JsThrow; })");
             }
             _ => {
                 self.emit_default_binop(op, left, right);

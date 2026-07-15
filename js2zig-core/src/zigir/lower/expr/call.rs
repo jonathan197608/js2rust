@@ -114,7 +114,9 @@ impl Lowerer {
                     crate::native_builtins::BuiltinCall::SetUnion => "union",
                     crate::native_builtins::BuiltinCall::SetIntersection => "intersection",
                     crate::native_builtins::BuiltinCall::SetDifference => "difference",
-                    crate::native_builtins::BuiltinCall::SetSymmetricDifference => "symmetricDifference",
+                    crate::native_builtins::BuiltinCall::SetSymmetricDifference => {
+                        "symmetricDifference"
+                    }
                     crate::native_builtins::BuiltinCall::SetIsSubsetOf => "isSubsetOf",
                     crate::native_builtins::BuiltinCall::SetIsSupersetOf => "isSupersetOf",
                     crate::native_builtins::BuiltinCall::SetIsDisjointFrom => "isDisjointFrom",
@@ -122,7 +124,10 @@ impl Lowerer {
                 };
                 return self.compile_error_expr(
                     ce.span,
-                    format!("Set.prototype.{}() is not supported (ES2025 Set operation)", method_name),
+                    format!(
+                        "Set.prototype.{}() is not supported (ES2025 Set operation)",
+                        method_name
+                    ),
                 );
             }
 
@@ -130,10 +135,10 @@ impl Lowerer {
 
             // JSON.parse can throw SyntaxError at runtime — mark function as can_throw
             // so the emitter's `catch return error.JsThrow` is valid.
-            if matches!(builtin, crate::native_builtins::BuiltinCall::JsonParse) {
-                if let Some(ctx) = self.fn_ctx.as_mut() {
-                    ctx.has_catchable_error = true;
-                }
+            if matches!(builtin, crate::native_builtins::BuiltinCall::JsonParse)
+                && let Some(ctx) = self.fn_ctx.as_mut()
+            {
+                ctx.has_catchable_error = true;
             }
             let obj_name = Self::extract_callee_object_name_static(&ce.callee);
 

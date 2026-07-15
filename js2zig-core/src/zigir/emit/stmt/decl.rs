@@ -167,23 +167,40 @@ impl Emitter {
             self.write(") catch return error.JsThrow");
         } else if let Some(init) = &vd.init {
             // Has initializer
-            let skip_type = vd
-                .zig_type
-                .as_ref()
-                .is_some_and(|t| matches!(t, ZigType::NamedStruct(_) | ZigType::ArrayList(_)));
-            if vd.is_const || skip_type {
+            // Special case: __arguments variable — emit as const slice &[_]JsAny{ ... }
+            if vd.name.zig_name == "__arguments" {
                 self.write(&format!("{} {} = ", kw, vd.name.zig_name));
-            } else if let Some(ty) = &vd.zig_type {
-                self.write(&format!(
-                    "{} {}: {} = ",
-                    kw,
-                    vd.name.zig_name,
-                    ty.to_zig_type()
-                ));
+                if let crate::zigir::types::IrExpr::ArrayLiteral(arr) = init {
+                    self.write("&[_]JsAny{ ");
+                    for (i, elem) in arr.elements.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        self.emit_expr(elem);
+                    }
+                    self.write(" }");
+                } else {
+                    self.emit_expr(init);
+                }
             } else {
-                self.write(&format!("{} {} = ", kw, vd.name.zig_name));
+                let skip_type = vd
+                    .zig_type
+                    .as_ref()
+                    .is_some_and(|t| matches!(t, ZigType::NamedStruct(_) | ZigType::ArrayList(_)));
+                if vd.is_const || skip_type {
+                    self.write(&format!("{} {} = ", kw, vd.name.zig_name));
+                } else if let Some(ty) = &vd.zig_type {
+                    self.write(&format!(
+                        "{} {}: {} = ",
+                        kw,
+                        vd.name.zig_name,
+                        ty.to_zig_type()
+                    ));
+                } else {
+                    self.write(&format!("{} {} = ", kw, vd.name.zig_name));
+                }
+                self.emit_expr(init);
             }
-            self.emit_expr(init);
         } else {
             // No initializer
             self.write(&format!("{} {}", kw, vd.name.zig_name));

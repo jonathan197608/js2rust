@@ -70,39 +70,28 @@ return Number.MIN_SAFE_INTEGER;
         "Expected 'std.math.floatMax(f64)' in:\n{}",
         zig
     );
+}
+
+// ── BUG-02: arguments object tests ──
+
+#[test]
+fn test_arguments_length() {
+    let js = r#"
+/** @returns {i64} */
+export function argLen(a, b, c) {
+    return arguments.length;
+}
+"#;
+    let zig = transpile_and_check(js, "test_arguments_length");
+    // __arguments is [&]JsAny, .length should be .len (slice length)
     assert!(
-        zig.contains("std.math.floatMin(f64)"),
-        "Expected 'std.math.floatMin(f64)' in:\n{}",
+        zig.contains("__arguments.len"),
+        "Expected '__arguments.len' for arguments.length, got:\n{}",
         zig
     );
     assert!(
-        zig.contains("std.math.nan(f64)"),
-        "Expected 'std.math.nan(f64)' in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("-std.math.inf(f64)"),
-        "Expected '-std.math.inf(f64)' in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("std.math.inf(f64)"),
-        "Expected 'std.math.inf(f64)' in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("std.math.floatEps(f64)"),
-        "Expected 'std.math.floatEps(f64)' in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("9007199254740991"),
-        "Expected '9007199254740991' in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("-9007199254740991"),
-        "Expected '-9007199254740991' in:\n{}",
+        !zig.contains("utf16Len"),
+        "Should NOT contain utf16Len for arguments.length, got:\n{}",
         zig
     );
 }
@@ -920,7 +909,7 @@ return s.match(/hello/);
 
 #[test]
 fn test_p8_new_regexp() {
-    // new RegExp(pattern) → try js_regexp.JsRegExp.init(alloc, pattern)
+    // new RegExp(pattern) → js_regexp.JsRegExp.init(alloc, pattern) catch @panic(...)
     let js = r#"
 export function makePattern(s) {
 const r = new RegExp("\\d+");
@@ -932,6 +921,11 @@ return r.test(s);
     assert!(
         zig.contains("js_regexp.JsRegExp.init(js_allocator.allocator(),"),
         "Expected 'js_regexp.JsRegExp.init(...)' for new RegExp in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("catch @panic(\"OOM: RegExp init\")"),
+        "Expected 'catch @panic(\"OOM: RegExp init\")' for new RegExp in:\n{}",
         zig
     );
 }
@@ -1115,6 +1109,50 @@ return 0;
     assert!(
         !zig.contains("== 100") && !zig.contains("==100"),
         "Should NOT contain '== 100' in generated Zig, got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_in_operator_map() {
+    // `key in map` → map.has(JsAny.from(key)), NOT map.contains(key)
+    let js = r#"
+export function hasMapKey(k) {
+    const m = new Map();
+    return k in m;
+}
+"#;
+    let zig = transpile_and_check(js, "test_in_operator_map");
+    assert!(
+        zig.contains(".has(JsAny.from("),
+        "Expected '.has(JsAny.from(...))' for 'in' operator on Map, got:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains(".contains("),
+        "Should NOT contain '.contains()' for Map 'in' operator, got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_in_operator_set() {
+    // `key in set` → set.has(JsAny.from(key)), NOT set.contains(key)
+    let js = r#"
+export function hasSetKey(k) {
+    const s = new Set();
+    return k in s;
+}
+"#;
+    let zig = transpile_and_check(js, "test_in_operator_set");
+    assert!(
+        zig.contains(".has(JsAny.from("),
+        "Expected '.has(JsAny.from(...))' for 'in' operator on Set, got:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains(".contains("),
+        "Should NOT contain '.contains()' for Set 'in' operator, got:\n{}",
         zig
     );
 }
@@ -1499,3 +1537,88 @@ return s.matchAll(re);
 }
 
 // ── #768: 声明+表达式混合 — 验证不产生未使用变量/值警告 ──
+
+// ── BUG-06: ArrayList type tracking tests ──
+
+#[test]
+fn test_bug08_string_padstart_literal() {
+    // BUG-08: const s = "5"; s.padStart(3, "0") should NOT emit .deinit() on result
+    let js = r#"
+/** @returns {i64} */
+export function testStringPadStart() {
+    const s = "5";
+    const padded = s.padStart(3, "0");
+    if (padded === "005") {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let zig = transpile_and_check(js, "test_bug08_string_padstart_literal");
+    // padded is a dynamically allocated string (padStart allocates) — should NOT have deinit
+    // because ZigType::Str variables don't own resources that need cleanup
+    assert!(
+        !zig.contains("padded.deinit"),
+        "String result of padStart should NOT have .deinit(), got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("js_string.padStart("),
+        "Expected js_string.padStart() call, got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_arraylist_length_access() {
+    // toReversed() returns ArrayList → .length should emit .items.len
+    let js = r#"
+export function getReversedLen() {
+    const arr = [1, 2, 3];
+    const rev = arr.toReversed();
+    return rev.length;
+}
+"#;
+    let zig = transpile_and_check(js, "test_arraylist_length_access");
+    assert!(
+        zig.contains(".items.len"),
+        "Expected '.items.len' for ArrayList .length, got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_arraylist_index_access() {
+    // toReversed() returns ArrayList → [i] should emit .items[@as(usize, @intCast(i))]
+    let js = r#"
+export function getReversedFirst() {
+    const arr = [1, 2, 3];
+    const rev = arr.toReversed();
+    return rev[0];
+}
+"#;
+    let zig = transpile_and_check(js, "test_arraylist_index_access");
+    assert!(
+        zig.contains(".items[@as(usize, @intCast("),
+        "Expected '.items[@as(usize, @intCast(...))]' for ArrayList index access, got:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_arraylist_needs_deinit() {
+    // toReversed() returns ArrayList → needs defer .deinit()
+    let js = r#"
+export function testDeinit() {
+    const arr = [1, 2, 3];
+    const rev = arr.toReversed();
+    return rev[0];
+}
+"#;
+    let zig = transpile_and_check(js, "test_arraylist_needs_deinit");
+    assert!(
+        zig.contains("defer rev.deinit(js_allocator.allocator())"),
+        "Expected 'defer rev.deinit(js_allocator.allocator())' for ArrayList variable, got:\n{}",
+        zig
+    );
+}

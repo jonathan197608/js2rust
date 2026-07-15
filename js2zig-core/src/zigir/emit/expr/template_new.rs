@@ -66,8 +66,8 @@ impl Emitter {
                 }
             },
             NewConstructor::RegExp => {
-                // new RegExp(pat, flags?) → try js_regexp.JsRegExp.init(alloc, pat, flags_or_empty)
-                self.write("try js_regexp.JsRegExp.init(js_allocator.allocator(), ");
+                // new RegExp(pat, flags?) → js_regexp.JsRegExp.init(alloc, pat, flags_or_empty) catch @panic(...)
+                self.write("js_regexp.JsRegExp.init(js_allocator.allocator(), ");
                 self.emit_first_arg_or_default(&new_expr.args, "\"\"");
                 self.write(", ");
                 if new_expr.args.len() >= 2 {
@@ -75,7 +75,7 @@ impl Emitter {
                 } else {
                     self.write("\"\"");
                 }
-                self.write(")");
+                self.write(") catch @panic(\"OOM: RegExp init\")");
             }
             NewConstructor::TypedArray(kind) => {
                 let (module, init_fn) = super::typed_array_init(kind);

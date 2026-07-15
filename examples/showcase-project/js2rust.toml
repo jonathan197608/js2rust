@@ -16,6 +16,11 @@ js_files = [
     "test_builtins_es2023.js",
     "test_builtins_advanced.js",
     "test_advanced_types.js",
+    "test_string_methods.js",
+    "test_date_setters.js",
+    "test_delete_operator.js",
+    "test_regexp.js",
+    "test_in_operator.js",
 ]
 
 # js_src_pending/ 目录包含因 codegen bug 暂无法编译的 e2e 测试文件。

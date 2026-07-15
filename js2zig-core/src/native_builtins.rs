@@ -135,13 +135,13 @@ pub enum BuiltinCall {
     SetAdd, // set.add(value)
 
     // ES2025 Set methods (unsupported — emit @compileError)
-    SetUnion,                 // set.union(other)
-    SetIntersection,           // set.intersection(other)
-    SetDifference,             // set.difference(other)
-    SetSymmetricDifference,   // set.symmetricDifference(other)
-    SetIsSubsetOf,            // set.isSubsetOf(other)
-    SetIsSupersetOf,          // set.isSupersetOf(other)
-    SetIsDisjointFrom,        // set.isDisjointFrom(other)
+    SetUnion,               // set.union(other)
+    SetIntersection,        // set.intersection(other)
+    SetDifference,          // set.difference(other)
+    SetSymmetricDifference, // set.symmetricDifference(other)
+    SetIsSubsetOf,          // set.isSubsetOf(other)
+    SetIsSupersetOf,        // set.isSupersetOf(other)
+    SetIsDisjointFrom,      // set.isDisjointFrom(other)
 
     // Date methods (static)
     DateNow,   // Date.now() → i64

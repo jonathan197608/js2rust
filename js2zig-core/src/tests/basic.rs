@@ -381,10 +381,10 @@ return delete obj.x;
         "delete obj.prop should use deleteKey: {}",
         zig
     );
-    // delete obj[expr] uses deleteByKey
+    // delete obj[expr] uses .delete(alloc, JsAny.from(key))
     assert!(
-        zig.contains("deleteByKey(_dk, alloc)"),
-        "delete obj[expr] should use deleteByKey: {}",
+        zig.contains(".delete(js_allocator.allocator(), JsAny.from(_dk))"),
+        "delete obj[expr] should use .delete(alloc, JsAny.from(key)): {}",
         zig
     );
     // delete should consume result with _ =

@@ -19,6 +19,7 @@ pub const JsRegExp = struct {
     pattern: []const u8,
     flags: []const u8,
     global: bool,
+    ignoreCase: bool,
 
     /// Create a new RegExp from a pattern string and flags string.
     pub fn init(alloc: Allocator, pattern: []const u8, flags: []const u8) !JsRegExp {
@@ -28,6 +29,7 @@ pub const JsRegExp = struct {
             .pattern = owned_pattern,
             .flags = owned_flags,
             .global = std.mem.indexOfScalar(u8, flags, 'g') != null,
+            .ignoreCase = std.mem.indexOfScalar(u8, flags, 'i') != null,
         };
     }
 

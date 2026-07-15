@@ -90,6 +90,12 @@ impl Lowerer {
 
         // ── .length — type-aware dispatch ──
         if field_name == "length" {
+            // Special case: __arguments is a []const JsAny slice
+            if let Expression::Identifier(id) = &mem.object
+                && (id.name.as_str() == "__arguments" || id.name.as_str() == "arguments")
+            {
+                return self.make_field_access(mem, FieldKind::SliceLen);
+            }
             // Check type info for the object to determine the right FieldKind
             if let Expression::Identifier(id) = &mem.object
                 && let Some(zig_type) = self.type_info.var_types.get(id.name.as_str())
@@ -118,12 +124,12 @@ impl Lowerer {
             return self.make_field_access(mem, FieldKind::StringLen);
         }
 
-        // ── RegExp properties: .source, .flags, .global ──
+        // ── RegExp properties: .source, .flags, .global, .ignoreCase ──
         if let Expression::Identifier(id) = &mem.object {
             let var_name = id.name.as_str();
             if let Some(ctx) = &self.fn_ctx
                 && ctx.regexp_vars.contains(var_name)
-                && matches!(field_name, "source" | "flags" | "global")
+                && matches!(field_name, "source" | "flags" | "global" | "ignoreCase")
             {
                 return self.make_field_access(
                     mem,
@@ -188,8 +194,19 @@ impl Lowerer {
         // Determine the ZigType of the object (for routing)
         let obj_type = self.infer_expr_type(&mem.object);
 
+        // Special case: arguments/__arguments → slice indexing
+        let is_arguments = matches!(&mem.object, Expression::Identifier(id)
+            if id.name.as_str() == "arguments" || id.name.as_str() == "__arguments");
+
         // ── Case 1: NumericLiteral key → IndexAccess or StringChar ──
         if let Expression::NumericLiteral(nl) = &mem.expression {
+            if is_arguments {
+                return IrExpr::IndexAccess {
+                    object,
+                    index: Box::new(IrExpr::IntLiteral(nl.value as i64)),
+                    index_kind: IndexKind::SliceIndex,
+                };
+            }
             let is_arraylist = obj_type
                 .as_ref()
                 .map(|t| matches!(t, ZigType::ArrayList(_)))
@@ -235,6 +252,14 @@ impl Lowerer {
 
         // ── Case 3: Dynamic expression key → ComputedField ──
         let key = Box::new(self.lower_expr(&mem.expression));
+        // Special case: arguments/__arguments → IndexAccess with SliceIndex
+        if is_arguments {
+            return IrExpr::IndexAccess {
+                object,
+                index: key,
+                index_kind: IndexKind::SliceIndex,
+            };
+        }
         let key_kind = match &obj_type {
             Some(ZigType::Anytype) | Some(ZigType::JsAny) => ComputedKeyKind::JsAnyGetByKey,
             Some(ZigType::NamedStruct(name)) if name == "Map" => ComputedKeyKind::MapGet,

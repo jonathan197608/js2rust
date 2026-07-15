@@ -134,9 +134,7 @@ impl Emitter {
                             | BinOp::Shr
                     )
                 {
-                    self.write(
-                        "({ return error.JsThrow; })",
-                    );
+                    self.write("({ return error.JsThrow; })");
                 }
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
@@ -238,9 +236,7 @@ impl Emitter {
                 // ── Unsigned right shift ──
                 // BigInt × any: JS throws TypeError at runtime
                 else if *op == BinOp::UrShr && (left_is_bigint || right_is_bigint) {
-                    self.write(
-                        "({ return error.JsThrow; })",
-                    );
+                    self.write("({ return error.JsThrow; })");
                 }
                 // ── Unsigned right shift (non-BigInt) ──
                 else if *op == BinOp::UrShr {
@@ -250,13 +246,23 @@ impl Emitter {
                     self.emit_expr(right);
                     self.write(" & 31)))");
                 }
-                // ── `in` operator: key in obj → obj.contains(key) ──
+                // ── `in` operator: key in obj → obj.has(JsAny.from(key)) for Map/Set, obj.contains(key) otherwise ──
                 else if *op == BinOp::In {
-                    // Right side is the object, left side is the key (operands swapped for .contains())
+                    // Right side is the object, left side is the key (operands swapped for .has()/.contains())
+                    let is_map_or_set = matches!(
+                        right_type,
+                        Some(ZigType::NamedStruct(n)) if n == "Map" || n == "Set"
+                    );
                     self.emit_expr(right);
-                    self.write(".contains(");
-                    self.emit_expr(left);
-                    self.write(")");
+                    if is_map_or_set {
+                        self.write(".has(JsAny.from(");
+                        self.emit_expr(left);
+                        self.write("))");
+                    } else {
+                        self.write(".contains(");
+                        self.emit_expr(left);
+                        self.write(")");
+                    }
                 }
                 // ── Default: direct operator ──
                 else {
