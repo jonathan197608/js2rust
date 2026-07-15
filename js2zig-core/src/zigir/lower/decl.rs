@@ -140,7 +140,45 @@ impl Lowerer {
         let saved = self.enter_fn(fn_name, is_export, Some(return_type.clone()));
         self.name_mangler.push_shadow_scope();
 
-        let params = self.lower_fn_params(fd, fn_name);
+        let mut params = self.lower_fn_params(fd, fn_name);
+
+        // ── Synthetic rest param for `arguments` support ──
+        // Non-export functions using `arguments` (but without explicit rest param)
+        // get a synthetic `...__arguments` rest param so `arguments` captures ALL
+        // runtime arguments, not just declared params.
+        let needs_synthetic_rest = !is_export
+            && fd.params.rest.is_none()
+            && self
+                .type_info
+                .functions_needing_synthetic_rest
+                .contains(fn_name);
+
+        if needs_synthetic_rest {
+            params.push(IrParam {
+                name: self.make_ident("__arguments"),
+                zig_type: ZigType::Anytype, // Rendered as []const JsAny by Emitter
+                is_unused: false,
+                is_rest: true,
+            });
+        }
+
+        // Set rest_param_name in fn_ctx so lower_ident_expr can rewrite
+        // `arguments` → rest param name (synthetic `__arguments` or explicit `args`).
+        let rest_param_name = if let Some(rname) = fd
+            .params
+            .rest
+            .as_ref()
+            .and_then(|r| crate::infer::binding_name(&r.rest.argument))
+        {
+            Some(rname.to_string())
+        } else if needs_synthetic_rest {
+            Some("__arguments".to_string())
+        } else {
+            None
+        };
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            ctx.rest_param_name = rest_param_name;
+        }
 
         // Register parameter names in fn_scope_vars (for shadow detection)
         if let Some(ctx) = self.fn_ctx.as_mut() {
@@ -691,44 +729,52 @@ impl Lowerer {
         // Enter function context and lower params + body
         let mut scope = self.enter_fn_body(fd, name, is_export, &return_type);
 
-        // If the body references `arguments` (lowered as `__arguments`), inject
-        // `const __arguments = &[_]JsAny{ JsAny.from(param0), JsAny.from(param1), ... }`
-        // at the start of the function body.
-        let used_idents_pre = Self::collect_ir_idents_in_block(&scope.body);
-        if used_idents_pre.contains("__arguments") {
-            let args_exprs: Vec<crate::zigir::types::IrExpr> = scope
-                .params
-                .iter()
-                .filter(|p| p.name.zig_name != "io" && !p.is_rest)
-                .map(|p| {
-                    crate::zigir::types::IrExpr::Call(crate::zigir::types::IrCallExpr {
-                        callee: Box::new(crate::zigir::types::IrExpr::FieldAccess {
-                            object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new(
-                                "JsAny",
-                            ))),
-                            field: "from".to_string(),
-                            field_kind: crate::zigir::kinds::FieldKind::StructField,
-                        }),
-                        args: vec![crate::zigir::types::IrExpr::Ident(p.name.clone())],
-                        call_kind: crate::zigir::kinds::CallKind::Direct,
+        // If the body references `arguments` (lowered as `__arguments`):
+        // - Non-export with synthetic rest: `__arguments` is a rest param (injected
+        //   in enter_fn_body), no VarDecl needed.
+        // - Non-export with explicit rest (`...args`): body uses `args`, not
+        //   `__arguments`, so no VarDecl needed.
+        // - Export function (or any function without rest): inject
+        //   `const __arguments = &[_]JsAny{ JsAny.from(param0), ... }`
+        //   with declared params.
+        {
+            let used_idents_pre = Self::collect_ir_idents_in_block(&scope.body);
+            let has_rest_param = scope.params.iter().any(|p| p.is_rest);
+            if used_idents_pre.contains("__arguments") && !has_rest_param {
+                let args_exprs: Vec<crate::zigir::types::IrExpr> = scope
+                    .params
+                    .iter()
+                    .filter(|p| p.name.zig_name != "io" && !p.is_rest)
+                    .map(|p| {
+                        crate::zigir::types::IrExpr::Call(crate::zigir::types::IrCallExpr {
+                            callee: Box::new(crate::zigir::types::IrExpr::FieldAccess {
+                                object: Box::new(crate::zigir::types::IrExpr::Ident(IrIdent::new(
+                                    "JsAny",
+                                ))),
+                                field: "from".to_string(),
+                                field_kind: crate::zigir::kinds::FieldKind::StructField,
+                            }),
+                            args: vec![crate::zigir::types::IrExpr::Ident(p.name.clone())],
+                            call_kind: crate::zigir::kinds::CallKind::Direct,
+                        })
                     })
-                })
-                .collect();
-            let arguments_init = crate::zigir::types::IrStmt::VarDecl(IrVarDecl {
-                name: IrIdent::new("__arguments"),
-                is_const: true,
-                zig_type: None,
-                init: Some(crate::zigir::types::IrExpr::ArrayLiteral(
-                    crate::zigir::types::IrArrayLiteral {
-                        elements: args_exprs,
-                        spread_indices: vec![],
-                    },
-                )),
-                is_json_parse: false,
-                needs_var_suppression: false,
-                needs_deinit: false,
-            });
-            scope.body.stmts.insert(0, arguments_init);
+                    .collect();
+                let arguments_init = crate::zigir::types::IrStmt::VarDecl(IrVarDecl {
+                    name: IrIdent::new("__arguments"),
+                    is_const: true,
+                    zig_type: None,
+                    init: Some(crate::zigir::types::IrExpr::ArrayLiteral(
+                        crate::zigir::types::IrArrayLiteral {
+                            elements: args_exprs,
+                            spread_indices: vec![],
+                        },
+                    )),
+                    is_json_parse: false,
+                    needs_var_suppression: false,
+                    needs_deinit: false,
+                });
+                scope.body.stmts.insert(0, arguments_init);
+            }
         }
 
         // Mark unused parameters: collect all identifier references in the body,

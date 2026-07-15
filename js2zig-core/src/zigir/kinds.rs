@@ -14,6 +14,8 @@ pub enum FieldKind {
     StringLen,
     /// Slice/TypedArray length: `obj.len` (element count)
     SliceLen,
+    /// arguments.length: `@as(i64, @intCast(obj.len))` — JS .length is i64, Zig .len is usize
+    ArgumentsLen,
     /// Map/Set size: `map.size()` or `set.size()`  (method call, not field)
     MapSetSize,
     /// Math constant: `std.math.pi`, etc.

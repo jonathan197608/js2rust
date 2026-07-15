@@ -307,8 +307,16 @@ impl Lowerer {
 
         let var_name = id.name.as_str();
 
-        // arguments object: rewrite to __arguments array
+        // arguments object: rewrite to rest param name
+        // - Non-export with synthetic rest: `__arguments` (the rest param)
+        // - Function with explicit rest: the rest param name (e.g., `args`)
+        // - Export function (no rest): falls back to `__arguments` VarDecl
         if var_name == "arguments" {
+            if let Some(ctx) = self.fn_ctx.as_ref()
+                && let Some(rest_name) = &ctx.rest_param_name
+            {
+                return IrExpr::Ident(IrIdent::new(rest_name));
+            }
             return IrExpr::Ident(IrIdent::new("__arguments"));
         }
 

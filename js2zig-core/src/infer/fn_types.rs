@@ -89,6 +89,17 @@ impl TypeInferrer {
             self.var_types.insert(rname.to_string(), ZigType::JsAny);
         }
 
+        // Detect `arguments` usage in non-export functions without explicit rest param.
+        // If found, mark for synthetic `...__arguments` rest param injection by the Lowerer.
+        let has_explicit_rest = fd.params.rest.is_some();
+        if !is_export && !has_explicit_rest && Self::body_uses_arguments(fd) {
+            self.functions_needing_synthetic_rest
+                .insert(fn_name.to_string());
+            // Register __arguments in var_types so member access dispatch works
+            self.var_types
+                .insert("__arguments".to_string(), ZigType::JsAny);
+        }
+
         // Walk body for local var types FIRST,
         // so return-type inference can reference them.
         if let Some(body) = &fd.body {
@@ -671,6 +682,67 @@ impl TypeInferrer {
                 // Function/arrow scope boundary — stop recursing.
                 // String parameter usage inside nested functions is an
                 // inner-scope concern, not the outer function's.
+            },
+        );
+    }
+
+    // ============================================================
+    // `arguments` detection (for synthetic rest param injection)
+    // ============================================================
+
+    /// Check if a function body references the `arguments` identifier.
+    /// Stops at nested function scope boundaries (each function has its own `arguments`).
+    pub(crate) fn body_uses_arguments(fd: &Function) -> bool {
+        use std::cell::Cell;
+        if let Some(body) = &fd.body {
+            for s in &body.statements {
+                let found = Cell::new(false);
+                Self::stmt_uses_arguments(s, &found);
+                if found.get() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn stmt_uses_arguments(stmt: &Statement, found: &std::cell::Cell<bool>) {
+        if found.get() {
+            return;
+        }
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::stmt_uses_arguments(s, found),
+            &mut |e| Self::expr_uses_arguments(e, found),
+            &mut |vd| {
+                if !found.get() {
+                    for decl in &vd.declarations {
+                        if let Some(init) = &decl.init {
+                            Self::expr_uses_arguments(init, found);
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    fn expr_uses_arguments(expr: &Expression, found: &std::cell::Cell<bool>) {
+        if found.get() {
+            return;
+        }
+        crate::infer::ast_walk::for_each_expr_child(
+            expr,
+            &mut |e| Self::expr_uses_arguments(e, found),
+            &mut |name| {
+                if name == "arguments" {
+                    found.set(true);
+                }
+            },
+            &mut |_| {},
+            &mut |_| {},
+            &mut |_, _| {
+                // Function/arrow scope boundary — `arguments` inside nested
+                // functions refers to that function's arguments, not ours.
             },
         );
     }

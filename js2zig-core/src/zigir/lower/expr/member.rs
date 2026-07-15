@@ -94,7 +94,7 @@ impl Lowerer {
             if let Expression::Identifier(id) = &mem.object
                 && (id.name.as_str() == "__arguments" || id.name.as_str() == "arguments")
             {
-                return self.make_field_access(mem, FieldKind::SliceLen);
+                return self.make_field_access(mem, FieldKind::ArgumentsLen);
             }
             // Check type info for the object to determine the right FieldKind
             if let Expression::Identifier(id) = &mem.object

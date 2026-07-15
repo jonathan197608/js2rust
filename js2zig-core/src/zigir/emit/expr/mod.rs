@@ -903,10 +903,34 @@ impl Emitter {
             if i > 0 {
                 self.write(", ");
             }
-            // foo(...args) → foo(args.items)
+            // foo(...args) → foo(args.items)  [ArrayList spread]
+            // foo(...restParam) → foo(restParam)  [rest param: already []const JsAny]
+            // foo(...[1,2,3]) → foo(&[_]JsAny{ JsAny.from(1), ... })  [literal spread]
             if let crate::zigir::types::IrExpr::Spread(inner) = arg {
-                self.emit_expr(inner);
-                self.write(".items");
+                match inner.as_ref() {
+                    // Rest param spread: pass slice directly (no .items)
+                    crate::zigir::types::IrExpr::Ident(ident)
+                        if self.rest_param_names.contains(&ident.zig_name) =>
+                    {
+                        self.emit_expr(inner);
+                    }
+                    // Array literal spread: emit as &[_]JsAny{ ... }
+                    crate::zigir::types::IrExpr::ArrayLiteral(arr) => {
+                        self.write("&[_]JsAny{ ");
+                        for (j, elem) in arr.elements.iter().enumerate() {
+                            if j > 0 {
+                                self.write(", ");
+                            }
+                            self.emit_expr(elem);
+                        }
+                        self.write(" }");
+                    }
+                    // Default: ArrayList spread → .items
+                    _ => {
+                        self.emit_expr(inner);
+                        self.write(".items");
+                    }
+                }
             } else {
                 self.emit_expr(arg);
             }

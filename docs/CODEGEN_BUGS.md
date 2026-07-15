@@ -3,6 +3,39 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '474a1152-f040-4432-913d-b527cfa10d15'
+  PropagateID: '474a1152-f040-4432-913d-b527cfa10d15'
+  ReservedCode1: 'bb614588-a147-4133-9b54-cab400a4b4bc'
+  ReservedCode2: 'bb614588-a147-4133-9b54-cab400a4b4bc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'bf3d6cdc-435c-435b-87dd-ac671a03e740'
+  PropagateID: 'bf3d6cdc-435c-435b-87dd-ac671a03e740'
+  ReservedCode1: '6937a675-1e73-47dc-95e4-1c4b328b8464'
+  ReservedCode2: '6937a675-1e73-47dc-95e4-1c4b328b8464'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '353f7c8d-efaa-48c6-be16-c5ad85a2cf74'
+  PropagateID: '353f7c8d-efaa-48c6-be16-c5ad85a2cf74'
+  ReservedCode1: 'f55500ab-7d15-47a8-b75d-ab7736f22296'
+  ReservedCode2: 'f55500ab-7d15-47a8-b75d-ab7736f22296'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '96d95a23-1a74-4887-984f-994588b4f88c'
   PropagateID: '96d95a23-1a74-4887-984f-994588b4f88c'
   ReservedCode1: '576b07a7-9e52-4508-a58b-402e09ad1a05'
@@ -75,24 +108,22 @@ AIGC:
 
 ---
 
-## BUG-02: `arguments` 对象生成 ArrayList 但类型签名不匹配
+## BUG-02: `arguments` 对象生成 ArrayList 但类型签名不匹配（已修复）
 
 - **严重程度**: P0
-- **文件**: `js2zig-core/src/zigir/lower/decl.rs:695-732`（lowering），emit 侧
-- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_arguments.js`
-- **复现**: 任何使用 `arguments` 的函数
-- **现象**:
-  - `arguments.length` 生成 `js_string.utf16Len(__arguments)`，但 `__arguments` 是 `ArrayList(JsAny)` 不是 `[]const u8`
-  - `arguments[i]` 生成 `__arguments[i]`，但 `ArrayList` 不支持 `[]` 索引（需用 `.items[i]`）
-  - `arguments[i]` 的返回类型是 `JsAny`，无法直接与 `i64` 做算术
-- **生成代码示例**:
-  ```zig
-  const __arguments = std.ArrayList(JsAny).empty;
-  return js_string.utf16Len(__arguments);  // type error: expected []const u8
-  const a0 = __arguments[0];               // type error: ArrayList not indexable
-  ```
-- **修复方向**: `arguments` 应生成为具体类型数组（如 `[]const JsAny`），`length` 应生成 `__arguments.len` 或 `__arguments.items.len`，索引访问应生成 `__arguments.items[@intCast(i)]`。
-- **Workaround**: 无。Rust 单元测试覆盖 `test_arguments_object`。
+- **状态**: FIXED
+- **文件**: `js2zig-core/src/infer/fn_types.rs`（检测 `arguments` 使用），`js2zig-core/src/zigir/lower/decl.rs`（合成 rest 参数 + `__arguments` VarDecl），`js2zig-core/src/zigir/emit/expr/call_member.rs`（`ArgumentsLen` FieldKind），`js2zig-core/src/zigir/lower/expr/member.rs`（`.length` → `ArgumentsLen`），`js2zig-core/src/zigir/lower/expr/call.rs`（rest 参数打包）
+- **e2e 测试**: `examples/showcase-project/js_src/test_arguments.js`
+- **修复方案**:
+  - `infer/fn_types.rs`: 检测函数体中使用 `arguments` 的非导出函数，注册到 `functions_needing_synthetic_rest`
+  - `lower/decl.rs`: 为这些函数自动注入 `...__arguments` 合成 rest 参数，使 `arguments` 捕获所有运行时实参
+  - `lower/expr/member.rs`: `arguments.length` → `FieldKind::ArgumentsLen`（`@as(i64, @intCast(__arguments.len))`）
+  - `lower/expr/member.rs`: `arguments[i]` → `IndexAccess` with `SliceIndex`（`__arguments[@as(usize, @intCast(i))]`）
+  - `lower/expr/call.rs`: `pack_rest_args_if_needed` 将多余实参打包为 spread 传递给合成 rest 参数
+  - `emit/expr/call_member.rs`: 新增 `FieldKind::ArgumentsLen` 变体，emit `@as(i64, @intCast(obj.len))`
+  - `__arguments` 声明为 `[]const JsAny` const 切片，`needs_deinit=false`
+  - 导出函数（C ABI）不支持 `arguments`，需用户显式使用 `...args` rest 参数
+- **限制**: 导出函数中使用 `arguments` 会走旧路径（仅包含已声明参数），建议使用 `...args` rest 参数语法
 
 ---
 
@@ -332,7 +363,7 @@ AIGC:
 | Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) | 状态 | e2e 文件 |
 |----------|:---:|:---:|:---:|:---:|------|
 | BUG-01 | ✅ | ✅ | ❌ | FIXED | `js_src/test_in_operator.js` |
-| BUG-02 | ✅ | ✅ | ❌ | PARTIAL | `js_src/test_arguments.js` |
+| BUG-02 | ✅ | ✅ | ❌ | FIXED | `js_src/test_arguments.js` |
 | BUG-03 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
 | BUG-04 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
 | BUG-05 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
@@ -346,17 +377,15 @@ AIGC:
 | BUG-13 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
 | BUG-14 | ✅ | N/A | N/A | SKIP (架构限制) | `js_src_pending/test_extends.js` |
 
-### 已修复 (12/14):
+### 已修复 (13/14):
 - **BUG-01/07/08/11/12**: 已在先前提交修复并启用 e2e
+- **BUG-02**: `arguments` 完整支持 — 自动注入合成 rest 参数 `...__arguments` 捕获所有运行时实参，`arguments.length` 走 `ArgumentsLen` FieldKind（`@as(i64, @intCast(.len))`）、`arguments[i]` 走 `SliceIndex`、`__arguments` 声明为 `[]const JsAny` const 切片。新增 `FieldKind::ArgumentsLen` 变体避免影响其他 `SliceLen` 用例。导出函数需显式使用 `...args` rest 参数。
 - **BUG-03/04**: Map/Set for-of 迭代变量设为 JsAny + JsAny 算术转换 (`.asI64()`) + 未使用解构变量抑制
 - **BUG-05**: String for-of 新增 `IrForOfKind::Str` 变体，未使用捕获生成 `|_|`，修复 `ast_expr_uses_ident` 缺少 `AssignmentExpression`/`UpdateExpression`/`LogicalExpression` 的问题
 - **BUG-06**: ArrayList `needs_deinit` + ES2023 方法返回类型推断
 - **BUG-09**: Symbol `===`/`!==` 生成 `.eql()` 而非 `==`/`!=`
 - **BUG-10**: `Symbol.keyFor()` 返回值 `.?` 解包
 - **BUG-13**: Map/Set forEach 回调参数 var_types 预设 + Set.forEach 改用 iterator 模式
-
-### 部分修复 (1/14):
-- **BUG-02**: `arguments.length` 走 `.len`、`arguments[i]` 走 `SliceIndex` + `@as(usize, @intCast())`、`__arguments` 声明为 `[]const JsAny` 切片、`ComputedMemberExpression` 类型推断返回 `JsAny` 以支持 `.asI64()` 算术转换。e2e 测试已启用。完整可变参数支持需架构变更（`__arguments` 仅包含已声明参数）。
 
 ### 跳过 (1/14):
 - **BUG-14**: `class extends` / `super` 是架构限制，非 Bug，建议使用组合模式

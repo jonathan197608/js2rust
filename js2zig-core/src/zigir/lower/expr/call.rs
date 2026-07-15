@@ -457,6 +457,7 @@ impl Lowerer {
                 }
 
                 // Direct user function call
+                let args = self.pack_rest_args_if_needed(name, args);
                 IrExpr::Call(crate::zigir::types::IrCallExpr {
                     callee: Box::new(IrExpr::Ident(IrIdent::new(name))),
                     args,
@@ -766,5 +767,91 @@ impl Lowerer {
             args,
             result_type,
         })
+    }
+
+    /// If the callee has a synthetic rest param (from `arguments` usage),
+    /// pack extra args beyond the declared param count into a `[]const JsAny` slice.
+    ///
+    /// For `function sum() { return arguments[0]; }` called as `sum(1, 2, 3)`:
+    /// - declared_count = 0 (no explicit params)
+    /// - All args [1, 2, 3] become rest → packed into `Spread(ArrayLiteral{ JsAny.from(1), ... })`
+    /// - Emitter renders: `sum(&[_]JsAny{ JsAny.from(1), JsAny.from(2), JsAny.from(3) })`
+    ///
+    /// If the callee already has a Spread arg (e.g., `sum(...arr)`), pass it as-is.
+    fn pack_rest_args_if_needed(
+        &self,
+        callee_name: &str,
+        args: Vec<crate::zigir::types::IrExpr>,
+    ) -> Vec<crate::zigir::types::IrExpr> {
+        use crate::zigir::types::{IrArrayLiteral, IrCallExpr, IrExpr};
+
+        if !self
+            .type_info
+            .functions_needing_synthetic_rest
+            .contains(callee_name)
+        {
+            return args;
+        }
+
+        // Account for async `io` param (injected by lower_fn_params, not in fn_param_types)
+        let is_async = self
+            .type_info
+            .is_async
+            .get(callee_name)
+            .copied()
+            .unwrap_or(false);
+        let declared_count = self
+            .type_info
+            .fn_param_types
+            .get(callee_name)
+            .map(|params| params.len())
+            .unwrap_or(0)
+            + if is_async { 1 } else { 0 };
+
+        if args.len() <= declared_count {
+            // No extra args — pass empty slice for rest param
+            let mut result = args;
+            result.push(IrExpr::Spread(Box::new(IrExpr::ArrayLiteral(
+                IrArrayLiteral {
+                    elements: vec![],
+                    spread_indices: vec![],
+                },
+            ))));
+            return result;
+        }
+
+        // Split into regular and rest args
+        let mut regular_args = args;
+        let rest_args = regular_args.split_off(declared_count);
+
+        // If rest_args is a single Spread, pass as-is (e.g., sum(...arr))
+        if rest_args.len() == 1 && matches!(rest_args[0], IrExpr::Spread(_)) {
+            regular_args.extend(rest_args);
+            return regular_args;
+        }
+
+        // Pack rest args into Spread(ArrayLiteral{ JsAny.from(arg), ... })
+        let rest_elements: Vec<IrExpr> = rest_args
+            .into_iter()
+            .map(|arg| {
+                IrExpr::Call(IrCallExpr {
+                    callee: Box::new(IrExpr::FieldAccess {
+                        object: Box::new(IrExpr::Ident(IrIdent::new("JsAny"))),
+                        field: "from".to_string(),
+                        field_kind: FieldKind::StructField,
+                    }),
+                    args: vec![arg],
+                    call_kind: CallKind::Direct,
+                })
+            })
+            .collect();
+
+        regular_args.push(IrExpr::Spread(Box::new(IrExpr::ArrayLiteral(
+            IrArrayLiteral {
+                elements: rest_elements,
+                spread_indices: vec![],
+            },
+        ))));
+        regular_args
     }
 }

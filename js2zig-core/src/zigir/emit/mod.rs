@@ -56,6 +56,10 @@ pub struct Emitter {
     /// Used by `emit_var_decl` to determine whether a local variable of a NamedStruct
     /// type should get `defer varname.deinit(alloc)`.
     class_needs_deinit: HashSet<String>,
+    /// Names of all rest parameters across all functions in the module.
+    /// Used by `emit_args` to distinguish rest param spreads (already `[]const JsAny`)
+    /// from ArrayList spreads (need `.items`).
+    rest_param_names: HashSet<String>,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -93,6 +97,7 @@ impl Emitter {
             static_init_buffer: String::new(),
             static_deinit_buffer: String::new(),
             class_needs_deinit: HashSet::new(),
+            rest_param_names: HashSet::new(),
         }
     }
 
@@ -127,6 +132,17 @@ impl Emitter {
     }
 
     fn emit_module_inner(&mut self, module: &IrModule) {
+        // 0. Pre-scan: collect all rest param names for emit_args spread handling.
+        for decl in &module.declarations {
+            if let IrDecl::Fn(fn_decl) = decl {
+                for param in &fn_decl.params {
+                    if param.is_rest {
+                        self.rest_param_names.insert(param.name.zig_name.clone());
+                    }
+                }
+            }
+        }
+
         // 1. Emit closure struct definitions (prepended before declarations).
         //    Closure struct definitions are emitted before declarations.
         for closure_struct in &module.closure_structs {

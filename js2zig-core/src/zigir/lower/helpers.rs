@@ -75,6 +75,12 @@ pub struct FnContext {
     pub typedarray_vars: HashMap<String, String>,
     /// Variables holding RegExp instances.
     pub regexp_vars: HashSet<String>,
+    /// The name of the rest parameter for the current function (if any).
+    /// Used to rewrite `arguments` → rest param name (`__arguments` for synthetic,
+    /// or the explicit rest param name like `args`).
+    /// `None` for functions without a rest param (export functions using `arguments`
+    /// fall back to `__arguments` VarDecl injection).
+    pub rest_param_name: Option<String>,
     /// Identifiers referenced in expressions that were resolved at compile time
     /// (e.g., typeof x → "number" when x's type is known). These references
     /// must be tracked to avoid falsely marking parameters as unused.
@@ -104,6 +110,7 @@ impl FnContext {
             fn_local_types: HashMap::new(),
             typedarray_vars: HashMap::new(),
             regexp_vars: HashSet::new(),
+            rest_param_name: None,
             compile_time_referenced_idents: HashSet::new(),
         }
     }

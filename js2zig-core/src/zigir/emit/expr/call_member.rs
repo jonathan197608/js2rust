@@ -51,9 +51,16 @@ impl Emitter {
                 self.write(")");
             }
             FieldKind::SliceLen => {
-                // Slice/TypedArray length: element count
+                // Slice/TypedArray length: element count.
                 self.emit_expr(object);
                 self.write(".len");
+            }
+            FieldKind::ArgumentsLen => {
+                // arguments.length: JS .length is i64, but []const JsAny .len is usize.
+                // Cast to i64 for correct JS semantics.
+                self.write("@as(i64, @intCast(");
+                self.emit_expr(object);
+                self.write(".len))");
             }
             FieldKind::MapSetSize => {
                 self.emit_expr(object);

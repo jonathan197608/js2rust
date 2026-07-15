@@ -1,4 +1,4 @@
-﻿// native_proto/infer/mod.rs
+// native_proto/infer/mod.rs
 // Type inference for native_proto mode.
 // Follows the 8-rule simplification plan:
 // 1. Literal expressions → definite type (use JSDoc if available)
@@ -71,6 +71,9 @@ pub struct TypeCheckResult {
     pub class_field_types: HashMap<String, HashMap<String, ZigType>>,
     /// Host function return types: fn_name → ZigType (full name, e.g. "host_add")
     pub host_return_types: HashMap<String, ZigType>,
+    /// Non-export function names that use `arguments` and need a synthetic
+    /// `...__arguments` rest param injected by the Lowerer.
+    pub functions_needing_synthetic_rest: HashSet<String>,
 }
 
 // ── TypeInferrer ────────────────────────────────────
@@ -103,6 +106,8 @@ pub struct TypeInferrer {
     pub(crate) exported_functions: Option<HashSet<String>>,
     /// Host function return types: fn_name → ZigType
     pub(crate) host_return_types: HashMap<String, ZigType>,
+    /// Non-export functions using `arguments` that need synthetic rest param.
+    pub(crate) functions_needing_synthetic_rest: HashSet<String>,
     /// Host struct field types: struct_name → (field_name → ZigType)
     pub(crate) host_struct_fields: HashMap<String, HashMap<String, ZigType>>,
     /// Current function name being analyzed (for function-scoped mutated_vars)
@@ -135,6 +140,7 @@ impl TypeInferrer {
             exported_functions: None,
             host_return_types: HashMap::new(),
             host_struct_fields: HashMap::new(),
+            functions_needing_synthetic_rest: HashSet::new(),
             current_fn: None,
             class_names: HashSet::new(),
             class_field_types: HashMap::new(),
@@ -201,6 +207,9 @@ impl TypeInferrer {
             is_async: std::mem::take(&mut self.is_async),
             class_field_types: std::mem::take(&mut self.class_field_types),
             host_return_types: std::mem::take(&mut self.host_return_types),
+            functions_needing_synthetic_rest: std::mem::take(
+                &mut self.functions_needing_synthetic_rest,
+            ),
         }
     }
 }

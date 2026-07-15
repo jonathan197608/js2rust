@@ -311,7 +311,7 @@ impl Lowerer {
 mod tests {
     use super::*;
     use crate::types::{JSDocData, ZigType};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn empty_type_info() -> TypeCheckResult {
         empty_type_info_base()
@@ -340,6 +340,7 @@ mod tests {
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
             host_return_types: HashMap::new(),
+            functions_needing_synthetic_rest: HashSet::new(),
         }
     }
 
