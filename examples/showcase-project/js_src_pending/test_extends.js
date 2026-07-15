@@ -1,7 +1,10 @@
-// BUG-14: `class extends` / `super` — extends is tracked for instanceof only,
-// super produces @compileError("super not supported"). No field/method
-// inheritance is generated. Zig structs are always flat.
-// Status: BLOCKED by architecture limitation. Enable when BUG-14 is fixed.
+// BUG-14: `class extends` is now a compile error.
+// `class Child extends Parent` generates:
+//   @compileError("class extends is not supported: use composition instead")
+// This is by design — Zig structs are always flat and cannot model
+// prototype-based inheritance. Use composition (embedding a parent
+// struct as a field) instead.
+// Status: WONTFIX (compile error by design).
 
 /** @returns {i64} */
 export function testClassExtends() {

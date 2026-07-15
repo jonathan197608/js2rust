@@ -248,7 +248,17 @@ impl Lowerer {
                 }
             }
             Statement::ClassDeclaration(cd) => {
-                if let Some(ir_class) = self.lower_class_decl(cd) {
+                if cd.super_class.is_some() {
+                    let span = self.span_to_source_span(cd.span);
+                    self.add_error(
+                        span.clone(),
+                        "class extends is not supported: use composition instead",
+                    );
+                    decls.push(IrDecl::CompileError {
+                        span,
+                        msg: "class extends is not supported: use composition instead".to_string(),
+                    });
+                } else if let Some(ir_class) = self.lower_class_decl(cd) {
                     self.class_names.insert(ir_class.name.js_name.clone());
                     // Register extends relationship for instanceof chain traversal
                     if let Some(ref parent) = ir_class.extends {

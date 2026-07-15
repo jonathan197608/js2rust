@@ -269,7 +269,17 @@ impl Lowerer {
             // Lower same as ClassDeclaration, register as pending decl,
             // return an Ident referencing the class struct name.
             Expression::ClassExpression(ce) => {
-                if let Some(ir_class) = self.lower_class_decl(ce) {
+                if ce.super_class.is_some() {
+                    let span = self.span_to_source_span(ce.span);
+                    self.add_error(
+                        span.clone(),
+                        "class extends is not supported: use composition instead",
+                    );
+                    IrExpr::CompileError {
+                        span,
+                        msg: "class extends is not supported: use composition instead".to_string(),
+                    }
+                } else if let Some(ir_class) = self.lower_class_decl(ce) {
                     let class_name = ir_class.name.js_name.clone();
                     self.class_names.insert(class_name.clone());
                     // Register extends relationship for instanceof chain traversal

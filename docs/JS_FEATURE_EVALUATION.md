@@ -3,6 +3,39 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'af5f0e4c-4806-4261-a8f3-f08eb0fca35c'
+  PropagateID: 'af5f0e4c-4806-4261-a8f3-f08eb0fca35c'
+  ReservedCode1: '6b001b8d-da25-4e77-a08c-793bc15d8e04'
+  ReservedCode2: '6b001b8d-da25-4e77-a08c-793bc15d8e04'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ba322cf7-aa29-4293-8943-4b959f648b2f'
+  PropagateID: 'ba322cf7-aa29-4293-8943-4b959f648b2f'
+  ReservedCode1: 'dd6618fd-78b3-4199-a1d8-7546ee0b8a02'
+  ReservedCode2: 'dd6618fd-78b3-4199-a1d8-7546ee0b8a02'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8f9fff3c-1ece-4b5e-b875-43f8e9d207e2'
+  PropagateID: '8f9fff3c-1ece-4b5e-b875-43f8e9d207e2'
+  ReservedCode1: 'fd0dd99c-46db-4ec2-9236-9c2135c640bd'
+  ReservedCode2: 'fd0dd99c-46db-4ec2-9236-9c2135c640bd'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'ccf40794-0e83-4b96-8243-72a3fa70f06e'
   PropagateID: 'ccf40794-0e83-4b96-8243-72a3fa70f06e'
   ReservedCode1: '51cfd2a9-5126-476b-84bf-1ba2dc5a979b'
@@ -262,9 +295,9 @@ AIGC:
 **注意**:
 - `instanceof` 实现三种策略：
   1. Error 类型 → `e.name == "TypeName"` （高效，匹配 9 种标准错误类型）
-  2. 编译时类型推断 → 已知类型直接 resolve 为 `true`/`false`（ArrayList→Array/Object、Map→Map/Object、自定义类通过 `class_extends_map` 遍历原型链）
+  2. 编译时类型推断 → 已知类型直接 resolve 为 `true`/`false`（ArrayList→Array/Object、Map→Map/Object）
   3. 动态类型（JsAny/anytype）→ 运行时 `js_runtime.instanceOf(value, "TypeName")`，基于 JsAny tag + `__jsClass__`/`__jsExtends__` 元数据
-  - 原型链语义：自定义类通过 `class_extends_map` 在编译时遍历；JsAny 对象通过 `__jsClass__` 和 `__jsExtends__` 字段在运行时匹配
+  - 注意：`class extends` 生成编译错误，编译时原型链遍历（`class_extends_map`）保留在代码中但不再有数据。JsAny 运行时匹配仍通过 `__jsClass__` 和 `__jsExtends__` 字段支持。
 
 ### 2.17 不支持的表达式 - 按价值分类
 
@@ -332,7 +365,7 @@ AIGC:
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
-### 3.3 类声明 - ✅ 100% 实现
+### 3.3 类声明 - ✅ 90% 实现 (extends/super 为编译错误)
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -342,8 +375,8 @@ AIGC:
 | 静态方法 | ✅ | `pub fn method() {}` (无 `self`) | 同上 |
 | 静态属性 | ✅ | `pub const prop = val;` | 同上 |
 | Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` |
-| `extends` 继承 | ✅ | 内嵌 `base: ParentType` 字段 | showcase-project |
-| `super` 调用 | ✅ | `self.base.method()` | 同上 |
+| `extends` 继承 | ❌ 编译错误 | `@compileError("class extends is not supported: use composition instead")` | `test_class_extends_compile_error` |
+| `super` 调用 | ❌ 编译错误 | `@compileError("super not supported")` | 同上 |
 | 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
 | 静态初始化块 `static {}` | ✅ | `pub fn init_js2rust() !void { ... }` (orchestrator 自动发现并调用) + 静态字段读写 `__ClassName_field` + `this.field` → 静态字段 | `test_static_block` + `test_static_field_read` + `test_static_field_assign` + `test_static_block_this_read` + `test_static_block_this_write` + showcase `testStaticBlockInit` + `testStaticBlockThis` |

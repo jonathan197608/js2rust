@@ -367,6 +367,67 @@ return obj.x;
 }
 
 #[test]
+fn test_class_extends_compile_error() {
+    // BUG-14: `class extends` should produce @compileError, not silently
+    // accept the extends keyword without inheritance.
+    let js = r#"
+class Animal {
+    constructor(name) { this.name = name; }
+    speak() { return this.name; }
+}
+class Dog extends Animal {
+    constructor(name) { super(name); }
+    bark() { return this.name; }
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.contains("class extends is not supported")),
+        "Expected 'class extends is not supported' in errors: {:?}",
+        result.errors
+    );
+    assert!(
+        result
+            .zig_code
+            .contains("@compileError(\"class extends is not supported"),
+        "Expected @compileError in zig code:\n{}",
+        result.zig_code
+    );
+}
+
+#[test]
+fn test_class_extends_expression_compile_error() {
+    // BUG-14: class expression with extends should also produce @compileError.
+    let js = r#"
+/** @returns {i64} */
+export function fn() {
+    const Base = class { constructor(v) { this.x = v; } };
+    const Child = class extends Base { constructor(v) { super(v); } };
+    return 0;
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.contains("class extends is not supported")),
+        "Expected 'class extends is not supported' in errors: {:?}",
+        result.errors
+    );
+    assert!(
+        result
+            .zig_code
+            .contains("@compileError(\"class extends is not supported"),
+        "Expected @compileError in zig code:\n{}",
+        result.zig_code
+    );
+}
+
+#[test]
 fn test_not_implemented_generator_function() {
     // 🔘 function*: 生成器函数
     assert_not_implemented(
