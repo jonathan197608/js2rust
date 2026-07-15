@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '3d41e8c3-d73f-46bf-a9f0-3f0f8e2340f9'
+  PropagateID: '3d41e8c3-d73f-46bf-a9f0-3f0f8e2340f9'
+  ReservedCode1: '83abcf8f-63df-4e4a-866e-baa00160df4e'
+  ReservedCode2: '83abcf8f-63df-4e4a-866e-baa00160df4e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '18373494-e488-4051-8242-2357cd1788ca'
   PropagateID: '18373494-e488-4051-8242-2357cd1788ca'
   ReservedCode1: '8299073d-212e-45db-8605-97a5f82febbe'
@@ -310,7 +321,7 @@ AIGC:
 | Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) | 状态 | e2e 文件 |
 |----------|:---:|:---:|:---:|:---:|------|
 | BUG-01 | ✅ | ✅ | ❌ | FIXED | `js_src/test_in_operator.js` |
-| BUG-02 | ✅ | ⚠️ | ❌ | PARTIAL | `js_src_pending/test_arguments.js` |
+| BUG-02 | ✅ | ✅ | ❌ | PARTIAL | `js_src/test_arguments.js` |
 | BUG-03 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
 | BUG-04 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
 | BUG-05 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
