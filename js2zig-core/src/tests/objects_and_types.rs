@@ -190,8 +190,8 @@ return name;
         "Expected std.json.parse(User, ...), got: {}",
         zig
     );
-    // Should have catch @panic for allocation error.
-    assert!(zig.contains("catch @panic"));
+    // Should have catch return error.JsThrow for catchable runtime errors.
+    assert!(zig.contains("catch return error.JsThrow"));
 }
 
 #[test]

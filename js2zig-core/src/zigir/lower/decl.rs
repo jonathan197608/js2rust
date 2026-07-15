@@ -323,6 +323,13 @@ impl Lowerer {
         // JSON.parse special case
         let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
 
+        // std.json.parse (is_json_parse var decl) can fail at runtime — mark can_throw
+        if is_json_parse {
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.has_catchable_error = true;
+            }
+        }
+
         // Needs var suppression (ArrayList/Map/Set method calls need `_= &var;`)
         // Also for JS-const variables whose reassignment is replaced by a throw:
         // the var is never mutated at the Zig level, so Zig 0.16 reports
@@ -743,9 +750,13 @@ impl Lowerer {
             }
         }
 
-        // Read has_bigint_div and has_js_const_reassign BEFORE exiting the
-        // function context, since exit_fn() restores the outer context.
+        // Read has_bigint_div, has_catchable_error, and has_js_const_reassign BEFORE
+        // exiting the function context, since exit_fn() restores the outer context.
         let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
+        let has_catchable_error = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.has_catchable_error);
         let has_js_const_reassign = self
             .fn_ctx
             .as_ref()
@@ -765,7 +776,7 @@ impl Lowerer {
             body,
             is_export,
             is_async,
-            can_throw: has_throw || has_bigint_div || has_js_const_reassign,
+            can_throw: has_throw || has_bigint_div || has_catchable_error || has_js_const_reassign,
             is_cabi,
         })
     }

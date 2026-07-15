@@ -205,7 +205,7 @@ impl Emitter {
                 } else {
                     self.write(", null");
                 }
-                self.write(") catch @panic(\"JSON.parse error\")");
+                self.write(") catch return error.JsThrow");
             }
             "stringify" => {
                 self.write("try js_json.stringify(js_allocator.allocator(), ");

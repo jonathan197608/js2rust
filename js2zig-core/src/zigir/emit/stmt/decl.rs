@@ -164,7 +164,7 @@ impl Emitter {
             if let Some(init) = &vd.init {
                 self.emit_expr(init);
             }
-            self.write(") catch @panic(\"OOM: JSON.parse alloc\")");
+            self.write(") catch return error.JsThrow");
         } else if let Some(init) = &vd.init {
             // Has initializer
             let skip_type = vd

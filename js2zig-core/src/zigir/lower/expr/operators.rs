@@ -95,6 +95,12 @@ impl Lowerer {
                 let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::F64);
                 // BigInt ** BigInt: use BinOp::Pow so emit_bigint_binary generates .pow() call.
                 if left_type == ZigType::BigInt || right_type == ZigType::BigInt {
+                    // Mixed BigInt ** (e.g., 2n ** 2) throws TypeError at runtime
+                    if left_type != right_type {
+                        if let Some(ctx) = self.fn_ctx.as_mut() {
+                            ctx.has_catchable_error = true;
+                        }
+                    }
                     return IrExpr::Binary {
                         op: BinOp::Pow,
                         left: Box::new(self.lower_expr(&be.left)),
@@ -142,6 +148,37 @@ impl Lowerer {
             && let Some(ctx) = self.fn_ctx.as_mut()
         {
             ctx.has_bigint_div = true;
+        }
+
+        // BigInt mixed-type ops and BigInt >>> throw TypeError at runtime.
+        // These are emitted as `return error.JsThrow` (not @panic) so JS try/catch can catch them.
+        // Mark the function as can_throw so the signature includes `!`.
+        {
+            let left_is_bigint = left_type.as_ref() == Some(&ZigType::BigInt);
+            let right_is_bigint = right_type.as_ref() == Some(&ZigType::BigInt);
+            let is_mixed_bigint = left_is_bigint != right_is_bigint; // XOR: exactly one is BigInt
+            let is_bigint_urshr = op == BinOp::UrShr && (left_is_bigint || right_is_bigint);
+            if (is_mixed_bigint
+                && matches!(
+                    op,
+                    BinOp::Add
+                        | BinOp::Sub
+                        | BinOp::Mul
+                        | BinOp::Div
+                        | BinOp::Mod
+                        | BinOp::Pow
+                        | BinOp::BitAnd
+                        | BinOp::BitOr
+                        | BinOp::BitXor
+                        | BinOp::Shl
+                        | BinOp::Shr
+                ))
+                || is_bigint_urshr
+            {
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.has_catchable_error = true;
+                }
+            }
         }
 
         IrExpr::Binary {

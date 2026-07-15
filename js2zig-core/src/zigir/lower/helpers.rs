@@ -43,6 +43,10 @@ pub struct FnContext {
     pub fn_has_throw: bool,
     /// Whether the body contains BigInt division/modulo (can throw RangeError).
     pub has_bigint_div: bool,
+    /// Whether the body contains operations that emit @panic for JS-semantic errors
+    /// (BigInt mixed types, BigInt >>>, JSON.parse). These need to be converted to
+    /// `return error.JsThrow` so they can be caught by JS try/catch.
+    pub has_catchable_error: bool,
     /// JS-const variables that are reassigned (emit runtime TypeError guard).
     /// In JS, `const x = 1; x = 2` throws TypeError at runtime, but Zig uses
     /// `var` for reassigned variables so the assignment succeeds. We track these
@@ -87,6 +91,7 @@ impl FnContext {
             seen_return: false,
             fn_has_throw: false,
             has_bigint_div: false,
+            has_catchable_error: false,
             js_const_reassigned: HashSet::new(),
             in_return_expr: false,
             in_expr_stmt: false,

@@ -161,7 +161,7 @@ impl Emitter {
             // >>> is not supported for BigInt (JS throws TypeError at runtime)
             BinOp::UrShr => {
                 self.write(
-                    "@panic(\"TypeError: BigInt does not support unsigned right shift (>>>)\")",
+                    "({ return error.JsThrow; })",
                 );
             }
             _ => {

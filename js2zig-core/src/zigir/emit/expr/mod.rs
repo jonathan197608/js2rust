@@ -135,7 +135,7 @@ impl Emitter {
                     )
                 {
                     self.write(
-                        "@panic(\"TypeError: Cannot mix BigInt and other types, consider explicit conversions\")",
+                        "({ return error.JsThrow; })",
                     );
                 }
                 // ── String equality/comparison ──
@@ -239,7 +239,7 @@ impl Emitter {
                 // BigInt × any: JS throws TypeError at runtime
                 else if *op == BinOp::UrShr && (left_is_bigint || right_is_bigint) {
                     self.write(
-                        "@panic(\"TypeError: BigInt does not support unsigned right shift (>>>)\")",
+                        "({ return error.JsThrow; })",
                     );
                 }
                 // ── Unsigned right shift (non-BigInt) ──
