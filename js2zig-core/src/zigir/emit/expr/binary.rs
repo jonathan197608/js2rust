@@ -119,7 +119,7 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(".pow(");
                 self.emit_expr(right);
-                self.write(".toU64() catch @panic(\"BigInt toU64 failed\"), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
             }
             BinOp::Shl | BinOp::Shr => {
                 let (method, label) = match op {
@@ -129,10 +129,10 @@ impl Emitter {
                 };
                 self.write("(");
                 self.emit_expr(left);
-                self.write(&format!(".{}(@as(usize, @intCast(", method));
+                self.write(&format!(".{}(", method));
                 self.emit_expr(right);
                 self.write(&format!(
-                    ".toU64() catch @panic(\"BigInt toU64 failed\"))), js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                    ".toI64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
                     label
                 ));
             }

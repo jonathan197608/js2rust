@@ -147,14 +147,28 @@ pub const JsBigInt = struct {
         return Self{ .value = result };
     }
 
-    pub fn shiftLeft(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+    /// BigInt left shift. In JS, negative shift amounts reverse direction:
+    /// `x << -n` is equivalent to `x >> n`.
+    pub fn shiftLeft(self: *const Self, shift: i64, alloc: std.mem.Allocator) !Self {
+        if (shift < 0) return self.shiftRightRaw(@intCast(-shift), alloc);
+        return self.shiftLeftRaw(@intCast(shift), alloc);
+    }
+
+    /// BigInt right shift. In JS, negative shift amounts reverse direction:
+    /// `x >> -n` is equivalent to `x << n`.
+    pub fn shiftRight(self: *const Self, shift: i64, alloc: std.mem.Allocator) !Self {
+        if (shift < 0) return self.shiftLeftRaw(@intCast(-shift), alloc);
+        return self.shiftRightRaw(@intCast(shift), alloc);
+    }
+
+    fn shiftLeftRaw(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         try result.shiftLeft(&self.value, shift);
         return Self{ .value = result };
     }
 
-    pub fn shiftRight(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+    fn shiftRightRaw(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         try result.shiftRight(&self.value, shift);

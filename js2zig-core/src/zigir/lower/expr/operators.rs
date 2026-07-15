@@ -95,11 +95,11 @@ impl Lowerer {
                 let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::F64);
                 // BigInt ** BigInt: use BinOp::Pow so emit_bigint_binary generates .pow() call.
                 if left_type == ZigType::BigInt || right_type == ZigType::BigInt {
-                    // Mixed BigInt ** (e.g., 2n ** 2) throws TypeError at runtime
-                    if left_type != right_type {
-                        if let Some(ctx) = self.fn_ctx.as_mut() {
-                            ctx.has_catchable_error = true;
-                        }
+                    // BigInt ** can throw at runtime:
+                    // - Mixed BigInt (e.g., 2n ** 2): TypeError
+                    // - BigInt ** BigInt with negative exponent: RangeError (toU64 fails)
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.has_catchable_error = true;
                     }
                     return IrExpr::Binary {
                         op: BinOp::Pow,
@@ -150,14 +150,19 @@ impl Lowerer {
             ctx.has_bigint_div = true;
         }
 
-        // BigInt mixed-type ops and BigInt >>> throw TypeError at runtime.
-        // These are emitted as `return error.JsThrow` (not @panic) so JS try/catch can catch them.
+        // BigInt mixed-type ops, BigInt >>>, BigInt ** BigInt, and BigInt << >> BigInt
+        // throw or can throw at runtime. These are emitted as `return error.JsThrow`
+        // (not @panic) so JS try/catch can catch them.
         // Mark the function as can_throw so the signature includes `!`.
         {
             let left_is_bigint = left_type.as_ref() == Some(&ZigType::BigInt);
             let right_is_bigint = right_type.as_ref() == Some(&ZigType::BigInt);
             let is_mixed_bigint = left_is_bigint != right_is_bigint; // XOR: exactly one is BigInt
             let is_bigint_urshr = op == BinOp::UrShr && (left_is_bigint || right_is_bigint);
+            // BigInt << >> BigInt: toI64() can fail for very large shift amounts → error.JsThrow
+            let is_bigint_shift = matches!(op, BinOp::Shl | BinOp::Shr)
+                && left_is_bigint
+                && right_is_bigint;
             if (is_mixed_bigint
                 && matches!(
                     op,
@@ -174,6 +179,7 @@ impl Lowerer {
                         | BinOp::Shr
                 ))
                 || is_bigint_urshr
+                || is_bigint_shift
             {
                 if let Some(ctx) = self.fn_ctx.as_mut() {
                     ctx.has_catchable_error = true;
