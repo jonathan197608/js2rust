@@ -183,6 +183,8 @@ impl TypeInferrer {
                         InferResult::Definite(ZigType::NamedStruct(name.to_string()))
                     } else if name == "Error" {
                         InferResult::Definite(ZigType::JsError)
+                    } else if name == "Number" {
+                        InferResult::Definite(ZigType::F64)
                     } else if name == "Boolean" {
                         InferResult::Definite(ZigType::Bool)
                     } else if name == "String" {

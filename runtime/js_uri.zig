@@ -197,17 +197,36 @@ fn parseIntStr(s: []const u8, radix: ?i64) f64 {
         }
     }
 
-    // Parse digits
-    var result: f64 = 0;
+    // Parse digits using i128 for exact integer arithmetic, then convert to f64.
+    // This matches JS spec: parseInt parses an integer (exact), then converts to Number (f64).
+    // Using f64 accumulation causes rounding errors at each step for large numbers.
+    var result: i128 = 0;
     var found_digit = false;
+    var use_f64 = false;
+    var result_f64: f64 = 0;
+    const base_i128: i128 = @intCast(base);
+    const base_f64: f64 = @floatFromInt(base);
     while (i < s.len) : (i += 1) {
         const d = digitValue(s[i], base) orelse break;
-        result = result * @as(f64, @floatFromInt(base)) + @as(f64, @floatFromInt(d));
+        if (!use_f64) {
+            // Check if next multiply+add would overflow i128
+            if (result > @divTrunc(std.math.maxInt(i128) - @as(i128, d), base_i128)) {
+                // Overflow imminent — switch to f64 for remaining digits
+                use_f64 = true;
+                result_f64 = @as(f64, @floatFromInt(result));
+                result_f64 = result_f64 * base_f64 + @as(f64, @floatFromInt(d));
+            } else {
+                result = result * base_i128 + @as(i128, d);
+            }
+        } else {
+            result_f64 = result_f64 * base_f64 + @as(f64, @floatFromInt(d));
+        }
         found_digit = true;
     }
 
     if (!found_digit) return std.math.nan(f64);
-    return if (neg) -result else result;
+    const f: f64 = if (use_f64) result_f64 else @as(f64, @floatFromInt(result));
+    return if (neg) -f else f;
 }
 
 /// parseFloat stub: parse a float from a string.

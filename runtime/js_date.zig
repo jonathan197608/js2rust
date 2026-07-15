@@ -430,34 +430,34 @@ fn localOffsetMinutesWindows() i64 {
     }
 }
 
+/// C `struct tm` for localtime_r / gmtime_r (removed from std.posix in Zig 0.16).
+const Tm = extern struct {
+    tm_sec: c_int,
+    tm_min: c_int,
+    tm_hour: c_int,
+    tm_mday: c_int,
+    tm_mon: c_int,
+    tm_year: c_int,
+    tm_wday: c_int,
+    tm_yday: c_int,
+    tm_isdst: c_int,
+    tm_gmtoff: c_long,
+    tm_zone: ?[*:0]const u8,
+};
+
+extern "c" fn localtime_r(time: *const c_long, result: *Tm) ?*Tm;
+
 fn localOffsetMinutesPosix() i64 {
     var ts: std.posix.timespec = undefined;
     if (std.posix.system.clock_gettime(.REALTIME, &ts) != 0) return 0;
-    const epoch_sec = ts.sec;
+    const epoch_sec: c_long = @intCast(ts.sec);
 
     // Use localtime_r to convert epoch seconds to broken-down time
-    var tm: std.posix.tm = undefined;
-    const local_tm = std.posix.localtime_r(&epoch_sec, &tm) orelse return 0;
+    var tm: Tm = undefined;
+    const local_tm = localtime_r(&epoch_sec, &tm) orelse return 0;
 
     // tm_gmtoff is the offset from UTC in seconds, positive for east
-    // Not all POSIX systems expose tm_gmtoff, but major ones (Linux, macOS, BSD) do
-    if (@hasField(std.posix.tm, "tm_gmtoff")) {
-        return @divTrunc(local_tm.tm_gmtoff, 60);
-    }
-
-    // Fallback: compute from tm_hour/mday vs gmtime_r
-    var utc_tm: std.posix.tm = undefined;
-    const utc_ptr = std.posix.gmtime_r(&epoch_sec, &utc_tm) orelse return 0;
-
-    // Convert both to approximate seconds-since-epoch, then diff
-    // This is a rough approximation that ignores DST transitions within the year
-    const local_approx = local_tm.tm_yday * 86400 + local_tm.tm_hour * 3600 + local_tm.tm_min * 60 + local_tm.tm_sec;
-    const utc_approx = utc_ptr.tm_yday * 86400 + utc_ptr.tm_hour * 3600 + utc_ptr.tm_min * 60 + utc_ptr.tm_sec;
-    var diff = local_approx - utc_approx;
-    // Handle year boundary (yday wraps)
-    if (diff > 43200) diff -= 86400 * 7;
-    if (diff < -43200) diff += 86400 * 7;
-    return @divTrunc(diff, 60);
+    return @divTrunc(local_tm.tm_gmtoff, 60);
 }
 
 // ── Date math: millis ↔ civil date ──
