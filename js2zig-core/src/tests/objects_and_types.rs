@@ -190,8 +190,12 @@ return name;
         "Expected std.json.parse(User, ...), got: {}",
         zig
     );
-    // Should have catch return error.JsThrow for catchable runtime errors.
-    assert!(zig.contains("catch return error.JsThrow"));
+    // Top-level JSON.parse uses `catch @panic(...)` (cannot `return` outside a function).
+    assert!(
+        zig.contains("catch @panic(\"JSON.parse failed\")"),
+        "Expected catch @panic for top-level JSON.parse, got: {}",
+        zig
+    );
 }
 
 #[test]
@@ -633,15 +637,16 @@ return data.name + " from " + data.addresses[0].city;
         zig
     );
 
-    // Verify member access works (data.name, data.addresses[0].city)
+    // Verify member access works (data.name, data.addresses[...].city)
+    // Note: slice indices use @as(usize, @intCast(...)) for i64→usize conversion.
     assert!(
         zig.contains("data.name"),
         "Expected data.name access, got:\n{}",
         zig
     );
     assert!(
-        zig.contains("data.addresses[0].city"),
-        "Expected data.addresses[0].city access, got:\n{}",
+        zig.contains("data.addresses[") && zig.contains("].city"),
+        "Expected data.addresses[...].city access, got:\n{}",
         zig
     );
 }

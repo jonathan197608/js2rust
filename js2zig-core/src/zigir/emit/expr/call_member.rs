@@ -225,16 +225,17 @@ impl Emitter {
         self.write("))]");
     }
 
-    /// Emit `object[index]` — Slice/array index access.
+    /// Emit `object[@as(usize, @intCast(index))]` — Slice/array index access.
+    /// The @intCast is needed because JS indices are i64 but Zig indexing requires usize.
     pub(super) fn emit_slice_index(
         &mut self,
         object: &crate::zigir::types::IrExpr,
         index: &crate::zigir::types::IrExpr,
     ) {
         self.emit_expr(object);
-        self.write("[");
+        self.write("[@as(usize, @intCast(");
         self.emit_expr(index);
-        self.write("]");
+        self.write("))]");
     }
 
     /// Emit `__ClassName_field` — static field access on a class.

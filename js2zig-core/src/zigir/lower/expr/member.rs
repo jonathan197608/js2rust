@@ -288,6 +288,9 @@ impl Lowerer {
         match name {
             "Infinity" | "NaN" => return Some(ZigType::F64),
             "undefined" => return Some(ZigType::JsAny),
+            // arguments is lowered to __arguments: []const JsAny
+            // Use ArrayList(JsAny) as the closest ZigType approximation for inference.
+            "arguments" => return Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
             _ => {}
         }
         // Exact match
@@ -481,7 +484,20 @@ impl Lowerer {
                     .unwrap_or(ZigType::JsAny);
                 Some(ZigType::ArrayList(Box::new(elem_ty)))
             }
-            // Could add more patterns here
+            // Computed member access: obj[key]
+            Expression::ComputedMemberExpression(cme) => {
+                // arguments[i] → JsAny (since __arguments is []const JsAny)
+                if let Expression::Identifier(id) = &cme.object
+                    && (id.name.as_str() == "arguments" || id.name.as_str() == "__arguments")
+                {
+                    return Some(ZigType::JsAny);
+                }
+                // General: ArrayList(T)[i] → T
+                if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&cme.object) {
+                    return Some(*elem);
+                }
+                None
+            }
             _ => None,
         }
     }

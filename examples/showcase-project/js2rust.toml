@@ -22,6 +22,7 @@ js_files = [
     "test_regexp.js",
     "test_symbol.js",
     "test_for_of_collections.js",
+    "test_arguments.js",
     "test_in_operator.js",
 ]
 

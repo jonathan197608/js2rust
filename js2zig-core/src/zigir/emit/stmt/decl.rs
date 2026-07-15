@@ -164,12 +164,19 @@ impl Emitter {
             if let Some(init) = &vd.init {
                 self.emit_expr(init);
             }
-            self.write(") catch return error.JsThrow");
+            if self.in_function {
+                self.write(") catch return error.JsThrow");
+            } else {
+                self.write(") catch @panic(\"JSON.parse failed\")");
+            }
         } else if let Some(init) = &vd.init {
             // Has initializer
-            // Special case: __arguments variable — emit as const slice &[_]JsAny{ ... }
+            // Special case: __arguments variable — emit as const slice with explicit type
+            // annotation so that even empty arrays (&.{} ) are typed as []const JsAny (slice,
+            // which supports indexing) rather than *const [0]JsAny (zero-length array, which
+            // does not support indexing).
             if vd.name.zig_name == "__arguments" {
-                self.write(&format!("{} {} = ", kw, vd.name.zig_name));
+                self.write(&format!("{} {}: []const JsAny = ", kw, vd.name.zig_name));
                 if let crate::zigir::types::IrExpr::ArrayLiteral(arr) = init {
                     self.write("&[_]JsAny{ ");
                     for (i, elem) in arr.elements.iter().enumerate() {
@@ -267,6 +274,7 @@ impl Emitter {
 
         // Emit `_ = _param;` for unused params at the start of the body
         self.indent_push();
+        self.in_function = true;
         for param in &fd.params {
             if param.is_unused {
                 self.writeln(&format!("_ = _{};", param.name.zig_name));
@@ -275,6 +283,7 @@ impl Emitter {
 
         // Function body
         self.emit_block_stmts_unlabeled(&fd.body);
+        self.in_function = false;
         self.indent_pop();
 
         self.writeln("}");

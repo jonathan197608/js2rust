@@ -37,6 +37,11 @@ pub struct Emitter {
     try_label_counter: u32,
     /// Counter for generating unique block labels (for array literal labeled blocks).
     label_counter: u32,
+    /// Whether we are currently emitting inside a function body.
+    /// Top-level declarations (const, var) cannot use `return` or `try`,
+    /// so error-propagation patterns like `catch return error.JsThrow` must
+    /// be replaced with `catch @panic(...)` at the top level.
+    in_function: bool,
     /// Buffer for static block init code. When non-empty, `emit_module_inner`
     /// generates a `pub fn init_js2rust() !void { ... }` at the end of the
     /// module so the orchestrator's `init_js2rust()` will call it, ensuring
@@ -84,6 +89,7 @@ impl Emitter {
             inside_try_block: None,
             try_label_counter: 0,
             label_counter: 0,
+            in_function: false,
             static_init_buffer: String::new(),
             static_deinit_buffer: String::new(),
             class_needs_deinit: HashSet::new(),
