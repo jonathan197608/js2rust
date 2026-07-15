@@ -1,3 +1,14 @@
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ea4d00d2-c6ff-42fb-8a89-8c51e4b1b4b2'
+  PropagateID: 'ea4d00d2-c6ff-42fb-8a89-8c51e4b1b4b2'
+  ReservedCode1: 'deef3230-8072-4dcc-8a9c-83c784b978e9'
+  ReservedCode2: 'deef3230-8072-4dcc-8a9c-83c784b978e9'
+---
+
 # js2rust — JS-to-Zig Transpiler for Rust FFI
 
 `js2rust` is a JS-to-Zig source-level transpiler that enables seamless integration of JavaScript code into Rust projects via automatic FFI bridge generation.
@@ -6,13 +17,13 @@
 
 | Metric | Value |
 |--------|-------|
-| Rust tests | 361 (361 pass, 0 ignore) |
-| Zig tests | 27 |
+| Rust tests | 490 (490 pass, 0 ignore) |
 | Clippy warnings | 0 |
-| JS expression coverage | 78/91 (~86%) |
-| JS statement coverage | 43/49 (~88%) |
-| JS built-in coverage | 194/217 (~89%, incl. 5 simplified impls) |
-| Crate versions | [js2zig-core 0.7](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.8](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.8](https://crates.io/crates/js2rust-bridge-macro) |
+| MDN end-to-end tests | 237/237 (100% match, 0 mismatch, 0 error) |
+| JS expression coverage | 83/91 (~91%) |
+| JS statement coverage | 46/49 (~94%) |
+| JS built-in coverage | 208/220 (~95%) |
+| Crate versions | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
 
 > Detailed feature evaluation: [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) (Chinese).
 
@@ -38,10 +49,10 @@
 
 ```toml
 [dependencies]
-js2rust-bridge = "0.8"
+js2rust-bridge = "0.17"
 
 [build-dependencies]
-js2rust-bridge = "0.8"
+js2rust-bridge = "0.17"
 ```
 
 ### 2. Write JS code in `js_src/main.js`
@@ -190,7 +201,7 @@ js2rust/
     ├── test-bin-project/   # Binary project with sync + async host functions
     ├── test-lib-project/   # Library project
     ├── showcase-project/   # Multi-file demo
-    └── mdn-test-project/   # MDN semantic conformance test suite (149+ cases)
+    └── mdn-test-project/   # MDN semantic conformance test suite (237 cases)
 ```
 
 ### How it works
@@ -221,7 +232,7 @@ Rust: getUserInfo_main("alice")
 
 ## Documentation
 
-- [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) — Per-feature implementation status across 140 syntax features + 217 built-in method rows (Chinese)
+- [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) — Per-feature implementation status across 140 syntax features + 220 built-in method rows (Chinese)
 
 ## License
 

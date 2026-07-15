@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'eef6d784-9b57-4fe9-bbbf-956daa1f2941'
-  PropagateID: 'eef6d784-9b57-4fe9-bbbf-956daa1f2941'
-  ReservedCode1: '31443027-9974-4b38-99d1-2d3c68efce82'
-  ReservedCode2: '31443027-9974-4b38-99d1-2d3c68efce82'
+  ProduceID: 'fe85e4db-5e92-4bdb-ae87-4eba00b81797'
+  PropagateID: 'fe85e4db-5e92-4bdb-ae87-4eba00b81797'
+  ReservedCode1: '9903835c-48a1-4890-a179-dd39f3fd83a0'
+  ReservedCode2: '9903835c-48a1-4890-a179-dd39f3fd83a0'
 ---
 
 # js2rust 测试说明文档
@@ -19,17 +19,15 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（10 子模块）+ 内联测试 | 368 + 127 = 495 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig.exe` 在 PATH |
-| **Zig runtime 测试** | `runtime/jsany.zig` + `runtime/js_string.zig` 等 | 201 | 运行时函数正确性（UTF-16 helpers、字符串方法、instanceOf 动态类型检查、日期、集合等） | `zig.exe` 在 PATH |
-| **MDN 端到端测试** | `examples/mdn-test-project/` | 204 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig.exe` + `node` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（11 子模块）+ 内联测试 | 490 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig` 在 PATH |
+| **MDN 端到端测试** | `examples/mdn-test-project/` | 237 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig` + `node` 在 PATH |
 
-### 基线指标（2026-07-12）
+### 基线指标（2026-07-15）
 
-- Rust 单元测试：**495 passed, 0 failed**（368 在 `tests/` 子模块 + 127 内联在源文件中）
-- Zig runtime 测试：**201 passed, 0 failed**（分布在 15 个文件：js_string.zig 43、js_date.zig 34、jsany.zig 22、js_collections.zig 19、js_array.zig 14、js_object.zig 12、js_symbol.zig 11、js_uri.zig 10、js_number.zig 9、js_allocator.zig 8、js_console.zig 7、js_typedarray.zig 5、js_regexp.zig 3、js_json.zig 2、js_error.zig 2）
+- Rust 单元测试：**490 passed, 0 failed**（11 个 `tests/` 子模块 + 内联测试）
 - Clippy：**0 warnings**（全 workspace）
-- MDN 端到端：**203 match / 1 mismatch / 0 error**（匹配率 99.5%，204 total）
-- 1 个 mismatch 为已知限制，详见下方表格
+- MDN 端到端：**237 match / 0 mismatch / 0 error**（匹配率 100%，237 total）
+- JS 语义运行时错误（TypeError/RangeError/SyntaxError）均通过 `return error.JsThrow` 可被 try/catch 捕获
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 - 编译诊断：`cargo build` 可见 `@compileError` 信息（通过 `cargo:warning` 输出）
 - UTF-16/UTF-8 差异处理：String `.length`/`charAt`/`slice`/`substring`/`indexOf`/`lastIndexOf`/`padStart`/`padEnd` 已正确实现 UTF-16 索引语义（`.length` → `utf16Len()`，切片 → `utf16IndexToByteOffset()`，查找 → `byteOffsetToUtf16Index()`）
@@ -38,9 +36,9 @@ AIGC:
 
 | Crate | 版本 | 说明 |
 |-------|------|------|
-| js2zig-core | 0.13.0 | 核心转译库 |
-| js2rust-bridge | 0.14.0 | Bridge facade（build.rs + proc-macro） |
-| js2rust-bridge-macro | 0.14.0 | Proc-macro 实现 |
+| js2zig-core | 0.17.0 | 核心转译库 |
+| js2rust-bridge | 0.17.0 | Bridge facade（build.rs + proc-macro） |
+| js2rust-bridge-macro | 0.17.0 | Proc-macro 实现 |
 
 ---
 
@@ -88,7 +86,7 @@ js2zig-core/src/tests/
 | `native_proto.rs` | 2 | Native proto 测试 |
 | `testgen.rs` | 3 | Test 生成测试 |
 
-**总计：495 个测试**（368 + 127）
+**总计：490 个测试**
 
 ### 2.2 测试分类
 
@@ -250,9 +248,9 @@ cargo fmt -p js2zig-core -- --check
 examples/mdn-test-project/
 ├── Cargo.toml              # 依赖 js2rust-bridge
 ├── build.rs                # 构建时调用 js2rust_bridge::build(true)
-├── src/main.rs             # CLI 入口 + 204 个 fragment 分发与对比
-├── js_src/                 # JS 源文件（424 个 .js + 424 个 .node.js + 1 个 app.js）
-├── pass_fragments.json     # 通过转译的 204 个 fragment 列表
+├── src/main.rs             # CLI 入口 + 237 个 fragment 分发与对比
+├── js_src/                 # JS 源文件（859 个 .js + .node.js + 1 个 app.js）
+├── pass_fragments.json     # 通过转译的 230 个 fragment 列表
 ├── comparison_results.json # 上次对比结果快照（203 match / 1 mismatch）
 ├── compare_outputs.py      # Node.js vs Zig 输出对比脚本（已过时，main.rs 内置对比逻辑）
 └── _check_results.py       # 快速查看 comparison_results.json
@@ -260,14 +258,14 @@ examples/mdn-test-project/
 
 ### 3.2 测试数据来源
 
-从 MDN Web Docs 抓取的 JS 代码片段。磁盘上共 424 个 fragment 文件，其中 **204 个**通过转译纳入测试（`ALL_FRAGMENTS` 列表）：
+从 MDN Web Docs 抓取的 JS 代码片段。磁盘上共 859 个 fragment 文件，其中 **237 个**通过转译纳入测试（`ALL_FRAGMENTS` 列表）：
 
 | 类别 | 磁盘总数 | 通过转译 | 来源 |
 |------|----------|----------|------|
 | statements | 40 | 7 | MDN Statements 参考 |
 | expressions | 161 | 124 | MDN Expressions 参考 |
 | builtins | 223 | 73 | MDN Built-in Objects 参考 |
-| **总计** | **424** | **204** | |
+| **总计** | **859** | **237** | | |
 
 每个 fragment 有两个文件：
 - `test_<category>_frag_<N>.js` — 原始 JS 片段（供转译器处理）
@@ -284,7 +282,7 @@ cargo build                    ← 触发 build.rs
             4. 链接到 Rust 二进制
 
 cargo run                       ← 运行所有 fragment
-    └── 遍历 ALL_FRAGMENTS（204 个）
+    └── 遍历 ALL_FRAGMENTS（237 个）
         ├── 运行 Zig 二进制 (子进程，crash 隔离)
         ├── 运行 Node.js (获取参考输出)
         └── 逐行对比 stderr/stdout
@@ -385,7 +383,7 @@ cargo run     # 运行 main()，打印 128 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（495 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（490 passed）
 cargo clippy -p js2zig-core -p js2rust-bridge -p js2rust-bridge-macro -- -D warnings  # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -421,22 +419,16 @@ cd examples/showcase-project && cargo run     # 128 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 495 passed, 0 failed | 495 passed |
+| `cargo test -p js2zig-core --lib` | 490 passed, 0 failed | 490 passed |
 | `cargo clippy` （全 workspace） | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
-| MDN match 数 | >= 203（不低于基线） | 203 |
-| MDN mismatch 数 | <= 1（不增加已知 mismatch） | 1 |
-| MDN error 数 | 0（BigInt div/0 已修复为可恢复 throw） | 0 |
+| MDN match 数 | >= 237（不低于基线） | 237 |
+| MDN mismatch 数 | 0 | 0 |
+| MDN error 数 | 0 | 0 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
 | showcase-project `cargo run` | exit code 0（所有输出匹配 expected 值） | PASS — 0 codegen errors |
 | showcase `cargo build` 诊断 | 修改 JS 后可见 `cargo:warning=js2zig: ... COMPILE_ERROR` | PASS |
-
-#### MDN 已知 mismatch（1 个）
-
-| Fragment | 类型 | 问题 | 优先级 |
-|----------|------|------|--------|
-| `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0`（i64 无法表示 -0） | WONTFIX |
 
 ### 5.4 编译诊断机制
 

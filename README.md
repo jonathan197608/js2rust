@@ -1,3 +1,14 @@
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '19f6b39f-05b9-4a80-86e2-1f94eeb4a198'
+  PropagateID: '19f6b39f-05b9-4a80-86e2-1f94eeb4a198'
+  ReservedCode1: '24fafd74-eed2-4d85-8381-f8a187fc0bf2'
+  ReservedCode2: '24fafd74-eed2-4d85-8381-f8a187fc0bf2'
+---
+
 # js2rust — JS 转 Zig 转译器（Rust FFI 集成）
 
 `js2rust` 是一个 JS 到 Zig 的源码级转译器，可将 JavaScript 代码无缝集成到 Rust 项目中，通过自动生成 FFI 桥接代码实现 JS ↔ Rust 互调用。
@@ -8,13 +19,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| Rust 测试 | 361 (361 pass, 0 ignore) |
-| Zig 测试 | 27 |
+| Rust 测试 | 490 (490 pass, 0 ignore) |
 | Clippy 警告 | 0 |
-| JS 表达式覆盖率 | 78/91 (~86%) |
-| JS 语句覆盖率 | 43/49 (~88%) |
-| JS 内置对象覆盖率 | 194/217 (~89%，含 5 个简化实现) |
-| Crate 版本 | [js2zig-core 0.7](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.8](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.8](https://crates.io/crates/js2rust-bridge-macro) |
+| MDN 端到端测试 | 237/237 (100% match, 0 mismatch, 0 error) |
+| JS 表达式覆盖率 | 83/91 (~91%) |
+| JS 语句覆盖率 | 46/49 (~94%) |
+| JS 内置对象覆盖率 | 208/220 (~95%) |
+| Crate 版本 | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
 
 > 详细特性评估见 [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md)。
 
@@ -40,10 +51,10 @@
 
 ```toml
 [dependencies]
-js2rust-bridge = "0.8"
+js2rust-bridge = "0.17"
 
 [build-dependencies]
-js2rust-bridge = "0.8"
+js2rust-bridge = "0.17"
 ```
 
 ### 2. 编写 JS 代码 `js_src/main.js`
@@ -181,7 +192,7 @@ js2rust/
     ├── test-bin-project/   # 二进制项目（同步+异步 host 函数）
     ├── test-lib-project/   # 库项目
     ├── showcase-project/   # 多文件综合示例
-    └── mdn-test-project/   # MDN 语义一致性测试集（149+ cases）
+    └── mdn-test-project/   # MDN 语义一致性测试集（237 cases）
 ```
 
 ### 工作原理
@@ -212,7 +223,7 @@ Rust: getUserInfo_main("alice")
 
 ## 文档
 
-- [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态，覆盖 140 个语法特性 + 217 行内置对象方法
+- [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态，覆盖 140 个语法特性 + 220 行内置对象方法
 
 ## 许可证
 

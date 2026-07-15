@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '1692c856-cfaf-40ed-b4b3-755844464e73'
-  PropagateID: '1692c856-cfaf-40ed-b4b3-755844464e73'
-  ReservedCode1: 'af79aaa5-1fd1-4162-aa0d-2119b61ca786'
-  ReservedCode2: 'af79aaa5-1fd1-4162-aa0d-2119b61ca786'
+  ProduceID: '40c4f215-c9df-4f40-a276-a9d77f1a27ea'
+  PropagateID: '40c4f215-c9df-4f40-a276-a9d77f1a27ea'
+  ReservedCode1: '201e3488-1052-4150-9d84-82ba938326fa'
+  ReservedCode2: '201e3488-1052-4150-9d84-82ba938326fa'
 ---
 
 ---
@@ -89,7 +89,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 495 个 Rust 测试 (495 pass + 0 ignore) + 201 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment
+> **测试覆盖**: 490 个 Rust 测试 (490 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
 
 ---
 
@@ -101,7 +101,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 495 个 Rust 测试 (495 pass + 0 ignore) + 201 个 Zig runtime 测试 + 204 个 MDN 端到端 fragment |
+| **测试覆盖** | 490 个 Rust 测试 (490 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -130,11 +130,11 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 204 | ~93% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
+| ✅ 完全实现 | 208 | ~95% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
 | ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
-> **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
+> **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。混合类型运算/`>>>` 抛出 TypeError（`return error.JsThrow`，可被 JS try/catch 捕获）；BigInt `**` 负指数抛出 RangeError；BigInt 移位负值自动反方向移位（符合 JS 规范）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。JSON.parse 语法错误抛出 SyntaxError（`return error.JsThrow`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
 
 ### 1.5 三大类对比总览
 
@@ -1255,33 +1255,27 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 495 个测试 (495 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 490 个测试 (490 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（10 个文件） | 368 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
-| 源文件内联测试 | 127 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
+| `tests/` 子模块（11 个文件） | 380 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| 源文件内联测试 | 110 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
 
 ### 7.2 测试覆盖情况
 
-495 个 Rust 测试全部通过（495 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+490 个 Rust 测试全部通过（490 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 
-204 个 fragment 与 Node.js expected 输出对比：
+237 个 fragment 与 Node.js expected 输出对比：
 
 | 结果 | 数量 | 说明 |
 |------|------|------|
-| MATCH | 203 | 完全匹配 |
-| MISMATCH | 1 | 已知差异 |
+| MATCH | 237 | 完全匹配 |
+| MISMATCH | 0 | — |
 | ERROR (CRASH) | 0 | — |
 
-**匹配率: 203/204 = 99.5%**
-
-**1 个已知非 PASS**:
-
-| Fragment | 类型 | 差异原因 | 状态 |
-|----------|------|----------|------|
-| `test_expressions_frag_112` | MISMATCH | 一元 `-0`：Zig 无负零概念，输出 `0` 而非 `-0` | WONTFIX |
+**匹配率: 237/237 = 100%**
 
 > AI生成
