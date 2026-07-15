@@ -18,6 +18,6 @@ js_files = [
     "test_advanced_types.js",
 ]
 
-# [build]
-# force_rebuild = false
-# run_zig_build = true
+# js_src_pending/ 目录包含因 codegen bug 暂无法编译的 e2e 测试文件。
+# Bug 修复后，将文件移入 js_src/ 并添加到上方 js_files 列表即可启用。
+# 详见 docs/CODEGEN_BUGS.md。

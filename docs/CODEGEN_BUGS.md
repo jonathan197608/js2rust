@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'c27d8e3b-4a43-4456-955e-bedfe1d2d2b0'
-  PropagateID: 'c27d8e3b-4a43-4456-955e-bedfe1d2d2b0'
-  ReservedCode1: '5870f685-d7ac-4781-900d-a1e7d75a7847'
-  ReservedCode2: '5870f685-d7ac-4781-900d-a1e7d75a7847'
+  ProduceID: '7ccc77a4-cdcb-424a-a41a-2bb3c9b82b31'
+  PropagateID: '7ccc77a4-cdcb-424a-a41a-2bb3c9b82b31'
+  ReservedCode1: 'b8e49185-003b-4364-90d4-4ebe1c5b5fd9'
+  ReservedCode2: 'b8e49185-003b-4364-90d4-4ebe1c5b5fd9'
 ---
 
 # Codegen Bug Tracker
@@ -29,6 +29,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/expr/binary.rs:254-260`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_in_operator.js`
 - **复现**: `"key" in mapVariable` 或 `value in setVariable`
 - **现象**: 生成 `m.contains("key")`，但 `JsCollection(JsAny)` / `JsCollection(void)` 没有 `.contains()` 方法。`has()` 方法存在但签名不同（`has` 接受 `JsAny` 参数，`contains` 接受具体类型）。
 - **生成代码示例**:
@@ -45,6 +46,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/lower/decl.rs:695-732`（lowering），emit 侧
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_arguments.js`
 - **复现**: 任何使用 `arguments` 的函数
 - **现象**:
   - `arguments.length` 生成 `js_string.utf16Len(__arguments)`，但 `__arguments` 是 `ArrayList(JsAny)` 不是 `[]const u8`
@@ -65,6 +67,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/stmt/control_flow.rs:300-331`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_for_of_collections.js`
 - **复现**: `for (const [k, v] of mapInstance) { sum += v; }` 其中 `sum` 是 `i64`
 - **现象**: 解构变量 `v` 的类型为 `JsAny`（从 `__kv.value_ptr.*` 推断），而不是 Map 值的具体类型（如 `i64`）。当与 `i64` 做算术时报类型不兼容错误。
 - **生成代码示例**:
@@ -81,6 +84,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/stmt/control_flow.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_for_of_collections.js`
 - **复现**: `for (const val of setInstance) { sum += val; }` 其中 `sum` 是 `i64`
 - **现象**: 同 BUG-03，`val` 类型为 `JsAny`，与 `i64` 算术不兼容。
 - **生成代码示例**:
@@ -97,6 +101,7 @@ AIGC:
 
 - **严重程度**: P2
 - **文件**: `js2zig-core/src/zigir/emit/stmt/control_flow.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_for_of_collections.js`
 - **复现**: `for (const ch of "ABC") { count++; }`（未在循环体中使用 `ch`）
 - **现象**: Zig 0.16 将未使用的 for 循环捕获变量视为错误。应生成 `for ("ABC") |_ch|` 或 `for ("ABC") |_, _|` 来显式忽略。
 - **生成代码示例**:
@@ -114,6 +119,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/builtins/array_method.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_builtins_es2023.js`
 - **复现**: `arr.toReversed()[0]`、`arr.toSorted().length`、`for (const v of arr.toSpliced()) {}`
 - **现象**: `.toReversed()`/`.toSorted()`/`.toSpliced()`/`.with()` 返回 `ArrayList(i64)` 类型，但：
   1. **索引访问** `newArr[0]` 生成 `newArr[0]`，但 `ArrayList` 不支持 `[]`（需 `.items[0]`）
@@ -140,6 +146,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/builtins/collections.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_date_setters.js`
 - **复现**: `d.setFullYear(2025)`、`d.setMonth(5)`、`d.setHours(14)`
 - **现象**: JS 中 Date setter 的后续参数是可选的（如 `setFullYear(year, month?, date?)`），但生成代码将所有参数位置传递，Zig 运行时签名要求精确参数数量。
 - **生成代码示例**:
@@ -158,6 +165,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/`（自动 cleanup 逻辑）
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_string_methods.js`
 - **复现**: `const s = "hello"; const x = s.slice(0, 3);`（`s` 是字符串字面量，编译时类型为 `[:0]const u8`）
 - **现象**: 字符串字面量被标记为需要 `defer deinit()`，但 `[:0]const u8` 没有 `.deinit()` 方法。类似地，对字面量调用 `.items` 也会失败。
 - **生成代码示例**:
@@ -175,6 +183,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/expr/binary.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_symbol.js`
 - **复现**: `a !== b`（`a`, `b` 是 `Symbol()` 返回值）
 - **现象**: `JsSymbol` 是一个 Zig struct，不支持 `==` / `!=` 操作符。需要实现 `eql` 方法或使用 `ptrEqual`。
 - **生成代码示例**:
@@ -191,6 +200,7 @@ AIGC:
 
 - **严重程度**: P1
 - **文件**: `js2zig-core/src/zigir/emit/expr/call_member.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_symbol.js`
 - **复现**: `const key = Symbol.keyFor(sym); key === "my.key"`
 - **现象**: `Symbol.keyFor()` 返回 `?[]const u8`（optional），但生成代码直接将其作为 `[]const u8` 传给 `std.mem.eql`。
 - **生成代码示例**:
@@ -207,6 +217,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/expr/new.rs`（或相关 emit）
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_regexp.js`
 - **复现**: `const re = new RegExp("test", "g");` 在返回 `i64` 的函数中
 - **现象**: `JsRegExp.init()` 返回 `!JsRegExp`（error union），但生成代码在非 error 返回函数中直接使用 `try`。
 - **生成代码示例**:
@@ -224,6 +235,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/expr/operators.rs`（delete emit 逻辑）
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_delete_operator.js`
 - **复现**: `delete mapVariable["key"]`
 - **现象**: 对 Map 的 `delete obj[expr]` 生成 `m.deleteByKey(_dk, alloc)` 但 `alloc` 变量在作用域中不存在。
 - **生成代码示例**:
@@ -239,6 +251,7 @@ AIGC:
 
 - **严重程度**: P0
 - **文件**: `js2zig-core/src/zigir/emit/builtins/array_callback.rs`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_for_of_collections.js`
 - **复现**: `m.forEach((value, key) => { sum += value; })`（`sum` 是 `i64`）
 - **现象**: forEach 回调的 `value` 参数类型为 `JsAny`，与 `i64` 算术不兼容。同 BUG-03/04 的根本原因。
 - **生成代码示例**:
@@ -255,6 +268,7 @@ AIGC:
 
 - **严重程度**: P1
 - **文件**: `js2zig-core/src/zigir/lower/class.rs:175-181`
+- **Pending e2e 测试**: `examples/showcase-project/js_src_pending/test_extends.js`
 - **复现**: `class Child extends Parent { constructor() { super(); } }`
 - **现象**: `super` 明确不支持，生成 `@compileError("super not supported")`。`extends` 仅用于 `instanceof` 链追踪，不生成字段/方法继承。
 - **修复方向**: 需要完整的原型链继承 emit 策略（字段展开、方法委托、super 调用映射），属于较大的架构性工作。
@@ -282,21 +296,22 @@ AIGC:
 
 ## 测试覆盖状态
 
-| Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) |
-|----------|:---:|:---:|:---:|
-| BUG-01 | ✅ | ❌ | ❌ |
-| BUG-02 | ✅ | ❌ | ❌ |
-| BUG-03 | ✅ | ❌ | ❌ |
-| BUG-04 | ✅ | ❌ | ❌ |
-| BUG-05 | ✅ | ❌ | ❌ |
-| BUG-06 | ✅ | ❌ | ❌ |
-| BUG-07 | ✅ | ❌ | ❌ |
-| BUG-08 | ✅ | ❌ | ❌ |
-| BUG-09 | ✅ | ❌ | ❌ |
-| BUG-10 | ✅ | ❌ | ❌ |
-| BUG-11 | ✅ | ❌ | ❌ |
-| BUG-12 | ✅ | ❌ | ❌ |
-| BUG-13 | ✅ | ❌ | ❌ |
-| BUG-14 | ✅ | N/A | N/A |
+| Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) | Pending e2e 文件 |
+|----------|:---:|:---:|:---:|------|
+| BUG-01 | ✅ | ❌ | ❌ | `js_src_pending/test_in_operator.js` |
+| BUG-02 | ✅ | ❌ | ❌ | `js_src_pending/test_arguments.js` |
+| BUG-03 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
+| BUG-04 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
+| BUG-05 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
+| BUG-06 | ✅ | ❌ | ❌ | `js_src_pending/test_builtins_es2023.js` |
+| BUG-07 | ✅ | ❌ | ❌ | `js_src_pending/test_date_setters.js` |
+| BUG-08 | ✅ | ❌ | ❌ | `js_src_pending/test_string_methods.js` |
+| BUG-09 | ✅ | ❌ | ❌ | `js_src_pending/test_symbol.js` |
+| BUG-10 | ✅ | ❌ | ❌ | `js_src_pending/test_symbol.js` |
+| BUG-11 | ✅ | ❌ | ❌ | `js_src_pending/test_regexp.js` |
+| BUG-12 | ✅ | ❌ | ❌ | `js_src_pending/test_delete_operator.js` |
+| BUG-13 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
+| BUG-14 | ✅ | N/A | N/A | `js_src_pending/test_extends.js` |
 
 所有特性均有 Rust 侧单元测试保证正确性，e2e 测试受限于代码生成 Bug 暂无法通过。
+Pending e2e 测试文件位于 `examples/showcase-project/js_src_pending/`，Bug 修复后可移入 `js_src/` 目录启用。
