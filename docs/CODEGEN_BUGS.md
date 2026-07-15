@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '96d95a23-1a74-4887-984f-994588b4f88c'
+  PropagateID: '96d95a23-1a74-4887-984f-994588b4f88c'
+  ReservedCode1: '576b07a7-9e52-4508-a58b-402e09ad1a05'
+  ReservedCode2: '576b07a7-9e52-4508-a58b-402e09ad1a05'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '3d41e8c3-d73f-46bf-a9f0-3f0f8e2340f9'
   PropagateID: '3d41e8c3-d73f-46bf-a9f0-3f0f8e2340f9'
   ReservedCode1: '83abcf8f-63df-4e4a-866e-baa00160df4e'
@@ -345,9 +356,13 @@ AIGC:
 - **BUG-13**: Map/Set forEach 回调参数 var_types 预设 + Set.forEach 改用 iterator 模式
 
 ### 部分修复 (1/14):
-- **BUG-02**: `arguments.length` 和 `arguments[i]` 已修复，完整可变参数支持需架构变更
+- **BUG-02**: `arguments.length` 走 `.len`、`arguments[i]` 走 `SliceIndex` + `@as(usize, @intCast())`、`__arguments` 声明为 `[]const JsAny` 切片、`ComputedMemberExpression` 类型推断返回 `JsAny` 以支持 `.asI64()` 算术转换。e2e 测试已启用。完整可变参数支持需架构变更（`__arguments` 仅包含已声明参数）。
 
 ### 跳过 (1/14):
 - **BUG-14**: `class extends` / `super` 是架构限制，非 Bug，建议使用组合模式
 
-剩余 e2e 测试文件位于 `examples/showcase-project/js_src_pending/`（仅 `test_arguments.js` 和 `test_extends.js`）。
+剩余 e2e 测试文件位于 `examples/showcase-project/js_src_pending/`（仅 `test_extends.js`）。
+
+**额外修复**：JSON.parse 顶层作用域 `catch return error.JsThrow` 编译错误 — 新增 `Emitter.in_function` 字段，顶层使用 `catch @panic()` 替代。`emit_slice_index` 所有切片索引添加 `@as(usize, @intCast())` 转换。
+
+**测试状态**：501 passed, clippy clean, fmt clean, 4 个 e2e 项目全部通过。
