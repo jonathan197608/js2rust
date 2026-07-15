@@ -355,6 +355,75 @@ try {
     // This is tracked as a minor emission optimization issue.
 }
 
+// ── Test: JSON.parse inside try-catch → uses break :label, not return ──
+
+#[test]
+fn test_native_proto_try_catch_json_parse() {
+    // JSON.parse inside try-catch should use break :label (not return error.JsThrow)
+    // so that the catch block actually catches the error.
+    let js = r##"
+function safeParse(str) {
+try {
+    const result = JSON.parse(str);
+    return result;
+} catch (e) {
+    return null;
+}
+}
+"##;
+    let zig = transpile_and_assert(js, "test_native_proto_try_catch_json_parse");
+    println!("=== JSON.parse in try-catch ===\n{}", zig);
+    // Should generate labeled block pattern
+    assert!(
+        zig.contains("_js_try_body_blk_"),
+        "Expected labeled body block:\n{}",
+        zig
+    );
+    // JSON.parse should use break :label, NOT return error.JsThrow
+    assert!(
+        zig.contains("break :"),
+        "Expected break :label for JSON.parse inside try:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("catch return error.JsThrow"),
+        "Should NOT have 'catch return error.JsThrow' inside try block:\n{}",
+        zig
+    );
+    assert_zig_ast_check(&zig, "test_native_proto_try_catch_json_parse");
+}
+
+// ── Test: JSON.parse call (not var decl) inside try-catch ──
+
+#[test]
+fn test_native_proto_try_catch_json_parse_call() {
+    // bare JSON.parse() call expression inside try-catch
+    let js = r##"
+function parseAndIgnore(str) {
+try {
+    JSON.parse(str);
+    return true;
+} catch (e) {
+    return false;
+}
+}
+"##;
+    let zig = transpile_and_assert(js, "test_native_proto_try_catch_json_parse_call");
+    println!("=== JSON.parse call in try-catch ===\n{}", zig);
+    // Should use break :label, not return error.JsThrow
+    assert!(
+        zig.contains("break :"),
+        "Expected break :label for JSON.parse call inside try:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("catch return error.JsThrow"),
+        "Should NOT have 'catch return error.JsThrow' inside try block:\n{}",
+        zig
+    );
+    assert_zig_ast_check(&zig, "test_native_proto_try_catch_json_parse_call");
+}
+
 // ── Test: ** operator (exponentiation) ─────────────
 
 #[test]

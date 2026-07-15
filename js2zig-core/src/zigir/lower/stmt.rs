@@ -595,10 +595,27 @@ impl Lowerer {
         // Lower try block first, then inspect the resulting IR for throws.
         // This catches implicit throws like const-reassignment guards that
         // `stmt_has_throw_any` (AST-level) cannot detect.
+
+        // Record catchable_error state before lowering try body.
+        // If it changes from false to true, the try body contains operations
+        // that emit `catch return error.JsThrow` (JSON.parse, BigInt div/mod, etc.)
+        // — these need the labeled block pattern so the emit layer can use
+        // `break :label` instead of `return error.JsThrow`.
+        let catchable_before = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.has_catchable_error);
+
         let try_block = {
             let stmts = ts.block.body.iter().map(|s| self.lower_stmt(s)).collect();
             IrBlock::new(stmts)
         };
+
+        let catchable_after = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.has_catchable_error);
+        let has_catchable_error_in_try = catchable_after && !catchable_before;
 
         // AST-level throw detection (for nested try exclusion)
         let has_nested_try = ts
@@ -624,7 +641,7 @@ impl Lowerer {
                 _ => false,
             })
         }
-        let has_throw = ir_block_has_throw(&try_block);
+        let has_throw = ir_block_has_throw(&try_block) || has_catchable_error_in_try;
 
         let (catch_var, catch_var_referenced, catch_block) = if let Some(handler) = &ts.handler {
             let var = handler

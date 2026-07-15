@@ -155,7 +155,14 @@ impl Emitter {
                             | BinOp::Shr
                     )
                 {
-                    self.write("({ return error.JsThrow; })");
+                    if let Some(label) = &self.inside_try_block {
+                        self.write(&format!(
+                            "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
+                            label
+                        ));
+                    } else {
+                        self.write("({ return error.JsThrow; })");
+                    }
                 }
                 // ── String equality/comparison ──
                 else if left_is_str && right_is_str {
@@ -275,7 +282,14 @@ impl Emitter {
                 // ── Unsigned right shift ──
                 // BigInt × any: JS throws TypeError at runtime
                 else if *op == BinOp::UrShr && (left_is_bigint || right_is_bigint) {
-                    self.write("({ return error.JsThrow; })");
+                    if let Some(label) = &self.inside_try_block {
+                        self.write(&format!(
+                            "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
+                            label
+                        ));
+                    } else {
+                        self.write("({ return error.JsThrow; })");
+                    }
                 }
                 // ── Unsigned right shift (non-BigInt) ──
                 else if *op == BinOp::UrShr {

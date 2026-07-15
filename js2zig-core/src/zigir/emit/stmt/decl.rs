@@ -164,7 +164,12 @@ impl Emitter {
             if let Some(init) = &vd.init {
                 self.emit_expr(init);
             }
-            if self.in_function {
+            if let Some(label) = &self.inside_try_block {
+                self.write(&format!(
+                    ") catch |err| break :{} @as(anyerror!void, err)",
+                    label
+                ));
+            } else if self.in_function {
                 self.write(") catch return error.JsThrow");
             } else {
                 self.write(") catch @panic(\"JSON.parse failed\")");

@@ -5,9 +5,12 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_95() {
-
+    try {
         JSON.parse("[1, 2, 3, 4,]");
         JSON.parse('{"foo": 1,}');
         // SyntaxError JSON.parse: unexpected character
         // at line 1 column 14 of the JSON data
+    } catch (e) {
+        // Expected SyntaxError: invalid JSON (trailing comma)
+    }
     }

@@ -106,10 +106,17 @@ impl Emitter {
                 self.emit_expr(right);
                 self.write(", js_allocator.allocator()) catch ");
                 if matches!(op, BinOp::Div | BinOp::Mod) {
-                    self.write(&format!(
-                        "|err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
-                        label
-                    ));
+                    if let Some(try_label) = &self.inside_try_block {
+                        self.write(&format!(
+                            "|err| switch (err) {{ error.DivisionByZero => break :{} @as(anyerror!void, error.JsThrow), else => @panic(\"BigInt {} OOM\") }})",
+                            try_label, label
+                        ));
+                    } else {
+                        self.write(&format!(
+                            "|err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
+                            label
+                        ));
+                    }
                 } else {
                     self.write(&format!("@panic(\"BigInt {} OOM\"))", label));
                 }
@@ -119,7 +126,14 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(".pow(");
                 self.emit_expr(right);
-                self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                if let Some(try_label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ".toU64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))",
+                        try_label
+                    ));
+                } else {
+                    self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                }
             }
             BinOp::Shl | BinOp::Shr => {
                 let (method, label) = match op {
@@ -131,10 +145,17 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(&format!(".{}(", method));
                 self.emit_expr(right);
-                self.write(&format!(
-                    ".toI64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
-                    label
-                ));
+                if let Some(try_label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ".toI64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                        try_label, label
+                    ));
+                } else {
+                    self.write(&format!(
+                        ".toI64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                        label
+                    ));
+                }
             }
             // Equality
             BinOp::Eq | BinOp::StrictEq | BinOp::Ne | BinOp::StrictNe => {
@@ -160,7 +181,14 @@ impl Emitter {
             }
             // >>> is not supported for BigInt (JS throws TypeError at runtime)
             BinOp::UrShr => {
-                self.write("({ return error.JsThrow; })");
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
+                        label
+                    ));
+                } else {
+                    self.write("({ return error.JsThrow; })");
+                }
             }
             _ => {
                 self.emit_default_binop(op, left, right);
