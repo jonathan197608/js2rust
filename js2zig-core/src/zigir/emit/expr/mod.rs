@@ -89,6 +89,8 @@ impl Emitter {
                 let right_is_jsany = rt == Some(&ZigType::JsAny);
                 let left_is_float = lt == Some(&ZigType::F64);
                 let right_is_float = rt == Some(&ZigType::F64);
+                let left_is_symbol = lt == Some(&ZigType::JsSymbol);
+                let right_is_symbol = rt == Some(&ZigType::JsSymbol);
                 // Pre-compute cross-type flags (needed for the if/else-if chain below)
                 // Anytype should not count as a distinct type — Zig resolves it at comptime.
                 let left_is_anytype = lt == Some(&ZigType::Anytype);
@@ -106,6 +108,25 @@ impl Emitter {
                 // ── BigInt arithmetic/comparison ──
                 if left_is_bigint && right_is_bigint {
                     self.emit_bigint_binary(*op, left, right);
+                }
+                // ── Symbol equality/comparison ──
+                // JsSymbol is a struct with slice fields; Zig doesn't support == on it.
+                // Use .eql() for equality, and .id for ordering (shouldn't occur in practice).
+                else if left_is_symbol
+                    && right_is_symbol
+                    && matches!(
+                        op,
+                        BinOp::Eq | BinOp::Ne | BinOp::StrictEq | BinOp::StrictNe
+                    )
+                {
+                    let negate = matches!(*op, BinOp::Ne | BinOp::StrictNe);
+                    if negate {
+                        self.write("!");
+                    }
+                    self.emit_expr(left);
+                    self.write(".eql(");
+                    self.emit_expr(right);
+                    self.write(")");
                 }
                 // ── String + BigInt concatenation ──
                 // JS spec: "hello" + 5n → "hello5", 5n + "hello" → "5hello"
@@ -203,6 +224,24 @@ impl Emitter {
                     )
                 {
                     self.emit_jsany_comparison(*op, left, right, left_is_jsany, right_is_jsany);
+                }
+                // ── JsAny arithmetic: convert JsAny side to i64 via .asI64() ──
+                // This handles cases like `sum + mapValue` where mapValue is JsAny
+                // (e.g., from Map/Set for-of iteration or forEach callbacks).
+                else if (left_is_jsany || right_is_jsany)
+                    && matches!(
+                        op,
+                        BinOp::Add
+                            | BinOp::Sub
+                            | BinOp::Mul
+                            | BinOp::BitAnd
+                            | BinOp::BitOr
+                            | BinOp::BitXor
+                            | BinOp::Shl
+                            | BinOp::Shr
+                    )
+                {
+                    self.emit_jsany_arithmetic(*op, left, right, left_is_jsany, right_is_jsany);
                 }
                 // ── Division / Remainder ──
                 // Note: Integer `%` is handled by RemExpr node, not Binary(Mod).

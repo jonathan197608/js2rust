@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '18373494-e488-4051-8242-2357cd1788ca'
+  PropagateID: '18373494-e488-4051-8242-2357cd1788ca'
+  ReservedCode1: '8299073d-212e-45db-8605-97a5f82febbe'
+  ReservedCode2: '8299073d-212e-45db-8605-97a5f82febbe'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '7ccc77a4-cdcb-424a-a41a-2bb3c9b82b31'
   PropagateID: '7ccc77a4-cdcb-424a-a41a-2bb3c9b82b31'
   ReservedCode1: 'b8e49185-003b-4364-90d4-4ebe1c5b5fd9'
@@ -296,22 +307,36 @@ AIGC:
 
 ## 测试覆盖状态
 
-| Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) | Pending e2e 文件 |
-|----------|:---:|:---:|:---:|------|
-| BUG-01 | ✅ | ❌ | ❌ | `js_src_pending/test_in_operator.js` |
-| BUG-02 | ✅ | ❌ | ❌ | `js_src_pending/test_arguments.js` |
-| BUG-03 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
-| BUG-04 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
-| BUG-05 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
-| BUG-06 | ✅ | ❌ | ❌ | `js_src_pending/test_builtins_es2023.js` |
-| BUG-07 | ✅ | ❌ | ❌ | `js_src_pending/test_date_setters.js` |
-| BUG-08 | ✅ | ❌ | ❌ | `js_src_pending/test_string_methods.js` |
-| BUG-09 | ✅ | ❌ | ❌ | `js_src_pending/test_symbol.js` |
-| BUG-10 | ✅ | ❌ | ❌ | `js_src_pending/test_symbol.js` |
-| BUG-11 | ✅ | ❌ | ❌ | `js_src_pending/test_regexp.js` |
-| BUG-12 | ✅ | ❌ | ❌ | `js_src_pending/test_delete_operator.js` |
-| BUG-13 | ✅ | ❌ | ❌ | `js_src_pending/test_for_of_collections.js` |
-| BUG-14 | ✅ | N/A | N/A | `js_src_pending/test_extends.js` |
+| Bug 编号 | Rust 单元测试 | e2e 测试 (showcase) | e2e 测试 (MDN) | 状态 | e2e 文件 |
+|----------|:---:|:---:|:---:|:---:|------|
+| BUG-01 | ✅ | ✅ | ❌ | FIXED | `js_src/test_in_operator.js` |
+| BUG-02 | ✅ | ⚠️ | ❌ | PARTIAL | `js_src_pending/test_arguments.js` |
+| BUG-03 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
+| BUG-04 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
+| BUG-05 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
+| BUG-06 | ✅ | ✅ | ❌ | FIXED | `js_src/test_builtins_es2023.js` |
+| BUG-07 | ✅ | ✅ | ❌ | FIXED | `js_src/test_date_setters.js` |
+| BUG-08 | ✅ | ✅ | ❌ | N/A (已工作) | `js_src/test_string_methods.js` |
+| BUG-09 | ✅ | ✅ | ❌ | FIXED | `js_src/test_symbol.js` |
+| BUG-10 | ✅ | ✅ | ❌ | FIXED | `js_src/test_symbol.js` |
+| BUG-11 | ✅ | ✅ | ❌ | FIXED | `js_src/test_regexp.js` |
+| BUG-12 | ✅ | ✅ | ❌ | FIXED | `js_src/test_delete_operator.js` |
+| BUG-13 | ✅ | ✅ | ❌ | FIXED | `js_src/test_for_of_collections.js` |
+| BUG-14 | ✅ | N/A | N/A | SKIP (架构限制) | `js_src_pending/test_extends.js` |
 
-所有特性均有 Rust 侧单元测试保证正确性，e2e 测试受限于代码生成 Bug 暂无法通过。
-Pending e2e 测试文件位于 `examples/showcase-project/js_src_pending/`，Bug 修复后可移入 `js_src/` 目录启用。
+### 已修复 (12/14):
+- **BUG-01/07/08/11/12**: 已在先前提交修复并启用 e2e
+- **BUG-03/04**: Map/Set for-of 迭代变量设为 JsAny + JsAny 算术转换 (`.asI64()`) + 未使用解构变量抑制
+- **BUG-05**: String for-of 新增 `IrForOfKind::Str` 变体，未使用捕获生成 `|_|`，修复 `ast_expr_uses_ident` 缺少 `AssignmentExpression`/`UpdateExpression`/`LogicalExpression` 的问题
+- **BUG-06**: ArrayList `needs_deinit` + ES2023 方法返回类型推断
+- **BUG-09**: Symbol `===`/`!==` 生成 `.eql()` 而非 `==`/`!=`
+- **BUG-10**: `Symbol.keyFor()` 返回值 `.?` 解包
+- **BUG-13**: Map/Set forEach 回调参数 var_types 预设 + Set.forEach 改用 iterator 模式
+
+### 部分修复 (1/14):
+- **BUG-02**: `arguments.length` 和 `arguments[i]` 已修复，完整可变参数支持需架构变更
+
+### 跳过 (1/14):
+- **BUG-14**: `class extends` / `super` 是架构限制，非 Bug，建议使用组合模式
+
+剩余 e2e 测试文件位于 `examples/showcase-project/js_src_pending/`（仅 `test_arguments.js` 和 `test_extends.js`）。

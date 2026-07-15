@@ -341,8 +341,48 @@ impl Lowerer {
             };
         }
 
+        // For Map/Set iteration, destructure variables and the primary variable
+        // are JsAny (from __kv.key_ptr.* / __kv.value_ptr.*). Set var_types so
+        // the body's binary expressions have correct type info.
+        if matches!(kind, IrForOfKind::MapSetIter { .. }) {
+            if destructure_vars.is_empty() {
+                self.type_info
+                    .var_types
+                    .insert(var.js_name.clone(), ZigType::JsAny);
+            } else {
+                for dv in &destructure_vars {
+                    self.type_info
+                        .var_types
+                        .insert(dv.js_name.clone(), ZigType::JsAny);
+                }
+            }
+        }
+
+        // For String iteration, set var type to I64 so binary expressions work.
+        // The emit layer casts the u8 capture to i64.
+        if let IrForOfKind::Str { .. } = &kind {
+            self.type_info
+                .var_types
+                .insert(var.js_name.clone(), ZigType::I64);
+        }
+
         let iterable = self.lower_expr(&fos.right);
         let body = self.lower_stmt_as_block(&fos.body, None);
+
+        // For String for-of, determine if the loop variable is actually used
+        // in the body. If not, emit |_| to avoid Zig 0.16 unused-capture error.
+        let kind = if let IrForOfKind::Str { .. } = &kind {
+            let var_used = match &fos.body {
+                Statement::BlockStatement(b) => b
+                    .body
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(&var.js_name, s)),
+                other => Self::ast_stmt_uses_ident(&var.js_name, other),
+            };
+            IrForOfKind::Str { var_used }
+        } else {
+            kind
+        };
 
         crate::zigir::types::IrStmt::ForOf {
             var,
@@ -466,7 +506,7 @@ impl Lowerer {
         match right {
             Expression::Identifier(id) => {
                 if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
-                    // Map ¡ú iterator pattern
+                    // Map → iterator pattern
                     if let ZigType::NamedStruct(name) = zig_type {
                         if name == "Map" {
                             return (IrForOfKind::MapSetIter { is_map: true }, false);
@@ -475,14 +515,22 @@ impl Lowerer {
                             return (IrForOfKind::MapSetIter { is_map: false }, false);
                         }
                     }
-                    // ArrayList ¡ú use .items
+                    // ArrayList → use .items
                     if matches!(zig_type, ZigType::ArrayList(_)) {
                         return (IrForOfKind::Array, true);
+                    }
+                    // String → byte iteration
+                    if matches!(zig_type, ZigType::Str) {
+                        // Check if the loop variable is used in the body
+                        // (we can't check here since we don't have the body;
+                        //  the var_used flag is set in lower_for_of via a re-check)
+                        return (IrForOfKind::Str { var_used: true }, false);
                     }
                 }
                 // Default: array iteration
                 (IrForOfKind::Array, false)
             }
+            Expression::StringLiteral(_) => (IrForOfKind::Str { var_used: true }, false),
             _ => (IrForOfKind::Array, false),
         }
     }

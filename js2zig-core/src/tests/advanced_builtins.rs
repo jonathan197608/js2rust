@@ -174,11 +174,9 @@ return sum;
         "Expected 'entry.value_ptr.*' binding in:\n{}",
         zig
     );
-    assert!(
-        zig.contains("entry.key_ptr.*") || zig.contains("const key = entry.key_ptr.*"),
-        "Expected 'entry.key_ptr.*' binding in:\n{}",
-        zig
-    );
+    // Key binding: only emitted when the callback's key param is used in the body.
+    // In this test, only `val` is used, so key binding is correctly skipped.
+    // (If the body used `key`, we'd see `const key = entry.key_ptr.*;`)
     // Ensure it does NOT contain Array-style for-loop
     assert!(
         !zig.contains("for (m.items)"),
@@ -704,17 +702,22 @@ return sum;
 }
 "#;
     let zig = transpile_and_check(js, "test_p7_set_foreach");
-    // Should generate for-loop over set items
+    // Set.forEach now uses while-iterator (same as for-of Set),
+    // since JsCollection(void) doesn't have an .items field.
     assert!(
-        zig.contains("for (s.items.items)"),
-        "Expected 'for (s.items.items)' in:\n{}",
+        zig.contains("var iter = s.inner.iterator();"),
+        "Expected 'var iter = s.inner.iterator();' in:\n{}",
         zig
     );
-    assert!(zig.contains("|val|"), "Expected '|val|' in:\n{}", zig);
-    // Must NOT generate Map-style iterator
     assert!(
-        !zig.contains("iter.next()"),
-        "Should NOT contain iterator for Set.forEach:\n{}",
+        zig.contains("while (iter.next()) |entry|"),
+        "Expected 'while (iter.next()) |entry|' in:\n{}",
+        zig
+    );
+    // Set stores values as keys (value type is void), so use key_ptr.*
+    assert!(
+        zig.contains("entry.key_ptr.*"),
+        "Expected 'entry.key_ptr.*' for Set values in:\n{}",
         zig
     );
 }
@@ -1352,12 +1355,11 @@ return r1 || r2;
         "Expected s1 and s2 in code: {}",
         zig
     );
-    // Symbol equality is pointer equality (id comparison)
-    // JsSymbol has `id: u64`, so === becomes s1.id == s2.id
-    // Actually, Zig generates s1 == s2 for === on structs (uses @field-wise comparison)
+    // Symbol equality uses .eql() since JsSymbol is a struct with slice fields
+    // (Zig doesn't support == on structs with slice fields).
     assert!(
-        zig.contains("=="),
-        "Expected == for Symbol equality: {}",
+        zig.contains(".eql("),
+        "Expected .eql() for Symbol equality: {}",
         zig
     );
 }

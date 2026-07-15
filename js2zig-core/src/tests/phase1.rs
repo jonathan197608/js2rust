@@ -655,7 +655,14 @@ return count;
     let zig = transpile_and_assert(js, "test_p2_for_of_string");
     println!("=== Generated Zig (test_p2_for_of_string) ===\n{}", zig);
     assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
-    assert!(zig.contains(") |ch|"), "Expected |ch| capture in:\n{}", zig);
+    // String for-of: when the loop variable is unused, Zig 0.16 requires |_|.
+    // When used, emits |__ch| with a cast: const ch = @as(i64, __ch);
+    // This test has an unused `ch` (only count is incremented), so check for |_|.
+    assert!(
+        zig.contains("for (str) |_|"),
+        "Expected 'for (str) |_|' for unused capture in:\n{}",
+        zig
+    );
 }
 
 #[test]

@@ -70,13 +70,7 @@ impl Emitter {
                 self.emit_for_each_map_loop(&binding, &receiver, data, &data.body);
             }
             CollectionKind::Set => {
-                self.emit_for_each_simple_loop(
-                    &binding,
-                    &receiver,
-                    ".items.items",
-                    &data.elem_param,
-                    &data.body,
-                );
+                self.emit_for_each_set_loop(&binding, &receiver, data, &data.body);
             }
         }
     }
@@ -149,7 +143,37 @@ impl Emitter {
         }
     }
 
-    // ── some / every (shared) ─────────────────────────────
+    /// Emit Set.forEach: while-iterator over inner HashMap with key binding.
+    /// Set stores values as keys (value type is void), so we use key_ptr.*.
+    fn emit_for_each_set_loop(
+        &mut self,
+        binding: &Option<String>,
+        receiver: &str,
+        data: &crate::zigir::types::IrArrayCallbackInline,
+        body: &[crate::zigir::types::IrStmt],
+    ) {
+        if let Some(b) = binding {
+            self.write("{ ");
+            self.write(b);
+        }
+        self.writeln(&format!("var iter = {}.inner.iterator();", receiver));
+        self.writeln("while (iter.next()) |entry| {");
+        self.indent_push();
+        if data.elem_param != "_" {
+            self.writeln(&format!("const {} = entry.key_ptr.*;", data.elem_param));
+        }
+        for stmt in body {
+            self.emit_stmt(stmt);
+        }
+        if data.elem_param != "_" {
+            self.writeln(&format!("_ = &{};", data.elem_param));
+        }
+        self.indent_pop();
+        self.write("}");
+        if binding.is_some() {
+            self.write(" }");
+        }
+    }
     //
     //  Both emit a labeled block with a for-loop that short-circuits:
     //    some:  if (pred)  break :blk true;  default: false

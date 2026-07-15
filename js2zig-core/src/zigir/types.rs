@@ -201,6 +201,9 @@ pub enum IrForOfKind {
     Array,
     /// Map/Set iteration: `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { ... }`
     MapSetIter { is_map: bool },
+    /// String iteration: `for (str) |var| { ... }` (iterates u8 bytes).
+    /// `var_used` controls whether the capture variable is bound (false → `|_|`).
+    Str { var_used: bool },
     /// `for await...of` is not supported.
     AsyncUnsupported,
 }

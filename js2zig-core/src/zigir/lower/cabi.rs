@@ -276,10 +276,16 @@ impl Lowerer {
 
     /// Shared logic: parse callback parameters and lower the body from a CallExpression.
     /// Returns (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) or None.
+    ///
+    /// `elem_type` and `collection_kind` are used to set `var_types` for the callback
+    /// parameters BEFORE lowering the body, so binary expressions in the body have
+    /// correct type info (e.g., Map/Set forEach params are JsAny).
     fn parse_callback_inline(
         &mut self,
         ce: &CallExpression,
         kind: crate::zigir::types::ArrayCallbackKind,
+        elem_type: &ZigType,
+        collection_kind: crate::zigir::types::CollectionKind,
     ) -> Option<CallbackInlineParts> {
         use crate::zigir::types::ArrayCallbackKind;
 
@@ -305,6 +311,27 @@ impl Lowerer {
             .get(1)
             .and_then(|p| crate::infer::binding_name(&p.pattern));
         let has_idx_param = idx_param_raw.is_some();
+
+        // Set var_types for callback params BEFORE lowering the body.
+        // This ensures binary expressions in the body have correct type info.
+        // - elem param: uses the inferred element type (JsAny for Map/Set)
+        // - idx param: JsAny for Map (key), I64 for Array (numeric index)
+        if elem_param_raw != "_" {
+            self.type_info
+                .var_types
+                .insert(elem_param_raw.clone(), elem_type.clone());
+        }
+        if let Some(idx_name) = idx_param_raw
+            && idx_name != "_"
+        {
+            let idx_type = match collection_kind {
+                crate::zigir::types::CollectionKind::Map => ZigType::JsAny,
+                _ => ZigType::I64,
+            };
+            self.type_info
+                .var_types
+                .insert(idx_name.to_string(), idx_type);
+        }
 
         // Check if parameters are actually used in the callback body.
         let elem_used = body
@@ -373,9 +400,9 @@ impl Lowerer {
         use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
         let kind = Self::resolve_callback_kind(builtin)?;
-        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
-            self.parse_callback_inline(ce, kind)?;
 
+        // Determine obj_name, elem_type, and collection_kind BEFORE parsing the
+        // callback body, so var_types can be set for the callback params.
         let obj_name = self.extract_callee_object_name(ce)?;
         let elem_type = self
             .type_info
@@ -399,6 +426,9 @@ impl Lowerer {
                 }
             })
             .unwrap_or(crate::zigir::types::CollectionKind::Array);
+
+        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
+            self.parse_callback_inline(ce, kind, &elem_type, collection_kind.clone())?;
 
         Some(IrExpr::ArrayCallbackInline(Box::new(
             IrArrayCallbackInline {
@@ -432,8 +462,13 @@ impl Lowerer {
         use crate::zigir::types::{IrArrayCallbackInline, IrExpr};
 
         let kind = Self::resolve_callback_kind(builtin)?;
-        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) =
-            self.parse_callback_inline(ce, kind)?;
+        let (kind, elem_param, has_idx_param, idx_param, ir_body, reduce_init) = self
+            .parse_callback_inline(
+                ce,
+                kind,
+                elem_type,
+                crate::zigir::types::CollectionKind::Array,
+            )?;
 
         let chain_obj_name = self.name_mangler.next_name("__chain");
 
@@ -669,6 +704,29 @@ impl Lowerer {
             }
             Expression::ParenthesizedExpression(p) => {
                 Self::ast_expr_uses_ident(ident, &p.expression)
+            }
+            Expression::AssignmentExpression(a) => {
+                // Check both sides: `x = expr` uses ident if either side references it.
+                let left_matches = match &a.left {
+                    oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        id.name.as_str() == ident
+                    }
+                    _ => false,
+                };
+                left_matches || Self::ast_expr_uses_ident(ident, &a.right)
+            }
+            Expression::UpdateExpression(u) => {
+                // ++x / x-- : argument is SimpleAssignmentTarget (Identifier or MemberExpr)
+                match &u.argument {
+                    oxc_ast::ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        id.name.as_str() == ident
+                    }
+                    _ => false,
+                }
+            }
+            Expression::LogicalExpression(l) => {
+                Self::ast_expr_uses_ident(ident, &l.left)
+                    || Self::ast_expr_uses_ident(ident, &l.right)
             }
             Expression::ConditionalExpression(c) => {
                 Self::ast_expr_uses_ident(ident, &c.test)

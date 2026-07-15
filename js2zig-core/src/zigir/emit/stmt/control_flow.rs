@@ -327,6 +327,36 @@ impl Emitter {
                     self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
                 }
                 self.emit_block_stmts_unlabeled(body);
+                // Suppress unused-variable errors for destructured vars that
+                // the body doesn't reference (e.g., `for (const [k, v] of m)`
+                // where only v is used). Taking the address marks it as "used".
+                if *is_map && !destructure_vars.is_empty() {
+                    for dv in destructure_vars {
+                        self.writeln(&format!("_ = &{};", dv.zig_name));
+                    }
+                } else {
+                    self.writeln(&format!("_ = &{};", var.zig_name));
+                }
+                self.indent_pop();
+                self.writeln("}");
+            }
+            IrForOfKind::Str { var_used } => {
+                self.write_indent();
+                self.emit_label_prefix(label);
+                self.write("for (");
+                self.emit_expr(iterable);
+                self.write(") ");
+                if *var_used {
+                    // Bind to a temp var, then cast u8 → i64 for the user-facing name.
+                    self.write("|__ch| {\n");
+                    self.indent_push();
+                    self.writeln(&format!("const {} = @as(i64, __ch);", var.zig_name));
+                } else {
+                    // Unused capture: use |_| to avoid Zig 0.16 unused-capture error.
+                    self.write("|_| {\n");
+                    self.indent_push();
+                }
+                self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
             }

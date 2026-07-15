@@ -222,6 +222,35 @@ impl Emitter {
         }
     }
 
+    /// Emit a JsAny arithmetic operation: convert JsAny side(s) to i64 via .asI64().
+    /// e.g., `sum + v` where v is JsAny → `sum + v.asI64()`
+    pub(super) fn emit_jsany_arithmetic(
+        &mut self,
+        op: crate::zigir::ops::BinOp,
+        left: &crate::zigir::types::IrExpr,
+        right: &crate::zigir::types::IrExpr,
+        left_is_jsany: bool,
+        right_is_jsany: bool,
+    ) {
+        use crate::zigir::emit::helpers::bin_op_to_zig;
+
+        // Left side
+        if left_is_jsany {
+            self.emit_expr(left);
+            self.write(".asI64()");
+        } else {
+            self.emit_expr(left);
+        }
+        self.write(&format!(" {} ", bin_op_to_zig(op)));
+        // Right side
+        if right_is_jsany {
+            self.emit_expr(right);
+            self.write(".asI64()");
+        } else {
+            self.emit_expr(right);
+        }
+    }
+
     /// Emit an expression as `.asI64()`, wrapping with `JsAny.from()` first
     /// if it is not already a JsAny-typed value.
     fn emit_expr_as_i64(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {

@@ -311,6 +311,12 @@ impl Emitter {
                 }
             }
             // Static methods: js_symbol.symbolFor(key), js_symbol.symbolKeyFor(sym), etc.
+            // Symbol.keyFor returns ?[]const u8 — unwrap with .? (caller ensures symbol
+            // was created via Symbol.for, so key is always present).
+            "keyFor" => {
+                self.emit_module_call("js_symbol", "symbolKeyFor", args);
+                self.write(".?");
+            }
             _ => {
                 self.emit_module_call("js_symbol", zig_method, args);
             }
