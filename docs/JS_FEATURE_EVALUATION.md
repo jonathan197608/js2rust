@@ -3,93 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '40c4f215-c9df-4f40-a276-a9d77f1a27ea'
-  PropagateID: '40c4f215-c9df-4f40-a276-a9d77f1a27ea'
-  ReservedCode1: '201e3488-1052-4150-9d84-82ba938326fa'
-  ReservedCode2: '201e3488-1052-4150-9d84-82ba938326fa'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '3ab32c09-533d-4b74-a165-81d95f17a0a2'
-  PropagateID: '3ab32c09-533d-4b74-a165-81d95f17a0a2'
-  ReservedCode1: '97199062-a219-406e-b763-99d4b6e86b62'
-  ReservedCode2: '97199062-a219-406e-b763-99d4b6e86b62'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: 'f68cd93f-d3fb-4a86-afd4-39dd11ebe1c7'
-  PropagateID: 'f68cd93f-d3fb-4a86-afd4-39dd11ebe1c7'
-  ReservedCode1: 'f8c54867-7375-4e4e-8671-7bdb43a455a9'
-  ReservedCode2: 'f8c54867-7375-4e4e-8671-7bdb43a455a9'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '9646106b-b2f8-4286-abd6-f76d493beaec'
-  PropagateID: '9646106b-b2f8-4286-abd6-f76d493beaec'
-  ReservedCode1: '7c580da8-75a9-42c5-9e80-796d99553347'
-  ReservedCode2: '7c580da8-75a9-42c5-9e80-796d99553347'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '2f2519fd-d141-4f09-bb9e-71434bbe1e00'
-  PropagateID: '2f2519fd-d141-4f09-bb9e-71434bbe1e00'
-  ReservedCode1: '0e2ce64f-a512-4c80-a75f-f572a27b213b'
-  ReservedCode2: '0e2ce64f-a512-4c80-a75f-f572a27b213b'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '02546c6f-7790-4efd-9b9f-142167d93324'
-  PropagateID: '02546c6f-7790-4efd-9b9f-142167d93324'
-  ReservedCode1: '93af2015-2927-4f33-a237-7bf9769d0fe3'
-  ReservedCode2: '93af2015-2927-4f33-a237-7bf9769d0fe3'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '909645a0-a6c2-4eb9-a263-1e2b02c709a3'
-  PropagateID: '909645a0-a6c2-4eb9-a263-1e2b02c709a3'
-  ReservedCode1: '977c66e4-65b4-4e95-a90d-6d1350193b8c'
-  ReservedCode2: '977c66e4-65b4-4e95-a90d-6d1350193b8c'
----
-
----
-AIGC:
-  ContentProducer: '001191110102MAD55U9H0F10002'
-  ContentPropagator: '001191110102MAD55U9H0F10002'
-  Label: '1'
-  ProduceID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
-  PropagateID: '9813c182-9180-4f91-b3a6-3ad1f5f35280'
-  ReservedCode1: '0dff4b71-03e3-4e8c-a6ee-c834f1326f53'
-  ReservedCode2: '0dff4b71-03e3-4e8c-a6ee-c834f1326f53'
+  ProduceID: 'ccf40794-0e83-4b96-8243-72a3fa70f06e'
+  PropagateID: 'ccf40794-0e83-4b96-8243-72a3fa70f06e'
+  ReservedCode1: '51cfd2a9-5126-476b-84bf-1ba2dc5a979b'
+  ReservedCode2: '51cfd2a9-5126-476b-84bf-1ba2dc5a979b'
 ---
 
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 490 个 Rust 测试 (490 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
+> **测试覆盖**: 494 个 Rust 测试 (494 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
 
 ---
 
@@ -101,7 +24,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 140 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 490 个 Rust 测试 (490 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
+| **测试覆盖** | 494 个 Rust 测试 (494 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -111,7 +34,6 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | 83 | ~91% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta/私有字段/BigInt 字面量 等 |
-| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | 8 | ~9% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of` |
 
 ### 1.3 语句 (Statements) — ~49 特性
@@ -121,7 +43,6 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | ~46 | ~94% | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}+静态字段读写）/if/switch/for/while/do-while/try-catch/throw 等 |
-| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | ~3 | ~6% | `for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — 220 个表格行
@@ -131,19 +52,18 @@ AIGC:
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
 | ✅ 完全实现 | 208 | ~95% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
-| ⚠️ 简化实现 | 0 | 0% | — |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
 > **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。混合类型运算/`>>>` 抛出 TypeError（`return error.JsThrow`，可被 JS try/catch 捕获）；BigInt `**` 负指数抛出 RangeError；BigInt 移位负值自动反方向移位（符合 JS 规范）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。JSON.parse 语法错误抛出 SyntaxError（`return error.JsThrow`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
 
 ### 1.5 三大类对比总览
 
-| 类别 | 总数 | ✅ 实现 | ⚠️ 简化 | 🔘 不实现 | 实现率 |
-|------|------|---------|----------|-----------|--------|
-| **表达式** | 91 | 83 | 0 | 8 | **~91%** |
-| **语句** | 49 | 46 | 0 | 3 | **~94%** |
-| **内置对象** | 220 | 208 | 0 | 11 | **~95%** |
-| **语法合计** | 140 | 129 | 0 | 11 | **~92%** |
+| 类别 | 总数 | ✅ 实现 | 🔘 不实现 | 实现率 |
+|------|------|---------|-----------|--------|
+| **表达式** | 91 | 83 | 8 | **~91%** |
+| **语句** | 49 | 46 | 3 | **~94%** |
+| **内置对象** | 220 | 208 | 11 | **~95%** |
+| **语法合计** | 140 | 129 | 11 | **~92%** |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
 
@@ -152,7 +72,6 @@ AIGC:
 | 标记 | 定义 |
 |------|------|
 | ✅ 完全实现 | 完整支持，测试通过 |
-| ⚠️ 简化实现 | 基本可用，有已知限制 |
 | 🔘 不实现 | 很少用，或 Zig 有更好替代，或 JS 已废弃 |
 
 ---
@@ -352,14 +271,14 @@ AIGC:
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
 | 类表达式 `const X = class {}` | ✅ 已实现 | ✅ 完全实现（复用 ClassDeclaration 逻辑 + pending_expr_fns + 匿名类计数器 `_AnonClass_N`） |
-| `function*` (生成器函数) | `Unsupported expression type: Function` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
-| `yield` / `yield*` (生成器) | `Unsupported expression type` | 🔘 不实现（随 `function*` 一同不实现） |
-| `async function*` (异步生成器) | 未测试 | 🔘 不实现（niche 场景） |
+| `function*` (生成器函数) | `@compileError` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
+| `yield` / `yield*` (生成器) | `@compileError` | 🔘 不实现（随 `function*` 一同不实现） |
+| `async function*` (异步生成器) | `@compileError` | 🔘 不实现（niche 场景） |
 | 动态 `import()` | 需使用静态 `import` | 🔘 不实现（Zig `@import()` 仅 comptime，无运行时动态加载） |
 | 私有字段 `#field` | 完全支持 | ✅ 完全实现（# 前缀剥离，默认值保留） |
-| `new.target` | meta property not supported | 🔘 不实现（meta property，niche） |
-| `for await...of` | `Promise.{}() not supported` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
-| 标签模板 `` tag`...` `` | `Unsupported expression type` | 🔘 不实现（已在 2.12 标记） |
+| `new.target` | `@compileError` | 🔘 不实现（meta property，niche） |
+| `for await...of` | `@compileError` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
+| 标签模板 `` tag`...` `` | `@compileError` | 🔘 不实现（已在 2.12 标记） |
 | `import.meta` | ✅ 已实现 | ✅ 生成 `{ url: source_name }` ObjectLiteral（ES 模块元数据） |
 
 ---
@@ -448,7 +367,7 @@ AIGC:
 | `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
 | 标签语句 `label: while` | ✅ | `label: while {}` | `test_p1_labeled_*` (6 个测试) |
 | 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` |
-| `for await...of` | 🔘 不实现 | `Promise.{}() not supported` | 异步迭代，当前项目聚焦同步代码 |
+| `for await...of` | 🔘 不实现 | `@compileError` | 异步迭代，当前项目聚焦同步代码 |
 
 **for-of 实现状态**:
 - Array → `for (arr.items) |item|` ✅
@@ -543,7 +462,7 @@ AIGC:
 | `Math.SQRT1_2` | √½ | — | `f64` | `std.math.sqrt1_2` | ✅ | ✅ | — | ✅ |
 | `Math.SQRT2` | √2 | — | `f64` | `std.math.sqrt2` | ✅ | ✅ | — | ✅ |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/math.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/math.js`):
 > ```js
 > Math.sin(0);           // 0
 > Math.cos(Math.PI);     // -1
@@ -605,7 +524,7 @@ AIGC:
 > **检测冲突**: `str.slice()` vs `arr.slice()` 方法名相同，需通过 receiver 类型路由。
 > **已实现**: `.map()` 回调 inline 展开（与 filter/some/every 相同模式），非链式场景下回调真正应用；链式调用中回调 inline 可能不触发（已知限制）。
 >
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/array.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/array.js`):
 > ```js
 > const a = [1, 2, 3]; a.concat([4, 5]);     // [1,2,3,4,5]
 > [1, 2, 3].find(x => x > 1);                // 2
@@ -663,7 +582,7 @@ AIGC:
 | `.matchAll(re)` | `str.matchAll(regexp)` | `regexp: RegExp` | Iterator | ✅ | ✅ | ✅ | ✅ host_regex_match_all + matchAllString |
 | `String.raw\`...\`` | 静态: 标签模板字面量 | template | `string` | 🔘 | 🔘 | 🔘 | 🔘 不实现（很少使用） |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/string.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/string.js`):
 > ```js
 > 'hello'.charAt(0);            // 'h'
 > 'ABC'.charCodeAt(0);          // 65
@@ -695,7 +614,7 @@ AIGC:
 | `.entries()` | `map.entries()` | — | `JsArray(JsArray([]const u8))` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
 | `Map.groupBy(items, fn)` | 静态 (ES2024) | `items, fn` | `Map` | 🔘 | 🔘 | 🔘 | 🔘 应用层逻辑，不实现 |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/map_set.js`):
 > ```js
 > const m = new Map(); m.set('a', 1); m.get('a');  // 1
 > m.has('a');     // true
@@ -722,7 +641,7 @@ AIGC:
 | `.keys()` / `.values()` / `.entries()` | 迭代器方法 | — | `JsArray(JsAny)` | ✅ | ✅ | ✅ `js_collections.zig` | ✅ |
 | `.difference/intersection/symmetricDifference/union/isSubsetOf/isSupersetOf/isDisjointFrom(other)` | Set 操作 (ES2025) | `other: Set` | 新 Set / bool | 🔘 | 🔘 | 🔘 | 🔘 不实现（ES2025 很新，使用较少） |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/map_set.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/map_set.js`):
 > ```js
 > const s = new Set(); s.add(1); s.add(2);
 > s.has(1);       // true
@@ -765,7 +684,7 @@ AIGC:
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | ✅ | ✅ | ✅ | ✅ 内联 emit + HashMap 分组（回调 inline 展开；State of JS 2024 #1 Object 特性） |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/object.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/object.js`):
 > ```js
 > Object.keys({a:1,b:2});       // ['a', 'b']
 > Object.values({a:1,b:2});     // [1, 2]
@@ -824,7 +743,7 @@ AIGC:
 | `.setTime(ms)` | `date.setTime(timeValue)` | `ms: i64` | `i64` | ✅ | ✅ | ✅ | ✅ |
 | `.toUTCString()` | `date.toUTCString()` | — | `string` | ✅ | ✅ | ✅ | ✅ |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/date.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/date.js`):
 > ```js
 > Date.now();                               // ms since epoch
 > new Date(Date.now()).getFullYear();       // current year
@@ -849,7 +768,7 @@ AIGC:
 
 > **注意**: `parseInt` 委托 `js_number.parseInt()` runtime 函数，支持前导空白、`0x` 十六进制前缀、小数截断等 JS 语义（`std.fmt.parseInt` 不处理这些）。
 >
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/global_functions.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/global_functions.js`):
 > ```js
 > parseInt('42');                    // 42
 > parseFloat('3.14');                // 3.14
@@ -888,7 +807,7 @@ AIGC:
 
 > **注意**: `Number.isNaN` vs 全局 `isNaN`：前者仅对 `NaN` 返回 true，后者对非数字值也返回 true（会先做类型转换）。
 >
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/number.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/number.js`):
 > ```js
 > Number.isNaN(NaN);            // true
 > Number.isFinite(1e308);       // true
@@ -912,7 +831,7 @@ AIGC:
 
 > **检测方式**: console 的 receiver 是 `Identifier("console")`，通过 `detect_builtin_call()` 中 `StaticMemberExpression` 分支检测。
 >
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/console.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/console.js`):
 > ```js
 > console.log('hello');          // stdout: hello
 > console.log('x=%d', 42);       // stdout: x=42
@@ -935,7 +854,7 @@ AIGC:
 | `/pat/g` 全局标志 | `String.match()` 全局匹配（`.matchStringGlobal()`） | — | `string[]` | ✅ | ✅ | ✅ | ✅ |
 | `.source` / `.flags` / `.global` | 标志属性 | — | `string` / `bool` | ✅ | ✅ | ✅ | ✅ FieldKind::RegExpProp + runtime 字段 |
 
-> **MDN 测试用例** (∈ `examples/builtins-mdn-tests/js_src/regexp.js`):
+> **MDN 测试用例** (∈ `examples/mdn-test-project/js_src/regexp.js`):
 > ```js
 > /hello/.test('hello world');   // true
 > /world$/.test('hello world');  // true
@@ -1007,8 +926,7 @@ AIGC:
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
-> - ⚠️ **简化实现**: 基础功能可用
-> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy）
+> - 🔘 **不实现**: 应用价值低，或废弃特性，或 Zig 有更好替代（如 `with`/`debugger`/`eval`、WeakMap/Reflect/Intl、Map.groupBy、Promise/ES2025 Set operations）
 
 ---
 
@@ -1028,203 +946,297 @@ AIGC:
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 
-**设计**：多 Arena 全局分配器（环形拓扑 + 随机选取），所有 Zig 侧内存分配通过全局 arena 进行，调用方无需手动释放内存。
+#### 5.2.1 设计概览
 
-#### 核心机制：`js_allocator.zig`
+所有 Zig 侧内存通过多 Arena 全局分配器统一管理，调用方无需手动释放。Arena 超限后自动进入冷却期，冷却到期后 deinit + reinit 回收内存，形成环形轮换。Host 函数字符串传递采用零拷贝 `ptr+len` 协议，无 `dupeZ`/`host_free`/`CString::into_raw()`。
 
-**多 Arena 环形设计**：
+#### 5.2.2 核心：多 Arena 环形分配器 (`js_allocator.zig`)
 
+**数据结构**：
+
+```zig
+pub const ArenaNode = struct {
+    arena: ArenaAllocator,
+    state: AllocatorState,        // ready / cooling
+    mutex: std.atomic.Mutex,
+    prev: usize,
+    next: usize,
+    cooling_since: i64,
+};
+
+pub const MultiArenaAllocator = struct {
+    nodes: []ArenaNode,
+    node_count: usize,
+    total_limit: usize,
+    min_cooling_time: i64,
+};
+
+pub const AllocatorState = enum(u8) { ready = 0, cooling = 1 };
 ```
-    ┌─────────────────────────────────────────────┐
-    │                                             │
-    ▼         Arena 0      Arena 1      Arena 2   │
-    random ──► [active] ──► [ready] ──► [ready] ──┘
-                │ 超限
-                ▼
-             [cooling] ── 倒计时 ──► [ready]
-```
 
-- 默认 3 个 arena，每个上限 128MB（总上限 384MB），可通过 `init()` 参数调整
-- 环形拓扑：所有 arena 逻辑上排列成环，当前 `active` 指向其中一个
-- 随机选取初始 active，通过 `total_limit` 和 `min_cooling_time` 参数控制容量和冷却
-- 当 active arena 超过容量上限时，切换到下一个 `ready` arena（环形遍历）
-- 退出的 arena 进入 `cooling` 状态，倒计时 `min_cooling_time`（默认 5s），确保已返回的指针在 FFI 消费窗口内保持有效
-- cooling 到期后，arena 被 `reset`（内存回收），状态回到 `ready`
+**配置常量**：
 
-**关键设计**：
+| 常量 | 值 | 说明 |
+|------|-----|------|
+| `DEFAULT_TOTAL_LIMIT` | 384 MB | 总内存上限 |
+| `MIN_TOTAL_LIMIT` | 384 MB | 下限强制值 |
+| `ARENA_SIZE` | 128 MB | 单个 Arena 容量 |
+| `COOLING_THRESHOLD` | 80% × ARENA_SIZE (102.4 MB) | 自动触发冷却的使用率阈值 |
+| `MIN_COOLING_TIME_SECONDS` | 600 (10 分钟) | 冷却最短时长 |
+| 默认 node count | 3 (384/128) | Arena 节点数 |
+| 最小 node count | 2 | 至少 2 个 Arena |
 
-1. **惰性回收**：冷却倒计时检查在 `allocator()` 调用时惰性执行，无需后台线程
-2. **线程安全**：使用原子自旋锁保护状态转换
-3. **初始化参数**：
-   - `backing`: 底层 allocator（通常 `std.heap.page_allocator`）
-   - `total_limit`（默认 384MB / 3 * 128MB）：所有 arena 总容量上限（null 表示无限制）
-   - `min_cooling_time`（默认 5000ms）：arena 冷却最短毫秒数（null 表示永不回收）
+**选取策略**：随机化——`selectNode()` 从 `global_counter % node_count` 开始遍历，`global_counter` 为原子 `u64`（`fetchAdd(1, .monotonic)`），将负载均匀分布到所有 `ready` 状态的 Arena，**不是**单一 `active` 指针。
+
+**冷却机制**：Arena 使用量超过 80% 阈值时，`tryMarkCoolingIfFull()` 将其标记为 `cooling`。冷却期（默认 10 分钟）结束后，Arena 被 **deinit + reinit**（非 reset），重新回到 `ready` 状态。
+
+**惰性冷却检查**：冷却倒计时在 `allocator()` 调用时惰性检查，无后台线程。
+
+**线程安全**：每个 `ArenaNode` 持有独立 `std.atomic.Mutex`（自旋锁），节点选取通过原子计数器实现。
+
+**VTable**：`allocImpl` 委托选中 Arena；`freeImpl` 为 no-op；`resizeImpl` 始终 false；`remapImpl` 始终 null。
+
+**`isNoOpFree` 优化**：运行时检查 `alloc.vtable.free == freeImpl`，跳过不必要的 deinit 遍历。使用于 `jsany.zig`、`js_regexp.zig`、`js_symbol.zig`、`js_collections.zig`、`js_error.zig`。
+
+**环境变量支持**：`readEnvConfig()` 可读 `JS_ZIG_TOTAL_LIMIT` 和 `JS_ZIG_MIN_COOLING_TIME`，但生成代码**不调用**——使用 `js_allocator.init(null, null)` 走默认值。可供手动使用。
 
 **Zig 侧公共 API**：
 
 | 函数 | 说明 |
 |------|------|
-| `js_allocator.init(backing, total_limit, min_cooling_time)` | 初始化 MultiArenaAllocator，返回 `!void` |
-| `js_allocator.deinit()` | 释放所有 arena 内存 |
-| `js_allocator.allocator()` | 获取当前 active arena 的 Allocator interface |
-| `js_allocator.allocBytes(n: usize) ![]u8` | 从 active arena 分配 n 字节，OOM 时返回 error |
-| `js_allocator.dupeBytes(src: []const u8) ![]u8` | 从 active arena 复制字符串，OOM 时返回 error |
+| `js_allocator.init(?total_limit, ?min_cooling_time)` | 初始化，null 参数走默认值 |
+| `js_allocator.deinit()` | 释放所有 Arena 内存 |
+| `js_allocator.allocator()` | 获取当前 Allocator interface（含惰性冷却检查） |
+| `js_allocator.allocBytes(n)` | 分配 n 字节，OOM 返回 error |
+| `js_allocator.dupeBytes(src)` | 复制字符串到 Arena，OOM 返回 error |
 
-**C ABI 导出函数**：
+#### 5.2.3 C ABI 导出函数
 
-| 函数 | 说明 |
-|------|------|
-| `js2rust_init()` | 调用 `js_allocator.init()` 初始化分配器 + `js_runtime.initIo()`（Rust 侧调用前执行） |
-| `js2rust_deinit()` | 调用 `js_allocator.deinit()` + `js_runtime.deinitIo()` |
-| `js_allocator_alloc(len) ?[*]u8` | C ABI 分配接口，null 表示 OOM |
-| `js_allocator_dupe(ptr, len) ?[*]u8` | C ABI 字符串复制接口，null 表示 OOM |
+在 Zig orchestrator `lib.zig` 中生成（由 `project.rs` 驱动）：
 
-**重要变更（v0.7→v0.8）**：
-- 旧 `initGlobalAllocator`/`deinitGlobalAllocator`/`resetGlobalAllocator`/`getAllocator`/`g_alloc()` 全部删除
-- `js2rust_reset()` 删除（环形冷却自动管理 arena 轮换，无需手动触发）
-- `init_js2rust()` 返回类型从 `void` 改为 `!void`（error union），Rust 端用 `.expect("Zig allocator init failed")`
-- `js_allocator_alloc`/`js_allocator_dupe` 从直接指针改为 `?[*]u8`，Rust 端 extern 用 `Option<*mut u8>`，`.expect("Zig arena OOM")` 处理 null
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `js2rust_init()` | `callconv(.c) void` | 调用 `init_js2rust() catch @panic()` → `js_allocator.init(null, null)` + `js_runtime.initIo()` + 模块初始化 |
+| `js2rust_deinit()` | `callconv(.c) void` | 调用 `deinit_js2rust()` → `js_runtime.deinitIo()` + 模块清理 + `js_allocator.deinit()` |
+| `js_allocator_alloc` | `callconv(.c) fn(usize) callconv(.c) ?[*]u8` | OOM 返回 null |
+| `js_allocator_dupe` | `callconv(.c) fn([*]const u8, usize) callconv(.c) ?[*]u8` | OOM 返回 null |
 
-#### oxc Allocator 优化
+> **注意**：无 `js2rust_reset()`——Arena 轮换由冷却机制自动管理，无需手动触发。
 
-Rust 端的 oxc 解析器每次调用 `parse()` 会创建新的 `Allocator` 并 leak。优化方案：
+#### 5.2.4 字符串传递：零拷贝 `ptr+len` 协议
 
-- 使用 `AtomicPtr` 将单个 `Allocator` 实例共享为 `'static` 引用
-- oxc `Allocator` 内部用 bump-allocator，通过 `reset()` 重用（而非每次 leak）
-- 复杂度从 O(n) 降到 O(1) leak（只 leak 一个 Allocator）
+旧文档描述的 `dupeZ`/`host_free`/`CString::into_raw()` 流程**已被完全替换**。当前实现为纯 `ptr+len` 零拷贝协议：
 
-```rust
-let allocator: &'static Allocator = {
-    static ALLOC: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
-    // 首次创建 transmute 到 static ref，后续 reset 重用
-};
-```
+| 方向 | C ABI 布局 | Zig Wrapper 转换 |
+|------|-----------|-----------------|
+| String IN (Zig→Rust) | `{name}_ptr: [*]const u8, {name}_len: usize` | Wrapper 直接传 `s.ptr, s.len` |
+| String OUT (Rust→Zig 同步) | 返回 `StrRet` | Wrapper 调用 `result.toSlice()` |
+| String OUT (Rust→Zig 异步) | 返回 Host struct | Wrapper 提取 `raw.name_ptr[0..raw.name_len]` |
 
-#### 字符串返回：`string.zig`
+- 同步函数含字符串参数/返回 → 生成 `_wrap` 后缀 wrapper
+- 异步函数 → 生成 `_async` 后缀 wrapper + struct 字段转换
+- 所有字符串数据驻留在 Zig Arena；Rust 通过 `js_allocator_dupe()` 向 Arena 分配，返回 `ptr+len` 对
 
-**`StrRet` 结构体**（C ABI 兼容）：
+#### 5.2.5 Rust 侧 SDK (`sdk.rs`)
+
+| 类型 | 方向 | 布局 | 用途 |
+|------|------|------|------|
+| `HostStr<'a>` | Zig → Rust (输入) | `&'a str` wrapper | 安全 deref |
+| `JsStr` | Rust → Zig (同步返回) | `#[repr(C)] { ptr: *const u8, len: isize }` | 符号位错误约定 |
+| `JsStrField` | Rust → Zig (struct 字段) | `#[repr(C)] { ptr: *const u8, len: usize }` | 无符号位（字段不携带错误） |
+
+- **`dupe_to_arena()`**：调用 `js_allocator_dupe` C ABI 函数，返回 `*mut u8`（非 Option），null 时 assert 失败（Rust 不保证 `Option<*mut u8>` 的空指针优化）
+- **空字符串优化**：`JsStr::empty()` 返回 `{ ptr: null, len: 0 }`
+
+**Bridge Macro (`js2rust-bridge-macro`)**：
+- `js2rust_init()` 通过 `std::sync::Once` 保证一次性初始化
+- `ensure_initialized()` 由所有 safe wrapper 自动调用
+- struct 返回使用 out-pointer 参数 (`out: *mut StructName`)
+- 标记 `can_throw` 的函数额外接收 `err_out: *mut *const c_char` 参数
+
+#### 5.2.6 StrRet 结构体 (`string.zig`)
 
 ```zig
 pub const StrRet = extern struct {
     ptr: [*c]const u8,
-    len: isize,  // >= 0: 字符串长度; < 0: 错误标志，|len| = 错误名长度
+    len: isize,  // >= 0: 字符串长度; < 0: 错误标志
 };
 ```
 
-**符号位约定**：
+| 条件 | 含义 |
+|------|------|
+| `len >= 0` | 正常 arena 分配字符串 |
+| `len < 0` | 错误，`@errorName(err)` 为静态字符串，零分配 |
 
-- `len >= 0`：正常字符串（arena 分配，Zig 侧拥有所有权）
-- `len < 0`：异步错误传播（ `@errorName(err)` 静态字符串，无需释放）
+方法：`from()`、`from_panic()`、`is_panic()`、`panic_msg()`、`toSlice()`
 
-**Rust 侧对应**：`#[repr(C)] struct __JsStr { ptr: *const u8, len: isize }`
+Rust 侧对应：`#[repr(C)] struct __JsStr { ptr: *const u8, len: isize }`
 
-#### Host 函数字符串处理：`host.rs`
+#### 5.2.7 oxc Allocator 共享
 
-**字符串参数（Zig → Rust）**：
+**实际实现**：`Box::leak` 一次，永不 reset。通过 `AtomicPtr` 单例共享为 `'static` 引用。旧文档提到 "reset() 重用" 但代码从未调用 reset。此行为可接受——转译器是构建时工具，单次 leak 无运行时影响。
 
-1. Zig 侧调用 `js_allocator.allocator().dupeZ(u8, str)` 创建以 `\0` 结尾的 C 字符串
-2. 调用 `defer js_allocator.allocator().free(c_str)` 确保在函数返回后释放 C 字符串
-3. 将 `c_str` 传递给 Rust（`[*:0]const u8`）
-
-**字符串返回（Rust → Zig）**：
-
-1. Rust 侧用 `CString::into_raw()` 分配内存并返回指针
-2. Zig 侧用 `std.mem.span(raw)` 获取切片长度
-3. Zig 侧用 `js_allocator.allocator().dupe(u8, span)` 复制到 arena
-4. Zig 侧调用 `host_free(@ptrCast(raw))` 释放 Rust 分配的内存
-5. 返回 arena 分配的副本（由多 Arena 自动管理生命周期）
-
-**内存所有权**：
-
-- Rust 分配 → Zig 复制 → Rust 释放 → Zig arena 拥有副本
-- 调用方（Rust）无需手动释放，arena 在冷却期后自动回收
-
-#### 示例：完整调用流程
-
+```rust
+let allocator: &'static Allocator = {
+    static ALLOC: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
+    // 首次创建 transmute 到 static ref，后续直接使用
+};
 ```
-Rust: js2rust_init()  // 初始化 3 个 Arena (均 128MB), 随机选择 Arena 1 为 active
 
-Rust: call greet("Alice")  // C ABI 调用
-  └─ Zig: 使用 js_allocator.allocator() (Arena 1)
-  └─ Zig: 生成字符串 "Hello, Alice" (Arena 1 分配)
-  └─ Zig: 返回 StrRet { .ptr = arena_ptr, .len = 13 }
-  └─ Rust: 使用字符串 (指针有效，因为 Arena 1 仍 active)
-
-Rust: 持续调用 (Arena 1 逐渐填满超过 128MB)
-  └─ Arena 1 → cooling (5 秒倒计时), Arena 2 → active (环形下一个)
-  └─ 所有 Arena 1 的指针在 5 秒冷却期内保持有效
-  └─ Rust 已消费完所有指针
-  └─ 5 秒后 Arena 1 自动 reset → ready
-
-Rust: js2rust_deinit()  // 释放所有 arena
-```
+#### 特性总览
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 多 Arena 分配器 | ✅ | 3×128MB 环形拓扑 + 随机选取 + 冷却期保证指针有效性 |
-| 自动内存释放 | ✅ | Arena 统一回收，调用方无需手动释放 |
-| 字符串返回 | ✅ | `StrRet` 结构体 + 符号位约定 |
-| Host 函数字符串参数 | ✅ | `dupeZ` + `defer free`（Zig → Rust） |
-| Host 函数字符串返回 | ✅ | `span` + `dupe` + `host_free`（Rust → Zig） |
+| 多 Arena 分配器 | ✅ | 3×128MB 环形 + 随机化选取 + 冷却期保证指针有效性 |
+| 自动内存释放 | ✅ | Arena deinit+reinit 统一回收，调用方无需手动释放 |
+| 零拷贝字符串传递 | ✅ | `ptr+len` 协议，无 `dupeZ`/`host_free`/`CString::into_raw()` |
+| `StrRet` 符号位约定 | ✅ | `len >= 0` 正常 / `len < 0` 错误 |
 | 异步 Host 函数 | ✅ | `Io.Threaded` + `io.async()` 模式 |
 | C ABI OOM 处理 | ✅ | `js_allocator_alloc`/`js_allocator_dupe` 返回 nullable 指针，Rust 端 expect 处理 |
-| oxc Allocator 共享 | ✅ | `AtomicPtr` 单例复用，O(n)→O(1) leak |
+| `isNoOpFree` 优化 | ✅ | 跳过 free no-op 的 deinit 遍历 |
+| oxc Allocator 共享 | ✅ | `AtomicPtr` 单例 + `Box::leak` 一次，O(1) leak |
 
 ---
 
 ## 6. 类型系统 (Type System)
 
-### 6.1 设计概览
+### 6.1 四阶段管线架构
 
-类型系统采用**两遍分离架构**：第一遍 `TypeInferrer` 遍历完整 AST 生成 `TypeCheckResult`，第二遍 `Codegen` 只读 `TypeCheckResult` 生成 Zig 代码。推断与代码生成完全解耦。
+类型系统采用**四阶段管线**，推断与代码生成完全解耦：
 
-**核心数据结构：**
+```
+AST → TypeInferrer → TypeCheckResult → Lowerer → IrModule → PassPipeline → Emitter → Zig source
+```
+
+| 阶段 | 组件 | 输入 | 输出 | 职责 |
+|------|------|------|------|------|
+| 1 | `TypeInferrer::infer_all()` | AST | `TypeCheckResult` | 遍历 AST，推断所有类型信息 |
+| 2 | `Lowerer::lower()` | AST + TypeCheckResult | `IrModule` (ZigIR) | 将 AST 转换为中间表示 |
+| 3 | `PassPipeline` | `IrModule` | `IrModule` | 优化 pass（死代码消除、常量折叠、验证） |
+| 4 | `Emitter::emit_module()` | `IrModule` | Zig 源码 | 格式化输出 Zig 文本 |
+
+### 6.2 TypeInferrer 三遍内部遍历
+
+`TypeInferrer` 内部分三遍执行：
+
+| Pass | 方法 | 职责 |
+|------|------|------|
+| 0 | `analyze_objects()` | 检测对象变异和动态访问模式 |
+| 1 | `collect_used_names()` | 收集所有引用的标识符名称，供未使用常量消除 |
+| 2 | `walk_toplevel_for_types()` | 主要类型收集遍历，推断所有变量/函数/表达式类型 |
+
+### 6.3 核心数据结构
 
 ```
 TypeInferrer  →  (推断阶段)  收集所有类型信息
-TypeCheckResult  →  (只读快照)  传递给 Codegen
+TypeCheckResult  →  (只读快照)  传递给 Lowerer + Emitter
 ZigType  →  (类型枚举)  表示推断出的 Zig 类型
 InferResult  →  Definite(ZigType) | Indeterminate
 ```
 
-### 6.2 类型推断规则（8 条简化规则）
+**`InferResult` 枚举：**
 
-| 规则 | 说明 | 示例 |
-|------|------|------|
-| 1. 字面量精确推断 | 字面量表达式 → 确定类型（有 JSDoc 则用 JSDoc） | `42` → `i64`, `"hi"` → `[]const u8` |
-| 2. 二元表达式 | 仅当**两个**操作数都是字面量时才确定类型 | `2 + 3` → `i64`, `x + y` → Indeterminate |
-| 3. 其他表达式 | 一律 Indeterminate | 函数调用、成员访问等 |
-| 4. `const` 声明 | 不生成类型注解，让 Zig 自行推断 | `const x = expr;` |
-| 5. 局部变量 | 检查**所有**赋值，至少一个确定 → 使用该类型 | `let x = 1; x = 2;` → `i64` |
-| 6. 返回类型 | 检查**所有** return 表达式，至少一个确定 → 使用该类型 | `if (c) return 1; return 2;` → `i64` |
-| 7. 非导出函数参数 | Indeterminate → `anytype` | `function f(x)` → `f(x: anytype)` |
-| 8. Indeterminate 报错 | 导出函数参数 / CABI 返回类型若为 Indeterminate → 编译错误 | 要求 JSDoc 标注 |
+| 变体 | 含义 |
+|------|------|
+| `Definite(ZigType)` | 推断出确定类型 |
+| `Indeterminate` | 无法确定类型，需要用户通过 JSDoc 标注或触发 Rule 8 报错 |
 
-**特殊推断：**
-- 箭头函数闭包：自动生成 `Closure` 结构体类型（value capture / reference capture）
-- Host 函数返回类型：`host_return_types` + `host_struct_fields` 查表
-- 可选链 `?.`：返回 `InferResult::Indeterminate`（Zig 从 `else null` 自动推导 `?T`）
-- `JSON.parse(@type)`：通过 `has_json_parse_types` 标记，生成类型转换代码
-
-### 6.3 `ZigType` 类型枚举
+### 6.4 `ZigType` 类型枚举 — 14 变体
 
 | 变体 | Zig 类型 | 说明 |
 |------|----------|------|
 | `Void` | `void` | 无返回值 |
 | `I64` | `i64` | 整数 |
-| `F64` | `f64` | 浮点数 |
+| `F64` | `f64` | 浮点数/double |
 | `Bool` | `bool` | 布尔值 |
 | `Str` | `[]const u8` | 字符串 |
-| `ArrayList(inner)` | `std.ArrayList(T)` | 动态数组，T 为元素类型 |
-| `Struct(fields)` | 匿名结构体 | `.{ .field1 = T1, .field2 = T2 }` |
-| `NamedStruct(name)` | 命名结构体 | 由 `HostStructDef` 定义（如 `"UserInfo"`） |
-| `Anytype` | `anytype` | 非导出函数参数，留待 Zig 推断 |
+| `ArrayList(Box<ZigType>)` | `std.ArrayList(T)` | 动态数组，T 为元素类型 |
+| `Struct(Vec<(String, ZigType)>)` | `.{ .field1 = T1, ... }` | 匿名结构体 |
+| `NamedStruct(String)` | name as-is | 覆盖：Host 定义、内置运行时类型（Map/Set/Date/RegExp）、用户 JS 类、JSDoc `@typedef` |
+| `Anytype` | `anytype` | 非导出函数参数 |
+| `JsAny` | `JsAny` | 动态 JSON 值（JSON.parse、动态属性、null、undefined） |
+| `JsSymbol` | `JsSymbol` | JS Symbol（含可选描述） |
+| `BigInt` | `js_bigint.JsBigInt` | 任意精度整数 |
+| `JsError` | `js_error.JsError` | JS Error 对象（name/message/stack） |
+| `AnytypeReturn` | `@TypeOf(return_expr)` | 返回类型依赖 anytype 参数 |
+| `AsyncIo` | `js_runtime.Io` | 异步 I/O 句柄，注入参数，不跨越 C ABI |
+
+### 6.5 `TypeCheckResult` — 12 字段
+
+| 字段 | 类型 | 用途 |
+|------|------|------|
+| `var_types` | `HashMap<String, ZigType>` | 变量 → 推断类型 |
+| `array_element_types` | `HashMap<String, ZigType>` | 数组变量 → 元素类型 |
+| `fn_return_types` | `HashMap<String, ZigType>` | 函数 → 返回类型 |
+| `fn_param_types` | `HashMap<String, Vec<(String, ZigType)>>` | 函数 → 参数名/类型对 |
+| `mutated_vars` | `HashSet<String>` | 需要 `var` 的变量（成员赋值目标） |
+| `reassigned_vars` | `HashSet<String>` | 直接重新赋值的变量 |
+| `used_names` | `HashSet<String>` | 任意位置引用的标识符名称 |
+| `has_json_parse_types` | `HashSet<String>` | 来自 JSON.parse(@type) 的变量 |
+| `errors` | `Vec<String>` | 类型检查错误（Rule 8 违规） |
+| `is_async` | `HashMap<String, bool>` | 各函数是否异步 |
+| `class_field_types` | `HashMap<String, HashMap<String, ZigType>>` | 类 → (字段 → 类型) |
+| `host_return_types` | `HashMap<String, ZigType>` | Host 函数返回类型 |
+
+### 6.6 类型推断规则
+
+#### 6.6.1 八条核心规则
+
+| 规则 | 说明 | 示例 |
+|------|------|------|
+| 1. 字面量精确推断 | 字面量 → 确定类型。Identifier 检查 JSDoc @type / 内置全局变量；`NullLiteral` → `JsAny`；`RegExpLiteral` → `NamedStruct("RegExp")`；`BigIntLiteral` → `BigInt`；`NewExpression` 按构造函数名分发 | `42` → `I64`, `"hi"` → `Str`, `null` → `JsAny`, `/re/` → `NamedStruct("RegExp")` |
+| 2. 二元表达式 | 两操作数均 Definite → 结果类型。短路特例：比较 → `Bool`，字符串拼接 → `Str`，`F64` 提升。BigInt 算术保持 `BigInt`；BigInt + string → `Str` | `2 + 3` → `I64`, `x + "!"` → `Str`, `3 > 1` → `Bool` |
+| 3. 其他表达式 | 默认 `Indeterminate` | — |
+| 4. `const` 声明 | 推断出 Definite 类型时生成类型注解；`Indeterminate` 时不加注解，让 Zig 自行推断 | `const x: i64 = 42;` |
+| 5. 局部变量 | 检查所有赋值，JSDoc @type 优先；JSON.parse(@type) 特殊处理；未初始化 → 编译错误 | `let x: i64 = 1; x = 2;` |
+| 6. 返回类型 | 导出函数：先查 JSDoc @returns，不匹配报 ERROR；非导出函数含 anytype 参数 → `AnytypeReturn` | — |
+| 7. 非导出函数参数 | JSDoc @param 优先；无 JSDoc → `Anytype`；**使用点细化**：字符串方法调用细化参数为 `Str` | `function f(x)` → `f(x: anytype)` |
+| 8. Indeterminate 报错 | 导出函数参数 / C ABI 返回类型若为 Indeterminate → 编译错误（"Rule 8"） | 要求 JSDoc 标注 |
+
+#### 6.6.2 十项补充能力
+
+| 编号 | 能力 | 说明 |
+|------|------|------|
+| A | 静态成员访问类型推断 | `this.field`、`Symbol.iterator`、`Number.MAX_VALUE`、`Math.PI`、`str.length`、`Map.size` 等 |
+| B | 计算成员访问类型推断 | `JsAny[key]` → `JsAny`；`str[idx]` → `I64`；`ArrayList[idx]` → 元素类型 |
+| C | 函数调用返回类型推断 | `fn_return_types` 缓存 + `host_return_types` 查表 + `builtin_return_type()` 100+ 条目分发 |
+| D | 数组类型推断 | 空 → `ArrayList(JsAny)`；非空：所有元素同类型 → `ArrayList(T)`，否则 `ArrayList(JsAny)` |
+| E | 对象类型推断 | 所有属性均有 Definite 类型 → `Struct`；spread 合并；getter 从 return body 推断 |
+| F | JSDoc 类型标注系统 | `@typedef`、`@type`、`@returns`、`@param`；匿名对象类型；嵌套类型 |
+| G | 类类型推断 | 字段类型来自 `PropertyDefinition` + 隐式 `this.x` 赋值，方法返回类型推断 |
+| H | JSON.parse 类型推断 | `@type` 标注 + 验证已知类/host struct/typedef |
+| I | 内置返回类型表 | 100+ 内置调用分发条目，覆盖 Math、String、Array、Map、Set、Date、Object、Number、RegExp、JSON、Symbol、TypedArray |
+| J | Host 函数集成 | 预填充 `host_return_types` 和 `host_struct_fields`，支持异步返回 struct 字段推断 |
+
+#### 6.6.3 附加表达式规则
+
+| 表达式 | 推断规则 |
+|--------|----------|
+| 逻辑 `&&` `\|\|` `??` | 同类型 → 该类型；不同类型 → `JsAny` |
+| 一元 `!` | → `Bool` |
+| 一元 `-` / `+u` | → 与操作数同类型 |
+| 一元 `void` | → `JsAny` |
+| 一元 `delete` | → `Bool` |
+| 一元 `typeof` | → `Str` |
+| 条件（三元） | 同类型 → 该类型；`I64` + `F64` → `F64`；不匹配 → `Indeterminate` |
+| `for...of` | 变量类型从可迭代元素类型推断 |
+| `for...in` | 变量类型始终 → `Str` |
+
+### 6.7 类型兼容性与 C ABI 映射
 
 **类型兼容性：** `I64` 可宽化到 `F64`（`is_compatible_with`），其他组合同类型才兼容。
 
-**C ABI 类型映射：** `Str` → `StrRet`（extern struct `{ ptr, len }`），`Struct`/`NamedStruct` → 对应 C ABI struct。
+**C ABI 类型映射：**
 
-### 6.4 类型映射（JS → Zig）
+| ZigType | C ABI 映射 |
+|---------|------------|
+| `Str` | `StrRet`（extern struct `{ ptr, len }`） |
+| `Struct` / `NamedStruct` | 对应 C ABI struct |
+| `JsAny` | `JsAny`（extern union） |
+| `BigInt` | `js_bigint.JsBigInt`（extern struct） |
+| `Bool` / `I64` / `F64` | 直接 C ABI 映射 |
+
+### 6.8 JS → Zig 类型映射
 
 | JS 类型 | Zig 类型 | 备注 |
 |---------|----------|------|
@@ -1232,39 +1244,44 @@ InferResult  →  Definite(ZigType) | Indeterminate
 | `number`（浮点/除法） | `f64` | |
 | `string` | `[]const u8` | C ABI 返回时用 `StrRet` |
 | `boolean` | `bool` | |
-| `null` / `undefined` | `void` | 用作返回类型时 |
-| `object`（已知字段） | 匿名 `struct` | `.{ .name = []const u8, .age = i64 }` |
-| `object`（Host 定义） | `NamedStruct` | `HostStructDef` 中定义 |
-| `object`（动态） | `std.StringHashMap(ZigType)` | 通过 `Map` 模拟 |
-| `array`（字面量） | `[_]T{ ... }` | 元素类型统一推断 |
-| `array`（动态） | `std.ArrayList(T)` | |
-| `function` | 函数类型 或 闭包结构体 | 闭包自动生成 `Closure` 泛型结构体 |
+| `null` / `undefined` | `JsAny` | `JsAny{ .undefined = {} }` / `JsAny{ .null = {} }` |
+| `object`（已知字段） | `Struct` | `.{ .name = []const u8, .age = i64 }` |
+| `object`（Host 定义/内置/类） | `NamedStruct` | Map/Set/Date/RegExp/用户类/@typedef |
+| `object`（动态） | `JsAny` | `JSON.parse` / 动态属性访问 |
+| `array`（字面量） | `ArrayList(T)` | 元素类型统一推断 |
+| `function` | 函数类型 或 闭包结构体 | 闭包自动生成 `Closure` 结构体 |
 | `any` | `anytype` | 非导出函数参数 |
-| TypedArray | `[]T`（Zig 切片） | 完整支持 method/accessor (.get/.set/.subarray/.buffer 等) |
+| `symbol` | `JsSymbol` | 含可选描述 |
+| `bigint` | `js_bigint.JsBigInt` | 任意精度 |
+| `error` | `js_error.JsError` | name/message/stack |
+| TypedArray | `[]T`（Zig 切片） | 完整支持 .get/.set/.subarray/.buffer 等 |
 
-### 6.5 JSDoc 类型标注
+### 6.9 JSDoc 类型标注
 
 | 注解 | 作用 |
 |------|------|
-| `@type {type}` | 变量类型强制标注 |
+| `@type {type}` | 变量类型强制标注（优先级高于推断结果） |
 | `@param {type} name` | 函数参数类型（解决 Rule 8 错误） |
-| `@returns {type}` | 函数返回类型 |
-| `@typedef {field: type}` | 定义命名结构体类型 |
+| `@returns {type}` | 函数返回类型（导出函数不匹配则报 ERROR） |
+| `@typedef {field: type}` | 定义命名结构体类型，可跨文件引用 |
+| `@property {type} name` | typedef 属性定义 |
+
+**匿名对象类型：** `@type {{name: string, age: number}}` — 双括号语法，`extract_braced_type()` 处理外层 `{}`，`parse_anonymous_object_type()` 递归解析内层类型 → `ZigType::Struct(fields)`。支持嵌套和数组形式 `{name: string}[]`。
 
 ---
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 490 个测试 (490 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 494 个测试 (494 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（11 个文件） | 380 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法 |
+| `tests/` 子模块（11 个文件） | 384 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法、不实现特性检测 |
 | 源文件内联测试 | 110 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
 
 ### 7.2 测试覆盖情况
 
-490 个 Rust 测试全部通过（490 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+494 个 Rust 测试全部通过（494 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 

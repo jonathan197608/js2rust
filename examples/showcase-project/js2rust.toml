@@ -11,6 +11,11 @@ js_files = [
     "test_dynamic_index.js",
     "test_optional.js",
     "for_in_struct.js",
+    "test_operators.js",
+    "test_control_flow.js",
+    "test_builtins_es2023.js",
+    "test_builtins_advanced.js",
+    "test_advanced_types.js",
 ]
 
 # [build]

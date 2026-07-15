@@ -1231,6 +1231,18 @@ pub fn builtin_call_to_ir(
         // RegExp
         BuiltinCall::RegExpTest => (BuiltinModule::JsRegExp, "test".into(), ZigType::Bool),
         BuiltinCall::RegExpExec => (BuiltinModule::JsRegExp, "exec".into(), ZigType::JsAny),
+
+        // ES2025 Set operations — intercepted in lower_call() before reaching here,
+        // but must be covered for exhaustive match
+        BuiltinCall::SetUnion
+        | BuiltinCall::SetIntersection
+        | BuiltinCall::SetDifference
+        | BuiltinCall::SetSymmetricDifference
+        | BuiltinCall::SetIsSubsetOf
+        | BuiltinCall::SetIsSupersetOf
+        | BuiltinCall::SetIsDisjointFrom => {
+            (BuiltinModule::JsCollections, "unsupported_es2025".into(), ZigType::JsAny)
+        }
     }
 }
 

@@ -134,6 +134,15 @@ pub enum BuiltinCall {
     // Set methods (called on local Set variables)
     SetAdd, // set.add(value)
 
+    // ES2025 Set methods (unsupported — emit @compileError)
+    SetUnion,                 // set.union(other)
+    SetIntersection,           // set.intersection(other)
+    SetDifference,             // set.difference(other)
+    SetSymmetricDifference,   // set.symmetricDifference(other)
+    SetIsSubsetOf,            // set.isSubsetOf(other)
+    SetIsSupersetOf,          // set.isSupersetOf(other)
+    SetIsDisjointFrom,        // set.isDisjointFrom(other)
+
     // Date methods (static)
     DateNow,   // Date.now() → i64
     DateParse, // Date.parse(str) → i64
@@ -736,6 +745,15 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             // Set methods (called on local Set variables)
             "add" => Some(BuiltinCall::SetAdd),
 
+            // ES2025 Set methods (unsupported)
+            "union" => Some(BuiltinCall::SetUnion),
+            "intersection" => Some(BuiltinCall::SetIntersection),
+            "difference" => Some(BuiltinCall::SetDifference),
+            "symmetricDifference" => Some(BuiltinCall::SetSymmetricDifference),
+            "isSubsetOf" => Some(BuiltinCall::SetIsSubsetOf),
+            "isSupersetOf" => Some(BuiltinCall::SetIsSupersetOf),
+            "isDisjointFrom" => Some(BuiltinCall::SetIsDisjointFrom),
+
             _ => None,
         }
     } else {
@@ -1001,6 +1019,14 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::TypedArraySubarray => Some(ZigType::JsAny), // returns a view — type depends on input
 
         // Methods that return void or complex types — can't infer
+        // ES2025 Set operations — intercepted before reaching emit, but must be covered
+        BuiltinCall::SetUnion
+        | BuiltinCall::SetIntersection
+        | BuiltinCall::SetDifference
+        | BuiltinCall::SetSymmetricDifference
+        | BuiltinCall::SetIsSubsetOf
+        | BuiltinCall::SetIsSupersetOf
+        | BuiltinCall::SetIsDisjointFrom => None,
         _ => None,
     }
 }

@@ -731,7 +731,37 @@ const b = new Set([2, 3, 4]);
 return a.difference(b);
 }
 "#,
-        "Set.prototype.difference() (ES2025)",
+        "Set.prototype.difference() (ES2025 Set operation)",
+    );
+}
+
+#[test]
+fn test_not_implemented_set_union() {
+    // 🔘 Set.prototype.union(): ES2025 Set 操作
+    assert_not_implemented(
+        r#"
+function test() {
+const a = new Set([1, 2]);
+const b = new Set([2, 3]);
+return a.union(b);
+}
+"#,
+        "Set.prototype.union() (ES2025 Set operation)",
+    );
+}
+
+#[test]
+fn test_not_implemented_set_is_subset_of() {
+    // 🔘 Set.prototype.isSubsetOf(): ES2025 Set 操作
+    assert_not_implemented(
+        r#"
+function test() {
+const a = new Set([1, 2]);
+const b = new Set([1, 2, 3]);
+return a.isSubsetOf(b);
+}
+"#,
+        "Set.prototype.isSubsetOf() (ES2025 Set operation)",
     );
 }
 
@@ -840,6 +870,33 @@ return p;
 }
 "#,
         "new Promise() (use async/await instead)",
+    );
+}
+
+#[test]
+fn test_not_implemented_promise_static_methods() {
+    // 🔘 Promise.all/race/resolve/reject: 静态方法也不支持
+    assert_not_implemented(
+        r#"
+function test() {
+return Promise.all([1, 2, 3]);
+}
+"#,
+        "Promise.all() (use async/await + host functions instead)",
+    );
+}
+
+#[test]
+fn test_not_implemented_intl_static_methods() {
+    // 🔘 Intl.NumberFormat/DateTimeFormat: 静态方法调用也不支持
+    assert_not_implemented(
+        r#"
+function test() {
+const fmt = Intl.NumberFormat("en-US");
+return fmt;
+}
+"#,
+        "Intl.NumberFormat() (use Zig/C library for internationalization)",
     );
 }
 

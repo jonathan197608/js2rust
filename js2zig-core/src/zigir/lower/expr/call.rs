@@ -39,6 +39,14 @@ impl Lowerer {
                         "Map" if method_name == "groupBy" => Some(
                             "Map.groupBy() is not supported (requires iterable grouping)".to_string(),
                         ),
+                        "Promise" => Some(format!(
+                            "Promise.{}() is not supported (use async/await + host functions instead)",
+                            method_name
+                        )),
+                        "Intl" => Some(format!(
+                            "Intl.{}() is not supported (use Zig/C library for internationalization)",
+                            method_name
+                        )),
                         _ => None,
                     }
                 } else {
@@ -46,7 +54,7 @@ impl Lowerer {
                 }
             }
             Expression::Identifier(id) => match id.name.as_str() {
-                name @ "Atomics" | name @ "Reflect" => {
+                name @ "Atomics" | name @ "Reflect" | name @ "Promise" | name @ "Intl" => {
                     Some(format!("{} is not supported in js2zig", name))
                 }
                 _ => None,
@@ -89,6 +97,33 @@ impl Lowerer {
             // ── Step 1c: eval() → compile error ──
             if matches!(builtin, crate::native_builtins::BuiltinCall::Eval) {
                 return self.compile_error_expr(ce.span, "eval() is not supported (security risk, cannot dynamically execute at compile time)");
+            }
+
+            // ── Step 1d: ES2025 Set operations → @compileError ──
+            if matches!(
+                builtin,
+                crate::native_builtins::BuiltinCall::SetUnion
+                    | crate::native_builtins::BuiltinCall::SetIntersection
+                    | crate::native_builtins::BuiltinCall::SetDifference
+                    | crate::native_builtins::BuiltinCall::SetSymmetricDifference
+                    | crate::native_builtins::BuiltinCall::SetIsSubsetOf
+                    | crate::native_builtins::BuiltinCall::SetIsSupersetOf
+                    | crate::native_builtins::BuiltinCall::SetIsDisjointFrom
+            ) {
+                let method_name = match &builtin {
+                    crate::native_builtins::BuiltinCall::SetUnion => "union",
+                    crate::native_builtins::BuiltinCall::SetIntersection => "intersection",
+                    crate::native_builtins::BuiltinCall::SetDifference => "difference",
+                    crate::native_builtins::BuiltinCall::SetSymmetricDifference => "symmetricDifference",
+                    crate::native_builtins::BuiltinCall::SetIsSubsetOf => "isSubsetOf",
+                    crate::native_builtins::BuiltinCall::SetIsSupersetOf => "isSupersetOf",
+                    crate::native_builtins::BuiltinCall::SetIsDisjointFrom => "isDisjointFrom",
+                    _ => unreachable!(),
+                };
+                return self.compile_error_expr(
+                    ce.span,
+                    format!("Set.prototype.{}() is not supported (ES2025 Set operation)", method_name),
+                );
             }
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
@@ -677,6 +712,31 @@ impl Lowerer {
                     );
                 }
             },
+            Expression::StaticMemberExpression(mem) => {
+                if let Expression::Identifier(id) = &mem.object {
+                    let obj_name = id.name.as_str();
+                    let method_name = mem.property.name.as_str();
+                    match obj_name {
+                        "Intl" => {
+                            let span = oxc_span::GetSpan::span(ne);
+                            return self.compile_error_expr(
+                                span,
+                                format!(
+                                    "Intl.{}() is not supported (use Zig/C library for internationalization)",
+                                    method_name
+                                ),
+                            );
+                        }
+                        _ => {
+                            let span = oxc_span::GetSpan::span(ne);
+                            return self.compile_error_expr(span, "Unsupported NewExpression");
+                        }
+                    }
+                } else {
+                    let span = oxc_span::GetSpan::span(ne);
+                    return self.compile_error_expr(span, "Unsupported NewExpression");
+                }
+            }
             _ => {
                 let span = oxc_span::GetSpan::span(ne);
                 return self.compile_error_expr(span, "Unsupported NewExpression");
