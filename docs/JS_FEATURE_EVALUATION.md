@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'e1352576-30e5-4c2c-840f-45b0554bd6e8'
-  PropagateID: 'e1352576-30e5-4c2c-840f-45b0554bd6e8'
-  ReservedCode1: 'a4a46b5b-826f-435a-83a0-e8dc3eaebdf3'
-  ReservedCode2: 'a4a46b5b-826f-435a-83a0-e8dc3eaebdf3'
+  ProduceID: '01aa90c8-a582-49f2-a2d7-49c630b15127'
+  PropagateID: '01aa90c8-a582-49f2-a2d7-49c630b15127'
+  ReservedCode1: '5a1ba005-cb94-4931-bb7f-255d1a4b6ef5'
+  ReservedCode2: '5a1ba005-cb94-4931-bb7f-255d1a4b6ef5'
 ---
 
 ---
@@ -45,7 +45,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 494 个 Rust 测试 (494 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
+> **测试覆盖**: 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
 
 ---
 
@@ -55,28 +55,28 @@ AIGC:
 
 | 指标 | 数值 |
 |------|------|
-| **JS 语法特性总数** (表达式 + 语句) | 140 |
+| **JS 语法特性总数** (表达式 + 语句) | 141 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 494 个 Rust 测试 (494 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
+| **测试覆盖** | 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
 
 > 对应 Section 2.1–2.18，涵盖字面量、运算符、函数调用、箭头函数、模板字面量、JSDoc 类型标注等所有表达式语法。
 
-| 状态 | 数量 | 占比 | 说明 |
-|------|------|------|------|
-| ✅ 完全实现 | 81 | ~89% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/私有字段/BigInt 字面量/delete/in/序列表达式 等 |
-| 🔘 不实现 | 10 | ~11% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of`、`import.meta`、Setter |
+| 状态 | 数量 | 说明 |
+|------|------|------|
+| ✅ 完全实现 | 82 | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/私有字段/BigInt 字面量/delete/in/序列表达式 等 |
+| 🔘 不实现 | 9 | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`import.meta`、Setter |
 
-### 1.3 语句 (Statements) — ~49 特性
+### 1.3 语句 (Statements) — 50 特性
 
 > 对应 Section 3.1–3.6，涵盖变量/函数/类声明、控制流、错误处理等语句语法。
 
-| 状态 | 数量 | 占比 | 说明 |
-|------|------|------|------|
-| ✅ 完全实现 | ~46 | ~94% | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}+静态字段读写）/if/switch/for/while/do-while/try-catch/throw 等 |
-| 🔘 不实现 | ~3 | ~6% | `for await...of`、`with`、`debugger` |
+| 状态 | 数量 | 说明 |
+|------|------|------|
+| ✅ 完全实现 | 45 | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}+静态字段读写）/if/switch/for/while/do-while/try-catch/throw、for-in Map 等 |
+| 🔘 不实现 | 5 | `extends`/`super`、`for await...of`、`with`、`debugger` |
 
 ### 1.4 内置对象 (Built-in Objects) — 220 个表格行
 
@@ -91,14 +91,14 @@ AIGC:
 
 ### 1.5 三大类对比总览
 
-| 类别 | 总数 | ✅ 实现 | 🔘 不实现 | 实现率 |
-|------|------|---------|-----------|--------|
-| **表达式** | 91 | 83 | 8 | **~91%** |
-| **语句** | 49 | 46 | 3 | **~94%** |
-| **内置对象** | 220 | 208 | 11 | **~95%** |
-| **语法合计** | 140 | 129 | 11 | **~92%** |
+| 类别 | 总数 | ✅ 实现 | 🔘 不实现 |
+|------|------|---------|-----------|
+| **表达式** | 91 | 82 | 9 |
+| **语句** | 50 | 45 | 5 |
+| **内置对象** | 220 | 208 | 11 |
+| **语法合计** | 141 | 127 | 14 |
 
-> **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。
+> **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。表达式 91 项中 2.17 节的「类表达式」和「私有字段」同时出现在语句章节，仅在语句中计数，避免重复。
 
 ### 1.6 状态标记说明
 
@@ -112,7 +112,7 @@ AIGC:
 
 ## 2. 表达式 (Expressions)
 
-### 2.1 基本字面量 (Primary Literals) - ✅ 89% 实现
+### 2.1 基本字面量 (Primary Literals) — ✅ 9
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -126,7 +126,7 @@ AIGC:
 | `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
 | BigInt 字面量 | ✅ | `js_bigint.JsBigInt.init(alloc, "9")` | 完整实现：四则/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型运算/`>>>` TypeError（与 JS 规范一致） |
 
-### 2.2 算术运算符 (Arithmetic Operators) - ✅ 100% 实现
+### 2.2 算术运算符 (Arithmetic Operators) — ✅ 9
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -140,7 +140,7 @@ AIGC:
 | `--` (自减) | ✅ | `-= 1` | 隐式测试 |
 | `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 运算符 | 隐式测试 |
 
-### 2.3 比较运算符 (Comparison Operators) - ✅ 100% 实现
+### 2.3 比较运算符 (Comparison Operators) — ✅ 5
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -150,7 +150,7 @@ AIGC:
 | `!=` (宽松不等) | ✅ | `!.eq()` | 同上 |
 | `<` `>` `<=` `>=` | ✅ | `a < b` 或 `.lt()` | `test_native_proto_operators` |
 
-### 2.4 逻辑运算符 (Logical Operators) - ✅ 100% 实现
+### 2.4 逻辑运算符 (Logical Operators) — ✅ 3
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -158,13 +158,13 @@ AIGC:
 | `\|\|` (或) | ✅ | `or` | 同上 |
 | `??` (空值合并) | ✅ | `orelse` | showcase `test_nullish_ops` |
 
-### 2.5 位运算 (Bitwise Operators) - ✅ 100% 实现
+### 2.5 位运算 (Bitwise Operators) — ✅ 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `&` `\|` `^` `~` `<<` `>>` `>>>` | ✅ | 对应 Zig 运算符 | `test_native_proto_operators` |
 
-### 2.6 一元运算符 (Unary Operators) - ✅ 100% 实现
+### 2.6 一元运算符 (Unary Operators) — ✅ 7
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -189,13 +189,13 @@ AIGC:
 - `try-catch` 嵌套资源释放未验证：使用 labeled block + catch handler，finally 内联 emit，需验证嵌套场景下资源是否正确释放
 - 模板字符串 `allocPrint` 使用 arena allocator（`js_allocator`），内存由 arena 自动管理，不会泄漏
 
-### 2.7 条件（三元）运算符 - ✅ 100% 实现
+### 2.7 条件（三元）运算符 — ✅ 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `cond ? a : b` | ✅ | `if (cond) a else b` | `test_native_proto_operators` |
 
-### 2.8 赋值运算符 (Assignment Operators) - ✅ 100% 实现
+### 2.8 赋值运算符 (Assignment Operators) — ✅ 6
 
 | 特性              | 状态           | Zig 输出 | 测试 |
 |-----------------|--------------|----------|------|
@@ -206,7 +206,7 @@ AIGC:
 | `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` + showcase `testOrAssign*` (2) |
 | `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` + showcase `testNullishAssign*` (2) |
 
-### 2.9 对象/数组访问 - ✅ 100% 实现
+### 2.9 对象/数组访问 — ✅ 4
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -221,7 +221,7 @@ AIGC:
 - `str[idx]` 支持变量索引（需要 JSDoc `@param {string}` 标注），→ `@as(i64, @intCast(str[@as(usize, @intCast(idx))]))`
 - `.length` 分发逻辑：String（`ZigType::Str`）→ `js_string.utf16Len(obj)`，ArrayList → `obj.items.len`，其他类型（TypedArray、rest params、`match()` 结果等）→ `obj.len`。对非 Identifier 表达式先尝试 `infer_expr_type()` 推导类型再分发。
 
-### 2.10 函数调用 - ✅ 100% 实现
+### 2.10 函数调用 — ✅ 3
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -229,7 +229,7 @@ AIGC:
 | 内置函数调用 | ✅ | 走 `BuiltinRegistry` | 同上 |
 | 方法调用 `obj.method()` | ✅ | `obj.method()` | showcase-project |
 
-### 2.11 对象/数组字面量 - ✅ 100% 实现
+### 2.11 对象/数组字面量 — ✅ 5 / 🔘 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -240,7 +240,7 @@ AIGC:
 | Setter 属性 `{ set x(v) { ... } }` | 🔘 不实现 | `@compileError("setter is not supported")` | `test_setter_compile_error` |
 | 多 spread 合并 `{ ...a, ...b }` | ✅ | `spreadMerge(spreadMerge({}, a), b)` | `testSpreadSingle/Multi/Triple/WithInline/Override` |
 
-### 2.12 模板字面量 - ✅ 75% 实现
+### 2.12 模板字面量 — ✅ 3 / 🔘 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -249,7 +249,7 @@ AIGC:
 | 复杂嵌套 | ✅ | 递归生成 | 同上 |
 | 标签模板 `` tag`...` `` | 🔘 不实现 | `@compileError` | 很少使用 |
 
-### 2.13 箭头函数 - ✅ 100% 实现
+### 2.13 箭头函数 — ✅ 6
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -264,7 +264,7 @@ AIGC:
 - 不可变捕获 (`const` 外层变量) → 值复制到结构体字段
 - 可变捕获 (`let`/`var` 外层变量) → 指针字段 (`*T`)，通过 `self.x.*` 解引用
 
-### 2.14 `new` 表达式 - ✅ 83% 实现
+### 2.14 `new` 表达式 — ✅ 5 / 🔘 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -275,13 +275,13 @@ AIGC:
 | `new Promise(...)` | 🔘 不实现 | `@compileError` | 建议用 `async/await` + `Io` 模式替代 |
 | 其他构造函数 | ✅ | 自动映射 | 隐式测试 |
 
-### 2.15 `await` 表达式 - ✅ 100% 实现
+### 2.15 `await` 表达式 — ✅ 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `await expr` | ✅ | `io.async(fn, .{io, args}).await(io)` | test-bin-project |
 
-### 2.16 其他表达式 - ✅ 88% 实现
+### 2.16 其他表达式 — ✅ 7
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -300,7 +300,7 @@ AIGC:
   3. 动态类型（JsAny/anytype）→ 运行时 `js_runtime.instanceOf(value, "TypeName")`，基于 JsAny tag + `__jsClass__`/`__jsExtends__` 元数据
   - 注意：`class extends` 生成编译错误，编译时原型链遍历（`class_extends_map`）保留在代码中但不再有数据。JsAny 运行时匹配仍通过 `__jsClass__` 和 `__jsExtends__` 字段支持。
 
-### 2.17 不支持的表达式 - 按价值分类
+### 2.17 不支持的表达式 — ✅ 2 / 🔘 8
 
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
@@ -317,7 +317,7 @@ AIGC:
 
 ---
 
-## 2.18 JSDoc 类型标注 (JSDoc Type Annotations) - ✅ 完全实现
+## 2.18 JSDoc 类型标注 (JSDoc Type Annotations) — ✅ 7
 
 > **实现方式**: JSDoc 注释中的 `@type`、`@returns`、`@param` 标签支持类型标注，影响 Zig 代码生成中的类型推断。
 
@@ -341,7 +341,7 @@ AIGC:
 
 ## 3. 语句 (Statements)
 
-### 3.1 变量声明 - ✅ 100% 实现
+### 3.1 变量声明 — ✅ 5
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -351,7 +351,7 @@ AIGC:
 | 解构 `const {a, b} = obj` | ✅ | 展平为逐字段访问 | showcase-project |
 | 解构默认值 `const {a = 1} = obj` | ✅ | HashMap: `if (get("a")) \|v\| v.asI64() else 1`；Slice: `arr[0] orelse 1` | `test_p2_destructure_object_with_defaults` |
 
-### 3.2 函数声明 - ✅ 100% 实现
+### 3.2 函数声明 — ✅ 7
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -366,7 +366,7 @@ AIGC:
 **注意**:
 - `arguments` 是传统函数（非箭头函数）内部的类数组对象，包含调用时传入的所有参数
 
-### 3.3 类声明 - ✅ 90% 实现 (extends/super 为编译错误)
+### 3.3 类声明 — ✅ 9 / 🔘 2
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -382,7 +382,7 @@ AIGC:
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
 | 静态初始化块 `static {}` | ✅ | `pub fn init_js2rust() !void { ... }` (orchestrator 自动发现并调用) + 静态字段读写 `__ClassName_field` + `this.field` → 静态字段 | `test_static_block` + `test_static_field_read` + `test_static_field_assign` + `test_static_block_this_read` + `test_static_block_this_write` + showcase `testStaticBlockInit` + `testStaticBlockThis` |
 
-### 3.4 控制流语句 - ✅ 94% 实现
+### 3.4 控制流语句 — ✅ 16 / 🔘 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -412,7 +412,7 @@ AIGC:
 - String → Zig 原生 `for (str) |ch|` 迭代 ✅
 - 自定义 iterable（`Symbol.iterator` 协议）— 未实现（不影响当前项目）
 
-### 3.5 错误处理 - ✅ 100% 实现
+### 3.5 错误处理 — ✅ 4
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
@@ -421,7 +421,7 @@ AIGC:
 | `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | 同上 |
 | 嵌套 try-catch | ✅ | 支持 | showcase `testNestedTryCatch` |
 
-### 3.6 其他语句 - ✅ 71% 实现
+### 3.6 其他语句 — ✅ 4 / 🔘 2
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
