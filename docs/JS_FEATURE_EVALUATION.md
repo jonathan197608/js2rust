@@ -1,4 +1,37 @@
-﻿# JS 语言特性实现说明
+﻿---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6045a792-5d3a-486e-a7a1-1bbf61764d74'
+  PropagateID: '6045a792-5d3a-486e-a7a1-1bbf61764d74'
+  ReservedCode1: '5f58b0cc-f268-4aa2-89bd-4d970b015af7'
+  ReservedCode2: '5f58b0cc-f268-4aa2-89bd-4d970b015af7'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b29c83cf-393f-4b7b-ae96-077c1724ed54'
+  PropagateID: 'b29c83cf-393f-4b7b-ae96-077c1724ed54'
+  ReservedCode1: 'ad912b89-4abf-4ae3-86e6-29de6544b25f'
+  ReservedCode2: 'ad912b89-4abf-4ae3-86e6-29de6544b25f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c60feb33-c3f9-4537-b927-8411bd7286a5'
+  PropagateID: 'c60feb33-c3f9-4537-b927-8411bd7286a5'
+  ReservedCode1: 'b2edee49-401e-4f0a-afc2-6cdc0c4eb51d'
+  ReservedCode2: 'b2edee49-401e-4f0a-afc2-6cdc0c4eb51d'
+---
+
+# JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
 > **测试覆盖**: 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
@@ -256,20 +289,20 @@
   3. 动态类型（JsAny/anytype）→ 运行时 `js_runtime.instanceOf(value, "TypeName")`，基于 JsAny tag + `__jsClass__`/`__jsExtends__` 元数据
   - 注意：`class extends` 生成编译错误，编译时原型链遍历（`class_extends_map`）保留在代码中但不再有数据。JsAny 运行时匹配仍通过 `__jsClass__` 和 `__jsExtends__` 字段支持。
 
-### 2.17 不支持的表达式 — ✅ 2 / 🔘 8
+### 2.17 不支持的表达式 — 🔘 8
+
+> **注意**: 类表达式 `const X = class {}` 和私有字段 `#field` 已完全实现，归类于 Section 3.3 类声明，此处不再重复。
 
 | 特性 | 错误信息 | 评估 |
 |------|----------|------|
-| 类表达式 `const X = class {}` | ✅ 已实现 | ✅ 完全实现（复用 ClassDeclaration 逻辑 + pending_expr_fns + 匿名类计数器 `_AnonClass_N`） |
 | `function*` (生成器函数) | `@compileError` | 🔘 不实现（状态机变换极复杂，Zig 无等价物） |
 | `yield` / `yield*` (生成器) | `@compileError` | 🔘 不实现（随 `function*` 一同不实现） |
 | `async function*` (异步生成器) | `@compileError` | 🔘 不实现（niche 场景） |
 | 动态 `import()` | 需使用静态 `import` | 🔘 不实现（Zig `@import()` 仅 comptime，无运行时动态加载） |
-| 私有字段 `#field` | ✅ 完全实现 | ✅ 完全实现（# 前缀剥离，默认值保留）；`test_native_proto_private_field_*` (5) + showcase `testPrivateFieldInit`/`testPrivateFieldDefault` (test_private_fields.js) |
 | `new.target` | `@compileError` | 🔘 不实现（meta property，niche） |
 | `for await...of` | `@compileError` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `@compileError` | 🔘 不实现（已在 2.12 标记） |
-| `import.meta` | `@compileError` | 🔘 不实现（Zig 无运行时模块元信息） | `test_import_meta_compile_error` |
+| `import.meta` | `@compileError` | 🔘 不实现（Zig 无运行时模块元信息）；`test_import_meta_compile_error` |
 
 ---
 
