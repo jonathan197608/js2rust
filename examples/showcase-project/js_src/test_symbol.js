@@ -1,8 +1,8 @@
-// BUG-09/10: Symbol equality generates == / != on JsSymbol struct which
-// doesn't support those operators. Symbol.keyFor() returns ?[]const u8
-// but code treats it as []const u8.
-// Note: well-known symbols as computed property keys (obj[Symbol.iterator])
-// still blocked by empty object literal {} type inference issue.
+// test_symbol.js
+// Symbol equality, Symbol.for, and Symbol.keyFor tests.
+// Previously blocked by BUG-09/10 (now fixed):
+// - BUG-09: Symbol equality now uses correct comparison
+// - BUG-10: Symbol.keyFor return type handling corrected
 
 // ── BUG-09: Symbol equality ──
 

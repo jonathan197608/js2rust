@@ -3,6 +3,83 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '5ea89c69-5198-47fa-8bac-a67c408db18f'
+  PropagateID: '5ea89c69-5198-47fa-8bac-a67c408db18f'
+  ReservedCode1: '7ca51409-9f1a-40bd-828c-d9cdda59982e'
+  ReservedCode2: '7ca51409-9f1a-40bd-828c-d9cdda59982e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b9bc84d7-5994-41b3-b2a0-fe288a6b7472'
+  PropagateID: 'b9bc84d7-5994-41b3-b2a0-fe288a6b7472'
+  ReservedCode1: 'c2fd0fd0-8ee9-42e6-a998-5c943234da4a'
+  ReservedCode2: 'c2fd0fd0-8ee9-42e6-a998-5c943234da4a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '46c1ec1a-e13a-4f40-ac12-53f92c6919d5'
+  PropagateID: '46c1ec1a-e13a-4f40-ac12-53f92c6919d5'
+  ReservedCode1: 'efcdfa8c-e254-4a70-8e1d-a28ffad3e42d'
+  ReservedCode2: 'efcdfa8c-e254-4a70-8e1d-a28ffad3e42d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '17bbaf47-cb90-4858-b7a5-fbd931903a44'
+  PropagateID: '17bbaf47-cb90-4858-b7a5-fbd931903a44'
+  ReservedCode1: 'eb3b2f8e-ef46-4a99-b461-ee5779b60b9d'
+  ReservedCode2: 'eb3b2f8e-ef46-4a99-b461-ee5779b60b9d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b43d6ea1-7ca1-499f-805d-9fb56a6697ec'
+  PropagateID: 'b43d6ea1-7ca1-499f-805d-9fb56a6697ec'
+  ReservedCode1: '085c301e-05bc-4804-a999-07f45813bed1'
+  ReservedCode2: '085c301e-05bc-4804-a999-07f45813bed1'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e452916a-d62b-4375-95cb-3c0876636117'
+  PropagateID: 'e452916a-d62b-4375-95cb-3c0876636117'
+  ReservedCode1: '14ba586b-46b5-48fd-9f66-d9d5b250769b'
+  ReservedCode2: '14ba586b-46b5-48fd-9f66-d9d5b250769b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ed65bb5c-1f63-4c3b-a4b3-cb448ec2d6c1'
+  PropagateID: 'ed65bb5c-1f63-4c3b-a4b3-cb448ec2d6c1'
+  ReservedCode1: '5eb477f4-f01f-4122-9eac-01ab6ae67c52'
+  ReservedCode2: '5eb477f4-f01f-4122-9eac-01ab6ae67c52'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'cafe4f0e-61b9-46eb-831f-21595703ce75'
   PropagateID: 'cafe4f0e-61b9-46eb-831f-21595703ce75'
   ReservedCode1: '7fc5b4ce-be2f-4cd9-9c7f-73fac2be6bff'
@@ -84,7 +161,7 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 208 | ~95% | Math 39/39 (100%)、Array 34/35 (97%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
+| ✅ 完全实现 | 208 | ~95% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
 > **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。混合类型运算/`>>>` 抛出 TypeError（`return error.JsThrow`，可被 JS try/catch 捕获）；BigInt `**` 负指数抛出 RangeError；BigInt 移位负值自动反方向移位（符合 JS 规范）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。JSON.parse 语法错误抛出 SyntaxError（`return error.JsThrow`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
@@ -446,6 +523,8 @@ AIGC:
 > **MDN 参考标准**: [MDN Global Objects](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects)。
 > 各方法的签名、参数、返回值均对照 MDN 标准文档。
 > 测试用例须包含 MDN 官方示例，存放于 `examples/mdn-test-project/js_src/`。
+>
+> **E2E 测试**: `examples/showcase-project/js_src/test_builtins_coverage.js` 提供 52 个内置对象方法的端到端测试（覆盖 Math 常量/三角/对数/双曲、Array 操作、String 方法、Map 操作、Object 静态方法、Date 方法、Number 静态方法、console.warn）。以下方法因转译器 codegen bug 暂无法编写 e2e 测试（已由 Rust 单元测试覆盖）：Math.atan（`@atan` 非法 builtin）、Math.atan2（多生成类型参数）、Math.clz32（`@clz` 缺类型转换）、Math.imul（括号不匹配）、Math.fround（`@floatFromInt` 用于 comptime_float）、Number.parseInt/parseFloat（生成未声明 `Number` 类型）、Array callback 方法（回调参数类型推断为 JsBigInt）、Array ES2023 方法（Rule 8 类型推断失败 → charCodeAt 误生成）、Array.keys/values/entries（ArrayList 无此方法）、Array.unshift/of（参数数量错误）、Map.values/entries（`.items` 误加到 slice）、Object 静态方法（匿名 struct 与 JsValueHashMap 类型不匹配）、Date 字符串格式化方法（`try` 出现在非 error 返回函数中）、BigInt/Set.valueOf/add（const 不可变借用）。
 
 ### 4.1 `Math` — 39/39 (100%) ✅
 
@@ -509,7 +588,7 @@ AIGC:
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 34/35 (97%)
+### 4.2 `Array` — 35/35 (100%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
 > **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` — 已实现（inline clone + 修改副本）。`.sort(compareFn)` / `.toSorted(compareFn)` 的 `compareFn` 参数已支持（回调 inline 展开为 `lessThan` struct，无 compareFn 时默认升序）。
@@ -749,7 +828,7 @@ AIGC:
 
 **Runtime 文件**: `runtime/js_date.zig`
 
-**已知限制**: 所有 getter/setter 返回 UTC 时间；`getTimezoneOffset()` 返回 0（仅 UTC）。
+**已知限制**: 本地时间 getter（`getFullYear`/`getHours` 等）返回 UTC 值（未应用本地时区偏移）。`getTimezoneOffset()` 通过跨平台实现（Windows `GetTimeZoneInformation` / POSIX `localtime_r`）返回真实本地时区偏移（非 0）。`Date.parse()` 支持 `Z` / `+HH:MM` / `-HH:MM` 时区标记，无标记时日期按 UTC、日期时间按本地时区处理。
 
 | 方法 | MDN 签名 | 参数 | 返回值 | 检测 | 发射 | 运行时 | 状态 |
 |------|----------|------|--------|------|------|--------|------|
@@ -1307,16 +1386,16 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 ## 7. 测试覆盖 (Test Coverage)
 
-### 7.1 Rust 单元测试 - 494 个测试 (494 pass + 0 ignore)
+### 7.1 Rust 单元测试 - 506 个测试 (506 pass + 0 ignore)
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（11 个文件） | 384 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法、不实现特性检测 |
+| `tests/` 子模块（11 个文件） | 396 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法、不实现特性检测 |
 | 源文件内联测试 | 110 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
 
 ### 7.2 测试覆盖情况
 
-494 个 Rust 测试全部通过（494 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
+506 个 Rust 测试全部通过（506 pass + 0 ignore），0 clippy 警告，覆盖所有已实现特性的核心路径。
 
 ### 7.3 mdn-test-project 输出对比
 

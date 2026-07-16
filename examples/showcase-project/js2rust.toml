@@ -15,6 +15,7 @@ js_files = [
     "test_control_flow.js",
     "test_builtins_es2023.js",
     "test_builtins_advanced.js",
+    "test_builtins_coverage.js",
     "test_advanced_types.js",
     "test_string_methods.js",
     "test_date_setters.js",
@@ -31,8 +32,8 @@ js_files = [
     "test_logical_assign.js",
     "test_private_fields.js",
     "test_for_in_map.js",
+    "test_missing_coverage.js",
 ]
 
-# js_src_pending/ 目录包含因 codegen bug 暂无法编译的 e2e 测试文件。
-# Bug 修复后，将文件移入 js_src/ 并添加到上方 js_files 列表即可启用。
-# 详见 docs/CODEGEN_BUGS.md。
+# All codegen bugs have been fixed (previously tracked in docs/CODEGEN_BUGS.md).
+# All test files in js_src/ are now listed above and participate in the build.

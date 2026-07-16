@@ -1,9 +1,10 @@
-// BUG-03/04/05/13: for...of on Map/Set/String, Map.forEach/Set.forEach
-// - BUG-03: Map destructure variables have type JsAny instead of inferred type
-// - BUG-04: Set iteration variable has type JsAny instead of inferred type
-// - BUG-05: for-of String unused capture generates error in Zig 0.16
-// - BUG-13: Map.forEach/Set.forEach callback params have type JsAny
-// Status: BLOCKED by codegen bugs. Enable when BUG-03/04/05/13 are fixed.
+// test_for_of_collections.js
+// for...of iteration on Map, Set, and String, plus Map/Set forEach.
+// Previously blocked by BUG-03/04/05/13 (now fixed):
+// - BUG-03: Map destructure variables now have correctly inferred types
+// - BUG-04: Set iteration variable now has correctly inferred type
+// - BUG-05: for-of String unused capture no longer generates error
+// - BUG-13: Map/Set.forEach callback params now have correct types
 
 // ── BUG-03: for...of Map with value arithmetic ──
 

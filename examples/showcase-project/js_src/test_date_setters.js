@@ -1,7 +1,7 @@
-// BUG-07: Date setter methods lack optional parameter passing.
-// JS: d.setFullYear(2025) → Zig expects setFullYear(self, year, month, date)
-// with all 3 args. Missing args should be passed as null.
-// Status: BLOCKED by codegen bug. Enable when BUG-07 is fixed.
+// test_date_setters.js
+// Date setter methods with optional parameter passing.
+// Previously blocked by BUG-07 (now fixed): missing optional args
+// are handled correctly by the codegen.
 
 /** @returns {i64} */
 export function testDateSetFullYear() {

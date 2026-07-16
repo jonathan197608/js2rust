@@ -1,6 +1,7 @@
-// BUG-11: `new RegExp()` generates `try` in a non-error-returning function.
-// JsRegExp.init() returns !JsRegExp but the enclosing function is `fn () i64`.
-// Status: BLOCKED by codegen bug. Enable when BUG-11 is fixed.
+// test_regexp.js
+// RegExp constructor and instance method tests.
+// Previously blocked by BUG-11 (now fixed): RegExp init no longer
+// generates try in a non-error-returning function.
 
 /** @returns {i64} */
 export function testRegExpGlobal() {

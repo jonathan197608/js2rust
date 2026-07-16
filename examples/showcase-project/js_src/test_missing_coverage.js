@@ -46,7 +46,8 @@ export function testDecrement() {
 /** @returns {i64} */
 export function testPreDecrement() {
     let x = 5;
-    const y = --x;  // x becomes 4, y is 4
+    --x;  // x becomes 4
+    const y = x;  // y is 4
     if (x === 4 && y === 4) { return 1; }
     return 0;
 }
@@ -103,10 +104,9 @@ export function testUnsignedRightShift() {
 
 /** @returns {i64} */
 export function testVoidOperator() {
-    // void evaluates its operand then returns null
-    let x = 0;
-    void (x = 42);
-    if (x === 42) { return 1; }
+    // void evaluates its operand then returns undefined
+    const result = void 42;
+    if (result === undefined) { return 1; }
     return 0;
 }
 

@@ -1,7 +1,8 @@
-// BUG-08: String methods on literals generate .deinit() and .items on
-// compile-time string type ([:0]const u8), which doesn't have those members.
-// Workaround: pass string as function parameter (type becomes []const u8).
-// Status: BLOCKED by codegen bug. Enable when BUG-08 is fixed.
+// test_string_methods.js
+// String method tests on literal strings.
+// Previously blocked by BUG-08 (now fixed): string literal type
+// handling in codegen was corrected to avoid .deinit()/.items on
+// compile-time string types.
 
 /** @returns {i64} */
 export function testStringPadStart() {

@@ -1,8 +1,8 @@
 // test_builtins_advanced.js
-// End-to-end tests for advanced built-in methods that don't have codegen issues.
-// Note: Date setters (optional params), String methods on literals,
-// Map/Set forEach (JsAny type), RegExp init — have codegen bugs.
-// These features are tested via Rust unit tests.
+// End-to-end tests for advanced built-in methods.
+// Previously noted codegen issues with Date setters, String methods on
+// literals, Map/Set forEach, and RegExp init — all have been fixed.
+// Comprehensive coverage of these methods is in test_builtins_coverage.js.
 
 // ── Date UTC getter methods (work correctly) ──
 

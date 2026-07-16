@@ -3,6 +3,50 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '9aa9819b-7ecd-4e97-afd4-f3e18c2c9e60'
+  PropagateID: '9aa9819b-7ecd-4e97-afd4-f3e18c2c9e60'
+  ReservedCode1: 'a2befb52-229f-4906-917b-b2e76e77de24'
+  ReservedCode2: 'a2befb52-229f-4906-917b-b2e76e77de24'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd6c20fa4-35c5-45a4-b066-d39b615e52d0'
+  PropagateID: 'd6c20fa4-35c5-45a4-b066-d39b615e52d0'
+  ReservedCode1: '4105c764-1203-430a-903b-dc513d2bf0a0'
+  ReservedCode2: '4105c764-1203-430a-903b-dc513d2bf0a0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3608b86b-2f9d-4982-8df4-c33620ddf29a'
+  PropagateID: '3608b86b-2f9d-4982-8df4-c33620ddf29a'
+  ReservedCode1: '3b35d95f-f964-4d66-aa03-dff136602f2b'
+  ReservedCode2: '3b35d95f-f964-4d66-aa03-dff136602f2b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ae4b924a-6a02-43e1-a1ab-7f456c12250e'
+  PropagateID: 'ae4b924a-6a02-43e1-a1ab-7f456c12250e'
+  ReservedCode1: '1bf34bb9-ce4f-4ba1-b0c1-3ab2b8209a5e'
+  ReservedCode2: '1bf34bb9-ce4f-4ba1-b0c1-3ab2b8209a5e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'fe85e4db-5e92-4bdb-ae87-4eba00b81797'
   PropagateID: 'fe85e4db-5e92-4bdb-ae87-4eba00b81797'
   ReservedCode1: '9903835c-48a1-4890-a179-dd39f3fd83a0'
@@ -326,7 +370,7 @@ cargo run -- --all
 |------|------|------|----------|----------|
 | test-lib-project | `examples/test-lib-project/` | lib | `cargo test` | 基础库导出（C ABI → Rust lib），2 个单元测试（greet + add） |
 | test-bin-project | `examples/test-bin-project/` | bin | `cargo run` | sync/async host 函数、try-catch 嵌套、Date 方法，`assert_eq!` 断言 |
-| showcase-project | `examples/showcase-project/` | bin | `cargo run` | 128 个导出函数覆盖 Array/Math/String/Date/Object/Class/Spread/解构，println 对比 expected 值 |
+| showcase-project | `examples/showcase-project/` | bin | `cargo run` | 337 个导出函数覆盖 Array/Math/String/Date/Object/Class/Spread/解构/Map/Set/BigInt/Symbol/RegExp，println 对比 expected 值 |
 
 ### 4.1 test-lib-project
 
@@ -355,15 +399,15 @@ cargo run     # 运行 main()，含 assert_eq! 断言
 
 ```bash
 cd examples/showcase-project
-cargo run     # 运行 main()，打印 128 个函数结果
+cargo run     # 运行 main()，打印 337 个函数结果
 ```
 
-覆盖范围最广的集成测试，10 个 JS 文件共 128 个导出函数：
+覆盖范围最广的集成测试，34 个 JS 文件共 337 个导出函数：
 
 | JS 文件 | 导出数 | 覆盖内容 |
 |---------|--------|----------|
 | `app.js` | 47 | C ABI 导出、循环、错误处理、集合(Map/Set)、位运算、解构默认值 |
-| `phase5.js` | 15 | Array 高阶方法（pop/shift/reverse/sort/slice/map/filter/reduce/some/every/forEach） |
+| `phase5.js` | 16 | Array 高阶方法（pop/shift/reverse/sort/slice/map/filter/reduce/some/every/forEach） |
 | `phase6.js` | 37 | String 实例方法、Math 静态方法、Date 全量、parseInt、Object.keys、Spread merge |
 | `phase_memory.js` | 5 | Memory 压力测试（Map/Set/Array 突变 + Arena 轮转） |
 | `test_throw.js` | 5 | Throw/Error 传播、try-finally |
@@ -372,8 +416,32 @@ cargo run     # 运行 main()，打印 128 个函数结果
 | `test_dynamic_index.js` | 5 | 动态数组索引赋值 |
 | `test_optional.js` | 2 | Optional chaining |
 | `for_in_struct.js` | 2 | For-in static struct |
+| `utils.js` | 41 | 工具函数（add/sqrt/compare 等，被 helpers.js 导入） |
+| `helpers.js` | 29 | 辅助函数（闭包/类/工厂模式，部分触发 COMPILE_ERROR） |
+| `test_builtins_coverage.js` | 52 | 内置对象方法 e2e 测试（Math/Array/String/Map/Object/Date/Number/console） |
+| `test_missing_coverage.js` | 12 | 补充覆盖（void/typeof/instanceof/delete/前缀运算等） |
+| `test_builtins_advanced.js` | 7 | Date UTC getter、Number 静态方法、String slice/substring |
+| `test_string_methods.js` | 7 | String 方法（padStart/padEnd/trim/trimStart/trimEnd/match/search） |
+| `test_for_of_collections.js` | 7 | For-of 遍历 Map/Set/String/Array |
+| `test_date_setters.js` | 6 | Date setter 方法（setFullYear/setMonth/setDate 等） |
+| `test_regexp.js` | 4 | RegExp（构造/test/exec/source/flags/global） |
+| `test_arguments.js` | 5 | arguments 对象（length/索引/variadic） |
+| `test_expr_advanced.js` | 6 | 高级表达式（三元/序列/逗号/展开） |
+| `test_logical_assign.js` | 5 | 逻辑赋值（??=/&&=/\|=） |
+| `test_private_fields.js` | 4 | 私有字段（#/读写/默认值） |
+| `test_in_operator.js` | 3 | in 运算符（Object/Map/Set） |
+| `test_jsdoc_types.js` | 3 | JSDoc 类型注解（@param/@returns/@typedef） |
+| `test_nullish_ops.js` | 3 | 空值合并运算符（??/??=） |
+| `test_symbol.js` | 3 | Symbol（创建/相等/well-known） |
+| `test_control_flow.js` | 1 | 控制流（labeled break/continue） |
+| `test_advanced_types.js` | 2 | 高级类型（匿名对象/数组） |
+| `test_for_in_map.js` | 2 | For-in 遍历 Map |
+| `test_delete_operator.js` | 2 | delete 运算符 |
+| `test_operators.js` | 2 | 运算符（位运算/比较） |
+| `test_stmt_advanced.js` | 2 | 高级语句（empty/labeled） |
+| `test_builtins_es2023.js` | 0 | 占位文件（测试在 test_builtins_coverage.js 中） |
 
-> 注：所有 10 个 JS 文件均在 `js2rust.toml` 中声明并参与构建。此外 `js_src/` 中还有 `utils.js`（56 个导出）和 `helpers.js`（29 个导出）存在但未在 `js2rust.toml` 中声明，暂不参与构建。
+> 注：所有 34 个 JS 文件均在 `js2rust.toml` 中声明并参与构建。
 
 ---
 
@@ -408,7 +476,7 @@ cargo run -- --all                  # 运行对比（exit code 恒为 0，需检
 # 5. Example 项目 — 运行验证（非仅构建）
 cd examples/test-lib-project && cargo test    # 2 tests passed
 cd examples/test-bin-project && cargo run     # assert_eq! 断言通过
-cd examples/showcase-project && cargo run     # 128 个函数输出正确
+cd examples/showcase-project && cargo run     # 337 个函数输出正确
 
 # 6. 增量编译验证 — 修改 JS 文件后重新编译应触发转译
 # 手动验证：修改 showcase js_src/helpers.js（如加一行注释），然后 cargo build
