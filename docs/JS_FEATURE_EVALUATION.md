@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'cafe4f0e-61b9-46eb-831f-21595703ce75'
+  PropagateID: 'cafe4f0e-61b9-46eb-831f-21595703ce75'
+  ReservedCode1: '7fc5b4ce-be2f-4cd9-9c7f-73fac2be6bff'
+  ReservedCode2: '7fc5b4ce-be2f-4cd9-9c7f-73fac2be6bff'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '6045a792-5d3a-486e-a7a1-1bbf61764d74'
   PropagateID: '6045a792-5d3a-486e-a7a1-1bbf61764d74'
   ReservedCode1: '5f58b0cc-f268-4aa2-89bd-4d970b015af7'
@@ -365,8 +376,8 @@ AIGC:
 | 静态方法 | ✅ | `pub fn method() {}` (无 `self`) | showcase `testClassStatic` (helpers.js: `PointFactory.create(x, y)`) |
 | 静态属性 | ✅ | `pub const prop = val;` | showcase `testStaticFieldRead` / `testStaticFieldAssign` (test_static_fields.js: `Counter.count`) |
 | Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` + showcase `testGetterInObjectLiteral` (test_missing_coverage.js) |
-| `extends` 继承 | ❌ 编译错误 | `@compileError("class extends is not supported: use composition instead")` | `test_class_extends_compile_error` |
-| `super` 调用 | ❌ 编译错误 | `@compileError("super not supported")` | 同上 |
+| `extends` 继承 | 🔘 不实现 | `@compileError("class extends is not supported: use composition instead")` | `test_class_extends_compile_error` |
+| `super` 调用 | 🔘 不实现 | `@compileError("super not supported")` | 同上 |
 | 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | `test_native_proto_private_field_*` (5) + showcase `testPrivateFieldInit`/`testPrivateFieldDefault` (test_private_fields.js) |
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
 | 静态初始化块 `static {}` | ✅ | `pub fn init_js2rust() !void { ... }` (orchestrator 自动发现并调用) + 静态字段读写 `__ClassName_field` + `this.field` → 静态字段 | `test_static_block` + `test_static_field_read` + `test_static_field_assign` + `test_static_block_this_read` + `test_static_block_this_write` + showcase `testStaticBlockInit` + `testStaticBlockThis` |
