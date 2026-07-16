@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'fdc93ed5-2af8-4b0b-b4c9-25253973d1e2'
+  PropagateID: 'fdc93ed5-2af8-4b0b-b4c9-25253973d1e2'
+  ReservedCode1: '48594183-263a-4bca-ad52-156f37c43855'
+  ReservedCode2: '48594183-263a-4bca-ad52-156f37c43855'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '5ea89c69-5198-47fa-8bac-a67c408db18f'
   PropagateID: '5ea89c69-5198-47fa-8bac-a67c408db18f'
   ReservedCode1: '7ca51409-9f1a-40bd-828c-d9cdda59982e'
@@ -999,7 +1010,7 @@ AIGC:
 |------|------|
 | `throw new Error(msg)` → `error.JsThrow` | ✅ |
 
-### 4.16 未实现类别（重新评估）
+### 4.16 其他内置对象（重新评估）
 
 | 类别 | 状态 | MDN 参考 | 评估 |
 |------|------|----------|------|
