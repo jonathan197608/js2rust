@@ -358,7 +358,7 @@ export function testObjectHasOwn() {
 }
 
 // ═══════════════════════════════════════════════════════
-// Date methods (8 — UTCFullYear/Month/Date in test_builtins_advanced.js;
+// Date methods (7 — UTCFullYear/Month/Date in test_builtins_advanced.js;
 //   string format methods excluded: try in non-error function)
 // ═══════════════════════════════════════════════════════
 

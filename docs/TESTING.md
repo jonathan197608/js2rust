@@ -3,6 +3,215 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '570f8203-0314-4dd7-b28c-55a0e57dcf5b'
+  PropagateID: '570f8203-0314-4dd7-b28c-55a0e57dcf5b'
+  ReservedCode1: 'c3378468-2005-4c92-a7c8-f3d2febcb331'
+  ReservedCode2: 'c3378468-2005-4c92-a7c8-f3d2febcb331'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '46066ba9-70ac-4453-97a4-d700da8ef586'
+  PropagateID: '46066ba9-70ac-4453-97a4-d700da8ef586'
+  ReservedCode1: 'c891c6af-efd1-491f-9b20-8cd3f2c993ba'
+  ReservedCode2: 'c891c6af-efd1-491f-9b20-8cd3f2c993ba'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'cdec3074-5bd9-442a-a875-4251891fd33c'
+  PropagateID: 'cdec3074-5bd9-442a-a875-4251891fd33c'
+  ReservedCode1: 'c983d439-3056-40b5-b6b3-39da038e820d'
+  ReservedCode2: 'c983d439-3056-40b5-b6b3-39da038e820d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9d1a3684-4fee-441e-bc71-560142f9c0d9'
+  PropagateID: '9d1a3684-4fee-441e-bc71-560142f9c0d9'
+  ReservedCode1: '610f8d16-3146-4af0-b9b3-dbd1891029f3'
+  ReservedCode2: '610f8d16-3146-4af0-b9b3-dbd1891029f3'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '24877c47-05ed-4e6b-90b6-b0ae2769f1ff'
+  PropagateID: '24877c47-05ed-4e6b-90b6-b0ae2769f1ff'
+  ReservedCode1: '6295b9eb-284f-4604-8194-3f619ef693ce'
+  ReservedCode2: '6295b9eb-284f-4604-8194-3f619ef693ce'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f57f1e05-5c4e-42a4-8c76-dae8cd9b3850'
+  PropagateID: 'f57f1e05-5c4e-42a4-8c76-dae8cd9b3850'
+  ReservedCode1: '25fd28dc-3085-49c7-b74e-b9050ab8a300'
+  ReservedCode2: '25fd28dc-3085-49c7-b74e-b9050ab8a300'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '61367856-7666-47c2-9fb6-b4ad625e9314'
+  PropagateID: '61367856-7666-47c2-9fb6-b4ad625e9314'
+  ReservedCode1: '0c62ff58-be0f-46d6-a514-62b3a738940a'
+  ReservedCode2: '0c62ff58-be0f-46d6-a514-62b3a738940a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '001b1e0b-587f-4db3-860d-2877fbc7a69a'
+  PropagateID: '001b1e0b-587f-4db3-860d-2877fbc7a69a'
+  ReservedCode1: 'b1170f51-bd10-4941-8860-18988f60def5'
+  ReservedCode2: 'b1170f51-bd10-4941-8860-18988f60def5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '2f18d7be-c5dc-4bb2-bd33-d06bd4b7d75b'
+  PropagateID: '2f18d7be-c5dc-4bb2-bd33-d06bd4b7d75b'
+  ReservedCode1: '7ac6ccd0-c97f-489f-a6bc-bc697c9fc357'
+  ReservedCode2: '7ac6ccd0-c97f-489f-a6bc-bc697c9fc357'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6afc1073-fd27-4d3a-a50d-ed89bfa0a2ec'
+  PropagateID: '6afc1073-fd27-4d3a-a50d-ed89bfa0a2ec'
+  ReservedCode1: '7b732550-395c-4442-abe1-83abbbfd83f8'
+  ReservedCode2: '7b732550-395c-4442-abe1-83abbbfd83f8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '36c508cc-6de6-429d-9f95-844def165916'
+  PropagateID: '36c508cc-6de6-429d-9f95-844def165916'
+  ReservedCode1: '7b198957-ced6-4964-9aac-9cc0bbc919d9'
+  ReservedCode2: '7b198957-ced6-4964-9aac-9cc0bbc919d9'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9dd4369e-119a-4634-a54a-5444f5ca33cb'
+  PropagateID: '9dd4369e-119a-4634-a54a-5444f5ca33cb'
+  ReservedCode1: 'c1c2c864-74bd-421a-8829-af1caaf890ad'
+  ReservedCode2: 'c1c2c864-74bd-421a-8829-af1caaf890ad'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '70c773eb-2c4a-4eb8-89a1-2d996f401248'
+  PropagateID: '70c773eb-2c4a-4eb8-89a1-2d996f401248'
+  ReservedCode1: 'f1c77285-18be-4832-b51a-afe6cd0dd4e1'
+  ReservedCode2: 'f1c77285-18be-4832-b51a-afe6cd0dd4e1'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3e137740-d433-453d-8c94-a617f0ba004b'
+  PropagateID: '3e137740-d433-453d-8c94-a617f0ba004b'
+  ReservedCode1: '485caac8-732b-4700-8649-d9c65fcf3e07'
+  ReservedCode2: '485caac8-732b-4700-8649-d9c65fcf3e07'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '57a78916-b965-4c8c-a7b1-337579a1eef9'
+  PropagateID: '57a78916-b965-4c8c-a7b1-337579a1eef9'
+  ReservedCode1: 'c5f93bc9-420f-4d0d-b744-64a8ff197b4b'
+  ReservedCode2: 'c5f93bc9-420f-4d0d-b744-64a8ff197b4b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '66a21d78-6ef6-46d0-af25-30683bb5a681'
+  PropagateID: '66a21d78-6ef6-46d0-af25-30683bb5a681'
+  ReservedCode1: '84fdb754-2904-4639-9312-8a1852e7d709'
+  ReservedCode2: '84fdb754-2904-4639-9312-8a1852e7d709'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '5d88401c-fa33-4f13-950a-7d631e5a0ae7'
+  PropagateID: '5d88401c-fa33-4f13-950a-7d631e5a0ae7'
+  ReservedCode1: 'bd17dda6-86ff-44ff-9e43-12e883aad420'
+  ReservedCode2: 'bd17dda6-86ff-44ff-9e43-12e883aad420'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'dad039b5-4f12-4a1b-bc49-26ca8fe57d20'
+  PropagateID: 'dad039b5-4f12-4a1b-bc49-26ca8fe57d20'
+  ReservedCode1: '89026a94-3caf-44bb-8847-4541a47f03ef'
+  ReservedCode2: '89026a94-3caf-44bb-8847-4541a47f03ef'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6e3b0a44-1267-49de-96ef-9bb2bfcb7c5a'
+  PropagateID: '6e3b0a44-1267-49de-96ef-9bb2bfcb7c5a'
+  ReservedCode1: 'dc2f3b9f-afb2-4ea6-9d90-19d88e3dc23a'
+  ReservedCode2: 'dc2f3b9f-afb2-4ea6-9d90-19d88e3dc23a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '9aa9819b-7ecd-4e97-afd4-f3e18c2c9e60'
   PropagateID: '9aa9819b-7ecd-4e97-afd4-f3e18c2c9e60'
   ReservedCode1: 'a2befb52-229f-4906-917b-b2e76e77de24'
@@ -63,14 +272,14 @@ AIGC:
 
 | 层级 | 位置 | 测试数量 | 验证内容 | 运行依赖 |
 |------|------|----------|----------|----------|
-| **Rust 单元测试** | `js2zig-core/src/tests/`（11 子模块）+ 内联测试 | 490 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig` 在 PATH |
+| **Rust 单元测试** | `js2zig-core/src/tests/`（10 个测试子模块 + common 辅助）+ 内联测试 | 506 | 转译器正确性（JS → Zig 代码生成 + `zig ast-check`） | `zig` 在 PATH |
 | **MDN 端到端测试** | `examples/mdn-test-project/` | 237 | 真实 JS 片段转译后运行结果与 Node.js 对比 | `zig` + `node` 在 PATH |
 
 ### 基线指标（2026-07-15）
 
-- Rust 单元测试：**490 passed, 0 failed**（11 个 `tests/` 子模块 + 内联测试）
+- Rust 单元测试：**506 passed, 0 failed**（10 个 `tests/` 测试子模块 + common 辅助 + 内联测试）
 - Clippy：**0 warnings**（全 workspace）
-- MDN 端到端：**237 match / 0 mismatch / 0 error**（匹配率 100%，237 total）
+- MDN 端到端：**236 match / 1 mismatch (WONTFIX) / 0 error**（匹配率 99.6%，237 total）
 - JS 语义运行时错误（TypeError/RangeError/SyntaxError）均通过 `return error.JsThrow` 可被 try/catch 捕获
 - Example 项目：test-lib `cargo test` 2 passed / test-bin `cargo run` 0 errors / showcase `cargo run` **0 errors（全部输出正确）**
 - 编译诊断：`cargo build` 可见 `@compileError` 信息（通过 `cargo:warning` 输出）
@@ -94,26 +303,26 @@ AIGC:
 js2zig-core/src/tests/
 ├── mod.rs                          # 模块入口，声明 10 个子模块
 ├── common.rs                       # 共享 helper 函数（0 个测试）
-├── basic.rs                        # 基础转译：运算符/控制流/循环/switch（29 个测试）
+├── basic.rs                        # 基础转译：运算符/控制流/循环/switch（30 个测试）
 ├── builtins_basic.rs               # 内置方法基础：Math/Array/String/JSON（31 个测试）
-├── advanced_builtins.rs            # 高级内置：Number/Map/Set/URI/RegExp/Symbol（69 个测试）
+├── advanced_builtins.rs            # 高级内置：Number/Map/Set/URI/RegExp/Symbol（76 个测试）
 ├── destructure_class_arrays.rs     # 解构/Class/String 方法/Array 高阶（51 个测试）
-├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复（63 个测试）
+├── not_implemented_and_fixes.rs    # 未实现特性占位/回归修复（69 个测试）
 ├── shadowing_chaining_array.rs     # 变量遮蔽/方法链/Array 高阶方法/flatMap/sort（33 个测试）
 ├── objects_and_types.rs            # 对象/JSDoc/类型签名/JSON E2E（20 个测试）
 ├── phase1.rs                       # P1 特性：in/instanceof/Date/Object/spread（40 个测试）
 ├── collision.rs                    # 标识符冲突/保留字转义（3 个测试）
-└── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（29 个测试）
+└── try_catch_and_closures.rs       # try-catch/throw/箭头函数/闭包/可选链（31 个测试）
 ```
 
-另有 **127 个内联测试**分布在源文件中：
+另有 **122 个内联测试**分布在源文件中：
 
 | 文件 | 测试数 | 说明 |
 |------|--------|------|
 | `zigir/types.rs` | 20 | 类型系统单元测试 |
 | `zigir/passes/constant_fold.rs` | 12 | 常量折叠 pass |
 | `zigir/ident.rs` | 9 | IrIdent 测试 |
-| `zigir/lower/mod.rs` | 10 | Lower 层测试 |
+| `zigir/lower/mod.rs` | 5 | Lower 层测试 |
 | `zigir/emit/helpers.rs` | 7 | Emit helper 测试 |
 | `zigir/passes/mod.rs` | 7 | Pass 框架测试 |
 | `zigir/passes/dead_code.rs` | 5 | 死代码消除 |
@@ -130,7 +339,7 @@ js2zig-core/src/tests/
 | `native_proto.rs` | 2 | Native proto 测试 |
 | `testgen.rs` | 3 | Test 生成测试 |
 
-**总计：490 个测试**
+**总计：506 个测试**
 
 ### 2.2 测试分类
 
@@ -294,8 +503,8 @@ examples/mdn-test-project/
 ├── build.rs                # 构建时调用 js2rust_bridge::build(true)
 ├── src/main.rs             # CLI 入口 + 237 个 fragment 分发与对比
 ├── js_src/                 # JS 源文件（859 个 .js + .node.js + 1 个 app.js）
-├── pass_fragments.json     # 通过转译的 230 个 fragment 列表
-├── comparison_results.json # 上次对比结果快照（203 match / 1 mismatch）
+├── pass_fragments.json     # 通过转译的 fragment 列表
+├── comparison_results.json # 上次对比结果快照（已过时，208 total，当前 237 total）
 ├── compare_outputs.py      # Node.js vs Zig 输出对比脚本（已过时，main.rs 内置对比逻辑）
 └── _check_results.py       # 快速查看 comparison_results.json
 ```
@@ -358,7 +567,7 @@ cargo run -- --all
 
 | Fragment | 类型 | 问题 | 优先级 | 说明 |
 |----------|------|------|--------|------|
-| `test_expressions_frag_112` | MISMATCH | `-4 % 2` 输出 `0` 而非 `-0` | WONTFIX | i64 无法表示 `-0` |
+| `test_expressions_frag_112` | MISMATCH | Node.js 输出 `3\n-3\n0\n-0`，Zig 输出 `3\n-3\n0\n0` | WONTFIX | i64 无法表示 `-0`；Node.js `console.log(-0)` 输出 `-0`（util.inspect 特殊处理），Zig `console.log(0)` 输出 `0` |
 
 ---
 
@@ -451,7 +660,7 @@ cargo run     # 运行 main()，打印 337 个函数结果
 
 ```bash
 # 1. 确认基线
-cargo test -p js2zig-core --lib                                      # 应全绿（490 passed）
+cargo test -p js2zig-core --lib                                      # 应全绿（506 passed）
 cargo clippy -p js2zig-core -p js2rust-bridge -p js2rust-bridge-macro -- -D warnings  # 零警告
 cargo fmt -p js2zig-core -- --check                                   # 无变更
 cargo run -p mdn-test-project -- --all                                # 记录 match/mismatch 基线
@@ -487,11 +696,11 @@ cd examples/showcase-project && cargo run     # 337 个函数输出正确
 
 | 检查项 | 要求 | 当前结果 |
 |--------|------|----------|
-| `cargo test -p js2zig-core --lib` | 490 passed, 0 failed | 490 passed |
+| `cargo test -p js2zig-core --lib` | 506 passed, 0 failed | 506 passed |
 | `cargo clippy` （全 workspace） | 0 warnings | 0 warnings |
 | `cargo fmt -p js2zig-core -- --check` | 无变更 | clean |
-| MDN match 数 | >= 237（不低于基线） | 237 |
-| MDN mismatch 数 | 0 | 0 |
+| MDN match 数 | >= 236（不低于基线） | 236 |
+| MDN mismatch 数 | ≤ 1（仅 WONTFIX） | 1 (WONTFIX) |
 | MDN error 数 | 0 | 0 |
 | test-lib-project `cargo test --lib` | 2 passed, 0 failed | 2 passed |
 | test-bin-project `cargo run` | exit code 0（所有 assert_eq! 通过） | PASS |
@@ -550,7 +759,7 @@ zig version
 
 ### Q: Python 对比脚本还能用吗？
 
-`compare_outputs.py` 和 `_check_results.py` 仍存在但已过时：脚本内置 153 条 fragment 计数，与当前 204 条不匹配。对比逻辑已内置到 `main.rs` 的 `run_all()` 中，推荐直接使用 `cargo run -- --all`。旧版 `compare_results.json` 已删除，以 `comparison_results.json` 为准。
+`compare_outputs.py` 和 `_check_results.py` 仍存在但已过时：脚本内置的 fragment 计数与当前 237 条不匹配。对比逻辑已内置到 `main.rs` 的 `run_all()` 中，推荐直接使用 `cargo run -- --all`。`comparison_results.json` 为上次对比快照（已过时，208 total），不应作为当前基线参考。
 
 ### Q: 测试文件如何导航？
 

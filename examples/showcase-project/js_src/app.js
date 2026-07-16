@@ -421,10 +421,6 @@ export function testSetSize() {
     return 0;
 }
 
-// TODO: Add tests for Map.get(), Map.delete()
-// TODO: Add tests for Set.delete()
-// TODO: Fix codegen for optional return types and primitive comparisons
-
 // -- Map: get() method --
 /** @returns {i64} */
 export function testMapGet() {

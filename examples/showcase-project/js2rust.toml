@@ -35,5 +35,9 @@ js_files = [
     "test_missing_coverage.js",
 ]
 
-# All codegen bugs have been fixed (previously tracked in docs/CODEGEN_BUGS.md).
-# All test files in js_src/ are now listed above and participate in the build.
+# The 14 tracked codegen bugs (previously in docs/CODEGEN_BUGS.md) are fixed.
+# Additional methods remain unsupported in e2e due to type inference / API
+# mismatch issues — see test_builtins_coverage.js header for the exclusion list.
+# Most JS files in js_src/ are listed above and participate in the build.
+# utils.js and helpers.js are not listed here — they are pulled in via import
+# chain resolution when their exports are used by other files.

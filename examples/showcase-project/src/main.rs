@@ -347,7 +347,7 @@ fn main() {
     // ════════════════════════════════════════════════════════════
     // Array ES2023 tests (codegen limited, Rust unit tests cover fully)
     println!("\n=== Array ES2023 Tests ===");
-    println!("  (Array ES2023 methods covered by 494 Rust unit tests)");
+    println!("  (Array ES2023 methods covered by 506 Rust unit tests)");
 
     // ════════════════════════════════════════════════════════════
     // Advanced built-in tests: Date UTC, Number statics, String methods

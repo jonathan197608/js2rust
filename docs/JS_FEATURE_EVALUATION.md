@@ -3,6 +3,72 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '63f94dbf-bf40-4461-9c36-1fe69ddfa13d'
+  PropagateID: '63f94dbf-bf40-4461-9c36-1fe69ddfa13d'
+  ReservedCode1: 'ad7d0049-5f7c-43d2-8d2c-ba01566a118a'
+  ReservedCode2: 'ad7d0049-5f7c-43d2-8d2c-ba01566a118a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a54f8083-98c5-4cb9-931f-78558a1897ef'
+  PropagateID: 'a54f8083-98c5-4cb9-931f-78558a1897ef'
+  ReservedCode1: '524a297a-f767-47ca-bfab-3d8facaecd7f'
+  ReservedCode2: '524a297a-f767-47ca-bfab-3d8facaecd7f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a1dfc32d-2b28-489c-99b2-c121842e9c74'
+  PropagateID: 'a1dfc32d-2b28-489c-99b2-c121842e9c74'
+  ReservedCode1: '72bf68d1-0f36-41d6-92d0-56fa7d1d9bc6'
+  ReservedCode2: '72bf68d1-0f36-41d6-92d0-56fa7d1d9bc6'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'cdbb0194-e252-4f3d-bdfb-2778bc5af131'
+  PropagateID: 'cdbb0194-e252-4f3d-bdfb-2778bc5af131'
+  ReservedCode1: '8ca74798-cb93-4f4f-b134-74a9963dca6b'
+  ReservedCode2: '8ca74798-cb93-4f4f-b134-74a9963dca6b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9908eb4f-866b-4dc4-9d17-8963b361c959'
+  PropagateID: '9908eb4f-866b-4dc4-9d17-8963b361c959'
+  ReservedCode1: 'e445acb0-2bfb-4869-a4bd-9bae1d564eac'
+  ReservedCode2: 'e445acb0-2bfb-4869-a4bd-9bae1d564eac'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f98857a4-0e47-4b94-ba96-3c14b3642fb4'
+  PropagateID: 'f98857a4-0e47-4b94-ba96-3c14b3642fb4'
+  ReservedCode1: '3de3a25f-36d3-40dd-a228-b7ac9018b9c0'
+  ReservedCode2: '3de3a25f-36d3-40dd-a228-b7ac9018b9c0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'fdc93ed5-2af8-4b0b-b4c9-25253973d1e2'
   PropagateID: 'fdc93ed5-2af8-4b0b-b4c9-25253973d1e2'
   ReservedCode1: '48594183-263a-4bca-ad52-156f37c43855'
@@ -133,7 +199,7 @@ AIGC:
 # JS 语言特性实现说明
 
 > **项目**: js2rust (JS → Zig 转译器)
-> **测试覆盖**: 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error)
+> **测试覆盖**: 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (236/237 pass, 1 mismatch (WONTFIX), 0 error)
 
 ---
 
@@ -145,7 +211,7 @@ AIGC:
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 141 |
 | **内置对象表格行数** | 220 |
-| **测试覆盖** | 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (237/237 pass, 0 mismatch, 0 error) |
+| **测试覆盖** | 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (236/237 pass, 1 mismatch (WONTFIX), 0 error) |
 | **代码质量** | 0 clippy 警告 |
 
 ### 1.2 表达式 (Expressions) — 91 特性
@@ -526,7 +592,7 @@ AIGC:
 
 > **评估方法**: 内置对象经过三层流水线才能正常工作：
 > 1. **检测 (Detect)** — `js2zig-core/src/native_builtins.rs` 的 `BuiltinCall` 枚举 + `detect_builtin_call()`
-> 2. **发射 (Emit)** — `js2zig-core/src/codegen/expr.rs` 的 `emit_builtin_call()` 生成 Zig 代码
+> 2. **发射 (Emit)** — `js2zig-core/src/zigir/emit/builtins/mod.rs` 的 `emit_builtin_call()` 生成 Zig 代码
 > 3. **运行时 (Runtime)** — `runtime/*.zig` 提供 Zig 侧实现
 >
 > 三层全部 ✅ 才算"有效覆盖"。仅 runtime 有但检测/发射缺失 → 实际不可用。
@@ -1047,7 +1113,7 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 6 | 6 | 100% | 0 | ✅ 完整实现（字面量/构造函数/运算/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型/`>>>` TypeError 与 JS 规范一致） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **225** | **219** | **~97%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
+| **总计** | **225** | **214** | **~95%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1414,10 +1480,10 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 | 结果 | 数量 | 说明 |
 |------|------|------|
-| MATCH | 237 | 完全匹配 |
-| MISMATCH | 0 | — |
+| MATCH | 236 | 完全匹配 |
+| MISMATCH | 1 | `test_expressions_frag_112`: `-4 % 2` 输出 `0` 而非 `-0`（WONTFIX，i64 无法表示 -0） |
 | ERROR (CRASH) | 0 | — |
 
-**匹配率: 237/237 = 100%**
+**匹配率: 236/237 ≈ 99.6%**
 
 > AI生成
