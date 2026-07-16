@@ -4,6 +4,15 @@ use crate::native_proto::transpile_js;
 use crate::types::TranspileResult;
 use std::collections::HashSet;
 
+/// Return the Zig compiler binary name for the current platform.
+/// On Windows, `CreateProcessW` searches PATH and appends `.exe` when the
+/// extension is missing, so `"zig"` works everywhere in practice.
+/// Tests that need to invoke the Zig compiler should call this instead of
+/// hardcoding `"zig.exe"` (which fails on macOS/Linux).
+pub fn zig_binary() -> &'static str {
+    "zig"
+}
+
 /// Helper: parse JS source, then call transpile_js with the parsed Program.
 /// Wraps the two-arg API for test convenience.
 pub fn parse_and_transpile(
@@ -18,8 +27,6 @@ pub fn parse_and_transpile(
 /// Helper: run `zig ast-check` on generated Zig code.
 /// Panics if ast-check fails (to fail the test).
 /// Skips gracefully if `zig` is not installed.
-/// Automatically adds `const std = @import("std");` and `const allocator = ...`
-/// if the generated code references `std.` or `allocator` (self-contained for ast-check).
 pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
     // Check which runtime imports are needed.
     let needs_std = zig_code.contains("std.") || zig_code.contains("allocator");
@@ -131,7 +138,7 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
     let wrapped_ref: &str = &wrapped;
     std::fs::write(&zig_path, wrapped_ref).unwrap();
 
-    match std::process::Command::new("zig.exe")
+    match std::process::Command::new(zig_binary())
         .args(["ast-check", zig_path.to_str().unwrap()])
         .output()
     {

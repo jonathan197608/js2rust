@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'eda552eb-a718-465b-9ca3-79086f0ad3b6'
-  PropagateID: 'eda552eb-a718-465b-9ca3-79086f0ad3b6'
-  ReservedCode1: '15831e23-d3d0-477f-abff-8518ac31edcd'
-  ReservedCode2: '15831e23-d3d0-477f-abff-8518ac31edcd'
+  ProduceID: 'c767cd9e-61da-4010-bf83-c39236433db9'
+  PropagateID: 'c767cd9e-61da-4010-bf83-c39236433db9'
+  ReservedCode1: 'c8889133-0d5f-41ad-aaac-6e00dc32cc1b'
+  ReservedCode2: 'c8889133-0d5f-41ad-aaac-6e00dc32cc1b'
 ---
 
 ---
@@ -105,6 +105,7 @@ AIGC:
 | 标记 | 定义 |
 |------|------|
 | ✅ 完全实现 | 完整支持，测试通过 |
+| ⚠️ 部分实现 | 已实现但有已知 Bug 或限制，部分场景不可用 |
 | 🔘 不实现 | 很少用，或 Zig 有更好替代，或 JS 已废弃 |
 
 ---
@@ -173,7 +174,7 @@ AIGC:
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
 | `typeof` | ✅ | 静态类型→JS typeof 字符串；动态类型→`jsTypeof()` 运行时 helper | 4 个测试 |
 | `void` | ✅ | `{ expr; null }` (求值后返回 null) | `test_native_proto_void_operator` |
-| `delete` | ✅ | `obj.deleteKey("prop")` / `obj.deleteByKey(expr, alloc)` | `test_native_proto_delete_operator` |
+| `delete` | ⚠️ | `delete obj.prop` → `obj.deleteKey("prop")` ✅; `delete obj[key]` → `obj.deleteByKey(expr, alloc)` ⚠️ BUG-12: `alloc` 未声明 | `test_native_proto_delete_operator` (IR 文本); e2e: `.delete()` 方法调用通过，`delete` 运算符语法 BLOCKED |
 
 **注意**:
 - `typeof` 根据推断出的 Zig 类型生成 JS typeof 字符串：`I64/F64`→`"number"`、`Bool`→`"boolean"`、`Str`→`"string"`、`JsSymbol`→`"symbol"`、Struct/ArrayList→`"object"`、`Void`→`"undefined"`；动态类型（JsAny/Anytype）→`jsTypeof()` 运行时 helper
@@ -285,12 +286,12 @@ AIGC:
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `instanceof` | ✅ | 三层策略：Error → .name 比较；编译时类型推断 → 字面量；JsAny → `js_runtime.instanceOf()` | `test_p1_instanceof_*` + `test_implemented_instanceof_*` |
-| `"key" in obj` | ✅ | `@hasField(...)` 或 `.contains(key)` | `test_p1_in_operator` |
+| `"key" in obj` | ⚠️ | `@hasField(...)` (struct) ✅; `.contains(key)` (HashMap) ✅; JsMap/JsSet → `.contains()` ❌ BUG-01: 集合类型无此方法 | `test_p1_in_operator` (IR 文本); e2e BLOCKED ([BUG-01](../js_src_pending/test_in_operator.js)) |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | `test_p8_regex_*` (17 个测试) |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
 | 非空断言 `x!` (TS) | ✅ | `x.?` | 需要 TS 解析器（当前不可测试） |
 | 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 需要 TS 解析器（当前不可测试） |
-| 序列表达式 `a, b` | ✅ | `a, b` | `test_sequence_expression` |
+| 序列表达式 `a, b` | ⚠️ | `a, b` — Zig 不支持逗号运算符，编译失败 | `test_sequence_expression` (IR 文本，断言极弱); e2e BLOCKED |
 
 **注意**:
 - `instanceof` 实现三种策略：
@@ -312,7 +313,7 @@ AIGC:
 | `new.target` | `@compileError` | 🔘 不实现（meta property，niche） |
 | `for await...of` | `@compileError` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `@compileError` | 🔘 不实现（已在 2.12 标记） |
-| `import.meta` | ✅ 已实现 | ✅ 生成 `{ url: source_name }` ObjectLiteral（ES 模块元数据） |
+| `import.meta` | ⚠️ | 生成 `.{ .url = source_name }` 但访问 `.url` 触发 Rule 8 类型推断错误 | `test_import_meta_is_implemented` (仅验证不报 Unsupported); e2e BLOCKED |
 
 ---
 
@@ -323,12 +324,12 @@ AIGC:
 | 特性 | 状态 | 说明 | 测试 |
 |------|------|------|------|
 | `@type {string}` (基本类型) | ✅ | 指定变量/属性类型 | `test_native_proto_*` |
-| `@type {number[]}` (数组) | ✅ | 数组类型标注 | 隐式测试 |
-| `@type {{name: string, age: number}}` (匿名对象) | ✅ | 内联对象类型，生成 Zig struct | `test_native_proto_anon_obj_*` |
-| `@returns {{name: string, ...}}` (匿名对象返回) | ✅ | export 函数返回匿名对象类型 | `test_native_proto_anon_obj_*` |
+| `@type {number[]}` (数组) | ✅ | 数组类型标注 | showcase `testJsdocArrayLength` + `test_native_proto_*` |
+| `@type {{name: string, age: number}}` (匿名对象) | ✅ | 内联对象类型，生成 Zig struct | `test_native_proto_anon_obj_*` + showcase `testJsdocAnonObject` |
+| `@returns {{name: string, ...}}` (匿名对象返回) | ⚠️ | export 函数返回匿名对象类型 — 生成 `.{ .name = T, ... }` 作为返回类型，Zig 中此为结构体字面量非类型 | `test_native_proto_anon_obj_*` (IR 文本); e2e BLOCKED (codegen: 返回类型语法错误) |
 | `@param {Type} name` (参数类型) | ✅ | 参数类型标注 | 隐式测试 |
-| `@typedef` (类型别名) | ✅ | 命名类型，可跨文件引用 | 隐式测试 |
-| `@property {Type} name` (typedef 属性) | ✅ | typedef 属性定义 | 隐式测试 |
+| `@typedef` (类型别名) | ✅ | 命名类型，可跨文件引用 | showcase `testJsdocTypedef` |
+| `@property {Type} name` (typedef 属性) | ✅ | typedef 属性定义 | showcase `testJsdocTypedef`（@property + @typedef 联合测试） |
 
 **实现细节**:
 - `extract_braced_type()` 处理 `{{name: string}}` 双括号语法（外层 `{}` 是 JSDoc wrapper，内层 `{}` 是匿名对象类型）

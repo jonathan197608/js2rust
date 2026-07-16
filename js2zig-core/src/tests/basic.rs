@@ -786,7 +786,7 @@ const y = abs(-42);
     let zig_path = tmp_dir.join("e2e_native_gen.zig");
     std::fs::write(&zig_path, &zig_gen).unwrap();
 
-    let check_output = std::process::Command::new("zig.exe")
+    let check_output = std::process::Command::new(zig_binary())
         .args(["ast-check", zig_path.to_str().unwrap()])
         .output();
 
@@ -838,7 +838,7 @@ std.debug.print("add(10,20)={}  abs(-42)={}\n", .{x, y});
     let exe_path = tmp_dir.join("e2e_native_full.exe");
     std::fs::write(&zig_path_full, &zig_full).unwrap();
 
-    let build_output = std::process::Command::new("zig.exe")
+    let build_output = std::process::Command::new(zig_binary())
         .args([
             "build-exe",
             zig_path_full.to_str().unwrap(),

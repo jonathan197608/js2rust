@@ -4,13 +4,13 @@ use super::common::*;
 
 /// Write `zig_code` to a temp file named `file_name`, run `zig ast-check`, and
 /// return the temp path (for reuse in e.g. `zig build-exe`).
-/// Panics if ast-check fails. Returns `None` if `zig.exe` is not available.
+/// Panics if ast-check fails. Returns `None` if `zig` is not available.
 fn zig_ast_check(zig_code: &str, file_name: &str) -> Option<std::path::PathBuf> {
     let tmp_dir = std::env::temp_dir();
     let zig_path = tmp_dir.join(file_name);
     std::fs::write(&zig_path, zig_code).unwrap();
 
-    let check_output = std::process::Command::new("zig.exe")
+    let check_output = std::process::Command::new(zig_binary())
         .args(["ast-check", zig_path.to_str().unwrap()])
         .output();
 
@@ -730,7 +730,7 @@ std.debug.print("Parsed: {{s}} is {{d}} years old\n", .{{parsed.name, parsed.age
     // Step 4: compile with `zig build-exe`
     let tmp_dir = zig_path.parent().unwrap();
     let exe_path = tmp_dir.join("e2e_json_test.exe");
-    let compile_output = std::process::Command::new("zig.exe")
+    let compile_output = std::process::Command::new(zig_binary())
         .args(["build-exe", zig_path.to_str().unwrap(), "-freference-trace"])
         .current_dir(tmp_dir)
         .output();

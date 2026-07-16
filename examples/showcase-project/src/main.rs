@@ -409,6 +409,19 @@ fn main() {
     let ntc = testNestedTryCatch();
     println!("  testNestedTryCatch() = {:?} (expected Ok(1))", ntc);
 
+    // ══════════════════════════════════════════════════════════════
+    // JSDoc type annotation tests (Section 2.18)
+    println!("\n=== JSDoc Type Annotation Tests ===");
+
+    let ja = testJsdocArrayLength();
+    println!("  testJsdocArrayLength() = {} (expected 1)", ja);
+
+    let jo = testJsdocAnonObject();
+    println!("  testJsdocAnonObject() = {} (expected 1)", jo);
+
+    let jt = testJsdocTypedef();
+    println!("  testJsdocTypedef() = {} (expected 1)", jt);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }
