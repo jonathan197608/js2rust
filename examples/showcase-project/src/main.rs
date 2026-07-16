@@ -367,6 +367,48 @@ fn main() {
     let baun = testBigIntAsUintN();
     println!("  testBigIntAsUintN() = {} (expected 1)", baun);
 
+    // ════════════════════════════════════════════════════════════
+    // Nullish coalescing tests (isolated file to avoid JsAny pollution)
+    println!("\n=== Nullish Coalescing Tests ===");
+
+    let nc = testNullishCoalescing();
+    println!("  testNullishCoalescing() = {} (expected 1)", nc);
+
+    let ncu = testNullishCoalescingUndefined();
+    println!("  testNullishCoalescingUndefined() = {} (expected 1)", ncu);
+
+    // ════════════════════════════════════════════════════════════
+    // Advanced expression tests: unary +, bitwise compound assign
+    println!("\n=== Advanced Expression Tests ===");
+
+    let up = testUnaryPlus();
+    println!("  testUnaryPlus() = {} (expected 1)", up);
+
+    let bsla = testBitwiseShiftLeftAssign();
+    println!("  testBitwiseShiftLeftAssign() = {} (expected 1)", bsla);
+
+    let bsra = testBitwiseShiftRightAssign();
+    println!("  testBitwiseShiftRightAssign() = {} (expected 1)", bsra);
+
+    let baa = testBitwiseAndAssign();
+    println!("  testBitwiseAndAssign() = {} (expected 1)", baa);
+
+    let boa = testBitwiseOrAssign();
+    println!("  testBitwiseOrAssign() = {} (expected 1)", boa);
+
+    let bxa = testBitwiseXorAssign();
+    println!("  testBitwiseXorAssign() = {} (expected 1)", bxa);
+
+    // ════════════════════════════════════════════════════════════
+    // Advanced statement tests: labeled for-of, nested try-catch
+    println!("\n=== Advanced Statement Tests ===");
+
+    let lfo = testLabeledForOf();
+    println!("  testLabeledForOf() = {} (expected 1)", lfo);
+
+    let ntc = testNestedTryCatch();
+    println!("  testNestedTryCatch() = {:?} (expected Ok(1))", ntc);
+
     js2rust_deinit();
     println!("=== All tests done ===");
 }

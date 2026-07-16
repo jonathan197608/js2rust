@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'af5f0e4c-4806-4261-a8f3-f08eb0fca35c'
-  PropagateID: 'af5f0e4c-4806-4261-a8f3-f08eb0fca35c'
-  ReservedCode1: '6b001b8d-da25-4e77-a08c-793bc15d8e04'
-  ReservedCode2: '6b001b8d-da25-4e77-a08c-793bc15d8e04'
+  ProduceID: 'eda552eb-a718-465b-9ca3-79086f0ad3b6'
+  PropagateID: 'eda552eb-a718-465b-9ca3-79086f0ad3b6'
+  ReservedCode1: '15831e23-d3d0-477f-abff-8518ac31edcd'
+  ReservedCode2: '15831e23-d3d0-477f-abff-8518ac31edcd'
 ---
 
 ---
@@ -155,7 +155,7 @@ AIGC:
 |------|------|----------|------|
 | `&&` (与) | ✅ | `and` | `test_native_proto_operators` |
 | `\|\|` (或) | ✅ | `or` | 同上 |
-| `??` (空值合并) | ✅ | `orelse` | 隐式测试 |
+| `??` (空值合并) | ✅ | `orelse` | showcase `test_nullish_ops` |
 
 ### 2.5 位运算 (Bitwise Operators) - ✅ 100% 实现
 
@@ -168,7 +168,7 @@ AIGC:
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `-` (取负) | ✅ | `-x` | `test_native_proto_operators` |
-| `+` (取正) | ✅ | 忽略（Zig 无一元加） | 隐式测试 |
+| `+` (取正) | ✅ | 忽略（Zig 无一元加） | showcase `testUnaryPlus` |
 | `!` (逻辑非) | ✅ | `!x` | 同上 |
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
 | `typeof` | ✅ | 静态类型→JS typeof 字符串；动态类型→`jsTypeof()` 运行时 helper | 4 个测试 |
@@ -199,11 +199,11 @@ AIGC:
 | 特性              | 状态           | Zig 输出 | 测试 |
 |-----------------|--------------|----------|------|
 | `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` |
+| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` + showcase `testBitwise*Assign` (5) |
 | `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
-| `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` |
-| `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` |
-| `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` |
+| `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: i64 无 `.toBool()`) |
+| `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: i64 无 `.toBool()`) |
+| `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: comptime_int 不兼容 JsAny) |
 
 ### 2.9 对象/数组访问 - ✅ 100% 实现
 
@@ -358,7 +358,7 @@ AIGC:
 | `export function fn(params) {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 同上 |
 | `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
-| Rest 参数 `function fn(...args) {}` | ✅ | `args: []const i64` | showcase-project |
+| Rest 参数 `function fn(...args) {}` | ✅ | `args: []const JsAny` (Anytype, 不可跨 C ABI) | Rust 单元测试 (e2e BLOCKED) |
 | 嵌套函数声明 | ✅ | 提取为模块级函数（含闭包捕获） | `test_p2_nested_function_*` |
 | `arguments` 对象 | ✅ | `const __arguments = [JsAny.from(param0), ...]` 注入函数首行 | `test_arguments_object` |
 
@@ -399,7 +399,7 @@ AIGC:
 | `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |
 | `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
 | 标签语句 `label: while` | ✅ | `label: while {}` | `test_p1_labeled_*` (6 个测试) |
-| 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` |
+| 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` + showcase `testLabeledForOf` |
 | `for await...of` | 🔘 不实现 | `@compileError` | 异步迭代，当前项目聚焦同步代码 |
 
 **for-of 实现状态**:
@@ -417,7 +417,7 @@ AIGC:
 | `throw expr` | ✅ | `return error.JsThrow` 或 `break :_try error.JsThrow` | `test_native_proto_throw_*` |
 | `try { ... } catch (e) { ... }` | ✅ | `defer { ... } _ = _try0: { ... } catch { ... }` | 同上 |
 | `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | 同上 |
-| 嵌套 try-catch | ✅ | 支持 | 同上 |
+| 嵌套 try-catch | ✅ | 支持 | showcase `testNestedTryCatch` |
 
 ### 3.6 其他语句 - ✅ 71% 实现
 

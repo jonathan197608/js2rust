@@ -24,6 +24,9 @@ js_files = [
     "test_for_of_collections.js",
     "test_arguments.js",
     "test_in_operator.js",
+    "test_expr_advanced.js",
+    "test_nullish_ops.js",
+    "test_stmt_advanced.js",
 ]
 
 # js_src_pending/ 目录包含因 codegen bug 暂无法编译的 e2e 测试文件。
