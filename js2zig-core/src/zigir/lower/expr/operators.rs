@@ -466,9 +466,7 @@ impl Lowerer {
             // ??= on non-JsAny types is a no-op: the value can't be null/undefined
             // in our type system (i64, bool, string, etc.). Evaluate RHS for side
             // effects, keep target unchanged.
-            if ae.operator == AssignmentOperator::LogicalNullish
-                && target_type != ZigType::JsAny
-            {
+            if ae.operator == AssignmentOperator::LogicalNullish && target_type != ZigType::JsAny {
                 let target = self.lower_assign_target(&ae.left);
                 let value = self.lower_expr(&ae.right);
                 if let Some(read) = target.to_read_expr() {
@@ -478,9 +476,7 @@ impl Lowerer {
             } else {
                 let target = self.lower_assign_target(&ae.left);
                 let value = self.lower_expr(&ae.right);
-                let value_type = self
-                    .infer_expr_type(&ae.right)
-                    .unwrap_or(ZigType::JsAny);
+                let value_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::JsAny);
                 let logical_op = match ae.operator {
                     AssignmentOperator::LogicalAnd => LogicalOp::And,
                     AssignmentOperator::LogicalOr => LogicalOp::Or,

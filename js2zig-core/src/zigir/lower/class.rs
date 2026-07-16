@@ -91,15 +91,13 @@ impl Lowerer {
                                     .or_else(|| {
                                         // Fallback: for anonymous class expressions,
                                         // field types are stored under the variable name
-                                        self.class_expr_var_name
-                                            .as_ref()
-                                            .and_then(|vn| {
-                                                self.type_info
-                                                    .class_field_types
-                                                    .get(vn)
-                                                    .and_then(|m| m.get(&name))
-                                                    .cloned()
-                                            })
+                                        self.class_expr_var_name.as_ref().and_then(|vn| {
+                                            self.type_info
+                                                .class_field_types
+                                                .get(vn)
+                                                .and_then(|m| m.get(&name))
+                                                .cloned()
+                                        })
                                     })
                                     .unwrap_or(ZigType::JsAny);
                                 // Register static field type in var_types for Member target type inference
@@ -117,15 +115,13 @@ impl Lowerer {
                                 .or_else(|| {
                                     // Fallback: for anonymous class expressions,
                                     // field types are stored under the variable name
-                                    self.class_expr_var_name
-                                        .as_ref()
-                                        .and_then(|vn| {
-                                            self.type_info
-                                                .class_field_types
-                                                .get(vn)
-                                                .and_then(|m| m.get(&name))
-                                                .cloned()
-                                        })
+                                    self.class_expr_var_name.as_ref().and_then(|vn| {
+                                        self.type_info
+                                            .class_field_types
+                                            .get(vn)
+                                            .and_then(|m| m.get(&name))
+                                            .cloned()
+                                    })
                                 })
                                 .unwrap_or(ZigType::JsAny);
                             let default = pd.value.as_ref().map(|v| self.lower_expr(v));
@@ -273,15 +269,13 @@ impl Lowerer {
                                 .or_else(|| {
                                     // Fallback: for anonymous class expressions,
                                     // field types are stored under the variable name
-                                    self.class_expr_var_name
-                                        .as_ref()
-                                        .and_then(|vn| {
-                                            self.type_info
-                                                .class_field_types
-                                                .get(vn)
-                                                .and_then(|m| m.get(&fname))
-                                                .cloned()
-                                        })
+                                    self.class_expr_var_name.as_ref().and_then(|vn| {
+                                        self.type_info
+                                            .class_field_types
+                                            .get(vn)
+                                            .and_then(|m| m.get(&fname))
+                                            .cloned()
+                                    })
                                 })
                                 .unwrap_or(ZigType::JsAny);
                             field_names.push(fname.clone());
@@ -337,12 +331,10 @@ impl Lowerer {
             .or_else(|| {
                 // Fallback: for anonymous class expressions, return types are
                 // stored under the variable name (e.g. "Point.sum" not "_AnonClass_0.sum")
-                self.class_expr_var_name
-                    .as_ref()
-                    .and_then(|vn| {
-                        let var_fq = format!("{}.{}", vn, method_name);
-                        self.type_info.fn_return_types.get(&var_fq)
-                    })
+                self.class_expr_var_name.as_ref().and_then(|vn| {
+                    let var_fq = format!("{}.{}", vn, method_name);
+                    self.type_info.fn_return_types.get(&var_fq)
+                })
             })
             .cloned()
             .unwrap_or(if method_name == "init" {
@@ -362,12 +354,10 @@ impl Lowerer {
                 .or_else(|| self.type_info.fn_param_types.get(method_name))
                 .or_else(|| {
                     // Fallback: for anonymous class expressions
-                    self.class_expr_var_name
-                        .as_ref()
-                        .and_then(|vn| {
-                            let var_fq = format!("{}.{}", vn, method_name);
-                            self.type_info.fn_param_types.get(&var_fq)
-                        })
+                    self.class_expr_var_name.as_ref().and_then(|vn| {
+                        let var_fq = format!("{}.{}", vn, method_name);
+                        self.type_info.fn_param_types.get(&var_fq)
+                    })
                 })
                 .cloned();
             if let Some(ptypes) = param_types {

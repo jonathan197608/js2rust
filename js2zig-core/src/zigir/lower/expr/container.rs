@@ -101,17 +101,18 @@ impl Lowerer {
                         PropertyKind::Set => {
                             // Setter: @compileError — Zig structs don't support setters
                             let span = self.span_to_source_span(op.span);
-                            self.add_error(span, "setter property is not supported (Zig structs have no setters)");
-                            items.push(IrObjectItem::Field(
-                                crate::zigir::types::IrObjectField {
-                                    key,
-                                    value: crate::zigir::types::IrExpr::CompileError {
-                                        span: SourceSpan::default(),
-                                        msg: "setter not supported".to_string(),
-                                    },
-                                    is_computed,
+                            self.add_error(
+                                span,
+                                "setter property is not supported (Zig structs have no setters)",
+                            );
+                            items.push(IrObjectItem::Field(crate::zigir::types::IrObjectField {
+                                key,
+                                value: crate::zigir::types::IrExpr::CompileError {
+                                    span: SourceSpan::default(),
+                                    msg: "setter not supported".to_string(),
                                 },
-                            ));
+                                is_computed,
+                            }));
                         }
                     }
                 }

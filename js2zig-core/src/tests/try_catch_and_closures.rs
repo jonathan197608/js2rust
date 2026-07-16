@@ -730,10 +730,7 @@ return obj.a;
 }
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_setter_compile_error");
-    println!(
-        "=== Setter compile error ===\n{}",
-        zig
-    );
+    println!("=== Setter compile error ===\n{}", zig);
     // Setter should generate @compileError
     assert!(
         zig.contains("@compileError"),

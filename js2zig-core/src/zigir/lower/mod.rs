@@ -113,6 +113,7 @@ pub struct Lowerer {
     pub(super) class_expr_var_name: Option<String>,
 
     /// Source file name (for `import.meta.url`). Empty string if unavailable.
+    #[allow(dead_code)]
     pub(super) source_name: String,
 
     // ── Diagnostics ───────────────────────────────────

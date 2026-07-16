@@ -486,11 +486,7 @@ impl TypeInferrer {
         self.current_class = Some(class_name.to_string());
         for elem in &class.body.body {
             if let ClassElement::MethodDefinition(md) = elem {
-                let method_name = md
-                    .key
-                    .name()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+                let method_name = md.key.name().map(|s| s.to_string()).unwrap_or_default();
                 if method_name.is_empty() || method_name == "constructor" {
                     // constructor return type is always the class itself
                     if method_name == "constructor" {
@@ -517,10 +513,8 @@ impl TypeInferrer {
                     }
                     InferResult::Indeterminate => {
                         // Default to JsAny for methods that can't infer
-                        self.fn_return_types.insert(
-                            format!("{}.{}", class_name, method_name),
-                            ZigType::JsAny,
-                        );
+                        self.fn_return_types
+                            .insert(format!("{}.{}", class_name, method_name), ZigType::JsAny);
                     }
                 }
             }

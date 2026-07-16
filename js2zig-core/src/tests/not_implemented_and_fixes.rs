@@ -513,10 +513,7 @@ return import.meta.url;
     )
     .unwrap();
     // import.meta 应产生 "not supported" 错误
-    let has_not_supported = result
-        .errors
-        .iter()
-        .any(|e| e.contains("not supported"));
+    let has_not_supported = result.errors.iter().any(|e| e.contains("not supported"));
     assert!(
         has_not_supported,
         "import.meta should produce 'not supported' error, got: {:?}",
@@ -1405,4 +1402,3 @@ export function boolEqNum(b, n) {
         zig
     );
 }
-

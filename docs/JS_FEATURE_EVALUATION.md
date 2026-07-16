@@ -3,6 +3,380 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'a6cc41de-b4cb-45d3-8040-50f04b42ead4'
+  PropagateID: 'a6cc41de-b4cb-45d3-8040-50f04b42ead4'
+  ReservedCode1: 'd961a980-0dcb-4be1-8ffa-422b77a09b45'
+  ReservedCode2: 'd961a980-0dcb-4be1-8ffa-422b77a09b45'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '57e3dfbd-560c-40ea-98f6-be3c6a0b856e'
+  PropagateID: '57e3dfbd-560c-40ea-98f6-be3c6a0b856e'
+  ReservedCode1: 'c7b1cea6-95bc-46f8-ae2c-821df35d9350'
+  ReservedCode2: 'c7b1cea6-95bc-46f8-ae2c-821df35d9350'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b23af4d0-2144-4f54-b311-80ad8ad608b0'
+  PropagateID: 'b23af4d0-2144-4f54-b311-80ad8ad608b0'
+  ReservedCode1: '8370573c-7f11-4d33-86c7-310a51d04482'
+  ReservedCode2: '8370573c-7f11-4d33-86c7-310a51d04482'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd1f6cfe0-9786-4548-93b5-8e93dd507c11'
+  PropagateID: 'd1f6cfe0-9786-4548-93b5-8e93dd507c11'
+  ReservedCode1: '2b3db1b1-89a9-4280-806c-95798bea80a0'
+  ReservedCode2: '2b3db1b1-89a9-4280-806c-95798bea80a0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'cef515cc-d799-44ef-8aec-7ec46a90a258'
+  PropagateID: 'cef515cc-d799-44ef-8aec-7ec46a90a258'
+  ReservedCode1: '555173c2-74f9-41ea-a806-4d8d804440bc'
+  ReservedCode2: '555173c2-74f9-41ea-a806-4d8d804440bc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '71d72c56-7607-4206-82a0-5fd3346fae0c'
+  PropagateID: '71d72c56-7607-4206-82a0-5fd3346fae0c'
+  ReservedCode1: 'af6a35be-7424-4a3c-9747-84cb0f95cbae'
+  ReservedCode2: 'af6a35be-7424-4a3c-9747-84cb0f95cbae'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd575a55f-560f-4b6e-8b34-4e49798ecac3'
+  PropagateID: 'd575a55f-560f-4b6e-8b34-4e49798ecac3'
+  ReservedCode1: '59c76adc-2cc0-4f0d-89d5-767941acf1f5'
+  ReservedCode2: '59c76adc-2cc0-4f0d-89d5-767941acf1f5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '45bf6d06-9c8c-4d3e-b24d-33232d6468e3'
+  PropagateID: '45bf6d06-9c8c-4d3e-b24d-33232d6468e3'
+  ReservedCode1: '48737380-f12a-46c8-923d-83f1684b8386'
+  ReservedCode2: '48737380-f12a-46c8-923d-83f1684b8386'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '199e811a-4f20-4e46-ae56-d4a1a0f913cd'
+  PropagateID: '199e811a-4f20-4e46-ae56-d4a1a0f913cd'
+  ReservedCode1: 'ca412755-0bb6-4a3b-97e5-66d9c59ea6c8'
+  ReservedCode2: 'ca412755-0bb6-4a3b-97e5-66d9c59ea6c8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e44ca055-1c9d-49a9-9fcc-3ee6fe69eaf6'
+  PropagateID: 'e44ca055-1c9d-49a9-9fcc-3ee6fe69eaf6'
+  ReservedCode1: '8c2fa57d-1999-41c1-9039-fcd7113ef34e'
+  ReservedCode2: '8c2fa57d-1999-41c1-9039-fcd7113ef34e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ae4b5176-c017-4646-9e13-787f121fc836'
+  PropagateID: 'ae4b5176-c017-4646-9e13-787f121fc836'
+  ReservedCode1: 'e617f48c-affc-4a3d-9c64-03b5e297de06'
+  ReservedCode2: 'e617f48c-affc-4a3d-9c64-03b5e297de06'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd177582e-a75a-4fa8-b828-6cb63e3ba682'
+  PropagateID: 'd177582e-a75a-4fa8-b828-6cb63e3ba682'
+  ReservedCode1: '0a2b6359-ce7b-4327-b117-37ded2e0b107'
+  ReservedCode2: '0a2b6359-ce7b-4327-b117-37ded2e0b107'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'fdb0952a-6e43-4e7d-90c6-4133334fecfb'
+  PropagateID: 'fdb0952a-6e43-4e7d-90c6-4133334fecfb'
+  ReservedCode1: '03b5fcaa-5e6b-4c41-93ca-fbf32f90c8f5'
+  ReservedCode2: '03b5fcaa-5e6b-4c41-93ca-fbf32f90c8f5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a1b73254-2fad-4d3e-87f9-8ae892cd3152'
+  PropagateID: 'a1b73254-2fad-4d3e-87f9-8ae892cd3152'
+  ReservedCode1: 'be5ec83a-ebc8-4ce6-8ca9-65a5240a3ad8'
+  ReservedCode2: 'be5ec83a-ebc8-4ce6-8ca9-65a5240a3ad8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '8e1c41d6-b98c-40fd-a6af-b1626c0cc1c1'
+  PropagateID: '8e1c41d6-b98c-40fd-a6af-b1626c0cc1c1'
+  ReservedCode1: 'fb6675aa-5dfe-48a3-872f-4a5ce38faf25'
+  ReservedCode2: 'fb6675aa-5dfe-48a3-872f-4a5ce38faf25'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '765d297a-9c15-42d4-9a35-8b5d36f83f4b'
+  PropagateID: '765d297a-9c15-42d4-9a35-8b5d36f83f4b'
+  ReservedCode1: '42694c55-4916-4227-8c1a-1aa546e78f5d'
+  ReservedCode2: '42694c55-4916-4227-8c1a-1aa546e78f5d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '5a446d60-0fe4-4b42-9933-9cb009ca3e87'
+  PropagateID: '5a446d60-0fe4-4b42-9933-9cb009ca3e87'
+  ReservedCode1: 'b3253252-9abe-484a-9fcb-250bbe4957f4'
+  ReservedCode2: 'b3253252-9abe-484a-9fcb-250bbe4957f4'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'e517504b-834e-4885-b40e-2a1842336689'
+  PropagateID: 'e517504b-834e-4885-b40e-2a1842336689'
+  ReservedCode1: '1e8ca6fd-7bba-4fde-a780-0c5db3eaebe8'
+  ReservedCode2: '1e8ca6fd-7bba-4fde-a780-0c5db3eaebe8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '939b41f4-f451-4589-bb3f-1295617cdaf8'
+  PropagateID: '939b41f4-f451-4589-bb3f-1295617cdaf8'
+  ReservedCode1: '26c0820d-3efb-47dc-ae8e-41ce2aed7893'
+  ReservedCode2: '26c0820d-3efb-47dc-ae8e-41ce2aed7893'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '00ce2c36-1f18-4297-bc79-784fcb70afa2'
+  PropagateID: '00ce2c36-1f18-4297-bc79-784fcb70afa2'
+  ReservedCode1: 'd8aed7bf-05ac-474c-a8fb-0c68c63984c8'
+  ReservedCode2: 'd8aed7bf-05ac-474c-a8fb-0c68c63984c8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c4349b6f-f5c4-4003-9679-3da3ac58da5c'
+  PropagateID: 'c4349b6f-f5c4-4003-9679-3da3ac58da5c'
+  ReservedCode1: 'aee63ba1-ef77-492a-ba48-13bc3ab8cb06'
+  ReservedCode2: 'aee63ba1-ef77-492a-ba48-13bc3ab8cb06'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'cdce61ed-4068-4531-816b-3bca71c903c4'
+  PropagateID: 'cdce61ed-4068-4531-816b-3bca71c903c4'
+  ReservedCode1: '777a3918-79e6-44a8-945d-3e7c0685d6de'
+  ReservedCode2: '777a3918-79e6-44a8-945d-3e7c0685d6de'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '9aed3b10-288c-468a-b80c-370c64768c84'
+  PropagateID: '9aed3b10-288c-468a-b80c-370c64768c84'
+  ReservedCode1: '3f66d4ae-42f6-4967-ae6e-a30a171926b2'
+  ReservedCode2: '3f66d4ae-42f6-4967-ae6e-a30a171926b2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '6730521e-4774-4f04-bc77-3287d3870583'
+  PropagateID: '6730521e-4774-4f04-bc77-3287d3870583'
+  ReservedCode1: 'dd725782-1a2b-4299-af10-675c533652b2'
+  ReservedCode2: 'dd725782-1a2b-4299-af10-675c533652b2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ebd30fd9-030d-4535-8a86-856ffb2b525d'
+  PropagateID: 'ebd30fd9-030d-4535-8a86-856ffb2b525d'
+  ReservedCode1: 'af8484a7-e52e-4280-8ea1-7f77c22b2c52'
+  ReservedCode2: 'af8484a7-e52e-4280-8ea1-7f77c22b2c52'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f2389cae-9a85-446a-8f4f-e5b46c3a57be'
+  PropagateID: 'f2389cae-9a85-446a-8f4f-e5b46c3a57be'
+  ReservedCode1: '5996c3a1-c4e8-46d5-bfee-a234000e3b2a'
+  ReservedCode2: '5996c3a1-c4e8-46d5-bfee-a234000e3b2a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c978339b-8dfd-4288-86bb-0a6b9c374ce7'
+  PropagateID: 'c978339b-8dfd-4288-86bb-0a6b9c374ce7'
+  ReservedCode1: '19417696-3bfa-49f7-a64d-497c4fb351b7'
+  ReservedCode2: '19417696-3bfa-49f7-a64d-497c4fb351b7'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '52c9f529-8190-438c-ab31-aaf4437c81f9'
+  PropagateID: '52c9f529-8190-438c-ab31-aaf4437c81f9'
+  ReservedCode1: '37c58ed0-3187-4b5e-ac97-64674c6c09dc'
+  ReservedCode2: '37c58ed0-3187-4b5e-ac97-64674c6c09dc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '07ccf85b-d55b-4a78-b33b-4c12c6c35e9f'
+  PropagateID: '07ccf85b-d55b-4a78-b33b-4c12c6c35e9f'
+  ReservedCode1: 'bda45199-b3ac-4bed-b15e-0b9a5322cafd'
+  ReservedCode2: 'bda45199-b3ac-4bed-b15e-0b9a5322cafd'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '07aa3274-9314-490a-973f-ed9bcb706759'
+  PropagateID: '07aa3274-9314-490a-973f-ed9bcb706759'
+  ReservedCode1: '3bd79b3d-f9d0-4fa5-98d2-530cfec9be3f'
+  ReservedCode2: '3bd79b3d-f9d0-4fa5-98d2-530cfec9be3f'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'c62e85d8-69d0-42d8-9944-0682ef019d21'
+  PropagateID: 'c62e85d8-69d0-42d8-9944-0682ef019d21'
+  ReservedCode1: '2e545e6a-8750-4579-a232-cf156fa9799e'
+  ReservedCode2: '2e545e6a-8750-4579-a232-cf156fa9799e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '06497475-edbe-4789-8e7b-75d5db0760b6'
+  PropagateID: '06497475-edbe-4789-8e7b-75d5db0760b6'
+  ReservedCode1: '65f1cf26-5821-4160-9dde-1caa1815d8dc'
+  ReservedCode2: '65f1cf26-5821-4160-9dde-1caa1815d8dc'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '3380ce18-c7cd-4d3b-9e42-4daa749e3393'
+  PropagateID: '3380ce18-c7cd-4d3b-9e42-4daa749e3393'
+  ReservedCode1: '0d2c6249-44f8-49d6-99c6-ff9cbe4f5f45'
+  ReservedCode2: '0d2c6249-44f8-49d6-99c6-ff9cbe4f5f45'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '64c60d94-a110-4d37-a50a-28c8871be20d'
+  PropagateID: '64c60d94-a110-4d37-a50a-28c8871be20d'
+  ReservedCode1: '1bb13e33-18c9-4729-8d40-48f7f8464c3a'
+  ReservedCode2: '1bb13e33-18c9-4729-8d40-48f7f8464c3a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '01aa90c8-a582-49f2-a2d7-49c630b15127'
   PropagateID: '01aa90c8-a582-49f2-a2d7-49c630b15127'
   ReservedCode1: '5a1ba005-cb94-4931-bb7f-255d1a4b6ef5'
@@ -120,10 +494,10 @@ AIGC:
 | 字符串字面量 | ✅ | `"hello"` | 同上 |
 | 布尔字面量 | ✅ | `true` / `false` | 同上 |
 | `null` 字面量 | ✅ | `null` | 同上 |
-| `undefined` | ✅ | `null` (映射) | 隐式测试 |
-| `this` | ✅ | `self` | showcase-project |
-| `NaN` | ✅ | `std.math.nan(f64)` | 隐式测试 |
-| `Infinity` | ✅ | `std.math.inf(f64)` | 隐式测试 |
+| `undefined` | ✅ | `null` (映射) | showcase `testNullishCoalescingUndefined` (test_nullish_ops.js) + `testOptionalChainNull` (test_optional.js) |
+| `this` | ✅ | `self` | showcase `testRectArea` (test_classes.js: `this.width * this.height`) + `testClassStatic` (helpers.js: `this.x`) |
+| `NaN` | ✅ | `std.math.nan(f64)` | showcase `testNaNLiteral` (test_missing_coverage.js) + `test_native_proto_literals` |
+| `Infinity` | ✅ | `std.math.inf(f64)` | showcase `testInfinityLiteral` (test_missing_coverage.js) + `test_native_proto_literals` |
 | BigInt 字面量 | ✅ | `js_bigint.JsBigInt.init(alloc, "9")` | 完整实现：四则/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型运算/`>>>` TypeError（与 JS 规范一致） |
 
 ### 2.2 算术运算符 (Arithmetic Operators) — ✅ 9
@@ -135,10 +509,10 @@ AIGC:
 | `*` (乘法) | ✅ | `a * b` | 同上 |
 | `/` (除法) | ✅ | `@divTrunc(a, b)` | 同上 |
 | `%` (取模) | ✅ | `@rem(a, b)` | 同上 |
-| `**` (指数) | ✅ | `std.math.pow(f64, ...)` | `test_native_proto_exponential_*` |
-| `++` (自增) | ✅ | `+= 1` | 隐式测试 |
-| `--` (自减) | ✅ | `-= 1` | 隐式测试 |
-| `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 运算符 | 隐式测试 |
+| `**` (指数) | ✅ | `std.math.pow(f64, ...)` | `test_native_proto_exponential_*` + showcase `testExponentOp` (test_missing_coverage.js) |
+| `++` (自增) | ✅ | `+= 1` | showcase `forSum` / `breakAtFive` / `continueEven` (app.js: `i++`) |
+| `--` (自减) | ✅ | `-= 1` | showcase `testDecrement` / `testPreDecrement` (test_missing_coverage.js: `x--`) |
+| `+=` `-=` `*=` `/=` `%=` | ✅ | 对应 Zig 运算符 | showcase `compoundOps` (app.js: +=, *=, -=) + `intDivTest` (app.js: /=) + `modOpTest` (app.js: %=) |
 
 ### 2.3 比较运算符 (Comparison Operators) — ✅ 5
 
@@ -146,8 +520,8 @@ AIGC:
 |------|------|----------|------|
 | `===` (严格相等) | ✅ | `.strictEq()` | `test_native_proto_operators` |
 | `!==` (严格不等) | ✅ | `!.strictEq()` | 同上 |
-| `==` (宽松相等) | ✅ | `.eq()` | `test_native_proto_operators` |
-| `!=` (宽松不等) | ✅ | `!.eq()` | 同上 |
+| `==` (宽松相等) | ✅ | `.eq()` | `test_native_proto_operators` + showcase `testLooseEqual` (test_missing_coverage.js) |
+| `!=` (宽松不等) | ✅ | `!.eq()` | 同上 + showcase `testLooseNotEqual` (test_missing_coverage.js) |
 | `<` `>` `<=` `>=` | ✅ | `a < b` 或 `.lt()` | `test_native_proto_operators` |
 
 ### 2.4 逻辑运算符 (Logical Operators) — ✅ 3
@@ -156,13 +530,13 @@ AIGC:
 |------|------|----------|------|
 | `&&` (与) | ✅ | `and` | `test_native_proto_operators` |
 | `\|\|` (或) | ✅ | `or` | 同上 |
-| `??` (空值合并) | ✅ | `orelse` | showcase `test_nullish_ops` |
+| `??` (空值合并) | ✅ | `orelse` | showcase `testNullishCoalescing` / `testNullishCoalescingUndefined` (test_nullish_ops.js) |
 
 ### 2.5 位运算 (Bitwise Operators) — ✅ 1
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `&` `\|` `^` `~` `<<` `>>` `>>>` | ✅ | 对应 Zig 运算符 | `test_native_proto_operators` |
+| `&` `\|` `^` `~` `<<` `>>` `>>>` | ✅ | 对应 Zig 运算符 | `test_native_proto_operators` + showcase `testBitwiseAnd`/`testBitwiseOr`/`testBitwiseXor` (app.js) + `testUnsignedRightShift` (test_missing_coverage.js: `>>>`) |
 
 ### 2.6 一元运算符 (Unary Operators) — ✅ 7
 
@@ -173,7 +547,7 @@ AIGC:
 | `!` (逻辑非) | ✅ | `!x` | 同上 |
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
 | `typeof` | ✅ | 静态类型→JS typeof 字符串；动态类型→`jsTypeof()` 运行时 helper | 4 个测试 |
-| `void` | ✅ | `{ expr; null }` (求值后返回 null) | `test_native_proto_void_operator` |
+| `void` | ✅ | `{ expr; null }` (求值后返回 null) | `test_native_proto_void_operator` + showcase `testVoidOperator` (test_missing_coverage.js) |
 | `delete` | ✅ | `delete obj.prop` → `obj.deleteKey("prop")` ✅; `delete obj[key]` → `obj.deleteByKey(expr, alloc)` ✅ | `test_native_proto_delete_operator` + showcase `testDeleteMap*` (4) |
 
 **注意**:
@@ -199,9 +573,9 @@ AIGC:
 
 | 特性              | 状态           | Zig 输出 | 测试 |
 |-----------------|--------------|----------|------|
-| `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | 隐式测试 |
-| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` + showcase `testBitwise*Assign` (5) |
-| `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
+| `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | showcase `compoundOps` (app.js: +=, *=, -=) + `intDivTest` (app.js: /=) + `modOpTest` (app.js: %=) |
+| `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` + showcase `testBitwise*Assign` (5, test_expr_advanced.js) + `testUnsignedRightShiftAssign` (test_missing_coverage.js: `>>>=`) |
+| `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` + showcase `testExponentAssign` (test_missing_coverage.js) |
 | `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` + showcase `testAndAssign*` (2) |
 | `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` + showcase `testOrAssign*` (2) |
 | `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` + showcase `testNullishAssign*` (2) |
@@ -210,7 +584,7 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase-project |
+| `obj.prop` (属性访问) | ✅ | `obj.prop` | showcase `testObjLiteral` (helpers.js: `obj.x + obj.y`) + `testRectArea` (test_classes.js: `this.width`) |
 | `obj[key]` (计算属性) | ✅ | 按 `obj` 类型分发：`struct` → `obj.field`，`HashMap` → `obj.get(key)`/`obj.put(key, val)` | `test_native_proto_computed_member` |
 | `arr[idx]` (数组索引) | ✅ | `arr.items[@as(usize, @intCast(idx))]`（支持变量索引） | `test_dynamic_array_access_index` + `test_dynamic_array_assignment_index` |
 | `.length` | ✅ | 类型感知分发：String → `utf16Len(obj)`，ArrayList → `obj.items.len`，其他 → `obj.len` | 同上 |
@@ -225,9 +599,9 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `fn(args)` | ✅ | `fn(args)` | 所有测试 |
+| `fn(args)` | ✅ | `fn(args)` | app.js / utils.js / helpers.js (广泛使用, 如 `showcaseSum`, `add`, `mathFloor`) |
 | 内置函数调用 | ✅ | 走 `BuiltinRegistry` | 同上 |
-| 方法调用 `obj.method()` | ✅ | `obj.method()` | showcase-project |
+| 方法调用 `obj.method()` | ✅ | `obj.method()` | showcase `testRectArea` (test_classes.js: `r.area()`) + `testUserId` (test_classes.js: `u.getId()`) |
 
 ### 2.11 对象/数组字面量 — ✅ 5 / 🔘 1
 
@@ -235,8 +609,8 @@ AIGC:
 |------|------|----------|------|
 | `[...]` (数组字面量) | ✅ | `[_]T{ ... }` | `test_native_proto_literals` |
 | `{...}` (对象字面量) | ✅ | `.{ .k = v }` | 同上 |
-| 对象展开 `{ ...base, k: v }` | ✅ | `blk: { var _tmp = base; ... }` | 隐式测试 |
-| Getter 属性 `{ get x() { ... } }` | ✅ | `.x = <return expr>` | `test_native_proto_getter` |
+| 对象展开 `{ ...base, k: v }` | ✅ | `blk: { var _tmp = base; ... }` | showcase `testSpreadSingle`–`testSpreadOverride` (phase6.js, 5 函数) |
+| Getter 属性 `{ get x() { ... } }` | ✅ | `.x = <return expr>` | `test_native_proto_getter` + showcase `testGetterInObjectLiteral` (test_missing_coverage.js) |
 | Setter 属性 `{ set x(v) { ... } }` | 🔘 不实现 | `@compileError("setter is not supported")` | `test_setter_compile_error` |
 | 多 spread 合并 `{ ...a, ...b }` | ✅ | `spreadMerge(spreadMerge({}, a), b)` | `testSpreadSingle/Multi/Triple/WithInline/Override` |
 
@@ -244,9 +618,9 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `` `text` `` (无插值) | ✅ | `"text"` | `test_native_proto_template_*` |
-| `` `hello ${name}` `` (有插值) | ✅ | `allocPrint(...)` | 同上 |
-| 复杂嵌套 | ✅ | 递归生成 | 同上 |
+| `` `text` `` (无插值) | ✅ | `"text"` | `test_native_proto_template_*` + showcase `tplPlain` (helpers.js) |
+| `` `hello ${name}` `` (有插值) | ✅ | `allocPrint(...)` | 同上 + showcase `tplDynArr` / `tplObjProp` (helpers.js) |
+| 复杂嵌套 | ✅ | 递归生成 | 同上 + showcase `tplMultiLine` (helpers.js: 多行+插值) |
 | 标签模板 `` tag`...` `` | 🔘 不实现 | `@compileError` | 很少使用 |
 
 ### 2.13 箭头函数 — ✅ 6
@@ -256,7 +630,7 @@ AIGC:
 | 单表达式 `(x, y) => x + y` | ✅ | 生成独立 `fn` | `test_native_proto_arrow_*` |
 | 块语句 `(x, y) => { return x + y; }` | ✅ | 生成独立 `fn` | 同上 |
 | 单参数 `x => expr` | ✅ | 生成独立 `fn` | 同上 |
-| 无捕获箭头函数 | ✅ | 函数指针 | 隐式测试 |
+| 无捕获箭头函数 | ✅ | 函数指针 | showcase `testArrayMap` (`x => x`) / `testArrayFilter` (`x => true`) (phase5.js) |
 | 闭包值捕获 `(y) => x + y` | ✅ | 生成 `Closure_X` 结构体 + `call()` | `test_native_proto_closure_basic` |
 | 闭包可变捕获 `() => { x++; }` | ✅ | 生成 `Closure_X` 结构体 + `*i64` 指针 | `test_native_proto_closure_mutable` |
 
@@ -268,12 +642,12 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `new Map()` | ✅ | `js_map.JsMap.init(alloc)` | showcase-project |
-| `new Set()` | ✅ | `js_set.JsSet.init(alloc)` | 同上 |
+| `new Map()` | ✅ | `js_map.JsMap.init(alloc)` | showcase `testMapHas` (app.js: `new Map()`) |
+| `new Set()` | ✅ | `js_set.JsSet.init(alloc)` | 同上 (`testSetHas`) |
 | `new Error(msg)` | ✅ | `js_error.JsError.init(alloc, msg)` | `test_native_proto_throw_*` |
-| `new ClassName(args)` | ✅ | `ClassName.init(args)` | showcase-project |
+| `new ClassName(args)` | ✅ | `ClassName.init(args)` | showcase `testRectArea` (test_classes.js: `new Rectangle(3, 4)`) + `testClassExpression` (test_private_fields.js: `new Point(3, 7)`) |
 | `new Promise(...)` | 🔘 不实现 | `@compileError` | 建议用 `async/await` + `Io` 模式替代 |
-| 其他构造函数 | ✅ | 自动映射 | 隐式测试 |
+| 其他构造函数 | ✅ | 自动映射 | showcase `testDateNow` (phase6.js: `new Date()`) + `testBigIntAsIntN` (test_advanced_types.js: `BigInt.asIntN`) |
 
 ### 2.15 `await` 表达式 — ✅ 1
 
@@ -309,7 +683,7 @@ AIGC:
 | `yield` / `yield*` (生成器) | `@compileError` | 🔘 不实现（随 `function*` 一同不实现） |
 | `async function*` (异步生成器) | `@compileError` | 🔘 不实现（niche 场景） |
 | 动态 `import()` | 需使用静态 `import` | 🔘 不实现（Zig `@import()` 仅 comptime，无运行时动态加载） |
-| 私有字段 `#field` | 完全支持 | ✅ 完全实现（# 前缀剥离，默认值保留） |
+| 私有字段 `#field` | ✅ 完全实现 | ✅ 完全实现（# 前缀剥离，默认值保留）；`test_native_proto_private_field_*` (5) + showcase `testPrivateFieldInit`/`testPrivateFieldDefault` (test_private_fields.js) |
 | `new.target` | `@compileError` | 🔘 不实现（meta property，niche） |
 | `for await...of` | `@compileError` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `@compileError` | 🔘 不实现（已在 2.12 标记） |
@@ -327,7 +701,7 @@ AIGC:
 | `@type {number[]}` (数组) | ✅ | 数组类型标注 | showcase `testJsdocArrayLength` + `test_native_proto_*` |
 | `@type {{name: string, age: number}}` (匿名对象) | ✅ | 内联对象类型，生成 Zig struct | `test_native_proto_anon_obj_*` + showcase `testJsdocAnonObject` |
 | `@returns {{name: string, ...}}` (匿名对象返回) | ✅ | export 函数返回匿名对象类型 — 使用 `@TypeOf(first_return_expr)` 推断返回类型 | `test_native_proto_anon_obj_*` + showcase `testJsdocAnonObject` |
-| `@param {Type} name` (参数类型) | ✅ | 参数类型标注 | 隐式测试 |
+| `@param {Type} name` (参数类型) | ✅ | 参数类型标注 | app.js / utils.js / helpers.js (广泛使用, 如 `@param {i64} a`) |
 | `@typedef` (类型别名) | ✅ | 命名类型，可跨文件引用 | showcase `testJsdocTypedef` |
 | `@property {Type} name` (typedef 属性) | ✅ | typedef 属性定义 | showcase `testJsdocTypedef`（@property + @typedef 联合测试） |
 
@@ -345,20 +719,20 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `var x = val` | ✅ | `var x: T = val;` | 所有测试 |
+| `var x = val` | ✅ | `var x: T = val;` | app.js / utils.js / helpers.js (广泛使用, 如 `let sum = 0` in app.js) |
 | `let x = val` | ✅ | `const x = val;` (如未修改) | 同上 |
 | `const x = val` | ✅ | `const x = val;` | 同上 |
-| 解构 `const {a, b} = obj` | ✅ | 展平为逐字段访问 | showcase-project |
+| 解构 `const {a, b} = obj` | ✅ | 展平为逐字段访问 | showcase `testDestructureObjDefault` / `testDestructureArrDefault` (app.js) |
 | 解构默认值 `const {a = 1} = obj` | ✅ | HashMap: `if (get("a")) \|v\| v.asI64() else 1`；Slice: `arr[0] orelse 1` | `test_p2_destructure_object_with_defaults` |
 
 ### 3.2 函数声明 — ✅ 7
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `function fn(params) {}` | ✅ | `pub fn fn(params) ret {}` | 所有测试 |
-| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 同上 |
-| `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
-| 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
+| `function fn(params) {}` | ✅ | `pub fn fn(params) ret {}` | app.js (`helper`, `doubleHelper`) / utils.js (广泛使用) |
+| `export function fn(params) {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 同上 (如 `showcaseSum`, `add`, `mathFloor`) |
+| `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project `getUserInfo` (main.js: `export async function`) |
+| 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | showcase `withDefault` (utils.js: `y = 10`) |
 | Rest 参数 `function fn(...args) {}` | ✅ | `args: []const JsAny` (Anytype, 不可跨 C ABI) | Rust 单元测试 (4) + showcase `testArguments*` / `testVariadic*` (5) |
 | 嵌套函数声明 | ✅ | 提取为模块级函数（含闭包捕获） | `test_p2_nested_function_*` |
 | `arguments` 对象 | ✅ | `const __arguments = [JsAny.from(param0), ...]` 注入函数首行 | `test_arguments_object` |
@@ -370,15 +744,15 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `class Name { ... }` | ✅ | `const Name = struct { ... };` | showcase-project |
-| 构造函数 `constructor()` | ✅ | `pub fn init() Name { ... }` | 同上 |
-| 实例方法 | ✅ | `pub fn method(self: *const Name) {}` | 同上 |
-| 静态方法 | ✅ | `pub fn method() {}` (无 `self`) | 同上 |
-| 静态属性 | ✅ | `pub const prop = val;` | 同上 |
-| Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` |
+| `class Name { ... }` | ✅ | `const Name = struct { ... };` | showcase `testRectArea` (test_classes.js: `class Rectangle`) + `testStaticFieldRead` (test_static_fields.js: `class Counter`) |
+| 构造函数 `constructor()` | ✅ | `pub fn init() Name { ... }` | 同上 (`constructor(w, h) { this.width = w; ... }`) |
+| 实例方法 | ✅ | `pub fn method(self: *const Name) {}` | 同上 (`area() { return this.width * this.height; }`) |
+| 静态方法 | ✅ | `pub fn method() {}` (无 `self`) | showcase `testClassStatic` (helpers.js: `PointFactory.create(x, y)`) |
+| 静态属性 | ✅ | `pub const prop = val;` | showcase `testStaticFieldRead` / `testStaticFieldAssign` (test_static_fields.js: `Counter.count`) |
+| Getter/Setter | ✅ | `pub fn get_prop() T {}` / `pub fn set_prop(v: T) {}` | `test_native_proto_getter_*` + showcase `testGetterInObjectLiteral` (test_missing_coverage.js) |
 | `extends` 继承 | ❌ 编译错误 | `@compileError("class extends is not supported: use composition instead")` | `test_class_extends_compile_error` |
 | `super` 调用 | ❌ 编译错误 | `@compileError("super not supported")` | 同上 |
-| 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | ES2022 封装 |
+| 私有字段 `#field` | ✅ 完全实现 | `const` 字段，无 `pub` | `test_native_proto_private_field_*` (5) + showcase `testPrivateFieldInit`/`testPrivateFieldDefault` (test_private_fields.js) |
 | 类表达式 `const X = class {}` | ✅ | `const X = struct { ... }` (匿名类名 `_AnonClass_N`) | `test_class_expression` + `test_class_expression_named` |
 | 静态初始化块 `static {}` | ✅ | `pub fn init_js2rust() !void { ... }` (orchestrator 自动发现并调用) + 静态字段读写 `__ClassName_field` + `this.field` → 静态字段 | `test_static_block` + `test_static_field_read` + `test_static_field_assign` + `test_static_block_this_read` + `test_static_block_this_write` + showcase `testStaticBlockInit` + `testStaticBlockThis` |
 
@@ -389,7 +763,7 @@ AIGC:
 | `if...else` | ✅ | `if (cond) {} else {}` | `test_native_proto_control_flow` |
 | `if...else if...else` | ✅ | 嵌套 `if...else` | 同上 |
 | `switch` | ✅ | `_ = switch (val) { ... }` | 同上 |
-| `for (init; test; update)` | ✅ | `{ init; while (test) : (update) {} }` | showcase-project |
+| `for (init; test; update)` | ✅ | `{ init; while (test) : (update) {} }` | showcase `forSum` (app.js) |
 | `for...of` (Array) | ✅ | `for (arr.items) \|item\| {}` | `test_native_proto_for_of` |
 | `for...of` (Map) | ✅ | `.inner.iterator()` HashMap 迭代器模式（含解构） | `test_p2_for_of_map_*` |
 | `for...of` (Set) | ✅ | `.inner.iterator()` HashMap 迭代器模式 | `test_p2_for_of_set` |
@@ -397,9 +771,9 @@ AIGC:
 | `for...in` (动态对象) | ✅ | HashMap iterator | `test_native_proto_for_in` |
 | `for...in` (Map) | ✅ | `.inner.iterator()` HashMap 迭代器模式 (key via `__kv.key_ptr.*`) | showcase `testForInMap*` (2) |
 | `for...in` (静态 struct) | ✅ | 字段展开循环 | `test_native_proto_for_in_static` |
-| `while` | ✅ | `while (cond) {}` | showcase-project |
+| `while` | ✅ | `while (cond) {}` | showcase `whileHalve` (app.js) |
 | `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |
-| `break` / `continue` | ✅ | `break` / `continue` | showcase-project |
+| `break` / `continue` | ✅ | `break` / `continue` | showcase `breakAtFive` / `continueEven` (app.js) |
 | 标签语句 `label: while` | ✅ | `label: while {}` | `test_p1_labeled_*` (6 个测试) |
 | 标签 for-of `label: for...of` | ✅ | `label: for (arr.items) \|item\| {}` | `test_p1_labeled_for_of` + showcase `testLabeledForOf` |
 | `for await...of` | 🔘 不实现 | `@compileError` | 异步迭代，当前项目聚焦同步代码 |
@@ -416,17 +790,17 @@ AIGC:
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| `throw expr` | ✅ | `return error.JsThrow` 或 `break :_try error.JsThrow` | `test_native_proto_throw_*` |
-| `try { ... } catch (e) { ... }` | ✅ | `defer { ... } _ = _try0: { ... } catch { ... }` | 同上 |
-| `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | 同上 |
-| 嵌套 try-catch | ✅ | 支持 | showcase `testNestedTryCatch` |
+| `throw expr` | ✅ | `return error.JsThrow` 或 `break :_try error.JsThrow` | `test_native_proto_throw_*` + showcase `bareThrowStr`/`bareThrowI64`/`caughtThrow`/`tryFinally` (test_throw.js) |
+| `try { ... } catch (e) { ... }` | ✅ | `defer { ... } _ = _try0: { ... } catch { ... }` | `test_native_proto_throw_*` + showcase `caughtThrow` (test_throw.js) |
+| `try { ... } finally { ... }` | ✅ | `defer { cleanup }` | `test_native_proto_throw_*` + showcase `tryFinally` (test_throw.js) |
+| 嵌套 try-catch | ✅ | 支持 | showcase `testNestedTryCatch` (test_stmt_advanced.js) |
 
 ### 3.6 其他语句 — ✅ 4 / 🔘 2
 
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
-| 表达式语句 | ✅ | `expr;` | 所有测试 |
-| 块语句 `{ }` | ✅ | `{ }` | 同上 |
+| 表达式语句 | ✅ | `expr;` | showcase `testImportedAdd` (helpers.js: 调用表达式) + `testClassBasic` (helpers.js: new 表达式) |
+| 块语句 `{ }` | ✅ | `{ }` | showcase `testBlock` (helpers.js: 独立块语句 + const 声明) |
 | 空语句 `;` | ✅ | 忽略 | `test_empty_statement` |
 | `with` 语句 | 🔘 不实现 | JS 严格模式已废弃 | 绝不实现 |
 | `debugger` 语句 | 🔘 不实现 | 不支持 | 调试用，Zig 有自身调试工具 |
@@ -971,13 +1345,13 @@ AIGC:
 
 | 特性 | 状态 | 说明 | 测试 |
 |------|------|------|------|
-| `import { name } from './file.js'` | ✅ | AST 驱动提取 | showcase-project |
-| `import defaultExport from './file.js'` | ✅ | 同上 | 同上 |
+| `import { name } from './file.js'` | ✅ | AST 驱动提取 | showcase `testImportedAdd`/`testImportedSqrt`/`testImportedCompare` (helpers.js: 从 utils.js 导入) |
+| `import defaultExport from './file.js'` | ✅ | 同上 | showcase 无专门 e2e 测试（命名导入已由 `testImportedAdd` 等覆盖） |
 | `import * as ns from './file.js'` | ❌ | analyzer 识别但 transpiler 生成 @compileError | 未实现 |
-| `export function fn() {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 所有测试 |
-| `export const x = val` | ✅ | 导出为 C ABI 函数 | 同上 |
+| `export function fn() {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | showcase 全部 export 函数 + test-lib-project `greet`/`add` (main.js) |
+| `export const x = val` | ✅ | 导出为 C ABI 函数 | showcase 无 e2e 测试（所有项目均使用 export function） |
 | `export default expr` | ❌ | analyzer 识别但 transpiler 生成 @compileError | 未实现 |
-| 多文件分组 | ✅ | DFS 依赖排序 | showcase-project |
+| 多文件分组 | ✅ | DFS 依赖排序 | showcase 多文件依赖链 (helpers.js → utils.js, app.js → utils.js + helpers.js) |
 
 ### 5.2 C ABI 内存管理 - ✅ 100% 实现
 

@@ -559,10 +559,10 @@ impl Lowerer {
             Expression::Identifier(id) => {
                 if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
                     // Map (NamedStruct("Map")) → iterator via .inner.iterator()
-                    if let ZigType::NamedStruct(name) = zig_type {
-                        if name == "Map" {
-                            return IrForInKind::MapIter;
-                        }
+                    if let ZigType::NamedStruct(name) = zig_type
+                        && name == "Map"
+                    {
+                        return IrForInKind::MapIter;
                     }
                     // HashMap/dynamic object → iterator-based
                     if matches!(zig_type, ZigType::Anytype) {
