@@ -425,18 +425,41 @@ return a;
         "**= should use std.math.pow: {}",
         zig
     );
-    // &&= → if (a.toBool()) b else a
+    // &&= → expanded to Logical(And), uses js_runtime.isTruthy
     assert!(
-        zig.contains(".toBool()"),
-        "&&= should use toBool(): {}",
+        zig.contains("js_runtime.isTruthy"),
+        "&&= should use js_runtime.isTruthy: {}",
         zig
     );
-    // ||= → if (!a.toBool()) b else a
-    // (checks for toBool negation)
-    // ??= → if (a.isNullish()) b else a
+    // ||= → also uses js_runtime.isTruthy (branches flipped)
+    assert!(
+        zig.contains("js_runtime.isTruthy"),
+        "||= should use js_runtime.isTruthy: {}",
+        zig
+    );
+    // ??= on anytype (non-JsAny) → no-op sequence (RHS evaluated, original kept)
+    // This is correct: non-JsAny types cannot be nullish, so ??= is a no-op.
+    assert!(
+        !zig.contains(".isNullish()"),
+        "??= on anytype should be no-op (no isNullish): {}",
+        zig
+    );
+}
+
+#[test]
+fn test_nullish_assign_jsany() {
+    let js = r#"
+function nullish_jsany() {
+let x = null;
+x ??= 42;
+return x;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_nullish_assign_jsany");
+    // For JsAny-typed variable (inferred from null literal), ??= uses isNullish
     assert!(
         zig.contains(".isNullish()"),
-        "??= should use isNullish(): {}",
+        "??= on JsAny should use isNullish: {}",
         zig
     );
 }

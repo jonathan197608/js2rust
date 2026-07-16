@@ -1,6 +1,5 @@
-// BUG-12: `delete obj[key]` on Map generates `deleteByKey(key, alloc)` but
-// `alloc` is undeclared in scope. Should use `js_allocator.allocator()`.
-// Status: BLOCKED by codegen bug. Enable when BUG-12 is fixed.
+// `delete obj[key]` on Map: generates `.delete(js_allocator.allocator(), JsAny.from(key))`.
+// Previously BUG-12, now fixed in emit/builtins/collections.rs.
 
 /** @returns {i64} */
 export function testDeleteMapBracket() {

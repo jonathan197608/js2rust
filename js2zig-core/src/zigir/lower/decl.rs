@@ -380,6 +380,14 @@ impl Lowerer {
         // Lower initializer expression
         let init = match decl.init.as_ref() {
             Some(expr) => {
+                // Class expression: register the variable name in class_names
+                // so that `new VarName()` routes correctly.
+                if let Expression::ClassExpression(_) = expr {
+                    self.class_names.insert(js_name.to_string());
+                    // Set class_expr_var_name so lower_class_decl can look up
+                    // field types stored under the variable name by the type inferrer.
+                    self.class_expr_var_name = Some(js_name.to_string());
+                }
                 // Special case: arrow function / closure initializer.
                 // Instead of returning IrExpr::ArrowFn as init, we:
                 // 1. Register the struct definition in module.closure_structs
@@ -388,6 +396,7 @@ impl Lowerer {
                 //   const _arrow_fn_0 = struct { ... };
                 //   const double = _arrow_fn_0;
                 let ir = self.lower_expr(expr);
+                self.class_expr_var_name = None;
                 match ir {
                     crate::zigir::types::IrExpr::ArrowFn(ref arrow) => {
                         // Generate a unique struct name like _arrow_fn_0, _arrow_fn_1, ...

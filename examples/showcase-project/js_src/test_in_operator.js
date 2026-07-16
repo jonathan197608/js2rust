@@ -1,6 +1,5 @@
-// BUG-01: `in` operator on Map/Set generates `.contains()` which doesn't exist
-// on JsCollection. Should generate `.has(JsAny.from(key))` instead.
-// Status: BLOCKED by codegen bug. Enable when BUG-01 is fixed.
+// `in` operator on Map/Set: generates `.has(JsAny.from(key))`.
+// Previously BUG-01, now fixed in emit/expr/mod.rs.
 
 // ── in operator on Map ──
 

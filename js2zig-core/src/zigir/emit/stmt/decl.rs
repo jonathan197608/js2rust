@@ -22,7 +22,9 @@ impl Emitter {
         is_async: bool,
         can_throw: bool,
     ) -> String {
-        if matches!(return_type, ZigType::AnytypeReturn) {
+        // AnytypeReturn and Struct (anonymous object) both need @TypeOf
+        // because `.{ .field = T, ... }` is a struct literal, not a valid type.
+        if matches!(return_type, ZigType::AnytypeReturn | ZigType::Struct(_)) {
             if let Some(body_expr) = typeof_return_body {
                 let captured = self.expr_to_string(body_expr);
                 let stripped = captured.replace("try ", "");

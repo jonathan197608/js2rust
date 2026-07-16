@@ -234,6 +234,28 @@ impl Emitter {
                 self.indent_pop();
                 self.writeln("}");
             }
+            IrForInKind::MapIter => {
+                // `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
+                self.write_indent();
+                self.emit_label_prefix(label);
+                self.write("var ");
+                let it_name = "__it";
+                self.write(it_name);
+                self.write(" = ");
+                self.emit_expr(iterable);
+                self.write(".inner.iterator();\n");
+                self.write_indent();
+                self.write("while (");
+                self.write(it_name);
+                self.write(".next()) |__kv| {\n");
+                self.indent_push();
+                self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
+                self.emit_block_stmts_unlabeled(body);
+                // Suppress unused-variable error when key is not referenced in body
+                self.writeln(&format!("_ = &{};", var.zig_name));
+                self.indent_pop();
+                self.writeln("}");
+            }
             IrForInKind::StructUnroll { fields } => {
                 // Unrolled: one iteration per field; label on first iteration only
                 for (i, field_name) in fields.iter().enumerate() {

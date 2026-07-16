@@ -188,6 +188,8 @@ pub struct IrBlock {
 pub enum IrForInKind {
     /// HashMap/dynamic object: iterator-based (`var __it = obj.iterator(); while (...)`)
     HashMapIter,
+    /// Map (NamedStruct("Map")): iterator via `.inner.iterator()`
+    MapIter,
     /// Static struct with known fields: unrolled loop (one iteration per field).
     StructUnroll { fields: Vec<String> },
     /// Unknown/unsupported type → compile error.

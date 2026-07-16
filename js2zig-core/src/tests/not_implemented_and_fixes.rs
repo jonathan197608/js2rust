@@ -501,36 +501,32 @@ for await (const item of items) { }
 }
 
 #[test]
-fn test_import_meta_is_implemented() {
-    // ✅ import.meta: 已实现（生成 .{ .url = "..." } 结构体字面量）
-    // 注意：const url = import.meta.url 会触发 Rule 8 类型推断错误
-    // （ObjectLiteral 字段访问需要类型标注），但 import.meta 本身已正确实现
+fn test_import_meta_is_compile_error() {
+    // 🔘 import.meta: 改为 @compileError（无法在 Zig 运行时中正确表示）
     let result = parse_and_transpile(
         r#"
-const url = import.meta.url;
+function getMeta() {
+return import.meta.url;
+}
 "#,
         None,
     )
     .unwrap();
-    // import.meta 不应产生 "Unsupported" 或 "not supported" 错误
-    let has_unsupported = result
+    // import.meta 应产生 "not supported" 错误
+    let has_not_supported = result
         .errors
         .iter()
-        .any(|e| e.contains("Unsupported") || e.contains("not supported"));
+        .any(|e| e.contains("not supported"));
     assert!(
-        !has_unsupported,
-        "import.meta should be implemented, but got 'Unsupported' error: {:?}",
+        has_not_supported,
+        "import.meta should produce 'not supported' error, got: {:?}",
         result.errors
     );
-    // 应产生 Rule 8 类型推断错误（这是预期的限制，不是功能缺失）
-    let has_rule8 = result
-        .errors
-        .iter()
-        .any(|e| e.contains("Rule 8") || e.contains("type annotation"));
+    // 应生成 @compileError
     assert!(
-        has_rule8,
-        "import.meta.url access should produce Rule 8 type inference error, got: {:?}",
-        result.errors
+        result.zig_code.contains("@compileError"),
+        "import.meta should generate @compileError: {}",
+        result.zig_code
     );
 }
 
@@ -1409,3 +1405,4 @@ export function boolEqNum(b, n) {
         zig
     );
 }
+

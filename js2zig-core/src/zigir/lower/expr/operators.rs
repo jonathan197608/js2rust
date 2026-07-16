@@ -9,7 +9,7 @@ use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
 use crate::zigir::kinds::{FieldKind, IndexKind};
-use crate::zigir::ops::{AssignOp, BinOp, UnaOp, UpdateOp};
+use crate::zigir::ops::{AssignOp, BinOp, LogicalOp, UnaOp, UpdateOp};
 
 use super::Lowerer;
 use crate::zigir::lower::helpers;
@@ -448,7 +448,61 @@ impl Lowerer {
             }
             // BigInt %=: fall through to BigInt compound expansion below
         }
-        // &&= / ||= / ??= → use AssignOp, Emitter will expand
+        // &&= / ||= / ??= → expand into Assign + Logical
+        // This reuses the Logical emitter's type-aware JsAny.from() wrapping,
+        // avoiding type mismatches between comptime_int and JsAny branches.
+        // For &&/|| the emitter uses js_runtime.isTruthy() (anytype), so it works
+        // for i64 as well. For ?? the emitter uses .isNullish() (JsAny-only).
+        if matches!(
+            ae.operator,
+            AssignmentOperator::LogicalAnd
+                | AssignmentOperator::LogicalOr
+                | AssignmentOperator::LogicalNullish
+        ) {
+            let target_type = self
+                .infer_assign_target_type(&ae.left)
+                .unwrap_or(ZigType::JsAny);
+
+            // ??= on non-JsAny types is a no-op: the value can't be null/undefined
+            // in our type system (i64, bool, string, etc.). Evaluate RHS for side
+            // effects, keep target unchanged.
+            if ae.operator == AssignmentOperator::LogicalNullish
+                && target_type != ZigType::JsAny
+            {
+                let target = self.lower_assign_target(&ae.left);
+                let value = self.lower_expr(&ae.right);
+                if let Some(read) = target.to_read_expr() {
+                    return IrExpr::Sequence(vec![value, read]);
+                }
+                // Fall through for unsupported targets
+            } else {
+                let target = self.lower_assign_target(&ae.left);
+                let value = self.lower_expr(&ae.right);
+                let value_type = self
+                    .infer_expr_type(&ae.right)
+                    .unwrap_or(ZigType::JsAny);
+                let logical_op = match ae.operator {
+                    AssignmentOperator::LogicalAnd => LogicalOp::And,
+                    AssignmentOperator::LogicalOr => LogicalOp::Or,
+                    AssignmentOperator::LogicalNullish => LogicalOp::Nullish,
+                    _ => unreachable!(),
+                };
+                if let Some(read) = target.to_read_expr() {
+                    return IrExpr::Assign {
+                        op: AssignOp::Assign,
+                        target: Box::new(target),
+                        value: Box::new(IrExpr::Logical {
+                            op: logical_op,
+                            left: Box::new(read),
+                            right: Box::new(value),
+                            left_type: Some(target_type),
+                            right_type: Some(value_type),
+                        }),
+                    };
+                }
+                // For unsupported targets (index, destructure), fall through to default path
+            }
+        }
 
         // ── BigInt compound assignment expansion ──
         // BigInt has no Zig +=, -=, etc. Expand `bigVar += expr` into
@@ -644,6 +698,10 @@ impl Lowerer {
             SimpleAssignmentTarget::ComputedMemberExpression(mem) => {
                 self.lower_computed_member_assign_target(&mem.object, &mem.expression)
             }
+            SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                // Private field assignment (this.#field += ...) — treat as struct field access
+                self.lower_static_member_assign_target(&pfe.object, pfe.field.name.as_str())
+            }
             _ => crate::zigir::types::IrAssignTarget::CompileError {
                 msg: "unsupported assignment target".to_string(),
             },
@@ -690,6 +748,10 @@ impl Lowerer {
             }
             AssignmentTarget::ComputedMemberExpression(mem) => {
                 self.lower_computed_member_assign_target(&mem.object, &mem.expression)
+            }
+            AssignmentTarget::PrivateFieldExpression(pfe) => {
+                // Private field assignment (this.#field = ...) — treat as struct field access
+                self.lower_static_member_assign_target(&pfe.object, pfe.field.name.as_str())
             }
             AssignmentTarget::ObjectAssignmentTarget(ot) => {
                 let bindings: Vec<crate::zigir::types::IrDestructureBinding> = ot

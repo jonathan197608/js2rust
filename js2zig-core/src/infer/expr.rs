@@ -462,6 +462,23 @@ impl TypeInferrer {
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.infer_expr_type(&pe.expression),
 
+            // Private field access: this.#field inside a class method → look up field type
+            Expression::PrivateFieldExpression(pfe) => {
+                if matches!(&pfe.object, Expression::ThisExpression(_))
+                    && let Some(class_name) = &self.current_class
+                {
+                    if let Some(field_types) = self.class_field_types.get(class_name.as_str()) {
+                        // PrivateIdentifier.name does NOT include the '#' prefix
+                        let field_name = pfe.field.name.to_string();
+                        if let Some(field_ty) = field_types.get(&field_name) {
+                            return InferResult::Definite(field_ty.clone());
+                        }
+                    }
+                    return InferResult::Indeterminate;
+                }
+                InferResult::Indeterminate
+            }
+
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
         }

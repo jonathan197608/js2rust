@@ -88,6 +88,19 @@ impl Lowerer {
                                     .get(&class_name)
                                     .and_then(|m| m.get(&name))
                                     .cloned()
+                                    .or_else(|| {
+                                        // Fallback: for anonymous class expressions,
+                                        // field types are stored under the variable name
+                                        self.class_expr_var_name
+                                            .as_ref()
+                                            .and_then(|vn| {
+                                                self.type_info
+                                                    .class_field_types
+                                                    .get(vn)
+                                                    .and_then(|m| m.get(&name))
+                                                    .cloned()
+                                            })
+                                    })
                                     .unwrap_or(ZigType::JsAny);
                                 // Register static field type in var_types for Member target type inference
                                 let var_key = format!("__{}_{}", class_name, name);
@@ -101,6 +114,19 @@ impl Lowerer {
                                 .get(&class_name)
                                 .and_then(|m| m.get(&name))
                                 .cloned()
+                                .or_else(|| {
+                                    // Fallback: for anonymous class expressions,
+                                    // field types are stored under the variable name
+                                    self.class_expr_var_name
+                                        .as_ref()
+                                        .and_then(|vn| {
+                                            self.type_info
+                                                .class_field_types
+                                                .get(vn)
+                                                .and_then(|m| m.get(&name))
+                                                .cloned()
+                                        })
+                                })
                                 .unwrap_or(ZigType::JsAny);
                             let default = pd.value.as_ref().map(|v| self.lower_expr(v));
                             field_names.push(name.clone());
@@ -221,18 +247,42 @@ impl Lowerer {
         for stmt in stmts {
             match stmt {
                 Statement::ExpressionStatement(es) => {
-                    if let Expression::AssignmentExpression(ae) = &es.expression
-                        && let AssignmentTarget::StaticMemberExpression(sme) = &ae.left
-                        && matches!(&sme.object, Expression::ThisExpression(_))
-                    {
-                        let fname = sme.property.name.to_string();
-                        if !field_names.contains(&fname) {
+                    if let Expression::AssignmentExpression(ae) = &es.expression {
+                        let maybe_fname = match &ae.left {
+                            AssignmentTarget::StaticMemberExpression(sme)
+                                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+                            {
+                                Some(sme.property.name.to_string())
+                            }
+                            AssignmentTarget::PrivateFieldExpression(pfe)
+                                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+                            {
+                                Some(pfe.field.name.to_string())
+                            }
+                            _ => None,
+                        };
+                        if let Some(fname) = maybe_fname
+                            && !field_names.contains(&fname)
+                        {
                             let ftype = self
                                 .type_info
                                 .class_field_types
                                 .get(class_name)
                                 .and_then(|m| m.get(&fname))
                                 .cloned()
+                                .or_else(|| {
+                                    // Fallback: for anonymous class expressions,
+                                    // field types are stored under the variable name
+                                    self.class_expr_var_name
+                                        .as_ref()
+                                        .and_then(|vn| {
+                                            self.type_info
+                                                .class_field_types
+                                                .get(vn)
+                                                .and_then(|m| m.get(&fname))
+                                                .cloned()
+                                        })
+                                })
                                 .unwrap_or(ZigType::JsAny);
                             field_names.push(fname.clone());
                             fields.push(crate::zigir::types::IrClassField {
@@ -284,6 +334,16 @@ impl Lowerer {
             .fn_return_types
             .get(&fq_method)
             .or_else(|| self.type_info.fn_return_types.get(method_name))
+            .or_else(|| {
+                // Fallback: for anonymous class expressions, return types are
+                // stored under the variable name (e.g. "Point.sum" not "_AnonClass_0.sum")
+                self.class_expr_var_name
+                    .as_ref()
+                    .and_then(|vn| {
+                        let var_fq = format!("{}.{}", vn, method_name);
+                        self.type_info.fn_return_types.get(&var_fq)
+                    })
+            })
             .cloned()
             .unwrap_or(if method_name == "init" {
                 ZigType::NamedStruct(class_name.to_string())
@@ -300,6 +360,15 @@ impl Lowerer {
                 .fn_param_types
                 .get(&fq_method)
                 .or_else(|| self.type_info.fn_param_types.get(method_name))
+                .or_else(|| {
+                    // Fallback: for anonymous class expressions
+                    self.class_expr_var_name
+                        .as_ref()
+                        .and_then(|vn| {
+                            let var_fq = format!("{}.{}", vn, method_name);
+                            self.type_info.fn_param_types.get(&var_fq)
+                        })
+                })
                 .cloned();
             if let Some(ptypes) = param_types {
                 let mut params = Vec::new();
@@ -358,14 +427,28 @@ impl Lowerer {
         for stmt in stmts {
             match stmt {
                 Statement::ExpressionStatement(es) => {
-                    // Check if this is `this.field = value`
-                    if let Expression::AssignmentExpression(ae) = &es.expression
-                        && let AssignmentTarget::StaticMemberExpression(sme) = &ae.left
-                        && matches!(&sme.object, Expression::ThisExpression(_))
-                    {
-                        let fname = sme.property.name.to_string();
-                        if field_names.contains(&fname) {
-                            // this.field = value ¡ú const field = value
+                    // Check if this is `this.field = value` or `this.#field = value`
+                    if let Expression::AssignmentExpression(ae) = &es.expression {
+                        let maybe_fname = match &ae.left {
+                            // this.field = value
+                            AssignmentTarget::StaticMemberExpression(sme)
+                                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+                            {
+                                Some(sme.property.name.to_string())
+                            }
+                            // this.#field = value
+                            AssignmentTarget::PrivateFieldExpression(pfe)
+                                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+                            {
+                                // PrivateIdentifier.name does NOT include the '#' prefix
+                                Some(pfe.field.name.to_string())
+                            }
+                            _ => None,
+                        };
+                        if let Some(fname) = maybe_fname
+                            && field_names.contains(&fname)
+                        {
+                            // this.field = value → const field = value
                             let value_ir = self.lower_expr(&ae.right);
                             ir_stmts.push(crate::zigir::types::IrStmt::VarDecl(
                                 crate::zigir::types::IrVarDecl {

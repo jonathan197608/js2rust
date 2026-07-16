@@ -719,24 +719,28 @@ return obj.x;
     );
 }
 
-// ── Test: Setter skipped in object literal ─────
+// ── Test: Setter generates @compileError ─────
 
 #[test]
-fn test_native_proto_setter_skipped() {
-    // Object literal with setter — setter is skipped
+fn test_native_proto_setter_compile_error() {
+    // Object literal with setter — setter generates @compileError
     let js = r#"export function useSetter() {
 const obj = { a: 1, set x(v) { this._x = v; } };
 return obj.a;
 }
 "#;
-    let zig = transpile_and_assert(js, "test_native_proto_setter_skipped");
+    let zig = transpile_and_assert(js, "test_native_proto_setter_compile_error");
     println!(
-        "=== Setter skipped ===
-{}",
+        "=== Setter compile error ===\n{}",
         zig
     );
-    // Setter should be removed — only field 'a' remains
-    assert!(!zig.contains("set "), "Setter should be removed: {}", zig);
+    // Setter should generate @compileError
+    assert!(
+        zig.contains("@compileError"),
+        "Setter should generate @compileError: {}",
+        zig
+    );
+    assert!(!zig.contains("set "), "No 'set' keyword in output: {}", zig);
     assert!(
         zig.contains(".a = 1"),
         "Regular field should be preserved: {}",
@@ -771,11 +775,13 @@ return obj.name;
         "Getter should provide field value: {}",
         zig
     );
+    // Setter for 'age' should generate @compileError
     assert!(
-        !zig.contains("set "),
-        "No setter keyword in output: {}",
+        zig.contains("@compileError"),
+        "Setter should generate @compileError: {}",
         zig
     );
+    assert!(!zig.contains("set "), "No 'set' keyword in output: {}", zig);
 }
 
 // ── Test: Optional chaining (?. ) — known struct → direct access ─────

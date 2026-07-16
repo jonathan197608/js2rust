@@ -325,7 +325,7 @@ impl TypeInferrer {
     /// Walk a statement to collect variable types (no code generation).
     pub(crate) fn walk_stmt_for_types(&mut self, stmt: &Statement) {
         match stmt {
-            Statement::VariableDeclaration(vd) => self.collect_var_types_from_decl(vd),
+            // VariableDeclaration is handled after ClassDeclaration (see below)
             Statement::FunctionDeclaration(fd) => {
                 self.walk_fn_for_types(
                     fd,
@@ -423,93 +423,113 @@ impl TypeInferrer {
                 // Register class name for type inference of `new ClassName()`
                 if let Some(id) = &cd.id {
                     let class_name = id.name.to_string();
-                    self.class_names.insert(class_name.clone());
-
-                    // Collect field types from PropertyDefinitions
-                    let mut field_types: HashMap<String, ZigType> = HashMap::new();
-                    for elem in &cd.body.body {
-                        if let ClassElement::PropertyDefinition(pd) = elem
-                            && let Some(field_name) = pd.key.static_name()
-                        {
-                            let field_ty = if let Some(init) = &pd.value {
-                                match self.infer_expr_type(init) {
-                                    InferResult::Definite(ty) => ty,
-                                    InferResult::Indeterminate => ZigType::JsAny,
-                                }
-                            } else {
-                                ZigType::JsAny
-                            };
-                            field_types.insert(field_name.to_string(), field_ty);
-                        }
-                    }
-                    // Also scan constructor body for `this.x = expr` assignments
-                    // that implicitly declare fields
-                    for elem in &cd.body.body {
-                        if let ClassElement::MethodDefinition(md) = elem
-                            && md.key.static_name().as_deref() == Some("constructor")
-                            && let Some(body) = &md.value.body
-                        {
-                            self.collect_this_fields_from_body(&body.statements, &mut field_types);
-                            break;
-                        }
-                    }
-
-                    self.class_field_types
-                        .insert(class_name.clone(), field_types);
-
-                    // Process class methods: infer return types
-                    let saved_class = self.current_class.clone();
-                    self.current_class = Some(class_name.clone());
-                    for elem in &cd.body.body {
-                        if let ClassElement::MethodDefinition(md) = elem {
-                            let method_name = md
-                                .key
-                                .static_name()
-                                .map(|s| s.to_string())
-                                .unwrap_or_default();
-                            if method_name.is_empty() || method_name == "constructor" {
-                                // constructor return type is always the class itself
-                                if method_name == "constructor" {
-                                    self.fn_return_types.insert(
-                                        format!("{}.constructor", class_name),
-                                        ZigType::NamedStruct(class_name.clone()),
-                                    );
-                                }
-                                // Still walk body for local type info
-                                if let Some(body) = &md.value.body {
-                                    for s in &body.statements {
-                                        self.walk_stmt_for_types(s);
-                                    }
-                                }
-                                continue;
-                            }
-
-                            // Infer return type for regular class method
-                            let ret_ty = self.infer_class_method_return_type(md);
-                            match ret_ty {
-                                InferResult::Definite(ty) => {
-                                    self.fn_return_types
-                                        .insert(format!("{}.{}", class_name, method_name), ty);
-                                }
-                                InferResult::Indeterminate => {
-                                    // Default to JsAny for methods that can't infer
-                                    self.fn_return_types.insert(
-                                        format!("{}.{}", class_name, method_name),
-                                        ZigType::JsAny,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    self.current_class = saved_class;
+                    self.process_class_for_types(&class_name, cd.as_ref());
                 }
+            }
+            Statement::VariableDeclaration(vd) => {
+                // Handle class expressions: const X = class { ... }
+                for decl in &vd.declarations {
+                    if let Some(name) = binding_name(&decl.id)
+                        && let Some(Expression::ClassExpression(ce)) = &decl.init
+                    {
+                        self.process_class_for_types(name, ce.as_ref());
+                    }
+                }
+                self.collect_var_types_from_decl(vd);
             }
             _ => {}
         }
     }
 
+    /// Collect type information for a class (declaration or expression).
+    /// Registers class name, field types (from PropertyDefinition + constructor
+    /// `this.x = expr` / `this.#x = expr`), and method return types.
+    fn process_class_for_types(&mut self, class_name: &str, class: &Class) {
+        self.class_names.insert(class_name.to_string());
+
+        // Collect field types from PropertyDefinitions.
+        // Use `PropertyKey::name()` instead of `static_name()` because
+        // `static_name()` returns `None` for `PrivateIdentifier` (#field).
+        let mut field_types: HashMap<String, ZigType> = HashMap::new();
+        for elem in &class.body.body {
+            if let ClassElement::PropertyDefinition(pd) = elem
+                && let Some(field_name) = pd.key.name()
+            {
+                let field_ty = if let Some(init) = &pd.value {
+                    match self.infer_expr_type(init) {
+                        InferResult::Definite(ty) => ty,
+                        InferResult::Indeterminate => ZigType::JsAny,
+                    }
+                } else {
+                    ZigType::JsAny
+                };
+                field_types.insert(field_name.to_string(), field_ty);
+            }
+        }
+        // Also scan constructor body for `this.x = expr` / `this.#x = expr`
+        // assignments that implicitly declare or override fields.
+        for elem in &class.body.body {
+            if let ClassElement::MethodDefinition(md) = elem
+                && md.key.name().as_deref() == Some("constructor")
+                && let Some(body) = &md.value.body
+            {
+                self.collect_this_fields_from_body(&body.statements, &mut field_types);
+                break;
+            }
+        }
+
+        self.class_field_types
+            .insert(class_name.to_string(), field_types);
+
+        // Process class methods: infer return types
+        let saved_class = self.current_class.clone();
+        self.current_class = Some(class_name.to_string());
+        for elem in &class.body.body {
+            if let ClassElement::MethodDefinition(md) = elem {
+                let method_name = md
+                    .key
+                    .name()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if method_name.is_empty() || method_name == "constructor" {
+                    // constructor return type is always the class itself
+                    if method_name == "constructor" {
+                        self.fn_return_types.insert(
+                            format!("{}.constructor", class_name),
+                            ZigType::NamedStruct(class_name.to_string()),
+                        );
+                    }
+                    // Still walk body for local type info
+                    if let Some(body) = &md.value.body {
+                        for s in &body.statements {
+                            self.walk_stmt_for_types(s);
+                        }
+                    }
+                    continue;
+                }
+
+                // Infer return type for regular class method
+                let ret_ty = self.infer_class_method_return_type(md);
+                match ret_ty {
+                    InferResult::Definite(ty) => {
+                        self.fn_return_types
+                            .insert(format!("{}.{}", class_name, method_name), ty);
+                    }
+                    InferResult::Indeterminate => {
+                        // Default to JsAny for methods that can't infer
+                        self.fn_return_types.insert(
+                            format!("{}.{}", class_name, method_name),
+                            ZigType::JsAny,
+                        );
+                    }
+                }
+            }
+        }
+        self.current_class = saved_class;
+    }
+
     /// Recursively walk constructor body statements to find `this.x = expr`
-    /// and collect field names + inferred types.
+    /// or `this.#x = expr` and collect field names + inferred types.
     fn collect_this_fields_from_body(
         &mut self,
         stmts: &[Statement],
@@ -518,17 +538,31 @@ impl TypeInferrer {
         for stmt in stmts {
             match stmt {
                 Statement::ExpressionStatement(es) => {
-                    if let Expression::AssignmentExpression(ae) = &es.expression
-                        && let AssignmentTarget::StaticMemberExpression(sme) = &ae.left
-                        && matches!(&sme.object, Expression::ThisExpression(_))
-                    {
-                        let fname = sme.property.name.to_string();
-                        field_types.entry(fname).or_insert_with(|| {
-                            match self.infer_expr_type(&ae.right) {
-                                InferResult::Definite(ty) => ty,
-                                InferResult::Indeterminate => ZigType::JsAny,
+                    if let Expression::AssignmentExpression(ae) = &es.expression {
+                        let maybe_fname = match &ae.left {
+                            // this.field = expr
+                            AssignmentTarget::StaticMemberExpression(sme)
+                                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+                            {
+                                Some(sme.property.name.to_string())
                             }
-                        });
+                            // this.#field = expr
+                            AssignmentTarget::PrivateFieldExpression(pfe)
+                                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+                            {
+                                // PrivateIdentifier.name does NOT include the '#' prefix
+                                Some(pfe.field.name.to_string())
+                            }
+                            _ => None,
+                        };
+                        if let Some(fname) = maybe_fname {
+                            field_types.entry(fname).or_insert_with(|| {
+                                match self.infer_expr_type(&ae.right) {
+                                    InferResult::Definite(ty) => ty,
+                                    InferResult::Indeterminate => ZigType::JsAny,
+                                }
+                            });
+                        }
                     }
                 }
                 Statement::IfStatement(is) => {
@@ -552,6 +586,11 @@ impl TypeInferrer {
         for decl in &vd.declarations {
             if let Some(name) = binding_name(&decl.id) {
                 if let Some(init) = &decl.init {
+                    // Skip class expressions — type info is collected in
+                    // walk_stmt_for_types via process_class_for_types.
+                    if matches!(init, Expression::ClassExpression(_)) {
+                        continue;
+                    }
                     // Check if this is JSON.parse(@type)
                     if let Some(type_name) = self.get_json_parse_type(name, init) {
                         self.has_json_parse_types.insert(name.to_string());

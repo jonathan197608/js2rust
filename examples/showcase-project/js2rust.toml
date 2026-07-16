@@ -28,6 +28,9 @@ js_files = [
     "test_nullish_ops.js",
     "test_stmt_advanced.js",
     "test_jsdoc_types.js",
+    "test_logical_assign.js",
+    "test_private_fields.js",
+    "test_for_in_map.js",
 ]
 
 # js_src_pending/ 目录包含因 codegen bug 暂无法编译的 e2e 测试文件。

@@ -106,6 +106,12 @@ pub struct Lowerer {
     /// Counter for anonymous class expressions (to generate unique names).
     pub(super) anon_class_counter: u32,
 
+    /// When lowering a class expression assigned to a variable (e.g. `const X = class { ... }`),
+    /// this holds the variable name. The type inferrer stores field types under the variable
+    /// name, but `lower_class_decl` generates `_AnonClass_N` for anonymous classes. This field
+    /// allows field type lookups to fall back to the variable name.
+    pub(super) class_expr_var_name: Option<String>,
+
     /// Source file name (for `import.meta.url`). Empty string if unavailable.
     pub(super) source_name: String,
 
@@ -147,6 +153,7 @@ impl Lowerer {
             in_static_block: false,
             in_expr_stmt: false,
             anon_class_counter: 0,
+            class_expr_var_name: None,
             source_name: String::new(),
             diagnostics: Vec::new(),
         }

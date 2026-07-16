@@ -199,32 +199,14 @@ impl Lowerer {
             Expression::MetaProperty(mp) => {
                 let meta_name = mp.meta.name.as_str();
                 let prop_name = mp.property.name.as_str();
-                if meta_name == "import" && prop_name == "meta" {
-                    // import.meta → struct literal with .url field
-                    let url = if self.source_name.is_empty() {
-                        "import.meta.url".to_string()
-                    } else {
-                        self.source_name.clone()
-                    };
-                    IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral {
-                        items: vec![crate::zigir::types::IrObjectItem::Field(
-                            crate::zigir::types::IrObjectField {
-                                key: "url".to_string(),
-                                value: IrExpr::StringLiteral(url),
-                                is_computed: false,
-                            },
-                        )],
-                    })
-                } else {
-                    let span = self.span_to_source_span(mp.span);
-                    self.add_error(
-                        span,
-                        format!("MetaProperty {}.{} is not supported", meta_name, prop_name),
-                    );
-                    IrExpr::CompileError {
-                        span: SourceSpan::default(),
-                        msg: format!("MetaProperty {}.{} not supported", meta_name, prop_name),
-                    }
+                let span = self.span_to_source_span(mp.span);
+                self.add_error(
+                    span,
+                    format!("MetaProperty {}.{} is not supported", meta_name, prop_name),
+                );
+                IrExpr::CompileError {
+                    span: SourceSpan::default(),
+                    msg: format!("MetaProperty {}.{} not supported", meta_name, prop_name),
                 }
             }
 

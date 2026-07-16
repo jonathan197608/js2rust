@@ -424,12 +424,30 @@ impl Lowerer {
 
         // For StructUnroll, the iterable is not used at runtime (fields are
         // hardcoded as string literals), so we use Null to avoid false
-        // "parameter used" detection. For HashMapIter, we need the actual
+        // "parameter used" detection. For HashMapIter/MapIter, we need the actual
         // iterable expression at runtime.
         //
         // However, for unused-param detection, we still need to track that
         // the iterable expression references identifiers (e.g., the param `cfg`
         // in `for (const key in cfg)`), even though it's replaced by Null.
+
+        // Register loop variable type so body expressions have correct type info.
+        // - MapIter: key is JsAny (from std.HashMap(JsAny, JsAny, ...))
+        // - HashMapIter: key is []const u8 (from StringHashMap(JsAny))
+        match &kind {
+            IrForInKind::MapIter => {
+                self.type_info
+                    .var_types
+                    .insert(var.js_name.clone(), ZigType::JsAny);
+            }
+            IrForInKind::HashMapIter => {
+                self.type_info
+                    .var_types
+                    .insert(var.js_name.clone(), ZigType::Str);
+            }
+            _ => {}
+        }
+
         let iterable = if matches!(kind, IrForInKind::StructUnroll { .. }) {
             // Track identifiers from the iterable for unused-param detection
             let mut idents = HashSet::new();
@@ -540,11 +558,17 @@ impl Lowerer {
         match right {
             Expression::Identifier(id) => {
                 if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
-                    // HashMap/dynamic object ¡ú iterator-based
+                    // Map (NamedStruct("Map")) → iterator via .inner.iterator()
+                    if let ZigType::NamedStruct(name) = zig_type {
+                        if name == "Map" {
+                            return IrForInKind::MapIter;
+                        }
+                    }
+                    // HashMap/dynamic object → iterator-based
                     if matches!(zig_type, ZigType::Anytype) {
                         return IrForInKind::HashMapIter;
                     }
-                    // Static struct with known fields ¡ú unroll
+                    // Static struct with known fields → unroll
                     if let ZigType::Struct(fields) = zig_type
                         && !fields.is_empty()
                     {
@@ -552,7 +576,7 @@ impl Lowerer {
                             fields: fields.iter().map(|(n, _)| n.clone()).collect(),
                         };
                     }
-                    // Named struct (e.g., JSDoc @typedef) ¡ú resolve to StructUnroll
+                    // Named struct (e.g., JSDoc @typedef) → resolve to StructUnroll
                     if let ZigType::NamedStruct(name) = zig_type
                         && let Some(typedef) = self.jsdoc_data.typedefs.get(name)
                         && !typedef.fields.is_empty()

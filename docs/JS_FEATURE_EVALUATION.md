@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'c767cd9e-61da-4010-bf83-c39236433db9'
-  PropagateID: 'c767cd9e-61da-4010-bf83-c39236433db9'
-  ReservedCode1: 'c8889133-0d5f-41ad-aaac-6e00dc32cc1b'
-  ReservedCode2: 'c8889133-0d5f-41ad-aaac-6e00dc32cc1b'
+  ProduceID: 'e1352576-30e5-4c2c-840f-45b0554bd6e8'
+  PropagateID: 'e1352576-30e5-4c2c-840f-45b0554bd6e8'
+  ReservedCode1: 'a4a46b5b-826f-435a-83a0-e8dc3eaebdf3'
+  ReservedCode2: 'a4a46b5b-826f-435a-83a0-e8dc3eaebdf3'
 ---
 
 ---
@@ -66,8 +66,8 @@ AIGC:
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 83 | ~91% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/import.meta/私有字段/BigInt 字面量 等 |
-| 🔘 不实现 | 8 | ~9% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of` |
+| ✅ 完全实现 | 81 | ~89% | 基本字面量/算术/比较/逻辑/位运算/赋值/对象数组字面量/模板/箭头函数/await/计算属性访问/typeof/instanceof/JSDoc/类表达式/私有字段/BigInt 字面量/delete/in/序列表达式 等 |
+| 🔘 不实现 | 10 | ~11% | 标签模板、`new Promise`、`function*`/`yield`、`async function*`、动态 `import()`、`new.target`、`for await...of`、`import.meta`、Setter |
 
 ### 1.3 语句 (Statements) — ~49 特性
 
@@ -174,7 +174,7 @@ AIGC:
 | `~` (位非) | ✅ | `~@as(i64, x)` | 同上 |
 | `typeof` | ✅ | 静态类型→JS typeof 字符串；动态类型→`jsTypeof()` 运行时 helper | 4 个测试 |
 | `void` | ✅ | `{ expr; null }` (求值后返回 null) | `test_native_proto_void_operator` |
-| `delete` | ⚠️ | `delete obj.prop` → `obj.deleteKey("prop")` ✅; `delete obj[key]` → `obj.deleteByKey(expr, alloc)` ⚠️ BUG-12: `alloc` 未声明 | `test_native_proto_delete_operator` (IR 文本); e2e: `.delete()` 方法调用通过，`delete` 运算符语法 BLOCKED |
+| `delete` | ✅ | `delete obj.prop` → `obj.deleteKey("prop")` ✅; `delete obj[key]` → `obj.deleteByKey(expr, alloc)` ✅ | `test_native_proto_delete_operator` + showcase `testDeleteMap*` (4) |
 
 **注意**:
 - `typeof` 根据推断出的 Zig 类型生成 JS typeof 字符串：`I64/F64`→`"number"`、`Bool`→`"boolean"`、`Str`→`"string"`、`JsSymbol`→`"symbol"`、Struct/ArrayList→`"object"`、`Void`→`"undefined"`；动态类型（JsAny/Anytype）→`jsTypeof()` 运行时 helper
@@ -202,9 +202,9 @@ AIGC:
 | `=` `+=` `-=` `*=` `/=` `%=` | ✅            | 对应 Zig 语法 | 隐式测试 |
 | `<<=` `>>=` `>>>=` `&=` `\|=` `^=` | ✅            | 对应 Zig 语法 | `test_bitwise_compound_assignment` + showcase `testBitwise*Assign` (5) |
 | `**=` (指数赋值)    | ✅            | `left **= right` → `left = left ** right` | `test_native_proto_compound_assignment` |
-| `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: i64 无 `.toBool()`) |
-| `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: i64 无 `.toBool()`) |
-| `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` (e2e BLOCKED: comptime_int 不兼容 JsAny) |
+| `&&=` (逻辑与赋值)   | ✅            | `left &&= right` → `if (left) left = right` | `test_native_proto_compound_assignment` + showcase `testAndAssign*` (2) |
+| `\|\|=` (逻辑或赋值) | ✅ | `left \|\|= right` → `if (!left) left = right` | `test_native_proto_compound_assignment` + showcase `testOrAssign*` (2) |
+| `??=` (空值合并赋值)  | ✅            | `left ??= right` → `if (left == null) left = right` | `test_native_proto_compound_assignment` + showcase `testNullishAssign*` (2) |
 
 ### 2.9 对象/数组访问 - ✅ 100% 实现
 
@@ -237,7 +237,7 @@ AIGC:
 | `{...}` (对象字面量) | ✅ | `.{ .k = v }` | 同上 |
 | 对象展开 `{ ...base, k: v }` | ✅ | `blk: { var _tmp = base; ... }` | 隐式测试 |
 | Getter 属性 `{ get x() { ... } }` | ✅ | `.x = <return expr>` | `test_native_proto_getter` |
-| Setter 属性 `{ set x(v) { ... } }` | ✅ | 跳过（不贡献字段） | `test_native_proto_setter_skipped` |
+| Setter 属性 `{ set x(v) { ... } }` | 🔘 不实现 | `@compileError("setter is not supported")` | `test_setter_compile_error` |
 | 多 spread 合并 `{ ...a, ...b }` | ✅ | `spreadMerge(spreadMerge({}, a), b)` | `testSpreadSingle/Multi/Triple/WithInline/Override` |
 
 ### 2.12 模板字面量 - ✅ 75% 实现
@@ -286,12 +286,12 @@ AIGC:
 | 特性 | 状态 | Zig 输出 | 测试 |
 |------|------|----------|------|
 | `instanceof` | ✅ | 三层策略：Error → .name 比较；编译时类型推断 → 字面量；JsAny → `js_runtime.instanceOf()` | `test_p1_instanceof_*` + `test_implemented_instanceof_*` |
-| `"key" in obj` | ⚠️ | `@hasField(...)` (struct) ✅; `.contains(key)` (HashMap) ✅; JsMap/JsSet → `.contains()` ❌ BUG-01: 集合类型无此方法 | `test_p1_in_operator` (IR 文本); e2e BLOCKED ([BUG-01](../js_src_pending/test_in_operator.js)) |
+| `"key" in obj` | ✅ | `@hasField(...)` (struct) ✅; `.contains(key)` (HashMap) ✅; JsMap/JsSet → `.contains()` ✅ | `test_p1_in_operator` + showcase `testInOperator*` (3) |
 | 正则表达式 `/pattern/` | ✅ | `"pattern"` (提取 pattern) | `test_p8_regex_*` (17 个测试) |
 | 可选链 `obj?.prop` | ✅ | `if (obj) |v| v.prop else null` | 5 个测试 |
 | 非空断言 `x!` (TS) | ✅ | `x.?` | 需要 TS 解析器（当前不可测试） |
 | 类型断言 `x as T` (TS) | ✅ | `@as(T, expr)` | 需要 TS 解析器（当前不可测试） |
-| 序列表达式 `a, b` | ⚠️ | `a, b` — Zig 不支持逗号运算符，编译失败 | `test_sequence_expression` (IR 文本，断言极弱); e2e BLOCKED |
+| 序列表达式 `a, b` | ✅ | `(blk: { _ = a; break :blk b; })` labeled block | `test_sequence_expression` + showcase `testSequenceExpr` |
 
 **注意**:
 - `instanceof` 实现三种策略：
@@ -313,7 +313,7 @@ AIGC:
 | `new.target` | `@compileError` | 🔘 不实现（meta property，niche） |
 | `for await...of` | `@compileError` | 🔘 不实现（异步迭代，当前项目聚焦同步代码） |
 | 标签模板 `` tag`...` `` | `@compileError` | 🔘 不实现（已在 2.12 标记） |
-| `import.meta` | ⚠️ | 生成 `.{ .url = source_name }` 但访问 `.url` 触发 Rule 8 类型推断错误 | `test_import_meta_is_implemented` (仅验证不报 Unsupported); e2e BLOCKED |
+| `import.meta` | `@compileError` | 🔘 不实现（Zig 无运行时模块元信息） | `test_import_meta_compile_error` |
 
 ---
 
@@ -326,7 +326,7 @@ AIGC:
 | `@type {string}` (基本类型) | ✅ | 指定变量/属性类型 | `test_native_proto_*` |
 | `@type {number[]}` (数组) | ✅ | 数组类型标注 | showcase `testJsdocArrayLength` + `test_native_proto_*` |
 | `@type {{name: string, age: number}}` (匿名对象) | ✅ | 内联对象类型，生成 Zig struct | `test_native_proto_anon_obj_*` + showcase `testJsdocAnonObject` |
-| `@returns {{name: string, ...}}` (匿名对象返回) | ⚠️ | export 函数返回匿名对象类型 — 生成 `.{ .name = T, ... }` 作为返回类型，Zig 中此为结构体字面量非类型 | `test_native_proto_anon_obj_*` (IR 文本); e2e BLOCKED (codegen: 返回类型语法错误) |
+| `@returns {{name: string, ...}}` (匿名对象返回) | ✅ | export 函数返回匿名对象类型 — 使用 `@TypeOf(first_return_expr)` 推断返回类型 | `test_native_proto_anon_obj_*` + showcase `testJsdocAnonObject` |
 | `@param {Type} name` (参数类型) | ✅ | 参数类型标注 | 隐式测试 |
 | `@typedef` (类型别名) | ✅ | 命名类型，可跨文件引用 | showcase `testJsdocTypedef` |
 | `@property {Type} name` (typedef 属性) | ✅ | typedef 属性定义 | showcase `testJsdocTypedef`（@property + @typedef 联合测试） |
@@ -359,7 +359,7 @@ AIGC:
 | `export function fn(params) {}` | ✅ | 生成 C ABI wrapper（arena 自动管理内存） | 同上 |
 | `async function fn(params) {}` | ✅ | 添加 `io: Io` 参数 | test-bin-project |
 | 默认参数 `function fn(a = 1) {}` | ✅ | `a: i64 = 1` | 隐式测试 |
-| Rest 参数 `function fn(...args) {}` | ✅ | `args: []const JsAny` (Anytype, 不可跨 C ABI) | Rust 单元测试 (e2e BLOCKED) |
+| Rest 参数 `function fn(...args) {}` | ✅ | `args: []const JsAny` (Anytype, 不可跨 C ABI) | Rust 单元测试 (4) + showcase `testArguments*` / `testVariadic*` (5) |
 | 嵌套函数声明 | ✅ | 提取为模块级函数（含闭包捕获） | `test_p2_nested_function_*` |
 | `arguments` 对象 | ✅ | `const __arguments = [JsAny.from(param0), ...]` 注入函数首行 | `test_arguments_object` |
 
@@ -395,6 +395,7 @@ AIGC:
 | `for...of` (Set) | ✅ | `.inner.iterator()` HashMap 迭代器模式 | `test_p2_for_of_set` |
 | `for...of` (String) | ✅ | Zig 原生 `for (str) \|ch\|` 迭代 | `test_p2_for_of_string` |
 | `for...in` (动态对象) | ✅ | HashMap iterator | `test_native_proto_for_in` |
+| `for...in` (Map) | ✅ | `.inner.iterator()` HashMap 迭代器模式 (key via `__kv.key_ptr.*`) | showcase `testForInMap*` (2) |
 | `for...in` (静态 struct) | ✅ | 字段展开循环 | `test_native_proto_for_in_static` |
 | `while` | ✅ | `while (cond) {}` | showcase-project |
 | `do...while` | ✅ | `while (true) { ... if (!cond) break; }` | `test_native_proto_do_while` |

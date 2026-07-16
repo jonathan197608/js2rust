@@ -5,6 +5,7 @@ use oxc_ast::ast::*;
 
 use super::Lowerer;
 use crate::zigir::lower::helpers;
+use crate::zigir::source_span::SourceSpan;
 
 impl Lowerer {
     /// Lower an array expression.
@@ -68,6 +69,7 @@ impl Lowerer {
                         PropertyKind::Get => {
                             // Getter: extract return expression from function body
                             // { get x() { return expr; } } → .x = expr
+                            // Only single-return getters are inlined; complex ones get @compileError
                             if let Expression::FunctionExpression(func) = &op.value
                                 && let Some(body) = &func.body
                                 && let Some(return_expr) = Self::extract_return_expr_from_body(body)
@@ -80,11 +82,36 @@ impl Lowerer {
                                         is_computed,
                                     },
                                 ));
+                            } else {
+                                // Complex getter (multiple statements) — @compileError
+                                let span = self.span_to_source_span(op.span);
+                                self.add_error(span, "getter with complex body is not supported (only single-return getters are inlined)");
+                                items.push(IrObjectItem::Field(
+                                    crate::zigir::types::IrObjectField {
+                                        key,
+                                        value: crate::zigir::types::IrExpr::CompileError {
+                                            span: SourceSpan::default(),
+                                            msg: "complex getter not supported".to_string(),
+                                        },
+                                        is_computed,
+                                    },
+                                ));
                             }
-                            // If getter body is more complex, skip it (can't inline)
                         }
                         PropertyKind::Set => {
-                            // Setter: skip entirely, doesn't contribute a field
+                            // Setter: @compileError — Zig structs don't support setters
+                            let span = self.span_to_source_span(op.span);
+                            self.add_error(span, "setter property is not supported (Zig structs have no setters)");
+                            items.push(IrObjectItem::Field(
+                                crate::zigir::types::IrObjectField {
+                                    key,
+                                    value: crate::zigir::types::IrExpr::CompileError {
+                                        span: SourceSpan::default(),
+                                        msg: "setter not supported".to_string(),
+                                    },
+                                    is_computed,
+                                },
+                            ));
                         }
                     }
                 }

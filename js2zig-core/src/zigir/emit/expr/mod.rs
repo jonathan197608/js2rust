@@ -729,11 +729,22 @@ impl Emitter {
             }
 
             crate::zigir::types::IrExpr::Sequence(exprs) => {
-                for (i, e) in exprs.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
+                // JS comma operator: evaluate all expressions, return the last.
+                // Zig has no comma operator, so use a labeled block.
+                // `a, b, c` → `blk: { _ = a; _ = b; break :blk c; }`
+                if exprs.len() == 1 {
+                    self.emit_expr(&exprs[0]);
+                } else {
+                    let blk = self.next_label();
+                    self.write(&format!("({blk}: {{ "));
+                    for e in &exprs[..exprs.len() - 1] {
+                        self.write("_ = ");
+                        self.emit_expr(e);
+                        self.write("; ");
                     }
-                    self.emit_expr(e);
+                    self.write(&format!("break :{blk} "));
+                    self.emit_expr(&exprs[exprs.len() - 1]);
+                    self.write("; })");
                 }
             }
 

@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 use super::walk;
+use crate::zigir::kinds::NewConstructor;
 use crate::zigir::types::{IrAssignTarget, IrBlock, IrDecl, IrExpr, IrStmt};
 
 /// Collect all identifier names referenced in a declaration.
@@ -58,8 +59,19 @@ pub fn collect_stmt_idents(stmt: &IrStmt, names: &mut HashSet<String>) {
 
 /// Collect all identifier names referenced in an expression.
 pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
-    if let IrExpr::Ident(id) = expr {
-        names.insert(id.zig_name.clone());
+    match expr {
+        IrExpr::Ident(id) => {
+            names.insert(id.zig_name.clone());
+        }
+        // IrExpr::New stores the class name as a plain String in
+        // NewConstructor::Class(name), not as a child IrExpr::Ident.
+        // walk.rs only visits .args, so we must extract it here.
+        IrExpr::New(n) => {
+            if let NewConstructor::Class(name) = &n.constructor {
+                names.insert(name.clone());
+            }
+        }
+        _ => {}
     }
     let names = RefCell::new(names);
     walk::for_each_expr_child(

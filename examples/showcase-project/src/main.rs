@@ -317,6 +317,26 @@ fn main() {
     let dsk = testDeleteSetKey();
     println!("  testDeleteSetKey() = {} (expected 1)", dsk);
 
+    // ── delete obj[key] (bracket syntax, was BUG-12) ──
+    let dmb = testDeleteMapBracket();
+    println!("  testDeleteMapBracket() = {} (expected 1)", dmb);
+
+    let dmc = testDeleteMapComputedKey();
+    println!("  testDeleteMapComputedKey() = {} (expected 1)", dmc);
+
+    // ════════════════════════════════════════════════════════════
+    // Operator tests: in (was BUG-01)
+    println!("\n=== Operator Tests (in) ===");
+
+    let iom = testInOperatorMap();
+    println!("  testInOperatorMap() = {} (expected 1)", iom);
+
+    let ios = testInOperatorSet();
+    println!("  testInOperatorSet() = {} (expected 1)", ios);
+
+    let ioo = testInOperatorObj();
+    println!("  testInOperatorObj() = {} (expected 1)", ioo);
+
     // ════════════════════════════════════════════════════════════
     // Control flow tests: labeled statements
     println!("\n=== Control Flow Tests ===");
@@ -421,6 +441,99 @@ fn main() {
 
     let jt = testJsdocTypedef();
     println!("  testJsdocTypedef() = {} (expected 1)", jt);
+
+    // ══════════════════════════════════════════════════════════════
+    // Logical assignment tests: &&= / ||= / ??= (was codegen bug)
+    println!("\n=== Logical Assignment Tests ===");
+
+    let aat = testAndAssignTruthy();
+    println!("  testAndAssignTruthy() = {} (expected 10)", aat);
+
+    let aaf = testAndAssignFalsy();
+    println!("  testAndAssignFalsy() = {} (expected 0)", aaf);
+
+    let oaf = testOrAssignFalsy();
+    println!("  testOrAssignFalsy() = {} (expected 10)", oaf);
+
+    let oat = testOrAssignTruthy();
+    println!("  testOrAssignTruthy() = {} (expected 5)", oat);
+
+    let nan = testNullishAssignNull();
+    println!("  testNullishAssignNull() = {} (expected 1)", nan);
+
+    // ── Sequence expression (comma operator) ──
+    let seq = testSequenceExpr();
+    println!("  testSequenceExpr() = {} (expected 3)", seq);
+
+    // ══════════════════════════════════════════════════════════════
+    // Private field and class expression tests
+    println!("\n=== Private Field & Class Expression Tests ===");
+
+    let pfi = testPrivateFieldInit();
+    println!("  testPrivateFieldInit() = {} (expected 100)", pfi);
+
+    let pfd = testPrivateFieldDefault();
+    println!("  testPrivateFieldDefault() = {} (expected 0)", pfd);
+
+    let tce = testClassExpression();
+    println!("  testClassExpression() = {} (expected 10)", tce);
+
+    let tcf = testClassExpressionFields();
+    println!("  testClassExpressionFields() = {} (expected 10)", tcf);
+
+    // ══════════════════════════════════════════════════════════════
+    // for...of Map/Set/String collection tests
+    println!("\n=== For-Of Collection Tests ===");
+
+    let fms = testForOfMapSumValues();
+    println!("  testForOfMapSumValues() = {} (expected 1)", fms);
+
+    let fmk = testForOfMapKeyCheck();
+    println!("  testForOfMapKeyCheck() = {} (expected 1)", fmk);
+
+    let fss = testForOfSetSum();
+    println!("  testForOfSetSum() = {} (expected 1)", fss);
+
+    let fsc = testForOfStringCountOnly();
+    println!("  testForOfStringCountOnly() = {} (expected 1)", fsc);
+
+    let fsb = testForOfStringByteSum();
+    println!("  testForOfStringByteSum() = {} (expected 1)", fsb);
+
+    let mfe = testMapForEach();
+    println!("  testMapForEach() = {} (expected 1)", mfe);
+
+    let sfe = testSetForEach();
+    println!("  testSetForEach() = {} (expected 1)", sfe);
+
+    // ══════════════════════════════════════════════════════════════
+    // for...in Map tests (iterates keys via .inner.iterator())
+    println!("\n=== For-In Map Tests ===");
+
+    let fimc = testForInMapCount();
+    println!("  testForInMapCount() = {} (expected 1)", fimc);
+
+    let fimk = testForInMapSingleKey();
+    println!("  testForInMapSingleKey() = {} (expected 1)", fimk);
+
+    // ══════════════════════════════════════════════════════════════
+    // arguments object & rest parameter tests
+    println!("\n=== Arguments & Rest Parameter Tests ===");
+
+    let al = testArgumentsLength();
+    println!("  testArgumentsLength() = {} (expected 0)", al);
+
+    let aa = testArgumentsAccess(3, 7);
+    println!("  testArgumentsAccess(3,7) = {} (expected 10)", aa);
+
+    let ai = testArgumentsIterate(1, 2, 3);
+    println!("  testArgumentsIterate(1,2,3) = {} (expected 6)", ai);
+
+    let vs = testVariadicSum(1, 2, 3);
+    println!("  testVariadicSum(1,2,3) = {} (expected 6)", vs);
+
+    let vl = testVariadicLength(1, 2, 3, 4);
+    println!("  testVariadicLength(1,2,3,4) = {} (expected 4)", vl);
 
     js2rust_deinit();
     println!("=== All tests done ===");
