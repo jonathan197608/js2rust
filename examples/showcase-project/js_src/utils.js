@@ -19,26 +19,10 @@ export function mathCeil(x) { return Math.ceil(x); }
  * @returns {f64}
  */
 export function mathRound(x) { return Math.round(x); }
-// Math.trunc not supported in native_proto
-// export function mathTrunc(x) { return Math.trunc(x); }
 /**
  * @returns {f64}
  */
 export function mathSqrt(x) { return Math.sqrt(x); }
-// Math.sin not supported in native_proto
-// export function mathSin(x) { return Math.sin(x); }
-// Math.cos not supported in native_proto
-// export function mathCos(x) { return Math.cos(x); }
-// Math.tan not supported in native_proto
-// export function mathTan(x) { return Math.tan(x); }
-// Math.exp not supported in native_proto
-// export function mathExp(x) { return Math.exp(x); }
-// Math.log not supported in native_proto
-// export function mathLog(x) { return Math.log(x); }
-// Math.log2 not supported in native_proto
-// export function mathLog2(x) { return Math.log2(x); }
-// Math.log10 not supported in native_proto
-// export function mathLog10(x) { return Math.log10(x); }
 /** @returns {f64} */
 export function mathPow(b, e) { return Math.pow(b, e); }
 /** @returns {f64} */
@@ -48,11 +32,6 @@ export function mathAbs(x) { return Math.abs(x); }
 export function mathMinMax(a, b) {
     return Math.min(a, b) + Math.max(a, b);
 }
-
-// Math.hypot not supported in native_proto
-// export function mathHypot(a, b) {
-//     return Math.hypot(a, b);
-// }
 
 /** @returns {i64} */
 export function mathSign(x) {
@@ -76,12 +55,6 @@ export function mathConstants() {
 
 // ── Global functions (S7.2) ─────────────────────────────────────
 
-// parseInt not yet supported in native_proto
-// /** @returns {i64} */
-// export function globalParseInt(s) {
-//     return parseInt(s);
-// }
-
 // ── Arithmetic operators (S4.1) — add, sub, mul only ────────────
 
 /** @returns {i64} */
@@ -99,8 +72,6 @@ export function bitwiseAnd(a, b) { return a & b; }
 export function bitwiseOr(a, b) { return a | b; }
 /** @returns {i64} */
 export function bitwiseXor(a, b) { return a ^ b; }
-// bitwise NOT (~) not supported in native_proto
-// export function bitwiseNot(a) { return ~a; }
 /** @returns {i64} */
 export function bitwiseLshift(a, b) { return a << b; }
 /** @returns {i64} */
@@ -134,18 +105,6 @@ export function strLength() {
     return s.length;
 }
 
-// String.toUpperCase() not supported in native_proto
-// export function strToUpper() {
-//     const s = "hello";
-//     return s.toUpperCase();
-// }
-
-// String.toLowerCase() not supported in native_proto
-// export function strToLower() {
-//     const s = "HELLO";
-//     return s.toLowerCase();
-// }
-
 /** @returns {bool} */
 export function strIncludes() {
     const s = "hello world";
@@ -169,18 +128,6 @@ export function strEndsWith() {
     const s = "hello world";
     return s.endsWith("world");
 }
-
-// String.trim() not supported in native_proto
-// export function strTrim() {
-//     const s = "  hello  ";
-//     return s.trim();
-// }
-
-// String.slice() not supported in native_proto
-// export function strSlice() {
-//     const s = "hello world";
-//     return s.slice(0, 5);
-// }
 
 // ── Static array methods (S7.4) ─────────────────────────────────
 

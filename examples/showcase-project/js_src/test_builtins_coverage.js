@@ -83,7 +83,7 @@ export function testMathSQRT2() {
 }
 
 // ═══════════════════════════════════════════════════════
-// Math trig (5 — atan2 excluded: codegen bug)
+// Math trig (5 — atan/atan2 excluded: codegen bug)
 // ═══════════════════════════════════════════════════════
 
 /** @returns {i64} */

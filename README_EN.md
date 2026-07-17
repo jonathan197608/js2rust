@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '1382e66d-519b-411f-8c6d-e25b392a232f'
+  PropagateID: '1382e66d-519b-411f-8c6d-e25b392a232f'
+  ReservedCode1: '85055633-41f1-4218-963b-3d17c17f53ca'
+  ReservedCode2: '85055633-41f1-4218-963b-3d17c17f53ca'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '99ea6ed3-ffd6-482c-afc2-b02062d13360'
+  PropagateID: '99ea6ed3-ffd6-482c-afc2-b02062d13360'
+  ReservedCode1: '31ffc97e-ff08-47a6-a82a-ae4fdee898f2'
+  ReservedCode2: '31ffc97e-ff08-47a6-a82a-ae4fdee898f2'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'ea4d00d2-c6ff-42fb-8a89-8c51e4b1b4b2'
   PropagateID: 'ea4d00d2-c6ff-42fb-8a89-8c51e4b1b4b2'
   ReservedCode1: 'deef3230-8072-4dcc-8a9c-83c784b978e9'
@@ -17,12 +39,12 @@ AIGC:
 
 | Metric | Value |
 |--------|-------|
-| Rust tests | 490 (490 pass, 0 ignore) |
+| Rust tests | 506 (506 pass, 0 ignore) |
 | Clippy warnings | 0 |
-| MDN end-to-end tests | 237/237 (100% match, 0 mismatch, 0 error) |
-| JS expression coverage | 83/91 (~91%) |
-| JS statement coverage | 46/49 (~94%) |
-| JS built-in coverage | 208/220 (~95%) |
+| MDN end-to-end tests | 236/237 (99.6% match, 1 WONTFIX mismatch, 0 error) |
+| JS expression coverage | 82/91 (~90%) |
+| JS statement coverage | 45/50 (~90%) |
+| JS built-in coverage | 217/228 (~95%) |
 | Crate versions | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
 
 > Detailed feature evaluation: [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) (Chinese).
@@ -232,7 +254,7 @@ Rust: getUserInfo_main("alice")
 
 ## Documentation
 
-- [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) — Per-feature implementation status across 140 syntax features + 220 built-in method rows (Chinese)
+- [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) — Per-feature implementation status across 141 syntax features + 228 built-in method rows (Chinese)
 
 ## License
 

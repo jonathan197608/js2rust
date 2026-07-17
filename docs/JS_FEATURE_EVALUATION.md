@@ -3,6 +3,138 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '495c82dc-8fa6-4345-ab39-b9dfd0177252'
+  PropagateID: '495c82dc-8fa6-4345-ab39-b9dfd0177252'
+  ReservedCode1: '32a3af70-9573-4a7c-8a32-9e8b13a017bf'
+  ReservedCode2: '32a3af70-9573-4a7c-8a32-9e8b13a017bf'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b1ec2ec0-78bd-4ae1-93b7-07fe1969a2a8'
+  PropagateID: 'b1ec2ec0-78bd-4ae1-93b7-07fe1969a2a8'
+  ReservedCode1: '2db65860-2aa1-458d-b185-55da0af14ca8'
+  ReservedCode2: '2db65860-2aa1-458d-b185-55da0af14ca8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b79a61b9-8f2b-437f-a419-ca35e9a58d70'
+  PropagateID: 'b79a61b9-8f2b-437f-a419-ca35e9a58d70'
+  ReservedCode1: '97bbb667-1116-487f-9138-6f38ee6bbb4e'
+  ReservedCode2: '97bbb667-1116-487f-9138-6f38ee6bbb4e'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '925d0138-f019-4af8-b99d-6f2d834d6c6d'
+  PropagateID: '925d0138-f019-4af8-b99d-6f2d834d6c6d'
+  ReservedCode1: '895bc824-2564-468c-a4df-ab290c42331d'
+  ReservedCode2: '895bc824-2564-468c-a4df-ab290c42331d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'b7d74cd5-ba67-46b0-910e-d777410e4528'
+  PropagateID: 'b7d74cd5-ba67-46b0-910e-d777410e4528'
+  ReservedCode1: '92727bfd-c9a0-408c-a8a4-b6cf67d7c432'
+  ReservedCode2: '92727bfd-c9a0-408c-a8a4-b6cf67d7c432'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '737e8ade-8ca4-4360-a8ee-c6690fc43f2a'
+  PropagateID: '737e8ade-8ca4-4360-a8ee-c6690fc43f2a'
+  ReservedCode1: '1d1c47c0-c7fd-415e-8db6-2960fc943634'
+  ReservedCode2: '1d1c47c0-c7fd-415e-8db6-2960fc943634'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '63f81ffa-6e88-4578-9941-5085056ea762'
+  PropagateID: '63f81ffa-6e88-4578-9941-5085056ea762'
+  ReservedCode1: 'e63ce505-d151-4792-8d22-ba33f28eb555'
+  ReservedCode2: 'e63ce505-d151-4792-8d22-ba33f28eb555'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'ffba6bb9-4127-47d7-830b-a8fd296bc1d7'
+  PropagateID: 'ffba6bb9-4127-47d7-830b-a8fd296bc1d7'
+  ReservedCode1: '37022071-85a3-4cbd-84c6-646cf84e104a'
+  ReservedCode2: '37022071-85a3-4cbd-84c6-646cf84e104a'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'a00ee162-1b3f-4de7-9460-c673d4796862'
+  PropagateID: 'a00ee162-1b3f-4de7-9460-c673d4796862'
+  ReservedCode1: '7624d8c3-2fef-48eb-9154-efb0d7b16100'
+  ReservedCode2: '7624d8c3-2fef-48eb-9154-efb0d7b16100'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '7683fb89-3d59-4694-a0d5-1942678b8ea7'
+  PropagateID: '7683fb89-3d59-4694-a0d5-1942678b8ea7'
+  ReservedCode1: '23d90821-5409-4665-8225-7b9ee19b0693'
+  ReservedCode2: '23d90821-5409-4665-8225-7b9ee19b0693'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f364bc71-3f4d-4da2-87c0-aacfeaacc976'
+  PropagateID: 'f364bc71-3f4d-4da2-87c0-aacfeaacc976'
+  ReservedCode1: '2c32a4d6-925a-4c7f-b591-732fe6f6554b'
+  ReservedCode2: '2c32a4d6-925a-4c7f-b591-732fe6f6554b'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '462446a2-722c-4990-b100-f04ed00e5f80'
+  PropagateID: '462446a2-722c-4990-b100-f04ed00e5f80'
+  ReservedCode1: 'b64cf4c8-4f46-4185-bb65-1de319eb803c'
+  ReservedCode2: 'b64cf4c8-4f46-4185-bb65-1de319eb803c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '63f94dbf-bf40-4461-9c36-1fe69ddfa13d'
   PropagateID: '63f94dbf-bf40-4461-9c36-1fe69ddfa13d'
   ReservedCode1: 'ad7d0049-5f7c-43d2-8d2c-ba01566a118a'
@@ -210,7 +342,7 @@ AIGC:
 | 指标 | 数值 |
 |------|------|
 | **JS 语法特性总数** (表达式 + 语句) | 141 |
-| **内置对象表格行数** | 220 |
+| **内置对象表格行数** | 228 |
 | **测试覆盖** | 506 个 Rust 测试 (506 pass + 0 ignore) + 237 个 MDN 端到端 fragment (236/237 pass, 1 mismatch (WONTFIX), 0 error) |
 | **代码质量** | 0 clippy 警告 |
 
@@ -232,13 +364,13 @@ AIGC:
 | ✅ 完全实现 | 45 | 变量声明/函数声明（含 arguments 对象）/类声明（含类表达式+static {}+静态字段读写）/if/switch/for/while/do-while/try-catch/throw、for-in Map 等 |
 | 🔘 不实现 | 5 | `extends`/`super`、`for await...of`、`with`、`debugger` |
 
-### 1.4 内置对象 (Built-in Objects) — 220 个表格行
+### 1.4 内置对象 (Built-in Objects) — 228 个表格行
 
 > 对应 Section 4.1–4.17（21 个内置对象类别，详见 4.17 汇总表）。统计粒度：表格行数（部分行含多个方法，如 Math.sinh/cosh/tanh 合并为 1 行）。
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| ✅ 完全实现 | 208 | ~95% | Math 39/39 (100%)、Array 35/35 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 20/21 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
+| ✅ 完全实现 | 217 | ~95% | Math 39/39 (100%)、Array 37/37 (100%)、Number 17/17 (100%)、Date 23/23 (100%)、Object 21/22 (95%)、RegExp 6/6 (100%)、BigInt 6/6 (100%) 等 |
 | 🔘 不实现 | 11 | ~5% | Promise、WeakMap/WeakSet、Reflect、Intl、Atomics、String.raw、Map.groupBy、ES2025 Set ops、Object.getOwnPropertySymbols、eval 等不实现 |
 
 > **注**: BigInt 已完整实现（字面量/构造函数/四则运算/位运算/比较/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit）。混合类型运算/`>>>` 抛出 TypeError（`return error.JsThrow`，可被 JS try/catch 捕获）；BigInt `**` 负指数抛出 RangeError；BigInt 移位负值自动反方向移位（符合 JS 规范）。String localeCompare/normalize/toLocaleUpperCase/toLocaleLowerCase 已通过 ICU4X 完整实现（可选 feature `icu`）。JSON.parse 语法错误抛出 SyntaxError（`return error.JsThrow`）。🔘 不实现 11 个：String.raw、Map.groupBy、ES2025 Set operations、Object.getOwnPropertySymbols、eval、Promise、WeakMap、WeakSet、Reflect、Intl、Atomics。
@@ -249,7 +381,7 @@ AIGC:
 |------|------|---------|-----------|
 | **表达式** | 91 | 82 | 9 |
 | **语句** | 50 | 45 | 5 |
-| **内置对象** | 220 | 208 | 11 |
+| **内置对象** | 228 | 217 | 11 |
 | **语法合计** | 141 | 127 | 14 |
 
 > **说明**: 语法合计 = 表达式 + 语句（不含内置对象）。内置对象独立统计方法覆盖率。表达式 91 项中 2.17 节的「类表达式」和「私有字段」同时出现在语句章节，仅在语句中计数，避免重复。
@@ -634,7 +766,7 @@ AIGC:
 | `Math.log2(x)` | `Math.log2(x)` | `x: number` | `number` | `@log2(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
 | `Math.exp(x)` | `Math.exp(x)` | `x: number` | `eˣ` | `@exp(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
 | `Math.expm1(x)` | `Math.expm1(x)` | `x: number` | `eˣ - 1` | `std.math.expm1(x)` | ✅ | ✅ | — | ✅ |
-| **— 其他数学函数 (8) —** | | | | | | | | |
+| **— 其他数学函数 (9) —** | | | | | | | | |
 | `Math.sign(x)` | `Math.sign(x)` | `x: number` | `-1\|0\|1\|NaN` | inline if/else→f64 | ✅ | ✅ | — | ✅ |
 | `Math.trunc(x)` | `Math.trunc(x)` | `x: number` | `number` (截断) | `@trunc(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
 | `Math.cbrt(x)` | `Math.cbrt(x)` | `x: number` | `number` (立方根) | `std.math.cbrt(@as(f64, @floatFromInt(x)))` | ✅ | ✅ | — | ✅ |
@@ -665,7 +797,7 @@ AIGC:
 > Math.atan2(90, 15);    // ~1.405
 > ```
 
-### 4.2 `Array` — 35/35 (100%)
+### 4.2 `Array` — 37/37 (100%)
 
 > **Runtime 策略**: 内联 Zig 操作 + `std.ArrayList` 方法，闭包方法展开为 for 循环。
 > **ES2023 不可变方法** `.with()` / `.toReversed()` / `.toSorted()` / `.toSpliced()` — 已实现（inline clone + 修改副本）。`.sort(compareFn)` / `.toSorted(compareFn)` 的 `compareFn` 参数已支持（回调 inline 展开为 `lessThan` struct，无 compareFn 时默认升序）。
@@ -842,7 +974,7 @@ AIGC:
 > s.add(1).add(2).add(3);  // chaining
 > ```
 
-### 4.6 `Object` — 20/21 (95%)
+### 4.6 `Object` — 21/22 (95%)
 
 > **Runtime 文件**: `runtime/js_object.zig`
 > **注意**: `Object.keys()` 对 Zig struct 类型使用 `keysStruct()` comptime 反射（自动路由），对 HashMap 使用 `keys()` 运行时函数。
@@ -870,7 +1002,7 @@ AIGC:
 | `Object.setPrototypeOf(obj,proto)` | 设置原型 | `obj, proto` | obj | ✅ | ✅ | ✅ | ✅ (no-op) |
 | `Object.hasOwn(obj,k)` | `Object.hasOwn(obj, prop)` (ES2022) | `obj, prop` | `bool` | ✅ | ✅ | ✅ | ✅ comptime `@hasField` 或 `js_object.hasOwn()` |
 | `Object.is(v1,v2)` | `Object.is(value1, value2)` | `v1, v2: any` | `bool` | ✅ | ✅ | ✅ | ✅ NaN-safe SameValue |
-| **— 创建/转换 (2) —** | | | | | | | |
+| **— 创建/转换 (3) —** | | | | | | | |
 | `Object.create(proto)` | `Object.create(proto)` | `proto` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.fromEntries(iter)` | `Object.fromEntries(iterable)` | `iterable: [K,V][]` | `object` | ✅ | ✅ | ✅ | ✅ |
 | `Object.groupBy(items, fn)` | ES2024 静态方法 | `items, fn` | `object` | ✅ | ✅ | ✅ | ✅ 内联 emit + HashMap 分组（回调 inline 展开；State of JS 2024 #1 Object 特性） |
@@ -1093,12 +1225,12 @@ AIGC:
 | 类别 | 总方法数 | 有效覆盖 | 比例 | 不实现 | 备注 |
 |------|---------|---------|------|---------|------|
 | Math | 39 | 39 | 100% | — | ✅ 全覆盖 |
-| Array | 35 | 35 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
+| Array | 37 | 37 | 100% | 0 | ✅ 全覆盖（map 回调 inline 展开） |
 | String | 32 | 31 | 97% | 1 | 4 个 ICU 方法通过 ICU4X 完整实现（可选 `icu` feature，默认简化版本），String.raw 🔘 |
 | Map | 12 | 11 | 92% | 1 | Map.groupBy 🔘 不实现（应用层逻辑） |
 | Set | 9 | 8 | 89% | 1 | ES2025 Set 操作不实现 |
 | Date | 23 | 23 | 100% | — | ✅ 全覆盖 |
-| Object | 21 | 20 | 95% | 1 | groupBy ✅ 已实现；getOwnPropertySymbols 🔘 不实现 |
+| Object | 22 | 21 | 95% | 1 | groupBy ✅ 已实现；getOwnPropertySymbols 🔘 不实现 |
 | JSON | 2 | 2 | 100% | — | ✅ |
 | Global | 9 | 8 | 89% | 1 | eval 不实现 |
 | console | 3 | 3 | 100% | — | ✅ |
@@ -1113,7 +1245,7 @@ AIGC:
 | Intl | 1 | 0 | 0% | 1 | 不实现（可调用 Zig/C 库） |
 | BigInt | 6 | 6 | 100% | 0 | ✅ 完整实现（字面量/构造函数/运算/toString/valueOf/asIntN/asUintN/toLocaleString/String+BigInt拼接/deinit；混合类型/`>>>` TypeError 与 JS 规范一致） |
 | Atomics | 1 | 0 | 0% | 1 | 不实现（niche 场景） |
-| **总计** | **225** | **214** | **~95%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
+| **总计** | **228** | **217** | **~95%** | **11** | String ICU 方法通过 ICU4X 完整实现（可选 feature `icu`） |
 
 > **实现策略**:
 > - ✅ **已实现**: 完整支持，测试通过
@@ -1467,8 +1599,8 @@ InferResult  →  Definite(ZigType) | Indeterminate
 
 | 测试位置 | 测试数量 | 覆盖特性 |
 |----------|----------|----------|
-| `tests/` 子模块（11 个文件） | 396 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法、不实现特性检测 |
-| 源文件内联测试 | 110 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
+| `tests/` 子模块（10 个文件） | 384 | 所有核心语法、内置对象、闭包、错误处理、解构、class、String/RegExp/URI 方法、不实现特性检测 |
+| 源文件内联测试 | 122 | IR 类型系统、常量折叠、死代码消除、验证 pass、emit helper、ident、jsdoc、parser、source_span |
 
 ### 7.2 测试覆盖情况
 

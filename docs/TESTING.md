@@ -3,6 +3,61 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '78107da6-f0e8-4518-aebb-78755dbf71e8'
+  PropagateID: '78107da6-f0e8-4518-aebb-78755dbf71e8'
+  ReservedCode1: '36a9442a-adf9-4e38-83ef-47c04613ac49'
+  ReservedCode2: '36a9442a-adf9-4e38-83ef-47c04613ac49'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '52a5c338-18d2-42f3-bf55-505b49984777'
+  PropagateID: '52a5c338-18d2-42f3-bf55-505b49984777'
+  ReservedCode1: '380457e5-8e0e-41d0-96fc-54b19f16b693'
+  ReservedCode2: '380457e5-8e0e-41d0-96fc-54b19f16b693'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'f7710076-5c32-4206-8b8c-a1b67a319d68'
+  PropagateID: 'f7710076-5c32-4206-8b8c-a1b67a319d68'
+  ReservedCode1: '95df99e4-9a26-45d1-b4c3-a3c9d2d87ab1'
+  ReservedCode2: '95df99e4-9a26-45d1-b4c3-a3c9d2d87ab1'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: 'd8a5935a-d453-45ac-8a31-bd583fd769ed'
+  PropagateID: 'd8a5935a-d453-45ac-8a31-bd583fd769ed'
+  ReservedCode1: 'cf0ca85c-c18e-4125-862f-d6838a75db5c'
+  ReservedCode2: 'cf0ca85c-c18e-4125-862f-d6838a75db5c'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '845d6626-0c93-4d85-9dff-40f8535497b5'
+  PropagateID: '845d6626-0c93-4d85-9dff-40f8535497b5'
+  ReservedCode1: '5f5fc0c8-064e-4278-b3a0-d16d52ec1ef8'
+  ReservedCode2: '5f5fc0c8-064e-4278-b3a0-d16d52ec1ef8'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '570f8203-0314-4dd7-b28c-55a0e57dcf5b'
   PropagateID: '570f8203-0314-4dd7-b28c-55a0e57dcf5b'
   ReservedCode1: 'c3378468-2005-4c92-a7c8-f3d2febcb331'
@@ -515,9 +570,9 @@ examples/mdn-test-project/
 
 | 类别 | 磁盘总数 | 通过转译 | 来源 |
 |------|----------|----------|------|
-| statements | 40 | 7 | MDN Statements 参考 |
-| expressions | 161 | 124 | MDN Expressions 参考 |
-| builtins | 223 | 73 | MDN Built-in Objects 参考 |
+| statements | 40 | 8 | MDN Statements 参考 |
+| expressions | 161 | 134 | MDN Expressions 参考 |
+| builtins | 228 | 95 | MDN Built-in Objects 参考 |
 | **总计** | **859** | **237** | | |
 
 每个 fragment 有两个文件：
@@ -608,7 +663,7 @@ cargo run     # 运行 main()，含 assert_eq! 断言
 
 ```bash
 cd examples/showcase-project
-cargo run     # 运行 main()，打印 337 个函数结果
+cargo run     # 运行 main()，打印 134 个函数输出（337 个导出函数编译通过）
 ```
 
 覆盖范围最广的集成测试，34 个 JS 文件共 337 个导出函数：
@@ -650,7 +705,7 @@ cargo run     # 运行 main()，打印 337 个函数结果
 | `test_stmt_advanced.js` | 2 | 高级语句（empty/labeled） |
 | `test_builtins_es2023.js` | 0 | 占位文件（测试在 test_builtins_coverage.js 中） |
 
-> 注：所有 34 个 JS 文件均在 `js2rust.toml` 中声明并参与构建。
+> 注：32 个 JS 文件在 `js2rust.toml` 中显式声明，helpers.js 和 utils.js 通过 import chain 引入，共 34 个文件参与构建。
 
 ---
 
@@ -685,7 +740,7 @@ cargo run -- --all                  # 运行对比（exit code 恒为 0，需检
 # 5. Example 项目 — 运行验证（非仅构建）
 cd examples/test-lib-project && cargo test    # 2 tests passed
 cd examples/test-bin-project && cargo run     # assert_eq! 断言通过
-cd examples/showcase-project && cargo run     # 337 个函数输出正确
+cd examples/showcase-project && cargo run     # 134 个函数输出验证通过（337 个导出函数编译通过）
 
 # 6. 增量编译验证 — 修改 JS 文件后重新编译应触发转译
 # 手动验证：修改 showcase js_src/helpers.js（如加一行注释），然后 cargo build
@@ -723,7 +778,7 @@ cd examples/showcase-project && cargo run     # 337 个函数输出正确
 
 重构时如果发现未覆盖的边界情况：
 
-1. 确定应归入哪个测试子模块（basic/builtins_basic/advanced_builtins/destructure_class_arrays/not_implemented_and_fixes/objects_and_types/phase1/try_catch_and_closures），在对应文件末尾添加
+1. 确定应归入哪个测试子模块（basic/builtins_basic/advanced_builtins/destructure_class_arrays/not_implemented_and_fixes/objects_and_types/phase1/shadowing_chaining_array/collision/try_catch_and_closures），在对应文件末尾添加
 2. 使用 `transpile_and_check` 或 `transpile_and_assert` 函数完成转译 + 验证
 3. `assert!` 验证生成的 Zig 代码包含关键模式
 4. 运行 `cargo test -p js2zig-core --lib <新测试名>` 确认通过

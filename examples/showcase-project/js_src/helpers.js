@@ -101,7 +101,6 @@ export function testObjAccess() {
 // ── Template literals (S4.1) — proven via test_template.js ──────
 
 // Static array element interpolation
-// NOTE: dynamic arr.push() not supported in native_proto (see #231); use static init.
 /** @returns {string} */
 export function tplDynArr() {
     const arr = [10, 20, 30];
@@ -211,7 +210,6 @@ export function testBlock() {
 }
 
 // ── Static arrays — index access (S7.4) ─────────────────────────
-// NOTE: dynamic arr.push() not supported in native_proto (see #231).
 
 /** @returns {i64} */
 export function testDynArrayPush() {

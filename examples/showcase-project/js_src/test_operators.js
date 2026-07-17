@@ -1,7 +1,6 @@
 // test_operators.js
 // End-to-end tests for delete operator.
-// Note: `in` operator on Map/Set generates .contains() which is not
-// available on JsCollection — only tested via Rust unit tests.
+// Note: `in` operator on Map/Set is tested in test_in_operator.js.
 
 // ── delete operator: use explicit .delete() method on Map ──
 

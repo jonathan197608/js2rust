@@ -3,6 +3,28 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: 'c8a98ebd-bcff-4ff7-810f-f135bc63cf07'
+  PropagateID: 'c8a98ebd-bcff-4ff7-810f-f135bc63cf07'
+  ReservedCode1: 'e67bce26-3fe8-4a32-bb74-2b7bcc70a9a0'
+  ReservedCode2: 'e67bce26-3fe8-4a32-bb74-2b7bcc70a9a0'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
+  ProduceID: '304ca596-cff5-4fb0-893b-360cbfb52be1'
+  PropagateID: '304ca596-cff5-4fb0-893b-360cbfb52be1'
+  ReservedCode1: 'ce5c3c8c-4bad-4e65-80e1-926d000437c5'
+  ReservedCode2: 'ce5c3c8c-4bad-4e65-80e1-926d000437c5'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '19f6b39f-05b9-4a80-86e2-1f94eeb4a198'
   PropagateID: '19f6b39f-05b9-4a80-86e2-1f94eeb4a198'
   ReservedCode1: '24fafd74-eed2-4d85-8381-f8a187fc0bf2'
@@ -19,12 +41,12 @@ AIGC:
 
 | 指标 | 数值 |
 |------|------|
-| Rust 测试 | 490 (490 pass, 0 ignore) |
+| Rust 测试 | 506 (506 pass, 0 ignore) |
 | Clippy 警告 | 0 |
-| MDN 端到端测试 | 237/237 (100% match, 0 mismatch, 0 error) |
-| JS 表达式覆盖率 | 83/91 (~91%) |
-| JS 语句覆盖率 | 46/49 (~94%) |
-| JS 内置对象覆盖率 | 208/220 (~95%) |
+| MDN 端到端测试 | 236/237 (99.6% match, 1 WONTFIX mismatch, 0 error) |
+| JS 表达式覆盖率 | 82/91 (~90%) |
+| JS 语句覆盖率 | 45/50 (~90%) |
+| JS 内置对象覆盖率 | 217/228 (~95%) |
 | Crate 版本 | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
 
 > 详细特性评估见 [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md)。
@@ -223,7 +245,7 @@ Rust: getUserInfo_main("alice")
 
 ## 文档
 
-- [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态，覆盖 140 个语法特性 + 220 行内置对象方法
+- [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md) — 逐特性实现状态，覆盖 141 个语法特性 + 228 行内置对象方法
 
 ## 许可证
 
