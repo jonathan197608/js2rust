@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '3c2dd8b2-0f87-4b51-a3cd-b41ff8984858'
+  PropagateID: '3c2dd8b2-0f87-4b51-a3cd-b41ff8984858'
+  ReservedCode1: '5343505b-f448-43bc-8bc1-3b518c839d18'
+  ReservedCode2: '5343505b-f448-43bc-8bc1-3b518c839d18'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '1382e66d-519b-411f-8c6d-e25b392a232f'
   PropagateID: '1382e66d-519b-411f-8c6d-e25b392a232f'
   ReservedCode1: '85055633-41f1-4218-963b-3d17c17f53ca'
@@ -45,7 +56,7 @@ AIGC:
 | JS expression coverage | 82/91 (~90%) |
 | JS statement coverage | 45/50 (~90%) |
 | JS built-in coverage | 217/228 (~95%) |
-| Crate versions | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
+| Crate versions | [js2zig-core 0.17.1](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17.1](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17.1](https://crates.io/crates/js2rust-bridge-macro) |
 
 > Detailed feature evaluation: [JS Language Feature Implementation Notes](docs/JS_FEATURE_EVALUATION.md) (Chinese).
 

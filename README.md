@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '58a75f57-7309-4ec3-930c-272998fa6713'
+  PropagateID: '58a75f57-7309-4ec3-930c-272998fa6713'
+  ReservedCode1: '44f4b60b-687f-4e23-82ff-dd70c7048a96'
+  ReservedCode2: '44f4b60b-687f-4e23-82ff-dd70c7048a96'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: 'c8a98ebd-bcff-4ff7-810f-f135bc63cf07'
   PropagateID: 'c8a98ebd-bcff-4ff7-810f-f135bc63cf07'
   ReservedCode1: 'e67bce26-3fe8-4a32-bb74-2b7bcc70a9a0'
@@ -47,7 +58,7 @@ AIGC:
 | JS 表达式覆盖率 | 82/91 (~90%) |
 | JS 语句覆盖率 | 45/50 (~90%) |
 | JS 内置对象覆盖率 | 217/228 (~95%) |
-| Crate 版本 | [js2zig-core 0.17](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17](https://crates.io/crates/js2rust-bridge-macro) |
+| Crate 版本 | [js2zig-core 0.17.1](https://crates.io/crates/js2zig-core) · [js2rust-bridge 0.17.1](https://crates.io/crates/js2rust-bridge) · [js2rust-bridge-macro 0.17.1](https://crates.io/crates/js2rust-bridge-macro) |
 
 > 详细特性评估见 [JS 语言特性实现说明](docs/JS_FEATURE_EVALUATION.md)。
 
