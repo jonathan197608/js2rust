@@ -409,24 +409,6 @@ pub fn build(b: *std.Build) void {{
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run all library tests");
     test_step.dependOn(&run_tests.step);
-
-    // WASM target step: `zig build wasm` produces a .wasm module
-    const wasm_mod = b.createModule(.{{
-        .root_source_file = b.path("src/lib.zig"),
-        .target = b.resolveTargetQuery(.{{
-            .cpu_arch = .wasm32,
-            .os_tag = .wasi,
-        }}),
-        .optimize = optimize,
-    }});
-    const wasm_lib = b.addExecutable(.{{
-        .name = "{name}",
-        .root_module = wasm_mod,
-    }});
-    wasm_lib.entry = .disabled;
-    const wasm_install = b.addInstallArtifact(wasm_lib, .{{}});
-    const wasm_step = b.step("wasm", "Build WASM target (wasm32-wasi)");
-    wasm_step.dependOn(&wasm_install.step);
 }}
 "#,
         name = lib_name

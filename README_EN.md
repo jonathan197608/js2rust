@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '717516a1-b890-4b3b-937f-1a4ade96d6ab'
+  PropagateID: '717516a1-b890-4b3b-937f-1a4ade96d6ab'
+  ReservedCode1: '6ab9056c-6127-4b2c-8a7f-248acb32dab7'
+  ReservedCode2: '6ab9056c-6127-4b2c-8a7f-248acb32dab7'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '3c2dd8b2-0f87-4b51-a3cd-b41ff8984858'
   PropagateID: '3c2dd8b2-0f87-4b51-a3cd-b41ff8984858'
   ReservedCode1: '5343505b-f448-43bc-8bc1-3b518c839d18'
@@ -71,7 +82,6 @@ AIGC:
 - **String host functions**: Automatic `[*:0]const u8` ↔ `[]const u8` conversion with heap-allocated returns
 - **Source Map**: `// @src(file:line)` inline comments + `source_map.json`
 - **Incremental compilation**: Hash-based cache — unchanged files are skipped on rebuild (`--force` to override)
-- **WASM target**: `zig build wasm` (wasm32-wasi) support
 - **Multi-file project support**: Transpile entire JS project directories with DFS dependency ordering
 - **Type inference**: Automatic JS type inference (number → i64/f64, string → `[]u8`, etc.)
 - **Zero code generation**: Everything happens in the proc-macro — IDE-friendly

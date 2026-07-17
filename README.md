@@ -3,6 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
+  ProduceID: '6d16cb7b-f16e-4ca2-bb00-135908d86ebc'
+  PropagateID: '6d16cb7b-f16e-4ca2-bb00-135908d86ebc'
+  ReservedCode1: 'd9c126fc-5808-40c4-8d2d-1374a0e9802d'
+  ReservedCode2: 'd9c126fc-5808-40c4-8d2d-1374a0e9802d'
+---
+
+---
+AIGC:
+  ContentProducer: '001191110102MAD55U9H0F10002'
+  ContentPropagator: '001191110102MAD55U9H0F10002'
+  Label: '1'
   ProduceID: '58a75f57-7309-4ec3-930c-272998fa6713'
   PropagateID: '58a75f57-7309-4ec3-930c-272998fa6713'
   ReservedCode1: '44f4b60b-687f-4e23-82ff-dd70c7048a96'
@@ -73,7 +84,6 @@ AIGC:
 - **字符串宿主函数**：自动 `[*:0]const u8` ↔ `[]const u8` 转换，堆分配返回值
 - **Source Map**：`// @src(file:line)` 行内注释 + `source_map.json`
 - **增量编译**：基于哈希的缓存，未修改文件跳过重建（`--force` 强制重建）
-- **WASM 目标**：`zig build wasm`（wasm32-wasi）支持
 - **多文件项目支持**：可转译整个 JS 项目目录，DFS 依赖排序
 - **类型推断**：自动 JS 类型推断（number → i64/f64，string → `[]u8` 等）
 - **零代码生成**：所有逻辑在 proc-macro 中完成，IDE 友好
