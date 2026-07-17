@@ -269,11 +269,13 @@ impl Emitter {
                             self.write(")");
                         }
                     } else if *op == BinOp::Div {
-                        self.write("@divTrunc(");
+                        // JS `/` always returns float (5/2 === 2.5).
+                        // Convert integer operands to f64 before division.
+                        self.write("(@as(f64, @floatFromInt(");
                         self.emit_expr(left);
-                        self.write(", ");
+                        self.write(")) / @as(f64, @floatFromInt(");
                         self.emit_expr(right);
-                        self.write(")");
+                        self.write(")))");
                     } else {
                         // BigInt %: emit via bigint binary method
                         self.emit_bigint_binary(BinOp::Mod, left, right);
@@ -374,7 +376,44 @@ impl Emitter {
                 }
             }
 
-            crate::zigir::types::IrExpr::Unary { op, operand } => {
+            crate::zigir::types::IrExpr::DivExpr {
+                left,
+                right,
+                left_type,
+                right_type,
+                result_type,
+            } => {
+                // JS `/` always returns float. For integer operands, convert to f64 first.
+                // When result_type is i64, wrap in @as(i64, @intFromFloat(...)).
+                let left_is_float = *left_type == crate::types::ZigType::F64;
+                let right_is_float = *right_type == crate::types::ZigType::F64;
+                if let Some(crate::types::ZigType::I64) = result_type {
+                    // i64 target: convert to f64, divide, truncate back
+                    self.write("@as(i64, @intFromFloat(");
+                }
+                if left_is_float || right_is_float {
+                    self.write("(");
+                    self.emit_expr(left);
+                    self.write(" / ");
+                    self.emit_expr(right);
+                    self.write(")");
+                } else {
+                    self.write("(@as(f64, @floatFromInt(");
+                    self.emit_expr(left);
+                    self.write(")) / @as(f64, @floatFromInt(");
+                    self.emit_expr(right);
+                    self.write(")))");
+                }
+                if let Some(crate::types::ZigType::I64) = result_type {
+                    self.write("))");
+                }
+            }
+
+            crate::zigir::types::IrExpr::Unary {
+                op,
+                operand,
+                operand_type,
+            } => {
                 match op {
                     crate::zigir::ops::UnaOp::Neg => {
                         self.write("-");
@@ -387,11 +426,18 @@ impl Emitter {
                         self.emit_expr_as_bool(operand);
                     }
                     crate::zigir::ops::UnaOp::BitNot => {
-                        // JS `~x` operates on 32-bit integer. Wrap in @as(i32, @intCast(..))
-                        // to handle comptime_int and ensure correct 32-bit semantics.
-                        self.write("~@as(i32, @intCast(");
-                        self.emit_expr(operand);
-                        self.write("))");
+                        // JS `~x` operates on 32-bit integer. Convert operand to i32 first.
+                        // For f64 operands: @intFromFloat → i64, then @intCast → i32.
+                        // For integer/comptime operands: @intCast works directly.
+                        if let Some(crate::types::ZigType::F64) = operand_type {
+                            self.write("~@as(i32, @intCast(@as(i64, @intFromFloat(");
+                            self.emit_expr(operand);
+                            self.write("))))");
+                        } else {
+                            self.write("~@as(i32, @intCast(");
+                            self.emit_expr(operand);
+                            self.write("))");
+                        }
                     }
                     crate::zigir::ops::UnaOp::Void => {
                         // void expr → evaluate and discard
@@ -859,9 +905,9 @@ impl Emitter {
         }
     }
 
-    /// Emit a compound assignment (Div/LogicAnd/LogicOr/Nullish or simple op).
+    /// Emit a compound assignment (LogicAnd/LogicOr/Nullish or simple op).
     /// Shared by IrExpr::Assign (expression context) and emit_assign_inline (statement context).
-    /// Note: Mod (%) is no longer handled here — it's expanded to RemExpr in the lowerer.
+    /// Note: Mod (%) is expanded to RemExpr and Div (/) to DivExpr in the lowerer.
     pub(super) fn emit_compound_assign(
         &mut self,
         target: &crate::zigir::types::IrAssignTarget,
@@ -869,15 +915,7 @@ impl Emitter {
         value: &crate::zigir::types::IrExpr,
     ) {
         use crate::zigir::ops::AssignOp;
-        if op == AssignOp::Div {
-            // Zig signed integer division requires @divTrunc
-            self.emit_assign_target_inner(target);
-            self.write(" = @divTrunc(");
-            self.emit_assign_target_inner(target);
-            self.write(", ");
-            self.emit_expr(value);
-            self.write(")");
-        } else if op == AssignOp::LogicAnd {
+        if op == AssignOp::LogicAnd {
             // a &&= b → a = if (a.toBool()) b else a
             self.emit_assign_target_inner(target);
             self.write(" = if (");

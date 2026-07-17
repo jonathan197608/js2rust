@@ -50,6 +50,46 @@ impl Emitter {
         })
     }
 
+    /// Recursively check if a block contains `return` or `throw` statements.
+    /// Used to detect finally blocks that can't be emitted as `defer { }`
+    /// (Zig doesn't allow return/throw inside defer).
+    fn block_has_return_or_throw(stmts: &[IrStmt]) -> bool {
+        fn ir_stmt_has_return_or_throw(stmt: &IrStmt) -> bool {
+            match stmt {
+                IrStmt::Return { .. } | IrStmt::Throw { .. } => true,
+                IrStmt::If { then, else_, .. } => {
+                    Emitter::block_has_return_or_throw(&then.stmts)
+                        || else_
+                            .as_ref()
+                            .is_some_and(|e| Emitter::block_has_return_or_throw(&e.stmts))
+                }
+                IrStmt::While { body, .. }
+                | IrStmt::DoWhile { body, .. }
+                | IrStmt::For { body, .. }
+                | IrStmt::ForOf { body, .. }
+                | IrStmt::ForIn { body, .. } => Emitter::block_has_return_or_throw(&body.stmts),
+                IrStmt::Block(b) => Emitter::block_has_return_or_throw(&b.stmts),
+                IrStmt::Switch { cases, .. } => cases
+                    .iter()
+                    .any(|c| Emitter::block_has_return_or_throw(&c.body)),
+                IrStmt::Try {
+                    try_block,
+                    catch_block,
+                    finally,
+                    ..
+                } => {
+                    Emitter::block_has_return_or_throw(&try_block.stmts)
+                        || Emitter::block_has_return_or_throw(&catch_block.stmts)
+                        || finally
+                            .as_ref()
+                            .is_some_and(|f| Emitter::block_has_return_or_throw(&f.stmts))
+                }
+                _ => false,
+            }
+        }
+        stmts.iter().any(ir_stmt_has_return_or_throw)
+    }
+
     pub(super) fn emit_if_stmt(&mut self, cond: &IrExpr, then: &IrBlock, else_: &Option<IrBlock>) {
         self.write_indent();
         self.write("if (");
@@ -113,16 +153,22 @@ impl Emitter {
         cond: &IrExpr,
         label: &Option<String>,
     ) {
+        // JS do-while: body always runs at least once, then cond is checked.
+        // `continue` must re-evaluate cond (not jump to loop top).
+        // Use a first-iteration flag as the while condition so that
+        // continue → continue expr (flag=false) → re-check cond.
+        self.writeln("{");
+        self.indent_push();
+        self.writeln("var __dw_first: bool = true;");
         self.write_indent();
         self.emit_label_prefix(label);
-        // Zig doesn't have do-while; use `while (true)` with break at end
-        self.write("while (true) {\n");
+        self.write("while (__dw_first or (");
+        self.emit_expr_as_bool(cond);
+        self.write(")) : (__dw_first = false) {\n");
         self.indent_push();
         self.emit_block_stmts_unlabeled(body);
-        self.write_indent();
-        self.write("if (");
-        self.emit_expr_as_bool(cond);
-        self.write(") {} else { break; }\n");
+        self.indent_pop();
+        self.writeln("}");
         self.indent_pop();
         self.writeln("}");
     }
@@ -212,18 +258,20 @@ impl Emitter {
         match kind {
             IrForInKind::HashMapIter => {
                 // `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
+                // When labeled, wrap in a labeled block: `label: { var __it = ...; while ... }`
+                let has_label = label.is_some();
+                if has_label {
+                    self.write_indent();
+                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
+                    self.indent_push();
+                }
                 self.write_indent();
-                self.emit_label_prefix(label);
-                self.write("var ");
                 let it_name = "__it";
+                self.write("var ");
                 self.write(it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
                 self.write(".iterator();\n");
-                // The while loop is NOT labeled separately — the label is on
-                // the outer `var __it` statement for HashMapIter.
-                // The label wraps `{ var __it = ... while ... }` as a single block.
-                // We match that by emitting the while at the same level.
                 self.write_indent();
                 self.write("while (");
                 self.write(it_name);
@@ -233,13 +281,22 @@ impl Emitter {
                 self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
+                if has_label {
+                    self.indent_pop();
+                    self.writeln("}");
+                }
             }
             IrForInKind::MapIter => {
                 // `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
+                let has_label = label.is_some();
+                if has_label {
+                    self.write_indent();
+                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
+                    self.indent_push();
+                }
                 self.write_indent();
-                self.emit_label_prefix(label);
-                self.write("var ");
                 let it_name = "__it";
+                self.write("var ");
                 self.write(it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
@@ -255,6 +312,10 @@ impl Emitter {
                 self.writeln(&format!("_ = &{};", var.zig_name));
                 self.indent_pop();
                 self.writeln("}");
+                if has_label {
+                    self.indent_pop();
+                    self.writeln("}");
+                }
             }
             IrForInKind::StructUnroll { fields } => {
                 // Unrolled: one iteration per field; label on first iteration only
@@ -320,8 +381,14 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForOfKind::MapSetIter { is_map } => {
+                // When labeled, wrap in a labeled block: `label: { var __it = ...; while ... }`
+                let has_label = label.is_some();
+                if has_label {
+                    self.write_indent();
+                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
+                    self.indent_push();
+                }
                 self.write_indent();
-                self.emit_label_prefix(label);
                 let it_name = "__it";
                 self.write("var ");
                 self.write(it_name);
@@ -361,6 +428,10 @@ impl Emitter {
                 }
                 self.indent_pop();
                 self.writeln("}");
+                if has_label {
+                    self.indent_pop();
+                    self.writeln("}");
+                }
             }
             IrForOfKind::Str { var_used } => {
                 self.write_indent();
@@ -434,10 +505,22 @@ impl Emitter {
         // ── B1: No throw, no catch, no nested try → inline body + finally ──
         // Also applies when: no throw AND body always exits (catch is unreachable)
         if !has_throw && (!needs_catch || Self::block_always_exits(try_block)) && !has_nested_try {
-            self.emit_block_stmts_unlabeled(try_block);
+            // Emit finally as defer BEFORE the body so it always runs,
+            // even if the body contains return/break/continue.
             if let Some(finally_block) = finally {
-                self.emit_block_stmts_unlabeled(finally_block);
+                if Self::block_has_return_or_throw(&finally_block.stmts) {
+                    self.writeln(
+                        "@compileError(\"return/throw in finally block is not yet supported\");",
+                    );
+                } else {
+                    self.writeln("defer {");
+                    self.indent_push();
+                    self.emit_block_stmts_unlabeled(finally_block);
+                    self.indent_pop();
+                    self.writeln("}");
+                }
             }
+            self.emit_block_stmts_unlabeled(try_block);
             return;
         }
 
@@ -465,11 +548,17 @@ impl Emitter {
 
         // ── Finally as defer (always runs, inside labeled block) ──
         if let Some(finally_block) = finally {
-            self.writeln("defer {");
-            self.indent_push();
-            self.emit_block_stmts_unlabeled(finally_block);
-            self.indent_pop();
-            self.writeln("}");
+            if Self::block_has_return_or_throw(&finally_block.stmts) {
+                self.writeln(
+                    "@compileError(\"return/throw in finally block is not yet supported\");",
+                );
+            } else {
+                self.writeln("defer {");
+                self.indent_push();
+                self.emit_block_stmts_unlabeled(finally_block);
+                self.indent_pop();
+                self.writeln("}");
+            }
         }
 
         // ── Inner body labeled block ──

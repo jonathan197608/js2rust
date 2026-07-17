@@ -55,7 +55,38 @@ impl Lowerer {
             BinaryOperator::Addition => BinOp::Add,
             BinaryOperator::Subtraction => BinOp::Sub,
             BinaryOperator::Multiplication => BinOp::Mul,
-            BinaryOperator::Division => BinOp::Div,
+            BinaryOperator::Division => {
+                let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::I64);
+                let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::I64);
+                // BigInt / BigInt or mixed BigInt: use BinOp::Div so emit_bigint_binary
+                // (for pure BigInt) or error.JsThrow (for mixed) is generated at emit time.
+                if left_type == ZigType::BigInt || right_type == ZigType::BigInt {
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.has_bigint_div = true;
+                        // Mixed BigInt division throws TypeError at runtime
+                        if left_type != right_type {
+                            ctx.has_catchable_error = true;
+                        }
+                    }
+                    return IrExpr::Binary {
+                        op: BinOp::Div,
+                        left: Box::new(self.lower_expr(&be.left)),
+                        right: Box::new(self.lower_expr(&be.right)),
+                        left_type: Some(left_type),
+                        right_type: Some(right_type),
+                    };
+                }
+                // Non-BigInt: JS `/` always returns f64. Emit a DivExpr with type info
+                // so the Emitter can generate the correct f64 coercion and i64 wrapping
+                // (when result_type is later set to Some(I64) by coerce_i64_result_type).
+                return IrExpr::DivExpr {
+                    left: Box::new(self.lower_expr(&be.left)),
+                    right: Box::new(self.lower_expr(&be.right)),
+                    left_type,
+                    right_type,
+                    result_type: None, // standalone `/` keeps f64 result
+                };
+            }
             BinaryOperator::Remainder => {
                 let left_type = self.infer_expr_type(&be.left).unwrap_or(ZigType::I64);
                 let right_type = self.infer_expr_type(&be.right).unwrap_or(ZigType::I64);
@@ -208,6 +239,7 @@ impl Lowerer {
                 IrExpr::Unary {
                     op: UnaOp::Neg,
                     operand: Box::new(self.lower_expr(&ue.argument)),
+                    operand_type: self.infer_expr_type(&ue.argument),
                 }
             }
             UnaryOperator::UnaryPlus => {
@@ -217,6 +249,7 @@ impl Lowerer {
             UnaryOperator::LogicalNot => IrExpr::Unary {
                 op: UnaOp::Not,
                 operand: Box::new(self.lower_expr(&ue.argument)),
+                operand_type: self.infer_expr_type(&ue.argument),
             },
             UnaryOperator::BitwiseNot => {
                 if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
@@ -226,6 +259,7 @@ impl Lowerer {
                 IrExpr::Unary {
                     op: UnaOp::BitNot,
                     operand: Box::new(self.lower_expr(&ue.argument)),
+                    operand_type: self.infer_expr_type(&ue.argument),
                 }
             }
             UnaryOperator::Typeof => {
@@ -448,11 +482,45 @@ impl Lowerer {
             }
             // BigInt %=: fall through to BigInt compound expansion below
         }
+        // /= → a = a / b  (JS `/` always returns float; for i64 target, truncate back)
+        if ae.operator == AssignmentOperator::Division {
+            let target = self.lower_assign_target(&ae.left);
+            let target_type = self.infer_assign_target_type(&ae.left);
+            // BigInt /= falls through to the BigInt compound expansion below
+            if target_type != Some(ZigType::BigInt) {
+                let value = Box::new(self.lower_expr(&ae.right));
+                let base_expr = target
+                    .to_read_expr()
+                    .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+                let left_type = target_type.unwrap_or(ZigType::I64);
+                let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
+                // When assigning / result to an i64 variable, set result_type so
+                // the emit layer wraps in @as(i64, @intFromFloat(...))
+                let result_type = if left_type == ZigType::I64 {
+                    Some(ZigType::I64)
+                } else {
+                    None
+                };
+                return IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::DivExpr {
+                        left: Box::new(base_expr),
+                        right: value,
+                        left_type,
+                        right_type,
+                        result_type,
+                    }),
+                };
+            }
+            // BigInt /=: fall through to BigInt compound expansion below
+        }
         // &&= / ||= / ??= → expand into Assign + Logical
         // This reuses the Logical emitter's type-aware JsAny.from() wrapping,
         // avoiding type mismatches between comptime_int and JsAny branches.
         // For &&/|| the emitter uses js_runtime.isTruthy() (anytype), so it works
-        // for i64 as well. For ?? the emitter uses .isNullish() (JsAny-only).
+        // for i64 as well. For ??= on non-JsAny types, the value can't be
+        // null/undefined, so it's handled as a no-op (evaluate RHS, keep target).
         if matches!(
             ae.operator,
             AssignmentOperator::LogicalAnd
@@ -608,6 +676,28 @@ impl Lowerer {
                         exp: exp.clone(),
                         base_type: base_type.clone(),
                         exp_type: exp_type.clone(),
+                        result_type: Some(ZigType::I64),
+                    }),
+                };
+            }
+            // Same for DivExpr: `x = a / b` when target is i64
+            if target_type == Some(ZigType::I64)
+                && let IrExpr::DivExpr {
+                    result_type: None,
+                    left,
+                    right,
+                    left_type,
+                    right_type,
+                } = value.as_ref()
+            {
+                return IrExpr::Assign {
+                    op,
+                    target,
+                    value: Box::new(IrExpr::DivExpr {
+                        left: left.clone(),
+                        right: right.clone(),
+                        left_type: left_type.clone(),
+                        right_type: right_type.clone(),
                         result_type: Some(ZigType::I64),
                     }),
                 };

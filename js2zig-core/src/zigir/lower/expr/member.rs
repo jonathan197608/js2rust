@@ -320,12 +320,13 @@ impl Lowerer {
         match expr {
             Expression::Identifier(id) => self.infer_ident_type(id.name.as_str()),
             Expression::NumericLiteral(nl) => {
-                // Distinguish I64 vs F64 based on presence of decimal point / exponent
-                let s = nl.value.to_string();
-                if s.contains('.') || s.contains('e') || s.contains('E') {
-                    Some(ZigType::F64)
-                } else {
+                // Match lower_expr's logic: fract()==0 and fits in i64 → I64, else F64.
+                // Using the value (not the source string) avoids mismatches when
+                // Rust's Display omits 'e' for large values like 1e19.
+                if nl.value.fract() == 0.0 && nl.value.abs() < i64::MAX as f64 {
                     Some(ZigType::I64)
+                } else {
+                    Some(ZigType::F64)
                 }
             }
             Expression::StringLiteral(_) => Some(ZigType::Str),
@@ -528,19 +529,23 @@ impl Lowerer {
                 _ => None,
             },
 
-            // Arithmetic: F64 if either F64, else I64
+            // Subtraction/Multiplication: F64 if either F64, else I64
             BinaryOperator::Subtraction
             | BinaryOperator::Multiplication
-            | BinaryOperator::Division
             | BinaryOperator::Remainder => match (left_ty.as_ref(), right_ty.as_ref()) {
                 (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
                 (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
                 _ => None,
             },
 
-            // Exponential: BigInt if both operands BigInt, f64 otherwise
+            // Division: JS `/` always returns float (5/2 === 2.5),
+            // even when both operands are integers.
+            BinaryOperator::Division => Some(ZigType::F64),
+
+            // Exponential: BigInt only if BOTH operands are BigInt (JS spec:
+            // mixed BigInt ** Number is a TypeError). Otherwise f64.
             BinaryOperator::Exponential => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::BigInt), _) | (_, Some(ZigType::BigInt)) => Some(ZigType::BigInt),
+                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
                 _ => Some(ZigType::F64),
             },
 

@@ -253,7 +253,11 @@ impl Lowerer {
                         | ZigType::ArrayList(_)
                         | ZigType::NamedStruct(_),
                     ) => false,
-                    _ => true, // Void, JsAny, Anytype, unknown → might be null
+                    // Unknown type: variable is likely a global, class, or function
+                    // name — never null in Zig. Generating if(obj)|oc| on a
+                    // non-optional type would be a compile error.
+                    None => false,
+                    _ => true, // JsAny, Anytype, Void → might be null
                 }
             }
 

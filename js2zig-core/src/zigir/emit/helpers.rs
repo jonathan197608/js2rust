@@ -73,6 +73,9 @@ pub fn bin_op_to_zig(op: BinOp) -> &'static str {
         BinOp::Ge => ">=",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
+        // JS === / !== map to Zig == / != — Zig has no loose equality.
+        // Most comparisons are handled by special emit paths (string .eql,
+        // JsAny comparison, cross-type); this is the fallback for same-type.
         BinOp::StrictEq => "==",
         BinOp::StrictNe => "!=",
         BinOp::BitAnd => "&",

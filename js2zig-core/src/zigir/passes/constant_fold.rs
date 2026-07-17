@@ -55,7 +55,7 @@ impl ConstantFoldPass {
                     changed
                 }
             }
-            IrExpr::Unary { op, operand } => {
+            IrExpr::Unary { op, operand, .. } => {
                 let changed = Self::try_fold(operand);
                 if let Some(result) = fold_unary(*op, operand) {
                     *expr = result;
@@ -408,6 +408,7 @@ fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
             IrExpr::Unary {
                 op: UnaOp::Not,
                 operand: inner,
+                ..
             },
         ) => {
             if matches!(inner.as_ref(), IrExpr::BoolLiteral(_)) {
@@ -540,6 +541,7 @@ mod tests {
             value: Some(IrExpr::Unary {
                 op: UnaOp::Neg,
                 operand: Box::new(IrExpr::IntLiteral(42)),
+                operand_type: Some(ZigType::I64),
             }),
         }]);
         let mut pass = ConstantFoldPass::new();
@@ -557,6 +559,7 @@ mod tests {
             value: Some(IrExpr::Unary {
                 op: UnaOp::Not,
                 operand: Box::new(IrExpr::BoolLiteral(true)),
+                operand_type: Some(ZigType::Bool),
             }),
         }]);
         let mut pass = ConstantFoldPass::new();

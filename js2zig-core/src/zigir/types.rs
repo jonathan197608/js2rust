@@ -567,6 +567,8 @@ pub enum IrExpr {
     Unary {
         op: UnaOp,
         operand: Box<IrExpr>,
+        /// Inferred type of the operand, used by BitNot to handle f64 conversion.
+        operand_type: Option<ZigType>,
     },
     Logical {
         op: LogicalOp,
@@ -702,6 +704,21 @@ pub enum IrExpr {
         right: Box<IrExpr>,
         /// If the result needs to be converted from f64 (jsRem returns f64)
         /// to a different type (e.g. i64), this is set. None means keep as f64.
+        result_type: Option<ZigType>,
+    },
+
+    // ── Division (JS /) ─────────────────────────────────
+    /// JS `/` operator — always returns float (5/2 === 2.5).
+    /// For integer operands, converts to f64 before dividing.
+    /// When `result_type` is `Some(I64)`, the emitter wraps the result
+    /// with `@as(i64, @intFromFloat(...))` for assignment to an i64 variable.
+    DivExpr {
+        left: Box<IrExpr>,
+        right: Box<IrExpr>,
+        left_type: ZigType,
+        right_type: ZigType,
+        /// If the result needs to be converted from f64 to i64, set this.
+        /// None means keep as f64.
         result_type: Option<ZigType>,
     },
 

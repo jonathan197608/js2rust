@@ -12,11 +12,12 @@ impl Emitter {
         }
 
         // Determine element type: if any spread is present, force JsAny (mixed types guaranteed).
-        // Otherwise, infer from first element.
+        // Otherwise, scan ALL elements — if any differ from the first, use JsAny.
         let elem_type = if !arr.spread_indices.is_empty() {
             "JsAny"
         } else {
-            arr.elements
+            let first_type = arr
+                .elements
                 .first()
                 .map(|e| match e {
                     crate::zigir::types::IrExpr::IntLiteral(_) => "i64",
@@ -25,8 +26,19 @@ impl Emitter {
                     crate::zigir::types::IrExpr::BoolLiteral(_) => "bool",
                     _ => "i64",
                 })
-                .unwrap_or("i64")
+                .unwrap_or("i64");
+
+            let all_same = arr.elements.iter().all(|e| match e {
+                crate::zigir::types::IrExpr::IntLiteral(_) => first_type == "i64",
+                crate::zigir::types::IrExpr::FloatLiteral(_) => first_type == "f64",
+                crate::zigir::types::IrExpr::StringLiteral(_) => first_type == "[]const u8",
+                crate::zigir::types::IrExpr::BoolLiteral(_) => first_type == "bool",
+                _ => first_type == "i64",
+            });
+
+            if all_same { first_type } else { "JsAny" }
         };
+        let needs_jsany_wrap = elem_type == "JsAny";
 
         // Emit as labeled block with ArrayList builder:
         // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
@@ -45,7 +57,13 @@ impl Emitter {
                 }
             } else {
                 self.write("__arr.append(js_allocator.allocator(), ");
+                if needs_jsany_wrap {
+                    self.write("JsAny.from(");
+                }
                 self.emit_expr(elem);
+                if needs_jsany_wrap {
+                    self.write(")");
+                }
                 self.write(") catch @panic(\"OOM: Array.push append\"); ");
             }
         }

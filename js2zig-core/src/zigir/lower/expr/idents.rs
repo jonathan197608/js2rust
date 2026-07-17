@@ -470,6 +470,10 @@ impl Lowerer {
                 Self::collect_ir_idents_in_expr(left, idents);
                 Self::collect_ir_idents_in_expr(right, idents);
             }
+            IrExpr::DivExpr { left, right, .. } => {
+                Self::collect_ir_idents_in_expr(left, idents);
+                Self::collect_ir_idents_in_expr(right, idents);
+            }
             IrExpr::IntLiteral(_)
             | IrExpr::FloatLiteral(_)
             | IrExpr::StringLiteral(_)

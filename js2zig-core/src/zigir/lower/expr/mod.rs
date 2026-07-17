@@ -102,6 +102,17 @@ impl Lowerer {
                 let right_type = self
                     .infer_expr_type(&le.right)
                     .unwrap_or(crate::types::ZigType::JsAny);
+
+                // ?? on non-JsAny types is a no-op: the left value can never be
+                // null/undefined in our type system (i64, f64, bool, Str, BigInt).
+                // Short-circuit: return left, don't evaluate right.
+                if op == LogicalOp::Nullish
+                    && left_type != crate::types::ZigType::JsAny
+                    && left_type != crate::types::ZigType::Anytype
+                {
+                    return self.lower_expr(&le.left);
+                }
+
                 IrExpr::Logical {
                     op,
                     left: Box::new(self.lower_expr(&le.left)),

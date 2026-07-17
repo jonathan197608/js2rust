@@ -121,7 +121,7 @@ impl Lowerer {
                 }
                 let value = rs.argument.as_ref().map(|expr| {
                     let mut val = self.lower_expr(expr);
-                    // When the function return type is i64, RemExpr and PowExpr need
+                    // When the function return type is i64, RemExpr, DivExpr, and PowExpr need
                     // result_type = Some(I64) so the emitter wraps in @intFromFloat.
                     if let Some(ref fn_ctx) = self.fn_ctx
                         && fn_ctx.return_type == Some(ZigType::I64)
@@ -270,13 +270,23 @@ impl Lowerer {
 
         let init = fs.init.as_ref().map(|init| match init {
             ForStatementInit::VariableDeclaration(vd) => {
-                // Emit as VarDecl statement(s)
-                let decl = self.lower_var_decl(&vd.declarations[0], vd.kind.is_const());
-                match decl {
-                    IrDecl::Var(v) => Box::new(crate::zigir::types::IrStmt::VarDecl(v)),
-                    _ => Box::new(crate::zigir::types::IrStmt::Comment(
-                        "// skipped init".to_string(),
-                    )),
+                // Lower ALL declarations (handle `for (let i = 0, j = 10; ...)`)
+                let is_const = vd.kind.is_const();
+                let stmts: Vec<crate::zigir::types::IrStmt> = vd
+                    .declarations
+                    .iter()
+                    .filter_map(|d| {
+                        let decl = self.lower_var_decl(d, is_const);
+                        match decl {
+                            IrDecl::Var(v) => Some(crate::zigir::types::IrStmt::VarDecl(v)),
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                if stmts.len() == 1 {
+                    Box::new(stmts.into_iter().next().unwrap())
+                } else {
+                    Box::new(crate::zigir::types::IrStmt::Block(IrBlock::new(stmts)))
                 }
             }
             _ => {
@@ -595,21 +605,48 @@ impl Lowerer {
     /// Lower a switch statement.
     pub(super) fn lower_switch(&mut self, ss: &SwitchStatement) -> crate::zigir::types::IrStmt {
         let expr = self.lower_expr(&ss.discriminant);
-        let cases: Vec<crate::zigir::types::IrSwitchCase> = ss
-            .cases
-            .iter()
-            .map(|case| {
-                let test = case.test.as_ref().map(|e| self.lower_expr(e));
-                // Filter out break statements (Zig switch doesn't need them)
-                let body: Vec<crate::zigir::types::IrStmt> = case
+
+        // Pre-compute fall-through ranges: for each case i, determine which
+        // cases' consequents must be merged into case i's body.
+        // A case falls through to the next if its consequent has no top-level
+        // break statement.
+        let n = ss.cases.len();
+        let mut body_ranges: Vec<(usize, usize)> = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut end = i + 1;
+            while end <= n {
+                let has_break = ss.cases[end - 1]
                     .consequent
                     .iter()
-                    .filter(|s| !matches!(s, Statement::BreakStatement(_)))
-                    .map(|s| self.lower_stmt(s))
-                    .collect();
-                crate::zigir::types::IrSwitchCase { test, body }
-            })
-            .collect();
+                    .any(|s| matches!(s, Statement::BreakStatement(_)));
+                if has_break {
+                    break;
+                }
+                if end < n {
+                    end += 1;
+                } else {
+                    break;
+                }
+            }
+            body_ranges.push((i, end));
+        }
+
+        // Lower each case: merge fall-through bodies, strip break statements.
+        let mut cases: Vec<crate::zigir::types::IrSwitchCase> = Vec::with_capacity(n);
+        for (i, case) in ss.cases.iter().enumerate() {
+            let test = case.test.as_ref().map(|e| self.lower_expr(e));
+            let (start, end) = body_ranges[i];
+            let mut body: Vec<crate::zigir::types::IrStmt> = Vec::new();
+            for j in start..end {
+                for s in &ss.cases[j].consequent {
+                    if matches!(s, Statement::BreakStatement(_)) {
+                        break;
+                    }
+                    body.push(self.lower_stmt(s));
+                }
+            }
+            cases.push(crate::zigir::types::IrSwitchCase { test, body });
+        }
 
         crate::zigir::types::IrStmt::Switch { expr, cases }
     }
@@ -952,7 +989,7 @@ impl Lowerer {
     }
 
     /// When an i64-returning function contains a `return expr` where `expr`
-    /// is a RemExpr or PowExpr with `result_type: None`, set `result_type`
+    /// is a RemExpr, DivExpr, or PowExpr with `result_type: None`, set `result_type`
     /// to `Some(I64)` so the emitter wraps the f64 result in
     /// `@as(i64, @intFromFloat(...))`.
     fn coerce_i64_result_type(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
@@ -965,6 +1002,19 @@ impl Lowerer {
             } => IrExpr::RemExpr {
                 left,
                 right,
+                result_type: Some(ZigType::I64),
+            },
+            IrExpr::DivExpr {
+                left,
+                right,
+                left_type,
+                right_type,
+                result_type: None,
+            } => IrExpr::DivExpr {
+                left,
+                right,
+                left_type,
+                right_type,
                 result_type: Some(ZigType::I64),
             },
             IrExpr::PowExpr {

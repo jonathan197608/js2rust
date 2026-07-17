@@ -379,6 +379,13 @@ impl Lowerer {
         // Enter function context
         let saved_fn = self.enter_fn(method_name, false, Some(return_type.clone()));
 
+        // For static methods, set in_static_block so `this` → ClassName
+        // (static methods don't have a `self` parameter in Zig).
+        let saved_static_block = self.in_static_block;
+        if is_static && method_name != "init" {
+            self.in_static_block = true;
+        }
+
         // Lower body
         let body = func
             .body
@@ -393,6 +400,7 @@ impl Lowerer {
             })
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
+        self.in_static_block = saved_static_block;
         self.exit_fn(saved_fn);
 
         crate::zigir::types::IrClassMethod {

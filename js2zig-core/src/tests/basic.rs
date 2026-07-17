@@ -132,7 +132,7 @@ return x;
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_operators");
     assert!(
-        zig.contains("+") && zig.contains("-") && zig.contains("*") && zig.contains("@divTrunc")
+        zig.contains("+") && zig.contains("-") && zig.contains("*") && zig.contains("floatFromInt")
     );
     assert!(zig.contains("==") && zig.contains("!=") && zig.contains("<") && zig.contains(">"));
 }
@@ -538,12 +538,20 @@ return x;
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_do_while");
     assert!(
-        zig.contains("while (true) {"),
-        "missing while true: {}",
+        zig.contains("__dw_first"),
+        "missing do-while first-iteration flag: {}",
         zig
     );
-    assert!(zig.contains("if (x > 0)"), "missing if condition: {}", zig);
-    assert!(zig.contains("else { break; }"), "missing break: {}", zig);
+    assert!(
+        zig.contains("while (__dw_first or (x > 0))"),
+        "missing do-while while condition: {}",
+        zig
+    );
+    assert!(
+        zig.contains(": (__dw_first = false)"),
+        "missing do-while continuation: {}",
+        zig
+    );
     assert!(zig.contains("return x;"));
 }
 
