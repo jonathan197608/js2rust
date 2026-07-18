@@ -1,5 +1,5 @@
 // test_dynamic_array_index.js — Variable array index & dynamic string index tests
-// Covers: arr[idx] read, arr[idx] = val write, str[idx] with JSDoc annotation
+// Covers: arr[idx] read, arr[idx] = val write, str.charCodeAt(idx) with JSDoc
 
 // ── Variable array index: read ────────────────────────────────
 
@@ -38,9 +38,10 @@ export function testDynamicArraySum() {
     return sum;
 }
 
-// ── Dynamic string index: with JSDoc annotation ───────────────
-// Note: str[idx] returns a byte (u8) value, not a substring.
-// Compare against the ASCII code of the character.
+// ── Dynamic string index: charCodeAt via JSDoc annotation ──────
+// Note: str[idx] in JS returns a single-character substring ([]const u8 in
+// Zig). To compare against an ASCII code numerically, use String.prototype
+// .charCodeAt() which yields a UTF-16 code unit (u16, widened to i64 here).
 
 /**
  * @param {string} s
@@ -48,7 +49,7 @@ export function testDynamicArraySum() {
  * @returns {i64}
  */
 export function testDynamicStringIndex(s, idx) {
-    const ch = s[idx];
+    const ch = s.charCodeAt(idx);
     // 'H' = 72, 'W' = 87
     if (ch === 72) { return 1; }
     if (ch === 87) { return 2; }

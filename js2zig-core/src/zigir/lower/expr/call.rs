@@ -80,14 +80,26 @@ impl Lowerer {
             return self.compile_error_expr(ce.span, err_msg);
         }
 
-        let args = self.lower_args(&ce.arguments);
-
         // ── Step 1: Builtin detection ──
         if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
             // ── Step 1a: Array callback inlining ──
+            // NOTE: `try_inline_array_callback` parses the callback directly
+            // from AST (via `parse_callback_inline`), so the call arguments
+            // must NOT be pre-lowered at this point. Pre-lowering would invoke
+            // `lower_arrow_fn` on the arrow-function argument, which registers
+            // a closure struct in `ClosureManager`. When the call expression
+            // is then replaced by `ArrayCallbackInline`, that registered
+            // closure struct becomes dead code that fails Zig `ast-check`
+            // (anytype parameter mismatch). Defer `lower_args` until after
+            // this check so the callback is lowered only via
+            // `parse_callback_inline`, which embeds its body in the inline IR
+            // without registering a closure struct.
             if let Some(inlined) = self.try_inline_array_callback(ce, &builtin) {
                 return inlined;
             }
+
+            // Callback inline did not fire — safe to lower arguments now.
+            let args = self.lower_args(&ce.arguments);
 
             // ── Step 1b: Array non-callback method inlining ──
             if let Some(inlined) = self.try_inline_array_method(ce, &builtin, &args) {
@@ -301,6 +313,11 @@ impl Lowerer {
                 ta_type_suffix,
             });
         }
+
+        // ── Non-builtin path: lower arguments ──
+        // Reached only when `detect_builtin_call` returned None (not a builtin)
+        // — in that case no `lower_args` call happened in Step 1, so do it here.
+        let args = self.lower_args(&ce.arguments);
 
         // ── Step 1.5: BigInt variable method interception ──
         // `b.toString()` or `b.valueOf()` where `b` is a known BigInt variable.

@@ -273,7 +273,7 @@ fn test_update_expr_in_index() {
 
 #[test]
 fn test_dynamic_string_index() {
-    // str[idx] where idx is a variable → StringChar
+    // str[idx] where idx is a variable → StringCharAt (returns Str)
     let js = r#"
         /**
          * @param {string} s
@@ -284,8 +284,13 @@ fn test_dynamic_string_index() {
     "#;
     let zig = transpile_and_assert(js, "test_dynamic_string_index");
     assert!(
-        zig.contains("@as(i64, @intCast("),
-        "Expected @as(i64, @intCast(...)) for StringChar access"
+        zig.contains("js_string.charAt(js_allocator.allocator(),"),
+        "Expected js_string.charAt(...) for StringCharAt access, got:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@as(i64, @intCast(js_string.charCodeAt"),
+        "Should not emit charCodeAt (old buggy behavior) for str[idx]"
     );
 }
 
@@ -293,7 +298,7 @@ fn test_dynamic_string_index() {
 fn test_string_param_refined_from_method_usage() {
     // No JSDoc @param {string}, but s.charAt() usage infers s as Str
     // (only for non-export functions where params default to Anytype),
-    // so s[i] should be treated as StringChar (not array index).
+    // so s[i] should be treated as StringCharAt (not array index).
     let js = r#"
         export function testStringRefinement() {
             function inner(s, i) {
@@ -305,8 +310,8 @@ fn test_string_param_refined_from_method_usage() {
     "#;
     let zig = transpile_and_assert(js, "test_string_param_refined_from_method_usage");
     assert!(
-        zig.contains("@as(i64, @intCast("),
-        "Expected @as(i64, @intCast(...)) for StringChar via type refinement, got:\n{}",
+        zig.contains("js_string.charAt(js_allocator.allocator(),"),
+        "Expected js_string.charAt(...) for StringCharAt via type refinement, got:\n{}",
         zig
     );
 }
@@ -322,8 +327,8 @@ fn test_string_literal_index_inferred_type() {
     "#;
     let zig = transpile_and_assert(js, "test_string_literal_index_inferred_type");
     assert!(
-        zig.contains("@as(i64, @intCast("),
-        "Expected @as(i64, @intCast(...)) for StringChar on inferred string var, got:\n{}",
+        zig.contains("js_string.charAt(js_allocator.allocator(),"),
+        "Expected js_string.charAt(...) for StringCharAt on inferred string var, got:\n{}",
         zig
     );
 }

@@ -92,8 +92,8 @@ impl Lowerer {
         stmts: &oxc_allocator::Vec<'_, Statement>,
         include_local_decls: bool,
     ) -> Vec<(String, ZigType, bool)> {
-        let mut captured = Vec::new();
-        let mut seen = HashSet::new();
+        let captured = RefCell::new(Vec::new());
+        let seen = RefCell::new(HashSet::new());
 
         let mut local_names = param_names.clone();
         if include_local_decls {
@@ -101,15 +101,10 @@ impl Lowerer {
         }
 
         for stmt in stmts {
-            Self::collect_idents_from_stmt(
-                stmt,
-                &mut captured,
-                &mut seen,
-                &local_names,
-                &self.type_info,
-            );
+            Self::collect_idents_from_stmt(stmt, &captured, &seen, &local_names, &self.type_info);
         }
 
+        let mut captured = captured.into_inner();
         let mutated = Self::detect_mutated_vars_in_stmts(stmts);
         for (name, _ztype, is_mut) in &mut captured {
             *is_mut = mutated.contains(name);
@@ -120,20 +115,31 @@ impl Lowerer {
 
     /// Collect locally declared variable names from a list of statements.
     /// These variables (const/let/var in the function body) are NOT captures.
+    /// Recurses into nested control flow (if/for/while/block/try/switch, etc.)
+    /// but does NOT recurse into FunctionDeclaration bodies (separate scope).
     pub(super) fn collect_local_declarations(
         stmts: &oxc_allocator::Vec<'_, Statement>,
     ) -> HashSet<String> {
-        let mut names = HashSet::new();
-        for stmt in stmts.iter() {
-            if let Statement::VariableDeclaration(var_decl) = stmt {
-                for declarator in &var_decl.declarations {
-                    if let Some(name) = crate::infer::binding_name(&declarator.id) {
-                        names.insert(name.to_string());
+        let names = RefCell::new(HashSet::new());
+        for stmt in stmts {
+            Self::collect_local_decls_from_stmt(stmt, &names);
+        }
+        names.into_inner()
+    }
+
+    fn collect_local_decls_from_stmt(stmt: &Statement, names: &RefCell<HashSet<String>>) {
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::collect_local_decls_from_stmt(s, names),
+            &mut |_| {}, // on_expr: not needed for local declarations
+            &mut |vd| {
+                for decl in &vd.declarations {
+                    if let Some(name) = crate::infer::binding_name(&decl.id) {
+                        names.borrow_mut().insert(name.to_string());
                     }
                 }
-            }
-        }
-        names
+            },
+        );
     }
 
     /// Detect which variables are mutated (assigned to or updated) in a list of statements.
@@ -183,11 +189,13 @@ impl Lowerer {
 
     /// Helper: collect identifiers from a function body (params + statements).
     /// Shared by FunctionExpression and ArrowFunctionExpression to avoid duplication.
+    /// Also collects local declarations from the nested function body to avoid
+    /// misclassifying them as captures.
     fn collect_idents_from_fn_body(
-        params: &oxc_allocator::Vec<'_, FormalParameter>,
+        params: &[FormalParameter],
         stmts: &oxc_allocator::Vec<'_, Statement>,
-        captured: &mut Vec<(String, ZigType, bool)>,
-        seen: &mut HashSet<String>,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
         local_names: &HashSet<String>,
         type_info: &crate::infer::TypeCheckResult,
     ) {
@@ -197,6 +205,10 @@ impl Lowerer {
                 inner_locals.insert(pname.to_string());
             }
         }
+        // Also collect the nested function's own local declarations so they
+        // are not falsely treated as captures from the enclosing scope.
+        inner_locals.extend(Self::collect_local_declarations(stmts));
+
         for stmt in stmts {
             Self::collect_idents_from_stmt(stmt, captured, seen, &inner_locals, type_info);
         }
@@ -205,115 +217,175 @@ impl Lowerer {
     /// Helper: collect identifiers from a statement that reference variables
     /// in an enclosing scope (possible captures).
     ///
-    /// Note: This intentionally handles only a limited set of statement types
-    /// (ExpressionStatement, ReturnStatement, VariableDeclaration). Other
-    /// statement types (If, While, For, etc.) are not recursed because the
-    /// caller already iterates top-level statements and the arrow function
-    /// bodies we analyze rarely have complex control flow.
+    /// Recurses into ALL statement types (if/while/for/try/block/switch/etc.)
+    /// using `for_each_stmt_child` to ensure identifiers inside control flow
+    /// are properly detected as captures.
     pub(super) fn collect_idents_from_stmt(
         stmt: &Statement,
-        captured: &mut Vec<(String, ZigType, bool)>,
-        seen: &mut HashSet<String>,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
         local_names: &HashSet<String>,
         type_info: &crate::infer::TypeCheckResult,
     ) {
-        match stmt {
-            Statement::ExpressionStatement(es) => {
-                Self::collect_idents_from_expr(
-                    &es.expression,
-                    captured,
-                    seen,
-                    local_names,
-                    type_info,
-                );
-            }
-            Statement::ReturnStatement(ret) => {
-                if let Some(expr) = &ret.argument {
-                    Self::collect_idents_from_expr(expr, captured, seen, local_names, type_info);
-                }
-            }
-            Statement::VariableDeclaration(var_decl) => {
-                for declarator in &var_decl.declarations {
-                    if let Some(init) = &declarator.init {
-                        Self::collect_idents_from_expr(
-                            init,
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::collect_idents_from_stmt(s, captured, seen, local_names, type_info),
+            &mut |e| Self::collect_idents_from_expr(e, captured, seen, local_names, type_info),
+            &mut |vd| {
+                crate::infer::ast_walk::for_each_var_decl_init(vd, &mut |init| {
+                    Self::collect_idents_from_expr(init, captured, seen, local_names, type_info);
+                });
+            },
+        );
+    }
+
+    /// Helper: collect identifiers from an expression that reference variables
+    /// in an enclosing scope.
+    ///
+    /// Recurses into ALL expression types using `for_each_expr_child` to ensure
+    /// identifiers inside member accesses, assignments, conditionals, arrays,
+    /// objects, optional chains, etc. are properly detected as captures.
+    pub(super) fn collect_idents_from_expr(
+        expr: &Expression,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
+        local_names: &HashSet<String>,
+        type_info: &crate::infer::TypeCheckResult,
+    ) {
+        crate::infer::ast_walk::for_each_expr_child(
+            expr,
+            &mut |e| Self::collect_idents_from_expr(e, captured, seen, local_names, type_info),
+            &mut |name| {
+                Self::check_and_add_capture(name, captured, seen, local_names, type_info);
+            },
+            &mut |target| {
+                match target {
+                    AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        Self::check_and_add_capture(
+                            id.name.as_str(),
                             captured,
                             seen,
                             local_names,
                             type_info,
                         );
                     }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Helper: collect identifiers from an expression that reference variables
-    /// in an enclosing scope.
-    ///
-    /// Note: This intentionally handles a limited set of expression types to
-    /// match the original behavior. Expanding coverage (e.g., handling
-    /// AssignmentExpression, StaticMemberExpression) would change capture
-    /// detection and affect the generated closure code.
-    pub(super) fn collect_idents_from_expr(
-        expr: &Expression,
-        captured: &mut Vec<(String, ZigType, bool)>,
-        seen: &mut HashSet<String>,
-        local_names: &HashSet<String>,
-        type_info: &crate::infer::TypeCheckResult,
-    ) {
-        match expr {
-            Expression::Identifier(id) => {
-                let name = id.name.as_str();
-                if !local_names.contains(name)
-                    && !seen.contains(name)
-                    && !crate::native_builtins::is_js_builtin_identifier(name)
-                {
-                    seen.insert(name.to_string());
-                    let ztype = type_info
-                        .var_types
-                        .get(name)
-                        .cloned()
-                        .unwrap_or(ZigType::JsAny);
-                    captured.push((name.to_string(), ztype, false));
-                }
-            }
-            Expression::BinaryExpression(be) => {
-                Self::collect_idents_from_expr(&be.left, captured, seen, local_names, type_info);
-                Self::collect_idents_from_expr(&be.right, captured, seen, local_names, type_info);
-            }
-            Expression::CallExpression(ce) => {
-                for arg in &ce.arguments {
-                    if let Some(e) = arg.as_expression() {
-                        Self::collect_idents_from_expr(e, captured, seen, local_names, type_info);
+                    AssignmentTarget::StaticMemberExpression(mem) => {
+                        Self::collect_idents_from_expr(
+                            &mem.object,
+                            captured,
+                            seen,
+                            local_names,
+                            type_info,
+                        );
                     }
+                    AssignmentTarget::ComputedMemberExpression(mem) => {
+                        Self::collect_idents_from_expr(
+                            &mem.object,
+                            captured,
+                            seen,
+                            local_names,
+                            type_info,
+                        );
+                        Self::collect_idents_from_expr(
+                            &mem.expression,
+                            captured,
+                            seen,
+                            local_names,
+                            type_info,
+                        );
+                    }
+                    AssignmentTarget::PrivateFieldExpression(pfe) => {
+                        Self::collect_idents_from_expr(
+                            &pfe.object,
+                            captured,
+                            seen,
+                            local_names,
+                            type_info,
+                        );
+                    }
+                    _ => {} // Destructuring targets — best effort skip
                 }
-                Self::collect_idents_from_expr(&ce.callee, captured, seen, local_names, type_info);
-            }
-            Expression::FunctionExpression(fe) => {
-                if let Some(body) = &fe.body {
-                    Self::collect_idents_from_fn_body(
-                        &fe.params.items,
-                        &body.statements,
+            },
+            &mut |simple_target| match simple_target {
+                SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                    Self::check_and_add_capture(
+                        id.name.as_str(),
                         captured,
                         seen,
                         local_names,
                         type_info,
                     );
                 }
-            }
-            Expression::ArrowFunctionExpression(af) => {
+                SimpleAssignmentTarget::StaticMemberExpression(mem) => {
+                    Self::collect_idents_from_expr(
+                        &mem.object,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                }
+                SimpleAssignmentTarget::ComputedMemberExpression(mem) => {
+                    Self::collect_idents_from_expr(
+                        &mem.object,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                    Self::collect_idents_from_expr(
+                        &mem.expression,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                }
+                SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                    Self::collect_idents_from_expr(
+                        &pfe.object,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                }
+                _ => {}
+            },
+            &mut |params, stmts| {
                 Self::collect_idents_from_fn_body(
-                    &af.params.items,
-                    &af.body.statements,
+                    params,
+                    stmts,
                     captured,
                     seen,
                     local_names,
                     type_info,
                 );
-            }
-            _ => {}
+            },
+        );
+    }
+
+    /// Check if a name should be added to the capture list.
+    /// A name is captured if it is NOT a local variable, NOT already seen,
+    /// and NOT a JavaScript built-in identifier.
+    fn check_and_add_capture(
+        name: &str,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
+        local_names: &HashSet<String>,
+        type_info: &crate::infer::TypeCheckResult,
+    ) {
+        if !local_names.contains(name)
+            && !seen.borrow().contains(name)
+            && !crate::native_builtins::is_js_builtin_identifier(name)
+        {
+            seen.borrow_mut().insert(name.to_string());
+            let ztype = type_info
+                .var_types
+                .get(name)
+                .cloned()
+                .unwrap_or(ZigType::JsAny);
+            captured.borrow_mut().push((name.to_string(), ztype, false));
         }
     }
 
@@ -395,7 +467,11 @@ impl Lowerer {
         arrow: &ArrowFunctionExpression,
         captured: &[(String, ZigType, bool)],
     ) -> ZigType {
-        if arrow.body.statements.len() == 1
+        // Only expression-body arrows (`() => expr`) return the expression value.
+        // Block-body arrows (`() => { expr; }`) return void unless they have an
+        // explicit `return` statement.
+        if arrow.expression
+            && arrow.body.statements.len() == 1
             && let Statement::ExpressionStatement(es) = &arrow.body.statements[0]
         {
             return self

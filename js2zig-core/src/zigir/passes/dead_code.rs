@@ -396,7 +396,12 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         IrStmt::ForOf { iterable, body, .. } => {
             expr_has_side_effects(iterable) || body.stmts.iter().any(stmt_has_side_effects)
         }
-        IrStmt::CompileError { .. } | IrStmt::Comment(_) => false,
+        // CompileError must be preserved: it carries a compile-time
+        // diagnostic that needs to surface to the user. Treating it as
+        // side-effect-free would let dead-code elimination drop it (and any
+        // preceding statements that the error is meant to flag).
+        IrStmt::CompileError { .. } => true,
+        IrStmt::Comment(_) => false,
         IrStmt::DestructureDecl(data) => expr_has_side_effects(&data.init),
         IrStmt::NestedFnDecl { .. } => true,
     }

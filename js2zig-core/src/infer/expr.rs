@@ -383,9 +383,9 @@ impl TypeInferrer {
                         InferResult::Definite(ZigType::JsAny)
                     }
                     InferResult::Definite(ZigType::Str) => {
-                        // str[idx] → u8 character (promoted to i64 in Zig context)
-                        // Both literal and variable index return I64
-                        InferResult::Definite(ZigType::I64)
+                        // str[idx] → single-character substring (JS charAt)
+                        // Returns Str ([]const u8) for both literal and variable index.
+                        InferResult::Definite(ZigType::Str)
                     }
                     InferResult::Definite(ZigType::ArrayList(ref elem_ty)) => {
                         // arr[idx] → element type (both literal and variable index)
@@ -624,9 +624,7 @@ impl TypeInferrer {
                     ZigType::I64
                 }
             }
-            BinaryOperator::Subtraction
-            | BinaryOperator::Multiplication
-            | BinaryOperator::Division => {
+            BinaryOperator::Subtraction | BinaryOperator::Multiplication => {
                 // BigInt arithmetic preserves BigInt type
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;
@@ -636,6 +634,15 @@ impl TypeInferrer {
                 } else {
                     ZigType::I64
                 }
+            }
+            // Division: JS `/` always returns float (5/2 === 2.5),
+            // even when both operands are integers.
+            // The Emitter generates DivExpr which always computes f64.
+            BinaryOperator::Division => {
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
+                ZigType::F64
             }
             // Remainder: JS % always uses f64 semantics (to preserve -0).
             // The Emitter generates js_runtime.jsRem() for integer operands,

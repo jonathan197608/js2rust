@@ -118,7 +118,10 @@ pub fn for_each_stmt_child(
         Statement::LabeledStatement(ls) => {
             on_stmt(&ls.body);
         }
-        // FunctionDeclaration, ClassDeclaration, Export*, Throw, etc.
+        Statement::ThrowStatement(ts) => {
+            on_expr(&ts.argument);
+        }
+        // FunctionDeclaration, ClassDeclaration, Export*, etc.
         // are not recursed by any current consumer; add as needed.
         _ => {}
     }
@@ -168,16 +171,26 @@ pub fn for_each_expr_child(
         Expression::CallExpression(ce) => {
             on_expr(&ce.callee);
             for arg in &ce.arguments {
-                if let Some(e) = arg.as_expression() {
-                    on_expr(e);
+                match arg {
+                    Argument::SpreadElement(se) => on_expr(&se.argument),
+                    _ => {
+                        if let Some(e) = arg.as_expression() {
+                            on_expr(e);
+                        }
+                    }
                 }
             }
         }
         Expression::NewExpression(ne) => {
             on_expr(&ne.callee);
             for arg in &ne.arguments {
-                if let Some(e) = arg.as_expression() {
-                    on_expr(e);
+                match arg {
+                    Argument::SpreadElement(se) => on_expr(&se.argument),
+                    _ => {
+                        if let Some(e) = arg.as_expression() {
+                            on_expr(e);
+                        }
+                    }
                 }
             }
         }
@@ -216,6 +229,64 @@ pub fn for_each_expr_child(
         }
         Expression::ArrowFunctionExpression(af) => {
             on_fn_scope(&af.params.items, &af.body.statements);
+        }
+        Expression::ArrayExpression(ae) => {
+            for elem in &ae.elements {
+                match elem {
+                    ArrayExpressionElement::SpreadElement(se) => on_expr(&se.argument),
+                    _ => {
+                        if let Some(e) = elem.as_expression() {
+                            on_expr(e);
+                        }
+                    }
+                }
+            }
+        }
+        Expression::ObjectExpression(oe) => {
+            for prop in &oe.properties {
+                match prop {
+                    ObjectPropertyKind::ObjectProperty(op) => {
+                        if op.computed
+                            && let Some(expr) = op.key.as_expression()
+                        {
+                            on_expr(expr);
+                        }
+                        on_expr(&op.value);
+                    }
+                    ObjectPropertyKind::SpreadProperty(sp) => {
+                        on_expr(&sp.argument);
+                    }
+                }
+            }
+        }
+        Expression::ChainExpression(ce) => match &ce.expression {
+            ChainElement::CallExpression(call_ce) => {
+                on_expr(&call_ce.callee);
+                for arg in &call_ce.arguments {
+                    match arg {
+                        Argument::SpreadElement(se) => on_expr(&se.argument),
+                        _ => {
+                            if let Some(e) = arg.as_expression() {
+                                on_expr(e);
+                            }
+                        }
+                    }
+                }
+            }
+            ChainElement::StaticMemberExpression(sme) => {
+                on_expr(&sme.object);
+            }
+            ChainElement::ComputedMemberExpression(cme) => {
+                on_expr(&cme.object);
+                on_expr(&cme.expression);
+            }
+            _ => {}
+        },
+        Expression::TaggedTemplateExpression(tte) => {
+            on_expr(&tte.tag);
+            for e in &tte.quasi.expressions {
+                on_expr(e);
+            }
         }
         // Literals, ThisExpression, etc. — leaf nodes with no children
         _ => {}

@@ -468,10 +468,23 @@ return sum;
 }
 "#;
     let zig = transpile_and_assert(js, "test_p1_labeled_for");
-    // for loop is transformed to while, but the label should be preserved
+    // for loop is transformed to while, but the label should be preserved.
+    // CRITICAL: the label must be on the `while`, NOT on the enclosing
+    // block — Zig `continue :label` only targets a labeled loop. A label on
+    // a plain block labels that block, which `continue` cannot target.
+    // Generate:
+    //   {
+    //       var i: i64 = 0;
+    //       loop1: while (...) : ({ ... }) { ... }
+    //   }
+    // NOT:
+    //   loop1: {                ← label on block — INVALID for continue :loop1
+    //       var i: i64 = 0;
+    //       while (...) ... { ... }
+    //   }
     assert!(
-        zig.contains("loop1:"),
-        "Expected 'loop1:' label in:\n{}",
+        zig.contains("loop1: while"),
+        "Expected 'loop1: while' (label on loop, not on block) in:\n{}",
         zig
     );
     assert!(

@@ -198,7 +198,7 @@ impl Lowerer {
         let is_arguments = matches!(&mem.object, Expression::Identifier(id)
             if id.name.as_str() == "arguments" || id.name.as_str() == "__arguments");
 
-        // ── Case 1: NumericLiteral key → IndexAccess or StringChar ──
+        // ── Case 1: NumericLiteral key → IndexAccess or StringCharAt ──
         if let Expression::NumericLiteral(nl) = &mem.expression {
             if is_arguments {
                 return IrExpr::IndexAccess {
@@ -215,12 +215,12 @@ impl Lowerer {
                 .as_ref()
                 .map(|t| matches!(t, ZigType::Str))
                 .unwrap_or(false);
-            // str[0] → StringChar (JS charCodeAt semantics, returns i64)
+            // str[0] → StringCharAt (JS charAt semantics, returns Str)
             if is_string {
                 return IrExpr::ComputedField {
                     object,
                     key: Box::new(IrExpr::IntLiteral(nl.value as i64)),
-                    key_kind: ComputedKeyKind::StringChar,
+                    key_kind: ComputedKeyKind::StringCharAt,
                 };
             }
             return IrExpr::IndexAccess {
@@ -264,7 +264,7 @@ impl Lowerer {
             Some(ZigType::Anytype) | Some(ZigType::JsAny) => ComputedKeyKind::JsAnyGetByKey,
             Some(ZigType::NamedStruct(name)) if name == "Map" => ComputedKeyKind::MapGet,
             Some(ZigType::ArrayList(_)) => ComputedKeyKind::ArrayListItem,
-            Some(ZigType::Str) => ComputedKeyKind::StringChar,
+            Some(ZigType::Str) => ComputedKeyKind::StringCharAt,
             Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
                 ComputedKeyKind::StructField
             }
@@ -338,8 +338,26 @@ impl Lowerer {
                 UnaryOperator::LogicalNot => Some(ZigType::Bool),
                 UnaryOperator::Void => Some(ZigType::JsAny),
                 UnaryOperator::Typeof => Some(ZigType::Str),
-                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
+                UnaryOperator::UnaryNegation => {
+                    // -0.0 must stay F64 to preserve IEEE 754 signed zero:
+                    // Zig's @as(i64, @intFromFloat(-0.0)) produces 0, losing
+                    // the sign. Match on the underlying NumericLiteral value
+                    // (covers both `0.0` and `-0.0` since they compare equal).
+                    if let Expression::NumericLiteral(nl) = &ue.argument
+                        && nl.value == 0.0
+                    {
+                        return Some(ZigType::F64);
+                    }
                     self.infer_expr_type(&ue.argument)
+                }
+                UnaryOperator::UnaryPlus => self.infer_expr_type(&ue.argument),
+                UnaryOperator::BitwiseNot => {
+                    // JS: ~x converts to Int32 then bit-negates; we store as
+                    // I64. A BigInt operand stays BigInt.
+                    match self.infer_expr_type(&ue.argument) {
+                        Some(ZigType::BigInt) => Some(ZigType::BigInt),
+                        _ => Some(ZigType::I64),
+                    }
                 }
                 _ => None,
             },
@@ -521,21 +539,35 @@ impl Lowerer {
             | BinaryOperator::GreaterEqualThan
             | BinaryOperator::In => Some(ZigType::Bool),
 
-            // Addition: string if either operand is string, otherwise numeric
+            // Addition: string if either operand is string, otherwise numeric.
+            // BigInt + BigInt preserves BigInt (JS spec).
             BinaryOperator::Addition => match (left_ty.as_ref(), right_ty.as_ref()) {
                 (Some(ZigType::Str), _) | (_, Some(ZigType::Str)) => Some(ZigType::Str),
+                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
                 (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
                 (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
                 _ => None,
             },
 
-            // Subtraction/Multiplication: F64 if either F64, else I64
-            BinaryOperator::Subtraction
-            | BinaryOperator::Multiplication
-            | BinaryOperator::Remainder => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
-                (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
-                _ => None,
+            // Subtraction/Multiplication: BigInt preserves BigInt, F64 if
+            // either F64, else I64.
+            BinaryOperator::Subtraction | BinaryOperator::Multiplication => {
+                match (left_ty.as_ref(), right_ty.as_ref()) {
+                    (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
+                    (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
+                    (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
+                    _ => None,
+                }
+            }
+
+            // Remainder: JS `%` always uses f64 semantics (to preserve -0).
+            // The Emitter generates js_runtime.jsRem() for integer operands,
+            // which returns f64, so the inferred type must be F64 to avoid
+            // type mismatches when the result is used in a larger expression.
+            // BigInt % BigInt preserves BigInt.
+            BinaryOperator::Remainder => match (left_ty.as_ref(), right_ty.as_ref()) {
+                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
+                _ => Some(ZigType::F64),
             },
 
             // Division: JS `/` always returns float (5/2 === 2.5),
@@ -549,13 +581,16 @@ impl Lowerer {
                 _ => Some(ZigType::F64),
             },
 
-            // Bitwise: always I64
+            // Bitwise: BigInt if both operands are BigInt, otherwise I64.
             BinaryOperator::BitwiseAnd
             | BinaryOperator::BitwiseOR
             | BinaryOperator::BitwiseXOR
             | BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => Some(ZigType::I64),
+            | BinaryOperator::ShiftRightZeroFill => match (left_ty.as_ref(), right_ty.as_ref()) {
+                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
+                _ => Some(ZigType::I64),
+            },
 
             _ => None,
         }

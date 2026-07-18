@@ -197,13 +197,17 @@ impl Emitter {
             ComputedKeyKind::ArrayListItem => {
                 self.emit_arraylist_item(object, key);
             }
-            ComputedKeyKind::StringChar => {
-                // str[idx] in JS returns a UTF-16 code unit value; use charCodeAt for correct semantics
-                self.write("@as(i64, @intCast(js_string.charCodeAt(");
+            ComputedKeyKind::StringCharAt => {
+                // str[idx] in JS returns a single-character substring (charAt
+                // semantics). Use js_string.charAt which returns `[]const u8`.
+                // Match the fallible string-method pattern used elsewhere:
+                // `catch @panic("OOM: string method")` (avoids forcing an
+                // error-union return type on the enclosing function).
+                self.write("js_string.charAt(js_allocator.allocator(), ");
                 self.emit_expr(object);
                 self.write(", ");
                 self.emit_expr(key);
-                self.write(")))");
+                self.write(") catch @panic(\"OOM: string method\")");
             }
             ComputedKeyKind::CompileError(msg) => {
                 self.write(&helpers::compile_error(msg));

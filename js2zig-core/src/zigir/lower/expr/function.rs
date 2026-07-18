@@ -342,8 +342,7 @@ impl Lowerer {
         use crate::zigir::types::{IrArrowFn, IrExpr};
 
         let captured = self.collect_arrow_captures(af);
-        let is_concise = af.body.statements.len() == 1
-            && matches!(af.body.statements[0], Statement::ExpressionStatement(_));
+        let is_concise = af.expression;
         let return_type = self.infer_arrow_return_type(af, &captured);
         let params = self.lower_arrow_params(af);
         let arrow_fn_label = format!("_arrow_{}", self.name_mangler.next_name("arrow"));

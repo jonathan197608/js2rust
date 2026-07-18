@@ -271,6 +271,17 @@ impl TypeInferrer {
         stmt: &'a Statement<'a>,
         exprs: &mut Vec<&'a Expression<'a>>,
     ) {
+        // P1-11: recurse into the bodies of every block-introducing construct
+        // so returns nested inside those constructs are picked up. The
+        // previous implementation only handled If/Block/While explicitly and
+        // silently dropped returns inside DoWhile/For/ForOf/ForIn/Switch/Try/
+        // Labeled — leading to wrong return-type inference (e.g. a function
+        // that only returns inside a for loop would be inferred as `void`).
+        //
+        // VariableDeclaration and ExpressionStatement are intentionally NOT
+        // recursed into: their initializers/expressions may hold arrow or
+        // function expressions, and recursing into those would capture the
+        // nested function's returns (a different function scope).
         match stmt {
             Statement::ReturnStatement(rs) => {
                 if let Some(ref arg) = rs.argument {
@@ -290,6 +301,43 @@ impl TypeInferrer {
             }
             Statement::WhileStatement(ws) => {
                 Self::collect_returns(&ws.body, exprs);
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::collect_returns(&dws.body, exprs);
+            }
+            Statement::ForStatement(fs) => {
+                Self::collect_returns(&fs.body, exprs);
+            }
+            Statement::ForOfStatement(fos) => {
+                Self::collect_returns(&fos.body, exprs);
+            }
+            Statement::ForInStatement(fis) => {
+                Self::collect_returns(&fis.body, exprs);
+            }
+            Statement::SwitchStatement(ss) => {
+                for case in &ss.cases {
+                    for s in &case.consequent {
+                        Self::collect_returns(s, exprs);
+                    }
+                }
+            }
+            Statement::TryStatement(ts) => {
+                for s in &ts.block.body {
+                    Self::collect_returns(s, exprs);
+                }
+                if let Some(handler) = &ts.handler {
+                    for s in &handler.body.body {
+                        Self::collect_returns(s, exprs);
+                    }
+                }
+                if let Some(finalizer) = &ts.finalizer {
+                    for s in &finalizer.body {
+                        Self::collect_returns(s, exprs);
+                    }
+                }
+            }
+            Statement::LabeledStatement(ls) => {
+                Self::collect_returns(&ls.body, exprs);
             }
             _ => {}
         }
@@ -429,6 +477,11 @@ impl TypeInferrer {
     }
 
     pub(crate) fn stmt_contains_await(stmt: &Statement) -> bool {
+        // P1-12: previously only handled a subset of statement types —
+        // awaited expressions inside ForStatement/ForInStatement/Labeled/
+        // TryStatement/ThrowStatement were silently dropped, so a function
+        // using `await` inside (e.g.) a try block was incorrectly categorized
+        // as non-async. Added the missing block-introducing constructs.
         match stmt {
             Statement::ExpressionStatement(es) => Self::expr_contains_await(&es.expression),
             Statement::ReturnStatement(rs) => rs
@@ -451,18 +504,54 @@ impl TypeInferrer {
             Statement::WhileStatement(ws) => {
                 Self::expr_contains_await(&ws.test) || Self::stmt_contains_await(&ws.body)
             }
-            Statement::DoWhileStatement(dws) => Self::stmt_contains_await(&dws.body),
-            Statement::ForOfStatement(fos) => Self::stmt_contains_await(&fos.body),
-            Statement::SwitchStatement(ss) => ss
-                .cases
-                .iter()
-                .any(|c| c.consequent.iter().any(|s| Self::stmt_contains_await(s))),
+            Statement::DoWhileStatement(dws) => {
+                Self::stmt_contains_await(&dws.body) || Self::expr_contains_await(&dws.test)
+            }
+            Statement::ForStatement(fs) => {
+                // init: may be a VariableDeclaration (no await) or an expression
+                let init_has = fs.init.as_ref().is_some_and(|init| match init {
+                    ForStatementInit::VariableDeclaration(_) => false,
+                    other => other.as_expression().is_some_and(Self::expr_contains_await),
+                });
+                let test_has = fs.test.as_ref().is_some_and(Self::expr_contains_await);
+                let update_has = fs.update.as_ref().is_some_and(Self::expr_contains_await);
+                init_has || test_has || update_has || Self::stmt_contains_await(&fs.body)
+            }
+            Statement::ForOfStatement(fos) => {
+                // for-await iteration is handled by the not-implemented feature
+                // pass; only the body / right expression matter for plain await.
+                Self::expr_contains_await(&fos.right) || Self::stmt_contains_await(&fos.body)
+            }
+            Statement::ForInStatement(fis) => {
+                Self::expr_contains_await(&fis.right) || Self::stmt_contains_await(&fis.body)
+            }
+            Statement::SwitchStatement(ss) => ss.cases.iter().any(|c| {
+                c.test.as_ref().is_some_and(Self::expr_contains_await)
+                    || c.consequent.iter().any(|s| Self::stmt_contains_await(s))
+            }),
             Statement::BlockStatement(bs) => bs.body.iter().any(|s| Self::stmt_contains_await(s)),
+            Statement::TryStatement(ts) => {
+                ts.block.body.iter().any(|s| Self::stmt_contains_await(s))
+                    || ts
+                        .handler
+                        .as_ref()
+                        .is_some_and(|h| h.body.body.iter().any(|s| Self::stmt_contains_await(s)))
+                    || ts
+                        .finalizer
+                        .as_ref()
+                        .is_some_and(|f| f.body.iter().any(|s| Self::stmt_contains_await(s)))
+            }
+            Statement::LabeledStatement(ls) => Self::stmt_contains_await(&ls.body),
+            Statement::ThrowStatement(ts) => Self::expr_contains_await(&ts.argument),
             _ => false,
         }
     }
 
     pub(crate) fn expr_contains_await(expr: &Expression) -> bool {
+        // P1-12: previously only handled a handful of expression types.
+        // Awaitable operands nested inside New/Assignment/Member/Chain/Template/
+        // Object/Sequence expressions were silently missed. Added the
+        // commonly-needed variants.
         match expr {
             Expression::AwaitExpression(_) => true,
             Expression::ParenthesizedExpression(pe) => Self::expr_contains_await(&pe.expression),
@@ -484,11 +573,77 @@ impl TypeInferrer {
                             .is_some_and(|e| Self::expr_contains_await(e))
                     })
             }
+            Expression::NewExpression(ne) => {
+                Self::expr_contains_await(&ne.callee)
+                    || ne.arguments.iter().any(|a| {
+                        a.as_expression()
+                            .is_some_and(|e| Self::expr_contains_await(e))
+                    })
+            }
             Expression::UnaryExpression(ue) => Self::expr_contains_await(&ue.argument),
             Expression::ArrayExpression(ae) => ae.elements.iter().any(|e| {
                 e.as_expression()
                     .is_some_and(|e| Self::expr_contains_await(e))
             }),
+            // P1-12 additions below
+            Expression::AssignmentExpression(ae) => {
+                // Right side is always Expression-typed and the common place
+                // where `await` appears (`x = await foo()`).
+                Self::expr_contains_await(&ae.right)
+            }
+            Expression::StaticMemberExpression(sme) => {
+                // e.g. `(await foo()).bar`
+                Self::expr_contains_await(&sme.object)
+            }
+            Expression::ComputedMemberExpression(cme) => {
+                // e.g. `(await foo())[await bar()]`
+                Self::expr_contains_await(&cme.object) || Self::expr_contains_await(&cme.expression)
+            }
+            Expression::SequenceExpression(se) => {
+                se.expressions.iter().any(|e| Self::expr_contains_await(e))
+            }
+            Expression::TemplateLiteral(tl) => {
+                tl.expressions.iter().any(|e| Self::expr_contains_await(e))
+            }
+            Expression::TaggedTemplateExpression(tte) => {
+                Self::expr_contains_await(&tte.tag)
+                    || tte
+                        .quasi
+                        .expressions
+                        .iter()
+                        .any(|e| Self::expr_contains_await(e))
+            }
+            Expression::ObjectExpression(oe) => oe.properties.iter().any(|p| match p {
+                ObjectPropertyKind::ObjectProperty(op) => {
+                    let key_has = op
+                        .key
+                        .as_expression()
+                        .is_some_and(Self::expr_contains_await);
+                    key_has || Self::expr_contains_await(&op.value)
+                }
+                ObjectPropertyKind::SpreadProperty(sp) => Self::expr_contains_await(&sp.argument),
+            }),
+            Expression::ChainExpression(ce) => match &ce.expression {
+                ChainElement::CallExpression(cce) => {
+                    Self::expr_contains_await(&cce.callee)
+                        || cce.arguments.iter().any(|a| {
+                            a.as_expression()
+                                .is_some_and(|e| Self::expr_contains_await(e))
+                        })
+                }
+                ChainElement::StaticMemberExpression(sme) => Self::expr_contains_await(&sme.object),
+                ChainElement::ComputedMemberExpression(cme) => {
+                    Self::expr_contains_await(&cme.object)
+                        || Self::expr_contains_await(&cme.expression)
+                }
+                _ => false,
+            },
+            // Note: ArrowFunctionExpression / FunctionExpression intentionally
+            // NOT recursed into — their bodies introduce a new function scope
+            // whose awaits belong to the nested function's own async-ness
+            // (sync arrow inherits enclosing context, but that's an edge case
+            // beyond this fix's scope; missed awaits in those scopes are a
+            // separate concern).
             _ => false,
         }
     }

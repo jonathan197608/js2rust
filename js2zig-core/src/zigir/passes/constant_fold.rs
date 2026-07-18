@@ -415,7 +415,13 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
 
 fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
     match (op, operand) {
-        (UnaOp::Neg, IrExpr::IntLiteral(n)) => Some(IrExpr::IntLiteral(-n)),
+        (UnaOp::Neg, IrExpr::IntLiteral(n)) => {
+            // Use checked_neg to avoid overflow panic on i64::MIN
+            // (in debug builds `-i64::MIN` panics). When negation overflows
+            // we leave the expression unfolded rather than producing a
+            // wrapping value.
+            n.checked_neg().map(IrExpr::IntLiteral)
+        }
         (UnaOp::Neg, IrExpr::FloatLiteral(n)) => Some(IrExpr::FloatLiteral(-n)),
         (UnaOp::Not, IrExpr::BoolLiteral(b)) => Some(IrExpr::BoolLiteral(!b)),
         (UnaOp::BitNot, IrExpr::IntLiteral(n)) => Some(IrExpr::IntLiteral(!n)),

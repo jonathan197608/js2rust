@@ -161,9 +161,15 @@ impl Lowerer {
                         error_name: Some("ConstReassignment".to_string()),
                     }
                 } else {
+                    // Save/restore the old flag value rather than unconditionally
+                    // resetting to false. If the lowered expression contains a
+                    // nested function/closure, lowering that body may itself
+                    // touch in_expr_stmt; restoring the saved value keeps the
+                    // outer context consistent instead of clobbering it.
+                    let prev_in_expr_stmt = self.in_expr_stmt;
                     self.in_expr_stmt = true;
                     let expr = self.lower_expr(&es.expression);
-                    self.in_expr_stmt = false;
+                    self.in_expr_stmt = prev_in_expr_stmt;
                     crate::zigir::types::IrStmt::Expr(expr)
                 }
             }
@@ -687,6 +693,21 @@ impl Lowerer {
             .is_some_and(|ctx| ctx.has_catchable_error);
         let has_catchable_error_in_try = catchable_after && !catchable_before;
 
+        // Reset has_catchable_error to its pre-try state.
+        // Without this reset, the flag is sticky: once any catchable operation
+        // (JSON.parse, BigInt div/mod, BigInt **) sets it to true, it stays true
+        // for all subsequent try blocks in the same function. Since lower_try
+        // detects catchable errors via the DIFFERENCE between catchable_before
+        // and catchable_after, a sticky true makes has_catchable_error_in_try =
+        // true && !true = false for every try after the first — silently
+        // skipping the labeled-block emit pattern and producing invalid Zig
+        // (catch return error.JsThrow inside a non-error-returning function).
+        // Catch/finally blocks below may set the flag again, which is correct:
+        // those errors are outside the try body and need function-level can_throw.
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            ctx.has_catchable_error = catchable_before;
+        }
+
         // AST-level throw detection (for nested try exclusion)
         let has_nested_try = ts
             .block
@@ -711,6 +732,20 @@ impl Lowerer {
                     cases.iter().any(|c| c.body.iter().any(ir_stmt_has_throw))
                 }
                 crate::zigir::types::IrStmt::Block(b) => ir_block_has_throw(b),
+                // Recurse into nested try: throws in the try body, catch, or
+                // finally all propagate to the outer try's has_throw flag
+                // (conservative — even throws caught by the inner catch count,
+                //  which only makes the outer emit use the more general path).
+                crate::zigir::types::IrStmt::Try {
+                    try_block,
+                    catch_block,
+                    finally,
+                    ..
+                } => {
+                    ir_block_has_throw(try_block)
+                        || ir_block_has_throw(catch_block)
+                        || finally.as_ref().is_some_and(ir_block_has_throw)
+                }
                 _ => false,
             }
         }
@@ -718,6 +753,49 @@ impl Lowerer {
             block.stmts.iter().any(ir_stmt_has_throw)
         }
         let has_throw = ir_block_has_throw(&try_block) || has_catchable_error_in_try;
+
+        // Check if a finally block contains break/continue that would escape
+        // the defer block (which is how finally is emitted). Break/continue
+        // inside nested loops are valid — they target the loop. Only
+        // break/continue in If/Block/Switch/Try (not inside a loop) would
+        // target a loop outside the defer, producing invalid Zig.
+        fn ir_finally_has_escaping_break_or_continue(
+            stmts: &[crate::zigir::types::IrStmt],
+        ) -> bool {
+            fn check(s: &crate::zigir::types::IrStmt) -> bool {
+                use crate::zigir::types::IrStmt;
+                match s {
+                    IrStmt::Break { .. } | IrStmt::Continue { .. } => true,
+                    IrStmt::If { then, else_, .. } => {
+                        check_block(&then.stmts)
+                            || else_.as_ref().is_some_and(|e| check_block(&e.stmts))
+                    }
+                    IrStmt::Block(b) => check_block(&b.stmts),
+                    IrStmt::Switch { cases, .. } => cases.iter().any(|c| c.body.iter().any(check)),
+                    IrStmt::Try {
+                        try_block,
+                        catch_block,
+                        finally,
+                        ..
+                    } => {
+                        check_block(&try_block.stmts)
+                            || check_block(&catch_block.stmts)
+                            || finally.as_ref().is_some_and(|f| check_block(&f.stmts))
+                    }
+                    // Loops: break/continue inside these target the loop — valid
+                    IrStmt::While { .. }
+                    | IrStmt::DoWhile { .. }
+                    | IrStmt::For { .. }
+                    | IrStmt::ForOf { .. }
+                    | IrStmt::ForIn { .. } => false,
+                    _ => false,
+                }
+            }
+            fn check_block(stmts: &[crate::zigir::types::IrStmt]) -> bool {
+                stmts.iter().any(check)
+            }
+            check_block(stmts)
+        }
 
         let (catch_var, catch_var_referenced, catch_block) = if let Some(handler) = &ts.handler {
             let var = handler
@@ -758,6 +836,24 @@ impl Lowerer {
             let stmts = f.body.iter().map(|s| self.lower_stmt(s)).collect();
             IrBlock::new(stmts)
         });
+
+        // Detect break/continue in finally that would escape the defer.
+        // The emit layer already catches return/throw via block_has_return_or_throw,
+        // but break/continue are not checked there — producing invalid Zig that
+        // fails at compile time with an unhelpful error. Catch it here instead.
+        // Also call add_error so the message surfaces in TranspileResult.errors
+        // (not just compile_errors / emitted @compileError).
+        if let Some(ref fin) = finally
+            && ir_finally_has_escaping_break_or_continue(&fin.stmts)
+        {
+            let span = self.span_to_source_span(ts.span);
+            let msg = "break/continue in finally block is not supported";
+            self.add_error(span.clone(), msg);
+            return crate::zigir::types::IrStmt::CompileError {
+                span,
+                msg: msg.to_string(),
+            };
+        }
 
         crate::zigir::types::IrStmt::Try {
             try_block,

@@ -232,6 +232,16 @@ impl Lowerer {
 
         match ue.operator {
             UnaryOperator::UnaryNegation => {
+                // -0.0 must be lowered directly as FloatLiteral(-0.0) to
+                // preserve IEEE 754 signed zero. Otherwise the operand 0.0 is
+                // lowered as IntLiteral(0) (0.0 fits in i64), and constant
+                // folding collapses Neg(IntLiteral(0)) -> IntLiteral(0),
+                // losing the sign bit.
+                if let Expression::NumericLiteral(nl) = &ue.argument
+                    && nl.value == 0.0
+                {
+                    return IrExpr::FloatLiteral(-0.0);
+                }
                 if self.infer_expr_type(&ue.argument) == Some(ZigType::BigInt) {
                     let operand = self.lower_expr(&ue.argument);
                     return self.bigint_unary_builtin("bigIntNeg", operand);
@@ -286,17 +296,32 @@ impl Lowerer {
             UnaryOperator::Delete => {
                 // delete obj.prop → IrBuiltinCall { JsRuntime, "deleteKey", obj, [prop] }
                 // delete obj[expr] → IrBuiltinCall { JsRuntime, "deleteByKey", obj, [expr] }
+                //
+                // Bug fix (Agent1 P1-6): When the receiver is a non-Identifier
+                // expression (e.g. `delete getObj().prop`, `delete arr[i].prop`,
+                // `delete obj.a.b`), the previous code set both `obj_name` and
+                // `obj_expr` to `None`, silently dropping the receiver —
+                // including its side effects. The emit layer would then produce
+                // invalid Zig like `_ = .deleteKey("prop")`. Now we lower the
+                // receiver expression and pass it via `obj_expr` so the Emitter
+                // renders it inline (`Self::emit_expr_inline`).
                 match &ue.argument {
                     Expression::StaticMemberExpression(mem) => {
-                        let obj_name = match &mem.object {
-                            Expression::Identifier(id) => Some(id.name.as_str().to_string()),
-                            _ => None,
+                        let (obj_name, obj_expr) = match &mem.object {
+                            Expression::Identifier(id) => {
+                                (Some(id.name.as_str().to_string()), None)
+                            }
+                            other => {
+                                // Lower the receiver so its side effects happen
+                                // exactly once at the delete call site.
+                                (None, Some(Box::new(self.lower_expr(other))))
+                            }
                         };
                         IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
                             BuiltinModule::JsRuntime,
                             "deleteKey",
                             obj_name,
-                            None,
+                            obj_expr,
                             vec![IrExpr::StringLiteral(
                                 mem.property.name.as_str().to_string(),
                             )],
@@ -304,16 +329,17 @@ impl Lowerer {
                         ))
                     }
                     Expression::ComputedMemberExpression(mem) => {
-                        let obj_name = if let Expression::Identifier(id) = &mem.object {
-                            Some(id.name.as_str().to_string())
-                        } else {
-                            None
+                        let (obj_name, obj_expr) = match &mem.object {
+                            Expression::Identifier(id) => {
+                                (Some(id.name.as_str().to_string()), None)
+                            }
+                            other => (None, Some(Box::new(self.lower_expr(other)))),
                         };
                         IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
                             BuiltinModule::JsRuntime,
                             "deleteByKey",
                             obj_name,
-                            None,
+                            obj_expr,
                             vec![self.lower_expr(&mem.expression)],
                             ZigType::Bool,
                         ))
@@ -394,11 +420,10 @@ impl Lowerer {
             let target = self.lower_assign_target(&ae.left);
             let value = Box::new(self.lower_expr(&ae.right));
             let target_type = self.infer_assign_target_type(&ae.left);
-            let base_expr = target
-                .to_read_expr()
-                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
-            if target_type == Some(ZigType::BigInt) {
-                return IrExpr::Assign {
+            let (bind, target, base_expr) = self.maybe_bind_member_object_for_compound(target);
+            let break_value = base_expr.clone();
+            let assign = if target_type == Some(ZigType::BigInt) {
+                IrExpr::Assign {
                     op: AssignOp::Assign,
                     target: Box::new(target),
                     value: Box::new(IrExpr::Binary {
@@ -408,29 +433,31 @@ impl Lowerer {
                         left_type: Some(ZigType::BigInt),
                         right_type: Some(ZigType::BigInt),
                     }),
-                };
-            }
-            // Non-BigInt: a = std.math.pow(a, b) via PowExpr
-            let base_type = target_type.unwrap_or(ZigType::F64);
-            let exp_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::F64);
-            // When assigning pow result to an i64 variable, set result_type so
-            // the emit layer wraps in @as(i64, @intFromFloat(...))
-            let result_type = if base_type == ZigType::I64 {
-                Some(ZigType::I64)
+                }
             } else {
-                None
+                // Non-BigInt: a = std.math.pow(a, b) via PowExpr
+                let base_type = target_type.unwrap_or(ZigType::F64);
+                let exp_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::F64);
+                // When assigning pow result to an i64 variable, set result_type so
+                // the emit layer wraps in @as(i64, @intFromFloat(...))
+                let result_type = if base_type == ZigType::I64 {
+                    Some(ZigType::I64)
+                } else {
+                    None
+                };
+                IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::PowExpr {
+                        base: Box::new(base_expr),
+                        exp: value,
+                        base_type,
+                        exp_type,
+                        result_type,
+                    }),
+                }
             };
-            return IrExpr::Assign {
-                op: AssignOp::Assign,
-                target: Box::new(target),
-                value: Box::new(IrExpr::PowExpr {
-                    base: Box::new(base_expr),
-                    exp: value,
-                    base_type,
-                    exp_type,
-                    result_type,
-                }),
-            };
+            return self.wrap_compound_assign(bind, assign, break_value);
         }
         // >>>= → a = a >>> b (unsigned right shift cannot use >>= which is signed)
         // Expand early, same pattern as **=, so the emitter uses the UrShr path.
@@ -440,10 +467,9 @@ impl Lowerer {
             let target_type = self.infer_assign_target_type(&ae.left);
             let base_type = target_type.unwrap_or(ZigType::I64);
             let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
-            let base_expr = target
-                .to_read_expr()
-                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
-            return IrExpr::Assign {
+            let (bind, target, base_expr) = self.maybe_bind_member_object_for_compound(target);
+            let break_value = base_expr.clone();
+            let assign = IrExpr::Assign {
                 op: AssignOp::Assign,
                 target: Box::new(target),
                 value: Box::new(IrExpr::Binary {
@@ -454,6 +480,7 @@ impl Lowerer {
                     right_type: Some(right_type),
                 }),
             };
+            return self.wrap_compound_assign(bind, assign, break_value);
         }
         // %= → a = a % b  (non-BigInt: use RemExpr for jsRem with type conversion)
         if ae.operator == AssignmentOperator::Remainder {
@@ -462,9 +489,8 @@ impl Lowerer {
             let value = Box::new(self.lower_expr(&ae.right));
             // BigInt %= falls through to the BigInt compound expansion below
             if target_type != Some(ZigType::BigInt) {
-                let base_expr = target
-                    .to_read_expr()
-                    .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+                let (bind, target, base_expr) = self.maybe_bind_member_object_for_compound(target);
+                let break_value = base_expr.clone();
                 // When assigning % result to an i64 variable, set result_type so
                 // the emit layer wraps in @as(i64, @intFromFloat(jsRem(...)))
                 let result_type = if target_type == Some(ZigType::I64) {
@@ -472,7 +498,7 @@ impl Lowerer {
                 } else {
                     None
                 };
-                return IrExpr::Assign {
+                let assign = IrExpr::Assign {
                     op: AssignOp::Assign,
                     target: Box::new(target),
                     value: Box::new(IrExpr::RemExpr {
@@ -481,6 +507,7 @@ impl Lowerer {
                         result_type,
                     }),
                 };
+                return self.wrap_compound_assign(bind, assign, break_value);
             }
             // BigInt %=: fall through to BigInt compound expansion below
         }
@@ -491,9 +518,8 @@ impl Lowerer {
             // BigInt /= falls through to the BigInt compound expansion below
             if target_type != Some(ZigType::BigInt) {
                 let value = Box::new(self.lower_expr(&ae.right));
-                let base_expr = target
-                    .to_read_expr()
-                    .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+                let (bind, target, base_expr) = self.maybe_bind_member_object_for_compound(target);
+                let break_value = base_expr.clone();
                 let left_type = target_type.unwrap_or(ZigType::I64);
                 let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
                 // When assigning / result to an i64 variable, set result_type so
@@ -503,7 +529,7 @@ impl Lowerer {
                 } else {
                     None
                 };
-                return IrExpr::Assign {
+                let assign = IrExpr::Assign {
                     op: AssignOp::Assign,
                     target: Box::new(target),
                     value: Box::new(IrExpr::DivExpr {
@@ -514,6 +540,7 @@ impl Lowerer {
                         result_type,
                     }),
                 };
+                return self.wrap_compound_assign(bind, assign, break_value);
             }
             // BigInt /=: fall through to BigInt compound expansion below
         }
@@ -544,16 +571,24 @@ impl Lowerer {
                 // Fall through for unsupported targets
             } else {
                 let target = self.lower_assign_target(&ae.left);
-                let value = self.lower_expr(&ae.right);
-                let value_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::JsAny);
-                let logical_op = match ae.operator {
-                    AssignmentOperator::LogicalAnd => LogicalOp::And,
-                    AssignmentOperator::LogicalOr => LogicalOp::Or,
-                    AssignmentOperator::LogicalNullish => LogicalOp::Nullish,
-                    _ => unreachable!(),
-                };
-                if let Some(read) = target.to_read_expr() {
-                    return IrExpr::Assign {
+                // Only expand for Member/Ident targets (to_read_expr returns Some).
+                // Index/Destructure fall through to the default path below.
+                if matches!(
+                    target,
+                    crate::zigir::types::IrAssignTarget::Member { .. }
+                        | crate::zigir::types::IrAssignTarget::Ident(_)
+                ) {
+                    let value = self.lower_expr(&ae.right);
+                    let value_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::JsAny);
+                    let logical_op = match ae.operator {
+                        AssignmentOperator::LogicalAnd => LogicalOp::And,
+                        AssignmentOperator::LogicalOr => LogicalOp::Or,
+                        AssignmentOperator::LogicalNullish => LogicalOp::Nullish,
+                        _ => unreachable!(),
+                    };
+                    let (bind, target, read) = self.maybe_bind_member_object_for_compound(target);
+                    let break_value = read.clone();
+                    let assign = IrExpr::Assign {
                         op: AssignOp::Assign,
                         target: Box::new(target),
                         value: Box::new(IrExpr::Logical {
@@ -564,6 +599,7 @@ impl Lowerer {
                             right_type: Some(value_type),
                         }),
                     };
+                    return self.wrap_compound_assign(bind, assign, break_value);
                 }
                 // For unsupported targets (index, destructure), fall through to default path
             }
@@ -583,8 +619,15 @@ impl Lowerer {
             let target_type = self.infer_assign_target_type(&ae.left);
             if target_type == Some(ZigType::BigInt) {
                 let target = self.lower_assign_target(&ae.left);
-                let value = Box::new(self.lower_expr(&ae.right));
-                if let Some(read) = target.to_read_expr() {
+                // Only expand for Member/Ident targets (to_read_expr returns Some).
+                if matches!(
+                    target,
+                    crate::zigir::types::IrAssignTarget::Member { .. }
+                        | crate::zigir::types::IrAssignTarget::Ident(_)
+                ) {
+                    let value = Box::new(self.lower_expr(&ae.right));
+                    let (bind, target, read) = self.maybe_bind_member_object_for_compound(target);
+                    let break_value = read.clone();
                     let bin_op = match ae.operator {
                         AssignmentOperator::Addition => BinOp::Add,
                         AssignmentOperator::Subtraction => BinOp::Sub,
@@ -599,7 +642,7 @@ impl Lowerer {
                         AssignmentOperator::BitwiseXOR => BinOp::BitXor,
                         _ => BinOp::Add, // fallback, shouldn't reach here
                     };
-                    return IrExpr::Assign {
+                    let assign = IrExpr::Assign {
                         op: AssignOp::Assign,
                         target: Box::new(target),
                         value: Box::new(IrExpr::Binary {
@@ -610,6 +653,7 @@ impl Lowerer {
                             right_type: Some(ZigType::BigInt),
                         }),
                     };
+                    return self.wrap_compound_assign(bind, assign, break_value);
                 }
                 // For unsupported BigInt targets (index, destructure), fall through
                 // to default path (may produce invalid Zig but handles common cases)
@@ -706,6 +750,116 @@ impl Lowerer {
         }
 
         IrExpr::Assign { op, target, value }
+    }
+
+    /// For compound-assignment expansions (`**=`, `>>>=`, `%=`, `/=`, `&&=`,
+    /// `||=`, `??=`, BigInt compound), check if the Member target's object
+    /// expression might have side effects (e.g. `getObj().prop += 1`).
+    ///
+    /// If so, bind it to a temp variable `__co_N` so the object is only
+    /// evaluated once. Returns `(optional (var_decl, block_label),
+    /// possibly-rewritten target, read_expr)`. Callers should pass the
+    /// returned bind info and final Assign to `wrap_compound_assign`.
+    ///
+    /// For simple lvalue paths (`a`, `a.b`, `a[i]`) — no side effects — or
+    /// non-Member targets, returns `(None, original_target, to_read_expr)`.
+    fn maybe_bind_member_object_for_compound(
+        &mut self,
+        target: crate::zigir::types::IrAssignTarget,
+    ) -> (
+        Option<(crate::zigir::types::IrStmt, String)>,
+        crate::zigir::types::IrAssignTarget,
+        crate::zigir::types::IrExpr,
+    ) {
+        use crate::zigir::types::{IrAssignTarget, IrExpr, IrStmt, IrVarDecl};
+
+        let IrAssignTarget::Member {
+            object,
+            field,
+            is_pointer,
+            field_kind,
+        } = &target
+        else {
+            let read = target
+                .to_read_expr()
+                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+            return (None, target, read);
+        };
+
+        // Simple lvalue paths (Ident, FieldAccess chain, IndexAccess of simple)
+        // have no side effects — safe to evaluate twice without binding.
+        if self.ir_object_is_simple_lvalue(object) {
+            let read = target.to_read_expr().unwrap();
+            return (None, target, read);
+        }
+
+        // Bind the object to a temp variable to ensure single evaluation.
+        let temp_name = self.name_mangler.next_name("__co");
+        let blk_label = format!("_co_blk{}", self.name_mangler.peek_count("__co"));
+        let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+
+        let var_decl = IrStmt::VarDecl(IrVarDecl {
+            name: IrIdent::new(&temp_name),
+            is_const: true,
+            zig_type: None,
+            init: Some((**object).clone()),
+            is_json_parse: false,
+            needs_var_suppression: false,
+            needs_deinit: false,
+        });
+
+        let new_target = IrAssignTarget::Member {
+            object: Box::new(temp_ident.clone()),
+            field: field.clone(),
+            is_pointer: *is_pointer,
+            field_kind: field_kind.clone(),
+        };
+        let read = IrExpr::FieldAccess {
+            object: Box::new(temp_ident),
+            field: field.clone(),
+            field_kind: field_kind.clone(),
+        };
+
+        (Some((var_decl, blk_label)), new_target, read)
+    }
+
+    /// Check if an IrExpr is a "simple lvalue path": an Ident, or a chain of
+    /// FieldAccess/IndexAccess over simple lvalue paths. Such expressions have
+    /// no side effects and can be safely evaluated twice without a temp binding.
+    fn ir_object_is_simple_lvalue(&self, expr: &crate::zigir::types::IrExpr) -> bool {
+        use crate::zigir::types::IrExpr;
+        match expr {
+            IrExpr::Ident(_) => true,
+            IrExpr::FieldAccess { object, .. } => self.ir_object_is_simple_lvalue(object),
+            IrExpr::IndexAccess { object, index, .. } => {
+                self.ir_object_is_simple_lvalue(object) && self.ir_object_is_simple_lvalue(index)
+            }
+            _ => false,
+        }
+    }
+
+    /// Wrap a compound-assignment expansion in a BlockExpr if the target's
+    /// object was bound to a temp variable. The BlockExpr runs the temp
+    /// binding, executes the Assign as a statement, then breaks with the
+    /// `read_expr` (which re-reads the target field, yielding the NEW value).
+    /// This matches JS semantics where `a op= b` returns the assigned value,
+    /// and ensures single evaluation of side-effecting object expressions.
+    fn wrap_compound_assign(
+        &self,
+        bind: Option<(crate::zigir::types::IrStmt, String)>,
+        assign: crate::zigir::types::IrExpr,
+        read_expr: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::{IrExpr, IrStmt};
+        if let Some((var_decl, label)) = bind {
+            IrExpr::BlockExpr {
+                label,
+                body: vec![var_decl, IrStmt::Expr(assign)],
+                result: Box::new(read_expr),
+            }
+        } else {
+            assign
+        }
     }
 
     /// Lower an identifier assignment target, handling captured closure variables.
@@ -906,7 +1060,7 @@ impl Lowerer {
         use crate::zigir::types::IrExpr;
 
         let mut operands: Vec<&Expression> = Vec::new();
-        Self::collect_concat_from_be(be, &mut operands);
+        self.collect_concat_from_be(be, &mut operands);
 
         let mut fmt = String::new();
         let mut args: Vec<IrExpr> = Vec::new();
@@ -943,15 +1097,19 @@ impl Lowerer {
     }
 
     /// Recursively collect all operands in a string concatenation chain.
-    /// Only recurses into BinaryExpression(+); other nodes become leaves.
+    /// Only recurses into nested `+` when the sub-tree itself involves a
+    /// string operand; this preserves JS left-to-right evaluation for
+    /// purely numeric sub-expressions (e.g. `1 + 2 + "3"` must produce
+    /// `"33"`, not `"123"`).
     pub(super) fn collect_concat_from_be<'a>(
+        &self,
         be: &'a BinaryExpression<'a>,
         out: &mut Vec<&'a Expression<'a>>,
     ) {
         // Left side
         if let Expression::BinaryExpression(ref left_be) = be.left {
-            if left_be.operator == BinaryOperator::Addition {
-                Self::collect_concat_from_be(left_be, out);
+            if left_be.operator == BinaryOperator::Addition && self.expr_is_string(&be.left) {
+                self.collect_concat_from_be(left_be, out);
             } else {
                 out.push(&be.left);
             }
@@ -961,8 +1119,8 @@ impl Lowerer {
 
         // Right side
         if let Expression::BinaryExpression(ref right_be) = be.right {
-            if right_be.operator == BinaryOperator::Addition {
-                Self::collect_concat_from_be(right_be, out);
+            if right_be.operator == BinaryOperator::Addition && self.expr_is_string(&be.right) {
+                self.collect_concat_from_be(right_be, out);
             } else {
                 out.push(&be.right);
             }

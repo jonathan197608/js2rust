@@ -37,6 +37,14 @@ pub struct Emitter {
     try_label_counter: u32,
     /// Counter for generating unique block labels (for array literal labeled blocks).
     label_counter: u32,
+    /// Counter for generating unique do-while "first iteration" flag names
+    /// (`__dw_first_0`, `__dw_first_1`, ...). Zig 0.16 forbids local-variable
+    /// shadowing across nesting scopes, so each nested do-while must use a
+    /// distinct flag name (e.g., an outer loop and an inner do-while inside
+    /// its body would otherwise both declare `__dw_first` and fail Zig
+    /// `ast-check` with `local variable '__dw_first' shadows local variable
+    /// from outer scope`).
+    do_while_counter: u32,
     /// Whether we are currently emitting inside a function body.
     /// Top-level declarations (const, var) cannot use `return` or `try`,
     /// so error-propagation patterns like `catch return error.JsThrow` must
@@ -93,6 +101,7 @@ impl Emitter {
             inside_try_block: None,
             try_label_counter: 0,
             label_counter: 0,
+            do_while_counter: 0,
             in_function: false,
             static_init_buffer: String::new(),
             static_deinit_buffer: String::new(),
@@ -215,6 +224,16 @@ impl Emitter {
         let n = self.label_counter;
         self.label_counter += 1;
         format!("blk_{}", n)
+    }
+
+    /// Return the next do-while "first iteration" flag name
+    /// (`__dw_first_0`, `__dw_first_1`, ...) and advance the counter.
+    /// Pairs of nested do-whiles must use distinct flag names to avoid Zig's
+    /// "local variable shadows local variable from outer scope" error.
+    fn next_do_while_flag(&mut self) -> String {
+        let n = self.do_while_counter;
+        self.do_while_counter += 1;
+        format!("__dw_first_{}", n)
     }
 
     /// Peek at the current label counter without advancing (for generating unique temp var names).

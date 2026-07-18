@@ -61,8 +61,10 @@ pub enum ComputedKeyKind {
     JsAnyGetByKey,
     /// ArrayList item: `arr.items[@as(usize, @intCast(key))]`
     ArrayListItem,
-    /// String character: `str[@as(usize, @intCast(key))]` (promoted to i64)
-    StringChar,
+    /// String character (single-character substring): `js_string.charAt(alloc, str, idx) catch ...`
+    /// Returns `[]const u8` (ZigType::Str). Matches JS `str[i]` semantics which
+    /// returns the i-th UTF-16 code unit as a substring (like `String.prototype.charAt`).
+    StringCharAt,
     /// Unsupported dynamic access → generates @compileError
     CompileError(String),
 }

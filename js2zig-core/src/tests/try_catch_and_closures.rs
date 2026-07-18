@@ -857,6 +857,47 @@ return obj?.greet("World");
     assert!(zig.contains("greet("), "Should call method greet: {}", zig);
 }
 
+// ── Test: Optional chain call on JsAny receiver ──────────────────────
+// When the receiver is JsAny (e.g. inferred from a null literal), the
+// optional chain call must use isNullish() + Conditional instead of
+// OptionalChain. OptionalChain emits (if (obj) |oc| ... else null) which
+// requires a Zig optional type — JsAny is a union, not an optional.
+
+#[test]
+fn test_optional_chain_call_jsany() {
+    let js = r#"
+function maybeCall() {
+    let x = null;
+    return x?.get("key");
+}
+"#;
+    let zig = transpile_and_assert(js, "test_optional_chain_call_jsany");
+    // Should NOT generate the optional unwrap pattern (if (obj) |oc| ...)
+    assert!(
+        !zig.contains("(if ("),
+        "JsAny receiver should not use OptionalChain unwrap: {}",
+        zig
+    );
+    // Should generate isNullish() check
+    assert!(
+        zig.contains(".isNullish()"),
+        "JsAny receiver should use isNullish(): {}",
+        zig
+    );
+    // Should generate JsAny.fromUndefined() as the null/undefined branch
+    assert!(
+        zig.contains("JsAny.fromUndefined()"),
+        "JsAny null branch should be JsAny.fromUndefined(): {}",
+        zig
+    );
+    // Should still call the method in the non-null branch
+    assert!(
+        zig.contains(".get(\"key\")"),
+        "Should call .get(\"key\") in non-null branch: {}",
+        zig
+    );
+}
+
 // ── Test: Nested optional chaining (a?.b?.c) ──────────────────────────
 
 #[test]
@@ -897,6 +938,204 @@ return null?.prop;
     assert!(
         zig.contains("(if (") || zig.contains("null"),
         "Should handle null literal in chain: {}",
+        zig
+    );
+}
+
+// ── Test: Sequential try blocks with catchable errors ─────────────────
+// The P1-7 fix resets has_catchable_error after each try body so that
+// subsequent try blocks independently detect their own catchable errors.
+// Without the fix, the flag is sticky: the second try would see
+// catchable_before=true and compute has_catchable_error_in_try=false,
+// causing it to use the B1 inline path (no labeled block) instead of
+// Case A — producing invalid Zig for catchable operations.
+
+#[test]
+fn test_try_sequential_catchable_error_reset() {
+    let js = r#"
+/** @param {string} jsonStr */
+export function testSequentialTry(jsonStr) {
+    let a = null;
+    try {
+        a = JSON.parse(jsonStr);
+    } catch (e) {
+        a = null;
+    }
+    let b = null;
+    try {
+        b = JSON.parse(jsonStr);
+    } finally {
+        b = null;
+    }
+    return a;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_try_sequential_catchable_error_reset");
+    // Both try blocks should use the labeled-block pattern (Case A).
+    // Each Case A try contributes exactly 2 occurrences of _js_try_blk_:
+    //   1. const _js_try_N: anyerror!void = _js_try_blk_N: {
+    //   2. break :_js_try_blk_N {};
+    // Without the P1-7 fix, the second try (finally, no catch) would use
+    // B1 inline (0 occurrences) due to has_throw being wrongly false —
+    // giving a total of 2 instead of 4.
+    let try_blk_count = zig.matches("_js_try_blk_").count();
+    assert!(
+        try_blk_count >= 4,
+        "Expected both try blocks to use labeled-block pattern (>= 4 _js_try_blk_ occurrences), got {}: {}",
+        try_blk_count,
+        zig
+    );
+}
+
+// ── Test: break/continue in finally → CompileError ────────────────────
+// P1-8: Break/continue in finally that would escape the `defer` block
+// (emitted for finally) produces invalid Zig. Catch it early as a
+// @compileError instead of letting `zig ast-check` reject it later.
+//
+// break/continue INSIDE a loop nested in finally are valid (they target
+// the enclosing loop), so they must NOT trigger the error.
+
+#[test]
+fn test_break_in_finally_compile_error() {
+    use crate::tests::common::parse_and_transpile;
+    let js = r#"
+export function testBreakFinally(arr) {
+    let sum = 0;
+    try {
+        sum = 1;
+    } finally {
+        if (sum > 0) break;
+    }
+    return sum;
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.contains("break/continue in finally")),
+        "Expected 'break/continue in finally' in errors: {:?}",
+        result.errors
+    );
+    assert!(
+        result.zig_code.contains("@compileError"),
+        "Expected @compileError in zig code:\n{}",
+        result.zig_code
+    );
+}
+
+#[test]
+fn test_continue_in_finally_compile_error() {
+    use crate::tests::common::parse_and_transpile;
+    let js = r#"
+export function testContinueFinally(arr) {
+    let sum = 0;
+    try {
+        sum = 1;
+    } finally {
+        if (sum > 0) continue;
+    }
+    return sum;
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.contains("break/continue in finally")),
+        "Expected 'break/continue in finally' in errors: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn test_break_in_loop_inside_finally_ok() {
+    // break inside a for loop in finally targets the loop — valid, no error.
+    let js = r#"
+export function testBreakInLoopFinally() {
+    let sum = 0;
+    try {
+        sum = 1;
+    } finally {
+        for (let i = 0; i < 3; i++) {
+            if (i === 1) break;
+        }
+    }
+    return sum;
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    assert!(
+        !result
+            .errors
+            .iter()
+            .any(|e| e.contains("break/continue in finally")),
+        "Expected NO 'break/continue in finally' error (break in for loop is valid), errors: {:?}",
+        result.errors
+    );
+}
+
+// ── P1-11: return inside try → captured by collect_returns ──────────
+// Before the fix, the only return inside a try block was silently dropped,
+// causing the function's inferred return type to fall back to something
+// other than []const u8. This confirms the return is now picked up.
+
+#[test]
+fn test_p1_11_return_inside_try() {
+    let js = r#"
+export function safeRead(jsonStr) {
+    try {
+        return JSON.parse(jsonStr);
+    } catch (e) {
+        return null;
+    }
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_11_return_inside_try");
+    // The `return JSON.parse(...)` inside try and `return null` in catch
+    // must both be captured. Return type should be JsAny (since null is
+    // JsAny and JSON.parse yields JsAny). Either way, it must NOT be void.
+    assert!(
+        !zig.contains(") void {"),
+        "Expected non-void return type for function returning inside try block (was dropped before P1-11):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p2_3_nested_try_throw_detection() {
+    // P2-3: ir_stmt_has_throw must recurse into nested IrStmt::Try so that
+    // throws inside a nested try's try/catch/finally blocks are detected.
+    // Before the fix, the Try arm fell through to `_ => false`, so has_throw
+    // was incorrectly false for the outer try when throws only existed inside
+    // a nested try.
+    let js = r#"
+export function nestedTryThrow() {
+    try {
+        try {
+            throw new Error("inner");
+        } catch (inner_e) {
+            throw new Error("rethrow: " + inner_e.message);
+        }
+    } catch (e) {
+        return e.message;
+    }
+}
+"#;
+    // The inner catch rethrows, so the error propagates to the outer catch.
+    // Both the inner try_block and catch_block contain throws. With the P2-3
+    // fix, has_throw for the outer try is true (throw detected in nested Try).
+    // Use transpile_and_assert (not _check) because the catch parameter
+    // `inner_e` is dropped by the lowerer — a known pre-existing issue that
+    // other try-catch tests also work around by skipping ast-check.
+    let zig = transpile_and_assert(js, "test_p2_3_nested_try_throw_detection");
+    // The outer try must use the Case A path (throw/catch handling), not
+    // the B1 inline path. Case A uses _js_try_blk_ labeled blocks.
+    assert!(
+        zig.contains("_js_try_blk_"),
+        "Expected Case A try emit (labeled blocks) for outer try with nested throw:\n{}",
         zig
     );
 }

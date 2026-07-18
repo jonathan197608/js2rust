@@ -73,6 +73,58 @@ pub fn expr_depends_on_anytype(expr: &Expression, anytype_params: &HashSet<Strin
             .expressions
             .last()
             .is_some_and(|e| expr_depends_on_anytype(e, anytype_params)),
+        // Constructor calls: arguments may depend on anytype params.
+        Expression::NewExpression(ne) => {
+            expr_depends_on_anytype(&ne.callee, anytype_params)
+                || ne.arguments.iter().any(|a| {
+                    a.as_expression()
+                        .is_some_and(|e| expr_depends_on_anytype(e, anytype_params))
+                })
+        }
+        // Tagged templates: tag and interpolated expressions may depend on anytype.
+        Expression::TaggedTemplateExpression(tte) => {
+            expr_depends_on_anytype(&tte.tag, anytype_params)
+                || tte
+                    .quasi
+                    .expressions
+                    .iter()
+                    .any(|e| expr_depends_on_anytype(e, anytype_params))
+        }
+        // Optional/chain expression wraps a ChainElement (call or member access).
+        Expression::ChainExpression(ce) => match &ce.expression {
+            ChainElement::CallExpression(cce) => {
+                expr_depends_on_anytype(&cce.callee, anytype_params)
+                    || cce.arguments.iter().any(|a| {
+                        a.as_expression()
+                            .is_some_and(|e| expr_depends_on_anytype(e, anytype_params))
+                    })
+            }
+            ChainElement::StaticMemberExpression(sme) => {
+                expr_depends_on_anytype(&sme.object, anytype_params)
+            }
+            ChainElement::ComputedMemberExpression(cme) => {
+                expr_depends_on_anytype(&cme.object, anytype_params)
+                    || expr_depends_on_anytype(&cme.expression, anytype_params)
+            }
+            _ => false,
+        },
+        // ++/-- operand is a SimpleAssignmentTarget (identifier or member).
+        Expression::UpdateExpression(ue) => match &ue.argument {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                anytype_params.contains(id.name.as_str())
+            }
+            SimpleAssignmentTarget::StaticMemberExpression(sme) => {
+                expr_depends_on_anytype(&sme.object, anytype_params)
+            }
+            SimpleAssignmentTarget::ComputedMemberExpression(cme) => {
+                expr_depends_on_anytype(&cme.object, anytype_params)
+                    || expr_depends_on_anytype(&cme.expression, anytype_params)
+            }
+            SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                expr_depends_on_anytype(&pfe.object, anytype_params)
+            }
+            _ => false,
+        },
         // Literals and constants never depend on anytype params
         Expression::NumericLiteral(_)
         | Expression::StringLiteral(_)

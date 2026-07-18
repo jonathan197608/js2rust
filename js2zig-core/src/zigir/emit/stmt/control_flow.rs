@@ -157,14 +157,23 @@ impl Emitter {
         // `continue` must re-evaluate cond (not jump to loop top).
         // Use a first-iteration flag as the while condition so that
         // continue → continue expr (flag=false) → re-check cond.
+        //
+        // P1-10: Use a unique per-iteration flag name (`__dw_first_N`) instead
+        // of a hardcoded `__dw_first`. Zig 0.16 forbids local-variable
+        // shadowing across nesting scopes, so an inner do-while nested in
+        // the body of an outer do-while would otherwise fail ast-check
+        // ("local variable '__dw_first' shadows local variable from outer
+        // scope").
+        let flag = self.next_do_while_flag();
         self.writeln("{");
         self.indent_push();
-        self.writeln("var __dw_first: bool = true;");
+        self.writeln(&format!("var {flag}: bool = true;", flag = flag));
         self.write_indent();
         self.emit_label_prefix(label);
-        self.write("while (__dw_first or (");
+        self.write("while (");
+        self.write(&format!("{flag} or (", flag = flag));
         self.emit_expr_as_bool(cond);
-        self.write(")) : (__dw_first = false) {\n");
+        self.write(&format!(")) : ({flag} = false) {{\n", flag = flag));
         self.indent_push();
         self.emit_block_stmts_unlabeled(body);
         self.indent_pop();
@@ -181,9 +190,12 @@ impl Emitter {
         body: &IrBlock,
         label: &Option<String>,
     ) {
-        // Wrap the entire for loop in a block scope: { init; while (cond) : ({ update; }) { body } }
+        // Wrap the entire for loop in a block scope:
+        //   { init; label: while (cond) : ({ update; }) { body } }
+        // The label MUST be on the `while`, not on the enclosing block —
+        // Zig `continue :label` only targets a labeled loop, and a label on
+        // a plain block labels that block (which `continue` cannot target).
         self.write_indent();
-        self.emit_label_prefix(label);
         self.write("{\n");
         self.indent_push();
 
@@ -194,6 +206,9 @@ impl Emitter {
 
         // While loop with optional update continuation
         self.write_indent();
+        // Place the label directly before `while` so `continue :label`
+        // (and `break :label`) target this loop rather than the wrapping block.
+        self.emit_label_prefix(label);
         self.write("while (");
         if let Some(c) = cond {
             self.emit_expr_as_bool(c);
@@ -305,18 +320,28 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForInKind::StructUnroll { fields } => {
-                // Unrolled: one iteration per field; label on first iteration only
-                for (i, field_name) in fields.iter().enumerate() {
+                // Unrolled: one iteration per field. When a label is present
+                // we wrap ALL iterations in a single labeled block so that
+                // `break :label` exits the entire for-in (previously the label
+                // was attached only to the first iteration's block, so a break
+                // would skip just that iteration and silently fall through to
+                // the remaining ones).
+                if let Some(lbl) = label {
                     self.write_indent();
-                    if i == 0
-                        && let Some(lbl) = label
-                    {
-                        self.write(&format!("{}: ", lbl));
-                    }
+                    self.write(lbl);
+                    self.write(": {\n");
+                    self.indent_push();
+                }
+                for field_name in fields.iter() {
+                    self.write_indent();
                     self.write("{\n");
                     self.indent_push();
                     self.writeln(&format!("const {} = \"{}\";", var.zig_name, field_name));
                     self.emit_block_stmts_unlabeled(body);
+                    self.indent_pop();
+                    self.writeln("}");
+                }
+                if label.is_some() {
                     self.indent_pop();
                     self.writeln("}");
                 }

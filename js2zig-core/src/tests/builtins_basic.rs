@@ -500,6 +500,107 @@ return x * 2;
     );
 }
 
+// ── P1-12: stmt_contains_await / expr_contains_await — nested-position tests ─
+// Before the fix, awaited expressions inside ForStatement bodies, TryStatement
+// blocks, the RHS of AssignmentExpression, or inside TemplateLiteral
+// interpolations were silently dropped, so a function using `await` in those
+// positions was incorrectly categorized as non-async (no `io: js_runtime.Io`).
+// Each test below places the only `await` inside one of the previously-missing
+// constructs and confirms the function is marked async.
+
+#[test]
+fn test_p1_12_await_inside_for_loop_body() {
+    let js = r#"
+async function fetchFirst(items) {
+    for (let i = 0; i < items.length; i = i + 1) {
+        const v = await items[i];
+        return v;
+    }
+}
+"#;
+    let mut exports = std::collections::HashSet::new();
+    exports.insert("fetchFirst".to_string());
+    let zig = transpile_and_check_with_exports(js, "test_p1_12_await_in_for", exports);
+    assert!(
+        zig.contains("io: js_runtime.Io"),
+        "Expected async signature (await inside for-loop was dropped before P1-12):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p1_12_await_inside_try_block() {
+    let js = r#"
+async function safeFetch(key) {
+    let result = null;
+    try {
+        result = await fetch(key);
+    } catch (e) {
+        result = null;
+    }
+    return result;
+}
+
+function fetch(k) { return k; }
+"#;
+    let mut exports = std::collections::HashSet::new();
+    exports.insert("safeFetch".to_string());
+    let zig = transpile_and_check_with_exports(js, "test_p1_12_await_in_try", exports);
+    assert!(
+        zig.contains("io: js_runtime.Io"),
+        "Expected async signature (await inside try block was dropped before P1-12):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p1_12_await_in_template_literal() {
+    let js = r#"
+async function greet(getNameFn) {
+    return `hello ${await getNameFn()}`;
+}
+
+function getName() { return "x"; }
+"#;
+    let mut exports = std::collections::HashSet::new();
+    exports.insert("greet".to_string());
+    let zig = transpile_and_check_with_exports(js, "test_p1_12_await_in_template", exports);
+    assert!(
+        zig.contains("io: js_runtime.Io"),
+        "Expected async signature (await inside TemplateLiteral was dropped before P1-12):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p1_12_await_in_switch_case() {
+    // Use break (not return) inside the case body — `return await foo()`
+    // generates an unreachable-code pattern after the switch.
+    let js = r#"
+async function dispatch(code) {
+    let result = null;
+    switch (code) {
+        case 1:
+            result = await fetchOne();
+            break;
+        default:
+            result = null;
+    }
+    return result;
+}
+
+function fetchOne() { return 1; }
+"#;
+    let mut exports = std::collections::HashSet::new();
+    exports.insert("dispatch".to_string());
+    let zig = transpile_and_check_with_exports(js, "test_p1_12_await_in_switch", exports);
+    assert!(
+        zig.contains("io: js_runtime.Io"),
+        "Expected async signature (await inside switch was dropped before P1-12):\n{}",
+        zig
+    );
+}
+
 // ── Test: TypedArray support ─────────────
 
 #[test]

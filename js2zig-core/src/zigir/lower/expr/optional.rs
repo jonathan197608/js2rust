@@ -149,6 +149,64 @@ impl Lowerer {
             _ => self.lower_expr(call_ce.callee.get_inner_expression()),
         };
 
+        // When the receiver is JsAny, use isNullish() + Conditional instead of
+        // OptionalChain. OptionalChain emits (if (obj) |oc| ... else null) which
+        // requires a Zig optional type — JsAny is a union, not an optional, so
+        // the unwrap syntax does not compile. Instead we bind the receiver to a
+        // temp, check .isNullish(), and return undefined_value or the method call.
+        let receiver_expr: Option<&Expression> = match &call_ce.callee {
+            Expression::StaticMemberExpression(sme) => Some(&sme.object),
+            Expression::ComputedMemberExpression(cme) => Some(&cme.object),
+            _ => None,
+        };
+        if needs_null_check
+            && let Some(method) = method_name.as_ref()
+            && receiver_expr.is_some_and(|e| self.expr_type_is_jsany(e))
+        {
+            use crate::zigir::kinds::MethodObjectKind;
+            use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
+
+            let temp_name = self.name_mangler.next_name("_oc");
+            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+            let args = self.lower_args(&call_ce.arguments);
+
+            let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));
+
+            return IrExpr::BlockExpr {
+                label: block_label,
+                body: vec![IrStmt::VarDecl(IrVarDecl::new_const(
+                    &temp_name,
+                    Some(ZigType::JsAny),
+                    Some(object),
+                ))],
+                result: Box::new(IrExpr::Conditional {
+                    cond: Box::new(IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(temp_ident(&temp_name)),
+                            field: "isNullish".to_string(),
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args: vec![],
+                        call_kind: CallKind::Method {
+                            object_type: MethodObjectKind::JsAny,
+                        },
+                    })),
+                    then: Box::new(IrExpr::Undefined),
+                    else_: Box::new(IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(temp_ident(&temp_name)),
+                            field: method.clone(),
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args,
+                        call_kind: CallKind::Method {
+                            object_type: MethodObjectKind::JsAny,
+                        },
+                    })),
+                }),
+            };
+        }
+
         let capture_var = self.name_mangler.next_name("_oc");
         let access_target = if needs_null_check {
             IrExpr::Ident(IrIdent::new(&capture_var))
@@ -289,7 +347,16 @@ impl Lowerer {
                 // Many runtime calls return JsAny; be conservative
                 true
             }
-            _ => false,
+            Expression::ParenthesizedExpression(pe) => {
+                // Unwrap parentheses and check the inner expression
+                self.expr_type_is_jsany(&pe.expression)
+            }
+            _ => {
+                // Fallback: use type inference to check if the expression is JsAny.
+                // This covers assignment, conditional, logical, member access, and
+                // other expression types whose inferred type could be JsAny.
+                self.infer_expr_type(expr) == Some(ZigType::JsAny)
+            }
         }
     }
 

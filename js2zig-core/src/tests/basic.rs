@@ -373,6 +373,11 @@ return obj;
 function delete_returns_bool(obj) {
 return delete obj.x;
 }
+
+function delete_chain(obj) {
+delete obj.a.b;
+return obj;
+}
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_delete_operator");
     // delete obj.prop uses deleteKey("prop")
@@ -391,6 +396,19 @@ return delete obj.x;
     assert!(
         zig.contains("_ = ") && zig.contains("deleteKey"),
         "delete should use _ = to discard: {}",
+        zig
+    );
+    // delete obj.a.b — receiver is a non-Identifier expression (StaticMemberExpression),
+    // must NOT be dropped. The InnerInline renderer wraps it in parens so we expect
+    // to find ".a).deleteKey(\"b\")" (the `)` closes the inline-rendered `obj.a`).
+    assert!(
+        zig.contains("deleteKey(\"b\")"),
+        "delete obj.a.b should still emit deleteKey for the outer property: {}",
+        zig
+    );
+    assert!(
+        !zig.contains("_ = .deleteKey"),
+        "delete obj.a.b must NOT discard the receiver (no bare `_ = .deleteKey`): {}",
         zig
     );
 }
@@ -460,6 +478,146 @@ return x;
     assert!(
         zig.contains(".isNullish()"),
         "??= on JsAny should use isNullish: {}",
+        zig
+    );
+}
+
+/// Compound assignment on a member with a side-effecting object expression
+/// (e.g. `getBox().value **= n`) must bind the object to a temp variable
+/// (__co_N) to prevent double evaluation of the object expression.
+/// Tests the P1-4 fix for the compound-assignment double-eval bug.
+#[test]
+fn test_compound_assign_member_side_effect() {
+    let js = r#"
+/**
+ * @typedef {Object} Box
+ * @property {number} value
+ */
+
+/**
+ * @type {Box}
+ */
+var box = { value: 5 };
+
+function getBox() {
+    return box;
+}
+
+/**
+ * @returns {number}
+ */
+export function testPowAssignSideEffect() {
+    getBox().value **= 3;
+    return box.value;
+}
+
+/**
+ * @returns {number}
+ */
+export function testRemAssignSideEffect() {
+    getBox().value %= 4;
+    return box.value;
+}
+
+/**
+ * @returns {number}
+ */
+export function testUrShrAssignSideEffect() {
+    getBox().value >>>= 1;
+    return box.value;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_compound_assign_member_side_effect");
+    println!("=== Compound assign on side-effecting member ===\n{}", zig);
+
+    // All three compound ops should bind the object to __co_ temp vars
+    let co_count = zig.matches("__co_").count();
+    assert!(
+        co_count >= 3,
+        "Expected at least 3 __co_ temp bindings (one per compound op), got {}: {}",
+        co_count,
+        zig
+    );
+    // Should NOT contain __target placeholder (old buggy fallback)
+    assert!(
+        !zig.contains("__target"),
+        "Should not use __target placeholder:\n{}",
+        zig
+    );
+    // Should use labeled blocks for the temp bindings
+    assert!(
+        zig.contains("_co_blk"),
+        "Should use _co_blk labeled block for temp binding:\n{}",
+        zig
+    );
+}
+
+// ── P1-11: collect_returns must descend into every block ──────────
+// Before the fix, returns nested inside DoWhile/For/ForOf/ForIn/Switch/Try/
+// Labeled were silently dropped, causing the function's return-type inference
+// to fall back to `void` (or `i64`/`anytype`) instead of using the inferred
+// type of the return expression. Each test below has its ONLY return inside
+// one of the previously-missing constructs and confirms the inferred Zig
+// return type matches the returned value.
+
+#[test]
+fn test_p1_11_return_inside_for_loop() {
+    let js = r#"
+export function firstMatch(arr) {
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (i === 2) return "found";
+    }
+    return "not-found";
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_11_return_inside_for_loop");
+    // The `return "found"` inside the for loop must be captured so the
+    // function return type is []const u8, not the default i64/void.
+    assert!(
+        zig.contains("[]const u8"),
+        "Expected return type []const u8 (return inside for loop was dropped before P1-11):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p1_11_return_inside_switch() {
+    let js = r#"
+/** @param {number} code */
+export function classify(code) {
+    switch (code) {
+        case 1: return "one";
+        case 2: return "two";
+        default: return "other";
+    }
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_11_return_inside_switch");
+    assert!(
+        zig.contains("[]const u8"),
+        "Expected return type []const u8 (return inside switch was dropped before P1-11):\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p1_11_return_inside_labeled_for() {
+    let js = r#"
+export function findTarget(target, items) {
+search: for (let i = 0; i < items.length; i = i + 1) {
+        if (i === target) return i;
+    }
+    return -1;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_11_return_inside_labeled_for");
+    // Return value `i` is i64 (the loop counter); function should be i64
+    // anyway. The real test is that BOTH returns are captured — if either
+    // is dropped, the inferred type might still be i64 by coincidence, so
+    // we additionally verify that the for-loop body actually emits a return.
+    assert!(
+        zig.contains("return i;") || zig.contains("return _i;"),
+        "Expected return statement inside for-loop body in:\n{}",
         zig
     );
 }
@@ -537,22 +695,70 @@ return x;
 }
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_do_while");
+    // P1-10: do-while first-iteration flags are now uniquely named
+    // `__dw_first_N`. The old hardcoded `__dw_first` caused Zig "local
+    // variable shadows local variable from outer scope" errors for nested
+    // do-whiles.
     assert!(
         zig.contains("__dw_first"),
         "missing do-while first-iteration flag: {}",
         zig
     );
     assert!(
-        zig.contains("while (__dw_first or (x > 0))"),
+        zig.contains("__dw_first_0"),
+        "missing do-while first-iteration flag (__dw_first_0): {}",
+        zig
+    );
+    assert!(
+        zig.contains("while (__dw_first_0 or (x > 0))"),
         "missing do-while while condition: {}",
         zig
     );
     assert!(
-        zig.contains(": (__dw_first = false)"),
+        zig.contains(": (__dw_first_0 = false)"),
         "missing do-while continuation: {}",
         zig
     );
     assert!(zig.contains("return x;"));
+}
+
+#[test]
+fn test_native_proto_nested_do_while() {
+    // P1-10: Nested do-while loops must not collide on the __dw_first
+    // variable name. Each do-while is scoped in its own {} block so the
+    // shadowing is lexically valid in Zig — but we still want to verify
+    // the generated code passes `zig ast-check` (whether Zig emits an
+    // error about the shadowing) and is structurally correct.
+    let js = r#"
+/** @param {number} n */
+export function nestedDoWhile(n) {
+    let result = 0;
+    let i = 0;
+    do {
+        i = i + 1;
+        let j = 0;
+        do {
+            j = j + 1;
+            result = result + j;
+        } while (j < 3);
+    } while (i < n);
+    return result;
+}
+"#;
+    // Use transpile_and_check (which invokes zig ast-check) since a nesting
+    // issue would manifest as a Zig compile error.
+    let zig = transpile_and_check(js, "test_native_proto_nested_do_while");
+    // Two do-whiles → two distinct `__dw_first_N` flags.
+    assert!(
+        zig.contains("__dw_first_0"),
+        "Expected outer do-while flag __dw_first_0 in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__dw_first_1"),
+        "Expected inner do-while flag __dw_first_1 in:\n{}",
+        zig
+    );
 }
 
 #[test]
@@ -921,4 +1127,140 @@ std.debug.print("add(10,20)={}  abs(-42)={}\n", .{x, y});
     );
 
     println!("=== E2E test passed! Generated Zig code compiles and runs correctly ===");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P2 regression tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_p2_1_neg_zero_preserves_f64() {
+    // P2-1: -0.0 must be inferred as F64 (not I64) to preserve IEEE 754
+    // signed zero. The lowerer emits FloatLiteral(-0.0) directly (bypassing
+    // constant folding which would collapse Neg(IntLiteral(0)) -> 0).
+    let js = r#"
+export function negZero() {
+    var x = -0.0;
+    return x;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p2_1_neg_zero_preserves_f64");
+    // The emitted value must be -0.0 (float), NOT 0 (integer)
+    assert!(
+        zig.contains("-0.0"),
+        "Expected '-0.0' in generated Zig to preserve signed zero:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p2_2_bitwise_not_type_inference() {
+    // P2-2: ~x must infer I64 (previously returned None via fallthrough).
+    // This affects variable type inference and binary expression typing.
+    let js = r#"
+/** @param {number} x */
+export function bitnot(x) {
+    var y = ~x;
+    return y;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p2_2_bitwise_not_type_inference");
+    // ~x should produce a bitwise-not with i32 cast
+    assert!(
+        zig.contains("~"),
+        "Expected bitwise not (~) in generated Zig:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p2_2_bitwise_not_bigint() {
+    // P2-2: ~x on a BigInt operand should infer BigInt (not I64).
+    let js = r#"
+/** @param {bigint} x */
+export function bitnotBig(x) {
+    return ~x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p2_2_bitwise_not_bigint");
+    assert!(
+        zig.contains("bitwiseNot"),
+        "Expected bitwiseNot for ~BigInt:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p2_6_negation_folding_still_works() {
+    // P2-6: After switching from -n to n.checked_neg(), basic negation
+    // folding must still produce the correct constant.
+    let js = r#"
+export function neg42() {
+    return -42;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p2_6_negation_folding_still_works");
+    assert!(
+        zig.contains("-42"),
+        "Expected '-42' (folded negation) in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p2_5_labeled_for_in_struct_unroll() {
+    // P2-5: A labeled for-in over a static struct (StructUnroll) must
+    // wrap ALL unrolled iterations in a single labeled block so that
+    // `break :label` exits the entire loop.
+    // Previously the label was on the first iteration's block only, so
+    // `break :label` skipped just that one iteration and fell through to
+    // the remaining ones.
+    let js = r#"
+function gatherKeys(obj) {
+    var keys = "";
+    outer: for (var k in obj) {
+        if (k == "b") {
+            break outer;
+        }
+        keys = keys + k;
+    }
+    return keys;
+}
+function demo() {
+    const obj = { a: 1, b: 2, name: "test" };
+    return gatherKeys(obj);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p2_5_labeled_for_in_struct_unroll");
+    // Unrolled fields should be present
+    assert!(
+        zig.contains("\"a\""),
+        "Expected unrolled field 'a' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("\"b\""),
+        "Expected unrolled field 'b' in:\n{}",
+        zig
+    );
+    // The label should wrap ALL iterations. With the old buggy code,
+    // the label was on the first iteration block only:
+    //   outer: { const k = "a"; ... } { const k = "b"; ... }
+    // With the fix, the label is on a wrapper block:
+    //   outer: { { const k = "a"; ... } { const k = "b"; ... } }
+    // After "outer: {", the next non-whitespace should be "{" (inner
+    // iteration block), NOT "const" (which would mean label is directly
+    // on an iteration block).
+    let after_label = zig.split("outer: {").nth(1);
+    assert!(
+        after_label.is_some(),
+        "Expected label 'outer: {{' in:\n{}",
+        zig
+    );
+    let rest = after_label.unwrap();
+    assert!(
+        rest.trim_start().starts_with('{'),
+        "Expected wrapper block after label (outer: {{ {{ ...), not direct iteration content:\n{}",
+        zig
+    );
 }
