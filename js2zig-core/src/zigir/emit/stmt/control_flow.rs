@@ -257,14 +257,9 @@ impl Emitter {
     ) {
         match kind {
             IrForInKind::HashMapIter => {
-                // `var __it = obj.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
-                // When labeled, wrap in a labeled block: `label: { var __it = ...; while ... }`
-                let has_label = label.is_some();
-                if has_label {
-                    self.write_indent();
-                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
-                    self.indent_push();
-                }
+                // `var __it = obj.iterator(); label: while (__it.next()) |__kv| { ... }`
+                // Label goes directly on while (not a wrapping block) so that
+                // `continue :label` targets the loop, not a block.
                 self.write_indent();
                 let it_name = "__it";
                 self.write("var ");
@@ -273,6 +268,9 @@ impl Emitter {
                 self.emit_expr(iterable);
                 self.write(".iterator();\n");
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.write("while (");
                 self.write(it_name);
                 self.write(".next()) |__kv| {\n");
@@ -281,19 +279,9 @@ impl Emitter {
                 self.emit_block_stmts_unlabeled(body);
                 self.indent_pop();
                 self.writeln("}");
-                if has_label {
-                    self.indent_pop();
-                    self.writeln("}");
-                }
             }
             IrForInKind::MapIter => {
-                // `var __it = obj.inner.iterator(); while (__it.next()) |__kv| { const var = __kv.key_ptr.*; ... }`
-                let has_label = label.is_some();
-                if has_label {
-                    self.write_indent();
-                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
-                    self.indent_push();
-                }
+                // `var __it = obj.inner.iterator(); label: while (__it.next()) |__kv| { ... }`
                 self.write_indent();
                 let it_name = "__it";
                 self.write("var ");
@@ -302,6 +290,9 @@ impl Emitter {
                 self.emit_expr(iterable);
                 self.write(".inner.iterator();\n");
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.write("while (");
                 self.write(it_name);
                 self.write(".next()) |__kv| {\n");
@@ -312,10 +303,6 @@ impl Emitter {
                 self.writeln(&format!("_ = &{};", var.zig_name));
                 self.indent_pop();
                 self.writeln("}");
-                if has_label {
-                    self.indent_pop();
-                    self.writeln("}");
-                }
             }
             IrForInKind::StructUnroll { fields } => {
                 // Unrolled: one iteration per field; label on first iteration only
@@ -381,13 +368,9 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForOfKind::MapSetIter { is_map } => {
-                // When labeled, wrap in a labeled block: `label: { var __it = ...; while ... }`
-                let has_label = label.is_some();
-                if has_label {
-                    self.write_indent();
-                    self.writeln(&format!("{}: {{", label.as_ref().unwrap()));
-                    self.indent_push();
-                }
+                // `var __it = obj.inner.iterator(); label: while (__it.next()) |__kv| { ... }`
+                // Label goes directly on while (not a wrapping block) so that
+                // `continue :label` targets the loop, not a block.
                 self.write_indent();
                 let it_name = "__it";
                 self.write("var ");
@@ -396,6 +379,9 @@ impl Emitter {
                 self.emit_expr(iterable);
                 self.write(".inner.iterator();\n");
                 self.write_indent();
+                if let Some(lbl) = label {
+                    self.write(&format!("{}: ", lbl));
+                }
                 self.write("while (");
                 self.write(it_name);
                 self.write(".next()) |__kv| {\n");
@@ -428,10 +414,6 @@ impl Emitter {
                 }
                 self.indent_pop();
                 self.writeln("}");
-                if has_label {
-                    self.indent_pop();
-                    self.writeln("}");
-                }
             }
             IrForOfKind::Str { var_used } => {
                 self.write_indent();

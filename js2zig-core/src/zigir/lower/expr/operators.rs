@@ -345,6 +345,7 @@ impl Lowerer {
                     },
                     target: Box::new(target),
                     is_expr_stmt: self.in_expr_stmt,
+                    prefix: ue.prefix,
                 };
             };
             let bin_op = if ue.operator == UpdateOperator::Increment {
@@ -376,6 +377,7 @@ impl Lowerer {
             op,
             target,
             is_expr_stmt: self.in_expr_stmt,
+            prefix: ue.prefix,
         }
     }
 
@@ -532,13 +534,12 @@ impl Lowerer {
                 .unwrap_or(ZigType::JsAny);
 
             // ??= on non-JsAny types is a no-op: the value can't be null/undefined
-            // in our type system (i64, bool, string, etc.). Evaluate RHS for side
-            // effects, keep target unchanged.
+            // in our type system (i64, bool, string, etc.). Short-circuit: just
+            // return the target value without evaluating RHS (consistent with ??).
             if ae.operator == AssignmentOperator::LogicalNullish && target_type != ZigType::JsAny {
                 let target = self.lower_assign_target(&ae.left);
-                let value = self.lower_expr(&ae.right);
                 if let Some(read) = target.to_read_expr() {
-                    return IrExpr::Sequence(vec![value, read]);
+                    return read;
                 }
                 // Fall through for unsupported targets
             } else {

@@ -84,10 +84,48 @@ impl Emitter {
                     TypedArrayKind::Float32Array | TypedArrayKind::Float64Array
                 );
                 let elem_type = if is_float { "f64" } else { "i64" };
-                self.write(&format!("{}.{}(&[_]{}{{", module, init_fn, elem_type));
-                // Emit array elements
-                self.emit_first_arg_or_default(&new_expr.args, "");
-                self.write("})");
+                let zero_val = if is_float { "0.0" } else { "0" };
+
+                self.write(&format!("{}.{}(", module, init_fn));
+                match new_expr.args.first() {
+                    // Array literal: emit elements directly as &[_]T{ ... }
+                    Some(crate::zigir::types::IrExpr::ArrayLiteral(arr)) => {
+                        self.write(&format!("&[_]{}{{ ", elem_type));
+                        for (i, elem) in arr.elements.iter().enumerate() {
+                            if i > 0 {
+                                self.write(", ");
+                            }
+                            // Skip spread elements in this context
+                            if !arr.spread_indices.contains(&i) {
+                                self.emit_expr(elem);
+                            }
+                        }
+                        self.write(" }");
+                    }
+                    // Integer literal: a positive, comptime-known length in
+                    // a reasonable range means we can emit `[_]T{ zero } ** n`
+                    // to get a zero-filled typed array.
+                    Some(crate::zigir::types::IrExpr::IntLiteral(n)) if *n > 0 && *n <= 1024 => {
+                        // Comptime-known length: use array repeat syntax
+                        self.write(&format!("&[_]{}{{ {} }} ** {}", elem_type, zero_val, n));
+                    }
+                    // Zero-length or unrealistic length: emit an empty array
+                    // (the runtime call is responsible for sizing).
+                    Some(crate::zigir::types::IrExpr::IntLiteral(_)) => {
+                        self.write(&format!("&[_]{}{{}}", elem_type));
+                    }
+                    // No args: empty array
+                    None => {
+                        self.write(&format!("&[_]{}{{}}", elem_type));
+                    }
+                    // Other expressions: not supported in this position
+                    Some(_) => {
+                        self.write(&helpers::compile_error(
+                            "new TypedArray(expr) only supports array literal or integer length",
+                        ));
+                    }
+                }
+                self.write(")");
             }
             NewConstructor::Class(class_name) => {
                 self.write(&format!("{}.init(", class_name));

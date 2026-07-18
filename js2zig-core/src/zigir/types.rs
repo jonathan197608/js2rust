@@ -583,6 +583,9 @@ pub enum IrExpr {
         op: UpdateOp,
         target: Box<IrAssignTarget>,
         is_expr_stmt: bool,
+        /// true for prefix (`++x`), false for postfix (`x++`).
+        /// Only meaningful when `is_expr_stmt` is false.
+        prefix: bool,
     },
     Assign {
         op: AssignOp,
@@ -758,6 +761,7 @@ impl IrExpr {
                 | Self::Undefined
                 | Self::Ident(_)
                 | Self::This
+                | Self::CompileError { .. }
         )
     }
 }
@@ -1271,6 +1275,7 @@ mod tests {
                 op: UpdateOp::Increment,
                 target: Box::new(IrAssignTarget::Ident(IrIdent::new("i"))),
                 is_expr_stmt: false,
+                prefix: false,
             }))),
             body: IrBlock::new(vec![]),
         };

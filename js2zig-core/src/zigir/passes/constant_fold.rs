@@ -150,6 +150,24 @@ impl ConstantFoldPass {
             IrExpr::ObjectLiteral(obj) => Self::try_fold_object_items(&mut obj.items),
             IrExpr::TemplateLiteral { exprs, .. } => Self::try_fold_iter(exprs),
             IrExpr::Spread(e) | IrExpr::Void(e) => Self::try_fold(e),
+            // PowExpr / RemExpr / DivExpr always carry sub-expressions on both
+            // sides — fold each so that constant sub-trees (e.g. `(1+2) % x`,
+            // `Math.pow(2**3, n)`) still get simplified, even when the node
+            // itself cannot be reduced to a literal.
+            IrExpr::PowExpr { base, exp, .. } => {
+                let mut changed = Self::try_fold(base);
+                if Self::try_fold(exp) {
+                    changed = true;
+                }
+                changed
+            }
+            IrExpr::RemExpr { left, right, .. } | IrExpr::DivExpr { left, right, .. } => {
+                let mut changed = Self::try_fold(left);
+                if Self::try_fold(right) {
+                    changed = true;
+                }
+                changed
+            }
             _ => false,
         }
     }
@@ -283,10 +301,9 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Sub => a.checked_sub(*b)?,
                 BinOp::Mul => a.checked_mul(*b)?,
                 BinOp::Div => {
-                    if *b == 0 {
-                        return None;
-                    }
-                    a.checked_div(*b)?
+                    // JS `/` always returns float (e.g., 5/2 === 2.5).
+                    // Don't fold to integer result — let DivExpr handle it.
+                    return None;
                 }
                 BinOp::Mod => {
                     if *b == 0 {

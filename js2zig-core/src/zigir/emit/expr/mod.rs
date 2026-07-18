@@ -548,17 +548,34 @@ impl Emitter {
                 op,
                 target,
                 is_expr_stmt,
+                prefix,
             } => {
                 if *is_expr_stmt {
                     // Statement context: `i += 1` (no parens, no _ = prefix)
                     self.emit_assign_target_inner(target);
                     self.write(&format!(" {}", update_op_to_zig(*op)));
-                } else {
-                    // Expression context: `({blk}: { ... break :blk old_val })`
-                    self.write("(");
+                } else if *prefix {
+                    // Prefix `++x` in expression context: returns NEW value.
+                    // (_blk: { x += 1; break :_blk x; })
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ ", blk));
                     self.emit_assign_target_inner(target);
-                    self.write(&format!(" {}", update_op_to_zig(*op)));
-                    self.write(")");
+                    self.write(&format!(" {}; ", update_op_to_zig(*op)));
+                    self.write("break :");
+                    self.write(&blk);
+                    self.write(" ");
+                    self.emit_assign_target_inner(target);
+                    self.write("; })");
+                } else {
+                    // Postfix `x++` in expression context: returns OLD value.
+                    // (_blk: { const _old = x; x += 1; break :_blk _old; })
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ const _old = ", blk));
+                    self.emit_assign_target_inner(target);
+                    self.write("; ");
+                    self.emit_assign_target_inner(target);
+                    self.write(&format!(" {}; ", update_op_to_zig(*op)));
+                    self.write(&format!("break :{} _old; }})", blk));
                 }
             }
 
@@ -978,13 +995,25 @@ impl Emitter {
                         self.emit_expr(inner);
                     }
                     // Array literal spread: emit as &[_]JsAny{ ... }
+                    // Each element must be wrapped in JsAny.from() since the
+                    // array literal type is explicitly JsAny.
                     crate::zigir::types::IrExpr::ArrayLiteral(arr) => {
                         self.write("&[_]JsAny{ ");
                         for (j, elem) in arr.elements.iter().enumerate() {
                             if j > 0 {
                                 self.write(", ");
                             }
-                            self.emit_expr(elem);
+                            if arr.spread_indices.contains(&j) {
+                                // Nested spread inside array literal spread:
+                                // not supported in &[_]JsAny{} syntax.
+                                self.write(
+                                    "@compileError(\"nested spread in call args not supported\")",
+                                );
+                            } else {
+                                self.write("JsAny.from(");
+                                self.emit_expr(elem);
+                                self.write(")");
+                            }
                         }
                         self.write(" }");
                     }

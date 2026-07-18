@@ -286,7 +286,12 @@ impl Lowerer {
                 if stmts.len() == 1 {
                     Box::new(stmts.into_iter().next().unwrap())
                 } else {
-                    Box::new(crate::zigir::types::IrStmt::Block(IrBlock::new(stmts)))
+                    // Transparent block: emits flat without {} braces so that
+                    // `for (let i = 0, j = 10; ...)` doesn't create a new Zig scope.
+                    // A non-transparent block would hide i/j from the while condition.
+                    Box::new(crate::zigir::types::IrStmt::Block(
+                        IrBlock::new_transparent(stmts),
+                    ))
                 }
             }
             _ => {
@@ -615,10 +620,12 @@ impl Lowerer {
         for i in 0..n {
             let mut end = i + 1;
             while end <= n {
+                // Only unlabeled `break;` terminates switch fall-through.
+                // Labeled `break outerLabel;` must be preserved for outer loops.
                 let has_break = ss.cases[end - 1]
                     .consequent
                     .iter()
-                    .any(|s| matches!(s, Statement::BreakStatement(_)));
+                    .any(|s| matches!(s, Statement::BreakStatement(bs) if bs.label.is_none()));
                 if has_break {
                     break;
                 }
@@ -639,7 +646,9 @@ impl Lowerer {
             let mut body: Vec<crate::zigir::types::IrStmt> = Vec::new();
             for j in start..end {
                 for s in &ss.cases[j].consequent {
-                    if matches!(s, Statement::BreakStatement(_)) {
+                    // Only strip unlabeled `break;` (switch break).
+                    // Labeled `break outerLabel;` must be lowered normally.
+                    if matches!(s, Statement::BreakStatement(bs) if bs.label.is_none()) {
                         break;
                     }
                     body.push(self.lower_stmt(s));
@@ -686,10 +695,10 @@ impl Lowerer {
             .any(|s| matches!(s, Statement::TryStatement(_)));
 
         // IR-level throw detection: scan lowered try_block for any IrStmt::Throw.
-        fn ir_block_has_throw(block: &IrBlock) -> bool {
-            block.stmts.iter().any(|s| match s {
+        fn ir_stmt_has_throw(s: &crate::zigir::types::IrStmt) -> bool {
+            match s {
                 crate::zigir::types::IrStmt::Throw { .. } => true,
-                // Recurse into nested blocks (if, while, for, etc.)
+                // Recurse into nested blocks (if, while, for, switch, etc.)
                 crate::zigir::types::IrStmt::If { then, else_, .. } => {
                     ir_block_has_throw(then) || else_.as_ref().is_some_and(ir_block_has_throw)
                 }
@@ -698,9 +707,15 @@ impl Lowerer {
                 | crate::zigir::types::IrStmt::For { body, .. }
                 | crate::zigir::types::IrStmt::ForOf { body, .. }
                 | crate::zigir::types::IrStmt::ForIn { body, .. } => ir_block_has_throw(body),
+                crate::zigir::types::IrStmt::Switch { cases, .. } => {
+                    cases.iter().any(|c| c.body.iter().any(ir_stmt_has_throw))
+                }
                 crate::zigir::types::IrStmt::Block(b) => ir_block_has_throw(b),
                 _ => false,
-            })
+            }
+        }
+        fn ir_block_has_throw(block: &IrBlock) -> bool {
+            block.stmts.iter().any(ir_stmt_has_throw)
         }
         let has_throw = ir_block_has_throw(&try_block) || has_catchable_error_in_try;
 
@@ -780,16 +795,34 @@ impl Lowerer {
                         .as_ref()
                         .is_some_and(|a| Self::stmt_references_name(a, name))
             }
-            Statement::WhileStatement(ws) => Self::stmt_references_name(&ws.body, name),
+            Statement::WhileStatement(ws) => {
+                Self::expr_references_name(&ws.test, name)
+                    || Self::stmt_references_name(&ws.body, name)
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::stmt_references_name(&dws.body, name)
+                    || Self::expr_references_name(&dws.test, name)
+            }
             Statement::ForStatement(fs) => {
                 Self::stmt_references_name(&fs.body, name)
                     || fs
                         .test
                         .as_ref()
                         .is_some_and(|e| Self::expr_references_name(e, name))
+                    || fs
+                        .update
+                        .as_ref()
+                        .is_some_and(|e| Self::expr_references_name(e, name))
             }
-            Statement::ForOfStatement(fos) => Self::stmt_references_name(&fos.body, name),
-            Statement::ForInStatement(fis) => Self::stmt_references_name(&fis.body, name),
+            Statement::ForOfStatement(fos) => {
+                Self::expr_references_name(&fos.right, name)
+                    || Self::stmt_references_name(&fos.body, name)
+            }
+            Statement::ForInStatement(fis) => {
+                Self::expr_references_name(&fis.right, name)
+                    || Self::stmt_references_name(&fis.body, name)
+            }
+            Statement::LabeledStatement(ls) => Self::stmt_references_name(&ls.body, name),
             Statement::SwitchStatement(ss) => ss.cases.iter().any(|c| {
                 c.consequent
                     .iter()
@@ -806,6 +839,10 @@ impl Lowerer {
                             .iter()
                             .any(|s| Self::stmt_references_name(s, name))
                     })
+                    || ts
+                        .finalizer
+                        .as_ref()
+                        .is_some_and(|f| f.body.iter().any(|s| Self::stmt_references_name(s, name)))
             }
             _ => false,
         }
@@ -818,6 +855,23 @@ impl Lowerer {
                 Self::expr_references_name(&be.left, name)
                     || Self::expr_references_name(&be.right, name)
             }
+            Expression::LogicalExpression(le) => {
+                Self::expr_references_name(&le.left, name)
+                    || Self::expr_references_name(&le.right, name)
+            }
+            Expression::UnaryExpression(ue) => Self::expr_references_name(&ue.argument, name),
+            Expression::UpdateExpression(ue) => {
+                Self::simple_assign_target_references_name(&ue.argument, name)
+            }
+            Expression::AssignmentExpression(ae) => {
+                Self::assign_target_references_name(&ae.left, name)
+                    || Self::expr_references_name(&ae.right, name)
+            }
+            Expression::ConditionalExpression(ce) => {
+                Self::expr_references_name(&ce.test, name)
+                    || Self::expr_references_name(&ce.consequent, name)
+                    || Self::expr_references_name(&ce.alternate, name)
+            }
             Expression::CallExpression(ce) => {
                 Self::expr_references_name(&ce.callee, name)
                     || ce
@@ -825,16 +879,103 @@ impl Lowerer {
                         .iter()
                         .any(|a| Self::arg_references_name(a, name))
             }
+            Expression::NewExpression(ne) => {
+                Self::expr_references_name(&ne.callee, name)
+                    || ne
+                        .arguments
+                        .iter()
+                        .any(|a| Self::arg_references_name(a, name))
+            }
             Expression::StaticMemberExpression(sme) => {
                 Self::expr_references_name(&sme.object, name)
             }
-            Expression::UnaryExpression(ue) => Self::expr_references_name(&ue.argument, name),
-            Expression::ConditionalExpression(ce) => {
-                Self::expr_references_name(&ce.test, name)
-                    || Self::expr_references_name(&ce.consequent, name)
-                    || Self::expr_references_name(&ce.alternate, name)
+            Expression::ComputedMemberExpression(cme) => {
+                Self::expr_references_name(&cme.object, name)
+                    || Self::expr_references_name(&cme.expression, name)
             }
-            Expression::AssignmentExpression(ae) => Self::expr_references_name(&ae.right, name),
+            Expression::ArrayExpression(ae) => ae.elements.iter().any(|e| match e {
+                ArrayExpressionElement::SpreadElement(se) => {
+                    Self::expr_references_name(&se.argument, name)
+                }
+                other => other
+                    .as_expression()
+                    .is_some_and(|e| Self::expr_references_name(e, name)),
+            }),
+            Expression::ObjectExpression(oe) => oe.properties.iter().any(|p| match p {
+                ObjectPropertyKind::ObjectProperty(op) => {
+                    Self::expr_references_name(&op.value, name)
+                }
+                ObjectPropertyKind::SpreadProperty(sp) => {
+                    Self::expr_references_name(&sp.argument, name)
+                }
+            }),
+            Expression::SequenceExpression(se) => se
+                .expressions
+                .iter()
+                .any(|e| Self::expr_references_name(e, name)),
+            Expression::TemplateLiteral(tl) => tl
+                .expressions
+                .iter()
+                .any(|e| Self::expr_references_name(e, name)),
+            Expression::ChainExpression(ce) => {
+                Self::chain_element_references_name(&ce.expression, name)
+            }
+            Expression::AwaitExpression(ae) => Self::expr_references_name(&ae.argument, name),
+            Expression::TaggedTemplateExpression(tte) => {
+                Self::expr_references_name(&tte.tag, name)
+                    || tte
+                        .quasi
+                        .expressions
+                        .iter()
+                        .any(|e| Self::expr_references_name(e, name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Recursively check whether an assignment target references the given name.
+    fn assign_target_references_name(target: &AssignmentTarget, name: &str) -> bool {
+        match target {
+            AssignmentTarget::AssignmentTargetIdentifier(id) => id.name.as_str() == name,
+            // Destructuring / member targets: identifiers inside the
+            // destructure pattern still count as references to `name`.
+            AssignmentTarget::ArrayAssignmentTarget(_)
+            | AssignmentTarget::ObjectAssignmentTarget(_) => {
+                // Conservative: assume destructuring patterns may reference
+                // the name rather than missing it. Catch-variable usage is
+                // intentionally over-reported here to avoid silently
+                // dropping the variable binding.
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Recursively check whether a simple assignment target references the given name.
+    fn simple_assign_target_references_name(target: &SimpleAssignmentTarget, name: &str) -> bool {
+        match target {
+            SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => id.name.as_str() == name,
+            _ => false,
+        }
+    }
+
+    /// Check whether an optional chain element references the given name.
+    fn chain_element_references_name(elem: &ChainElement, name: &str) -> bool {
+        match elem {
+            ChainElement::StaticMemberExpression(sme) => {
+                Self::expr_references_name(&sme.object, name)
+            }
+            ChainElement::ComputedMemberExpression(cme) => {
+                Self::expr_references_name(&cme.object, name)
+                    || Self::expr_references_name(&cme.expression, name)
+            }
+            ChainElement::CallExpression(ce) => {
+                Self::expr_references_name(&ce.callee, name)
+                    || ce
+                        .arguments
+                        .iter()
+                        .any(|a| Self::arg_references_name(a, name))
+            }
             _ => false,
         }
     }
@@ -992,9 +1133,14 @@ impl Lowerer {
     /// is a RemExpr, DivExpr, or PowExpr with `result_type: None`, set `result_type`
     /// to `Some(I64)` so the emitter wraps the f64 result in
     /// `@as(i64, @intFromFloat(...))`.
+    ///
+    /// Also recurses into Conditional and Sequence expressions to find
+    /// nested RemExpr/DivExpr/PowExpr in value-producing positions
+    /// (e.g., `return cond ? a % b : 0`).
     fn coerce_i64_result_type(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
         match expr {
+            // Direct matches: coerce result_type to I64
             IrExpr::RemExpr {
                 left,
                 right,
@@ -1030,6 +1176,22 @@ impl Lowerer {
                 exp_type,
                 result_type: Some(ZigType::I64),
             },
+            // Conditional: recurse into both branches (value-producing).
+            // `cond` is not value-producing in the i64-coercion sense, so we
+            // leave it as-is and only re-wrap the two outcome branches.
+            IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {
+                cond,
+                then: Box::new(Self::coerce_i64_result_type(*then)),
+                else_: Box::new(Self::coerce_i64_result_type(*else_)),
+            },
+            // Sequence: only the last element is the return value
+            IrExpr::Sequence(mut exprs) => {
+                if let Some(last) = exprs.pop() {
+                    exprs.push(Self::coerce_i64_result_type(last));
+                }
+                IrExpr::Sequence(exprs)
+            }
+            // Already-coerced or other expressions: pass through unchanged
             other => other,
         }
     }
