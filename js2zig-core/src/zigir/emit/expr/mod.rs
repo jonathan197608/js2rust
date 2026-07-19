@@ -373,33 +373,46 @@ impl Emitter {
                 // (preserves signed zero -0). When result_type is i64, wrap in
                 // @as(i64, @intFromFloat(...)) for assignment to i64 variable.
                 //
-                // jsRem signature is `(i64, i64) f64`. For JsAny operands we
-                // must coerce via `.asI64()` so the call compiles. (Non-BigInt
-                // integer/comptime operands emit directly; BigInt and F64 are
-                // routed to `Binary(Mod)` by the lowerer and never reach here.)
+                // For JsAny operands, route through `@rem(f64, f64)` with
+                // `.asF64()` coercion — this preserves the float payload
+                // (e.g. `JsAny.from(5.7) % 2` must give 1.7, not 5 % 2 = 1).
+                // Mirrors the DivExpr JsAny path. @rem on f64 preserves IEEE
+                // 754 signed-zero (-0) semantics just like jsRem does for i64.
+                //
+                // BigInt and F64 are routed to `Binary(Mod)` by the lowerer
+                // and never reach this node. comptime_int operands emit
+                // directly as comptime_int and are accepted by jsRem's i64
+                // parameter via comptime coercion.
                 use crate::types::ZigType;
+                let left_is_jsany = *left_type == ZigType::JsAny;
+                let right_is_jsany = *right_type == ZigType::JsAny;
+
                 if let Some(ZigType::I64) = result_type {
-                    self.write("@as(i64, @intFromFloat(js_runtime.jsRem(");
-                } else {
-                    self.write("js_runtime.jsRem(");
+                    self.write("@as(i64, @intFromFloat(");
                 }
-                if *left_type == ZigType::JsAny {
-                    self.emit_expr(left);
-                    self.write(".asI64()");
-                } else {
-                    self.emit_expr(left);
-                }
-                self.write(", ");
-                if *right_type == ZigType::JsAny {
-                    self.emit_expr(right);
-                    self.write(".asI64()");
-                } else {
-                    self.emit_expr(right);
-                }
-                if let Some(ZigType::I64) = result_type {
-                    self.write(")))");
-                } else {
+                if left_is_jsany || right_is_jsany {
+                    // At least one operand is JsAny: use @rem(f64, f64) to
+                    // preserve the float payload. emit_float_conversion maps
+                    // F64 → direct, I64/BigInt → @floatFromInt, JsAny →
+                    // .asF64(), comptime_int → @as(f64, ...).
+                    self.write("@rem(");
+                    self.emit_float_conversion(left, left_type);
+                    self.write(", ");
+                    self.emit_float_conversion(right, right_type);
                     self.write(")");
+                } else {
+                    // Pure integer operands (I64, comptime_int, BigInt-only
+                    // here because lowerer routes BigInt to Binary(Mod) — so
+                    // we actually only see I64/comptime_int at this point).
+                    // Use jsRem(i64, i64)→f64 for signed-zero preservation.
+                    self.write("js_runtime.jsRem(");
+                    self.emit_expr(left);
+                    self.write(", ");
+                    self.emit_expr(right);
+                    self.write(")");
+                }
+                if let Some(ZigType::I64) = result_type {
+                    self.write("))");
                 }
             }
 
@@ -796,7 +809,12 @@ impl Emitter {
                 self.write(label);
                 self.write(" ");
                 self.emit_expr(result);
-                self.write("}})");
+                // Close: `; })` — `;` ends the break STMT (Zig requires `;`
+                // after `break :label value`), `}` closes the labeled block,
+                // `)` closes the wrapping paren.
+                // Pre-fix typo wrote `}})` (two `}`, no `;`) which produced
+                // invalid Zig: `expected ';' after statement` on the `}`.
+                self.write("; })");
             }
 
             // ── Special ─────────────────────────────

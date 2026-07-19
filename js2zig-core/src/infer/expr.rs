@@ -607,12 +607,22 @@ impl TypeInferrer {
     pub(crate) fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
         match op {
             BinaryOperator::Addition => {
+                // JS `+`: if either operand is String, the result is a String
+                // (implicit toString coercion per ECMA). This must be checked
+                // BEFORE BigInt / F64 paths, otherwise `"a" + "b"` (Str + Str)
+                // would be misclassified as I64. Mirrors the lowerer's
+                // `infer_binary_result_type` Addition arm.
+                if left == ZigType::Str || right == ZigType::Str {
+                    return ZigType::Str;
+                }
                 // BigInt + BigInt → BigInt
                 if left == ZigType::BigInt && right == ZigType::BigInt {
                     return ZigType::BigInt;
                 }
                 // String + BigInt → String (JS spec: implicit toString)
                 // BigInt + String → String
+                // (Redundant after the Str check above, kept for clarity and
+                // to document the JS spec rule.)
                 if (left == ZigType::Str && right == ZigType::BigInt)
                     || (left == ZigType::BigInt && right == ZigType::Str)
                 {

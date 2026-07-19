@@ -309,10 +309,24 @@ impl Lowerer {
 
         // Skip unused toplevel constants
         let has_type_annotation = self.jsdoc_data.type_annotations.contains_key(js_name);
+        // Don't skip if the init expression would produce a CompileError when
+        // lowered — otherwise the user-facing `@compileError` (warning that an
+        // unsupported feature was used in source JS) gets silently dropped
+        // alongside the unused const, hiding the diagnostic. Tagged templates,
+        // `yield`, and `import.meta`/`new.target` always lower to CompileError.
+        let init_might_compile_error = decl.init.as_ref().is_some_and(|e| {
+            matches!(
+                e,
+                Expression::TaggedTemplateExpression(_)
+                    | Expression::YieldExpression(_)
+                    | Expression::MetaProperty(_)
+            )
+        });
         if self.fn_ctx.is_none()
             && is_const
             && !self.type_info.used_names.contains(js_name)
             && !has_type_annotation
+            && !init_might_compile_error
         {
             return IrDecl::CompileError {
                 span: SourceSpan::default(),

@@ -24,16 +24,26 @@ impl Emitter {
                     crate::zigir::types::IrExpr::FloatLiteral(_) => "f64",
                     crate::zigir::types::IrExpr::StringLiteral(_) => "[]const u8",
                     crate::zigir::types::IrExpr::BoolLiteral(_) => "bool",
-                    _ => "i64",
+                    // Non-literal elements (Ident, Call, FieldAccess, etc.)
+                    // have no statically-known type at the emit layer. Fall
+                    // back to JsAny rather than i64: this guarantees the
+                    // generated ArrayList is type-compatible with whatever
+                    // the expression evaluates to (JsAny.from polymorphism
+                    // handles all element types). Forcing i64 here would
+                    // produce Zig compile errors like "expected i64, found
+                    // f64" for cases like `const arr = [someF64Var]`.
+                    _ => "JsAny",
                 })
-                .unwrap_or("i64");
+                .unwrap_or("JsAny");
 
             let all_same = arr.elements.iter().all(|e| match e {
                 crate::zigir::types::IrExpr::IntLiteral(_) => first_type == "i64",
                 crate::zigir::types::IrExpr::FloatLiteral(_) => first_type == "f64",
                 crate::zigir::types::IrExpr::StringLiteral(_) => first_type == "[]const u8",
                 crate::zigir::types::IrExpr::BoolLiteral(_) => first_type == "bool",
-                _ => first_type == "i64",
+                // Non-literal matches only when first_type has already
+                // degraded to JsAny — preserving the conservative fallback.
+                _ => first_type == "JsAny",
             });
 
             if all_same { first_type } else { "JsAny" }

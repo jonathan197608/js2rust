@@ -260,6 +260,17 @@ fn is_terminator(stmt: &IrStmt) -> bool {
 
 /// Whether an expression may have side effects (function calls, assignments, etc.).
 fn expr_has_side_effects(expr: &IrExpr) -> bool {
+    // CompileError represents a Zig `@compileError` diagnostic that must
+    // always reach the Zig output. It MUST NOT be eliminated as dead —
+    // otherwise users silently lose diagnostics for unsupported constructs
+    // (e.g. `const X = someUnsupportedThing();` where X is unused would
+    // have its CompileError init stripped by eliminate_unused_decls).
+    // Check this BEFORE the is_leaf() short-circuit below, because
+    // `is_leaf()` currently classifies CompileError as a leaf (no
+    // sub-expressions), which would cause it to be treated as side-effect-free.
+    if matches!(expr, IrExpr::CompileError { .. }) {
+        return true;
+    }
     if expr.is_leaf() {
         return false;
     }

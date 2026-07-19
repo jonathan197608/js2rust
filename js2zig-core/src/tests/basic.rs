@@ -1487,3 +1487,298 @@ function indexCompound() {
         zig
     );
 }
+
+// ═══════════════════════════════════════════════════════
+//  Round 5 regression tests (R5-2 .. R5-12; R5-1/9/10 are
+//  covered by Zig-level tests in runtime/js_runtime.zig and
+//  runtime/jsvalue.zig — they execute via `zig test`).
+// ═══════════════════════════════════════════════════════
+
+/// R5-2 fix: emit_array_literal's element-type fallback for non-literal
+/// elements (Ident, Call, FieldAccess, …) was `i64` (pre-fix) — this made
+/// `const arr = [someF64Var]` produce `ArrayList(i64)` containing an f64
+/// value, which Zig rejects ("expected i64, found f64"). The fix changes
+/// the fallback to `JsAny`, which is type-polymorphic via `JsAny.from(...)`.
+#[test]
+fn test_r5_2_array_literal_non_literal_fallback_is_jsany() {
+    let js = r#"
+function buildArr(x) {
+    const arr = [x];
+    return arr;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_2_array_literal_non_literal_fallback_is_jsany");
+    println!(
+        "=== R5-2 array literal with non-literal element ===\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.ArrayList(JsAny)"),
+        "Non-literal element array must use ArrayList(JsAny) fallback (post-fix): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("std.ArrayList(i64)"),
+        "Non-literal element array must NOT use ArrayList(i64) (pre-fix fallback breaks f64 elements): {}",
+        zig
+    );
+}
+
+/// R5-3 fix: emit_bigint_string_concat in `binary.rs` hardcoded the label
+/// `blk:` instead of using `next_label()`. The fix (lines 474-506) uses
+/// `next_label()` so nested Str+BigInt concatenations would no longer
+/// produce `redefinition of label 'blk'` in Zig.
+///
+/// NOTE: There is no transpiler-level test for this fix because the lowerer
+/// intercepts ALL Str+BigInt additions via `lower_binary`'s check
+/// (`expr_is_string(...)` returns true on the String operand), which routes
+/// the entire concat chain into `IrExpr::AllocPrint` (see
+/// `lower_string_concat` in operators.rs). The `emit_bigint_string_concat`
+/// branch in the emitter (mod.rs:134-138) is therefore currently reachable
+/// only via synthesized `IrExpr::Binary { op: Add, left_type: Some(Str),
+/// right_type: Some(BigInt) }` IR — which the lowerer never produces from
+/// JS source. The defensive fix keeps the emit function safe against future
+/// lowerer changes that might route Str+BigInt through `emit_bigint_string_concat`.
+#[test]
+fn test_r5_3_emit_bigint_string_concat_documented_unreachable() {
+    // This test exists to document that the R5-3 fix in
+    // emit_bigint_string_concat is a defensive patch against a latent bug
+    // (label collision on nested calls). The code path is unreachable from
+    // JS source via the current lowerer (see the doc comment above).
+    // If the lowerer routing changes in the future to actually invoke
+    // emit_bigint_string_concat with nested calls, replace this stub with a
+    // real test case that triggers the path.
+    //
+    // For now we keep the fix and document the situation to avoid a
+    // false-positive "TODO: write test" nag.
+    //
+    // Sanity: the function source still uses next_label() (not "blk:").
+    let src = include_str!("../zigir/emit/expr/binary.rs");
+    assert!(
+        !src.contains("\"blk:\""),
+        "emit_bigint_string_concat must not reintroduce the hardcoded \"blk:\" label"
+    );
+    assert!(
+        src.contains("next_label()"),
+        "emit_bigint_string_concat should use next_label() for unique labels"
+    );
+}
+
+/// R5-4 fix: BigInt postfix `x++` must return the OLD value (JS spec).
+/// Pre-fix: lower_update always used `IrExpr::Assign` for BigInt — but an
+/// Assign expression evaluates to the NEW (post-increment) value, so
+/// `const y = x++` set y to x+1 instead of x.
+/// Post-fix: postfix path wraps the assign in a `BlockExpr` with a temp
+/// `__bi_post_N` capturing the pre-increment value, so the expression
+/// result is the temp (the old value).
+#[test]
+fn test_r5_4_bigint_postfix_returns_old_value() {
+    let js = r#"
+/**
+ * @param {bigint} x
+ * @returns {bigint}
+ */
+export function test(x) {
+    const y = x++;
+    return y;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_4_bigint_postfix_returns_old_value");
+    println!(
+        "=== R5-4 BigInt postfix `x++` (old value capture) ===\n{}",
+        zig
+    );
+    // Post-fix: BlockExpr wraps a __bi_post temp var.
+    assert!(
+        zig.contains("__bi_post"),
+        "BigInt postfix must capture old value in a __bi_post temp var (BlockExpr): {}",
+        zig
+    );
+    // The BlockExpr's `break :<label> __bi_post_N` makes the expression
+    // return the OLD value (pre-increment), matching JS postfix semantics.
+    assert!(
+        zig.contains("break :") && zig.contains("__bi_post"),
+        "BigInt postfix BlockExpr must break with the __bi_post temp var (old value): {}",
+        zig
+    );
+}
+
+/// R5-5 fix: unify_return_expr_types had no I64↔F64 numeric promotion.
+/// For `function f(x){ if(x) return 1; return 1.5; }` it reported
+/// "Return type mismatch" and returned None, defaulting the function's
+/// return type to i64 — truncating the f64 return expression.
+/// The fix promotes (I64, F64) → F64 before reporting a mismatch.
+#[test]
+fn test_r5_5_return_type_unify_i64_f64_promotion() {
+    let js = r#"
+function mixedReturn(x) {
+    if (x) return 1;
+    return 1.5;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_5_return_type_unify_i64_f64_promotion");
+    println!("=== R5-5 mixed int/float return unification ===\n{}", zig);
+    // Post-fix: function's return type is promoted to f64.
+    assert!(
+        zig.contains(") f64 {") || zig.contains(") f64\n"),
+        "Mixed I64/F64 returns must unify to f64 (not default to i64): {}",
+        zig
+    );
+    // No "Return type mismatch" error in the output.
+    assert!(
+        !zig.contains("Return type mismatch"),
+        "Should NOT report a return type mismatch for I64+F64 (should promote to F64): {}",
+        zig
+    );
+}
+
+/// R5-6 fix: infer_binary_type Addition checked BigInt before Str, so
+/// `Str + Str` (neither BigInt nor F64) fell through to I64. The fix puts
+/// the Str check first, mirroring the lowerer's infer_binary_result_type.
+#[test]
+fn test_r5_6_str_plus_str_inferred_as_str() {
+    let js = r#"
+function concatStr() {
+    return "a" + "b";
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_6_str_plus_str_inferred_as_str");
+    println!("=== R5-6 Str + Str inferred as Str ===\n{}", zig);
+    // Post-fix: function's return type is []const u8 (Str).
+    assert!(
+        zig.contains(") []const u8 {") || zig.contains(") []const u8\n"),
+        "Str + Str must infer as Str (return type []const u8), not i64: {}",
+        zig
+    );
+    // Pre-fix: function's return type was i64 (the wrong fallback).
+    assert!(
+        !zig.contains(") i64 {"),
+        "Str + Str must NOT infer as i64 (pre-fix bug — checked BigInt before Str): {}",
+        zig
+    );
+}
+
+/// R5-7 fix: expr_has_side_effects classified CompileError as a leaf and
+/// short-circuited to `false`, so top-level unused `const X = <unsupported>`
+/// was stripped by eliminate_unused_decls — silently dropping the
+/// user-facing `@compileError` diagnostic. The fix adds an explicit
+/// CompileError guard before the is_leaf() short-circuit.
+#[test]
+fn test_r5_7_top_level_unused_const_preserves_compileerror() {
+    // `const X = tag`hello`;` — X is unused, tag template is unsupported.
+    // Pre-fix: DCE stripped the whole const (CompileError treated as
+    // side-effect-free), so @compileError vanished from the Zig output.
+    // Post-fix: DCE preserves the const, emit produces `const X = @compileError(...)`.
+    let js = r#"
+function tag(parts) { return parts[0]; }
+const X = tag`hello`;
+"#;
+    let zig = transpile_and_assert(
+        js,
+        "test_r5_7_top_level_unused_const_preserves_compileerror",
+    );
+    println!(
+        "=== R5-7 top-level unused const with @compileError ===\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@compileError"),
+        "Top-level unused const with unsupported init must preserve @compileError (was silently stripped by DCE pre-fix): {}",
+        zig
+    );
+}
+
+/// R5-8 fix: RemExpr with JsAny operands used `.asI64()` then
+/// `jsRem(i64, i64)`, truncating the float payload — `JsAny.from(5.7) % 2`
+/// computed `5 % 2 = 1` instead of `1.7`. The fix routes JsAny operands
+/// through `@rem(emit_float_conversion(left), emit_float_conversion(right))`
+/// which uses `.asF64()` for JsAny, preserving the float payload.
+#[test]
+fn test_r5_8_remexpr_jsany_uses_rem_asf64() {
+    // JSON.parse returns JsAny, so `parsed % 2` reaches the RemExpr emit
+    // with at least one JsAny operand.
+    let js = r#"
+function modJsAny() {
+    const x = JSON.parse("5.7");
+    return x % 2;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_8_remexpr_jsany_uses_rem_asf64");
+    println!("=== R5-8 RemExpr with JsAny operand ===\n{}", zig);
+    assert!(
+        zig.contains("@rem("),
+        "RemExpr with JsAny operand must use @rem (not jsRem): {}",
+        zig
+    );
+    assert!(
+        zig.contains(".asF64()"),
+        "RemExpr with JsAny must use .asF64() to preserve float payload: {}",
+        zig
+    );
+    assert!(
+        !zig.contains("js_runtime.jsRem"),
+        "RemExpr with JsAny must NOT use jsRem (truncates floats via .asI64): {}",
+        zig
+    );
+}
+
+/// R5-11 fix: lowerer's infer_expr_type for ArrayExpression used find_map
+/// (returning the FIRST element's type). For `[1, 2.5]` it inferred
+/// ArrayList(I64) while the emitter produced ArrayList(JsAny)
+/// (all_same=false), risking downstream type-annotation mismatches.
+/// The fix walks ALL elements and unifies: any mismatch degrades to JsAny.
+#[test]
+fn test_r5_11_array_type_walks_all_elements() {
+    let js = r#"
+function mixedArray() {
+    const arr = [1, 2.5];
+    return arr;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_11_array_type_walks_all_elements");
+    println!(
+        "=== R5-11 mixed int/float array walking elements ===\n{}",
+        zig
+    );
+    // Post-fix: lowerer infers ArrayList(JsAny) — matches emit's all_same=false.
+    assert!(
+        zig.contains("std.ArrayList(JsAny)"),
+        "Mixed int/float array must infer ArrayList(JsAny) (any mismatch degrades from first elem type): {}",
+        zig
+    );
+    // Pre-fix: lowerer inferred ArrayList(I64) (the first element's type).
+    assert!(
+        !zig.contains("std.ArrayList(i64)"),
+        "Mixed int/float array must NOT infer ArrayList(I64) (pre-fix bug — used only first elem type): {}",
+        zig
+    );
+}
+
+/// R5-12 fix: lowerer's ConditionalExpression inference had
+/// `(Some(F64), _) | (_, Some(F64)) => Some(F64)`, so `cond ? "a" : 1.5`
+/// returned F64 even though "a" cannot coerce to f64. The fix restricts
+/// F64 promotion to (I64, F64) | (F64, I64) — both branches must be
+/// numeric. Other mismatches return None (JsAny fallback), aligning with
+/// the inferencer's behavior.
+#[test]
+fn test_r5_12_conditional_expr_str_f64_not_promoted() {
+    let js = r#"
+function condStr(flag) {
+    const x = flag ? "a" : 1.5;
+    return x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r5_12_conditional_expr_str_f64_not_promoted");
+    println!("=== R5-12 conditional Str+F64 not promoted ===\n{}", zig);
+    // Post-fix: variable is NOT annotated `: f64` (pre-fix the lowerer's
+    // ConditionalExpression inference wrongly returned F64 for Str+F64,
+    // which could leak :f64 into downstream annotations).
+    assert!(
+        !zig.contains(": f64 ="),
+        "Conditional Str+F64 variable must NOT be annotated :f64 (Str branch cannot coerce to f64): {}",
+        zig
+    );
+    // Sanity: the conditional must still compile (ast-check passed in
+    // transpile_and_check). Pre-fix's wrong inference risked downstream
+    // emit wrapping a string branch in a float coercion.
+}

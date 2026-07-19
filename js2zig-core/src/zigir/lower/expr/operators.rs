@@ -381,16 +381,62 @@ impl Lowerer {
             } else {
                 BinOp::Sub
             };
-            return IrExpr::Assign {
+
+            // For prefix `++x`: an `Assign` expression evaluates to the
+            // assigned (new) value, which matches JS semantics for prefix
+            // (the expression returns the value AFTER incrementing).
+            if ue.prefix {
+                return IrExpr::Assign {
+                    op: AssignOp::Assign,
+                    target: Box::new(target),
+                    value: Box::new(IrExpr::Binary {
+                        op: bin_op,
+                        left: Box::new(read_expr),
+                        right: Box::new(IrExpr::BigIntLiteral("1".to_string())),
+                        left_type: Some(ZigType::BigInt),
+                        right_type: Some(ZigType::BigInt),
+                    }),
+                };
+            }
+
+            // For postfix `x++`: JS spec returns the OLD value of `x`.
+            // An `Assign` expression alone would return the NEW value, so
+            // we capture the pre-increment value in a temp variable, then
+            // wrap the assign + temp in a BlockExpr so the expression
+            // result is the temp (old value):
+            //   (blk: {
+            //     const __bi_post_N = <read_expr>;
+            //     <target> = __bi_post_N + BigInt(1);
+            //     break :blk __bi_post_N;
+            //   })
+            use crate::zigir::types::{IrStmt, IrVarDecl};
+            let temp_name = self.name_mangler.next_name("__bi_post");
+            let blk_label = self.name_mangler.next_name("_bi_post_blk");
+            let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+            let var_decl = IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new(&temp_name),
+                is_const: true,
+                zig_type: None,
+                init: Some(read_expr),
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_deinit: false,
+            });
+            let assign_stmt = IrStmt::Expr(IrExpr::Assign {
                 op: AssignOp::Assign,
                 target: Box::new(target),
                 value: Box::new(IrExpr::Binary {
                     op: bin_op,
-                    left: Box::new(read_expr),
+                    left: Box::new(temp_ident.clone()),
                     right: Box::new(IrExpr::BigIntLiteral("1".to_string())),
                     left_type: Some(ZigType::BigInt),
                     right_type: Some(ZigType::BigInt),
                 }),
+            });
+            return IrExpr::BlockExpr {
+                label: blk_label,
+                body: vec![var_decl, assign_stmt],
+                result: Box::new(temp_ident),
             };
         }
 

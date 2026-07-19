@@ -471,7 +471,15 @@ impl Emitter {
         };
         let str_on_left = left_is_str;
 
-        self.write("(blk: { var __buf = std.ArrayList(u8).init(js_allocator.allocator()); errdefer __buf.deinit(); ");
+        // Use a unique label rather than the hardcoded `blk:` so nested
+        // BigInt-string concatenations (e.g. `("a" + 1n) + 2n` if both `+`
+        // ops resolve to string concat) do not produce `redefinition of
+        // label 'blk'` in Zig.
+        let label = self.next_label();
+        self.write(&format!(
+            "({}: {{ var __buf = std.ArrayList(u8).init(js_allocator.allocator()); errdefer __buf.deinit(); ",
+            label
+        ));
         // Write the first part
         if str_on_left {
             self.write("__buf.writer().print(\"{s}\", .{");
@@ -492,6 +500,9 @@ impl Emitter {
             self.emit_expr(str_expr);
             self.write("}) catch @panic(\"OOM: string concat\"); ");
         }
-        self.write("break :blk __buf.toOwnedSlice() catch @panic(\"OOM: string concat\"); })");
+        self.write(&format!(
+            "break :{} __buf.toOwnedSlice() catch @panic(\"OOM: string concat\"); }})",
+            label
+        ));
     }
 }

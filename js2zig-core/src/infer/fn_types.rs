@@ -173,11 +173,25 @@ impl TypeInferrer {
             match (&ty, &expr_ty) {
                 (None, InferResult::Definite(et)) => ty = Some(et.clone()),
                 (Some(t), InferResult::Definite(et)) if *t != *et => {
-                    self.errors.push(format!(
-                        "Return type mismatch in '{}': expected {:?}, found {:?}",
-                        fn_name, t, et
-                    ));
-                    return None;
+                    // Numeric promotion: I64 + F64 → F64 (and vice versa).
+                    // JS has a single `number` type; mixing integer and
+                    // float return expressions should unify to F64 rather
+                    // than reporting a mismatch. This mirrors the same
+                    // promotion already used by `infer_binary_type` /
+                    // `infer_binary_result_type` for arithmetic operands.
+                    let is_numeric_mismatch = matches!(
+                        (t, et),
+                        (ZigType::I64, ZigType::F64) | (ZigType::F64, ZigType::I64)
+                    );
+                    if is_numeric_mismatch {
+                        ty = Some(ZigType::F64);
+                    } else {
+                        self.errors.push(format!(
+                            "Return type mismatch in '{}': expected {:?}, found {:?}",
+                            fn_name, t, et
+                        ));
+                        return None;
+                    }
                 }
                 _ => {}
             }

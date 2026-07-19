@@ -370,8 +370,17 @@ impl Lowerer {
                 let then_ty = self.infer_expr_type(&ce.consequent);
                 let else_ty = self.infer_expr_type(&ce.alternate);
                 match (then_ty, else_ty) {
+                    // Both branches agree → that type
                     (Some(a), Some(b)) if a == b => Some(a),
-                    (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
+                    // Numeric promotion only: I64 ↔ F64 → F64. Mirrors
+                    // infer_binary_result_type's I64+F64 rule. Other mixed
+                    // combinations (e.g. Str ? F64) must NOT promote:
+                    // the Str branch cannot be coerced to F64, so returning
+                    // F64 here would cause downstream emit to wrap the
+                    // string-branch value in @floatFromInt, which is invalid
+                    // Zig. Fall through to None (JsAny fallback).
+                    (Some(ZigType::F64), Some(ZigType::I64))
+                    | (Some(ZigType::I64), Some(ZigType::F64)) => Some(ZigType::F64),
                     _ => None,
                 }
             }
@@ -494,14 +503,47 @@ impl Lowerer {
                 }
                 Some(ZigType::Struct(fields))
             }
-            // Array literal → ArrayList of element type
+            // Array literal → ArrayList of element type.
+            // Walk ALL elements and unify their types.
+            //
+            // IMPORTANT: this must agree with `emit_array_literal`'s element
+            // type decision. The emitter uses a conservative `all_same` check
+            // — any mismatch (e.g. IntLiteral + FloatLiteral) forces the
+            // whole array to JsAny. So we mirror that here: any mismatch
+            // degrades to JsAny. Previously this branch used `find_map` which
+            // returned the FIRST element's type — so for `[1, 2.5]` the
+            // lowerer inferred `ArrayList(I64)` while emit produced
+            // `ArrayList(JsAny)`, an inconsistency that risked downstream
+            // type-annotation mismatches.
+            //
+            // Spread elements (`...arr`) are skipped: their source element
+            // type would require cross-expression inference. emit_array_literal
+            // already forces JsAny whenever a spread is present, so falling
+            // through to `unwrap_or(JsAny)` here matches emit's behavior.
             Expression::ArrayExpression(ae) => {
-                let elem_ty = ae
-                    .elements
-                    .iter()
-                    .find_map(|el| el.as_expression().and_then(|e| self.infer_expr_type(e)))
-                    .unwrap_or(ZigType::JsAny);
-                Some(ZigType::ArrayList(Box::new(elem_ty)))
+                let mut elem_ty: Option<ZigType> = None;
+                for el in &ae.elements {
+                    let Some(e) = el.as_expression() else {
+                        continue;
+                    };
+                    let Some(t) = self.infer_expr_type(e) else {
+                        continue;
+                    };
+                    elem_ty = Some(match elem_ty {
+                        None => t,
+                        Some(a) if a == t => a,
+                        // Any mismatch degrades to JsAny — matches emit
+                        // (all_same=false → JsAny). No numeric promotion
+                        // here, to stay strictly aligned with the emitter.
+                        Some(_) => ZigType::JsAny,
+                    });
+                    if elem_ty == Some(ZigType::JsAny) {
+                        break;
+                    }
+                }
+                Some(ZigType::ArrayList(Box::new(
+                    elem_ty.unwrap_or(ZigType::JsAny),
+                )))
             }
             // Computed member access: obj[key]
             Expression::ComputedMemberExpression(cme) => {

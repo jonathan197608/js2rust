@@ -88,6 +88,9 @@ pub fn isTruthy(value: anytype) bool {
     if (T == []const u8) return value.len > 0;
     if (T == @TypeOf(null)) return false;
     if (T == js_bigint.JsBigInt) return !value.isZero();
+    // JsAny union — defer to its toBool which correctly handles NaN, -0,
+    // null, undefined, empty string, and falsy primitives.
+    if (T == jsany.JsAny) return value.toBool();
     // String literal: *const [N:0]u8 → check length via comptime type info
     switch (@typeInfo(T)) {
         .pointer => |p| if (p.size == .one) {
@@ -224,4 +227,28 @@ pub fn spreadMerge(a: anytype, b: anytype) SpreadMerge(@TypeOf(a), @TypeOf(b)) {
         }
     }
     return result;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Tests
+// ═══════════════════════════════════════════════════════
+
+test "isTruthy dispatches JsAny to JsAny.toBool (R5-1)" {
+    // Before the R5-1 fix, isTruthy had no JsAny arm — it fell through to
+    // `return true`, so EVERY JsAny value (including JsAny.fromNull(),
+    // JsAny.fromI64(0), JsAny.fromF64(NaN)) was unconditionally truthy.
+    // This broke every `if`/`while`/`!`/`&&`/`||` with a JsAny condition.
+    // (JsAny is already re-exported at the top of this file — use it directly.)
+    // Falsy JsAny values must report falsy (the bug returned true for all).
+    try std.testing.expect(!isTruthy(JsAny.fromNull()));
+    try std.testing.expect(!isTruthy(JsAny.fromUndefined()));
+    try std.testing.expect(!isTruthy(JsAny.fromI64(0)));
+    try std.testing.expect(!isTruthy(JsAny.fromF64(0.0)));
+    try std.testing.expect(!isTruthy(JsAny.fromF64(std.math.nan(f64))));
+    try std.testing.expect(!isTruthy(JsAny.fromString("")));
+    // Truthy JsAny values must remain truthy (no overcorrection).
+    try std.testing.expect(isTruthy(JsAny.fromI64(1)));
+    try std.testing.expect(isTruthy(JsAny.fromF64(1.5)));
+    try std.testing.expect(isTruthy(JsAny.fromBool(true)));
+    try std.testing.expect(isTruthy(JsAny.fromString("x")));
 }
