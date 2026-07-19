@@ -536,6 +536,24 @@ impl Lowerer {
                         crate::zigir::emit::helpers::escape_zig_string(&tl.quasis[0].value.raw);
                     Some(format!("\"{}\"", escaped))
                 }
+                // R8-NumberToString: numeric-literal receivers like
+                // `(42).toString(16)` inline the numeric value directly.
+                // Hex/binary literals are already resolved to a `f64`
+                // value by the parser; `format!("{}", value)` emits the
+                // decimal form which Zig coerces to the runtime `f64`
+                // parameter automatically. This also fixes pre-existing
+                // `(42).toFixed(2)` mis-emission that produced an empty
+                // receiver slot.
+                Expression::NumericLiteral(nl) => Some(format!("{}", nl.value)),
+                // Parenthesized-literal receivers: `((42)).method()` is
+                // syntactically equivalent to `(42).method()`. Only the
+                // common numeric case is inlined here — anything else
+                // (e.g. parenthesized binary expressions) falls back to
+                // the lowerer's complex-receiver path.
+                Expression::ParenthesizedExpression(pe) => match &pe.expression {
+                    Expression::NumericLiteral(nl) => Some(format!("{}", nl.value)),
+                    _ => None,
+                },
                 _ => None,
             },
             _ => None,
@@ -916,6 +934,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::NumberToPrecision => {
             (BuiltinModule::JsNumber, "toPrecision".into(), ZigType::Str)
         }
+        BuiltinCall::NumberToString => (BuiltinModule::JsNumber, "toString".into(), ZigType::Str),
 
         // String instance methods
         BuiltinCall::StringIndexOf => (BuiltinModule::JsString, "indexOf".into(), ZigType::I64),

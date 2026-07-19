@@ -172,6 +172,20 @@ impl Lowerer {
                             "slice" => (BuiltinModule::JsString, "slice".into(), ZigType::Str),
                             _ => (module, method, return_type),
                         }
+                    } else if matches!(var_type, ZigType::F64 | ZigType::I64)
+                        && module == BuiltinModule::JsDate
+                        && method == "toString"
+                    {
+                        // R8-NumberToString: detect_builtin_call routes any
+                        // `.toString()` on a non-literal receiver to
+                        // DateToString because it has no type info at the
+                        // AST layer. F64/I64 variables (e.g. `const n = 42;`)
+                        // must produce `js_number.toString(...)` instead of
+                        // the semantically wrong `js_date.toString(...)`
+                        // (which would also be a Zig compile error since f64
+                        // has no such method). BigInt variables continue to
+                        // be handled by the BigInt Step 1.5 interception.
+                        (BuiltinModule::JsNumber, "toString".into(), ZigType::Str)
                     } else if let ZigType::NamedStruct(n) = var_type {
                         if Self::is_typedarray_type(n) {
                             let ta_mod = BuiltinModule::JsTypedArray;

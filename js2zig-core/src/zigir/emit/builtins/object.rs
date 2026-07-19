@@ -247,6 +247,12 @@ impl Emitter {
         match method {
             "toFixed" | "toExponential" | "toPrecision" => {
                 // js_number.toFixed(js_allocator.allocator(), obj, digits)
+                // These runtime methods return ![]const u8 (RangeError on bad
+                // digit counts, plus OOM). We append `catch @panic` to coerce
+                // the error union back to []const u8, consistent with the
+                // fallible string-method convention (string.rs): `try` would
+                // require the enclosing fn to return an error union, which the
+                // transpiler does not currently propagate from builtin calls.
                 self.write(&format!("js_number.{}(js_allocator.allocator(), ", method));
                 if let Some(name) = obj {
                     self.write(name);
@@ -255,7 +261,30 @@ impl Emitter {
                     self.write(", ");
                     self.emit_expr(arg);
                 }
-                self.write(")");
+                self.write(") catch @panic(\"Number method failed\")");
+            }
+            // R8-NumberToString: js_number.toString(allocator, val, radix).
+            // Zig runtime requires all three args (no Zig default-param
+            // support); ECMA-262 21.1.3.7 says the default radix is 10.
+            // The emitter always emits `, 10` when the JS call omits it,
+            // matching the slice/substring/parseInt convention.
+            "toString" => {
+                self.write("js_number.toString(js_allocator.allocator(), ");
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                for arg in args.iter() {
+                    self.write(", ");
+                    self.emit_expr(arg);
+                }
+                if args.is_empty() {
+                    self.write(", 10");
+                }
+                // Same fallible-call convention as toFixed/toExponential/
+                // toPrecision above: toString returns ![]const u8 (RangeError
+                // on radix outside 2..36, plus OOM). `catch @panic` coerces it
+                // to []const u8 without requiring error-union propagation.
+                self.write(") catch @panic(\"Number method failed\")");
             }
             "parseInt" => {
                 self.write("js_number.parseInt(");

@@ -377,6 +377,129 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
     return std.fmt.allocPrint(alloc, "{s}{c}.{s}e{c}{d}", .{ prefix, digits[0], digits[1..], exp_sign, abs_exp });
 }
 
+/// Number.prototype.toString([radix]) — convert a number to its string
+/// representation in the given base. Matches ECMA-262 21.1.3.7.
+///
+/// `radix` is required (the emitter always supplies a default of 10 when JS
+/// omits it, following the slice/substring/parseInt convention). Valid range
+/// is 2..36 inclusive; out of range returns `error.RangeError`.
+///
+/// - NaN returns "NaN", ±Infinity return "Infinity"/"-Infinity", ±0 return "0".
+/// - Radix 10 defers to Zig's default `{}` formatter (shortest round-trip
+///   fixed-point), matching `JsValue.asString`'s float branch and the R8-E2
+///   fix in `lower/helpers.rs`. JS-spec deviations for |x| >= 1e21 / |x| < 1e-6
+///   (exponential form) are inherited from that path and tracked separately.
+/// - Other radixes use successive division on the integer part and successive
+///   multiplication on the fractional part, capping the fractional length at
+///   52 digits (IEEE 754 double mantissa precision). Per ECMA-262 note 1,
+///   fractional precision for non-decimal radixes is implementation-defined.
+///
+/// R8-NumberToString: Previously every `.toString()` call on a numeric
+/// receiver was silently mis-routed to `js_date.toString`, producing both
+/// wrong output and (for variable receivers) a Zig compile error. This
+/// runtime function plus the lowerer/emitter rewrite restores JS-spec
+/// semantics for radix 2..36.
+pub fn toString(alloc: std.mem.Allocator, val: f64, radix: i64) ![]const u8 {
+    // ECMA-262 step 4: validate radix BEFORE special-value handling so
+    // e.g. `(NaN).toString(1)` throws RangeError even though
+    // `(NaN).toString(10)` returns "NaN".
+    if (radix < 2 or radix > 36) {
+        return error.RangeError;
+    }
+    // Special values — same as toFixed/toExponential conventions.
+    if (std.math.isNan(val)) return alloc.dupe(u8, "NaN");
+    if (std.math.isInf(val)) {
+        return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
+    }
+    if (val == 0.0) return alloc.dupe(u8, "0"); // ±0 → "0"
+
+    // Negative handling: "-" prefix + recurse semantics via abs_val.
+    const negative = val < 0;
+    const abs_val: f64 = if (negative) -val else val;
+    const prefix: []const u8 = if (negative) "-" else "";
+
+    // Radix 10: defer to Zig's shortest-round-trip default formatter, which
+    // matches JS Number.prototype.toString() for the common range.
+    if (radix == 10) {
+        var buf: [128]u8 = undefined;
+        const s = try std.fmt.bufPrint(&buf, "{}", .{abs_val});
+        if (prefix.len == 0) return alloc.dupe(u8, s);
+        const result = try alloc.alloc(u8, prefix.len + s.len);
+        @memcpy(result[0..prefix.len], prefix);
+        @memcpy(result[prefix.len .. prefix.len + s.len], s);
+        return result;
+    }
+
+    // Radix 2..36 (other than 10): successive-division algorithm.
+    const base: f64 = @as(f64, @floatFromInt(radix));
+    const digit_chars = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    // Integer part built reversed, then flipped. Buffer covers
+    // log_2(Number.MAX_VALUE) ≈ 1024 digits plus generous slack.
+    var int_digits_buf: [1280]u8 = undefined;
+    var int_digits_len: usize = 0;
+    {
+        var dividend: f64 = if (abs_val >= 1.0) @floor(abs_val) else 0.0;
+        if (dividend == 0.0) {
+            int_digits_buf[0] = '0';
+            int_digits_len = 1;
+        } else {
+            while (dividend >= 1.0) {
+                const q: f64 = @floor(dividend / base);
+                const r: f64 = dividend - q * base;
+                const digit_idx: usize = @intFromFloat(r);
+                int_digits_buf[int_digits_len] = digit_chars[digit_idx];
+                int_digits_len += 1;
+                dividend = q;
+            }
+            // Reverse so the most-significant digit comes first.
+            const half = int_digits_len / 2;
+            for (0..half) |i| {
+                const j = int_digits_len - 1 - i;
+                const tmp = int_digits_buf[i];
+                int_digits_buf[i] = int_digits_buf[j];
+                int_digits_buf[j] = tmp;
+            }
+        }
+    }
+    const int_str: []const u8 = int_digits_buf[0..int_digits_len];
+
+    // Fractional part: successive multiplication, capped at 52 digits.
+    var frac_digits_buf: [64]u8 = undefined;
+    var frac_digits_len: usize = 0;
+    {
+        var f: f64 = abs_val - @floor(abs_val);
+        const max_frac_digits: usize = 52;
+        while (f != 0.0 and frac_digits_len < max_frac_digits) {
+            f *= base;
+            const d: f64 = @floor(f);
+            const d_idx: usize = @intFromFloat(d);
+            frac_digits_buf[frac_digits_len] = digit_chars[d_idx];
+            frac_digits_len += 1;
+            f -= d;
+        }
+    }
+
+    // If no fractional part, emit prefix + integer only.
+    if (frac_digits_len == 0) {
+        if (prefix.len == 0) return alloc.dupe(u8, int_str);
+        const result = try alloc.alloc(u8, prefix.len + int_str.len);
+        @memcpy(result[0..prefix.len], prefix);
+        @memcpy(result[prefix.len .. prefix.len + int_str.len], int_str);
+        return result;
+    }
+
+    // Construct prefix + int_str + "." + frac_digits on the heap.
+    const total_len = prefix.len + int_str.len + 1 + frac_digits_len;
+    const result = try alloc.alloc(u8, total_len);
+    @memcpy(result[0..prefix.len], prefix);
+    @memcpy(result[prefix.len .. prefix.len + int_str.len], int_str);
+    result[prefix.len + int_str.len] = '.';
+    const frac_off = prefix.len + int_str.len + 1;
+    @memcpy(result[frac_off .. frac_off + frac_digits_len], frac_digits_buf[0..frac_digits_len]);
+    return result;
+}
+
 // ── Tests ──
 
 test "isNaN" {
@@ -608,4 +731,155 @@ test "toPrecision uses fixed-point when -6 <= e < p (R8-P1-1)" {
         defer a.free(r);
         try std.testing.expectEqualStrings("1234", r);
     }
+}
+
+test "toString radix 10 default (R8-NumberToString)" {
+    const a = std.testing.allocator;
+    // Easiest case: matches JS `(42).toString()` (i.e. no radix).
+    {
+        const r = try toString(a, 42.0, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("42", r);
+    }
+    // Negative integer.
+    {
+        const r = try toString(a, -42.0, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-42", r);
+    }
+    // Fractional in shortest round-trip form (R8-E2).
+    {
+        const r = try toString(a, 3.14, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("3.14", r);
+    }
+    // 0.1 (the round-trip-canonical value).
+    {
+        const r = try toString(a, 0.1, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0.1", r);
+    }
+    // ±0 → "0" (ECMA-262 21.1.3.7 step 8: "-" is only emitted when x < 0).
+    {
+        const r = try toString(a, 0.0, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0", r);
+    }
+    {
+        const r = try toString(a, -0.0, 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0", r);
+    }
+    // Special values.
+    {
+        const r = try toString(a, std.math.nan(f64), 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("NaN", r);
+    }
+    {
+        const r = try toString(a, std.math.inf(f64), 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("Infinity", r);
+    }
+    {
+        const r = try toString(a, -std.math.inf(f64), 10);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-Infinity", r);
+    }
+}
+
+test "toString non-decimal radix integers (R8-NumberToString)" {
+    const a = std.testing.allocator;
+    // Binary.
+    {
+        const r = try toString(a, 42.0, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("101010", r);
+    }
+    // Octal.
+    {
+        const r = try toString(a, 8.0, 8);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("10", r);
+    }
+    {
+        const r = try toString(a, 7.0, 8);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("7", r);
+    }
+    // Hex.
+    {
+        const r = try toString(a, 255.0, 16);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("ff", r);
+    }
+    {
+        const r = try toString(a, 4096.0, 16);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1000", r);
+    }
+    // Base 36 wraps around to letters for digits >= 10.
+    {
+        const r = try toString(a, 35.0, 36);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("z", r);
+    }
+    {
+        const r = try toString(a, 36.0, 36);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("10", r);
+    }
+    // Negative values in non-decimal radix carry the '-' prefix.
+    {
+        const r = try toString(a, -10.0, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-1010", r);
+    }
+    {
+        const r = try toString(a, -255.0, 16);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-ff", r);
+    }
+}
+
+test "toString non-decimal radix fractional (R8-NumberToString)" {
+    const a = std.testing.allocator;
+    // 0.5 in binary is exactly 0.1.
+    {
+        const r = try toString(a, 0.5, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0.1", r);
+    }
+    // 0.125 in binary is exactly 0.001.
+    {
+        const r = try toString(a, 0.125, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0.001", r);
+    }
+    // Mixed integer and fractional parts in binary.
+    {
+        const r = try toString(a, 5.25, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("101.01", r);
+    }
+    // 0.5 in hex is exactly 0.8.
+    {
+        const r = try toString(a, 255.5, 16);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("ff.8", r);
+    }
+}
+
+test "toString rejects out-of-range radix (R8-NumberToString)" {
+    const a = std.testing.allocator;
+    // Radix 0 / 1 / 37 / -1 all must throw RangeError.
+    try std.testing.expectError(error.RangeError, toString(a, 42.0, 0));
+    try std.testing.expectError(error.RangeError, toString(a, 42.0, 1));
+    try std.testing.expectError(error.RangeError, toString(a, 42.0, 37));
+    try std.testing.expectError(error.RangeError, toString(a, 42.0, -1));
+    // Radix validation must run BEFORE the special-value short-circuit:
+    // `(NaN).toString(1)` throws RangeError even though
+    // `(NaN).toString(10)` returns "NaN".
+    try std.testing.expectError(error.RangeError, toString(a, std.math.nan(f64), 1));
+    try std.testing.expectError(error.RangeError, toString(a, std.math.inf(f64), 0));
 }

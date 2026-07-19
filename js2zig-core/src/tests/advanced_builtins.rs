@@ -138,6 +138,126 @@ return pi.toFixed(2);
     );
 }
 
+// ── Test: Number.prototype.toString() [radix] (R8-NumberToString) ──
+// Previously every `.toString()` call was silently mis-routed to
+// `js_date.toString`, producing wrong output for literals and a Zig
+// compile error for variable receivers. These four tests verify the
+// new routing through `js_number.toString` for both literal receivers
+// (handled in detect_builtin_call) and F64/I64 variable receivers
+// (handled by the lowerer's "fix string-variable methods" block).
+
+#[test]
+fn test_native_proto_number_tostring_literal_default_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function defaultRadixLiteral() {
+return (42).toString();
+}
+"#;
+    let zig = transpile_and_check(
+        js,
+        "test_native_proto_number_tostring_literal_default_radix",
+    );
+    // No-radix literal: emitter must supply the ECMA-262 default radix 10
+    // since the Zig runtime signature `toString(alloc, val, radix: i64)`
+    // has no Zig default-parameter support.
+    assert!(
+        zig.contains("js_number.toString(js_allocator.allocator(),"),
+        "Expected 'js_number.toString(js_allocator.allocator(),' in:\n{}",
+        zig
+    );
+    // The numeric literal value 42 must be inlined and the default radix
+    // 10 must be appended when the JS call omits it.
+    assert!(
+        zig.contains(", 10)"),
+        "Expected ', 10)' (default radix appended) in:\n{}",
+        zig
+    );
+    // Should NOT route to js_date.toString for a numeric literal receiver.
+    assert!(
+        !zig.contains("js_date.toString"),
+        "Must NOT route (42).toString() to js_date.toString:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_number_tostring_literal_explicit_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function hexLiteral() {
+return (255).toString(16);
+}
+"#;
+    let zig = transpile_and_check(
+        js,
+        "test_native_proto_number_tostring_literal_explicit_radix",
+    );
+    // Explicit radix: the user-supplied 16 must be emitted.
+    assert!(
+        zig.contains("js_number.toString(js_allocator.allocator(),"),
+        "Expected 'js_number.toString(js_allocator.allocator(),' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(", 16)"),
+        "Expected ', 16)' (explicit radix) in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_number_tostring_var_f64_radix() {
+    let js = r#"
+/**
+ * @param {number} n
+ * @returns {string}
+ */
+export function varF64Radix(n) {
+return n.toString(2);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_number_tostring_var_f64_radix");
+    // F64 variable receiver: detect_builtin_call routes `.toString()` to
+    // DateToString (no type info at AST layer); the lowerer's "fix
+    // string-variable methods" block rewrites the module to JsNumber.
+    assert!(
+        zig.contains("js_number.toString(js_allocator.allocator(), n, 2)"),
+        "Expected 'js_number.toString(js_allocator.allocator(), n, 2)' in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("js_date.toString"),
+        "Must NOT route F64-var .toString() to js_date.toString:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_number_tostring_var_i64_no_radix() {
+    let js = r#"
+/**
+ * @param {i64} n
+ * @returns {string}
+ */
+export function varI64Default(n) {
+return n.toString();
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_number_tostring_var_i64_no_radix");
+    // I64 variable receiver, no-radix: lowerer rewrites DateToString→JsNumber,
+    // emitter adds the ECMA-262 default radix 10.
+    assert!(
+        zig.contains("js_number.toString(js_allocator.allocator(), n, 10)"),
+        "Expected 'js_number.toString(js_allocator.allocator(), n, 10)' in:\n{}",
+        zig
+    );
+}
+
 // ── Test: Map.forEach — closure callback ─────────
 
 #[test]
@@ -1361,8 +1481,19 @@ return sym.description;
 #[test]
 fn test_native_proto_symbol_to_string() {
     // sym.toString() method call
+    // R8-NumberToString note: the @param {Symbol} annotation is required
+    // because the new F64/I64-variable interception in lower/expr/call.rs
+    // (Step 1 "fix string-variable methods" block) routes `.toString()` on
+    // i64-typed receivers to js_number.toString. Without the annotation
+    // the default inference makes sym an i64 and the test would no longer
+    // exercise Symbol's own toString, but rather the Number path. The
+    // annotation routes sym to JsSymbol so the lowerer falls through to
+    // (JsDate, "toString"), which emit_date_builtin renders as the
+    // generic `sym.toString(js_allocator.allocator())` instance method
+    // call.
     let js = r#"
 /**
+ * @param {Symbol} sym
  * @returns {string}
  */
 export function symbolToString(sym) {

@@ -268,6 +268,7 @@ pub enum BuiltinCall {
     NumberToFixed,       // num.toFixed(digits) → str
     NumberToExponential, // num.toExponential(fractionDigits) → str
     NumberToPrecision,   // num.toPrecision(precision) → str
+    NumberToString,      // num.toString([radix]) → str (R8 Tier 3)
 
     // String methods (extended)
     StringToUpperCase, // str.toUpperCase()
@@ -549,6 +550,30 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
         // Check if object is an array literal (for Array methods)
         let is_array = matches!(obj_expr, Expression::ArrayExpression(_));
 
+        // R8-NumberToString: detect numeric literal receivers so
+        // `(42).toString(16)` routes to NumberToString instead of the
+        // legacy blanket DateToString. The receiver of a literal
+        // `.toString()` is syntactically parenthesized, so unwrap one
+        // layer of ParenthesizedExpression. Variables of type F64/I64
+        // are handled separately in the lowerer (which has type info).
+        let is_number_literal = match obj_expr {
+            Expression::NumericLiteral(_) => true,
+            Expression::ParenthesizedExpression(pe) => {
+                matches!(&pe.expression, Expression::NumericLiteral(_))
+            }
+            _ => false,
+        };
+
+        // `Number(x)` call expression also produces a numeric (f64)
+        // receiver: `Number("0xff").toString(16)` should go through
+        // js_number.toString.
+        let is_number_call = match obj_expr {
+            Expression::CallExpression(ce) => {
+                matches!(&ce.callee, Expression::Identifier(id) if id.name.as_str() == "Number")
+            }
+            _ => false,
+        };
+
         // Handle array-specific methods (for array literals)
         if is_array {
             match method_name {
@@ -680,7 +705,18 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "getMilliseconds" => Some(BuiltinCall::DateGetMilliseconds),
             "getTimezoneOffset" => Some(BuiltinCall::DateGetTimezoneOffset),
             "toISOString" => Some(BuiltinCall::DateToISOString),
-            "toString" => Some(BuiltinCall::DateToString),
+            // R8-NumberToString: numeric-literal and `Number(x)` receivers
+            // hit NumberToString here. F64/I64-typed *variables* fall
+            // through with DateToString here and get rewritten by the
+            // lowerer's "fix string-variable methods" block (which has
+            // access to type info, unlike this AST-only function).
+            "toString" => {
+                if is_number_literal || is_number_call {
+                    Some(BuiltinCall::NumberToString)
+                } else {
+                    Some(BuiltinCall::DateToString)
+                }
+            }
             "toDateString" => Some(BuiltinCall::DateToDateString),
             "toTimeString" => Some(BuiltinCall::DateToTimeString),
             "toLocaleString" => Some(BuiltinCall::DateToLocaleString),
@@ -946,6 +982,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::NumberToFixed => Some(ZigType::Str),
         BuiltinCall::NumberToExponential => Some(ZigType::Str),
         BuiltinCall::NumberToPrecision => Some(ZigType::Str),
+        BuiltinCall::NumberToString => Some(ZigType::Str),
 
         // JSON methods
         BuiltinCall::JsonStringify => Some(ZigType::Str), // Returns JSON string

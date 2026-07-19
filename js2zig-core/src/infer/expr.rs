@@ -792,6 +792,14 @@ impl TypeInferrer {
                 "valueOf" => InferResult::Definite(ZigType::BigInt),
                 _ => InferResult::Indeterminate,
             },
+            // Number methods (R8-NumberToString) — `.toString()` on an F64 or
+            // I64 variable returns Str. Other Number prototype methods
+            // (toFixed/toExponential/toPrecision) are statically dispatched
+            // at detection time and never reach this fallback resolver.
+            ZigType::F64 | ZigType::I64 => match method {
+                "toString" => InferResult::Definite(ZigType::Str),
+                _ => InferResult::Indeterminate,
+            },
             _ => InferResult::Indeterminate,
         }
     }

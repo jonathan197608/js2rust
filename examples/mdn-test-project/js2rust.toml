@@ -146,7 +146,7 @@ js_files = [
     "test_expressions_frag_158.js",
     "test_expressions_frag_159.js",
     "test_expressions_frag_160.js",
-    # --- builtins (95) ---
+    # --- builtins (96) ---
     "test_builtins_frag_0.js",
     "test_builtins_frag_3.js",
     "test_builtins_frag_8.js",
@@ -175,6 +175,7 @@ js_files = [
     "test_builtins_frag_57.js",
     "test_builtins_frag_60.js",
     "test_builtins_frag_61.js",
+    "test_builtins_frag_68.js",
     "test_builtins_frag_71.js",
     "test_builtins_frag_74.js",
     "test_builtins_frag_80.js",
