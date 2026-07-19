@@ -492,7 +492,7 @@ fn timePart(millis: i64, divisor: i64, modulus: i64) i64 {
 fn daysFromCivil(y: i64, m: i64, d: i64) i64 {
     var year = y;
     year -= @intFromBool(m <= 2);
-    const era = @divFloor(if (year >= 0) year else year - 399, 400);
+    const era = @divTrunc(if (year >= 0) year else year - 399, 400);
     const yoe: i64 = year - era * 400;
     const doy = @divFloor((153 * (if (m > 2) m - 3 else m + 9) + 2), 5) + d - 1;
     const doe = yoe * 365 + @divFloor(yoe, 4) - @divFloor(yoe, 100) + doy;
@@ -502,7 +502,7 @@ fn daysFromCivil(y: i64, m: i64, d: i64) i64 {
 /// Days since 1970-01-01 → (y, m, d). Reverse of daysFromCivil.
 fn civilFromDays(days: i64) struct { y: i64, m: i64, d: i64 } {
     const z = days + 719468;
-    const era = @divFloor(if (z >= 0) z else z - 146096, 146097);
+    const era = @divTrunc(if (z >= 0) z else z - 146096, 146097);
     const doe = z - era * 146097; // [0, 146096]
     const yoe = @divFloor(doe - @divFloor(doe, 1460) + @divFloor(doe, 36524) - @divFloor(doe, 146096), 365);
     const y = yoe + era * 400;
@@ -935,4 +935,31 @@ test "JsDate.setUTCMilliseconds" {
     const result = d.setUTCMilliseconds(500);
     const new_d = JsDate.fromMillis(result);
     try std.testing.expectEqual(@as(i64, 500), new_d.getUTCMilliseconds());
+}
+
+test "daysFromCivil/civilFromDays uses divTrunc for BC dates (R7-8)" {
+    // Hinnant's algorithm uses C++ truncation-toward-zero division.
+    // Pre-fix: @divFloor made era = -2 for year -1 instead of -1,
+    // causing BC dates to be off by 1 day.
+    // Verify round-trip: daysFromCivil then civilFromDays returns the
+    // same (y, m, d) for BC dates.
+    const bc1 = daysFromCivil(-1, 1, 1);
+    const rt = civilFromDays(bc1);
+    try std.testing.expectEqual(@as(i64, -1), rt.y);
+    try std.testing.expectEqual(@as(i64, 1), rt.m);
+    try std.testing.expectEqual(@as(i64, 1), rt.d);
+
+    // Another BC date: year -100, March 15
+    const bc2 = daysFromCivil(-100, 3, 15);
+    const rt2 = civilFromDays(bc2);
+    try std.testing.expectEqual(@as(i64, -100), rt2.y);
+    try std.testing.expectEqual(@as(i64, 3), rt2.m);
+    try std.testing.expectEqual(@as(i64, 15), rt2.d);
+
+    // Positive dates should still round-trip correctly (no regression)
+    const ad = daysFromCivil(2024, 6, 15);
+    const rt3 = civilFromDays(ad);
+    try std.testing.expectEqual(@as(i64, 2024), rt3.y);
+    try std.testing.expectEqual(@as(i64, 6), rt3.m);
+    try std.testing.expectEqual(@as(i64, 15), rt3.d);
 }

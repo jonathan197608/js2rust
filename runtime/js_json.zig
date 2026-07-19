@@ -56,48 +56,78 @@ pub const ParseError = JSONError || Allocator.Error || std.json.Scanner.AllocErr
 pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny) ![]const u8 {
     _ = replacer;
     _ = space;
-    // Simplified implementation: use std.json.Stringify
+    // ECMA-262 §24.5.2: top-level undefined returns empty string
+    // (not the string "null"). The doc comment already specified this
+    // but the implementation was writing "null" via stringifyValue.
+    if (value == .value and value.value == .undefined) {
+        return alloc.dupe(u8, "");
+    }
     var out = std.ArrayList(u8).empty;
     defer out.deinit(alloc);
-    try stringifyValue(value, alloc, out.writer());
+    try stringifyValue(value, alloc, &out);
     return out.toOwnedSlice(alloc);
 }
 
-fn stringifyValue(value: JsAny, alloc: Allocator, writer: anytype) !void {
+fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8)) !void {
     switch (value) {
-        .null => try writer.writeAll("null"),
-        .value => |v| try stringifyJsValue(v, writer),
+        .null => try out.appendSlice(alloc, "null"),
+        .value => |v| try stringifyJsValue(v, alloc, out),
         .array => |arr| {
-            try writer.writeAll("[");
+            try out.appendSlice(alloc, "[");
             for (arr.items, 0..) |item, i| {
-                if (i > 0) try writer.writeAll(",");
-                try stringifyValue(item, alloc, writer);
+                if (i > 0) try out.appendSlice(alloc, ",");
+                try stringifyValue(item, alloc, out);
             }
-            try writer.writeAll("]");
+            try out.appendSlice(alloc, "]");
         },
         .object => |obj| {
-            try writer.writeAll("{");
+            try out.appendSlice(alloc, "{");
             var iter = obj.iterator();
             var first = true;
             while (iter.next()) |entry| {
-                if (!first) try writer.writeAll(",");
+                const val = entry.value_ptr.*;
+                // ECMA-262 §24.5.2: omit undefined values from objects
+                if (val == .value and val.value == .undefined) continue;
+                if (!first) try out.appendSlice(alloc, ",");
                 first = false;
-                try writer.print("\"{s}\":", .{entry.key_ptr.*});
-                try stringifyValue(entry.value_ptr.*, alloc, writer);
+                const key_part = try std.fmt.allocPrint(alloc, "\"{s}\":", .{entry.key_ptr.*});
+                defer alloc.free(key_part);
+                try out.appendSlice(alloc, key_part);
+                try stringifyValue(val, alloc, out);
             }
-            try writer.writeAll("}");
+            try out.appendSlice(alloc, "}");
         },
     }
 }
 
-fn stringifyJsValue(val: JsValue, writer: anytype) !void {
+fn stringifyJsValue(val: JsValue, alloc: Allocator, out: *std.ArrayList(u8)) !void {
     switch (val) {
-        .int => |v| try writer.print("{d}", .{v}),
-        .float => |v| try writer.print("{d}", .{v}),
-        .bool => |v| try writer.writeAll(if (v) "true" else "false"),
-        .string => |s| try writer.print("\"{s}\"", .{s}),
-        .null => try writer.writeAll("null"),
-        .undefined => try writer.writeAll("null"),
+        .int => |v| {
+            const s = try std.fmt.allocPrint(alloc, "{d}", .{v});
+            defer alloc.free(s);
+            try out.appendSlice(alloc, s);
+        },
+        .float => |v| {
+            // ECMA-262 §24.5.2: NaN and Infinity serialize as "null";
+            // -0 serializes as "0" (not "-0").
+            if (std.math.isNan(v) or std.math.isInf(v)) {
+                try out.appendSlice(alloc, "null");
+            } else if (v == 0.0) {
+                try out.appendSlice(alloc, "0");
+            } else {
+                const s = try std.fmt.allocPrint(alloc, "{d}", .{v});
+                defer alloc.free(s);
+                try out.appendSlice(alloc, s);
+            }
+        },
+        .bool => |v| try out.appendSlice(alloc, if (v) "true" else "false"),
+        .string => |s| {
+            const quoted = try std.fmt.allocPrint(alloc, "\"{s}\"", .{s});
+            defer alloc.free(quoted);
+            try out.appendSlice(alloc, quoted);
+        },
+        .null => try out.appendSlice(alloc, "null"),
+        .undefined => try out.appendSlice(alloc, "null"),
     }
 }
 
@@ -201,8 +231,12 @@ fn parseNumber(s: []const u8) JsAny {
         const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromI64(0);
         return JsAny.fromF64(f);
     }
-    // Integer: try i64
-    const i = std.fmt.parseInt(i64, s, 10) catch return JsAny.fromI64(0);
+    // Integer: try i64 first; on overflow fall back to f64
+    // (e.g. "9999999999999999999" exceeds i64 range → f64 ~1e19)
+    const i = std.fmt.parseInt(i64, s, 10) catch {
+        const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromI64(0);
+        return JsAny.fromF64(f);
+    };
     return JsAny.fromI64(i);
 }
 
@@ -242,4 +276,74 @@ test "parse: object with values" {
 
     const name = v.objectGet("name").?;
     try std.testing.expectEqualStrings("Alice", name.asString(alloc));
+}
+
+test "stringify: NaN/Infinity/-0 → null/null/0 (R7-1)" {
+    const alloc = std.testing.allocator;
+
+    // NaN → "null"
+    {
+        const val = JsAny.fromF64(std.math.nan(f64));
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("null", s);
+    }
+    // Infinity → "null"
+    {
+        const val = JsAny.fromF64(std.math.inf(f64));
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("null", s);
+    }
+    // -Infinity → "null"
+    {
+        const val = JsAny.fromF64(-std.math.inf(f64));
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("null", s);
+    }
+    // -0 → "0" (not "-0")
+    {
+        const neg_zero: f64 = @bitCast(@as(u64, 0x8000000000000000));
+        const val = JsAny.fromF64(neg_zero);
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("0", s);
+    }
+}
+
+test "stringify: top-level undefined returns empty string (R7-2)" {
+    const alloc = std.testing.allocator;
+    const undef: JsValue = .{ .undefined = {} };
+    const val = JsAny{ .value = undef };
+    const s = try stringify(alloc, val, null, null);
+    defer alloc.free(s);
+    try std.testing.expectEqualStrings("", s);
+}
+
+test "stringify: omit undefined object properties (R7-3)" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("present", JsAny.fromI64(42), alloc);
+    const undef: JsValue = .{ .undefined = {} };
+    try obj.objectPut("absent", JsAny{ .value = undef }, alloc);
+
+    const s = try stringify(alloc, obj, null, null);
+    defer alloc.free(s);
+    // "absent" should be omitted; only "present" appears
+    try std.testing.expect(std.mem.indexOf(u8, s, "absent") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "present") != null);
+}
+
+test "parse: integer overflow → f64 not 0 (R7-4)" {
+    const alloc = std.testing.allocator;
+
+    var v = try parse(alloc, "9999999999999999999", null);
+    defer v.deinit(alloc);
+    // Should parse as f64 (~1e19), not i64(0)
+    try std.testing.expect(v == .value and v.value == .float);
+    const f = v.asF64();
+    try std.testing.expect(f > 1e18);
 }

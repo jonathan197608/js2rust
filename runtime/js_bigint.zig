@@ -150,14 +150,21 @@ pub const JsBigInt = struct {
     /// BigInt left shift. In JS, negative shift amounts reverse direction:
     /// `x << -n` is equivalent to `x >> n`.
     pub fn shiftLeft(self: *const Self, shift: i64, alloc: std.mem.Allocator) !Self {
-        if (shift < 0) return self.shiftRightRaw(@intCast(-shift), alloc);
+        if (shift < 0) {
+            // Use @abs which returns u64 to avoid -minInt(i64) overflow
+            const abs_shift: usize = @intCast(@abs(shift));
+            return self.shiftRightRaw(abs_shift, alloc);
+        }
         return self.shiftLeftRaw(@intCast(shift), alloc);
     }
 
     /// BigInt right shift. In JS, negative shift amounts reverse direction:
     /// `x >> -n` is equivalent to `x << n`.
     pub fn shiftRight(self: *const Self, shift: i64, alloc: std.mem.Allocator) !Self {
-        if (shift < 0) return self.shiftLeftRaw(@intCast(-shift), alloc);
+        if (shift < 0) {
+            const abs_shift: usize = @intCast(@abs(shift));
+            return self.shiftLeftRaw(abs_shift, alloc);
+        }
         return self.shiftRightRaw(@intCast(shift), alloc);
     }
 
@@ -300,4 +307,38 @@ pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsB
     try quotient.divTrunc(&remainder, &value.value, &modulus);
     // divTrunc remainder is always non-negative when modulus is positive
     return JsBigInt{ .value = remainder };
+}
+
+// ── Tests ────────────────────────────────────────────────────────
+
+test "shiftLeft/shiftRight with minInt(i64) shift does not panic (R7-7)" {
+    // Pre-fix: negating minInt(i64) in `-shift` overflowed i64.
+    // Using @abs which returns u64 avoids the overflow.
+    const alloc = std.testing.allocator;
+    var n = try JsBigInt.fromI64(alloc, 1);
+    defer n.deinit(alloc);
+
+    // x << minInt(i64) → effectively x >> |minInt| (a huge right shift → 0)
+    // This would allocate enormous memory with a huge left shift, so test
+    // the reverse direction (shiftLeft with minInt = right shift → 0).
+    var result = try n.shiftLeft(std.math.minInt(i64), alloc);
+    defer result.deinit(alloc);
+    try std.testing.expect(result.isZero());
+
+    // Also test a moderate negative shift that won't OOM:
+    // 1n >> -2 = 1n << 2 = 4n
+    var result2 = try n.shiftRight(-2, alloc);
+    defer result2.deinit(alloc);
+    var expected = try JsBigInt.fromI64(alloc, 4);
+    defer expected.deinit(alloc);
+    try std.testing.expect(result2.eq(&expected));
+
+    // 8n << -2 = 8n >> 2 = 2n
+    var eight = try JsBigInt.fromI64(alloc, 8);
+    defer eight.deinit(alloc);
+    var result3 = try eight.shiftLeft(-2, alloc);
+    defer result3.deinit(alloc);
+    var expected2 = try JsBigInt.fromI64(alloc, 2);
+    defer expected2.deinit(alloc);
+    try std.testing.expect(result3.eq(&expected2));
 }

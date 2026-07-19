@@ -108,7 +108,7 @@ pub const JsValue = union(enum) {
             .int => |v| @as(f64, @floatFromInt(v)),
             .float => |v| v,
             .bool => |v| if (v) 1.0 else 0.0,
-            .string => |v| std.fmt.parseFloat(f64, v) catch 0,
+            .string => |v| std.fmt.parseFloat(f64, v) catch std.math.nan(f64),
             .null => 0.0,
             .undefined => std.math.nan(f64),
         };
@@ -239,4 +239,15 @@ test "asI64: NaN/Inf/out-of-range coerce to 0 (R5-10)" {
     try std.testing.expectEqual(@as(i64, 100), Jv.fromI64(100).asI64());
     try std.testing.expectEqual(@as(i64, 1), Jv.fromBool(true).asI64());
     try std.testing.expectEqual(@as(i64, 0), Jv.fromBool(false).asI64());
+}
+
+test "asF64: non-numeric string → NaN not 0 (R7-5)" {
+    // Pre-fix: `asF64` for `.string` used `parseFloat(...) catch 0`, so
+    // `Number("hello")` returned 0 instead of NaN per ECMA-262 ToNumber.
+    const Jv = JsValue;
+    try std.testing.expect(std.math.isNan(Jv.fromString("hello").asF64()));
+    try std.testing.expect(std.math.isNan(Jv.fromString("abc").asF64()));
+    // Numeric strings still parse correctly (no regression).
+    try std.testing.expectEqual(@as(f64, 42.0), Jv.fromString("42").asF64());
+    try std.testing.expectEqual(@as(f64, 3.14), Jv.fromString("3.14").asF64());
 }

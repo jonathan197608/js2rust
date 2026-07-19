@@ -441,16 +441,21 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForOfKind::Str { var_used } => {
+                // JS `for (x of str)` iterates over Unicode code points (UTF-8
+                // scalar values), not raw bytes. Zig's `for (str)` iterates u8
+                // bytes, so we emit a std.unicode.Utf8View while-loop instead.
+                self.write_indent();
+                self.write("var __iter = std.unicode.Utf8View.initUnchecked(");
+                self.emit_expr(iterable);
+                self.writeln(").iterator();");
                 self.write_indent();
                 self.emit_label_prefix(label);
-                self.write("for (");
-                self.emit_expr(iterable);
-                self.write(") ");
+                self.write("while (__iter.nextCodepoint()) ");
                 if *var_used {
-                    // Bind to a temp var, then cast u8 → i64 for the user-facing name.
-                    self.write("|__ch| {\n");
+                    // Bind to a temp var, then cast u21 → i64 for the user-facing name.
+                    self.write("|__cp| {\n");
                     self.indent_push();
-                    self.writeln(&format!("const {} = @as(i64, __ch);", var.zig_name));
+                    self.writeln(&format!("const {} = @as(i64, __cp);", var.zig_name));
                 } else {
                     // Unused capture: use |_| to avoid Zig 0.16 unused-capture error.
                     self.write("|_| {\n");

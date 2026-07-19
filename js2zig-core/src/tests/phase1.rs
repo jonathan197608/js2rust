@@ -652,7 +652,9 @@ return count;
 
 #[test]
 fn test_p2_for_of_string() {
-    // for (const ch of str) → for (str) |ch| { ... } (Zig string iteration)
+    // for (const ch of str) → Utf8View while-loop (iterates Unicode code points,
+    // not raw u8 bytes). R7-9: changed from `for (str) |__ch|` to
+    // `while (__iter.nextCodepoint()) |__cp|` for correct JS semantics.
     let js = r#"
 /**
  * @param {string} str
@@ -667,13 +669,16 @@ return count;
 "#;
     let zig = transpile_and_assert(js, "test_p2_for_of_string");
     println!("=== Generated Zig (test_p2_for_of_string) ===\n{}", zig);
-    assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
-    // String for-of: when the loop variable is unused, Zig 0.16 requires |_|.
-    // When used, emits |__ch| with a cast: const ch = @as(i64, __ch);
-    // This test has an unused `ch` (only count is incremented), so check for |_|.
+    assert!(zig.contains("Utf8View"), "Expected Utf8View in:\n{}", zig);
     assert!(
-        zig.contains("for (str) |_|"),
-        "Expected 'for (str) |_|' for unused capture in:\n{}",
+        zig.contains("nextCodepoint"),
+        "Expected nextCodepoint in:\n{}",
+        zig
+    );
+    // When the loop variable is unused, emits |_| (not |__cp|).
+    assert!(
+        zig.contains("while (__iter.nextCodepoint()) |_|"),
+        "Expected 'while (__iter.nextCodepoint()) |_|' for unused capture in:\n{}",
         zig
     );
 }

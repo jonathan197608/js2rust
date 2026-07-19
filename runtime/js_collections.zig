@@ -32,7 +32,16 @@ const JsAnyHashMapContext = struct {
         switch (key) {
             .value => |v| switch (v) {
                 .int => |i| hasher.update(std.mem.asBytes(&i)),
-                .float => |f| hasher.update(std.mem.asBytes(&f)),
+                .float => |f| {
+                    // SameValueZero: NaN === NaN → true. Use a canonical
+                    // bit pattern for all NaN values so they hash identically.
+                    if (std.math.isNan(f)) {
+                        const canonical: f64 = std.math.nan(f64);
+                        hasher.update(std.mem.asBytes(&canonical));
+                    } else {
+                        hasher.update(std.mem.asBytes(&f));
+                    }
+                },
                 .bool => |b| {
                     const byte: u8 = if (b) 1 else 0;
                     hasher.update(&[_]u8{byte});
@@ -61,7 +70,12 @@ const JsAnyHashMapContext = struct {
         switch (a) {
             .value => |va| switch (va) {
                 .int => |ia| return b.value.int == ia,
-                .float => |fa| return b.value.float == fa,
+                .float => |fa| {
+                    // SameValueZero: NaN === NaN → true
+                    const fb = b.value.float;
+                    if (std.math.isNan(fa) and std.math.isNan(fb)) return true;
+                    return fb == fa;
+                },
                 .bool => |ba| return b.value.bool == ba,
                 .string => |sa| return std.mem.eql(u8, sa, b.value.string),
                 .null => return true,
@@ -523,4 +537,28 @@ test "JsMap key can be any JsAny type" {
 
     const v = m.get(JsAny.fromString("name"));
     try std.testing.expect(v.eq(JsAny.fromString("Alice")));
+}
+
+test "NaN SameValueZero: NaN === NaN in Map/Set (R7-6)" {
+    // SameValueZero semantics: NaN is equal to itself for Map/Set keys.
+    // Pre-fix: eql used IEEE == which makes NaN != NaN, so two NaN keys
+    // were stored as separate entries instead of one.
+    const alloc = std.testing.allocator;
+
+    // Set with NaN key
+    var s = JsSet.init(alloc);
+    defer s.deinit(alloc);
+    try s.add(JsAny.fromF64(std.math.nan(f64)));
+    try s.add(JsAny.fromF64(std.math.nan(f64))); // should be a no-op (duplicate)
+    try std.testing.expectEqual(@as(usize, 1), s.size());
+    try std.testing.expect(s.has(JsAny.fromF64(std.math.nan(f64))));
+
+    // Map with NaN key
+    var m = JsMap.init(alloc);
+    defer m.deinit(alloc);
+    try m.set(JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(1));
+    try m.set(JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(2)); // overwrites
+    try std.testing.expectEqual(@as(usize, 1), m.size());
+    const v = m.get(JsAny.fromF64(std.math.nan(f64)));
+    try std.testing.expect(v.eq(JsAny.fromI64(2)));
 }
