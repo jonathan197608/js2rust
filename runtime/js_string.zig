@@ -310,11 +310,25 @@ pub fn includes(haystack: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, haystack, needle) != null;
 }
 
-/// Find index of needle in haystack, or -1 if not found.
-/// Returns UTF-16 code unit index (JS semantics).
-pub fn indexOf(haystack: []const u8, needle: []const u8) i64 {
-    if (std.mem.indexOf(u8, haystack, needle)) |pos| {
-        return @intCast(byteOffsetToUtf16Index(haystack, pos));
+/// Find index of needle in haystack starting at UTF-16 index `from_index`,
+/// or -1 if not found. Returns UTF-16 code unit index (JS semantics).
+///
+/// R8-P1-19: support optional `from_index` (ECMA-262 22.1.3.18).
+/// - `from_index < 0` → clamped to 0 (search from the start)
+/// - `from_index > len` → return -1 (or `len` if needle is empty)
+/// - empty needle → returns the clamped start position
+/// The emitter always supplies `from_index` (default `0` when JS omits it),
+/// matching the `slice` convention; direct Zig callers must pass it too.
+pub fn indexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
+    const hay_len: i64 = @intCast(utf16Len(haystack));
+    // start = clamp(from_index, 0, len)
+    const start: i64 = if (from_index < 0) 0 else if (from_index > hay_len) hay_len else from_index;
+    if (needle.len == 0) return start;
+    if (start >= hay_len) return -1;
+    // start is now in [0, hay_len), so the offset is non-null.
+    const start_byte: usize = utf16IndexToByteOffset(haystack, @intCast(start)).?;
+    if (std.mem.indexOf(u8, haystack[start_byte..], needle)) |pos| {
+        return @intCast(byteOffsetToUtf16Index(haystack, start_byte + pos));
     }
     return -1;
 }
@@ -444,15 +458,32 @@ pub fn trimEnd(s: []const u8) []const u8 {
 
 /// Find the last index of needle in haystack.
 /// Returns UTF-16 code unit index as i64, or -1 if not found.
-pub fn lastIndexOf(haystack: []const u8, needle: []const u8) i64 {
-    const haystack_utf16_len = utf16Len(haystack);
-    if (needle.len == 0) return @intCast(haystack_utf16_len);
+///
+/// R8-P1-19: support optional `from_index` (ECMA-262 22.1.3.19).
+/// Per spec, the search scans backward starting at position `start` where:
+///   - if `from_index >= 0`: `start = min(from_index, len)`
+///   - if `from_index <  0`: `start = len + from_index` (may be negative → -1)
+/// Empty needle matches at `start` (which may equal `len` when
+/// `from_index >= len`).
+pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
+    const hay_len: i64 = @intCast(utf16Len(haystack));
+    const start: i64 = if (from_index < 0) hay_len + from_index else @min(from_index, hay_len);
+    if (start < 0) return -1;
+    if (needle.len == 0) return start;
     if (needle.len > haystack.len) return -1;
-    var i: i64 = @intCast(haystack.len - needle.len);
+
+    // Scan backward from UTF-16 index `start` to 0, comparing byte slices.
+    // Converting UTF-16 idx → byte offset each iteration is O(N) overall for
+    // typical inputs; this trades raw speed for correctness under multi-byte
+    // sequences (a hot loop optimisation can come later if needed).
+    var i: i64 = start;
     while (i >= 0) : (i -= 1) {
-        const start: usize = @intCast(i);
-        if (std.mem.eql(u8, haystack[start .. start + needle.len], needle)) {
-            return @intCast(byteOffsetToUtf16Index(haystack, start));
+        // i is in [0, start] ⊆ [0, hay_len], so the offset is non-null.
+        const i_byte: usize = utf16IndexToByteOffset(haystack, @intCast(i)).?;
+        if (i_byte + needle.len <= haystack.len) {
+            if (std.mem.eql(u8, haystack[i_byte .. i_byte + needle.len], needle)) {
+                return i;
+            }
         }
     }
     return -1;
@@ -572,8 +603,30 @@ test "includes" {
 }
 
 test "indexOf" {
-    try std.testing.expectEqual(@as(i64, 6), indexOf("hello world", "world"));
-    try std.testing.expectEqual(@as(i64, -1), indexOf("hello world", "xyz"));
+    try std.testing.expectEqual(@as(i64, 6), indexOf("hello world", "world", 0));
+    try std.testing.expectEqual(@as(i64, -1), indexOf("hello world", "xyz", 0));
+}
+
+test "indexOf from_index (R8-P1-19)" {
+    // Basic from_index usage
+    try std.testing.expectEqual(@as(i64, 6), indexOf("hello hello", "hello", 1));
+    try std.testing.expectEqual(@as(i64, 0), indexOf("hello hello", "hello", 0));
+    // from_index beyond first occurrence skips it
+    try std.testing.expectEqual(@as(i64, 6), indexOf("hello hello", "hello", 1));
+    // from_index past a run of identical chars still finds later ones
+    try std.testing.expectEqual(@as(i64, 2), indexOf("aaabb", "a", 2));
+    // from_index beyond all occurrences returns -1
+    try std.testing.expectEqual(@as(i64, -1), indexOf("aaabb", "a", 3));
+    // Negative from_index clamped to 0
+    try std.testing.expectEqual(@as(i64, 0), indexOf("abcabc", "a", -5));
+    // from_index >= len returns -1 (non-empty needle)
+    try std.testing.expectEqual(@as(i64, -1), indexOf("abc", "a", 3));
+    try std.testing.expectEqual(@as(i64, -1), indexOf("abc", "a", 100));
+    // Empty needle returns clamped start position
+    try std.testing.expectEqual(@as(i64, 0), indexOf("abc", "", 0));
+    try std.testing.expectEqual(@as(i64, 0), indexOf("abc", "", -5));
+    try std.testing.expectEqual(@as(i64, 3), indexOf("abc", "", 3));
+    try std.testing.expectEqual(@as(i64, 3), indexOf("abc", "", 100));
 }
 
 test "startsWith" {
@@ -758,12 +811,45 @@ test "substring UTF-8" {
 
 test "indexOf UTF-8" {
     // "café": indexOf("é") should return 3 (UTF-16 index)
-    try std.testing.expectEqual(@as(i64, 3), indexOf("café", "é"));
+    try std.testing.expectEqual(@as(i64, 3), indexOf("café", "é", 0));
 }
 
 test "lastIndexOf UTF-8" {
     // "caféé": lastIndexOf("é") should return 4 (second é is UTF-16 index 4)
-    try std.testing.expectEqual(@as(i64, 4), lastIndexOf("caféé", "é"));
+    try std.testing.expectEqual(@as(i64, 4), lastIndexOf("caféé", "é", std.math.maxInt(i64)));
+}
+
+test "indexOf UTF-8 from_index (R8-P1-19)" {
+    // "caféé" UTF-16 indices: c=0,a=1,f=2,é=3,é=4 (len=5)
+    // from_index=4 should find the second é at index 4
+    try std.testing.expectEqual(@as(i64, 4), indexOf("caféé", "é", 4));
+    // from_index=0 should find the first é at index 3
+    try std.testing.expectEqual(@as(i64, 3), indexOf("caféé", "é", 0));
+    // from_index beyond len → -1
+    try std.testing.expectEqual(@as(i64, -1), indexOf("caféé", "é", 5));
+}
+
+test "lastIndexOf from_index (R8-P1-19)" {
+    // "hello hello": UTF-16 len=11, lastIndexOf("hello", from_index)
+    // from_index=5 → start=min(5,11)=5, scan backward from index 5
+    //   finds "hello" at index 0
+    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", 5));
+    // from_index=11 (>= len) → start=11, but needle non-empty so scan from 10
+    //   actually start=min(11,11)=11, scan backward from 11 meaning compare at
+    //   position 11-5=6..11 → "hello" at index 6
+    try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", 11));
+    // from_index=10 → start=10, scan backward, finds index 6
+    try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", 10));
+    // from_index=5 should find the first "hello" at 0 (second one starts at 6)
+    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", 5));
+    // Negative from_index: len + from_index
+    // len=11, from_index=-1 → start=10, finds index 6
+    try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", -1));
+    // from_index very negative → start < 0 → -1
+    try std.testing.expectEqual(@as(i64, -1), lastIndexOf("hello hello", "hello", -100));
+    // Empty needle returns start (clamped)
+    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("abc", "", 0));
+    try std.testing.expectEqual(@as(i64, 3), lastIndexOf("abc", "", 100));
 }
 
 test "padStart UTF-8" {
@@ -812,11 +898,19 @@ pub fn replaceAll(alloc: Allocator, s: []const u8, old: []const u8, new: []const
 }
 
 /// Create string from character code(s). Takes UTF-16 code units and returns a UTF-8 string.
+///
+/// R8-P1-17: Each `code` is first converted via ToUint16 (ECMA-262 7.1.15),
+/// i.e. `code mod 2^16` — so `String.fromCharCode(0x10000)` === "\u0000" and
+/// `String.fromCharCode(-1)` === "\uFFFF". Previously this clamped with
+/// `@max(0, @min(code, 0xFFFF))`, which incorrectly produced "\uFFFF" for
+/// 0x10000 (instead of "\u0000") and "\u0000" for -1 (instead of "\uFFFF").
+/// The cast `@as(u16, @truncate(@as(u64, @bitCast(code))))` yields the low
+/// 16 bits of the i64, which is exactly `code mod 2^16` under two's complement.
 pub fn fromCharCode(alloc: Allocator, codes: []const i64) ![]const u8 {
     // Calculate required buffer size
     var buf_size: usize = 0;
     for (codes) |code| {
-        const c: u32 = @intCast(@max(0, @min(code, 0xFFFF)));
+        const c: u32 = @as(u32, @as(u16, @truncate(@as(u64, @bitCast(code)))));
         if (c <= 0x7F) {
             buf_size += 1;
         } else if (c <= 0x7FF) {
@@ -825,11 +919,11 @@ pub fn fromCharCode(alloc: Allocator, codes: []const i64) ![]const u8 {
             buf_size += 3;
         }
     }
-    
+
     const result = try alloc.alloc(u8, buf_size);
     var pos: usize = 0;
     for (codes) |code| {
-        const c: u32 = @intCast(@max(0, @min(code, 0xFFFF)));
+        const c: u32 = @as(u32, @as(u16, @truncate(@as(u64, @bitCast(code)))));
         if (c <= 0x7F) {
             result[pos] = @intCast(c);
             pos += 1;
@@ -847,12 +941,21 @@ pub fn fromCharCode(alloc: Allocator, codes: []const i64) ![]const u8 {
     return result;
 }
 
-/// Create string from Unicode code point(s). Takes Unicode code points (U+0000 to U+10FFFF).
+/// Create string from Unicode code point(s). Takes Unicode code points (U+0000
+/// to U+10FFFF inclusive) and returns a UTF-8 string.
+///
+/// R8-P1-18: ECMA-262 `String.fromCodePoint` throws a `RangeError` for any
+/// code point that is not in `0..=0x10FFFF`. Previously out-of-range or
+/// negative inputs were silently coerced via `@max(0, cp)` and encoded as
+/// garbage UTF-8. We now `return error.RangeError` for invalid inputs; the
+/// emitter routes `error.RangeError` to `error.JsThrow` (JS-thrown TypeError)
+/// so a JS try/catch can observe it.
 pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
-    // Calculate required buffer size
+    // Validate + calculate required buffer size
     var buf_size: usize = 0;
     for (code_points) |cp| {
-        const c: u32 = @intCast(@max(0, cp));
+        if (cp < 0 or cp > 0x10FFFF) return error.RangeError;
+        const c: u32 = @intCast(cp);
         if (c <= 0x7F) {
             buf_size += 1;
         } else if (c <= 0x7FF) {
@@ -863,11 +966,12 @@ pub fn fromCodePoint(alloc: Allocator, code_points: []const i64) ![]const u8 {
             buf_size += 4;
         }
     }
-    
+
     const result = try alloc.alloc(u8, buf_size);
     var pos: usize = 0;
     for (code_points) |cp| {
-        const c: u32 = @intCast(@max(0, cp));
+        // Range check above guarantees cp is in 0..=0x10FFFF.
+        const c: u32 = @intCast(cp);
         if (c <= 0x7F) {
             result[pos] = @intCast(c);
             pos += 1;
@@ -895,6 +999,60 @@ test "replaceAll" {
     const result = try replaceAll(std.testing.allocator, "hello world world", "world", "zig");
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("hello zig zig", result);
+}
+
+test "fromCharCode: ToUint16 wrapping (R8-P1-17)" {
+    const a = std.testing.allocator;
+    // In-range values unchanged.
+    {
+        const r = try fromCharCode(a, &[_]i64{ 65, 66, 67 });
+        defer a.free(r);
+        try std.testing.expectEqualStrings("ABC", r);
+    }
+    // 0x10000 wraps to 0x0000 per ToUint16 (mod 2^16).
+    {
+        const r = try fromCharCode(a, &[_]i64{0x10000});
+        defer a.free(r);
+        try std.testing.expectEqualStrings("\u{0000}", r);
+    }
+    // -1 wraps to 0xFFFF per ToUint16 (two's complement low 16 bits).
+    {
+        const r = try fromCharCode(a, &[_]i64{-1});
+        defer a.free(r);
+        try std.testing.expectEqualStrings("\u{FFFF}", r);
+    }
+    // 0x10041 wraps to 0x0041 == 'A'.
+    {
+        const r = try fromCharCode(a, &[_]i64{0x10041});
+        defer a.free(r);
+        try std.testing.expectEqualStrings("A", r);
+    }
+}
+
+test "fromCodePoint: range validation (R8-P1-18)" {
+    const a = std.testing.allocator;
+    // Valid code points still encode correctly.
+    {
+        const r = try fromCodePoint(a, &[_]i64{ 0x41, 0x1F600 });
+        defer a.free(r);
+        try std.testing.expectEqualStrings("A\u{1F600}", r);
+    }
+    // Negative → error.RangeError.
+    try std.testing.expectError(error.RangeError, fromCodePoint(a, &[_]i64{-1}));
+    // Above 0x10FFFF → error.RangeError.
+    try std.testing.expectError(error.RangeError, fromCodePoint(a, &[_]i64{0x110000}));
+    // Boundary: 0x10FFFF is valid.
+    {
+        const r = try fromCodePoint(a, &[_]i64{0x10FFFF});
+        defer a.free(r);
+        try std.testing.expectEqualStrings("\u{10FFFF}", r);
+    }
+    // Boundary: 0 is valid.
+    {
+        const r = try fromCodePoint(a, &[_]i64{0});
+        defer a.free(r);
+        try std.testing.expectEqualStrings("\u{0000}", r);
+    }
 }
 
 test "fromCharCode" {

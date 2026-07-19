@@ -1302,6 +1302,44 @@ return "hello world".lastIndexOf("o");
         "Expected js_string.lastIndexOf( in:\n{}",
         zig
     );
+    // R8-P1-19: missing fromIndex defaults to std.math.maxInt(i64) so the
+    // search starts from the end of the string.
+    assert!(
+        zig.contains("std.math.maxInt(i64)"),
+        "Expected default fromIndex 'std.math.maxInt(i64)' as the third arg in:\n{}",
+        zig
+    );
+}
+
+// ── Test: String.lastIndexOf() with explicit fromIndex (R8-P1-19) ──
+
+#[test]
+fn test_native_proto_string_lastindexof_from_index() {
+    let js = r#"
+export function findLastCharFrom() {
+return "hello world".lastIndexOf("o", 5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_string_lastindexof_from_index");
+
+    assert!(
+        zig.contains("js_string.lastIndexOf("),
+        "Expected js_string.lastIndexOf( in:\n{}",
+        zig
+    );
+    // The explicit fromIndex argument should appear as the third parameter.
+    assert!(
+        zig.contains(", 5)"),
+        "Expected explicit fromIndex '5' as the third arg in:\n{}",
+        zig
+    );
+    // When the caller supplies fromIndex explicitly, the default sentinel
+    // must NOT be appended.
+    assert!(
+        !zig.contains("std.math.maxInt(i64)"),
+        "Should NOT append default sentinel after explicit fromIndex in:\n{}",
+        zig
+    );
 }
 
 // ── Test: String.match() ──────────────────────────

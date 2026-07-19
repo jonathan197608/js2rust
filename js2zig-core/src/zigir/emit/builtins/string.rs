@@ -30,6 +30,46 @@ impl Emitter {
             _ => {}
         }
 
+        // ── Static variadic calls: String.fromCharCode / String.fromCodePoint ──
+        // These have signature `fn(Allocator, []const i64) ![]const u8`, so the
+        // emitter must prepend the allocator and pack all JS arguments into an
+        // `&[_]i64{ ... }` slice literal. (obj is None for these — they are
+        // static methods on the `String` constructor, not instance methods.)
+        match method {
+            "fromCharCode" => {
+                self.write("js_string.fromCharCode(js_allocator.allocator(), &[_]i64{");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write("}) catch @panic(\"OOM: string method\")");
+                return;
+            }
+            "fromCodePoint" => {
+                // R8-P1-18: invalid code points (cp < 0 or cp > 0x10FFFF)
+                // produce `error.RangeError` from the runtime. For now we
+                // route it to a hard panic; full JS-throw routing (marking
+                // the enclosing fn `can_throw` and returning `error.JsThrow`)
+                // is tracked as a future improvement.
+                self.write("js_string.fromCodePoint(js_allocator.allocator(), &[_]i64{");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(
+                    "}) catch |err| switch (err) { \
+                     error.RangeError => @panic(\"fromCodePoint: invalid code point\"), \
+                     else => @panic(\"OOM: string method\") }",
+                );
+                return;
+            }
+            _ => {}
+        }
+
         // Method dispatch: JS name → Zig runtime name + allocator + fallible.
         // ICU-dependent methods (localeCompare, normalize, toLocaleUpperCase,
         // toLocaleLowerCase) are routed through js_string_icu instead of
@@ -49,13 +89,28 @@ impl Emitter {
             "trimStart" => ("trimStart", false, false, 0, 0, &[], "js_string"),
             "trimEnd" => ("trimEnd", false, false, 0, 0, &[], "js_string"),
             // ── No allocator, 1 arg, non-fallible ──
-            "indexOf" => ("indexOf", false, false, 1, 1, &[], "js_string"),
             "includes" => ("includes", false, false, 1, 1, &[], "js_string"),
             "startsWith" => ("startsWith", false, false, 1, 1, &[], "js_string"),
             "endsWith" => ("endsWith", false, false, 1, 1, &[], "js_string"),
-            "lastIndexOf" => ("lastIndexOf", false, false, 1, 1, &[], "js_string"),
             "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[], "js_string"),
             "codePointAt" => ("codePointAt", false, false, 1, 1, &[], "js_string"),
+            // ── R8-P1-19: indexOf/lastIndexOf support optional fromIndex ──
+            // JS `indexOf(searchString, fromIndex)` defaults fromIndex=0
+            // (search from the start). JS `lastIndexOf(searchString, fromIndex)`
+            // defaults fromIndex=+∞ (search from the end); the runtime clamps
+            // any value ≥ len to len. We use `std.math.maxInt(i64)` as a Zig
+            // sentinel guaranteed ≥ any valid string length. Sign convention
+            // matches `slice`/`substring`.
+            "indexOf" => ("indexOf", false, false, 1, 2, &["0"], "js_string"),
+            "lastIndexOf" => (
+                "lastIndexOf",
+                false,
+                false,
+                1,
+                2,
+                &["std.math.maxInt(i64)"],
+                "js_string",
+            ),
             // ── No allocator, 1-2 args, non-fallible ──
             "slice" => (
                 "slice",

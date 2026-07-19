@@ -444,6 +444,45 @@ return "hello".indexOf("lo");
         "Expected 'js_string.indexOf(' in:\n{}",
         zig
     );
+    // R8-P1-19: missing fromIndex defaults to 0 (third positional arg).
+    assert!(
+        zig.contains("js_string.indexOf(hello, \"lo\", 0)")
+            || zig.contains("js_string.indexOf(hello__slice__alias, \"lo\", 0)")
+            || zig.contains(", \"lo\", 0)"),
+        "Expected 'indexOf' to emit default fromIndex=0 (third arg) in:\n{}",
+        zig
+    );
+}
+
+// Test: String.indexOf() with explicit fromIndex (R8-P1-19)
+#[test]
+fn test_p19_string_index_of_from_index() {
+    let js = r#"
+/**
+ * @returns {i64}
+ */
+export function findIndexFrom() {
+return "hello hello".indexOf("o", 1);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p19_string_index_of_from_index");
+    assert!(
+        zig.contains("js_string.indexOf("),
+        "Expected 'js_string.indexOf(' in:\n{}",
+        zig
+    );
+    // The explicit fromIndex argument should appear as the third parameter.
+    assert!(
+        zig.contains(", 1)"),
+        "Expected explicit fromIndex '1' as the third arg in:\n{}",
+        zig
+    );
+    // Ensure no default-0 override is appended when JS provides fromIndex.
+    assert!(
+        !zig.contains(", 1, 0)"),
+        "Should NOT append a default-0 after explicit fromIndex in:\n{}",
+        zig
+    );
 }
 
 // ── Test: String.padStart() ────────────────────────
@@ -638,8 +677,9 @@ return String.fromCharCode(65, 66, 67);
 "#;
     let zig = transpile_and_check(js, "test_p6_string_from_char_code");
     assert!(
-        zig.contains("js_string.fromCharCode("),
-        "Expected 'js_string.fromCharCode(' in:\n{}",
+        zig.contains("js_string.fromCharCode(js_allocator.allocator(), &[_]i64{")
+            && zig.contains("65, 66, 67"),
+        "Expected fromCharCode to prepend js_allocator and pack args into i64 slice (R8-P1-17): {}",
         zig
     );
 }
@@ -657,8 +697,16 @@ return String.fromCodePoint(0x1F600);
 "#;
     let zig = transpile_and_check(js, "test_p6_string_from_code_point");
     assert!(
-        zig.contains("js_string.fromCodePoint("),
-        "Expected 'js_string.fromCodePoint(' in:\n{}",
+        zig.contains("js_string.fromCodePoint(js_allocator.allocator(), &[_]i64{")
+            && zig.contains("128512"),
+        "Expected fromCodePoint to prepend js_allocator and pack args into i64 slice (R8-P1-18): {}",
+        zig
+    );
+    // R8-P1-18: invalid code points must route `error.RangeError` through a
+    // catch switch (rather than swallow it as a generic OOM panic).
+    assert!(
+        zig.contains("catch |err| switch (err)"),
+        "Expected fromCodePoint emission to handle error.RangeError via catch switch (R8-P1-18): {}",
         zig
     );
 }

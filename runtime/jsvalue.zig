@@ -120,7 +120,23 @@ pub const JsValue = union(enum) {
             .int => |v| @as(f64, @floatFromInt(v)),
             .float => |v| v,
             .bool => |v| if (v) 1.0 else 0.0,
-            .string => |v| std.fmt.parseFloat(f64, v) catch std.math.nan(f64),
+            // R8-P1-6: JS ToNumber("") == +0 and ToNumber("   ") == +0
+            // (parseFloat fails for these; ECMA-262 StringNumericLiteral
+            // returns +0 after trimming WhiteSpace+LineTerminator).
+            // Non-numeric ("abc") still yields NaN per R7-5.
+            .string => |v| std.fmt.parseFloat(f64, v) catch blk: {
+                var all_ws = true;
+                for (v) |byte| {
+                    switch (byte) {
+                        ' ', '\t', '\n', '\r', 0x0B, 0x0C => {},
+                        else => {
+                            all_ws = false;
+                            break;
+                        },
+                    }
+                }
+                break :blk if (all_ws) 0.0 else std.math.nan(f64);
+            },
             .null => 0.0,
             .undefined => std.math.nan(f64),
         };
@@ -268,6 +284,18 @@ test "asF64: non-numeric string → NaN not 0 (R7-5)" {
     // Numeric strings still parse correctly (no regression).
     try std.testing.expectEqual(@as(f64, 42.0), Jv.fromString("42").asF64());
     try std.testing.expectEqual(@as(f64, 3.14), Jv.fromString("3.14").asF64());
+}
+
+test "asF64: empty/whitespace string → 0 not NaN (R8-P1-6)" {
+    // JS Number("")===0, Number(" ")===0, Number("  \t\n ")===0.
+    // Pre-fix: parseFloat("") fails → NaN, violating ECMA-262 ToNumber.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(f64, 0.0), Jv.fromString("").asF64());
+    try std.testing.expectEqual(@as(f64, 0.0), Jv.fromString(" ").asF64());
+    try std.testing.expectEqual(@as(f64, 0.0), Jv.fromString("\t\n\r ").asF64());
+    // Non-numeric, non-whitespace still → NaN (regression guard).
+    try std.testing.expect(std.math.isNan(Jv.fromString("abc").asF64()));
+    try std.testing.expect(std.math.isNan(Jv.fromString("12abc").asF64()));
 }
 
 test "format/asString emit NaN/Infinity not nan/inf (R8-P1-7)" {
