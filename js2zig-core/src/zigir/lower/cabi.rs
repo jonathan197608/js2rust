@@ -758,13 +758,24 @@ impl Lowerer {
         return_type: Option<ZigType>,
     ) -> Option<FnContext> {
         let old = self.fn_ctx.take();
-        self.fn_ctx = Some(FnContext::new(name, is_export, return_type));
+        // R8-C7: Reset the this-rewrite flag inside the new function context.
+        // `this.field = value` in a nested function must NOT be rewritten because
+        // its `this` is not the constructor's. The saved value is stashed on the
+        // new FnContext and restored by `exit_fn`.
+        let saved_rewrite = self.this_rewrite_fields.take();
+        self.this_rewrite_fields = None;
+        let mut new_ctx = FnContext::new(name, is_export, return_type);
+        new_ctx.saved_this_rewrite_fields = saved_rewrite;
+        self.fn_ctx = Some(new_ctx);
         old
     }
 
     /// Exit the current function context. Restores the previous one if any.
     pub(super) fn exit_fn(&mut self, saved: Option<FnContext>) -> FnContext {
-        let ctx = self.fn_ctx.take().expect("exit_fn called without enter_fn");
+        let mut ctx = self.fn_ctx.take().expect("exit_fn called without enter_fn");
+        // R8-C7: Restore the this-rewrite flag that was active before this fn.
+        // `.take()` leaves None in the ctx so it can still be returned whole.
+        self.this_rewrite_fields = ctx.saved_this_rewrite_fields.take();
         self.fn_ctx = saved;
         ctx
     }

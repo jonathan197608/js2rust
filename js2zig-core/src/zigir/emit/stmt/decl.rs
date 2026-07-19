@@ -5,9 +5,184 @@ use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers::{EmitterHelpers, format_param_with_rest, format_return_type};
 use crate::zigir::types::{
-    IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrFnDecl, IrStmt, IrTypedef,
-    IrVarDecl,
+    IrAssignTarget, IrBlock, IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrExpr,
+    IrFnDecl, IrStmt, IrTypedef, IrVarDecl,
 };
+use std::collections::HashSet;
+
+/// Pick a type-appropriate zero value for a pre-declared constructor `var`
+/// when the field has no explicit `default` (R8-C7 + R8-E4/C6).
+///
+/// Zig requires every `var` to have an initialiser. We use the most natural
+/// "empty" value per ZigType; complex/owning types (Map, Set, ArrayList,
+/// BigInt, JsError, NamedStruct) fall back to `undefined` because they have
+/// no const-evaluable zero state. JS semantics for an uninitialised field is
+/// `undefined`, which lines up with `undefined` here for the dynamic types.
+/// For the common scalar types we pick a real zero so the value is safe to
+/// read even if the constructor never assigns the field.
+fn field_zero_value(ty: &ZigType) -> &'static str {
+    match ty {
+        ZigType::I64 | ZigType::Anytype | ZigType::AnytypeReturn => "0",
+        ZigType::F64 => "0.0",
+        ZigType::Bool => "false",
+        ZigType::Str => "\"\"",
+        // JsAny / JsSymbol / BigInt / JsError / NamedStruct / Struct / ArrayList
+        // / AsyncIo — no const-zero; let Zig track it as `undefined` and rely
+        // on the user constructor assigning before any read.
+        _ => "undefined",
+    }
+}
+
+/// R8-E4/C6: Walk the constructor body and collect every identifier that is
+/// the target of an `IrStmt::Assign` anywhere in it (recursing through
+/// if/while/for/for-of/for-in/switch/try/block bodies AND destructuring
+/// targets). Zig 0.16.0 ast-check rejects `var` declarations that are never
+/// mutated with `"local variable is never mutated; consider using 'const'"`,
+/// so the Emitter must use `const` for pre-declared ctor fields that the
+/// constructor body never reassigns.
+///
+/// Destructure targets are included because `const { a, b } = obj` followed
+/// by a use of `a` near the struct return still has the binding declared as
+/// `const` by the Emitter's destructure path — but a *destructuring
+/// assignment* (`{ a, b } = obj;` — no `const`/`var` keyword) lowers to an
+/// `IrStmt::Assign { target: Destructure(...) }` that does mutate each
+/// binding, so those bindings count as "assigned" too and should be
+/// pre-declared `var` here to keep the rewrite legal at any scope.
+fn collect_assigned_idents_in_block(block: &IrBlock) -> HashSet<String> {
+    let mut out = HashSet::new();
+    collect_assigned_idents(&block.stmts, &mut out);
+    out
+}
+
+fn collect_assigned_idents(stmts: &[IrStmt], out: &mut HashSet<String>) {
+    for stmt in stmts {
+        match stmt {
+            IrStmt::Assign { target, .. } => match target {
+                IrAssignTarget::Ident(id) => {
+                    out.insert(id.js_name.clone());
+                }
+                IrAssignTarget::Destructure(bindings) => {
+                    for b in bindings {
+                        out.insert(b.pattern.js_name.clone());
+                    }
+                }
+                _ => {}
+            },
+            IrStmt::If { then, else_, .. } => {
+                collect_assigned_idents(&then.stmts, out);
+                if let Some(eb) = else_ {
+                    collect_assigned_idents(&eb.stmts, out);
+                }
+            }
+            IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
+                collect_assigned_idents(&body.stmts, out);
+            }
+            IrStmt::For { body, .. } => collect_assigned_idents(&body.stmts, out),
+            IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
+                collect_assigned_idents(&body.stmts, out);
+            }
+            IrStmt::Switch { cases, .. } => {
+                for case in cases {
+                    collect_assigned_idents(&case.body, out);
+                }
+            }
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                collect_assigned_idents(&try_block.stmts, out);
+                collect_assigned_idents(&catch_block.stmts, out);
+                if let Some(fb) = finally {
+                    collect_assigned_idents(&fb.stmts, out);
+                }
+            }
+            IrStmt::Block(b) => collect_assigned_idents(&b.stmts, out),
+            _ => {}
+        }
+    }
+}
+
+/// R8-E5/C1: Check whether a class method body mutates `self` — i.e.,
+/// contains any `this.field = ...` assignment (an assignment whose target
+/// is an `IrAssignTarget::Member` on `IrExpr::This`).
+///
+/// If so, the method signature must use `self: *@This()` (mutable pointer)
+/// because Zig rejects assignment to a by-value parameter. Non-mutating
+/// methods keep the cheaper `self: @This()` (by-value) form.
+///
+/// In the IR, `this.x = v` inside an ExpressionStatement is lowered as
+/// `IrStmt::Expr(IrExpr::Assign { target: Member { object: This, .. }, .. })`,
+/// NOT as `IrStmt::Assign`. Similarly `++this.x` becomes
+/// `IrStmt::Expr(IrExpr::Update { target: Member { object: This, .. }, .. })`
+/// (non-BigInt) or `IrStmt::Expr(IrExpr::BlockExpr { body: [..., Expr(Assign { .. })], .. })`
+/// (BigInt). All three forms must be detected.
+fn method_mutates_self(body: &IrBlock) -> bool {
+    /// Returns true if the assignment target is `this.field` (a Member on This).
+    fn target_is_self_member(target: &IrAssignTarget) -> bool {
+        matches!(
+            target,
+            IrAssignTarget::Member { object, .. }
+                if matches!(object.as_ref(), IrExpr::This)
+        )
+    }
+
+    /// Returns true if an expression mutates `self` — i.e., it is an
+    /// assignment or update expression (possibly wrapped in a BlockExpr)
+    /// whose target is `this.field`.
+    fn expr_mutates_self(expr: &IrExpr) -> bool {
+        match expr {
+            IrExpr::Assign { target, .. } => target_is_self_member(target.as_ref()),
+            IrExpr::Update { target, .. } => target_is_self_member(target.as_ref()),
+            IrExpr::BlockExpr { body, result, .. } => {
+                stmts_mutate_self(body) || expr_mutates_self(result.as_ref())
+            }
+            _ => false,
+        }
+    }
+
+    fn stmts_mutate_self(stmts: &[IrStmt]) -> bool {
+        stmts.iter().any(stmt_mutates_self)
+    }
+
+    fn stmt_mutates_self(stmt: &IrStmt) -> bool {
+        match stmt {
+            IrStmt::Assign { target, .. } => target_is_self_member(target),
+            IrStmt::Expr(expr) => expr_mutates_self(expr),
+            IrStmt::If { then, else_, .. } => {
+                stmts_mutate_self(&then.stmts)
+                    || else_
+                        .as_ref()
+                        .is_some_and(|eb| stmts_mutate_self(&eb.stmts))
+            }
+            IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
+                stmts_mutate_self(&body.stmts)
+            }
+            IrStmt::For { body, .. } => stmts_mutate_self(&body.stmts),
+            IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
+                stmts_mutate_self(&body.stmts)
+            }
+            IrStmt::Switch { cases, .. } => cases.iter().any(|c| stmts_mutate_self(&c.body)),
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                stmts_mutate_self(&try_block.stmts)
+                    || stmts_mutate_self(&catch_block.stmts)
+                    || finally
+                        .as_ref()
+                        .is_some_and(|fb| stmts_mutate_self(&fb.stmts))
+            }
+            IrStmt::Block(b) => stmts_mutate_self(&b.stmts),
+            _ => false,
+        }
+    }
+
+    stmts_mutate_self(&body.stmts)
+}
 
 impl Emitter {
     /// Resolve the return type string for a function/closure that may use `AnytypeReturn`.
@@ -432,15 +607,69 @@ impl Emitter {
         self.writeln(&sig);
         self.indent_push();
 
-        // Constructor body
+        // R8-C7 + R8-E4/C6: Pre-declare each class field at the top of the
+        // constructor body, so the Lowerer's rewritten `field = value` Assigns
+        // have a target to write to (no matter how deeply nested).
+        //
+        // The initialiser value comes from the field's `default` (its class
+        // body `x = ...`) when present, otherwise a type-appropriate zero.
+        // This means a constructor that *never* touches a field still yields
+        // the field's declared default instead of an undefined slot — which is
+        // the R8-E4/C6 fix.
+        //
+        // Whether each pre-declaration is `var` or `const` depends on whether
+        // the constructor body actually reassigns the field: Zig 0.16.0
+        // ast-check rejects a `var` that is never mutated, so a field that
+        // only carries its default through to the struct return must be
+        // declared `const`. We compute the set of assigned-identifier names
+        // up front (recursing into every nested container statement) and
+        // route each field accordingly.
+        let assigned = collect_assigned_idents_in_block(&ctor.body);
+        for f in fields {
+            let default_str = match &f.default {
+                Some(expr) => self.expr_to_string(expr),
+                None => field_zero_value(&f.zig_type).to_string(),
+            };
+            let kw = if assigned.contains(&f.name) {
+                "var"
+            } else {
+                "const"
+            };
+            self.writeln(&format!(
+                "{} {}: {} = {};",
+                kw,
+                f.name,
+                f.zig_type.to_zig_type(),
+                default_str
+            ));
+        }
+
+        // Constructor body — rewritten assignments target the vars above.
         self.emit_block_stmts_unlabeled(&ctor.body);
 
-        // Return struct literal (from fields assigned in body — values are the local vars)
-        let pairs: Vec<(&str, String)> = fields
-            .iter()
-            .map(|f| (f.name.as_str(), f.name.clone()))
-            .collect();
-        self.emit_struct_literal_return(&pairs);
+        // R8-C2: Skip the appended `return .{...}` if the body's last
+        // top-level statement is already a `Return`. Otherwise Zig would
+        // reject the appended return as unreachable code.
+        //
+        // Limitation: this only detects an explicit top-level trailing return.
+        // A return nested inside an if/switch branch still lets the appended
+        // return stand; that path will hit the appended struct return with
+        // whatever the branch left in the field vars, which matches JS
+        // "early return from ctor returns the partial instance".
+        let body_ends_in_return = ctor
+            .body
+            .stmts
+            .last()
+            .is_some_and(|last| matches!(last, IrStmt::Return { .. }));
+
+        if !body_ends_in_return {
+            // Return struct literal (from fields assigned in body — values are the local vars)
+            let pairs: Vec<(&str, String)> = fields
+                .iter()
+                .map(|f| (f.name.as_str(), f.name.clone()))
+                .collect();
+            self.emit_struct_literal_return(&pairs);
+        }
 
         self.indent_pop();
         self.writeln("}");
@@ -471,8 +700,14 @@ impl Emitter {
     }
 
     pub(super) fn emit_class_method(&mut self, _class_name: &str, method: &IrClassMethod) {
+        // R8-E5/C1: Methods that mutate `self` (assign to `self.field`) need
+        // `self: *@This()` so Zig allows the assignment. Non-mutating methods
+        // keep `self: @This()` (by-value) which is cheaper and works on both
+        // const and var instances.
         let mut sig = if method.is_static {
             format!("pub fn {}(", method.name)
+        } else if method_mutates_self(&method.body) {
+            format!("pub fn {}(self: *@This()", method.name)
         } else {
             format!("pub fn {}(self: @This()", method.name)
         };

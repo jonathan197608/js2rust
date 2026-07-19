@@ -99,6 +99,14 @@ pub struct Lowerer {
     /// Currently inside a static block (affects `this` → ClassName rewriting).
     pub(super) in_static_block: bool,
 
+    /// R8-C7: When set (during a constructor body), `this.field = value`
+    /// statements are rewritten to `const field = value` so the Emitter can
+    /// build the struct return. Propagates automatically into nested
+    /// if/loop/switch/try bodies (they lower via `lower_stmt`).
+    /// Reset to `None` inside nested function contexts (via `enter_fn`)
+    /// because their `this` differs from the constructor's.
+    pub(super) this_rewrite_fields: Option<Vec<String>>,
+
     /// Whether we're lowering inside an ExpressionStatement.
     /// Affects UpdateExpression lowering (e.g., `i++` → `i += 1` vs block expr).
     pub(super) in_expr_stmt: bool,
@@ -152,6 +160,7 @@ impl Lowerer {
             pending_label: None,
             current_class: None,
             in_static_block: false,
+            this_rewrite_fields: None,
             in_expr_stmt: false,
             anon_class_counter: 0,
             class_expr_var_name: None,

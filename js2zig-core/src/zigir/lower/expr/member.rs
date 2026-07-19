@@ -44,6 +44,25 @@ impl Lowerer {
 
         let field_name = mem.property.name.as_str();
 
+        // R8-C7: Inside a constructor body, reads of `this.<field>` must also
+        // be rewritten to the pre-declared local `var <field>`. The ctor's
+        // `init` function has no `self` parameter (it returns a fresh struct
+        // by value), so the default lowering — `IrExpr::This` + FieldAccess —
+        // would emit `self.field`, which Zig rejects as an undeclared
+        // identifier. The `this_rewrite_fields` flag is set inside
+        // `lower_class_method` for constructors exactly so that BOTH reads
+        // and writes of `this.field` get rewritten consistently.
+        //
+        // This branch must come before every other `this`-based special case
+        // (static block, default StructField) because those assume a `self`
+        // receiver exists, which is false inside `init`.
+        if let Some(ref fields) = self.this_rewrite_fields
+            && matches!(&mem.object, Expression::ThisExpression(_))
+            && fields.contains(&field_name.to_string())
+        {
+            return IrExpr::Ident(IrIdent::new(field_name));
+        }
+
         // ── Math constants: Math.PI, Math.E, etc. ──
         if let Expression::Identifier(id) = &mem.object {
             if id.name.as_str() == "Math" {

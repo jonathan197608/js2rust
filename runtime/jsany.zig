@@ -188,7 +188,9 @@ pub const JsAny = union(enum) {
 
     // === std.fmt integration (for template literals) ===
 
-    /// Custom formatter so `std.fmt.allocPrint("{}", .{jsany})` outputs the JS string representation.
+    /// Custom formatter so `std.fmt.allocPrint("{f}", .{jsany})` outputs the JS string representation.
+    /// Note: in Zig 0.16.0, only the `{f}` specifier dispatches to this method;
+    /// `{}`/`{any}` emit the debug representation for tagged unions.
     pub fn format(self: JsAny, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .value => |v| try v.format(writer),

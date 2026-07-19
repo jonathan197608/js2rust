@@ -1034,55 +1034,63 @@ impl Emitter {
         ));
     }
 
+    /// Emit a single call argument, handling spread elements.
+    /// Shared by `emit_args` (function calls, with parens) and `emit_new_expr`
+    /// (class constructors, parens managed by caller) so that
+    /// `new Foo(...args)` gets the same spread treatment as `foo(...args)`.
+    ///
+    /// foo(...args) → foo(args.items)  [ArrayList spread]
+    /// foo(...restParam) → foo(restParam)  [rest param: already []const JsAny]
+    /// foo(...[1,2,3]) → foo(&[_]JsAny{ JsAny.from(1), ... })  [literal spread]
+    pub(super) fn emit_one_arg(&mut self, arg: &crate::zigir::types::IrExpr) {
+        use crate::zigir::types::IrExpr;
+        if let IrExpr::Spread(inner) = arg {
+            match inner.as_ref() {
+                // Rest param spread: pass slice directly (no .items)
+                IrExpr::Ident(ident) if self.rest_param_names.contains(&ident.zig_name) => {
+                    self.emit_expr(inner);
+                }
+                // Array literal spread: emit as &[_]JsAny{ ... }
+                // Each element must be wrapped in JsAny.from() since the
+                // array literal type is explicitly JsAny.
+                IrExpr::ArrayLiteral(arr) => {
+                    self.write("&[_]JsAny{ ");
+                    for (j, elem) in arr.elements.iter().enumerate() {
+                        if j > 0 {
+                            self.write(", ");
+                        }
+                        if arr.spread_indices.contains(&j) {
+                            // Nested spread inside array literal spread:
+                            // not supported in &[_]JsAny{} syntax.
+                            self.write(
+                                "@compileError(\"nested spread in call args not supported\")",
+                            );
+                        } else {
+                            self.write("JsAny.from(");
+                            self.emit_expr(elem);
+                            self.write(")");
+                        }
+                    }
+                    self.write(" }");
+                }
+                // Default: ArrayList spread → .items
+                _ => {
+                    self.emit_expr(inner);
+                    self.write(".items");
+                }
+            }
+        } else {
+            self.emit_expr(arg);
+        }
+    }
+
     pub(super) fn emit_args(&mut self, args: &[crate::zigir::types::IrExpr]) {
         self.write("(");
         for (i, arg) in args.iter().enumerate() {
             if i > 0 {
                 self.write(", ");
             }
-            // foo(...args) → foo(args.items)  [ArrayList spread]
-            // foo(...restParam) → foo(restParam)  [rest param: already []const JsAny]
-            // foo(...[1,2,3]) → foo(&[_]JsAny{ JsAny.from(1), ... })  [literal spread]
-            if let crate::zigir::types::IrExpr::Spread(inner) = arg {
-                match inner.as_ref() {
-                    // Rest param spread: pass slice directly (no .items)
-                    crate::zigir::types::IrExpr::Ident(ident)
-                        if self.rest_param_names.contains(&ident.zig_name) =>
-                    {
-                        self.emit_expr(inner);
-                    }
-                    // Array literal spread: emit as &[_]JsAny{ ... }
-                    // Each element must be wrapped in JsAny.from() since the
-                    // array literal type is explicitly JsAny.
-                    crate::zigir::types::IrExpr::ArrayLiteral(arr) => {
-                        self.write("&[_]JsAny{ ");
-                        for (j, elem) in arr.elements.iter().enumerate() {
-                            if j > 0 {
-                                self.write(", ");
-                            }
-                            if arr.spread_indices.contains(&j) {
-                                // Nested spread inside array literal spread:
-                                // not supported in &[_]JsAny{} syntax.
-                                self.write(
-                                    "@compileError(\"nested spread in call args not supported\")",
-                                );
-                            } else {
-                                self.write("JsAny.from(");
-                                self.emit_expr(elem);
-                                self.write(")");
-                            }
-                        }
-                        self.write(" }");
-                    }
-                    // Default: ArrayList spread → .items
-                    _ => {
-                        self.emit_expr(inner);
-                        self.write(".items");
-                    }
-                }
-            } else {
-                self.emit_expr(arg);
-            }
+            self.emit_one_arg(arg);
         }
         self.write(")");
     }

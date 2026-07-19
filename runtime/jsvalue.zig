@@ -65,11 +65,23 @@ pub const JsValue = union(enum) {
 
     // --- std.fmt integration (for template literals) ---
 
-    /// Custom formatter so `std.fmt.allocPrint("{}", .{jsvalue})` outputs the JS string representation.
+    /// Custom formatter so `std.fmt.allocPrint("{f}", .{jsvalue})` outputs the JS string representation.
+    /// Note: in Zig 0.16.0, only the `{f}` specifier dispatches to this method;
+    /// `{}`/`{any}` emit the debug representation for tagged unions.
     pub fn format(self: JsValue, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .int => |v| try writer.print("{d}", .{v}),
-            .float => |v| try writer.print("{d}", .{v}),
+            // R8-P1-7: Zig {d} emits lowercase "nan"/"inf"; JS requires
+            // "NaN"/"Infinity"/"-Infinity".
+            .float => |v| {
+                if (std.math.isNan(v)) {
+                    try writer.writeAll("NaN");
+                } else if (std.math.isInf(v)) {
+                    try writer.writeAll(if (v > 0) "Infinity" else "-Infinity");
+                } else {
+                    try writer.print("{d}", .{v});
+                }
+            },
             .bool => |v| try writer.writeAll(if (v) "true" else "false"),
             .string => |s| try writer.writeAll(s),
             .null => try writer.writeAll("null"),
@@ -117,7 +129,13 @@ pub const JsValue = union(enum) {
     pub fn asString(self: JsValue, alloc: Allocator) []const u8 {
         return switch (self) {
             .int => |v| std.fmt.allocPrint(alloc, "{}", .{v}) catch "",
-            .float => |v| std.fmt.allocPrint(alloc, "{}", .{v}) catch "",
+            // R8-P1-7: Zig emits lowercase "nan"/"inf"; JS requires
+            // "NaN"/"Infinity"/"-Infinity".
+            .float => |v| blk: {
+                if (std.math.isNan(v)) break :blk "NaN";
+                if (std.math.isInf(v)) break :blk if (v > 0) "Infinity" else "-Infinity";
+                break :blk std.fmt.allocPrint(alloc, "{}", .{v}) catch "";
+            },
             .bool => |v| if (v) "true" else "false",
             .string => |v| v,
             .null => "null",
@@ -250,4 +268,40 @@ test "asF64: non-numeric string → NaN not 0 (R7-5)" {
     // Numeric strings still parse correctly (no regression).
     try std.testing.expectEqual(@as(f64, 42.0), Jv.fromString("42").asF64());
     try std.testing.expectEqual(@as(f64, 3.14), Jv.fromString("3.14").asF64());
+}
+
+test "format/asString emit NaN/Infinity not nan/inf (R8-P1-7)" {
+    const a = std.testing.allocator;
+    const Jv = JsValue;
+
+    // format() via allocPrint("{f}", .{v}) — {f} is the specifier that
+    // dispatches to the custom format method (Zig 0.16.0 Writer.zig).
+    // Pre-fix: the method body used {d} which emits lowercase "nan"/"inf".
+    {
+        const s = try std.fmt.allocPrint(a, "{f}", .{Jv.fromF64(std.math.nan(f64))});
+        defer a.free(s);
+        try std.testing.expectEqualStrings("NaN", s);
+    }
+    {
+        const s = try std.fmt.allocPrint(a, "{f}", .{Jv.fromF64(std.math.inf(f64))});
+        defer a.free(s);
+        try std.testing.expectEqualStrings("Infinity", s);
+    }
+    {
+        const s = try std.fmt.allocPrint(a, "{f}", .{Jv.fromF64(-std.math.inf(f64))});
+        defer a.free(s);
+        try std.testing.expectEqualStrings("-Infinity", s);
+    }
+
+    // asString() — NaN/Inf return static string literals (no alloc, no free).
+    try std.testing.expectEqualStrings("NaN", Jv.fromF64(std.math.nan(f64)).asString(a));
+    try std.testing.expectEqualStrings("Infinity", Jv.fromF64(std.math.inf(f64)).asString(a));
+    try std.testing.expectEqualStrings("-Infinity", Jv.fromF64(-std.math.inf(f64)).asString(a));
+
+    // Normal float still formats via {d} (no regression).
+    {
+        const s = try std.fmt.allocPrint(a, "{f}", .{Jv.fromF64(3.5)});
+        defer a.free(s);
+        try std.testing.expectEqualStrings("3.5", s);
+    }
 }

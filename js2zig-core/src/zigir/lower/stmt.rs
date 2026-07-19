@@ -151,6 +151,24 @@ impl Lowerer {
 
             // ©¤©¤ Expression statement ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             Statement::ExpressionStatement(es) => {
+                // R8-C7: In a constructor body, `this.field = value` is
+                // rewritten to a `const field = value` binding that the
+                // Emitter uses to build the struct return. Because this arm
+                // is the shared statement-lowering path, the rewrite reaches
+                // this-field assignments nested inside if/loop/switch/try
+                // bodies (which lower via lower_stmt_as_block → lower_stmt).
+                // `this_rewrite_fields` is None outside constructors and is
+                // cleared inside nested functions (enter_fn), so non-
+                // constructor and nested-fn `this` are unaffected.
+                // Clone the field list to release the immutable borrow on
+                // `self` before the mutable `try_rewrite_*` call (the list is
+                // small — a handful of class fields per constructor).
+                if let Some(fields) = self.this_rewrite_fields.clone()
+                    && let Some(rewritten) =
+                        self.try_rewrite_this_field_assignment(&es.expression, &fields)
+                {
+                    return rewritten;
+                }
                 // Check if this is an assignment to a JS-const variable.
                 // In JS, `const x = 1; x = 2` throws TypeError at runtime.
                 // We detect this and emit a Throw with error.ConstReassignment

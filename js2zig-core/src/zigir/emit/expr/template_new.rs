@@ -129,7 +129,12 @@ impl Emitter {
             }
             NewConstructor::Class(class_name) => {
                 self.write(&format!("{}.init(", class_name));
-                self.emit_inline_args(&new_expr.args);
+                for (i, arg) in new_expr.args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_one_arg(arg);
+                }
                 self.write(")");
             }
             NewConstructor::Error(msg) => {

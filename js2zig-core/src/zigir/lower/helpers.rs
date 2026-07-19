@@ -85,6 +85,11 @@ pub struct FnContext {
     /// (e.g., typeof x → "number" when x's type is known). These references
     /// must be tracked to avoid falsely marking parameters as unused.
     pub compile_time_referenced_idents: HashSet<String>,
+    /// Saved `this_rewrite_fields` value from before entering this function's
+    /// context (R8-C7). `enter_fn` resets the active flag to `None` so that
+    /// `this.field = value` inside a NESTED function is NOT rewritten (its
+    /// `this` differs from the constructor's). `exit_fn` restores it.
+    pub saved_this_rewrite_fields: Option<Vec<String>>,
 }
 
 impl FnContext {
@@ -112,6 +117,7 @@ impl FnContext {
             regexp_vars: HashSet::new(),
             rest_param_name: None,
             compile_time_referenced_idents: HashSet::new(),
+            saved_this_rewrite_fields: None,
         }
     }
 
@@ -262,8 +268,23 @@ pub(crate) fn format_specifier_for_type(ty: &ZigType) -> &'static str {
     match ty {
         ZigType::Str => "{s}",
         ZigType::I64 => "{d}",
-        ZigType::F64 => "{d:.15}",
+        // R8-E2: Use `{}` (default specifier) for f64 — Zig's default
+        // float formatting produces the shortest round-trip fixed-point
+        // representation (e.g. 1.5 → "1.5", 123.456 → "123.456"), matching
+        // JS Number.prototype.toString() for the common range.
+        // Previously `{d:.15}` padded to 15 digits → "1.500000000000000".
+        // NOTE: `{d}` (not `{}`) would wrongly use exponential for values
+        // like 100000 → "1e5"; `{}` keeps fixed-point. Remaining JS-spec
+        // deviations (exponential for |x|>=1e21 / |x|<1e-6, and -0 → "0")
+        // are shared with JsValue.asString and tracked for a future full
+        // ECMA numberToString helper.
+        ZigType::F64 => "{}",
         ZigType::Bool => "{}",
+        // R8-P1-7: {f} dispatches to the custom `format` method
+        // (JsAny.format → JsValue.format), which emits JS-correct
+        // "NaN"/"Infinity"/"true"/"null" etc. The previous {any} produced
+        // the debug repr `.{ .value = .{ .float = nan } }` for tagged unions.
+        ZigType::JsAny => "{f}",
         _ => "{any}",
     }
 }

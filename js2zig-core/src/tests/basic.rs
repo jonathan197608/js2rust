@@ -1992,3 +1992,454 @@ export function plusStr(s) { return +s; }
         zig3
     );
 }
+
+/// R8-P1-7: JsAny values in string contexts (template literals, string concat)
+/// must use the `{f}` specifier — the only Zig 0.16.0 specifier that dispatches
+/// to the custom `format` method (emitting JS-correct "NaN"/"Infinity"). The
+/// previous `{any}` emitted the debug repr `.{ .value = .{ .float = nan } }`
+/// for tagged unions.
+#[test]
+fn test_r8_p1_7_jsany_uses_f_specifier() {
+    // Template literal with a JSON.parse() result (inferred as JsAny).
+    let js = r#"
+/** @returns {string} */
+export function tmplJson() { return `val: ${JSON.parse("42")}`; }
+"#;
+    let zig = transpile_and_check(js, "test_r8_p1_7_jsany_template_f");
+    println!("=== R8-P1-7 template ===\n{}", zig);
+    assert!(
+        zig.contains("{f}"),
+        "Template literal with JsAny must use {{f}} specifier (R8-P1-7): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("{any}"),
+        "Template literal with JsAny must NOT use {{any}} specifier (R8-P1-7): {}",
+        zig
+    );
+
+    // String concatenation with a JSON.parse() result.
+    let js2 = r#"
+/** @returns {string} */
+export function concatJson() { return "val: " + JSON.parse("42"); }
+"#;
+    let zig2 = transpile_and_check(js2, "test_r8_p1_7_jsany_concat_f");
+    println!("=== R8-P1-7 concat ===\n{}", zig2);
+    assert!(
+        zig2.contains("{f}"),
+        "String concat with JsAny must use {{f}} specifier (R8-P1-7): {}",
+        zig2
+    );
+    assert!(
+        !zig2.contains("{any}"),
+        "String concat with JsAny must NOT use {{any}} specifier (R8-P1-7): {}",
+        zig2
+    );
+}
+
+/// R8-E2: F64 values in string contexts (template literals, string concat,
+/// Array.join) must use the `{}` default specifier — Zig's shortest round-trip
+/// fixed-point formatter — instead of `{d:.15}` which padded to 15 digits
+/// (1.5 → "1.500000000000000"). `{}` produces "1.5", matching JS toString
+/// for the common range.
+#[test]
+fn test_r8_e2_f64_uses_default_specifier_not_d15() {
+    // Template literal with a float literal (inferred F64).
+    let js = r#"
+/** @returns {string} */
+export function tmplFloat() { return `v=${1.5}`; }
+"#;
+    let zig = transpile_and_check(js, "test_r8_e2_f64_template");
+    println!("=== R8-E2 template ===\n{}", zig);
+    assert!(
+        !zig.contains("{d:.15}"),
+        "Template literal with F64 must NOT use {{d:.15}} (R8-E2): {}",
+        zig
+    );
+
+    // String concatenation with a float literal.
+    let js2 = r#"
+/** @returns {string} */
+export function concatFloat() { return "v=" + 1.5; }
+"#;
+    let zig2 = transpile_and_check(js2, "test_r8_e2_f64_concat");
+    println!("=== R8-E2 concat ===\n{}", zig2);
+    assert!(
+        !zig2.contains("{d:.15}"),
+        "String concat with F64 must NOT use {{d:.15}} (R8-E2): {}",
+        zig2
+    );
+}
+
+/// R8-C7: `this.field = value` inside loops/switch/try in a constructor
+/// must be (a) discovered as a class field, (b) rewritten to an assignment
+/// to a pre-declared local `var`, and (c) reach the struct-literal return at
+/// the end of `init`.
+///
+/// Background. The original constructor rewrite lowered `this.field = value`
+/// to `const field = value` (a fresh VarDecl at the point of the assignment)
+/// and the Emitter appended `return .{ .field = field, ... }` after the ctor
+/// body. That model relies on the assignment sitting at the top level of the
+/// body — any nested scope (if/else, for/while/switch/try/block) gives a
+/// `const field = ...` that (a) shadows the outer constant from earlier in
+/// the body and (b) is out of scope at the trailing struct return. Both are
+/// Zig compile errors, so this nested pattern was silently broken even for
+/// the if/else case (probes confirmed it before the fix landed).
+///
+/// The fix introduces a var-model:
+/// 1. `collect_implicit_class_fields` recurses into every container statement
+///    (if/while/for/for-of/for-in/switch/try/labeled), so nested field writes
+///    are *discovered*.
+/// 2. `try_rewrite_this_field_assignment` emits an `Assign { Ident(field) }`
+///    (a reassignment) instead of a fresh VarDecl. The rewrite is invoked via
+///    a `this_rewrite_fields` flag on the Lowerer that `lower_stmt` checks on
+///    every ExpressionStatement, so it reaches every nesting depth.
+/// 3. `emit_class_init` pre-declares `var field: T = <default>;` for each
+///    field at the very top of `init`, giving every Assign a target. The
+///    pre-declaration uses the field's class-body default when available,
+///    which is also the R8-E4/C6 fix.
+/// 4. Reads of `this.field` in the constructor are rewritten to `Ident(field)`
+///    as well (member.rs), so `this.count + 1` becomes `count + 1` instead of
+///    the unreachable `self.count + 1` (init has no `self`).
+#[test]
+fn test_r8_c7_this_field_in_loop_switch_try() {
+    // for-loop + switch + try, each assigning a distinct this-field.
+    // The for-loop body also READS this.count — the right-hand side must be
+    // rewritten too, otherwise the emitted Zig references the non-existent
+    // `self` parameter of `init`.
+    let js = r#"
+class Acc {
+constructor(n) {
+  this.count = 0;
+  for (let i = 0; i < n; i++) {
+    this.count = this.count + 1;
+  }
+  switch (n) {
+    case 0: this.flag = "zero"; break;
+    default: this.flag = "nonzero"; break;
+  }
+  try {
+    this.computed = n * 2;
+  } catch (e) {
+    this.computed = -1;
+  }
+}
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_c7_this_field_nested");
+    println!("=== R8-C7 nested this-field ===\n{}", zig);
+
+    // (a) All three fields are discovered and pre-declared as `var` locals.
+    assert!(
+        zig.contains("var count:") && zig.contains("var flag:") && zig.contains("var computed:"),
+        "Expected pre-declared `var count/flag/computed` at the top of init (R8-C7): {}",
+        zig
+    );
+
+    // (b) The nested assignments are rewritten to plain `field = value` writes
+    // against the pre-declared vars, NOT left as `self.x =` / `this.x =` field
+    // mutations (which would compile-error in a value-returning constructor).
+    assert!(
+        !zig.contains("self.count"),
+        "this.count read/write must be rewritten to `count`, not `self.count` (R8-C7): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("self.flag = "),
+        "Switch-body `this.flag = ...` must be rewritten (R8-C7): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("self.computed = "),
+        "Try-body `this.computed = ...` must be rewritten (R8-C7): {}",
+        zig
+    );
+
+    // (c) The struct-literal return references the locals (`.{ .count = count, ... }`).
+    assert!(
+        zig.contains("return .{ .count = count"),
+        "Expected `return .{{ .count = count, ... }}` referencing the pre-declared var (R8-C7): {}",
+        zig
+    );
+}
+
+/// R8-C7 (if/else branch): the original `lower_block_with_this_rewrite`
+/// nominally recursed into if-statements but still emitted `const` shadow
+/// bindings, which broke for the if/else case too. Probes confirmed the
+/// pre-existing breakage (this test was failing before the fix landed).
+/// The var-model fix retroactively repairs the if/else path as well.
+#[test]
+fn test_r8_c7_this_field_in_if_else() {
+    let js = r#"
+class C {
+  constructor(f) {
+    if (f) { this.a = 1; } else { this.a = 2; }
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_c7_if_else");
+    println!("=== R8-C7 if/else ===\n{}", zig);
+
+    assert!(
+        zig.contains("var a:"),
+        "Expected `var a:` pre-declaration (R8-C7): {}",
+        zig
+    );
+    assert!(
+        zig.contains("a = 1;") && zig.contains("a = 2;"),
+        "Expected both if/else branches to assign to the local `a` (R8-C7): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("self.a"),
+        "this.a must be rewritten to `a` (R8-C7): {}",
+        zig
+    );
+    assert!(
+        zig.contains("return .{ .a = a };"),
+        "Expected `return .{{ .a = a }};` (R8-C7): {}",
+        zig
+    );
+}
+
+/// R8-C7 (loop only, single field): the smallest reproducer from the audit.
+/// Verifies the rewrite reaches the body of a `for` loop, with no other
+/// noise from switch/try in the same body.
+#[test]
+fn test_r8_c7_this_field_in_loop_only() {
+    let js = r#"
+class C {
+  constructor(n) {
+    for (let i = 0; i < n; i++) { this.a = i; }
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_c7_loop_only");
+    println!("=== R8-C7 loop-only ===\n{}", zig);
+
+    assert!(
+        zig.contains("var a:"),
+        "Expected `var a:` pre-declaration (R8-C7): {}",
+        zig
+    );
+    assert!(
+        zig.contains("a = i;") && !zig.contains("self.a"),
+        "Expected loop body to assign `a = i`, never `self.a` (R8-C7): {}",
+        zig
+    );
+    assert!(
+        zig.contains("return .{ .a = a };"),
+        "Expected `return .{{ .a = a }};` (R8-C7): {}",
+        zig
+    );
+}
+
+/// R8-C2: When a constructor ends with an explicit `return` statement, the
+/// Emitter must NOT append its own struct-literal return afterwards, because
+/// Zig would reject the appended code as unreachable.
+///
+/// Before the fix:
+///   pub fn init(n) C { var x: i64 = 0; x = n; return; return .{ .x = x }; }
+///                                                                ^^^^^ Zig: unreachable
+///
+/// After the fix the Emitter inspects the last body statement; if it is a
+/// `Return`, the appended `return .{...}` is suppressed. Note: full JS
+/// semantics of `return <object>` from a constructor (instance replacement)
+/// is a separate, deeper feature and out of scope for R8-C2; this test only
+/// covers the unconditional-unreachable-code compilation error.
+#[test]
+fn test_r8_c2_ctor_explicit_return_no_unreachable() {
+    let js = r#"
+class C {
+  constructor(n) {
+    this.x = n;
+    return;
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_c2_ctor_return");
+    println!("=== R8-C2 ctor return ===\n{}", zig);
+
+    // Exactly one `return` keyword appears in init's body (the user's own).
+    let init_section = zig
+        .split("pub fn init(")
+        .nth(1)
+        .expect("init function must exist");
+    let return_count = init_section.matches("return").count();
+    assert_eq!(
+        return_count, 1,
+        "Expected exactly one `return` in init body (R8-C2): {}",
+        zig
+    );
+    // The appended struct-literal return must NOT be present.
+    assert!(
+        !zig.contains("return .{ .x = x };"),
+        "Appended struct return must be suppressed when body ends in `return;` (R8-C2): {}",
+        zig
+    );
+}
+
+/// R8-E4/C6: When a class has BOTH a field default (`x = 5`) AND a
+/// constructor, the field's default was previously ignored — the Emitter only
+/// seeded the struct-literal return from `this.x = value` assignments, so a
+/// field never touched by the constructor got the local var's zero/undefined
+/// slot instead of its declared default.
+///
+/// After the R8-C7 var-model redesign, `emit_class_init` pre-declares each
+/// field as `var field: T = <default>;`, where `<default>` is the field's
+/// class-body initializer. So a constructor that only sets some fields still
+/// yields the declared defaults for the rest.
+#[test]
+fn test_r8_e4_c6_field_default_used_when_ctor_present() {
+    let js = r#"
+class C {
+  x = 5;
+  constructor(n) {
+    this.y = n;
+  }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_e4_c6_defaults_with_ctor");
+    println!("=== R8-E4/C6 defaults with ctor ===\n{}", zig);
+
+    // The x field is pre-declared with its class-body default (5). Because the
+    // constructor never reassigns x, Zig 0.16.0 ast-check requires it to be
+    // `const`, not `var` (otherwise "local variable is never mutated" fires).
+    // The Emitter's `collect_assigned_idents_in_block` walks the ctor body to
+    // make exactly this var/const decision per field.
+    assert!(
+        zig.contains("const x: i64 = 5;"),
+        "Expected `const x: i64 = 5;` seeding the field default in the ctor (R8-E4/C6): {}",
+        zig
+    );
+    // The y field, in contrast, IS mutated (`y = n;`), so it must be `var`.
+    assert!(
+        zig.contains("var y: JsAny = undefined;"),
+        "Expected `var y: JsAny = undefined;` for the reassigned field (R8-E4/C6): {}",
+        zig
+    );
+    // The y field is reassigned from the constructor argument.
+    assert!(
+        zig.contains("y = n;"),
+        "Expected `y = n;` rewrite (R8-E4/C6): {}",
+        zig
+    );
+    // The struct-literal return includes both fields with their final values.
+    assert!(
+        zig.contains("return .{ .x = x, .y = y };") || zig.contains("return .{ .y = y, .x = x };"),
+        "Expected `return .{{ .x = x, .y = y }};` (order-independent) (R8-E4/C6): {}",
+        zig
+    );
+}
+
+#[test]
+fn test_r8_c3_new_spread_rest_param() {
+    // new Foo(...restParam) should pass the slice directly to init,
+    // not emit the bare rest param name.
+    // Constructor(...items) → init(items: []const JsAny)
+    // new Collector(...vals) → Collector.init(vals)
+    let js = r#"
+class Collector {
+  count = 0;
+  constructor(...items) {
+    this.count = items.length;
+  }
+}
+
+export function makeCollector(...vals) {
+  const c = new Collector(...vals);
+  return c.count;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_c3_new_spread_rest_param");
+    println!("=== R8-C3 new spread rest param ===\n{}", zig);
+
+    // Rest param spread: the slice is passed directly (no .items suffix).
+    assert!(
+        zig.contains("Collector.init(vals)"),
+        "Expected `Collector.init(vals)` for rest-param spread in new (R8-C3): {}",
+        zig
+    );
+    // The constructor accepts a rest slice.
+    assert!(
+        zig.contains("init(items: []const JsAny)"),
+        "Expected `init(items: []const JsAny)` rest param in constructor (R8-C3): {}",
+        zig
+    );
+}
+
+#[test]
+fn test_r8_c3_new_spread_arraylist() {
+    // new Foo(...arr) where arr is an ArrayList should emit arr.items,
+    // not the bare array variable. Previously emit_inline_args dropped
+    // the .items suffix, producing invalid Zig.
+    let js = r#"
+class Collector {
+  count = 0;
+  constructor(...items) {
+    this.count = items.length;
+  }
+}
+
+export function testSpread() {
+  const arr = [10, 20, 30];
+  const c = new Collector(...arr);
+  return c.count;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_r8_c3_new_spread_arraylist");
+    println!("=== R8-C3 new spread arraylist ===\n{}", zig);
+
+    // ArrayList spread: .items suffix is needed.
+    assert!(
+        zig.contains("Collector.init(arr.items)"),
+        "Expected `Collector.init(arr.items)` for ArrayList spread in new (R8-C3): {}",
+        zig
+    );
+}
+
+#[test]
+fn test_r8_e5_c1_method_mutates_self() {
+    // A method that assigns to `this.field` must use `self: *@This()`.
+    // A read-only method keeps `self: @This()` (by-value).
+    // The class instance is emitted as `var` (not `const`) with `_ = &c;`
+    // so that `c.increment()` (which takes *@This()) compiles.
+    let js = r#"
+class Counter {
+  count = 0;
+  increment() {
+    this.count = this.count + 1;
+  }
+  get() {
+    return this.count;
+  }
+}
+
+export function testMutate() {
+  const c = new Counter();
+  c.increment();
+  return c.get();
+}
+"#;
+    let zig = transpile_and_check(js, "test_r8_e5_c1_method_mutates_self");
+    println!("=== R8-E5/C1 method mutates self ===\n{}", zig);
+
+    // Mutating method: pointer receiver.
+    assert!(
+        zig.contains("pub fn increment(self: *@This()"),
+        "Expected `self: *@This()` for mutating method (R8-E5/C1): {}",
+        zig
+    );
+    // Read-only method: by-value receiver.
+    assert!(
+        zig.contains("pub fn get(self: @This()"),
+        "Expected `self: @This()` for read-only method (R8-E5/C1): {}",
+        zig
+    );
+    // Instance is `var` (forced for class instances) with suppression.
+    assert!(
+        zig.contains("var c = Counter.init()"),
+        "Expected `var c = Counter.init()` for class instance (R8-E5/C1): {}",
+        zig
+    );
+}

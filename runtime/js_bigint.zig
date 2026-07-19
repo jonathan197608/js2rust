@@ -276,13 +276,24 @@ pub fn asIntN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsBi
     try full_mod.set(1);
     try full_mod.shiftLeft(&full_mod, @intCast(bits));
     // full_mod = 2^bits
-    
+
     var remainder = try std.math.big.int.Managed.init(alloc);
     errdefer remainder.deinit();
     var quotient = try std.math.big.int.Managed.init(alloc);
     defer quotient.deinit();
     try quotient.divTrunc(&remainder, &value.value, &full_mod);
-    // remainder is value mod 2^bits (always non-negative via divTrunc)
+
+    // R8-P1-5: divTrunc truncates toward zero, so the remainder takes the
+    // sign of the dividend — NOT "always non-negative" as the old comment
+    // claimed. For negative inputs this produced wrong results:
+    //   asIntN(8, -129n) returned -129 instead of 127.
+    // Normalize to the [0, 2^bits) range first, then apply signed conversion.
+    // Note: Managed.isPositive() returns false for negative values and true for
+    // zero/positive, so !isPositive() implies negative-and-nonzero.
+    if (!remainder.isPositive() and !remainder.eqlZero()) {
+        try remainder.add(&remainder, &full_mod);
+    }
+
     // If remainder >= 2^(bits-1), subtract 2^bits to get signed value
     const order = remainder.order(modulus);
     if (order != .lt) {
@@ -305,13 +316,23 @@ pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsB
     defer modulus.deinit();
     try modulus.set(1);
     try modulus.shiftLeft(&modulus, @intCast(bits));
-    
+
     var remainder = try std.math.big.int.Managed.init(alloc);
     errdefer remainder.deinit();
     var quotient = try std.math.big.int.Managed.init(alloc);
     defer quotient.deinit();
     try quotient.divTrunc(&remainder, &value.value, &modulus);
-    // divTrunc remainder is always non-negative when modulus is positive
+
+    // R8-P1-5: divTrunc remainder takes the sign of the dividend, NOT
+    // "always non-negative" as the old comment claimed. For negative inputs
+    // this produced wrong results:
+    //   asUintN(8, -1n) returned -1n instead of 255n.
+    // Normalize to the [0, 2^bits) range.
+    // Note: Managed.isPositive() returns false for negative values and true for
+    // zero/positive, so !isPositive() implies negative-and-nonzero.
+    if (!remainder.isPositive() and !remainder.eqlZero()) {
+        try remainder.add(&remainder, &modulus);
+    }
     return JsBigInt{ .value = remainder };
 }
 
@@ -366,4 +387,128 @@ test "pow with exp > maxInt(u32) returns RangeError not panic (R8 P0-4)" {
     var expected = try JsBigInt.fromI64(alloc, 1024);
     defer expected.deinit(alloc);
     try std.testing.expect(result_ok.eq(&expected));
+}
+
+test "asIntN wraps negative values correctly (R8-P1-5)" {
+    const alloc = std.testing.allocator;
+
+    // Pre-fix: divTrunc remainder took the sign of the dividend, so
+    // asIntN(8, -129n) returned -129n instead of 127n.
+    {
+        var input = try JsBigInt.fromI64(alloc, -129);
+        defer input.deinit(alloc);
+        var result = try asIntN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 127);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asIntN(8, -1n) = -1n (unchanged, within signed range)
+    {
+        var input = try JsBigInt.fromI64(alloc, -1);
+        defer input.deinit(alloc);
+        var result = try asIntN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, -1);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asIntN(8, 128n) = -128n (positive boundary wraps to min signed)
+    {
+        var input = try JsBigInt.fromI64(alloc, 128);
+        defer input.deinit(alloc);
+        var result = try asIntN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, -128);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asIntN(8, 127n) = 127n (positive within range, unchanged)
+    {
+        var input = try JsBigInt.fromI64(alloc, 127);
+        defer input.deinit(alloc);
+        var result = try asIntN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 127);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asIntN(8, 255n) = -1n (unsigned max wraps to signed -1)
+    {
+        var input = try JsBigInt.fromI64(alloc, 255);
+        defer input.deinit(alloc);
+        var result = try asIntN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, -1);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asIntN(0, any) = 0n
+    {
+        var input = try JsBigInt.fromI64(alloc, 42);
+        defer input.deinit(alloc);
+        var result = try asIntN(0, &input, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+}
+
+test "asUintN wraps negative values correctly (R8-P1-5)" {
+    const alloc = std.testing.allocator;
+
+    // Pre-fix: asUintN(8, -1n) returned -1n instead of 255n.
+    {
+        var input = try JsBigInt.fromI64(alloc, -1);
+        defer input.deinit(alloc);
+        var result = try asUintN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 255);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asUintN(8, -129n) = 127n
+    {
+        var input = try JsBigInt.fromI64(alloc, -129);
+        defer input.deinit(alloc);
+        var result = try asUintN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 127);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asUintN(8, 200n) = 200n (positive within range, unchanged)
+    {
+        var input = try JsBigInt.fromI64(alloc, 200);
+        defer input.deinit(alloc);
+        var result = try asUintN(8, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 200);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
+    }
+
+    // asUintN(8, 256n) = 0n (wraps around)
+    {
+        var input = try JsBigInt.fromI64(alloc, 256);
+        defer input.deinit(alloc);
+        var result = try asUintN(8, &input, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+
+    // asUintN(0, any) = 0n
+    {
+        var input = try JsBigInt.fromI64(alloc, 42);
+        defer input.deinit(alloc);
+        var result = try asUintN(0, &input, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
 }

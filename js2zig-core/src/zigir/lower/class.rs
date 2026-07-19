@@ -6,7 +6,8 @@ use std::collections::HashSet;
 use oxc_ast::ast::*;
 
 use crate::types::ZigType;
-use crate::zigir::types::{IrBlock, IrParam};
+use crate::zigir::ops::AssignOp;
+use crate::zigir::types::{IrAssignTarget, IrBlock, IrParam};
 
 use super::Lowerer;
 use super::cabi::property_key_name;
@@ -306,6 +307,93 @@ impl Lowerer {
                 Statement::BlockStatement(bs) => {
                     self.collect_implicit_class_fields(&bs.body, class_name, field_names, fields);
                 }
+                // R8-C7: Recurse into loop/switch/try bodies so that
+                // `this.field = value` nested inside them is discovered as a
+                // class field (added to field_names) and later rewritten by
+                // try_rewrite_this_field_assignment during body lowering.
+                // Without this, such fields were silently dropped.
+                Statement::WhileStatement(ws) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&ws.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::DoWhileStatement(dws) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&dws.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::ForStatement(fs) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&fs.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::ForOfStatement(fos) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&fos.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::ForInStatement(fis) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&fis.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::LabeledStatement(ls) => {
+                    self.collect_implicit_class_fields(
+                        std::slice::from_ref(&ls.body),
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                }
+                Statement::SwitchStatement(ss) => {
+                    for case in &ss.cases {
+                        self.collect_implicit_class_fields(
+                            &case.consequent,
+                            class_name,
+                            field_names,
+                            fields,
+                        );
+                    }
+                }
+                Statement::TryStatement(ts) => {
+                    self.collect_implicit_class_fields(
+                        &ts.block.body,
+                        class_name,
+                        field_names,
+                        fields,
+                    );
+                    if let Some(handler) = &ts.handler {
+                        self.collect_implicit_class_fields(
+                            &handler.body.body,
+                            class_name,
+                            field_names,
+                            fields,
+                        );
+                    }
+                    if let Some(fin) = &ts.finalizer {
+                        self.collect_implicit_class_fields(
+                            &fin.body,
+                            class_name,
+                            field_names,
+                            fields,
+                        );
+                    }
+                }
                 _ => {}
             }
         }
@@ -392,8 +480,15 @@ impl Lowerer {
             .as_ref()
             .map(|b| {
                 if method_name == "init" {
-                    // Constructor: use this-rewrite lowering
-                    self.lower_block_with_this_rewrite(&b.statements, field_names)
+                    // Constructor: set the this-rewrite flag so that
+                    // `this.field = value` statements (directly, or nested
+                    // inside if/loop/switch/try bodies) are rewritten to
+                    // `const field = value` for the Emitter's struct return.
+                    // `enter_fn` above already saved+cleared the flag; we set
+                    // it here and `exit_fn` will restore the (cleared) saved
+                    // value, scoping the flag to just this constructor body.
+                    self.this_rewrite_fields = Some(field_names.to_vec());
+                    self.lower_block(&b.statements)
                 } else {
                     self.lower_block(&b.statements)
                 }
@@ -412,84 +507,77 @@ impl Lowerer {
         }
     }
 
-    /// Lower a block of statements with `this.x = value` rewriting.
+    /// R8-C7: Rewrite `this.field = value` (or `this.#field = value`) into an
+    /// `Assign` statement that writes to a pre-declared local `var` in the
+    /// constructor, used during constructor body lowering so the Emitter can
+    /// collect field values for the struct return.
     ///
-    /// In constructors, `this.field = value` is rewritten as a local const binding
-    /// that the Emitter will use to build the struct return.
-    pub(super) fn lower_block_with_this_rewrite(
+    /// Returns `Some(Assign)` when the expression is a this-field assignment
+    /// whose name is in `field_names`; otherwise `None` (caller lowers normally).
+    ///
+    /// Unlike the previous `lower_block_with_this_rewrite` (which only recursed
+    /// into if/block/expression statements), this is invoked from
+    /// `lower_stmt`'s ExpressionStatement arm. Because `lower_stmt` is the
+    /// shared body-lowering path, the rewrite now also reaches `this.field =
+    /// value` nested inside for/while/for-of/for-in/switch/try bodies
+    /// (previously those fell through to plain `lower_stmt` and were missed).
+    ///
+    /// The active field list lives on `self.this_rewrite_fields` and is
+    /// cleared inside nested function contexts (via `enter_fn`) so that `this`
+    /// in a nested function is not confused with the constructor's `this`.
+    ///
+    /// ## Why Assign (not VarDecl)
+    ///
+    /// The previous implementation emitted `const field = value` (a fresh
+    /// VarDecl at the point of the assignment). That model only works when the
+    /// assignment is at the top level of the constructor body: any nested scope
+    /// (if/else, for/while/switch/try/block) produces `const field = ...` that
+    /// (a) shadows the outer constant from earlier in the body and (b) is out
+    /// of scope at the trailing `return .{ .field = field, ... }`. Both
+    /// conditions are Zig compile errors.
+    ///
+    /// Switching to `Assign { target: Ident(field), op: Assign, value }` makes
+    /// the rewrite a plain reassignment of an enclosing local — which is legal
+    /// at any nesting depth. The Emitter now pre-declares one `var field: T =
+    /// <default>;` per field at the very top of `init` (see `emit_class_init`),
+    /// so the `Assign` always has a target to write to. As a side effect, this
+    /// also folds in R8-E4/C6: the field's `default` initializer becomes the
+    /// `var`'s initial value, so a constructor that doesn't touch a field
+    /// still produces the field's default instead of an undefined slot.
+    pub(super) fn try_rewrite_this_field_assignment(
         &mut self,
-        stmts: &[Statement],
+        expr: &Expression,
         field_names: &[String],
-    ) -> IrBlock {
-        let mut ir_stmts = Vec::new();
-        for stmt in stmts {
-            match stmt {
-                Statement::ExpressionStatement(es) => {
-                    // Check if this is `this.field = value` or `this.#field = value`
-                    if let Expression::AssignmentExpression(ae) = &es.expression {
-                        let maybe_fname = match &ae.left {
-                            // this.field = value
-                            AssignmentTarget::StaticMemberExpression(sme)
-                                if matches!(&sme.object, Expression::ThisExpression(_)) =>
-                            {
-                                Some(sme.property.name.to_string())
-                            }
-                            // this.#field = value
-                            AssignmentTarget::PrivateFieldExpression(pfe)
-                                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
-                            {
-                                // PrivateIdentifier.name does NOT include the '#' prefix
-                                Some(pfe.field.name.to_string())
-                            }
-                            _ => None,
-                        };
-                        if let Some(fname) = maybe_fname
-                            && field_names.contains(&fname)
-                        {
-                            // this.field = value → const field = value
-                            let value_ir = self.lower_expr(&ae.right);
-                            ir_stmts.push(crate::zigir::types::IrStmt::VarDecl(
-                                crate::zigir::types::IrVarDecl {
-                                    name: self.make_ident(&fname),
-                                    is_const: true,
-                                    zig_type: None,
-                                    init: Some(value_ir),
-                                    is_json_parse: false,
-                                    needs_var_suppression: false,
-                                    needs_deinit: false,
-                                },
-                            ));
-                            continue;
-                        }
-                    }
-                    // Fallback: lower as normal expression statement
-                    ir_stmts.push(self.lower_stmt(stmt));
-                }
-                Statement::IfStatement(is) => {
-                    // Recurse with this-rewrite for if branches
-                    let test_ir = self.lower_expr(&is.test);
-                    let consequent = self.lower_block_with_this_rewrite(
-                        std::slice::from_ref(&is.consequent),
-                        field_names,
-                    );
-                    let alternate = is.alternate.as_ref().map(|alt| {
-                        self.lower_block_with_this_rewrite(std::slice::from_ref(alt), field_names)
-                    });
-                    ir_stmts.push(crate::zigir::types::IrStmt::If {
-                        cond: test_ir,
-                        then: consequent,
-                        else_: alternate,
-                    });
-                }
-                Statement::BlockStatement(bs) => {
-                    let block = self.lower_block_with_this_rewrite(&bs.body, field_names);
-                    ir_stmts.push(crate::zigir::types::IrStmt::Block(block));
-                }
-                _ => {
-                    ir_stmts.push(self.lower_stmt(stmt));
-                }
+    ) -> Option<crate::zigir::types::IrStmt> {
+        let Expression::AssignmentExpression(ae) = expr else {
+            return None;
+        };
+        let maybe_fname = match &ae.left {
+            // this.field = value
+            AssignmentTarget::StaticMemberExpression(sme)
+                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+            {
+                Some(sme.property.name.to_string())
             }
+            // this.#field = value
+            AssignmentTarget::PrivateFieldExpression(pfe)
+                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+            {
+                // PrivateIdentifier.name does NOT include the '#' prefix
+                Some(pfe.field.name.to_string())
+            }
+            _ => None,
+        };
+        let fname = maybe_fname?;
+        if !field_names.contains(&fname) {
+            return None;
         }
-        IrBlock::new(ir_stmts)
+        // this.field = value → field = value (reassign the pre-declared var)
+        let value_ir = self.lower_expr(&ae.right);
+        Some(crate::zigir::types::IrStmt::Assign {
+            target: IrAssignTarget::Ident(self.make_ident(&fname)),
+            op: AssignOp::Assign,
+            value: value_ir,
+        })
     }
 }

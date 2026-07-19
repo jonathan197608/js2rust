@@ -342,11 +342,17 @@ impl Lowerer {
             };
         }
 
-        // Force 'var' for Map/Set/ArrayList/BigInt types (mutated via methods or needs deinit)
+        // Force 'var' for Map/Set/ArrayList/BigInt types (mutated via methods or needs deinit).
+        // R8-E5/C1: Also force 'var' for class instances (NamedStruct whose name
+        // is a registered class). Methods that mutate self take `*@This()`,
+        // which requires a mutable receiver. `_ = &x;` (via needs_var_suppression,
+        // already covering NamedStruct) silences Zig's "var never mutated" for
+        // instances that only call read-only methods.
         let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(js_name) {
             match inferred_ty {
                 ZigType::ArrayList(_) => false,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
+                ZigType::NamedStruct(n) if self.class_names.contains(n) => false,
                 ZigType::BigInt => false,
                 _ => is_const,
             }

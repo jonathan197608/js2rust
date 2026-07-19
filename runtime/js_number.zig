@@ -213,6 +213,23 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     return alloc.dupe(u8, s);
 }
 
+/// Post-process a Zig `{e}` format string to insert '+' after 'e' for
+/// positive exponents, matching the JS spec (e.g. "1.23e2" → "1.23e+2").
+/// Negative exponents already carry '-' and are returned unchanged.
+fn fixupExp(alloc: std.mem.Allocator, s: []const u8) ![]const u8 {
+    const e_idx = std.mem.indexOfScalar(u8, s, 'e') orelse
+        std.mem.indexOfScalar(u8, s, 'E') orelse return alloc.dupe(u8, s);
+    if (e_idx + 1 < s.len and (s[e_idx + 1] == '-' or s[e_idx + 1] == '+')) {
+        return alloc.dupe(u8, s);
+    }
+    // Insert '+' after 'e' for the unsigned positive exponent.
+    const result = try alloc.alloc(u8, s.len + 1);
+    @memcpy(result[0 .. e_idx + 1], s[0 .. e_idx + 1]);
+    result[e_idx + 1] = '+';
+    @memcpy(result[e_idx + 2 ..], s[e_idx + 1 ..]);
+    return result;
+}
+
 /// Number.prototype.toExponential — format a number in exponential notation.
 /// `fraction_digits` is optional (null = use default precision ~6 digits).
 pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) ![]const u8 {
@@ -226,33 +243,39 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
 
     var buf: [128]u8 = undefined;
 
-    // Use inline for to generate format string at comptime
+    // R8-P1-2: Zig `{e}` emits `e2` for positive exponents, but JS requires
+    // `e+2`. Format into the buffer, then post-process via fixupExp.
     inline for (0..21) |p| {
         if (digits == p) {
             const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{p});
             const s = std.fmt.bufPrint(&buf, fmt, .{val}) catch break;
-            return alloc.dupe(u8, s);
+            return fixupExp(alloc, s);
         }
     }
     // Fallback for digits >= 21
-    const s = std.fmt.bufPrint(&buf, "{e}", .{val}) catch "0e+0";
-    return alloc.dupe(u8, s);
+    const s = std.fmt.bufPrint(&buf, "{e}", .{val}) catch "0e0";
+    return fixupExp(alloc, s);
 }
 
 /// Number.prototype.toPrecision — format with specified significant digits.
-/// `precision` is optional (null = use full precision).
+/// `precision` is optional (null = use default 6 significant digits).
+///
+/// R8-P1-1: Previously this always emitted exponential notation. Per the JS
+/// spec, fixed-point is used when -6 <= e < p (where e is the decimal
+/// exponent of the leading significant digit and p is the precision).
 pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const u8 {
     // Handle special values
     if (std.math.isNan(val)) return alloc.dupe(u8, "NaN");
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
-    if (val == 0.0) {
-        const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 1;
-        if (p == 1) return alloc.dupe(u8, "0");
 
-        // Build "0." + (p-1) zeros
-        const result = try alloc.alloc(u8, 1 + 1 + (p - 1));
+    const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 6;
+
+    if (val == 0.0) {
+        // Zero: "0" for p=1, else "0." + (p-1) zeros. No sign for ±0.
+        if (p == 1) return alloc.dupe(u8, "0");
+        const result = try alloc.alloc(u8, 1 + 1 + (p - 1)); // "0" + "." + zeros
         result[0] = '0';
         result[1] = '.';
         for (0..(p - 1)) |i| {
@@ -261,22 +284,97 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
         return result;
     }
 
-    const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 6;
+    const negative = val < 0;
+    const abs_val: f64 = if (negative) -val else val;
+    const prefix: []const u8 = if (negative) "-" else "";
 
+    // Format in exponential notation with (p-1) digits after the decimal,
+    // yielding exactly p significant digits.
     var buf: [128]u8 = undefined;
+    const exp_s: []const u8 = blk: {
+        inline for (0..21) |prec| {
+            if (p - 1 == prec) {
+                const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{prec});
+                const s = std.fmt.bufPrint(&buf, fmt, .{abs_val}) catch break;
+                break :blk s;
+            }
+        }
+        break :blk std.fmt.bufPrint(&buf, "{e}", .{abs_val}) catch "0e0";
+    };
 
-    // Simplified: use exponential notation for toPrecision
-    inline for (1..21) |prec| {
-        if (p == prec) {
-            const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{prec - 1});
-            const s = std.fmt.bufPrint(&buf, fmt, .{val}) catch break;
-            return alloc.dupe(u8, s);
+    // Locate 'e' to split mantissa and exponent.
+    const e_idx = std.mem.indexOfScalar(u8, exp_s, 'e') orelse
+        std.mem.indexOfScalar(u8, exp_s, 'E') orelse {
+            return std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, exp_s });
+        };
+    const mantissa_str = exp_s[0..e_idx];
+    const exp_str = exp_s[e_idx + 1 ..];
+    const exponent = std.fmt.parseInt(i32, exp_str, 10) catch {
+        return fixupExp(alloc, exp_s);
+    };
+
+    // Build the digit string (mantissa without the decimal point) and ensure
+    // exactly p digits so fixed-point construction is well-defined.
+    var digits_buf: [128]u8 = undefined;
+    var digits_len: usize = 0;
+    for (mantissa_str) |c| {
+        if (c != '.') {
+            digits_buf[digits_len] = c;
+            digits_len += 1;
+        }
+    }
+    if (digits_len > p) digits_len = p;
+    while (digits_len < p) {
+        digits_buf[digits_len] = '0';
+        digits_len += 1;
+    }
+    const digits = digits_buf[0..digits_len];
+
+    // Decide format. `exponent` is the scientific power (d.ddd × 10^exponent).
+    // Fixed-point is used when -6 <= exponent < p.
+    if (exponent >= -6 and exponent < @as(i32, @intCast(p))) {
+        if (exponent < 0) {
+            // "0." + (-e-1) zeros + p digits
+            const num_zeros: usize = @intCast(-exponent - 1);
+            const result = try alloc.alloc(u8, prefix.len + 2 + num_zeros + p);
+            var idx: usize = 0;
+            @memcpy(result[idx .. idx + prefix.len], prefix);
+            idx += prefix.len;
+            result[idx] = '0';
+            idx += 1;
+            result[idx] = '.';
+            idx += 1;
+            for (0..num_zeros) |i| result[idx + i] = '0';
+            idx += num_zeros;
+            @memcpy(result[idx .. idx + p], digits);
+            return result;
+        } else if (exponent < @as(i32, @intCast(p)) - 1) {
+            // first (e+1) digits + "." + remaining (p-1-e) digits
+            const before_dec: usize = @intCast(exponent + 1);
+            const after_dec: usize = p - before_dec;
+            const result = try alloc.alloc(u8, prefix.len + before_dec + 1 + after_dec);
+            var idx: usize = 0;
+            @memcpy(result[idx .. idx + prefix.len], prefix);
+            idx += prefix.len;
+            @memcpy(result[idx .. idx + before_dec], digits[0..before_dec]);
+            idx += before_dec;
+            result[idx] = '.';
+            idx += 1;
+            @memcpy(result[idx .. idx + after_dec], digits[before_dec..]);
+            return result;
+        } else {
+            // e == p-1: integer form, no decimal point.
+            return std.fmt.allocPrint(alloc, "{s}{s}", .{ prefix, digits });
         }
     }
 
-    // Fallback
-    const s = std.fmt.bufPrint(&buf, "{d}", .{val}) catch "0";
-    return alloc.dupe(u8, s);
+    // Exponential form: d.dddd e ±exp (with '+' for non-negative exponent).
+    const exp_sign: u8 = if (exponent >= 0) '+' else '-';
+    const abs_exp: u32 = if (exponent >= 0) @intCast(exponent) else @intCast(-exponent);
+    if (p == 1) {
+        return std.fmt.allocPrint(alloc, "{s}{c}e{c}{d}", .{ prefix, digits[0], exp_sign, abs_exp });
+    }
+    return std.fmt.allocPrint(alloc, "{s}{c}.{s}e{c}{d}", .{ prefix, digits[0], digits[1..], exp_sign, abs_exp });
 }
 
 // ── Tests ──
@@ -423,4 +521,91 @@ test "toPrecision" {
     const r3 = try toPrecision(a, std.math.nan(f64), 3);
     defer a.free(r3);
     try std.testing.expectEqualStrings("NaN", r3);
+}
+
+test "toExponential emits e+ sign for positive exponents (R8-P1-2)" {
+    const a = std.testing.allocator;
+    // Pre-fix: Zig {e} produced "1.2e2" without the '+'; JS requires "1.2e+2".
+    {
+        const r = try toExponential(a, 123.0, 1);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1.2e+2", r);
+    }
+    // Exponent 0 also needs the '+' sign.
+    {
+        const r = try toExponential(a, 1.0, 0);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1e+0", r);
+    }
+    // Negative exponents keep the '-' (already correct).
+    {
+        const r = try toExponential(a, 0.012, 1);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1.2e-2", r);
+    }
+    // Large positive exponent with explicit digits.
+    {
+        const r = try toExponential(a, 10000.0, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1.00e+4", r);
+    }
+    // Negative value keeps the leading '-'.
+    {
+        const r = try toExponential(a, -123.0, 1);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-1.2e+2", r);
+    }
+}
+
+test "toPrecision uses fixed-point when -6 <= e < p (R8-P1-1)" {
+    const a = std.testing.allocator;
+    // Pre-fix: always exponential. JS uses fixed-point here.
+    // e == p-1 → integer form (no decimal point).
+    {
+        const r = try toPrecision(a, 123.0, 3);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("123", r);
+    }
+    // 0 <= e < p-1 → digits before and after the decimal.
+    {
+        const r = try toPrecision(a, 123.0, 5);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("123.00", r);
+    }
+    // e >= p → exponential.
+    {
+        const r = try toPrecision(a, 123.0, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1.2e+2", r);
+    }
+    // e < 0 (within -6) → "0." + zeros + digits.
+    {
+        const r = try toPrecision(a, 0.000123, 3);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0.000123", r);
+    }
+    // e < -6 → exponential.
+    {
+        const r = try toPrecision(a, 0.000000123, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1.2e-7", r);
+    }
+    // Zero with precision.
+    {
+        const r = try toPrecision(a, 0.0, 3);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("0.00", r);
+    }
+    // Negative value with exponential form keeps '-'.
+    {
+        const r = try toPrecision(a, -123.0, 2);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("-1.2e+2", r);
+    }
+    // Integer form at boundary: e == p-1.
+    {
+        const r = try toPrecision(a, 1234.0, 4);
+        defer a.free(r);
+        try std.testing.expectEqualStrings("1234", r);
+    }
 }
