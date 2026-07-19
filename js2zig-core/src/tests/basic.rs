@@ -1782,3 +1782,129 @@ function condStr(flag) {
     // transpile_and_check). Pre-fix's wrong inference risked downstream
     // emit wrapping a string branch in a float coercion.
 }
+
+// ── Round 6 deep audit regression tests ──────────────────────────────
+
+/// R6-1 fix: `try { throw ... } finally { ... }` without a catch clause
+/// silently swallowed the thrown error — `break :blk_label {}` always wrote
+/// the success variant, and the propagate-unhandled-re-throw block was
+/// guarded by `if needs_catch` (skipped when no catch handler). The fix
+/// (control_flow.rs:716) emits `break :blk_label if (body_result_var) |_| {} else |_| @as(anyerror!void, error.JsThrow);` and changes the propagate guard
+/// from `if needs_catch` to `if needs_catch || has_throw` (line 735).
+#[test]
+fn test_r6_1_try_finally_no_catch_propagates_throw() {
+    let js = r#"
+function tryThrowFinally() {
+    try {
+        throw 1;
+    } finally {
+    }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r6_1_try_finally_no_catch_propagates_throw");
+    println!(
+        "=== R6-1 try-finally-no-catch propagates throw ===\n{}",
+        zig
+    );
+    // Post-fix: top-level propagate emits `else |_| return error.JsThrow;`
+    // for the result var. Pre-fix the guard `if needs_catch` was false, so
+    // this block was skipped entirely — the thrown error was dropped.
+    assert!(
+        zig.contains("else |_| return error.JsThrow;"),
+        "try{{throw}}finally{{}} (no catch) must propagate the throw via `else |_| return error.JsThrow;` (was silently swallowed pre-fix because the propagate guard was `if needs_catch`): {}",
+        zig
+    );
+}
+
+/// R6-2 fix: `switch (strVar) { case "a": ... }` previously emitted Zig
+/// `switch (x) { ... }` which is a compile error (Zig switch on []const u8
+/// is invalid). The fix routes string-typed cases to `emit_string_switch`
+/// which emits an if/else chain with `std.mem.eql(u8, ...)`.
+#[test]
+fn test_r6_2_string_switch_uses_mem_eql() {
+    let js = r#"
+function strSwitch(x) {
+    switch (x) {
+        case "a": return 1;
+        case "b": return 2;
+        default: return 0;
+    }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r6_2_string_switch_uses_mem_eql");
+    println!("=== R6-2 string switch uses std.mem.eql ===\n{}", zig);
+    assert!(
+        zig.contains("std.mem.eql(u8,"),
+        "String switch must generate `std.mem.eql(u8, ...)` comparison (pre-fix emitted invalid `switch` on []const u8): {}",
+        zig
+    );
+    // Sanity: this small function switches only on x — must not emit
+    // `switch (x)` for it.
+    assert!(
+        !zig.contains("switch (x)"),
+        "String switch must NOT use Zig `switch` on the string variable (pre-fix bug): {}",
+        zig
+    );
+}
+
+/// R6-3 fix: `lower_template_literal` used `q.value.raw.to_string()`, which
+/// preserves the literal escape characters (e.g. `\n` stays as 2 chars
+/// backslash+n). After re-escaping for Zig source, this produced a runtime
+/// string `"hello\nworld"` (literal backslash-n) instead of an interpreted
+/// newline. The fix uses `cooked` (interpreted escapes) with `raw` as
+/// fallback for invalid escapes only.
+#[test]
+fn test_r6_3_template_literal_uses_cooked_not_raw() {
+    let js = r#"
+function templateNewline() {
+    return `hello\nworld`;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r6_3_template_literal_uses_cooked_not_raw");
+    println!("=== R6-3 template literal cooked vs raw ===\n{}", zig);
+    // Post-fix: Zig source contains `hello\nworld` (1 backslash + n = Zig
+    // escape for newline). Pre-fix: raw value's `\n` (2 chars: backslash, n)
+    // got re-escaped to `\\n` (3 chars: backslash, backslash, n).
+    assert!(
+        zig.contains("hello\\nworld"),
+        "Template literal with \\n must use cooked value (Zig source: \"hello\\nworld\", 1 backslash + n): {}",
+        zig
+    );
+    assert!(
+        !zig.contains("hello\\\\nworld"),
+        "Template literal with \\n must NOT use raw value (Zig source: \"hello\\\\nworld\", 2 backslashes + n — runtime string would be `hello\\nworld` literally): {}",
+        zig
+    );
+}
+
+/// R6-4 fix: `lower_string_concat` formatted BigInt operands via `{any}`,
+/// which invokes `JsBigInt.format()` — that method appends a trailing "n"
+/// suffix (Node.js console.log parity), so `"1" + 2n` produced runtime
+/// output "12n" instead of "12". The fix wraps BigInt operands in a
+/// `JsBigInt.toString()` BuiltinCall and uses `{s}` format specifier.
+#[test]
+fn test_r6_4_str_plus_bigint_no_n_suffix() {
+    let js = r#"
+function strPlusBigInt() {
+    return "1" + 2n;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r6_4_str_plus_bigint_no_n_suffix");
+    println!("=== R6-4 str + bigint no n suffix ===\n{}", zig);
+    // Post-fix: BigInt operand wrapped in a `.toString(allocator)` call
+    // (instance method on a JsBigInt value). Pre-fix: BigInt operand was
+    // lowered directly and formatted via `{any}` which invokes
+    // JsBigInt.format() (appends trailing "n" for Node.js console.log parity).
+    assert!(
+        zig.contains(".toString("),
+        "String + BigInt must wrap the BigInt operand in a .toString(allocator) call (pre-fix used {{any}} format which invokes JsBigInt.format appending \"n\" suffix): {}",
+        zig
+    );
+    // Post-fix: format specifier string must NOT contain `{any}` (which would
+    // invoke JsBigInt.format() and append "n").
+    assert!(
+        !zig.contains("{any}"),
+        "String + BigInt must NOT use {{any}} format specifier for the BigInt operand (appends \"n\" suffix at runtime): {}",
+        zig
+    );
+}

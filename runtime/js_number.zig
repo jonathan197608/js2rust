@@ -118,9 +118,16 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
     }
     if (r == 0) r = 10;
 
-    // Parse digits until first non-digit for this radix
-    var result: i64 = 0;
+    // Parse digits using i128 accumulator to avoid panic on overflow.
+    // JS parseInt returns a Number (f64); when the parsed magnitude exceeds
+    // the i64 range of our return type, we clamp to the nearest representable
+    // i64 rather than @intCast-panicking on huge inputs like
+    // parseInt("99999999999999999999").
+    var result: i128 = 0;
+    var overflow = false;
     var has_digit = false;
+    const base_i128: i128 = @intCast(r);
+    const mul_limit: i128 = @divTrunc(std.math.maxInt(i128), base_i128);
     while (i < len) {
         const c = s[i];
         const digit: u8 = blk: {
@@ -130,13 +137,36 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
             break :blk 255;
         };
         if (digit >= r) break;
-        result = result * @as(i64, r) + @as(i64, digit);
+        if (!overflow) {
+            // Check if `result * base + digit` would overflow i128
+            if (result > mul_limit) {
+                overflow = true;
+            } else {
+                result = result * base_i128 + @as(i128, digit);
+            }
+        }
         has_digit = true;
         i += 1;
     }
 
     if (!has_digit) return 0;
-    return if (negative) -result else result;
+
+    // Cast i128 → i64 with sign-aware clamping. The magnitude can be up to
+    // 2^63 (= -minInt(i64)) when negative; for positive the cap is 2^63 - 1.
+    const i64_max: i128 = std.math.maxInt(i64);
+    const neg_max: i128 = i64_max + 1; // = 2^63, magnitude of minInt(i64)
+    if (overflow) {
+        return if (negative) std.math.minInt(i64) else std.math.maxInt(i64);
+    }
+    if (negative) {
+        if (result >= neg_max) return std.math.minInt(i64);
+        const v: i64 = @intCast(result);
+        return -v;
+    } else {
+        if (result > i64_max) return std.math.maxInt(i64);
+        const v: i64 = @intCast(result);
+        return v;
+    }
 }
 
 /// Number.parseFloat — parse a float from a string.
@@ -148,6 +178,13 @@ pub fn parseFloat(s: []const u8) f64 {
 pub fn isSafeInteger(val: f64) bool {
     if (std.math.isNan(val) or std.math.isInf(val)) return false;
     if (@mod(val, 1.0) != 0.0) return false;
+    // Range check before @intFromFloat: finite-but-out-of-i64-range values
+    // (e.g. 1e30) would otherwise panic in @intFromFloat. Comparing against
+    // the safe-integer bounds early both avoids the panic and short-circuits
+    // correctly per JS spec.
+    const safe_max: f64 = 9007199254740991.0; // 2^53 - 1
+    const safe_min: f64 = -9007199254740991.0; // -(2^53 - 1)
+    if (val > safe_max or val < safe_min) return false;
     const v: i64 = @intFromFloat(val);
     return v >= -9007199254740991 and v <= 9007199254740991;
 }
@@ -278,6 +315,25 @@ test "parseInt" {
     try std.testing.expectEqual(@as(i64, 255), parseInt("ff", 16));
 }
 
+test "parseInt overflow does not panic (R6-7)" {
+    // JS parseInt returns a Number (f64) — values exceeding i64 range used
+    // to panic in the i64 accumulator. Now we clamp to nearest representable
+    // i64 instead. Verify a few overflow cases return without panicking.
+    const huge = parseInt("99999999999999999999", null);
+    try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), huge);
+    const huge_neg = parseInt("-99999999999999999999", null);
+    try std.testing.expectEqual(@as(i64, std.math.minInt(i64)), huge_neg);
+    // 2^63 magnitude exactly (= -minInt(i64)) parses to minInt(i64) (negative)
+    try std.testing.expectEqual(@as(i64, std.math.minInt(i64)), parseInt("-9223372036854775808", null));
+    // 2^63 (one past maxInt) positive overflows → clamp
+    try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), parseInt("9223372036854775808", null));
+    // Sanity: maxInt(i64) itself still parses exactly
+    try std.testing.expectEqual(@as(i64, 9223372036854775807), parseInt("9223372036854775807", null));
+    // Hex overflow path also must not panic
+    const hex_huge = parseInt("ffffffffffffffffffffffff", 16);
+    try std.testing.expectEqual(@as(i64, std.math.maxInt(i64)), hex_huge);
+}
+
 test "parseFloat" {
     try std.testing.expectEqual(@as(f64, 3.14), parseFloat("3.14"));
     try std.testing.expectEqual(@as(f64, 0.0), parseFloat("abc"));
@@ -292,6 +348,21 @@ test "isSafeInteger" {
     try std.testing.expect(!isSafeInteger(3.14));
     try std.testing.expect(!isSafeInteger(std.math.nan(f64)));
     try std.testing.expect(!isSafeInteger(std.math.inf(f64)));
+}
+
+test "isSafeInteger out-of-i64-range does not panic (R6-8)" {
+    // Finite-but-out-of-i64-range f64 values like 1e30 used to panic in
+    // @intFromFloat. Now we range-check against the safe-integer bounds first.
+    try std.testing.expect(!isSafeInteger(1e30));
+    try std.testing.expect(!isSafeInteger(-1e30));
+    try std.testing.expect(!isSafeInteger(1e300));
+    try std.testing.expect(!isSafeInteger(-1e300));
+    // Boundary: just outside safe range
+    try std.testing.expect(!isSafeInteger(@as(f64, 9007199254740992)));
+    try std.testing.expect(!isSafeInteger(@as(f64, -9007199254740992)));
+    // Boundary: still inside safe range
+    try std.testing.expect(isSafeInteger(@as(f64, 9007199254740991)));
+    try std.testing.expect(isSafeInteger(@as(f64, -9007199254740991)));
 }
 
 test "toFixed" {

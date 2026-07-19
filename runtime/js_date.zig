@@ -86,7 +86,20 @@ pub const JsDate = struct {
         const min = timePart(self.millis, 60 * 1000, 60);
         const s = timePart(self.millis, 1000, 60);
         const ms = @mod(self.millis, 1000);
-        // Use unsigned casts to avoid {d} sign prefix for positive numbers
+        // Sign-aware year formatting (R6-6): pre-fix `@as(u64, @intCast(cd.y))`
+        // panicked for BC dates (negative year). Per ISO 8601 extended format
+        // BC years render as `-YYYYYY-MM-DD...` (six-digit absolute value).
+        if (cd.y < 0) {
+            return std.fmt.allocPrint(alloc, "-{d:0>6}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z", .{
+                @as(u64, @intCast(-cd.y)),
+                @as(u64, @intCast(cd.m)),
+                @as(u64, @intCast(cd.d)),
+                @as(u64, @intCast(h)),
+                @as(u64, @intCast(min)),
+                @as(u64, @intCast(s)),
+                @as(u64, @intCast(@abs(ms))),
+            });
+        }
         return std.fmt.allocPrint(alloc, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z", .{
             @as(u64, @intCast(cd.y)),
             @as(u64, @intCast(cd.m)),
@@ -110,11 +123,13 @@ pub const JsDate = struct {
 
         const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
 
+        // Sign-aware year (R6-6): BC dates had `@intCast(cd.y)` panic on
+        // negative year. Use i64 directly so the sign is preserved.
         return std.fmt.allocPrint(alloc, "{s} {s} {d} {d} {d}:{d}:{d} GMT", .{
             day_names[@intCast(dow)],
             month_names[@intCast(cd.m - 1)],
             @as(u64, @intCast(cd.d)),
-            @as(u64, @intCast(cd.y)),
+            cd.y,
             @as(u64, @intCast(h)),
             @as(u64, @intCast(min)),
             @as(u64, @intCast(s)),
@@ -133,11 +148,12 @@ pub const JsDate = struct {
 
         const dow = @mod(dayCount(self.millis) + 4, 7);
 
+        // Sign-aware year (R6-6).
         return std.fmt.allocPrint(alloc, "{s}, {d} {s} {d} {d}:{d}:{d} UTC", .{
             day_names[@intCast(dow)],
             @as(u64, @intCast(cd.d)),
             month_names[@intCast(cd.m - 1)],
-            @as(u64, @intCast(cd.y)),
+            cd.y,
             @as(u64, @intCast(h)),
             @as(u64, @intCast(min)),
             @as(u64, @intCast(s)),
@@ -153,11 +169,12 @@ pub const JsDate = struct {
 
         const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
 
+        // Sign-aware year (R6-6).
         return std.fmt.allocPrint(alloc, "{s} {s} {d} {d}", .{
             day_names[@intCast(dow)],
             month_names[@intCast(cd.m - 1)],
             @as(u64, @intCast(cd.d)),
-            @as(u64, @intCast(cd.y)),
+            cd.y,
         });
     }
 
@@ -713,6 +730,38 @@ test "JsDate toISOString non-epoch" {
     const s = try d.toISOString(std.testing.allocator);
     defer std.testing.allocator.free(s);
     try std.testing.expectEqualStrings("1970-01-01T01:02:03.123Z", s);
+}
+
+test "JsDate BC date formatting does not panic (R6-6)" {
+    // Year 100 BC = -100 in civilFromDays. Pre-fix this panicked in
+    // toISOString/toString/toUTCString/toDateString because of
+    // `@as(u64, @intCast(cd.y))` on a negative year.
+    const days = daysFromCivil(-100, 1, 1);
+    const millis = days * 86400 * 1000;
+    const d = JsDate.fromMillis(millis);
+    const a = std.testing.allocator;
+
+    // Sanity: year is negative (BC), exercising the sign-aware branch.
+    try std.testing.expect(d.getUTCFullYear() < 0);
+
+    // ISO 8601 expanded format for BC dates: "-YYYYYY-..." (starts with '-').
+    const iso = try d.toISOString(a);
+    defer a.free(iso);
+    try std.testing.expect(iso.len > 0);
+    try std.testing.expectEqual(@as(u8, '-'), iso[0]);
+
+    // All three other formatters must produce output without panicking.
+    const s = try d.toString(a);
+    defer a.free(s);
+    try std.testing.expect(s.len > 0);
+
+    const utc_str = try d.toUTCString(a);
+    defer a.free(utc_str);
+    try std.testing.expect(utc_str.len > 0);
+
+    const ds = try d.toDateString(a);
+    defer a.free(ds);
+    try std.testing.expect(ds.len > 0);
 }
 
 test "JsDate UTC getters" {

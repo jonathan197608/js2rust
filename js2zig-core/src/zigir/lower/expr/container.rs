@@ -143,7 +143,28 @@ impl Lowerer {
         &mut self,
         tl: &TemplateLiteral,
     ) -> crate::zigir::types::IrExpr {
-        let parts: Vec<String> = tl.quasis.iter().map(|q| q.value.raw.to_string()).collect();
+        // Use the COOKED value (post-escape-interpretation), not `raw`.
+        // `raw` is the literal source text (e.g. `\\n` as two bytes 0x5C 0x6E);
+        // `cooked` is the interpreted string (a real 0x0A newline byte). When
+        // the emitter wraps a quasi in a Zig string literal via
+        // `escape_zig_format_string`, the cooked value's real control bytes
+        // get re-escaped to Zig escapes (e.g. `\n`) which Zig then correctly
+        // interprets at runtime. Using `raw` instead produced double-escaped
+        // output ("hello\\nworld" → runtime "hello\nworld" with literal
+        // backslash-n). Note: `cooked` is `None` for invalid escape sequences
+        // (e.g. `\u` not followed by valid hex); fall back to `raw` only then
+        // (R6-3).
+        let parts: Vec<String> = tl
+            .quasis
+            .iter()
+            .map(|q| {
+                q.value
+                    .cooked
+                    .as_ref()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| q.value.raw.to_string())
+            })
+            .collect();
         let exprs: Vec<crate::zigir::types::IrExpr> =
             tl.expressions.iter().map(|e| self.lower_expr(e)).collect();
 

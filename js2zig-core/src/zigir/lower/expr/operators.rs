@@ -1129,22 +1129,63 @@ impl Lowerer {
                     ));
                 }
                 _ => {
-                    // Pick placeholder based on inferred type
-                    let placeholder = if self.expr_is_string(op) {
-                        "{s}"
-                    } else {
-                        match self.infer_expr_type(op) {
-                            Some(ty) => helpers::format_specifier_for_type(&ty),
-                            None => "{any}",
-                        }
-                    };
-                    fmt.push_str(placeholder);
-                    // Unwrap parentheses before lowering
+                    // Lower the operand ONCE so we can wrap BigInt operands in
+                    // a `.toString(allocator)` call (R6-4). Pre-fix the BigInt
+                    // operand was lowered directly and formatted via `{any}`,
+                    // which invoked `JsBigInt.format()` — and that method
+                    // appends a trailing `"n"` (for Node.js console.log
+                    // parity), producing `"12n"` instead of `"12"` for
+                    // `"1" + 2n`.
+                    //
+                    // Unwrap parentheses before lowering.
                     let lowered = match op {
                         Expression::ParenthesizedExpression(pe) => self.lower_expr(&pe.expression),
                         _ => self.lower_expr(op),
                     };
-                    args.push(lowered);
+
+                    let operand_type = if self.expr_is_string(op) {
+                        Some(ZigType::Str)
+                    } else {
+                        self.infer_expr_type(op)
+                    };
+
+                    // Each arm pushes `lowered` to `args` exactly once. Moving
+                    // `lowered` only inside the BigInt arm BuiltinCall used to
+                    // break the borrow checker — the runtime
+                    // `if !matches!(operand_type, …)` guard on a post-match
+                    // `args.push(lowered)` couldn't narrow the move.
+                    let placeholder = match operand_type {
+                        Some(ZigType::BigInt) => {
+                            // Wrap the lowered BigInt expression in
+                            // `(.toString(allocator) catch @panic(...))` so the
+                            // resulting slice formats as the decimal value
+                            // (no trailing "n") via the `{s}` specifier.
+                            args.push(IrExpr::BuiltinCall(
+                                crate::zigir::types::IrBuiltinCall::simple(
+                                    BuiltinModule::JsBigInt,
+                                    "toString",
+                                    None,
+                                    Some(Box::new(lowered)),
+                                    vec![],
+                                    ZigType::Str,
+                                ),
+                            ));
+                            "{s}"
+                        }
+                        Some(ZigType::Str) => {
+                            args.push(lowered);
+                            "{s}"
+                        }
+                        Some(ref ty) => {
+                            args.push(lowered);
+                            helpers::format_specifier_for_type(ty)
+                        }
+                        None => {
+                            args.push(lowered);
+                            "{any}"
+                        }
+                    };
+                    fmt.push_str(placeholder);
                 }
             }
         }

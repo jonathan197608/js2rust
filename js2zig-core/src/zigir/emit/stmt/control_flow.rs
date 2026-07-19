@@ -467,6 +467,20 @@ impl Emitter {
     }
 
     pub(super) fn emit_switch_stmt(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
+        // Detect a string-keyed switch: Zig's `switch` cannot operate on
+        // []const u8 (only integers/enums/bools/union tags). If any case's
+        // test lowers to `IrExpr::StringLiteral`, lower the whole switch as
+        // an `if`/`else if` chain using `std.mem.eql(u8, ...)` (R6-2).
+        let is_string_switch = cases.iter().any(|c| {
+            c.test
+                .as_ref()
+                .is_some_and(|t| matches!(t, crate::zigir::types::IrExpr::StringLiteral(_)))
+        });
+        if is_string_switch {
+            self.emit_string_switch(expr, cases);
+            return;
+        }
+
         self.write_indent();
         self.write("switch (");
         self.emit_expr(expr);
@@ -496,6 +510,82 @@ impl Emitter {
         }
         self.indent_pop();
         self.writeln("}");
+    }
+
+    /// Emit a string-keyed switch as an if/else-if chain using std.mem.eql.
+    /// Used when any case test is a `StringLiteral` — Zig's `switch` cannot
+    /// operate on `[]const u8`.
+    fn emit_string_switch(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
+        // Bind the discriminant to a temp so each mem.eql call doesn't
+        // re-evaluate it (especially if it has side effects).
+        // We don't have access to a local scope here at the statement level;
+        // emit a labeled-block inline that captures the value. Simpler: emit
+        // each test as `std.mem.eql(u8, <expr>, "literal")` and chain with
+        // `else if`. The expr is emitted N times — but for string switches
+        // the discriminant is virtually always a variable or a cheap literal
+        // (the AST lowerer already lowered it once before handing to us).
+        let mut written_first = false;
+        let mut has_default = false;
+        for case in cases {
+            match &case.test {
+                Some(crate::zigir::types::IrExpr::StringLiteral(_)) => {
+                    self.write_indent();
+                    if !written_first {
+                        self.write("if (");
+                        written_first = true;
+                    } else {
+                        self.write("} else if (");
+                    }
+                    self.write("std.mem.eql(u8, ");
+                    self.emit_expr(expr);
+                    self.write(", ");
+                    self.emit_expr(case.test.as_ref().unwrap());
+                    self.write(")) {\n");
+                    // Body must be emitted INSIDE the string-literal arm —
+                    // otherwise the default case body leaks into the previous
+                    // case's scope (R6-2 follow-up: unreachable-code ast error).
+                    self.indent_push();
+                    for stmt in &case.body {
+                        self.emit_stmt(stmt);
+                    }
+                    self.indent_pop();
+                }
+                _ => {
+                    // default (test == None) — collect for the trailing else.
+                    // Body is emitted later from the `)} else {` block below.
+                    has_default = true;
+                }
+            }
+        }
+        if written_first {
+            self.write_indent();
+            if has_default {
+                self.write("} else {\n");
+                self.indent_push();
+                // find default body
+                for case in cases {
+                    if case.test.is_none() {
+                        for stmt in &case.body {
+                            self.emit_stmt(stmt);
+                        }
+                    }
+                }
+                self.indent_pop();
+                self.write_indent();
+                self.write("}\n");
+            } else {
+                self.write("}\n");
+            }
+        } else if has_default {
+            // All cases were default (no string tests) — just emit the default body inline.
+            for case in cases {
+                if case.test.is_none() {
+                    for stmt in &case.body {
+                        self.emit_stmt(stmt);
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn emit_try_stmt(&mut self, info: &TryInfo<'_>) {
@@ -622,15 +712,31 @@ impl Emitter {
         }
 
         // Normal completion of outer block
+        // When `needs_catch == false` but `has_throw == true` (try-finally with
+        // no catch handler that can throw), propagate the inner body's error
+        // result to the outer block. Without this, a thrown error in the body
+        // is silently swallowed (R6-1).
         self.write_indent();
-        self.write(&format!("break :{} {{}};\n", blk_label));
+        if !needs_catch && has_throw {
+            self.write(&format!(
+                "break :{} if ({}) |_| @as(anyerror!void, {{}}) else |_| @as(anyerror!void, error.JsThrow);\n",
+                blk_label, body_result_var,
+            ));
+        } else {
+            self.write(&format!("break :{} {{}};\n", blk_label));
+        }
 
         self.indent_pop();
         self.writeln("};");
 
         // ── Propagate unhandled re-throw ──
-        // If the result is an error (re-throw from catch), propagate it.
-        if needs_catch {
+        // If the result is an error (re-throw from catch, or a throw that
+        // escaped the body when there is no catch handler), propagate it.
+        // Pre-fix: guarded by `if needs_catch`, which meant a try-finally
+        // with NO catch handler silently dropped any throw from the body
+        // (body_result_var was error.JsThrow but never inspected).
+        // Post-fix: propagate whenever `needs_catch || has_throw`.
+        if needs_catch || has_throw {
             if let Some(ref parent_label) = saved_inside {
                 // Inside another try block → break to parent
                 self.writeln(&format!(

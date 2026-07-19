@@ -295,10 +295,18 @@ pub const JsAny = union(enum) {
             const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ s, o }) catch "";
             return .{ .value = .{ .string = result } };
         }
-        // Numeric: int + int = int, otherwise float
+        // Numeric: int + int = int (with overflow → f64), otherwise float.
+        // JS Number arithmetic always returns IEEE-754 double — when i64 +
+        // i64 overflows, fall back to f64 instead of panicking (R6-5).
         if (self.isNumber() and other.isNumber()) {
             if (self == .value and self.value == .int and other == .value and other.value == .int) {
-                return .{ .value = .{ .int = self.value.int + other.value.int } };
+                const sum, const overflow = @addWithOverflow(self.value.int, other.value.int);
+                if (overflow == 0) {
+                    return .{ .value = .{ .int = sum } };
+                }
+                return .{ .value = .{ .float =
+                    @as(f64, @floatFromInt(self.value.int)) +
+                    @as(f64, @floatFromInt(other.value.int)) } };
             }
             return .{ .value = .{ .float = self.asF64() + other.asF64() } };
         }
@@ -313,7 +321,13 @@ pub const JsAny = union(enum) {
     pub fn sub(self: JsAny, other: JsAny) JsAny {
         if (self.isNumber() and other.isNumber()) {
             if (self == .value and self.value == .int and other == .value and other.value == .int) {
-                return .{ .value = .{ .int = self.value.int - other.value.int } };
+                const diff, const overflow = @subWithOverflow(self.value.int, other.value.int);
+                if (overflow == 0) {
+                    return .{ .value = .{ .int = diff } };
+                }
+                return .{ .value = .{ .float =
+                    @as(f64, @floatFromInt(self.value.int)) -
+                    @as(f64, @floatFromInt(other.value.int)) } };
             }
         }
         return .{ .value = .{ .float = self.asF64() - other.asF64() } };
@@ -322,7 +336,13 @@ pub const JsAny = union(enum) {
     pub fn mul(self: JsAny, other: JsAny) JsAny {
         if (self.isNumber() and other.isNumber()) {
             if (self == .value and self.value == .int and other == .value and other.value == .int) {
-                return .{ .value = .{ .int = self.value.int * other.value.int } };
+                const prod, const overflow = @mulWithOverflow(self.value.int, other.value.int);
+                if (overflow == 0) {
+                    return .{ .value = .{ .int = prod } };
+                }
+                return .{ .value = .{ .float =
+                    @as(f64, @floatFromInt(self.value.int)) *
+                    @as(f64, @floatFromInt(other.value.int)) } };
             }
         }
         return .{ .value = .{ .float = self.asF64() * other.asF64() } };
@@ -343,7 +363,12 @@ pub const JsAny = union(enum) {
     pub fn neg(self: JsAny) JsAny {
         return switch (self) {
             .value => |v| switch (v) {
-                .int => |i| .{ .value = .{ .int = -i } },
+                // -minInt(i64) has no positive representation in two's
+                // complement — promoting to f64 avoids the overflow (R6-5).
+                .int => |i| if (i == std.math.minInt(i64))
+                    .{ .value = .{ .float = -@as(f64, @floatFromInt(i)) } }
+                else
+                    .{ .value = .{ .int = -i } },
                 else => .{ .value = .{ .float = -self.asF64() } },
             },
             else => .{ .value = .{ .float = -self.asF64() } },
@@ -745,6 +770,35 @@ test "JsAny numeric arithmetic" {
 
     const product = a.mul(b);
     try std.testing.expectEqual(@as(i64, 30), product.value.int);
+}
+
+test "JsAny arithmetic overflow promotes to f64 (R6-5)" {
+    const allocator = std.testing.allocator;
+
+    // add: maxInt(i64) + 1 overflows i64 — must promote to f64, not panic.
+    const sum = JsAny.fromI64(std.math.maxInt(i64)).add(JsAny.fromI64(1), allocator);
+    try std.testing.expectEqual(
+        @as(f64, @floatFromInt(std.math.maxInt(i64))) + 1.0,
+        sum.value.float,
+    );
+
+    // sub: minInt(i64) - 1 underflows i64 — promote to f64.
+    const diff = JsAny.fromI64(std.math.minInt(i64)).sub(JsAny.fromI64(1));
+    try std.testing.expectEqual(
+        @as(f64, @floatFromInt(std.math.minInt(i64))) - 1.0,
+        diff.value.float,
+    );
+
+    // mul: 5_000_000_000 * 5_000_000_000 = 2.5e19 > maxInt(i64) — promote to f64.
+    const product = JsAny.fromI64(5_000_000_000).mul(JsAny.fromI64(5_000_000_000));
+    try std.testing.expectEqual(@as(f64, 5_000_000_000.0) * 5_000_000_000.0, product.value.float);
+
+    // neg: -minInt(i64) has no positive i64 representation — promote to f64.
+    const neg_min = JsAny.fromI64(std.math.minInt(i64)).neg();
+    try std.testing.expectEqual(
+        -@as(f64, @floatFromInt(std.math.minInt(i64))),
+        neg_min.value.float,
+    );
 }
 
 test "JsAny float arithmetic" {
