@@ -349,15 +349,32 @@ pub const JsAny = union(enum) {
     }
 
     pub fn div(self: JsAny, other: JsAny) JsAny {
+        const num = self.asF64();
         const denom = other.asF64();
-        if (denom == 0.0) return .{ .value = .{ .float = std.math.inf(f64) } };
-        return .{ .value = .{ .float = self.asF64() / denom } };
+        if (denom == 0.0) {
+            // IEEE-754 / JS: 0/0 (any sign) → NaN; x/±0 → ±Infinity with
+            // sign(num) XOR sign(denom). Zig panics on f64 division by zero
+            // in safe modes, so we must guard explicitly. We use `copysign`
+            // (rather than direct `< 0` comparison) so signed zero is handled:
+            // `copysign(1.0, -0.0)` returns `-1.0`, distinguishing -0 from +0.
+            if (num == 0.0 or std.math.isNan(num)) {
+                return .{ .value = .{ .float = std.math.nan(f64) } };
+            }
+            const sign_num = std.math.copysign(@as(f64, 1.0), num);
+            const sign_denom = std.math.copysign(@as(f64, 1.0), denom);
+            const inf_sign = sign_num * sign_denom;
+            return .{ .value = .{ .float = std.math.copysign(std.math.inf(f64), inf_sign) } };
+        }
+        return .{ .value = .{ .float = num / denom } };
     }
 
     pub fn rem(self: JsAny, other: JsAny) JsAny {
         const d = other.asF64();
         if (d == 0.0) return .{ .value = .{ .float = std.math.nan(f64) } };
-        return .{ .value = .{ .float = @mod(self.asF64(), d) } };
+        // JS `%` uses truncated division semantics (sign follows dividend);
+        // `@rem` matches that. `@mod` is floored (Python-like) and was used
+        // here by mistake — this is a regression from R5-8 (R8-P1-9).
+        return .{ .value = .{ .float = @rem(self.asF64(), d) } };
     }
 
     pub fn neg(self: JsAny) JsAny {
@@ -807,6 +824,43 @@ test "JsAny float arithmetic" {
 
     const quotient = a.div(b);
     try std.testing.expectEqual(@as(f64, 2.5), quotient.value.float);
+}
+
+test "JsAny div by zero and 0/0 (R8-P1-8)" {
+    // 0/0 → NaN (was Infinity before fix).
+    const zero_div = JsAny.fromI64(0).div(JsAny.fromI64(0));
+    try std.testing.expect(std.math.isNan(zero_div.value.float));
+
+    // 1/0 → +Infinity (was Infinity, but verify sign correctness).
+    const pos_div = JsAny.fromI64(1).div(JsAny.fromI64(0));
+    try std.testing.expect(std.math.isInf(pos_div.value.float));
+    try std.testing.expect(pos_div.value.float > 0);
+
+    // 1/-0 → -Infinity (was +Infinity before fix: signed-zero handling).
+    const neg_zero = JsAny.fromF64(std.math.nan(f64)); // placeholder
+    _ = neg_zero;
+    const neg_div = JsAny.fromI64(1).div(JsAny.fromF64(-0.0));
+    try std.testing.expect(std.math.isInf(neg_div.value.float));
+    try std.testing.expect(neg_div.value.float < 0);
+
+    // -1/0 → -Infinity.
+    const neg_num_div = JsAny.fromI64(-1).div(JsAny.fromI64(0));
+    try std.testing.expect(std.math.isInf(neg_num_div.value.float));
+    try std.testing.expect(neg_num_div.value.float < 0);
+}
+
+test "JsAny rem truncated not floored (R8-P1-9)" {
+    // -5 % 3 → JS: -2 (truncated). @mod (floored) gives 1.
+    const rem_neg = JsAny.fromI64(-5).rem(JsAny.fromI64(3));
+    try std.testing.expectEqual(@as(f64, -2.0), rem_neg.value.float);
+
+    // 5 % -3 → JS: 2 (truncated). @mod (floored) gives -1.
+    const rem_pos = JsAny.fromI64(5).rem(JsAny.fromI64(-3));
+    try std.testing.expectEqual(@as(f64, 2.0), rem_pos.value.float);
+
+    // x % 0 → NaN.
+    const rem_zero = JsAny.fromI64(5).rem(JsAny.fromI64(0));
+    try std.testing.expect(std.math.isNan(rem_zero.value.float));
 }
 
 test "JsAny string concat" {

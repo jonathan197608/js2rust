@@ -1908,3 +1908,87 @@ function strPlusBigInt() {
         zig
     );
 }
+
+// ── Round 8 deep audit regression tests ──────────────────────────────
+
+/// R8-E6: Math.max/min with no args should return ±Infinity (f64), not
+/// minInt/maxInt(i64); and float-literal args must not be coerced to i64.
+#[test]
+fn test_r8_e6_math_max_min_empty_and_float() {
+    // Empty args: Math.max() → -Infinity, Math.min() → +Infinity.
+    let js = r#"
+/** @returns {number} */
+export function maxEmpty() { return Math.max(); }
+/** @returns {number} */
+export function minEmpty() { return Math.min(); }
+"#;
+    let zig = transpile_and_check(js, "test_r8_e6_math_max_min_empty_and_float");
+    assert!(
+        zig.contains("std.math.inf(f64)"),
+        "Math.max()/Math.min() with no args must return Infinity (R8-E6): {}",
+        zig
+    );
+    assert!(
+        zig.contains("-std.math.inf(f64)"),
+        "Math.max() with no args must return -Infinity (R8-E6): {}",
+        zig
+    );
+
+    // Float-literal args must NOT be coerced to i64 (would not compile).
+    let js2 = r#"
+/** @returns {number} */
+export function maxf(a, b) { return Math.max(1.5, 2.5); }
+"#;
+    let zig2 = transpile_and_check(js2, "test_r8_e6_math_max_min_float_args");
+    assert!(
+        !zig2.contains("@as(i64, 1.5)"),
+        "Math.max with float args must not emit @as(i64, ...) (R8-E6): {}",
+        zig2
+    );
+}
+
+/// R8-E1: Unary `+x` must perform ToNumber conversion.
+/// `+true` → 1 (constant-folded), `+boolVar` → conditional, `+strVar` →
+/// js_number.constructor call.
+#[test]
+fn test_r8_e1_unary_plus_to_number() {
+    // +true should be constant-folded to 1.
+    let js = r#"
+/** @returns {number} */
+export function plusTrue() { return +true; }
+"#;
+    let zig = transpile_and_check(js, "test_r8_e1_unary_plus_true");
+    assert!(
+        !zig.contains("+true"),
+        "+true must be constant-folded to 1, not emitted as +true (R8-E1): {}",
+        zig
+    );
+
+    // +boolVar should NOT be emitted as the bare bool variable.
+    let js2 = r#"
+/** @param {boolean} flag @returns {number} */
+export function plusBool(flag) { return +flag; }
+"#;
+    let zig2 = transpile_and_check(js2, "test_r8_e1_unary_plus_bool");
+    println!("=== R8-E1 +bool ===\n{}", zig2);
+    // Should contain a conditional (if (flag) 1 else 0) or similar coercion,
+    // NOT just `return flag;`.
+    assert!(
+        zig2.contains("if (") || zig2.contains("@intFromBool"),
+        "+boolVar must be coerced to number, not passed through as bool (R8-E1): {}",
+        zig2
+    );
+
+    // +strVar should call js_number.constructor.
+    let js3 = r#"
+/** @param {string} s @returns {number} */
+export function plusStr(s) { return +s; }
+"#;
+    let zig3 = transpile_and_check(js3, "test_r8_e1_unary_plus_str");
+    println!("=== R8-E1 +str ===\n{}", zig3);
+    assert!(
+        zig3.contains("js_number.constructor"),
+        "+strVar must call js_number.constructor for ToNumber (R8-E1): {}",
+        zig3
+    );
+}

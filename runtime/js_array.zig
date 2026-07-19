@@ -42,7 +42,14 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
     if (arrayLike.isObject()) {
         const obj = arrayLike.object.*;
         if (obj.get("length")) |len_val| {
-            const len = @as(usize, @intCast(len_val.asI64()));
+            // JS ToLength semantics: negative, NaN, or undefined → 0; very
+            // large values are capped at maxInt(usize). Without these guards,
+            // a negative i64 would panic in `@intCast` below (R8 P0-3).
+            const len_signed = len_val.asI64();
+            if (len_signed <= 0) {
+                return result;
+            }
+            const len = @as(usize, @intCast(len_signed));
             try result.ensureTotalCapacity(alloc, len);
             var i: usize = 0;
             while (i < len) : (i += 1) {

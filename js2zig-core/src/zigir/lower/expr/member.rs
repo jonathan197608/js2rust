@@ -350,7 +350,12 @@ impl Lowerer {
                     }
                     self.infer_expr_type(&ue.argument)
                 }
-                UnaryOperator::UnaryPlus => self.infer_expr_type(&ue.argument),
+                UnaryOperator::UnaryPlus => match self.infer_expr_type(&ue.argument) {
+                    // ToNumber conversion: bool → i64, str → f64, numbers pass through.
+                    Some(ZigType::Bool) => Some(ZigType::I64),
+                    Some(ZigType::Str) => Some(ZigType::F64),
+                    other => other,
+                },
                 UnaryOperator::BitwiseNot => {
                     // JS: ~x converts to Int32 then bit-negates; we store as
                     // I64. A BigInt operand stays BigInt.

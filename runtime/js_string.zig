@@ -381,9 +381,36 @@ pub fn substring(s: []const u8, start: i64, end: i64) []const u8 {
 }
 
 /// Split string by separator. Returns newly allocated array of strings.
+///
+/// Per ECMAScript spec, `split("")` splits the string into individual code units.
+/// Since the runtime strings are UTF-8, we split into UTF-8 code point sequences
+/// (equivalent for BMP characters). An empty separator must NOT be fed to
+/// `std.mem.indexOf`, which would match at position 0 forever and hang.
 pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
     var parts = std.ArrayList([]const u8).empty;
     errdefer parts.deinit(alloc);
+
+    if (sep.len == 0) {
+        // Split into individual UTF-8 code point sequences (matches JS `split("")`
+        // for BMP characters; the runtime stores strings as UTF-8). We walk by
+        // leading-byte pattern rather than std.unicode.Utf8View to avoid the
+        // error-returning `init` and to keep allocations as borrowed slices of
+        // the original string buffer.
+        var i: usize = 0;
+        while (i < s.len) {
+            const cp_len: usize = switch (s[i] >> 4) {
+                0x0...0x7 => 1,
+                0xC...0xD => 2,
+                0xE => 3,
+                0xF => 4,
+                else => 1, // invalid leading byte; consume one byte
+            };
+            const end = @min(i + cp_len, s.len);
+            try parts.append(alloc, s[i..end]);
+            i = end;
+        }
+        return parts.toOwnedSlice(alloc);
+    }
 
     var remaining = s;
     while (std.mem.indexOf(u8, remaining, sep)) |pos| {
@@ -571,6 +598,24 @@ test "split" {
     try std.testing.expectEqual(@as(usize, 3), result.len);
     try std.testing.expectEqualStrings("a", result[0]);
     try std.testing.expectEqualStrings("c", result[2]);
+}
+
+test "split empty separator (R8 P0-1)" {
+    const alloc = std.testing.allocator;
+    // split("") must split into individual code points, not infinite-loop.
+    const result = try split(alloc, "abc", "");
+    defer alloc.free(result);
+    try std.testing.expectEqual(@as(usize, 3), result.len);
+    try std.testing.expectEqualStrings("a", result[0]);
+    try std.testing.expectEqualStrings("b", result[1]);
+    try std.testing.expectEqualStrings("c", result[2]);
+}
+
+test "split empty string empty separator (R8 P0-1)" {
+    const alloc = std.testing.allocator;
+    const result = try split(alloc, "", "");
+    defer alloc.free(result);
+    try std.testing.expectEqual(@as(usize, 0), result.len);
 }
 
 test "replace" {

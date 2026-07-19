@@ -138,8 +138,20 @@ impl TypeInferrer {
             Expression::UnaryExpression(ue) => match ue.operator {
                 UnaryOperator::LogicalNot => InferResult::Definite(ZigType::Bool),
                 UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
+                    // Unary `+` performs ToNumber: bool/str/etc → number.
+                    // Unary `-` also performs ToNumber then negates.
                     match self.infer_expr_type(&ue.argument) {
-                        InferResult::Definite(ty) => InferResult::Definite(ty),
+                        InferResult::Definite(ty) => match ty {
+                            // Numbers pass through unchanged.
+                            ZigType::I64 | ZigType::F64 => InferResult::Definite(ty),
+                            // Bool/Str/JsAny → number (I64 for bool, F64 for
+                            // str/others, matching the lowerer's emission).
+                            ZigType::Bool => InferResult::Definite(ZigType::I64),
+                            ZigType::Str | ZigType::JsAny => InferResult::Definite(ZigType::F64),
+                            // BigInt stays BigInt (unary -); unary + on BigInt
+                            // is a JS TypeError but we let it pass through.
+                            _ => InferResult::Definite(ty),
+                        },
                         InferResult::Indeterminate => InferResult::Indeterminate,
                     }
                 }

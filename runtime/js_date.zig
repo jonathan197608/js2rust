@@ -4,6 +4,39 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+// ── Overflow-safe arithmetic helpers (R8 P0-2) ─────────────────────────
+//
+// JS Date arithmetic uses IEEE-754 doubles and returns NaN when |ms|
+// exceeds 8.64e15. The Zig runtime stores timestamps as `i64`, which would
+// overflow at maxInt(i64) ≈ 9.2e18. To avoid integer-overflow panics from
+// absurd inputs (e.g. `new Date(0,0,1, 1e13, 0, 0, 0)`), all date/time
+// arithmetic is performed in i128 and then clamped to i64 range. Clamping
+// is a simplification of NaN semantics; JsDate has no NaN representation.
+
+/// Clamp an i128 value to the i64 representable range.
+fn clampToI64(v: i128) i64 {
+    if (v > std.math.maxInt(i64)) return std.math.maxInt(i64);
+    if (v < std.math.minInt(i64)) return std.math.minInt(i64);
+    return @intCast(v);
+}
+
+/// Compute the time-of-day in milliseconds from hour/minute/second/ms
+/// components using i128 intermediates to avoid overflow on absurd inputs.
+fn makeTimeMs(hour: i64, minute: i64, second: i64, millis: i64) i64 {
+    const v: i128 = @as(i128, hour) * 3600000 +
+        @as(i128, minute) * 60000 +
+        @as(i128, second) * 1000 +
+        @as(i128, millis);
+    return clampToI64(v);
+}
+
+/// Combine a day count with a time-in-ms, using i128 to avoid overflow
+/// when days is huge.
+fn addDaysAndTimeMs(days: i64, time_ms: i64) i64 {
+    const v: i128 = @as(i128, days) * 86400000 + @as(i128, time_ms);
+    return clampToI64(v);
+}
+
 /// JsDate struct — represents a Date object in generated Zig code.
 /// Stores milliseconds since epoch as i64.
 pub const JsDate = struct {
@@ -26,9 +59,11 @@ pub const JsDate = struct {
         const civil_month: i64 = month + 1;
         // Compute days since civil epoch (1970-01-01)
         const days = daysFromCivil(year, civil_month, day);
-        // Compute time part in milliseconds
-        const time_part: i64 = ((hour * 3600 + minute * 60 + second) * 1000 + millis);
-        return .{ .millis = days * 86400000 + time_part };
+        // Time + day arithmetic done via i128 intermediates to avoid overflow
+        // panics for absurd i64 inputs (R8 P0-2). JS MakeTime/MakeDate operate
+        // on IEEE-754 doubles and return NaN when |ms| > 8.64e15; we cannot
+        // represent NaN inside `JsDate.millis: i64`, so we clamp instead.
+        return .{ .millis = addDaysAndTimeMs(days, makeTimeMs(hour, minute, second, millis)) };
     }
 
     // ── Local-time getters ──
@@ -276,7 +311,7 @@ pub const JsDate = struct {
         const m = if (min) |mm| mm else timePart(self.millis, 3600 * 1000, 60);
         const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
         const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setMinutes(min, sec?, ms?) → new milliseconds.
@@ -285,7 +320,7 @@ pub const JsDate = struct {
         const m = min;
         const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
         const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setSeconds(sec, ms?) → new milliseconds.
@@ -294,7 +329,7 @@ pub const JsDate = struct {
         const m = timePart(self.millis, 60000, 60);
         const s = sec;
         const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return dayCount(self.millis) * 86400000 + ((h * 3600 + m * 60 + s) * 1000 + mils);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setMilliseconds(ms) → new milliseconds.
@@ -302,7 +337,10 @@ pub const JsDate = struct {
         const days = dayCount(self.millis);
         const time = self.millis - days * 86400000;
         const old_ms = @mod(time, 1000);
-        return self.millis - old_ms + ms;
+        // Use i128 intermediate so absurd `ms` values (e.g., minInt(i64))
+        // combined with extreme `self.millis` do not panic (R8 P0-2).
+        const v: i128 = @as(i128, self.millis) - @as(i128, old_ms) + @as(i128, ms);
+        return clampToI64(v);
     }
 
     /// setTime(ms) → returns the new timestamp (caller reassigns)
@@ -962,4 +1000,28 @@ test "daysFromCivil/civilFromDays uses divTrunc for BC dates (R7-8)" {
     try std.testing.expectEqual(@as(i64, 2024), rt3.y);
     try std.testing.expectEqual(@as(i64, 6), rt3.m);
     try std.testing.expectEqual(@as(i64, 15), rt3.d);
+}
+
+test "fromComponents with huge hour does not panic (R8 P0-2)" {
+    // Pre-fix: ((hour * 3600 + ...) * 1000) overflowed i64 for huge hour
+    // values (e.g. 1e13 * 3600000 = 3.6e19 > maxInt(i64) ≈ 9.2e18).
+    // Post-fix: i128 intermediates + clampToI64 prevents the panic.
+    const d = JsDate.fromComponents(2024, 0, 1, 10_000_000_000_000, 0, 0, 0);
+    // Should be clamped to maxInt(i64), not panic.
+    try std.testing.expectEqual(std.math.maxInt(i64), d.millis);
+}
+
+test "setHours with huge values does not panic (R8 P0-2)" {
+    const d = JsDate.fromMillis(0);
+    // Huge hours value: 1e13 * 3600000 = 3.6e19 > maxInt(i64).
+    const result = d.setHours(10_000_000_000_000, null, null, null);
+    try std.testing.expectEqual(std.math.maxInt(i64), result);
+}
+
+test "setMilliseconds with extreme values does not panic (R8 P0-2)" {
+    const d = JsDate.fromMillis(std.math.maxInt(i64));
+    // maxInt(i64) - 0 + maxInt(i64) would overflow i64 in pre-fix arithmetic.
+    // Post-fix: i128 intermediate + clampToI64 prevents the panic.
+    const result = d.setMilliseconds(std.math.maxInt(i64));
+    try std.testing.expectEqual(std.math.maxInt(i64), result);
 }

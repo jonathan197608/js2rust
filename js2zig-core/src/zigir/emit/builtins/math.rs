@@ -160,27 +160,51 @@ impl Emitter {
     }
 
     /// Unified min/max block expansion.
-    /// min: (blk: { var __min = @as(i64, a); if (@as(i64, b) < __min) __min = @as(i64, b); break :blk __min; })
-    /// max: same with > and __max
+    ///
+    /// The inferred return type of `Math.max`/`Math.min` is `f64` (see
+    /// `builtin_return_type` in `native_builtins.rs` and the third tuple element
+    /// in `cabi::builtin_call_to_ir`). To match that, we emit a value of type
+    /// `f64` when:
+    /// - there are zero args (JS spec: `Math.max()` -> `-Infinity`,
+    ///   `Math.min()` -> `+Infinity`); or
+    /// - any arg is a float literal (i64 -> `@as(i64, 1.5)` would not compile).
+    ///
+    /// Otherwise -- the common case where every arg is i64-shaped -- we preserve
+    /// the existing i64-typed block: it round-trips cleanly through the inferred
+    /// `f64` return type at call sites via Zig's implicit int->float coercion on
+    /// assignment, and the integer literal/`number`-JSDoc args are i64.
     fn emit_min_max(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
+        use crate::zigir::types::IrExpr;
         let is_min = method == "min";
         let blk = self.next_label();
         let var = if is_min { "__min" } else { "__max" };
-        let extreme = if is_min {
-            "@as(i64, 9223372036854775807)"
-        } else {
-            "@as(i64, -9223372036854775808)"
-        };
         let cmp_op = if is_min { "<" } else { ">" };
+
+        // Any float literal in args ⇒ use f64 emit (Zig cannot `@as(i64, x)`
+        // a non-int value; `1.5` etc. would fail to compile).
+        let any_float = args.iter().any(|a| matches!(a, IrExpr::FloatLiteral(_)));
 
         match args.len() {
             0 => {
-                self.write(extreme);
+                // JS spec: empty Math.max() → -Infinity; Math.min() → +Infinity.
+                if is_min {
+                    self.write("std.math.inf(f64)");
+                } else {
+                    self.write("-std.math.inf(f64)");
+                }
             }
-            1 => {
-                self.write("@as(i64, ");
+            _ if any_float => {
+                self.write(&format!("({}: {{ var {} = ", blk, var));
                 self.emit_expr(&args[0]);
-                self.write(")");
+                self.write("; ");
+                for arg in &args[1..] {
+                    let arg_str = self.render_expr_to_string(arg);
+                    self.write(&format!(
+                        "if ({} {} {}) {} = {}; ",
+                        arg_str, cmp_op, var, var, arg_str
+                    ));
+                }
+                self.write(&format!(" break :{} {}; }})", blk, var));
             }
             _ => {
                 self.write(&format!("({}: {{ var {} = @as(i64, ", blk, var));

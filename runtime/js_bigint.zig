@@ -104,7 +104,13 @@ pub const JsBigInt = struct {
 
     /// Exponentiation: self ^ exp.
     /// `exp` is cast to u32 (Zig 0.16.0 Managed.pow requires u32 exponent).
+    /// Returns `error.RangeError` if `exp > maxInt(u32)` — guarding prevents
+    /// a runtime panic from `@intCast` (R8 P0-4). Negative exponents never
+    /// reach here: callers route BigInt power operands through `toU64()`,
+    /// which errors on negative values and is converted upstream to
+    /// `error.JsThrow` (see `emit_bigint_binary` in `emit/expr/binary.rs`).
     pub fn pow(self: *const Self, exp: u64, alloc: std.mem.Allocator) !Self {
+        if (exp > std.math.maxInt(u32)) return error.RangeError;
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         // Managed.pow(r, a, b): r = a ^ b (b is now u32 in Zig 0.16.0)
@@ -341,4 +347,23 @@ test "shiftLeft/shiftRight with minInt(i64) shift does not panic (R7-7)" {
     var expected2 = try JsBigInt.fromI64(alloc, 2);
     defer expected2.deinit(alloc);
     try std.testing.expect(result3.eq(&expected2));
+}
+
+test "pow with exp > maxInt(u32) returns RangeError not panic (R8 P0-4)" {
+    const alloc = std.testing.allocator;
+    var base = try JsBigInt.fromI64(alloc, 2);
+    defer base.deinit(alloc);
+
+    // Pre-fix: @intCast(exp) from u64 to u32 would panic for exp > 2^32.
+    // Post-fix: returns error.RangeError which the emitter routes to error.JsThrow.
+    const huge_exp: u64 = (@as(u64, std.math.maxInt(u32)) + 1);
+    const result = base.pow(huge_exp, alloc);
+    try std.testing.expectError(error.RangeError, result);
+
+    // Normal case still works: 2^10 = 1024.
+    var result_ok = try base.pow(10, alloc);
+    defer result_ok.deinit(alloc);
+    var expected = try JsBigInt.fromI64(alloc, 1024);
+    defer expected.deinit(alloc);
+    try std.testing.expect(result_ok.eq(&expected));
 }

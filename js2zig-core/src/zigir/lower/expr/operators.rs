@@ -255,8 +255,43 @@ impl Lowerer {
                 }
             }
             UnaryOperator::UnaryPlus => {
-                // Unary plus is a no-op in terms of IR; just lower the argument
-                self.lower_expr(&ue.argument)
+                // JS unary `+` performs ToNumber conversion:
+                //   +true → 1, +false → 0, +null → 0, +undefined → NaN,
+                //   +"5" → 5, +5 → 5 (no-op for numbers).
+                // Previously this was a no-op for all types, leaving bool and
+                // string operands unconverted (R8-E1).
+                let arg = &ue.argument;
+                let ty = self.infer_expr_type(arg);
+                match ty {
+                    Some(ZigType::Bool) => {
+                        // Constant-fold boolean literals.
+                        if let Expression::BooleanLiteral(bl) = arg {
+                            return IrExpr::IntLiteral(if bl.value { 1 } else { 0 });
+                        }
+                        // For a bool variable, emit `(if (expr) 1 else 0)`
+                        // to coerce to i64 without needing a new IR node.
+                        IrExpr::Conditional {
+                            cond: Box::new(self.lower_expr(arg)),
+                            then: Box::new(IrExpr::IntLiteral(1)),
+                            else_: Box::new(IrExpr::IntLiteral(0)),
+                        }
+                    }
+                    Some(ZigType::Str) => {
+                        // String → f64 via js_number.constructor (matches
+                        // Number(str) semantics: parseFloat with NaN fallback).
+                        IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
+                            BuiltinModule::JsNumber,
+                            "constructor",
+                            None,
+                            None,
+                            vec![self.lower_expr(arg)],
+                            ZigType::F64,
+                        ))
+                    }
+                    // Already numeric or BigInt: no-op (BigInt + is a JS
+                    // TypeError, but we let Zig surface the type mismatch).
+                    _ => self.lower_expr(arg),
+                }
             }
             UnaryOperator::LogicalNot => IrExpr::Unary {
                 op: UnaOp::Not,

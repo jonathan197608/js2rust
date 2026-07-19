@@ -131,13 +131,17 @@ impl Emitter {
                 self.emit_expr(left);
                 self.write(".pow(");
                 self.emit_expr(right);
+                // `BigInt.pow` returns `error.RangeError` when `exp > maxInt(u32)`
+                // (R8 P0-4); converting to `error.JsThrow` lets the surrounding
+                // try-catch machinery surface it as a JS TypeError instead of
+                // a Zig runtime panic.
                 if let Some(try_label) = &self.inside_try_block {
                     self.write(&format!(
-                        ".toU64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))",
-                        try_label
+                        ".toU64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch |err| switch (err) {{ error.RangeError => break :{} @as(anyerror!void, error.JsThrow), else => @panic(\"BigInt pow OOM\") }})",
+                        try_label, try_label
                     ));
                 } else {
-                    self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt pow OOM\"))");
+                    self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch |err| switch (err) { error.RangeError => return error.JsThrow, else => @panic(\"BigInt pow OOM\") })");
                 }
             }
             BinOp::Shl | BinOp::Shr => {
