@@ -119,6 +119,8 @@ impl Lowerer {
                 return IrExpr::RemExpr {
                     left: Box::new(self.lower_expr(&be.left)),
                     right: Box::new(self.lower_expr(&be.right)),
+                    left_type,
+                    right_type,
                     result_type: None, // standalone `%` keeps f64 result
                 };
             }
@@ -498,12 +500,16 @@ impl Lowerer {
                 } else {
                     None
                 };
+                let left_type = target_type.unwrap_or(ZigType::I64);
+                let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
                 let assign = IrExpr::Assign {
                     op: AssignOp::Assign,
                     target: Box::new(target),
                     value: Box::new(IrExpr::RemExpr {
                         left: Box::new(base_expr),
                         right: value,
+                        left_type,
+                        right_type,
                         result_type,
                     }),
                 };
@@ -691,6 +697,8 @@ impl Lowerer {
                     result_type: None,
                     left,
                     right,
+                    left_type,
+                    right_type,
                 } = value.as_ref()
             {
                 return IrExpr::Assign {
@@ -699,6 +707,8 @@ impl Lowerer {
                     value: Box::new(IrExpr::RemExpr {
                         left: left.clone(),
                         right: right.clone(),
+                        left_type: left_type.clone(),
+                        right_type: right_type.clone(),
                         result_type: Some(ZigType::I64),
                     }),
                 };

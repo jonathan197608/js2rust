@@ -813,7 +813,9 @@ return { };
 
 #[test]
 fn test_p1_array_spread_simple() {
-    // [...a, ...b] → appendSlice(a.items, b.items)
+    // [...a, ...b] → for-loop over a.items / b.items with JsAny.from
+    // (appendSlice was replaced because it required source element type to
+    // match JsAny exactly; the for-loop handles any ArrayList element type.)
     let js = r#"
 function arraySpread(a, b) {
 return [...a, ...b];
@@ -821,47 +823,57 @@ return [...a, ...b];
 "#;
     let zig = transpile_and_assert(js, "test_p1_array_spread_simple");
     assert!(
-        zig.contains("appendSlice"),
-        "Expected appendSlice in:\n{}",
+        zig.contains("for ("),
+        "Expected for-loop spread in:\n{}",
         zig
     );
-    assert!(zig.contains(".items)"), "Expected .items in:\n{}", zig);
+    assert!(
+        zig.contains(".items) |__spread_item|"),
+        "Expected .items iteration with __spread_item in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("JsAny.from(__spread_item)"),
+        "Expected JsAny.from wrap in:\n{}",
+        zig
+    );
 }
 
 #[test]
 fn test_p1_array_spread_mixed() {
-    // [...a, 1, ...b] → appendSlice + append
+    // [...a, 1, ...b] → for-loop spread + append
     let js = r#"
 function arraySpreadMixed(a, b) {
 return [...a, 1, ...b];
 }
 "#;
     let zig = transpile_and_assert(js, "test_p1_array_spread_mixed");
+    // Mixed spread: both for-loop spread (for ...a / ...b) and append (for 1)
     assert!(
-        zig.contains("appendSlice"),
-        "Expected appendSlice in:\n{}",
+        zig.contains("for ("),
+        "Expected for-loop spread in:\n{}",
         zig
     );
     assert!(
         zig.contains("append(js_allocator.allocator()"),
-        "Expected append in:\n{}",
+        "Expected append for the non-spread element in:\n{}",
         zig
     );
 }
 
 #[test]
 fn test_p1_array_spread_single() {
-    // [...a] → appendSlice (shallow copy, NOT identity)
+    // [...a] → for-loop spread (shallow copy, NOT identity)
     let js = r#"
 function arraySpreadSingle(a) {
 return [...a];
 }
 "#;
     let zig = transpile_and_assert(js, "test_p1_array_spread_single");
-    // Single array spread must create a new array via appendSlice
+    // Single array spread must create a new array via a for-loop
     assert!(
-        zig.contains("appendSlice"),
-        "[...a] should use appendSlice, got:\n{}",
+        zig.contains("for ("),
+        "[...a] should use a for-loop spread, got:\n{}",
         zig
     );
     assert!(

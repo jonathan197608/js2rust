@@ -1240,10 +1240,14 @@ impl Lowerer {
             IrExpr::RemExpr {
                 left,
                 right,
+                left_type,
+                right_type,
                 result_type: None,
             } => IrExpr::RemExpr {
                 left,
                 right,
+                left_type,
+                right_type,
                 result_type: Some(ZigType::I64),
             },
             IrExpr::DivExpr {

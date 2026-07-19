@@ -232,7 +232,8 @@ impl Emitter {
                 {
                     self.emit_jsany_comparison(*op, left, right, left_is_jsany, right_is_jsany);
                 }
-                // ── JsAny arithmetic: convert JsAny side to i64 via .asI64() ──
+                // ── JsAny arithmetic: convert JsAny side to i64 via .asI64()
+                // (or to f64 via .asF64() when the other side is F64) ──
                 // This handles cases like `sum + mapValue` where mapValue is JsAny
                 // (e.g., from Map/Set for-of iteration or forEach callbacks).
                 else if (left_is_jsany || right_is_jsany)
@@ -248,7 +249,15 @@ impl Emitter {
                             | BinOp::Shr
                     )
                 {
-                    self.emit_jsany_arithmetic(*op, left, right, left_is_jsany, right_is_jsany);
+                    self.emit_jsany_arithmetic(
+                        *op,
+                        left,
+                        right,
+                        left_is_jsany,
+                        right_is_jsany,
+                        lt,
+                        rt,
+                    );
                 }
                 // ── Division / Remainder ──
                 // Note: Integer `%` is handled by RemExpr node, not Binary(Mod).
@@ -356,22 +365,40 @@ impl Emitter {
             crate::zigir::types::IrExpr::RemExpr {
                 left,
                 right,
+                left_type,
+                right_type,
                 result_type,
             } => {
                 // JS `%` for integer operands: always uses jsRem which returns f64
                 // (preserves signed zero -0). When result_type is i64, wrap in
                 // @as(i64, @intFromFloat(...)) for assignment to i64 variable.
-                if let Some(crate::types::ZigType::I64) = result_type {
+                //
+                // jsRem signature is `(i64, i64) f64`. For JsAny operands we
+                // must coerce via `.asI64()` so the call compiles. (Non-BigInt
+                // integer/comptime operands emit directly; BigInt and F64 are
+                // routed to `Binary(Mod)` by the lowerer and never reach here.)
+                use crate::types::ZigType;
+                if let Some(ZigType::I64) = result_type {
                     self.write("@as(i64, @intFromFloat(js_runtime.jsRem(");
-                    self.emit_expr(left);
-                    self.write(", ");
-                    self.emit_expr(right);
-                    self.write(")))");
                 } else {
                     self.write("js_runtime.jsRem(");
+                }
+                if *left_type == ZigType::JsAny {
                     self.emit_expr(left);
-                    self.write(", ");
+                    self.write(".asI64()");
+                } else {
+                    self.emit_expr(left);
+                }
+                self.write(", ");
+                if *right_type == ZigType::JsAny {
                     self.emit_expr(right);
+                    self.write(".asI64()");
+                } else {
+                    self.emit_expr(right);
+                }
+                if let Some(ZigType::I64) = result_type {
+                    self.write(")))");
+                } else {
                     self.write(")");
                 }
             }
@@ -384,27 +411,37 @@ impl Emitter {
                 result_type,
             } => {
                 // JS `/` always returns float. For integer operands, convert to f64 first.
+                // For JsAny operands, .asF64() preserves the float payload.
                 // When result_type is i64, wrap in @as(i64, @intFromFloat(...)).
-                let left_is_float = *left_type == crate::types::ZigType::F64;
-                let right_is_float = *right_type == crate::types::ZigType::F64;
-                if let Some(crate::types::ZigType::I64) = result_type {
-                    // i64 target: convert to f64, divide, truncate back
+                use crate::types::ZigType;
+                let left_is_float = *left_type == ZigType::F64;
+                let right_is_float = *right_type == ZigType::F64;
+                let left_is_jsany = *left_type == ZigType::JsAny;
+                let right_is_jsany = *right_type == ZigType::JsAny;
+
+                if let Some(ZigType::I64) = result_type {
                     self.write("@as(i64, @intFromFloat(");
                 }
-                if left_is_float || right_is_float {
+                if left_is_float || right_is_float || left_is_jsany || right_is_jsany {
+                    // At least one operand is F64 (already float) or JsAny (.asF64()):
+                    // route both through emit_float_conversion which handles each
+                    // case appropriately (no @floatFromInt needed on already-numeric).
                     self.write("(");
-                    self.emit_expr(left);
+                    self.emit_float_conversion(left, left_type);
                     self.write(" / ");
-                    self.emit_expr(right);
+                    self.emit_float_conversion(right, right_type);
                     self.write(")");
                 } else {
+                    // Both operands are integer-ish (I64, BigInt, comptime_int,
+                    // Anytype-int-coercible). Wrap both in @as(f64, @floatFromInt(...)).
+                    // This matches the pre-Round-4 behavior and works for anytype params.
                     self.write("(@as(f64, @floatFromInt(");
                     self.emit_expr(left);
                     self.write(")) / @as(f64, @floatFromInt(");
                     self.emit_expr(right);
                     self.write(")))");
                 }
-                if let Some(crate::types::ZigType::I64) = result_type {
+                if let Some(ZigType::I64) = result_type {
                     self.write("))");
                 }
             }
@@ -933,20 +970,22 @@ impl Emitter {
     ) {
         use crate::zigir::ops::AssignOp;
         if op == AssignOp::LogicAnd {
-            // a &&= b → a = if (a.toBool()) b else a
+            // a &&= b → a = if (js_runtime.isTruthy(a)) b else a
+            // Use isTruthy (works for anytype: i64, f64, bool, JsAny, string, ...)
+            // instead of .toBool() which only exists on JsAny.
             self.emit_assign_target_inner(target);
-            self.write(" = if (");
+            self.write(" = if (js_runtime.isTruthy(");
             self.emit_assign_target_inner(target);
-            self.write(".toBool()) ");
+            self.write(")) ");
             self.emit_expr(value);
             self.write(" else ");
             self.emit_assign_target_inner(target);
         } else if op == AssignOp::LogicOr {
-            // a ||= b → a = if (!a.toBool()) b else a
+            // a ||= b → a = if (!js_runtime.isTruthy(a)) b else a
             self.emit_assign_target_inner(target);
-            self.write(" = if (!");
+            self.write(" = if (!js_runtime.isTruthy(");
             self.emit_assign_target_inner(target);
-            self.write(".toBool()) ");
+            self.write(")) ");
             self.emit_expr(value);
             self.write(" else ");
             self.emit_assign_target_inner(target);

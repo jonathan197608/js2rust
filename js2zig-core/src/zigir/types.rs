@@ -702,9 +702,16 @@ pub enum IrExpr {
     /// (to preserve signed zero -0). When `result_type` is `Some(I64)`,
     /// the emitter wraps the result with `@as(i64, @intFromFloat(...))`
     /// for assignment to an i64 variable.
+    ///
+    /// `left_type` / `right_type` carry the inferred operand types so the
+    /// emitter can coerce JsAny operands via `.asI64()` (matching the
+    /// integer `%` semantics). Float operands are routed to `Binary(Mod)`
+    /// by the lowerer and never reach this node.
     RemExpr {
         left: Box<IrExpr>,
         right: Box<IrExpr>,
+        left_type: ZigType,
+        right_type: ZigType,
         /// If the result needs to be converted from f64 (jsRem returns f64)
         /// to a different type (e.g. i64), this is set. None means keep as f64.
         result_type: Option<ZigType>,

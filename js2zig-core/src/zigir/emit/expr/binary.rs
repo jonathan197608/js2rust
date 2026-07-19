@@ -12,6 +12,7 @@ impl Emitter {
     /// Emit a float conversion for a `PowExpr` operand.
     /// - F64: emit directly
     /// - I64/BigInt: wrap in `@as(f64, @floatFromInt(...))`
+    /// - JsAny: call `.asF64()` (preserves the JsAny value's float payload)
     /// - Other: wrap in `@as(f64, ...)` (comptime_int, bool, etc.)
     pub(super) fn emit_float_conversion(
         &mut self,
@@ -26,6 +27,10 @@ impl Emitter {
                 self.write("@as(f64, @floatFromInt(");
                 self.emit_expr(expr);
                 self.write("))");
+            }
+            crate::types::ZigType::JsAny => {
+                self.emit_expr(expr);
+                self.write(".asF64()");
             }
             _ => {
                 // comptime_int, bool, or unknown — @as(f64, expr) works for comptime_int
@@ -237,7 +242,8 @@ impl Emitter {
     }
 
     /// Emit a JsAny comparison operation.
-    /// JsAny equality uses .eq()/.strictEq(), ordering uses .asI64().
+    /// JsAny equality uses .eq()/.strictEq(), ordering uses .asF64() (preserves
+    /// float precision since JS numbers are doubles).
     /// Emit an expression, optionally wrapping it in `JsAny.from()` if it
     /// is not already a JsAny-typed value.
     fn emit_expr_as_jsany(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
@@ -250,8 +256,20 @@ impl Emitter {
         }
     }
 
-    /// Emit a JsAny arithmetic operation: convert JsAny side(s) to i64 via .asI64().
-    /// e.g., `sum + v` where v is JsAny → `sum + v.asI64()`
+    /// Emit a JsAny arithmetic operation.
+    ///
+    /// Coerces JsAny side(s) via `.asI64()` by default (to match the inferred
+    /// integer result type for `i64 op JsAny` cases). However, when the OTHER
+    /// side has type F64, the JS result must be a float — use `.asF64()` in
+    /// that case to avoid Zig `i64 + f64` type errors AND to preserve float
+    /// precision (otherwise `5.0 + jsany` would compute `5 + jsany.asI64()`,
+    /// losing the float register and possibly truncating the JsAny value).
+    ///
+    /// The signature carries two extra type args (`left_type` / `right_type`)
+    /// so the emitter can decide `.asF64()` vs `.asI64()` based on the OTHER
+    /// side's type. Clippy's default 7-arg threshold is exceeded; suppressing
+    /// the lint here keeps the call-site (Binary dispatch in mod.rs) readable.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn emit_jsany_arithmetic(
         &mut self,
         op: crate::zigir::ops::BinOp,
@@ -259,13 +277,26 @@ impl Emitter {
         right: &crate::zigir::types::IrExpr,
         left_is_jsany: bool,
         right_is_jsany: bool,
+        left_type: Option<&crate::types::ZigType>,
+        right_type: Option<&crate::types::ZigType>,
     ) {
+        use crate::types::ZigType;
         use crate::zigir::emit::helpers::bin_op_to_zig;
+
+        // Coercion decision: if the OTHER side is F64, use .asF64(); otherwise .asI64().
+        // The "other" side governs because Zig binary ops require both operands to
+        // share a type. If one side is f64, the other must be f64 too.
+        let left_coerce_f64 = left_is_jsany && right_type == Some(&ZigType::F64);
+        let right_coerce_f64 = right_is_jsany && left_type == Some(&ZigType::F64);
 
         // Left side
         if left_is_jsany {
             self.emit_expr(left);
-            self.write(".asI64()");
+            if left_coerce_f64 {
+                self.write(".asF64()");
+            } else {
+                self.write(".asI64()");
+            }
         } else {
             self.emit_expr(left);
         }
@@ -273,23 +304,31 @@ impl Emitter {
         // Right side
         if right_is_jsany {
             self.emit_expr(right);
-            self.write(".asI64()");
+            if right_coerce_f64 {
+                self.write(".asF64()");
+            } else {
+                self.write(".asI64()");
+            }
         } else {
             self.emit_expr(right);
         }
     }
 
-    /// Emit an expression as `.asI64()`, wrapping with `JsAny.from()` first
+    /// Emit an expression as `.asF64()`, wrapping with `JsAny.from()` first
     /// if it is not already a JsAny-typed value.
-    fn emit_expr_as_i64(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
+    ///
+    /// Used for ordering comparisons (Lt/Le/Gt/Ge) where comparing via f64
+    /// preserves float precision (vs the old `.asI64()` which truncated
+    /// floats like 5.5 → 5, causing `(5.5).asI64() < (5.6).asI64()` to be false).
+    fn emit_expr_as_f64(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
         self.write("(");
         if is_jsany {
             self.emit_expr(expr);
-            self.write(".asI64())");
+            self.write(".asF64())");
         } else {
             self.write("JsAny.from(");
             self.emit_expr(expr);
-            self.write(").asI64())");
+            self.write(").asF64())");
         }
     }
 
@@ -324,15 +363,20 @@ impl Emitter {
                     self.write(")");
                 }
             }
-            // Ordering: use JsAny.from().asI64() for numeric comparison
+            // Ordering: use JsAny.from().asF64() for numeric comparison.
+            //
+            // We use .asF64() (not .asI64()) because JS numbers are doubles,
+            // and ordering of float values like 5.5 < 5.6 must be preserved.
+            // The old .asI64() path truncated floats, causing wrong results
+            // when comparing JsAny values holding floats.
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let zig_op = bin_op_to_zig(op);
                 // Both sides need to go through JsAny for consistent comparison.
-                // For already-JsAny sides, call .asI64() directly.
-                // For non-JsAny sides, wrap with JsAny.from() then .asI64().
-                self.emit_expr_as_i64(left, left_is_jsany);
+                // For already-JsAny sides, call .asF64() directly.
+                // For non-JsAny sides, wrap with JsAny.from() then .asF64().
+                self.emit_expr_as_f64(left, left_is_jsany);
                 self.write(&format!(" {} ", zig_op));
-                self.emit_expr_as_i64(right, right_is_jsany);
+                self.emit_expr_as_f64(right, right_is_jsany);
             }
             _ => {
                 self.emit_default_binop(op, left, right);

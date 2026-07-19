@@ -1264,3 +1264,226 @@ function demo() {
         zig
     );
 }
+
+// ── Round 4: JsAny operand handling in arithmetic, comparison, and division ──
+// Round 4 of the deep code audit fixed 5 deferred issues from Round 3:
+//   R4-1: DivExpr / RemExpr / PowExpr did not handle JsAny operands
+//   R4-2: emit_jsany_arithmetic used .asI64() unconditionally — truncated floats
+//         when the other side was F64
+//   R4-3: emit_jsany_comparison ordering branch used .asI64() — truncated float
+//         ordering comparison
+//   R4-4: Array literal spread hardcoded .items — broke JsAny arrays
+//   R4-5: emit_compound_assign used unsafe .toBool() — only exists on JsAny
+
+/// R4-1 regression baseline: integer `/` still routes through the integer-path
+/// emit (`@as(f64, @floatFromInt(...))` on both sides). Without this guard a
+/// refactor could break the common `i64 / i64` case by always going through
+/// `emit_float_conversion`, which fails to compile for anytype params.
+#[test]
+fn test_r4_1_div_int_baseline() {
+    let js = r#"
+function safeDivide(a, b) {
+    return a / b;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_1_div_int_baseline");
+    // anytype operands → must keep the @floatFromInt path (the first DivExpr
+    // attempt broke this case by routing through @as(f64, expr), which Zig
+    // rejects at comptime when expr is anytype).
+    assert!(
+        zig.contains("@floatFromInt"),
+        "Integer / division should use @floatFromInt (anytype-safe): {}",
+        zig
+    );
+    // Safety check: should NOT contain .asF64() (no JsAny operand here).
+    assert!(
+        !zig.contains(".asF64()"),
+        "Integer / should NOT use .asF64() (no JsAny): {}",
+        zig
+    );
+}
+
+/// R4-1 fix: DivExpr with a JsAny operand must coerce via .asF64() (preserves
+/// float payload) instead of crashing on @floatFromInt(JsAny).
+#[test]
+fn test_r4_1_div_jsany_operand() {
+    // Map.get(key) returns JsAny (orelse .undefined_value). Dividing it by an
+    // integer literal must coerce via .asF64() on the JsAny side.
+    let js = r#"
+function divMapVal() {
+    const m = new Map();
+    m.set("a", 10);
+    const v = m.get("a");
+    return v / 2;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_1_div_jsany_operand");
+    println!("=== R4-1 DivExpr with JsAny ===\n{}", zig);
+    // Must call .asF64() on the JsAny operand.
+    assert!(
+        zig.contains(".asF64()"),
+        "DivExpr with JsAny operand should call .asF64(): {}",
+        zig
+    );
+}
+
+/// R4-2 fix: JsAny arithmetic where the OTHER side is F64 must use .asF64()
+/// (not .asI64(), which truncates the float and produces a Zig type error).
+#[test]
+fn test_r4_2_jsany_arith_f64_operand() {
+    let js = r#"
+function addF64ToMapVal() {
+    const m = new Map();
+    m.set("a", 10);
+    const v = m.get("a");
+    return v + 1.5;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_2_jsany_arith_f64_operand");
+    println!("=== R4-2 JsAny + F64 ===\n{}", zig);
+    // The bug: .asI64() was used unconditionally. The fix: .asF64() when the
+    // other side is F64.
+    assert!(
+        zig.contains(".asF64()"),
+        "JsAny + F64 should use .asF64() (not .asI64()): {}",
+        zig
+    );
+    // Should NOT use .asI64() on the JsAny operand when the other side is F64.
+    assert!(
+        !zig.contains(".asI64()"),
+        "JsAny + F64 should NOT use .asI64() (would truncate the F64): {}",
+        zig
+    );
+}
+
+/// R4-2 complement: JsAny arithmetic with an i64 operand uses .asI64()
+/// (matches the inferred i64 result type for `i64 op JsAny` cases). This guards
+/// against a regression where the fix might have over-corrected to always use
+/// .asF64() and broken the common integer case.
+#[test]
+fn test_r4_2_jsany_arith_i64_operand() {
+    let js = r#"
+function addI64ToMapVal() {
+    const m = new Map();
+    m.set("a", 10);
+    const v = m.get("a");
+    return v + 5;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_2_jsany_arith_i64_operand");
+    println!("=== R4-2 JsAny + i64 ===\n{}", zig);
+    // Integer side → use .asI64() (matches the i64 result type).
+    assert!(
+        zig.contains(".asI64()"),
+        "JsAny + i64 should use .asI64(): {}",
+        zig
+    );
+}
+
+/// R4-3 fix: JsAny ordering comparison (Lt/Le/Gt/Ge) must use .asF64()
+/// (preserves float ordering like 5.5 < 5.6), not .asI64() (which truncated
+/// floats, making `(5.5).asI64() < (5.6).asI64()` false).
+#[test]
+fn test_r4_3_jsany_cmp_f64_preserves_float() {
+    let js = r#"
+function cmpMapVal() {
+    const m = new Map();
+    m.set("a", 5.5);
+    const v = m.get("a");
+    if (v < 5.6) return 1;
+    return 0;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_3_jsany_cmp_f64_preserves_float");
+    println!("=== R4-3 JsAny < F64 ordering ===\n{}", zig);
+    // Ordering must route through .asF64() on both sides so floats compare
+    // correctly (NOT .asI64() which would truncate 5.5 → 5, 5.6 → 5).
+    assert!(
+        zig.contains(".asF64()"),
+        "JsAny ordering with F64 should use .asF64() to preserve floats: {}",
+        zig
+    );
+    // Should NOT have .asI64() in the ordering comparison.
+    assert!(
+        !zig.contains(".asI64()"),
+        "JsAny ordering should NOT use .asI64() (truncates floats): {}",
+        zig
+    );
+}
+
+/// R4-4 fix: Array literal spread hardcoded `.items` for appendSlice, which
+/// required the source element type to match JsAny exactly. For non-JsAny
+/// arrays (e.g., `ArrayList(i64)` created from `[1, 2, 3]`), the resulting
+/// `appendSlice(ArrayList(JsAny), allocator, []i64)` would fail to compile.
+///
+/// The fix replaces appendSlice with a `for` loop that wraps each element via
+/// `JsAny.from(item)` — anytype-polymorphic and works for any ArrayList(T)
+/// whose element type JsAny.from accepts (i64, f64, []const u8, JsAny, bool, …).
+#[test]
+fn test_r4_4_array_spread_wraps_via_jsany_from() {
+    // `[1, 2, 3]` infers as `ArrayList(i64)` (homogeneous integer literal).
+    // Spreading it into `[...arr]` must produce a for-loop with JsAny.from
+    // so the i64 elements get wrapped for the `ArrayList(JsAny)` receiver.
+    let js = r#"
+function spreadIntArr() {
+    const arr = [1, 2, 3];
+    return [...arr];
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_4_array_spread_wraps_via_jsany_from");
+    println!("=== R4-4 array spread with i64 source ===\n{}", zig);
+
+    // The fix: emit a for-loop with JsAny.from wrapping (NOT appendSlice).
+    assert!(
+        zig.contains("for (") && zig.contains(".items) |__spread_item|"),
+        "Spread should iterate .items via a for-loop with __spread_item: {}",
+        zig
+    );
+    assert!(
+        zig.contains("JsAny.from(__spread_item)"),
+        "Spread should wrap each item via JsAny.from(): {}",
+        zig
+    );
+    // The OLD code emitted appendSlice, which only worked for ArrayList(JsAny);
+    // a regression would reintroduce appendSlice and break the i64 case.
+    assert!(
+        !zig.contains("appendSlice"),
+        "Spread should NOT use appendSlice (breaks for non-JsAny element types): {}",
+        zig
+    );
+}
+
+/// R4-5 fix: emit_compound_assign used .toBool() which only exists on JsAny.
+/// For Identifier targets the lowerer routes via IrExpr::Logical (which already
+/// uses isTruthy), so the bug only manifests for compound assignments on INDEX
+/// targets (the fall-through path). This test exercises that path by using a
+/// compound assignment on `arr[0]`, an ArrayListItem Index target.
+#[test]
+fn test_r4_5_index_compound_logical_uses_is_truthy() {
+    // arr[0] &&= / ||= on an Index (ArrayListItem) target — Index targets
+    // don't have to_read_expr and fall through to the Assign+compound path,
+    // which reaches emit_compound_assign (mod.rs). Before the R4-5 fix this
+    // path called .toBool(), which fails to compile on i64/bool operands.
+    let js = r#"
+function indexCompound() {
+    const arr = [1, 2, 3];
+    arr[0] &&= 2;
+    arr[1] ||= 3;
+    return arr[0];
+}
+"#;
+    let zig = transpile_and_check(js, "test_r4_5_index_compound_logical_uses_is_truthy");
+    println!("=== R4-5 Index compound &&= / ||= ===\n{}", zig);
+    // The fix: emit_compound_assign uses js_runtime.isTruthy for &&= / ||=,
+    // not .toBool() which only exists on JsAny.
+    assert!(
+        zig.contains("js_runtime.isTruthy"),
+        "Index-target compound &&= / ||= should use js_runtime.isTruthy (not .toBool()): {}",
+        zig
+    );
+    assert!(
+        !zig.contains(".toBool()"),
+        "Index-target compound should NOT use .toBool() (only valid on JsAny): {}",
+        zig
+    );
+}

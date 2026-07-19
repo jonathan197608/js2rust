@@ -49,11 +49,29 @@ impl Emitter {
         ));
         for (i, elem) in arr.elements.iter().enumerate() {
             if arr.spread_indices.contains(&i) {
-                // Spread element: use appendSlice
+                // Spread: iterate the source's `.items` slice and append each
+                // element wrapped via `JsAny.from(...)`. This handles ANY
+                // ArrayList element type uniformly (i64, f64, []const u8, JsAny,
+                // bool, comptime_int, etc.).
+                //
+                // Why not appendSlice: the receiver __arr is always
+                // `std.ArrayList(JsAny)` when a spread is present (see the
+                // `elem_type` decision above), so `appendSlice` would require
+                // the source's `.items` to be `[]const JsAny`. That fails to
+                // compile for the common `ArrayList(i64)` / `ArrayList(bool)` /
+                // `ArrayList([]const u8)` cases. The for-loop + JsAny.from
+                // approach is type-polymorphic via anytype.
+                //
+                // The loop variable name (`__spread_item`) is scoped to each
+                // for-loop body, so reusing it across multiple spreads in the
+                // same literal is safe.
                 if let crate::zigir::types::IrExpr::Spread(inner) = elem {
-                    self.write("__arr.appendSlice(js_allocator.allocator(), ");
+                    self.write("for (");
                     self.emit_expr(inner);
-                    self.write(".items) catch @panic(\"OOM: Array.spread\"); ");
+                    self.write(
+                        ".items) |__spread_item| __arr.append(js_allocator.allocator(), \
+                         JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ",
+                    );
                 }
             } else {
                 self.write("__arr.append(js_allocator.allocator(), ");
