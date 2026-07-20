@@ -800,7 +800,7 @@ return { ...a, ...b, c: 1, d: "hello" };
 
 #[test]
 fn test_p1_spread_empty() {
-    // { } → StringHashMap
+    // { } → JsObjectMap (insertion-order-preserving StringArrayHashMap wrapper)
     let js = r#"
 function emptyObj() {
 return { };
@@ -808,8 +808,8 @@ return { };
 "#;
     let zig = transpile_and_check(js, "test_p1_spread_empty");
     assert!(
-        zig.contains("StringHashMap(JsAny)"),
-        "Expected StringHashMap for empty object:\n{}",
+        zig.contains("JsObjectMap.init(js_allocator.allocator())"),
+        "Expected JsObjectMap for empty object:\n{}",
         zig
     );
 }

@@ -1,12 +1,13 @@
 //! JS Object static method implementations for Zig.
-//! Works with std.StringHashMap(JsValue) for dynamic objects.
+//! Works with StringArrayHashMap(JsValue) (insertion-order-preserving) for dynamic objects.
 //! All allocating functions take `alloc: std.mem.Allocator` as first parameter.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsValue = @import("jsvalue.zig").JsValue;
+const StringArrayHashMap = @import("string_array_hash_map.zig").StringArrayHashMap;
 
-const JsValueHashMap = std.StringHashMap(JsValue);
+const JsValueHashMap = StringArrayHashMap(JsValue);
 
 /// Object(value) — wraps a primitive value in an object wrapper.
 /// Simplified: returns the value as-is (this runtime has no real object wrappers).

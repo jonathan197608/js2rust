@@ -28,6 +28,7 @@ pub const JsAny = jsany.JsAny;
 pub const JsArrayList = jsany.JsArrayList;
 pub const JsObjectMap = jsany.JsObjectMap;
 pub const undefined_value = jsany.undefined_value;
+pub const StringArrayHashMap = @import("string_array_hash_map.zig").StringArrayHashMap;
 
 // ── Global Io for C ABI blocking wrappers ──────────────────────
 // When async functions are exported via C ABI, the wrapper needs an Io

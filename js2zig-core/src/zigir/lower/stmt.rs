@@ -472,7 +472,7 @@ impl Lowerer {
 
         // Register loop variable type so body expressions have correct type info.
         // - MapIter: key is JsAny (from std.HashMap(JsAny, JsAny, ...))
-        // - HashMapIter: key is []const u8 (from StringHashMap(JsAny))
+        // - HashMapIter: key is []const u8 (from JsObjectMap = StringArrayHashMap(JsAny))
         match &kind {
             IrForInKind::MapIter => {
                 self.type_info

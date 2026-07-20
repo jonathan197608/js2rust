@@ -127,7 +127,9 @@ impl Emitter {
             }
             "groupBy" => {
                 // Object.groupBy(items, callbackFn) — fully inline emission
-                self.write("blk: { var _grp_map = std.StringHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); ");
+                // Uses StringArrayHashMap (managed wrapper, insertion-order-preserving)
+                // so that Object.keys on the result iterates in insertion order.
+                self.write("blk: { var _grp_map = StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); ");
                 if let Some(items_arg) = args.first() {
                     self.write("for (");
                     self.emit_expr(items_arg);

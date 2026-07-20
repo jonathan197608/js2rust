@@ -123,9 +123,10 @@ impl Emitter {
     pub(super) fn emit_object_literal(&mut self, obj: &crate::zigir::types::IrObjectLiteral) {
         use crate::zigir::types::IrObjectItem;
 
-        // Empty object → StringHashMap(JsAny).init(allocator)
+        // Empty object → JsObjectMap.init(allocator)
+        // JsObjectMap is StringArrayHashMap(JsAny) — insertion-order-preserving.
         if obj.items.is_empty() {
-            self.write("std.StringHashMap(JsAny).init(js_allocator.allocator())");
+            self.write("JsObjectMap.init(js_allocator.allocator())");
             return;
         }
 

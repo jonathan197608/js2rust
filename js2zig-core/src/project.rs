@@ -481,6 +481,8 @@ fn push_runtime_imports(out: &mut String, needs_regex: bool) {
     out.push_str("const js_bigint = @import(\"js_runtime/js_bigint.zig\");\n");
     out.push_str("const JsValue = @import(\"js_runtime/jsvalue.zig\").JsValue;\n");
     out.push_str("const JsAny = @import(\"js_runtime/jsany.zig\").JsAny;\n");
+    out.push_str("const JsObjectMap = @import(\"js_runtime/jsany.zig\").JsObjectMap;\n");
+    out.push_str("const StringArrayHashMap = @import(\"js_runtime/string_array_hash_map.zig\").StringArrayHashMap;\n");
     out.push_str("const js_runtime = @import(\"js_runtime/js_runtime.zig\");\n");
     out.push('\n');
 }

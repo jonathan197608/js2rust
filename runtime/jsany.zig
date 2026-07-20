@@ -1,5 +1,5 @@
 //! JsAny — general-purpose JS value type that covers primitives, dynamic arrays, and objects.
-//! Arrays use std.ArrayList(JsAny), objects use std.StringHashMap(JsAny).
+//! Arrays use std.ArrayList(JsAny), objects use StringArrayHashMap(JsAny) (insertion-order-preserving).
 //! Both containers allow nesting (JsAny can contain JsAny).
 //! Updated for Zig 0.16.0 ArrayList API (.empty, deinit(alloc), append(alloc, item)).
 
@@ -7,12 +7,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsValue = @import("jsvalue.zig").JsValue;
 const js_allocator = @import("js_allocator.zig");
+const StringArrayHashMap = @import("string_array_hash_map.zig").StringArrayHashMap;
 
 /// Type alias for a dynamic JS array.
 pub const JsArrayList = std.ArrayList(JsAny);
 
-/// Type alias for a dynamic JS object (string-keyed map).
-pub const JsObjectMap = std.StringHashMap(JsAny);
+/// Type alias for a dynamic JS object (string-keyed, insertion-order map).
+pub const JsObjectMap = StringArrayHashMap(JsAny);
 
 /// General-purpose JS value that can hold primitives, arrays, or objects.
 pub const JsAny = union(enum) {

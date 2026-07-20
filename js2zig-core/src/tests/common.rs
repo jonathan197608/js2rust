@@ -37,6 +37,8 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
     let needs_js_runtime = zig_code.contains("js_runtime.");
     let needs_js_any = zig_code.contains("JsAny");
     let needs_string_hashmap = zig_code.contains("StringHashMap");
+    let needs_js_object_map = zig_code.contains("JsObjectMap");
+    let needs_string_array_hashmap = zig_code.contains("StringArrayHashMap(");
     let needs_js_allocator = zig_code.contains("js_allocator");
     let needs_js_array = zig_code.contains("js_array");
     let needs_js_json = zig_code.contains("js_json");
@@ -55,6 +57,8 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         || needs_js_runtime
         || needs_js_any
         || needs_string_hashmap
+        || needs_js_object_map
+        || needs_string_array_hashmap
         || needs_js_allocator
         || needs_js_array
         || needs_js_collections
@@ -125,6 +129,12 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         }
         if needs_string_hashmap {
             w.push_str("const StringHashMap = std.StringHashMap;\n");
+        }
+        if needs_js_object_map {
+            w.push_str("const JsObjectMap = @import(\"js_runtime/jsany.zig\").JsObjectMap;\n");
+        }
+        if needs_string_array_hashmap {
+            w.push_str("const StringArrayHashMap = @import(\"js_runtime/string_array_hash_map.zig\").StringArrayHashMap;\n");
         }
         w.push('\n');
         w.push_str(zig_code);
