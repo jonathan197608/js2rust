@@ -191,11 +191,34 @@ pub const JsAny = union(enum) {
     /// Custom formatter so `std.fmt.allocPrint("{f}", .{jsany})` outputs the JS string representation.
     /// Note: in Zig 0.16.0, only the `{f}` specifier dispatches to this method;
     /// `{}`/`{any}` emit the debug representation for tagged unions.
+    /// R8-P1-14: Arrays and objects now stream their contents (JSON-like)
+    /// instead of outputting the useless "[Array]"/"[Object]" labels.
+    /// No allocator needed — writes directly to the writer.
     pub fn format(self: JsAny, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .value => |v| try v.format(writer),
-            .array => try writer.writeAll("[Array]"),
-            .object => try writer.writeAll("[Object]"),
+            .array => |a| {
+                try writer.writeAll("[");
+                for (a.items, 0..) |item, i| {
+                    if (i > 0) try writer.writeAll(",");
+                    try item.format(writer);
+                }
+                try writer.writeAll("]");
+            },
+            .object => |o| {
+                try writer.writeAll("{");
+                var iter = o.iterator();
+                var first = true;
+                while (iter.next()) |entry| {
+                    if (!first) try writer.writeAll(",");
+                    first = false;
+                    try writer.writeAll("\"");
+                    try writer.writeAll(entry.key_ptr.*);
+                    try writer.writeAll("\":");
+                    try entry.value_ptr.*.format(writer);
+                }
+                try writer.writeAll("}");
+            },
             .null => try writer.writeAll("null"),
         }
     }
@@ -291,10 +314,11 @@ pub const JsAny = union(enum) {
 
     pub fn add(self: JsAny, other: JsAny, alloc: Allocator) JsAny {
         // String concat: if either side is a string, concatenate
+        // R8-P1-10: Use {f} format to avoid asString() temporary allocations.
+        // Previously self.asString(alloc) + other.asString(alloc) leaked
+        // heap-allocated temporaries for int/float/array/object operands.
         if (self.isString() or other.isString()) {
-            const s = self.asString(alloc);
-            const o = other.asString(alloc);
-            const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ s, o }) catch "";
+            const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch "";
             return .{ .value = .{ .string = result } };
         }
         // Numeric: int + int = int (with overflow → f64), otherwise float.
@@ -313,10 +337,8 @@ pub const JsAny = union(enum) {
             return .{ .value = .{ .float = self.asF64() + other.asF64() } };
         }
         // Array + Array → concat (JS semantics: converts to string first)
-        // Fallback: string concat
-        const s = self.asString(alloc);
-        const o = other.asString(alloc);
-        const result = std.fmt.allocPrint(alloc, "{s}{s}", .{ s, o }) catch "";
+        // Fallback: string concat — same {f} pattern avoids temp allocations.
+        const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch "";
         return .{ .value = .{ .string = result } };
     }
 
@@ -603,12 +625,19 @@ pub const JsAny = union(enum) {
     // === Cleanup ===
 
     /// Free the result of asString() if it was heap-allocated.
-    /// asString allocates for .value.int, .value.float, .array, .object.
+    /// asString allocates for .value.int, .value.float (non-NaN/Inf), .array, .object.
     /// It returns a borrowed slice or literal for everything else.
+    /// R8-P1-10: .float NaN/Infinity/-Infinity return literals — must NOT be freed.
     fn freeAsStringKey(key: JsAny, key_str: []const u8, alloc: Allocator) void {
         switch (key) {
             .value => |v| switch (v) {
-                .int, .float => alloc.free(key_str),
+                .int => alloc.free(key_str),
+                .float => |f| {
+                    // NaN and Infinity return string literals from asString — not heap-allocated.
+                    if (!std.math.isNan(f) and !std.math.isInf(f)) {
+                        alloc.free(key_str);
+                    }
+                },
                 else => {},
             },
             .array, .object => alloc.free(key_str),
@@ -1116,4 +1145,63 @@ test "instanceOf primitives are always false" {
 test "instanceOf null and undefined" {
     try std.testing.expect(!instanceOf(JsAny.fromNull(), "Object"));
     try std.testing.expect(!instanceOf(JsAny.undefined_value, "Object"));
+}
+
+test "JsAny.format array and object output (R8-P1-14)" {
+    const alloc = std.testing.allocator;
+
+    // Array: [1,2,3]
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+    try arr.arrayPush(alloc, JsAny.fromI64(1));
+    try arr.arrayPush(alloc, JsAny.fromI64(2));
+    try arr.arrayPush(alloc, JsAny.fromI64(3));
+    const arr_str = try std.fmt.allocPrint(alloc, "{f}", .{arr});
+    defer alloc.free(arr_str);
+    try std.testing.expectEqualStrings("[1,2,3]", arr_str);
+
+    // Object: {"x":42}
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.set("x", JsAny.fromI64(42), alloc);
+    const obj_str = try std.fmt.allocPrint(alloc, "{f}", .{obj});
+    defer alloc.free(obj_str);
+    try std.testing.expectEqualStrings("{\"x\":42}", obj_str);
+
+    // Null
+    const null_str = try std.fmt.allocPrint(alloc, "{f}", .{JsAny.fromNull()});
+    defer alloc.free(null_str);
+    try std.testing.expectEqualStrings("null", null_str);
+}
+
+test "JsAny.add string concat with non-string operand (R8-P1-10)" {
+    const alloc = std.testing.allocator;
+
+    // string + int → no leak with std.testing.allocator
+    const result1 = JsAny.fromString("x").add(JsAny.fromI64(42), alloc);
+    defer alloc.free(result1.value.string);
+    try std.testing.expectEqualStrings("x42", result1.value.string);
+
+    // int + string → no leak
+    const result2 = JsAny.fromI64(7).add(JsAny.fromString("y"), alloc);
+    defer alloc.free(result2.value.string);
+    try std.testing.expectEqualStrings("7y", result2.value.string);
+
+    // string + string → no alloc for operands, only for result
+    const result3 = JsAny.fromString("hello").add(JsAny.fromString(" world"), alloc);
+    defer alloc.free(result3.value.string);
+    try std.testing.expectEqualStrings("hello world", result3.value.string);
+}
+
+test "JsAny.add fallback concat with array operand (R8-P1-10)" {
+    const alloc = std.testing.allocator;
+
+    // array + string (fallback path) — no leak
+    var arr = try JsAny.newArray(alloc);
+    defer arr.deinit(alloc);
+    try arr.arrayPush(alloc, JsAny.fromI64(1));
+    try arr.arrayPush(alloc, JsAny.fromI64(2));
+    const result = arr.add(JsAny.fromString("x"), alloc);
+    defer alloc.free(result.value.string);
+    try std.testing.expectEqualStrings("[1,2]x", result.value.string);
 }
