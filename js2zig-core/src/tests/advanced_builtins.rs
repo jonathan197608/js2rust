@@ -258,6 +258,120 @@ return n.toString();
     );
 }
 
+// ── BigInt.prototype.toString(radix) — R8-P1-4 ──
+// Previously BigInt.toString hard-coded base 10 and silently dropped any
+// radix argument. Now radix is propagated to the runtime, and BigInt
+// literal receivers route to BigIntToString instead of DateToString.
+
+#[test]
+fn test_native_proto_bigint_tostring_literal_explicit_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function hexLiteral() {
+return 255n.toString(16);
+}
+"#;
+    let zig = transpile_and_check(
+        js,
+        "test_native_proto_bigint_tostring_literal_explicit_radix",
+    );
+    // BigInt literal receiver: extract_callee_object_name_static inlines
+    // a JsBigInt init expression as the receiver.
+    assert!(
+        zig.contains("js_bigint.JsBigInt.init(js_allocator.allocator(), \"255\")"),
+        "Expected BigInt init expression as receiver in:\n{}",
+        zig
+    );
+    // Explicit radix 16 must be emitted.
+    assert!(
+        zig.contains(".toString(js_allocator.allocator(), 16)"),
+        "Expected '.toString(js_allocator.allocator(), 16)' in:\n{}",
+        zig
+    );
+    // Should NOT route to js_date.toString for a BigInt literal receiver.
+    assert!(
+        !zig.contains("js_date.toString"),
+        "Must NOT route 255n.toString() to js_date.toString:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_bigint_tostring_literal_default_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function defaultRadixLiteral() {
+return 255n.toString();
+}
+"#;
+    let zig = transpile_and_check(
+        js,
+        "test_native_proto_bigint_tostring_literal_default_radix",
+    );
+    // No-radix literal: emitter must supply the ECMA-262 default radix 10.
+    assert!(
+        zig.contains(".toString(js_allocator.allocator(), 10)"),
+        "Expected '.toString(js_allocator.allocator(), 10)' (default radix) in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("js_date.toString"),
+        "Must NOT route 255n.toString() to js_date.toString:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_bigint_tostring_var_explicit_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function varRadix() {
+let b = 255n;
+return b.toString(16);
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_bigint_tostring_var_explicit_radix");
+    // BigInt variable receiver: the lowerer's BigInt variable interception
+    // block rewrites to BuiltinModule::JsBigInt. The user radix 16 must be
+    // emitted.
+    assert!(
+        zig.contains("b.toString(js_allocator.allocator(), 16)"),
+        "Expected 'b.toString(js_allocator.allocator(), 16)' in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("js_date.toString"),
+        "Must NOT route BigInt-var .toString() to js_date.toString:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_native_proto_bigint_tostring_var_default_radix() {
+    let js = r#"
+/**
+ * @returns {string}
+ */
+export function varDefault() {
+let b = 255n;
+return b.toString();
+}
+"#;
+    let zig = transpile_and_check(js, "test_native_proto_bigint_tostring_var_default_radix");
+    // No-radix BigInt variable: emitter appends the default radix 10.
+    assert!(
+        zig.contains("b.toString(js_allocator.allocator(), 10)"),
+        "Expected 'b.toString(js_allocator.allocator(), 10)' in:\n{}",
+        zig
+    );
+}
+
 // ── Test: Map.forEach — closure callback ─────────
 
 #[test]

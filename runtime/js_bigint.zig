@@ -232,8 +232,16 @@ pub const JsBigInt = struct {
         return try self.value.toConst().toInt(u64);
     }
 
-    pub fn toString(self: *const Self, alloc: std.mem.Allocator) ![]u8 {
-        return try self.value.toString(alloc, 10, .lower);
+    /// BigInt.prototype.toString([radix]) — convert to a string in the given base.
+    /// R8-P1-4: Previously this method hard-coded base 10 and accepted no radix
+    /// parameter, so JS callers' radix arguments were silently dropped.
+    /// Now validates radix in [2, 36] per ECMA-262 21.1.3.0 and defers to
+    /// std.math.big.int.Managed.toString which natively supports base 2..36
+    /// with lowercase digits and a leading `-` for negative values.
+    /// Examples: 255n.toString(16) -> "ff", (-255n).toString(16) -> "-ff".
+    pub fn toString(self: *const Self, alloc: std.mem.Allocator, radix: i64) ![]u8 {
+        if (radix < 2 or radix > 36) return error.RangeError;
+        return try self.value.toString(alloc, @as(u8, @intCast(radix)), .lower);
     }
 
     /// BigInt.prototype.valueOf() — returns self (identity).
@@ -510,5 +518,89 @@ test "asUintN wraps negative values correctly (R8-P1-5)" {
         var result = try asUintN(0, &input, alloc);
         defer result.deinit(alloc);
         try std.testing.expect(result.isZero());
+    }
+}
+
+test "BigInt.toString with radix (R8-P1-4)" {
+    const alloc = std.testing.allocator;
+
+    // Default decimal: 255n.toString(10) -> "255"
+    {
+        var b = try JsBigInt.fromI64(alloc, 255);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 10);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("255", s);
+    }
+
+    // Hex: 255n.toString(16) -> "ff"
+    {
+        var b = try JsBigInt.fromI64(alloc, 255);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 16);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("ff", s);
+    }
+
+    // Binary: 10n.toString(2) -> "1010"
+    {
+        var b = try JsBigInt.fromI64(alloc, 10);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 2);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("1010", s);
+    }
+
+    // Octal: 63n.toString(8) -> "77"
+    {
+        var b = try JsBigInt.fromI64(alloc, 63);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 8);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("77", s);
+    }
+
+    // Base 36: 35n.toString(36) -> "z"
+    {
+        var b = try JsBigInt.fromI64(alloc, 35);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 36);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("z", s);
+    }
+
+    // Large value: 65535n.toString(16) -> "ffff"
+    {
+        var b = try JsBigInt.fromI64(alloc, 65535);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 16);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("ffff", s);
+    }
+
+    // Zero: 0n.toString(16) -> "0"
+    {
+        var b = try JsBigInt.fromI64(alloc, 0);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 16);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("0", s);
+    }
+
+    // Negative hex: (-255n).toString(16) -> "-ff"
+    {
+        var b = try JsBigInt.fromI64(alloc, -255);
+        defer b.deinit(alloc);
+        const s = try b.toString(alloc, 16);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("-ff", s);
+    }
+
+    // Out-of-range radix throws RangeError
+    {
+        var b = try JsBigInt.fromI64(alloc, 42);
+        defer b.deinit(alloc);
+        try std.testing.expectError(error.RangeError, b.toString(alloc, 1));
+        try std.testing.expectError(error.RangeError, b.toString(alloc, 37));
     }
 }

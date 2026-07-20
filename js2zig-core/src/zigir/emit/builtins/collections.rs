@@ -210,18 +210,31 @@ impl Emitter {
                     zig_method, panic_ctx
                 ));
             }
-            "toString" | "toLocaleString" => {
-                // bigint.toString() / bigint.toLocaleString() → bigint.toString(allocator) catch @panic(...)
-                // toLocaleString without locale args is equivalent to toString per JS spec.
+            "toString" => {
+                // bigint.toString([radix]) → bigint.toString(allocator, radix) catch @panic(...)
+                // R8-P1-4: radix defaults to 10 per ECMA-262. Previously the
+                // radix argument was silently dropped. Fallible builtin call
+                // convention: catch @panic coerces the error union to []u8.
                 self.write("(");
                 if let Some(o) = obj {
                     self.write(o);
-                } else if !args.is_empty() {
-                    self.emit_expr(&args[0]);
                 }
-                self.write(
-                    ".toString(js_allocator.allocator()) catch @panic(\"OOM: BigInt toString\"))",
-                );
+                self.write(".toString(js_allocator.allocator(), ");
+                if !args.is_empty() {
+                    self.emit_expr(&args[0]);
+                } else {
+                    self.write("10");
+                }
+                self.write(") catch @panic(\"OOM: BigInt toString\"))");
+            }
+            "toLocaleString" => {
+                // toLocaleString() ignores any radix and is equivalent to
+                // toString(10) per JS spec (no radix parameter).
+                self.write("(");
+                if let Some(o) = obj {
+                    self.write(o);
+                }
+                self.write(".toString(js_allocator.allocator(), 10) catch @panic(\"OOM: BigInt toString\"))");
             }
             "valueOf" => {
                 // bigint.valueOf() → returns self (identity)

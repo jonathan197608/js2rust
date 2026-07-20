@@ -183,9 +183,24 @@ impl Lowerer {
                         // must produce `js_number.toString(...)` instead of
                         // the semantically wrong `js_date.toString(...)`
                         // (which would also be a Zig compile error since f64
-                        // has no such method). BigInt variables continue to
-                        // be handled by the BigInt Step 1.5 interception.
+                        // has no such method).
                         (BuiltinModule::JsNumber, "toString".into(), ZigType::Str)
+                    } else if matches!(var_type, ZigType::BigInt)
+                        && module == BuiltinModule::JsDate
+                        && (method == "toString" || method == "toLocaleString")
+                    {
+                        // R8-P1-4: BigInt variable `.toString(radix?)` /
+                        // `.toLocaleString()` is misrouted to DateToString /
+                        // DateToLocaleString by detect_builtin_call (no type
+                        // info at the AST layer). Rewrite to JsBigInt so
+                        // emit_bigint_builtin propagates the radix argument
+                        // (toString) or supplies the default 10 (toLocaleString).
+                        // Note: the legacy BigInt Step 1.5 interception in the
+                        // non-builtin path is dead code because
+                        // detect_builtin_call always returns Some for
+                        // `.toString()`, so this builtin-path rewrite is the
+                        // actual fix path for BigInt variables.
+                        (BuiltinModule::JsBigInt, method, ZigType::Str)
                     } else if let ZigType::NamedStruct(n) = var_type {
                         if Self::is_typedarray_type(n) {
                             let ta_mod = BuiltinModule::JsTypedArray;

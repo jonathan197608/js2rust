@@ -545,13 +545,25 @@ impl Lowerer {
                 // `(42).toFixed(2)` mis-emission that produced an empty
                 // receiver slot.
                 Expression::NumericLiteral(nl) => Some(format!("{}", nl.value)),
+                // R8-P1-4: BigInt-literal receivers like `255n.toString(16)`
+                // inline as a JsBigInt init expression. The literal cannot
+                // be a plain Zig value because large BigInts overflow f64,
+                // so unlike NumericLiteral we emit a full constructor call.
+                Expression::BigIntLiteral(bl) => Some(format!(
+                    "(js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\"))",
+                    crate::zigir::emit::helpers::escape_zig_string(bl.value.as_str())
+                )),
                 // Parenthesized-literal receivers: `((42)).method()` is
                 // syntactically equivalent to `(42).method()`. Only the
-                // common numeric case is inlined here — anything else
-                // (e.g. parenthesized binary expressions) falls back to
-                // the lowerer's complex-receiver path.
+                // common numeric/bigint cases are inlined here — anything
+                // else (e.g. parenthesized binary expressions) falls back
+                // to the lowerer's complex-receiver path.
                 Expression::ParenthesizedExpression(pe) => match &pe.expression {
                     Expression::NumericLiteral(nl) => Some(format!("{}", nl.value)),
+                    Expression::BigIntLiteral(bl) => Some(format!(
+                        "(js_bigint.JsBigInt.init(js_allocator.allocator(), \"{}\") catch @panic(\"OOM: BigInt init\"))",
+                        crate::zigir::emit::helpers::escape_zig_string(bl.value.as_str())
+                    )),
                     _ => None,
                 },
                 _ => None,

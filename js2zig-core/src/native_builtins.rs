@@ -574,6 +574,18 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             _ => false,
         };
 
+        // R8-P1-4: BigInt literal receivers like `255n.toString(16)` route
+        // to BigIntToString instead of the legacy DateToString. BigInt
+        // variables are handled separately in the lowerer (which has type
+        // info) via the BigInt variable interception block.
+        let is_bigint_literal = match obj_expr {
+            Expression::BigIntLiteral(_) => true,
+            Expression::ParenthesizedExpression(pe) => {
+                matches!(&pe.expression, Expression::BigIntLiteral(_))
+            }
+            _ => false,
+        };
+
         // Handle array-specific methods (for array literals)
         if is_array {
             match method_name {
@@ -711,7 +723,9 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             // lowerer's "fix string-variable methods" block (which has
             // access to type info, unlike this AST-only function).
             "toString" => {
-                if is_number_literal || is_number_call {
+                if is_bigint_literal {
+                    Some(BuiltinCall::BigIntToString)
+                } else if is_number_literal || is_number_call {
                     Some(BuiltinCall::NumberToString)
                 } else {
                     Some(BuiltinCall::DateToString)
