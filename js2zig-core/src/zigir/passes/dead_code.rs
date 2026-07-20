@@ -87,21 +87,26 @@ fn is_compile_error_expr(expr: &IrExpr) -> bool {
 /// which would otherwise emit `const r = @compileError(...)` — valid Zig but produces
 /// "unreachable code" noise for subsequent statements referencing the variable.
 ///
+/// Also converts `IrStmt::Return { value: Some(CompileError) }` into
+/// `IrStmt::CompileError`. Emitting `return @compileError(...)` is syntactically
+/// valid Zig, but `@compileError` has type `noreturn`, making the `return` keyword
+/// itself unreachable code — `zig ast-check` flags this.
+///
 /// Returns true if any conversions were made.
 fn convert_vardecl_compile_error(stmts: &mut [IrStmt]) -> bool {
     use crate::zigir::source_span::SourceSpan;
 
     // Phase 1: identify indices of VarDecls with CompileError init
+    // and Returns with CompileError value
     let indices: Vec<usize> = stmts
         .iter()
         .enumerate()
-        .filter_map(|(i, stmt)| {
-            if let IrStmt::VarDecl(vd) = stmt
-                && vd.init.as_ref().is_some_and(is_compile_error_expr)
-            {
-                return Some(i);
+        .filter_map(|(i, stmt)| match stmt {
+            IrStmt::VarDecl(vd) if vd.init.as_ref().is_some_and(is_compile_error_expr) => Some(i),
+            IrStmt::Return { value } if value.as_ref().is_some_and(is_compile_error_expr) => {
+                Some(i)
             }
-            None
+            _ => None,
         })
         .collect();
 
@@ -109,7 +114,7 @@ fn convert_vardecl_compile_error(stmts: &mut [IrStmt]) -> bool {
         return false;
     }
 
-    // Phase 2: convert those VarDecls to IrStmt::CompileError
+    // Phase 2: convert those statements to IrStmt::CompileError
     for i in indices {
         let old_stmt = std::mem::replace(
             &mut stmts[i],
@@ -118,10 +123,27 @@ fn convert_vardecl_compile_error(stmts: &mut [IrStmt]) -> bool {
                 msg: String::new(),
             },
         );
-        if let IrStmt::VarDecl(vd) = old_stmt
-            && let Some(IrExpr::CompileError { span, msg }) = vd.init
-        {
-            stmts[i] = IrStmt::CompileError { span, msg };
+        let msg = match old_stmt {
+            IrStmt::VarDecl(vd) => {
+                if let Some(IrExpr::CompileError { msg, .. }) = vd.init {
+                    msg
+                } else {
+                    String::new()
+                }
+            }
+            IrStmt::Return { value } => {
+                if let Some(IrExpr::CompileError { msg, .. }) = value {
+                    msg
+                } else {
+                    String::new()
+                }
+            }
+            _ => String::new(),
+        };
+        if let IrStmt::CompileError { span, msg: old_msg } = &mut stmts[i] {
+            *old_msg = msg;
+            // Keep the default span since we extracted from deconstructed stmt
+            let _ = span;
         }
     }
     true

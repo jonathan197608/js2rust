@@ -1917,3 +1917,58 @@ export function testDeinit() {
         zig
     );
 }
+
+// ── R8-P1-25: matchAll with non-/g RegExp → TypeError ──
+
+/// Literal RegExp without /g passed to matchAll should emit @compileError("TypeError: ...")
+/// Uses transpile_and_assert (no ast-check) because @compileError inside a function
+/// body makes zig ast-check flag "unreachable code" for the function signature —
+/// the compile error fires before the function is ever actually compiled.
+#[test]
+fn test_p1_25_matchall_literal_no_global_panic() {
+    let js = r#"
+export function matchAllNoGlobal(s) {
+    return s.matchAll(/./);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_25_matchall_literal_no_global_panic");
+    println!("=== matchAll with non-global literal ===\n{}", zig);
+    assert!(
+        zig.contains(
+            "@compileError(\"String.prototype.matchAll called with a non-global RegExp argument"
+        ),
+        "Expected @compileError for non-global matchAll:\n{}",
+        zig
+    );
+    // Verify the 'return' keyword is NOT present — dead_code pass converts
+    // Return+CompileError into a plain CompileError statement, avoiding
+    // 'unreachable code' from the 'return' before a noreturn expression.
+    assert!(
+        !zig.contains("return @compileError"),
+        "Return should be stripped by dead_code pass, but got:\n{}",
+        zig
+    );
+}
+
+/// Variable RegExp passed to matchAll should emit a runtime guard on .global
+#[test]
+fn test_p1_25_matchall_var_runtime_guard() {
+    let js = r#"
+export function matchAllVar(s) {
+    const re = new RegExp(".", "g");
+    return s.matchAll(re);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_25_matchall_var_runtime_guard");
+    println!("=== matchAll with regexp variable ===\n{}", zig);
+    assert!(
+        zig.contains(".global"),
+        "Expected '.global' runtime guard for variable matchAll:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("matchAllString"),
+        "Expected 'matchAllString' in:\n{}",
+        zig
+    );
+}

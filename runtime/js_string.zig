@@ -436,10 +436,19 @@ pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
     return parts.toOwnedSlice(alloc);
 }
 
-/// Replace all occurrences of old with new. Returns newly allocated string.
-pub fn replace(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
-    return std.mem.replaceOwned(u8, alloc, s, old, new);
-}
+    /// Replace the first occurrence of old with new. Returns newly allocated string.
+    /// R8-P1-22: JS String.prototype.replace() (without /g) replaces only the
+    /// first occurrence. Previously used std.mem.replaceOwned which replaced ALL
+    /// occurrences — identical to replaceAll. Now uses indexOf to find only the
+    /// first match, then builds the replacement via allocPrint.
+    pub fn replace(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
+        if (old.len == 0) {
+            // Empty search string → prepend replacement before first char
+            return std.fmt.allocPrint(alloc, "{s}{s}", .{ new, s });
+        }
+        const idx = std.mem.indexOf(u8, s, old) orelse return alloc.dupe(u8, s);
+        return std.fmt.allocPrint(alloc, "{s}{s}{s}", .{ s[0..idx], new, s[idx + old.len ..] });
+    }
 
 /// Trim whitespace from both ends. Returns borrowed slice.
 pub fn trim(s: []const u8) []const u8 {
@@ -672,9 +681,25 @@ test "split empty string empty separator (R8 P0-1)" {
 }
 
 test "replace" {
-    const result = try replace(std.testing.allocator, "hello world", "world", "zig");
-    defer std.testing.allocator.free(result);
-    try std.testing.expectEqualStrings("hello zig", result);
+    // Single occurrence — replaced
+    const r1 = try replace(std.testing.allocator, "hello world", "world", "zig");
+    defer std.testing.allocator.free(r1);
+    try std.testing.expectEqualStrings("hello zig", r1);
+
+    // R8-P1-22: Multiple occurrences — only FIRST is replaced (JS spec)
+    const r2 = try replace(std.testing.allocator, "abcabc", "b", "X");
+    defer std.testing.allocator.free(r2);
+    try std.testing.expectEqualStrings("aXcabc", r2);
+
+    // Not found — original string returned (newly allocated copy)
+    const r3 = try replace(std.testing.allocator, "hello", "xyz", "Z");
+    defer std.testing.allocator.free(r3);
+    try std.testing.expectEqualStrings("hello", r3);
+
+    // Empty search string — replacement prepended
+    const r4 = try replace(std.testing.allocator, "abc", "", "X");
+    defer std.testing.allocator.free(r4);
+    try std.testing.expectEqualStrings("Xabc", r4);
 }
 
 test "trim" {

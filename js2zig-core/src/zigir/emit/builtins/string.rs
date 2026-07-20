@@ -251,12 +251,44 @@ impl Emitter {
     }
 
     // ── String.matchAll() ───────────────────────────────
+    /// R8-P1-25: JS spec requires matchAll to throw TypeError if the RegExp
+    /// does not have the /g flag. Literal RegExp without /g is caught at
+    /// lower time (IrExpr::CompileError). Variable RegExp needs a runtime guard.
     pub(super) fn emit_string_match_all(
         &mut self,
         obj: Option<&str>,
         regex_info: Option<&crate::zigir::types::IrRegexInfo>,
     ) {
-        self.emit_string_match_like(obj, regex_info, "matchAllString");
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            // No regex info — no RegExp argument, skip validation
+            None => {
+                self.write(&format!("js_string_regex.matchAllString({})", receiver));
+            }
+            // Literal RegExp with /g — valid, emit matchAllString
+            // (Literal without /g is caught at lower time — won't reach here)
+            Some(ri) if !ri.is_var_ref => {
+                if let Some(pattern) = &ri.pattern {
+                    self.write(&format!(
+                        "js_string_regex.matchAllString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
+                        receiver, pattern
+                    ));
+                }
+            }
+            // Variable RegExp — runtime guard on .global field
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!(
+                        "(if (!{}.global) @panic(\"TypeError: String.prototype.matchAll called with a non-global RegExp argument\") else js_string_regex.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\"))",
+                        var, receiver, var
+                    ));
+                }
+            }
+            // Fallback (shouldn't reach)
+            Some(_) => {
+                self.emit_string_match_like(obj, regex_info, "matchAllString");
+            }
+        }
     }
 
     // ── String.search() ─────────────────────────────────

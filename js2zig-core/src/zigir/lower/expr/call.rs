@@ -3,6 +3,7 @@
 
 use oxc_ast::ast::*;
 
+use crate::native_builtins::BuiltinCall;
 use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
@@ -229,6 +230,21 @@ impl Lowerer {
 
             // ── Extract regex metadata for match/matchAll/search ──
             let regex_info = Self::extract_regex_info(ce, &builtin);
+
+            // R8-P1-25: matchAll with non-/g literal RegExp → compile error
+            // JS spec §22.1.3.19: String.prototype.matchAll called with a
+            // non-global RegExp argument must throw TypeError. For literal
+            // RegExp we know at compile time whether /g is present.
+            if matches!(builtin, BuiltinCall::StringMatchAll)
+                && let Some(ref ri) = regex_info
+                && !ri.is_var_ref
+                && !ri.has_global
+            {
+                return self.compile_error_expr(
+                    ce.span,
+                    "String.prototype.matchAll called with a non-global RegExp argument (TypeError)",
+                );
+            }
 
             // ── Derive TypedArray type suffix for JsTypedArray calls ──
             let ta_type_suffix = if module == BuiltinModule::JsTypedArray {
