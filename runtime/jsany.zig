@@ -422,32 +422,121 @@ pub const JsAny = union(enum) {
 
     // === Comparison ===
 
+    /// Loose equality (==): JS spec §7.2.13.
+    /// R8-P1-15: Previously reduced arrays/objects to .length via toValue(),
+    /// making distinct arrays with same length "equal". Now uses reference
+    /// identity for arrays/objects (two distinct objects are never ==).
     pub fn eq(self: JsAny, other: JsAny) bool {
-        return self.toValue().eq(other.toValue());
+        // Reference identity for heap-allocated containers
+        switch (self) {
+            .array => |a| {
+                switch (other) {
+                    .array => |b| return a == b, // pointer identity
+                    .object, .null => return false,
+                    .value => |v| switch (v) {
+                        .null, .undefined => return false,
+                        else => return false, // array == primitive → false
+                    },
+                }
+            },
+            .object => |o| {
+                switch (other) {
+                    .object => |b| return o == b, // pointer identity
+                    .array, .null => return false,
+                    .value => |v| switch (v) {
+                        .null, .undefined => return false,
+                        else => return false, // object == primitive → false
+                    },
+                }
+            },
+            .null => {
+                switch (other) {
+                    .null => return true,
+                    .value => |v| switch (v) {
+                        .null, .undefined => return true,
+                        else => return false,
+                    },
+                    else => return false,
+                }
+            },
+            .value => |v| switch (v) {
+                .null, .undefined => {
+                    switch (other) {
+                        .null => return true,
+                        .value => |ov| switch (ov) {
+                            .null, .undefined => return true,
+                            else => return false,
+                        },
+                        else => return false, // null/undefined == array/object → false
+                    }
+                },
+                else => {
+                    // value primitive vs array/object/null → false (no ToPrimitive conversion)
+                    switch (other) {
+                        .array, .object, .null => return false,
+                        else => {}, // both are .value primitives — fall through to JsValue.eq
+                    }
+                },
+            },
+        }
+        // Both are .value primitives — delegate to JsValue.eq (loose ==)
+        return self.value.eq(other.value);
     }
 
     /// Strict equality (===): same type AND same value. No coercion.
+    /// R8-P1-15: Reference identity for arrays/objects (two distinct
+    /// objects are never ===). Different JsAny tags → always false.
     pub fn strictEq(self: JsAny, other: JsAny) bool {
-        return self.toValue().strictEq(other.toValue());
+        // Different top-level tags → always false (strict requires same type)
+        const self_tag: std.meta.Tag(JsAny) = self;
+        const other_tag: std.meta.Tag(JsAny) = other;
+        if (self_tag != other_tag) {
+            // Exception: .value(.null) and .null are both JS null
+            if (self.isNull() and other.isNull()) return true;
+            return false;
+        }
+        return switch (self) {
+            .value => |v| v.strictEq(other.value),
+            .array => |a| a == other.array, // pointer identity
+            .object => |o| o == other.object, // pointer identity
+            .null => true,
+        };
     }
 
     pub fn neq(self: JsAny, other: JsAny) bool {
         return !self.eq(other);
     }
 
+    /// Ordering comparison (<): JS spec §7.2.14 Abstract Relational Comparison.
+    /// R8-P1-16: Both-strings → lexicographic; otherwise → numeric via asF64().
+    /// Previously always used asF64(), making string<string always return false.
     pub fn lt(self: JsAny, other: JsAny) bool {
+        if (self.isString() and other.isString()) {
+            return std.mem.order(u8, self.value.string, other.value.string) == .lt;
+        }
         return self.asF64() < other.asF64();
     }
 
     pub fn le(self: JsAny, other: JsAny) bool {
+        if (self.isString() and other.isString()) {
+            const ord = std.mem.order(u8, self.value.string, other.value.string);
+            return ord == .lt or ord == .eq;
+        }
         return self.asF64() <= other.asF64();
     }
 
     pub fn gt(self: JsAny, other: JsAny) bool {
+        if (self.isString() and other.isString()) {
+            return std.mem.order(u8, self.value.string, other.value.string) == .gt;
+        }
         return self.asF64() > other.asF64();
     }
 
     pub fn ge(self: JsAny, other: JsAny) bool {
+        if (self.isString() and other.isString()) {
+            const ord = std.mem.order(u8, self.value.string, other.value.string);
+            return ord == .gt or ord == .eq;
+        }
         return self.asF64() >= other.asF64();
     }
 
@@ -1204,4 +1293,87 @@ test "JsAny.add fallback concat with array operand (R8-P1-10)" {
     const result = arr.add(JsAny.fromString("x"), alloc);
     defer alloc.free(result.value.string);
     try std.testing.expectEqualStrings("[1,2]x", result.value.string);
+}
+
+test "JsAny.eq reference identity for arrays and objects (R8-P1-15)" {
+    const alloc = std.testing.allocator;
+
+    // Two distinct arrays with same contents are NOT equal (reference identity)
+    var arr1 = try JsAny.newArray(alloc);
+    defer arr1.deinit(alloc);
+    try arr1.arrayPush(alloc, JsAny.fromI64(1));
+    try arr1.arrayPush(alloc, JsAny.fromI64(2));
+    try arr1.arrayPush(alloc, JsAny.fromI64(3));
+
+    var arr2 = try JsAny.newArray(alloc);
+    defer arr2.deinit(alloc);
+    try arr2.arrayPush(alloc, JsAny.fromI64(1));
+    try arr2.arrayPush(alloc, JsAny.fromI64(2));
+    try arr2.arrayPush(alloc, JsAny.fromI64(3));
+
+    try std.testing.expect(!arr1.eq(arr2)); // distinct → false
+    try std.testing.expect(!arr1.strictEq(arr2)); // distinct → false
+
+    // Same reference IS equal
+    try std.testing.expect(arr1.eq(arr1)); // same pointer → true
+    try std.testing.expect(arr1.strictEq(arr1)); // same pointer → true
+
+    // Two distinct empty objects are NOT equal
+    var obj1 = try JsAny.newObject(alloc);
+    defer obj1.deinit(alloc);
+    var obj2 = try JsAny.newObject(alloc);
+    defer obj2.deinit(alloc);
+
+    try std.testing.expect(!obj1.eq(obj2)); // distinct → false
+    try std.testing.expect(!obj1.strictEq(obj2)); // distinct → false
+    try std.testing.expect(obj1.eq(obj1)); // same pointer → true
+
+    // Array vs object → false
+    try std.testing.expect(!arr1.eq(obj1));
+    try std.testing.expect(!arr1.strictEq(obj1));
+
+    // Array vs primitive → false
+    try std.testing.expect(!arr1.eq(JsAny.fromI64(3)));
+    try std.testing.expect(!arr1.strictEq(JsAny.fromI64(3)));
+
+    // Object vs null → false
+    try std.testing.expect(!obj1.eq(JsAny.fromNull()));
+    try std.testing.expect(!obj1.strictEq(JsAny.fromNull()));
+
+    // JsAny.null == JsAny.null → true; JsAny.null == JsAny.value(.null) → true
+    try std.testing.expect(JsAny.fromNull().eq(JsAny.fromNull()));
+    try std.testing.expect(JsAny.fromNull().eq(JsAny.fromValue(.null)));
+}
+
+test "JsAny.lt/le/gt/ge string lexicographic comparison (R8-P1-16)" {
+    // String < string → lexicographic
+    const a = JsAny.fromString("apple");
+    const b = JsAny.fromString("banana");
+    try std.testing.expect(a.lt(b)); // "apple" < "banana"
+    try std.testing.expect(!b.lt(a)); // "banana" < "apple" → false
+    try std.testing.expect(a.le(b));
+    try std.testing.expect(b.gt(a));
+    try std.testing.expect(b.ge(a));
+
+    // Equal strings
+    const c = JsAny.fromString("hello");
+    const d = JsAny.fromString("hello");
+    try std.testing.expect(!c.lt(d)); // equal → not less
+    try std.testing.expect(c.le(d)); // equal → le is true
+    try std.testing.expect(c.ge(d));
+    try std.testing.expect(!c.gt(d));
+
+    // Prefix: "abc" < "abcd"
+    const e = JsAny.fromString("abc");
+    const f = JsAny.fromString("abcd");
+    try std.testing.expect(e.lt(f));
+    try std.testing.expect(!f.lt(e));
+
+    // Non-string: numeric comparison still works
+    const x = JsAny.fromI64(3);
+    const y = JsAny.fromI64(5);
+    try std.testing.expect(x.lt(y));
+    try std.testing.expect(!y.lt(x));
+    try std.testing.expect(x.le(y));
+    try std.testing.expect(y.gt(x));
 }

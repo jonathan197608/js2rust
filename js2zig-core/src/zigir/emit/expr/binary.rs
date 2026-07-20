@@ -318,24 +318,6 @@ impl Emitter {
         }
     }
 
-    /// Emit an expression as `.asF64()`, wrapping with `JsAny.from()` first
-    /// if it is not already a JsAny-typed value.
-    ///
-    /// Used for ordering comparisons (Lt/Le/Gt/Ge) where comparing via f64
-    /// preserves float precision (vs the old `.asI64()` which truncated
-    /// floats like 5.5 → 5, causing `(5.5).asI64() < (5.6).asI64()` to be false).
-    fn emit_expr_as_f64(&mut self, expr: &crate::zigir::types::IrExpr, is_jsany: bool) {
-        self.write("(");
-        if is_jsany {
-            self.emit_expr(expr);
-            self.write(".asF64())");
-        } else {
-            self.write("JsAny.from(");
-            self.emit_expr(expr);
-            self.write(").asF64())");
-        }
-    }
-
     pub(super) fn emit_jsany_comparison(
         &mut self,
         op: crate::zigir::ops::BinOp,
@@ -344,7 +326,6 @@ impl Emitter {
         left_is_jsany: bool,
         right_is_jsany: bool,
     ) {
-        use crate::zigir::emit::helpers::bin_op_to_zig;
         use crate::zigir::ops::BinOp;
 
         match op {
@@ -367,20 +348,23 @@ impl Emitter {
                     self.write(")");
                 }
             }
-            // Ordering: use JsAny.from().asF64() for numeric comparison.
-            //
-            // We use .asF64() (not .asI64()) because JS numbers are doubles,
-            // and ordering of float values like 5.5 < 5.6 must be preserved.
-            // The old .asI64() path truncated floats, causing wrong results
-            // when comparing JsAny values holding floats.
+            // Ordering: delegate to JsAny runtime methods (lt/le/gt/ge).
+            // R8-P1-16: Previously inlined .asF64() which always compared
+            // numerically, making string<string always return false.
+            // The runtime methods now check isString() for lexicographic
+            // comparison before falling back to numeric asF64().
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                let zig_op = bin_op_to_zig(op);
-                // Both sides need to go through JsAny for consistent comparison.
-                // For already-JsAny sides, call .asF64() directly.
-                // For non-JsAny sides, wrap with JsAny.from() then .asF64().
-                self.emit_expr_as_f64(left, left_is_jsany);
-                self.write(&format!(" {} ", zig_op));
-                self.emit_expr_as_f64(right, right_is_jsany);
+                let method = match op {
+                    BinOp::Lt => "lt",
+                    BinOp::Le => "le",
+                    BinOp::Gt => "gt",
+                    BinOp::Ge => "ge",
+                    _ => unreachable!(),
+                };
+                self.emit_expr_as_jsany(left, left_is_jsany);
+                self.write(&format!(".{}(", method));
+                self.emit_expr_as_jsany(right, right_is_jsany);
+                self.write(")");
             }
             _ => {
                 self.emit_default_binop(op, left, right);

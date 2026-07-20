@@ -1382,7 +1382,9 @@ function addI64ToMapVal() {
 
 /// R4-3 fix: JsAny ordering comparison (Lt/Le/Gt/Ge) must use .asF64()
 /// (preserves float ordering like 5.5 < 5.6), not .asI64() (which truncated
-/// floats, making `(5.5).asI64() < (5.6).asI64()` false).
+/// R4-3 / R8-P1-16: JsAny ordering now uses runtime .lt()/.le()/.gt()/.ge()
+/// which internally checks isString() for lexicographic, then falls back to
+/// .asF64() for numeric — preserving float precision (NOT .asI64()).
 #[test]
 fn test_r4_3_jsany_cmp_f64_preserves_float() {
     let js = r#"
@@ -1396,11 +1398,11 @@ function cmpMapVal() {
 "#;
     let zig = transpile_and_check(js, "test_r4_3_jsany_cmp_f64_preserves_float");
     println!("=== R4-3 JsAny < F64 ordering ===\n{}", zig);
-    // Ordering must route through .asF64() on both sides so floats compare
-    // correctly (NOT .asI64() which would truncate 5.5 → 5, 5.6 → 5).
+    // Ordering must emit .lt() runtime method (which uses .asF64() internally
+    // for numeric operands, preserving float precision).
     assert!(
-        zig.contains(".asF64()"),
-        "JsAny ordering with F64 should use .asF64() to preserve floats: {}",
+        zig.contains(".lt("),
+        "JsAny ordering should emit .lt() runtime method: {}",
         zig
     );
     // Should NOT have .asI64() in the ordering comparison.
