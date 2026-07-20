@@ -223,6 +223,74 @@ pub unsafe extern "C" fn host_regex_match_all(
     }
 }
 
+/// str.replace(regex, replacement) → string
+///
+/// Replaces the first match of the regex pattern with the replacement string.
+/// On pattern compilation error or no match, returns the original text.
+fn host_regex_replace_inner(pattern: HostStr, text: HostStr, replacement: HostStr) -> String {
+    match fancy_regex::Regex::new(&pattern) {
+        Ok(re) => re.replace(&text, replacement.as_ref()).to_string(),
+        Err(_) => text.to_string(),
+    }
+}
+
+/// # Safety
+///
+/// Called from Zig via C ABI. ptr/len must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn host_regex_replace(
+    pattern_ptr: *const u8,
+    pattern_len: usize,
+    text_ptr: *const u8,
+    text_len: usize,
+    replacement_ptr: *const u8,
+    replacement_len: usize,
+) -> JsStr {
+    let pattern = unsafe { HostStr::from_raw(pattern_ptr, pattern_len) };
+    let text = unsafe { HostStr::from_raw(text_ptr, text_len) };
+    let replacement = unsafe { HostStr::from_raw(replacement_ptr, replacement_len) };
+    let result = host_regex_replace_inner(pattern, text, replacement);
+    if result.is_empty() {
+        JsStr::empty()
+    } else {
+        JsStr::new(&result)
+    }
+}
+
+/// str.replaceAll(regex, replacement) → string
+///
+/// Replaces all matches of the regex pattern with the replacement string.
+/// On pattern compilation error or no match, returns the original text.
+fn host_regex_replace_all_inner(pattern: HostStr, text: HostStr, replacement: HostStr) -> String {
+    match fancy_regex::Regex::new(&pattern) {
+        Ok(re) => re.replace_all(&text, replacement.as_ref()).to_string(),
+        Err(_) => text.to_string(),
+    }
+}
+
+/// # Safety
+///
+/// Called from Zig via C ABI. ptr/len must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn host_regex_replace_all(
+    pattern_ptr: *const u8,
+    pattern_len: usize,
+    text_ptr: *const u8,
+    text_len: usize,
+    replacement_ptr: *const u8,
+    replacement_len: usize,
+) -> JsStr {
+    let pattern = unsafe { HostStr::from_raw(pattern_ptr, pattern_len) };
+    let text = unsafe { HostStr::from_raw(text_ptr, text_len) };
+    let replacement = unsafe { HostStr::from_raw(replacement_ptr, replacement_len) };
+    let result = host_regex_replace_all_inner(pattern, text, replacement);
+    if result.is_empty() {
+        JsStr::empty()
+    } else {
+        JsStr::new(&result)
+    }
+}
+
 /// # Safety
 ///
 /// Called from Zig via C ABI. ptr/len must be valid. out_count must be a valid pointer.

@@ -303,6 +303,40 @@ export fn host_regex_match_all(
     out_group_count.* = 0;
     return .{ .ptr = undefined, .len = 0 };
 }
+
+export fn host_regex_replace(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    replacement_ptr: [*]const u8,
+    replacement_len: usize,
+) callconv(.c) JsStr {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    _ = replacement_ptr;
+    _ = replacement_len;
+    return .{ .ptr = undefined, .len = 0 };
+}
+
+export fn host_regex_replace_all(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    replacement_ptr: [*]const u8,
+    replacement_len: usize,
+) callconv(.c) JsStr {
+    _ = pattern_ptr;
+    _ = pattern_len;
+    _ = text_ptr;
+    _ = text_len;
+    _ = replacement_ptr;
+    _ = replacement_len;
+    return .{ .ptr = undefined, .len = 0 };
+}
 "#
     .to_string()
 }

@@ -246,6 +246,20 @@ impl Lowerer {
                 );
             }
 
+            // R8-P1-25: replaceAll with non-/g literal RegExp → compile error
+            // JS spec §22.1.3.18: String.prototype.replaceAll called with a
+            // non-global RegExp argument must throw TypeError.
+            if matches!(builtin, BuiltinCall::StringReplaceAll)
+                && let Some(ref ri) = regex_info
+                && !ri.is_var_ref
+                && !ri.has_global
+            {
+                return self.compile_error_expr(
+                    ce.span,
+                    "String.prototype.replaceAll called with a non-global RegExp argument (TypeError)",
+                );
+            }
+
             // ── Derive TypedArray type suffix for JsTypedArray calls ──
             let ta_type_suffix = if module == BuiltinModule::JsTypedArray {
                 obj_name.as_ref().and_then(|name| {

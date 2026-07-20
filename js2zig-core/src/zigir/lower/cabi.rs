@@ -631,7 +631,11 @@ impl Lowerer {
         use oxc_ast::ast::Expression;
 
         match builtin {
-            BuiltinCall::StringMatch | BuiltinCall::StringMatchAll | BuiltinCall::StringSearch => {}
+            BuiltinCall::StringMatch
+            | BuiltinCall::StringMatchAll
+            | BuiltinCall::StringSearch
+            | BuiltinCall::StringReplace
+            | BuiltinCall::StringReplaceAll => {}
             // RegExpTest/RegExpExec: extract pattern from the *receiver* (callee object)
             BuiltinCall::RegExpTest | BuiltinCall::RegExpExec => {
                 return if let Expression::StaticMemberExpression(sme) = &ce.callee {

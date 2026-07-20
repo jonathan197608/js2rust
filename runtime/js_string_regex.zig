@@ -36,6 +36,24 @@ extern fn host_regex_match_all(
     out_group_count: *usize,
 ) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
 
+extern fn host_regex_replace(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    replacement_ptr: [*]const u8,
+    replacement_len: usize,
+) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
+
+extern fn host_regex_replace_all(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    replacement_ptr: [*]const u8,
+    replacement_len: usize,
+) callconv(.c) extern struct { ptr: [*]const u8, len: isize };
+
 /// Match string against regex via host_regex_match C ABI.
 ///
 /// Returns null if no match, or an array of matched substrings.
@@ -116,4 +134,28 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
     }
 
     return outer_arr;
+}
+
+/// String.replace(regex, replacement) — replaces the first match.
+/// Returns the result string (always non-null in JS).
+pub fn replaceRegex(alloc: Allocator, s: []const u8, pattern: []const u8, replacement: []const u8) ![]const u8 {
+    const result = host_regex_replace(pattern.ptr, pattern.len, s.ptr, s.len, replacement.ptr, replacement.len);
+    if (result.len == 0 and s.len == 0) {
+        // Both input and result are empty — nothing to dupe
+        return alloc.dupe(u8, "");
+    }
+    const bytes = result.ptr[0..@intCast(result.len)];
+    return alloc.dupe(u8, bytes);
+}
+
+/// String.replaceAll(regex, replacement) — replaces all matches.
+/// Returns the result string (always non-null in JS).
+pub fn replaceAllRegex(alloc: Allocator, s: []const u8, pattern: []const u8, replacement: []const u8) ![]const u8 {
+    const result = host_regex_replace_all(pattern.ptr, pattern.len, s.ptr, s.len, replacement.ptr, replacement.len);
+    if (result.len == 0 and s.len == 0) {
+        // Both input and result are empty — nothing to dupe
+        return alloc.dupe(u8, "");
+    }
+    const bytes = result.ptr[0..@intCast(result.len)];
+    return alloc.dupe(u8, bytes);
 }

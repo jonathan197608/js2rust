@@ -65,9 +65,169 @@ return Number.MIN_SAFE_INTEGER;
     let zig = transpile_and_check(js, "test_native_proto_number_constants");
 
     // Verify all 8 constants are generated as Zig equivalents
+    assert!(zig.contains("floatMax"), "Expected 'floatMax' in:\n{}", zig);
+    assert!(zig.contains("floatMin"), "Expected 'floatMin' in:\n{}", zig);
+    assert!(zig.contains("nan"), "Expected 'nan' in:\n{}", zig);
     assert!(
-        zig.contains("std.math.floatMax(f64)"),
-        "Expected 'std.math.floatMax(f64)' in:\n{}",
+        zig.contains("9007199254740991"),
+        "Expected MAX_SAFE_INTEGER value in:\n{}",
+        zig
+    );
+}
+
+// ── R8-P1-23: String.replace/replaceAll RegExp routing ──
+
+/// Plain string replace (no RegExp) should still use js_string.replace (first-only)
+#[test]
+fn test_p1_23_replace_plain_string() {
+    let js = r#"
+export function replacePlain(s) {
+    return s.replace("world", "zig");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_plain_string");
+    println!("=== replace plain string ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected 'js_string.replace' for plain-string replace:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("replaceRegex"),
+        "Plain-string replace should NOT use replaceRegex:\n{}",
+        zig
+    );
+}
+
+/// Literal RegExp replace should emit replaceRegex with pattern literal
+#[test]
+fn test_p1_23_replace_literal_regexp() {
+    let js = r#"
+export function replaceRegex(s) {
+    return s.replace(/\d+/, "NUM");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_literal_regexp");
+    println!("=== replace literal regexp ===\n{}", zig);
+    assert!(
+        zig.contains("js_string_regex.replaceRegex("),
+        "Expected 'replaceRegex' for literal RegExp replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("\\\\d+"),
+        "Expected escaped pattern in replaceRegex call:\n{}",
+        zig
+    );
+}
+
+/// Variable RegExp replace should emit replaceRegex with var.pattern
+#[test]
+fn test_p1_23_replace_var_regexp() {
+    let js = r#"
+export function replaceRegexVar(s) {
+    const re = new RegExp("\\d+", "g");
+    return s.replace(re, "NUM");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_var_regexp");
+    println!("=== replace variable regexp ===\n{}", zig);
+    assert!(
+        zig.contains("js_string_regex.replaceRegex("),
+        "Expected 'replaceRegex' for variable RegExp replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("re.pattern"),
+        "Expected 're.pattern' for variable RegExp replace:\n{}",
+        zig
+    );
+}
+
+/// Plain string replaceAll (no RegExp) should still use js_string.replaceAll
+#[test]
+fn test_p1_23_replace_all_plain_string() {
+    let js = r#"
+export function replaceAllPlain(s) {
+    return s.replaceAll("x", "y");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_all_plain_string");
+    println!("=== replaceAll plain string ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replaceAll("),
+        "Expected 'js_string.replaceAll' for plain-string replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("replaceAllRegex"),
+        "Plain-string replaceAll should NOT use replaceAllRegex:\n{}",
+        zig
+    );
+}
+
+/// Literal RegExp with /g passed to replaceAll should emit replaceAllRegex
+#[test]
+fn test_p1_23_replace_all_literal_regexp() {
+    let js = r#"
+export function replaceAllRegex(s) {
+    return s.replaceAll(/\d+/g, "NUM");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_all_literal_regexp");
+    println!("=== replaceAll literal regexp with /g ===\n{}", zig);
+    assert!(
+        zig.contains("js_string_regex.replaceAllRegex("),
+        "Expected 'replaceAllRegex' for literal /g RegExp replaceAll:\n{}",
+        zig
+    );
+}
+
+/// Variable RegExp passed to replaceAll should emit runtime guard on .global
+#[test]
+fn test_p1_23_replace_all_var_regexp() {
+    let js = r#"
+export function replaceAllRegexVar(s) {
+    const re = new RegExp("\\d+", "g");
+    return s.replaceAll(re, "NUM");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_23_replace_all_var_regexp");
+    println!("=== replaceAll variable regexp ===\n{}", zig);
+    assert!(
+        zig.contains(".global"),
+        "Expected '.global' runtime guard for variable replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("replaceAllRegex"),
+        "Expected 'replaceAllRegex' in:\n{}",
+        zig
+    );
+}
+
+/// Literal RegExp without /g passed to replaceAll should emit @compileError (TypeError)
+/// Uses transpile_and_assert (no ast-check) because @compileError inside function
+/// body triggers zig ast-check "unreachable code" warnings.
+#[test]
+fn test_p1_23_replace_all_literal_no_global_panic() {
+    let js = r#"
+export function replaceAllNoGlobal(s) {
+    return s.replaceAll(/\d+/, "NUM");
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p1_23_replace_all_literal_no_global_panic");
+    println!("=== replaceAll with non-global literal regexp ===\n{}", zig);
+    assert!(
+        zig.contains(
+            "@compileError(\"String.prototype.replaceAll called with a non-global RegExp argument"
+        ),
+        "Expected @compileError for non-global replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("return @compileError"),
+        "Return should be stripped by dead_code pass, but got:\n{}",
         zig
     );
 }

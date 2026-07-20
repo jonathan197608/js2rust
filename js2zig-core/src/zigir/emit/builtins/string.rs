@@ -27,6 +27,15 @@ impl Emitter {
                 self.emit_string_search(obj, args, regex_info);
                 return;
             }
+            // R8-P1-23: replace/replaceAll branch on regex_info for RegExp routing
+            "replace" => {
+                self.emit_string_replace(obj, args, regex_info);
+                return;
+            }
+            "replaceAll" => {
+                self.emit_string_replace_all(obj, args, regex_info);
+                return;
+            }
             _ => {}
         }
 
@@ -148,8 +157,6 @@ impl Emitter {
             // ── With allocator, 2 args, fallible ──
             "padStart" => ("padStart", true, true, 2, 2, &[], "js_string"),
             "padEnd" => ("padEnd", true, true, 2, 2, &[], "js_string"),
-            "replace" => ("replace", true, true, 2, 2, &[], "js_string"),
-            "replaceAll" => ("replaceAll", true, true, 2, 2, &[], "js_string"),
             // ── ICU-dependent: With allocator, 0-1 arg, fallible ──
             "normalize" => ("normalize", true, true, 0, 1, &["\"NFC\""], "js_string_icu"),
             // ── Fallback ──
@@ -327,6 +334,139 @@ impl Emitter {
                 } else {
                     self.write(&format!("host_regex.regex_search(\"\", {})", receiver));
                 }
+            }
+        }
+    }
+
+    // ── String.replace() ──────────────────────────────────
+    /// R8-P1-23: Branch on regex_info for RegExp vs plain-string routing.
+    /// - None → js_string.replace(alloc, s, arg1, arg2)  (plain-string, first-only)
+    /// - Some(ri) literal → js_string_regex.replaceRegex(alloc, s, "pattern", arg2)
+    /// - Some(ri) variable → js_string_regex.replaceRegex(alloc, s, var.pattern, arg2)
+    pub(super) fn emit_string_replace(
+        &mut self,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            // Variable RegExp → runtime regex replace with var.pattern
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!(
+                        "js_string_regex.replaceRegex(js_allocator.allocator(), {}, {}.pattern, ",
+                        receiver, var
+                    ));
+                    if let Some(arg) = args.get(1) {
+                        self.emit_expr(arg);
+                    } else {
+                        self.write("\"\"");
+                    }
+                    self.write(") catch @panic(\"OOM: string method\")");
+                }
+            }
+            // Literal RegExp → compile-time known pattern
+            Some(ri) => {
+                if let Some(pattern) = &ri.pattern {
+                    self.write(&format!(
+                        "js_string_regex.replaceRegex(js_allocator.allocator(), {}, \"{}\", ",
+                        receiver, pattern
+                    ));
+                    if let Some(arg) = args.get(1) {
+                        self.emit_expr(arg);
+                    } else {
+                        self.write("\"\"");
+                    }
+                    self.write(") catch @panic(\"OOM: string method\")");
+                }
+            }
+            // No regex info → plain-string replace (first occurrence only)
+            None => {
+                self.write("js_string.replace(js_allocator.allocator(), ");
+                self.write(receiver);
+                self.write(", ");
+                if let Some(arg) = args.first() {
+                    self.emit_expr(arg);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write(", ");
+                if let Some(arg) = args.get(1) {
+                    self.emit_expr(arg);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write(") catch @panic(\"OOM: string method\")");
+            }
+        }
+    }
+
+    // ── String.replaceAll() ───────────────────────────────
+    /// R8-P1-23: Branch on regex_info for RegExp vs plain-string routing.
+    ///
+    /// - None → js_string.replaceAll(alloc, s, arg1, arg2)  (plain-string)
+    /// - Some(ri) literal with /g → js_string_regex.replaceAllRegex(alloc, s, "pattern", arg2)
+    /// - Some(ri) variable with /g → js_string_regex.replaceAllRegex(alloc, s, var.pattern, arg2)
+    ///   (runtime guard on .global for variable RegExp)
+    ///
+    /// R8-P1-25: Literal RegExp without /g is caught at lower time (CompileError).
+    pub(super) fn emit_string_replace_all(
+        &mut self,
+        obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
+        regex_info: Option<&crate::zigir::types::IrRegexInfo>,
+    ) {
+        let receiver = obj.unwrap_or("\"\"");
+        match regex_info {
+            // Variable RegExp → runtime guard on .global + regex replaceAll
+            Some(ri) if ri.is_var_ref => {
+                if let Some(var) = &ri.var_name {
+                    self.write(&format!(
+                        "(if (!{}.global) @panic(\"TypeError: String.prototype.replaceAll called with a non-global RegExp argument\") else js_string_regex.replaceAllRegex(js_allocator.allocator(), {}, {}.pattern, ",
+                        var, receiver, var
+                    ));
+                    if let Some(arg) = args.get(1) {
+                        self.emit_expr(arg);
+                    } else {
+                        self.write("\"\"");
+                    }
+                    self.write(") catch @panic(\"OOM: string method\"))");
+                }
+            }
+            // Literal RegExp with /g → compile-time known pattern
+            // (Literal without /g is caught at lower time — won't reach here)
+            Some(ri) => {
+                if let Some(pattern) = &ri.pattern {
+                    self.write(&format!(
+                        "js_string_regex.replaceAllRegex(js_allocator.allocator(), {}, \"{}\", ",
+                        receiver, pattern
+                    ));
+                    if let Some(arg) = args.get(1) {
+                        self.emit_expr(arg);
+                    } else {
+                        self.write("\"\"");
+                    }
+                    self.write(") catch @panic(\"OOM: string method\")");
+                }
+            }
+            // No regex info → plain-string replaceAll
+            None => {
+                self.write("js_string.replaceAll(js_allocator.allocator(), ");
+                self.write(receiver);
+                self.write(", ");
+                if let Some(arg) = args.first() {
+                    self.emit_expr(arg);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write(", ");
+                if let Some(arg) = args.get(1) {
+                    self.emit_expr(arg);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write(") catch @panic(\"OOM: string method\")");
             }
         }
     }

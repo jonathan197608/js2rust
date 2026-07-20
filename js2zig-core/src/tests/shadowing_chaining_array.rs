@@ -114,11 +114,12 @@ fn test_method_chaining_encodeuri_replace() {
     "#;
     let zig = transpile_and_assert(js, "test_method_chaining_encodeuri_replace");
     println!("=== Method chaining: encodeURI().replace() ===\n{}", zig);
+    // R8-P1-23: replace with RegExp literal now routes to replaceRegex
     // The object of .replace() is a CallExpression (encodeURIComponent(str))
     // callee_object_repr_mut should emit it inline as the object argument.
     assert!(
-        zig.contains("js_string.replace("),
-        "Expected js_string.replace() call"
+        zig.contains("js_string_regex.replaceRegex("),
+        "Expected js_string_regex.replaceRegex() call for RegExp literal"
     );
     assert!(
         zig.contains("encodeURI") || zig.contains("encodeURIComponent"),
