@@ -91,11 +91,30 @@ pub fn fromEntries(alloc: Allocator, from_entries: []const Entry) !JsValueHashMa
 }
 
 /// Object.assign — copy entries from source to target HashMap.
-pub fn assign(target: *JsValueHashMap, source: *const JsValueHashMap) !void {
+/// R8-P1-27: Keys must be deep-copied (alloc.dupe) to avoid sharing
+/// key pointers with the source. If both source and target are later
+/// deinited (JsAny.deinit frees each key), shared pointers would
+/// double-free.
+pub fn assign(alloc: Allocator, target: *JsValueHashMap, source: *const JsValueHashMap) !void {
     var siter = source.iterator();
     while (siter.next()) |entry| {
-        try target.put(entry.key_ptr.*, entry.value_ptr.*);
+        const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        try target.put(key_copy, entry.value_ptr.*);
     }
+}
+
+/// Free all key strings in a JsValueHashMap, then deinit the map itself.
+/// R8-P1-27: Since assign/create/defineProperties now dupe keys, the
+/// HashMap's own deinit() does NOT free those duped strings. This helper
+/// iterates the map, frees each key, then calls deinit(). For JsAny
+/// objects, JsAny.deinit() already handles key freeing; this is for
+/// standalone JsValueHashMap unit-test cleanup.
+pub fn deinitWithKeys(alloc: Allocator, map: *JsValueHashMap) void {
+    var iter = map.iterator();
+    while (iter.next()) |entry| {
+        alloc.free(entry.key_ptr.*);
+    }
+    map.deinit();
 }
 
 /// Object.hasOwn — check if key exists in HashMap.
@@ -150,12 +169,12 @@ test "entries" {
 test "assign" {
     const alloc = std.testing.allocator;
     var target = JsValueHashMap.init(alloc);
-    defer target.deinit();
+    defer deinitWithKeys(alloc, &target);
     var source = JsValueHashMap.init(alloc);
     defer source.deinit();
     try source.put("a", JsValue{ .int = 1 });
 
-    try assign(&target, &source);
+    try assign(alloc, &target, &source);
     try std.testing.expectEqual(@as(i64, 1), target.get("a").?.int);
 }
 
@@ -163,13 +182,15 @@ test "assign" {
 /// In our simplified implementation without prototype chain:
 /// - If proto is null: return empty HashMap
 /// - If proto is an object: create new HashMap and copy properties from proto
+/// R8-P1-27: Deep-copy keys to avoid sharing pointers with prototype.
 pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
     var obj = JsValueHashMap.init(alloc);
     if (proto) |p| {
-        // Copy all properties from prototype
+        // Copy all properties from prototype with deep-copied keys
         var iter = p.iterator();
         while (iter.next()) |entry| {
-            try obj.put(entry.key_ptr.*, entry.value_ptr.*);
+            const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+            try obj.put(key_copy, entry.value_ptr.*);
         }
     }
     return obj;
@@ -177,8 +198,10 @@ pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
 
 /// Object.defineProperty(obj, key, descriptor) — define a property.
 /// Simplified: just set the value (ignore descriptor). Returns obj per JS spec.
-pub fn defineProperty(obj: *JsValueHashMap, key: []const u8, value: JsValue) !*JsValueHashMap {
-    try obj.put(key, value);
+/// R8-P1-27: Deep-copy key to avoid aliasing with caller's string.
+pub fn defineProperty(alloc: Allocator, obj: *JsValueHashMap, key: []const u8, value: JsValue) !*JsValueHashMap {
+    const key_copy = try alloc.dupe(u8, key);
+    try obj.put(key_copy, value);
     return obj;
 }
 
@@ -191,10 +214,12 @@ pub fn getPrototypeOf(obj: *const JsValueHashMap) ?*const JsValueHashMap {
 
 /// Object.defineProperties(obj, props) — define multiple properties.
 /// Simplified: copy all entries from props to obj (ignore descriptors). Returns obj per JS spec.
-pub fn defineProperties(obj: *JsValueHashMap, props: *const JsValueHashMap) !*JsValueHashMap {
+/// R8-P1-27: Deep-copy keys to avoid sharing pointers with props HashMap.
+pub fn defineProperties(alloc: Allocator, obj: *JsValueHashMap, props: *const JsValueHashMap) !*JsValueHashMap {
     var iter = props.iterator();
     while (iter.next()) |entry| {
-        try obj.put(entry.key_ptr.*, entry.value_ptr.*);
+        const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        try obj.put(key_copy, entry.value_ptr.*);
     }
     return obj;
 }
@@ -245,7 +270,7 @@ test "create with proto" {
     try proto.put("version", JsValue{ .int = 1 });
 
     var obj = try create(alloc, &proto);
-    defer obj.deinit();
+    defer deinitWithKeys(alloc, &obj);
     try std.testing.expect(obj.contains("name"));
     try std.testing.expect(obj.contains("version"));
 }
@@ -253,9 +278,9 @@ test "create with proto" {
 test "defineProperty" {
     const alloc = std.testing.allocator;
     var obj = JsValueHashMap.init(alloc);
-    defer obj.deinit();
+    defer deinitWithKeys(alloc, &obj);
 
-    _ = try defineProperty(&obj, "name", JsValue{ .string = "zig" });
+    _ = try defineProperty(alloc, &obj, "name", JsValue{ .string = "zig" });
     try std.testing.expectEqualStrings("zig", obj.get("name").?.string);
 }
 
@@ -273,14 +298,14 @@ test "getPrototypeOf returns null" {
 test "defineProperties" {
     const alloc = std.testing.allocator;
     var obj = JsValueHashMap.init(alloc);
-    defer obj.deinit();
+    defer deinitWithKeys(alloc, &obj);
 
     var props = JsValueHashMap.init(alloc);
     defer props.deinit();
     try props.put("name", JsValue{ .string = "zig" });
     try props.put("version", JsValue{ .int = 1 });
 
-    _ = try defineProperties(&obj, &props);
+    _ = try defineProperties(alloc, &obj, &props);
     try std.testing.expectEqualStrings("zig", obj.get("name").?.string);
     try std.testing.expectEqual(@as(i64, 1), obj.get("version").?.int);
 }

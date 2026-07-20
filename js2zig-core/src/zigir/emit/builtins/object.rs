@@ -41,12 +41,25 @@ impl Emitter {
             }
             // ── Mutating methods that return obj per JS spec ──
             // Runtime functions have been updated to return the receiver pointer.
+            // R8-P1-27: assign/defineProperty/defineProperties now deep-copy
+            // keys (alloc.dupe), so they require an allocator parameter.
+            "assign" => {
+                self.write("js_object.assign(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.assign\")");
+            }
             "defineProperty" | "defineProperties" => {
                 // Object.defineProperty/defineProperties(obj, ...) → obj
                 // Runtime returns !*JsValueHashMap — must catch error.
-                self.write(&format!("js_object.{}(", method));
+                self.write(&format!("js_object.{}(js_allocator.allocator(), ", method));
                 self.emit_inline_args(args);
                 self.write(&format!(") catch @panic(\"OOM: Object.{}\")", method));
+            }
+            // ── Object.create — needs allocator (deep-copies keys from proto) ──
+            "create" => {
+                self.write("js_object.create(js_allocator.allocator(), ");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"OOM: Object.create\")");
             }
             "setPrototypeOf" => {
                 // Object.setPrototypeOf(obj, proto) → obj
