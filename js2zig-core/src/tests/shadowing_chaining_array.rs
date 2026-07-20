@@ -655,9 +655,12 @@ export function testSortDesc() {
     );
 }
 
+/// R8-P1-21: arr.sort() without compareFn now emits a custom lessThan closure
+/// with comptime type dispatch (JsAny → .lt(), primitives → a < b) instead of
+/// comptime std.sort.asc(T) which fails for JsAny (no < operator).
 #[test]
 fn test_sort_without_comparefn() {
-    // arr.sort() → default ascending sort (no compareFn)
+    // arr.sort() → default sort with custom lessThan closure (no compareFn)
     let js = r#"
 /**
  * @returns {number}
@@ -670,10 +673,15 @@ export function testSortAsc() {
 "#;
     let zig = transpile_and_assert(js, "test_sort_without_comparefn");
     println!("=== sort without compareFn ===\n{}", zig);
-    // Should use the default std.sort.asc comptime
+    // Should emit a custom lessThan closure, not comptime std.sort.asc
     assert!(
-        zig.contains("std.sort.asc"),
-        "Default sort should use std.sort.asc:\n{}",
+        zig.contains("lessThan"),
+        "Default sort should use custom lessThan closure:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("std.sort.asc"),
+        "Default sort should not use std.sort.asc:\n{}",
         zig
     );
 }

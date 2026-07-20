@@ -295,12 +295,18 @@ impl Emitter {
                 }
             }
             "sort" => {
+                // R8-P1-21: Default sort (no compareFn) uses a custom lessThan
+                // closure with comptime type dispatch: JsAny → a.lt(b),
+                // primitives → a < b. Previously used comptime std.sort.asc(T)
+                // which fails for JsAny (no < operator on the struct).
                 if let Some(name) = obj {
                     let blk = self.next_label();
                     self.write(&format!(
-                        "({}: {{ std.mem.sort(@TypeOf({}.items[0]), {}.items, {{}}, comptime std.sort.asc(@TypeOf({}.items[0]))); break :{} {}; }})",
-                        blk, name, name, name, blk, name
+                        "({}: {{ const T = @TypeOf({}.items[0]); ",
+                        blk, name
                     ));
+                    self.write(&format!("std.mem.sort(T, {}.items, {{}}, struct {{ fn lessThan(_: void, a: T, b: T) bool {{ if (T == JsAny) return a.lt(b); return a < b; }} }}.lessThan); ", name));
+                    self.write(&format!("break :{} {}; }})", blk, name));
                 } else {
                     self.emit_module_call("js_array", method, args);
                 }
