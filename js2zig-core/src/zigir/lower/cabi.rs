@@ -127,6 +127,8 @@ impl Lowerer {
 
     /// Build IrCapture list from raw capture tuples (name, zig_type, is_mut).
     /// Shared by closure.rs, decl.rs, and function.rs.
+    /// When name is "__self", sets init_expr to "self" so the emitter
+    /// generates `.__self = &self` instead of `.__self = &__self`.
     pub(super) fn make_ir_captures(
         &self,
         captures: Vec<(String, ZigType, bool)>,
@@ -137,6 +139,11 @@ impl Lowerer {
                 name: self.make_ident(&name),
                 zig_type,
                 is_mut,
+                init_expr: if name == "__self" {
+                    Some("self".to_string())
+                } else {
+                    None
+                },
             })
             .collect()
     }

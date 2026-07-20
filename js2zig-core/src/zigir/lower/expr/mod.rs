@@ -74,6 +74,18 @@ impl Lowerer {
                             msg: "`this` used in static block without class context".to_string(),
                         }
                     }
+                } else if self.in_closure_with_this {
+                    // C5: Inside a closure that captures `this` from enclosing class method.
+                    // `this` is captured as `__self` field on the closure struct.
+                    // Directly emit `self.__self` (FieldAccess) rather than
+                    // `Ident("__self")` — the latter would bypass the capture
+                    // rewrite in lower_ident_expr, producing `__self` instead
+                    // of `self.__self` in the closure's `call()` method body.
+                    IrExpr::FieldAccess {
+                        object: Box::new(IrExpr::Ident(IrIdent::new("self"))),
+                        field: "__self".to_string(),
+                        field_kind: FieldKind::StructField,
+                    }
                 } else if self.current_class.is_some() {
                     IrExpr::This
                 } else {

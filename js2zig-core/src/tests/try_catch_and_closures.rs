@@ -1139,3 +1139,238 @@ export function nestedTryThrow() {
         zig
     );
 }
+
+// ── C5: Arrow function `this` binding inside class methods ───────────
+// Before C5 fix: `this` inside arrow/function expressions in class methods
+// would reference the closure's `self` (the closure struct itself) or be
+// completely absent. After C5: `this` is captured as `__self: *ClassName`
+// and rewritten to `self.__self` inside the closure's `call()` method.
+
+#[test]
+fn test_c5_arrow_this_in_class_method() {
+    // Arrow function inside a class method references `this`
+    let js = r#"
+class Counter {
+    constructor() {
+        this.count = 0;
+    }
+    increment() {
+        const add = () => {
+            this.count = this.count + 1;
+        };
+        add();
+    }
+}
+
+/** @returns {i64} */
+export function testC5Counter() {
+    const c = new Counter();
+    c.increment();
+    return c.count;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_arrow_this_in_class_method");
+    println!("=== C5 arrow this in class method ===\n{}", zig);
+    // The closure struct should have a __self field of type *Counter
+    assert!(
+        zig.contains("__self: *Counter"),
+        "Expected __self: *Counter field in closure struct: {}",
+        zig
+    );
+    // The closure instance init should use .__self = &self
+    assert!(
+        zig.contains(".__self = &self"),
+        "Expected .__self = &self init in closure instance: {}",
+        zig
+    );
+    // Inside the closure's call method, this.count should become self.__self.count
+    assert!(
+        zig.contains("self.__self.count"),
+        "Expected self.__self.count access in closure body: {}",
+        zig
+    );
+}
+
+#[test]
+fn test_c5_arrow_this_read_in_class_method() {
+    // Arrow function reads this.field but does not write
+    let js = r#"
+class Box {
+    constructor(val) {
+        this.value = val;
+    }
+    getValue() {
+        const getter = () => this.value;
+        return getter();
+    }
+}
+
+export function testC5Box(v) {
+    const b = new Box(v);
+    return b.getValue();
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_arrow_this_read_in_class_method");
+    println!("=== C5 arrow this read ===\n{}", zig);
+    // Should have __self capture
+    assert!(
+        zig.contains("__self: *Box"),
+        "Expected __self: *Box field: {}",
+        zig
+    );
+    // this.value inside arrow → self.__self.value
+    assert!(
+        zig.contains("self.__self.value"),
+        "Expected self.__self.value: {}",
+        zig
+    );
+}
+
+#[test]
+fn test_c5_fn_expr_this_in_class_method() {
+    // Function expression inside a class method referencing `this`
+    let js = r#"
+class Logger {
+    constructor() {
+        this.prefix = "LOG";
+    }
+    log(msg) {
+        const formatMsg = function() {
+            return this.prefix + ": " + msg;
+        };
+        return formatMsg();
+    }
+}
+
+export function testC5Logger(m) {
+    const l = new Logger();
+    return l.log(m);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_fn_expr_this_in_class_method");
+    println!("=== C5 fn expr this in class method ===\n{}", zig);
+    // Same as arrow: __self capture should be generated
+    assert!(
+        zig.contains("__self: *Logger"),
+        "Expected __self: *Logger field: {}",
+        zig
+    );
+    assert!(
+        zig.contains("self.__self.prefix"),
+        "Expected self.__self.prefix: {}",
+        zig
+    );
+}
+
+#[test]
+fn test_c5_arrow_this_with_other_captures() {
+    // Arrow function captures both `this` and a local variable
+    let js = r#"
+class Accum {
+    constructor() {
+        this.total = 0;
+    }
+    add(delta) {
+        const step = 1;
+        const inc = () => {
+            this.total = this.total + step + delta;
+        };
+        inc();
+    }
+}
+
+export function testC5Accum(d) {
+    const a = new Accum();
+    a.add(d);
+    return a.total;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_arrow_this_with_other_captures");
+    println!("=== C5 arrow this with other captures ===\n{}", zig);
+    // Should have both __self and step/delta captures
+    assert!(
+        zig.contains("__self: *Accum"),
+        "Expected __self: *Accum: {}",
+        zig
+    );
+    assert!(
+        zig.contains("self.__self.total"),
+        "Expected self.__self.total: {}",
+        zig
+    );
+    // Other captures should also be accessible
+    assert!(
+        zig.contains("self.step") || zig.contains("self.delta"),
+        "Expected captured step or delta via self: {}",
+        zig
+    );
+}
+
+#[test]
+fn test_c5_arrow_no_this_no_capture() {
+    // Arrow function inside class method that does NOT use `this`
+    // → no __self capture
+    let js = r#"
+class Processor {
+    constructor() {
+        this.data = 0;
+    }
+    run(x) {
+        const double = (n) => n * 2;
+        return double(x);
+    }
+}
+
+export function testC5Processor(v) {
+    const p = new Processor();
+    return p.run(v);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_arrow_no_this_no_capture");
+    println!("=== C5 arrow no this no capture ===\n{}", zig);
+    // No __self field should appear
+    assert!(
+        !zig.contains("__self"),
+        "Expected no __self when this is not used in arrow: {}",
+        zig
+    );
+}
+
+#[test]
+fn test_c5_arrow_this_in_constructor_callback() {
+    // Arrow function inside constructor uses `this` — but in constructors,
+    // `this.field` is rewritten to local `var field`, so there is no `self`
+    // to capture. The arrow body accesses the local variable directly.
+    let js = r#"
+class Store {
+    constructor() {
+        this.items = 0;
+        const init = () => {
+            this.items = 10;
+        };
+        init();
+    }
+}
+
+/** @returns {i64} */
+export function testC5Store() {
+    const s = new Store();
+    return s.items;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_c5_arrow_this_in_constructor_callback");
+    println!("=== C5 arrow this in constructor callback ===\n{}", zig);
+    // In constructors, this.field is rewritten to local var, so __self
+    // capture is NOT needed — the arrow directly accesses the local var.
+    assert!(
+        !zig.contains("__self"),
+        "Expected no __self in constructor closure (this is rewritten to local var): {}",
+        zig
+    );
+    // The arrow body should reference the rewritten local variable `items`
+    assert!(
+        zig.contains("items") || zig.contains("items = 10"),
+        "Expected local var 'items' access in constructor closure: {}",
+        zig
+    );
+}

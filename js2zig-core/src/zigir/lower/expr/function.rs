@@ -341,11 +341,37 @@ impl Lowerer {
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::{IrArrowFn, IrExpr};
 
-        let captured = self.collect_arrow_captures(af);
+        let mut captured = self.collect_arrow_captures(af);
+
+        // C5: Detect `this` usage inside arrow body within a class method.
+        // Arrow functions capture `this` lexically from the enclosing scope.
+        // Add a synthetic `__self` capture so the class instance (`self`)
+        // is available as `self.__self` inside the closure's `call()` method.
+        //
+        // EXCEPTION: Inside a constructor (this_rewrite_fields is set), `this`
+        // is rewritten to local variables — no `self` exists in `init()`, so
+        // capturing `this` would be invalid. Skip the __self capture there.
+        let captures_this = self.current_class.is_some()
+            && self.this_rewrite_fields.is_none()
+            && Self::detect_this_in_body(&af.body.statements);
+        if captures_this {
+            let class_name = self.current_class.clone().unwrap();
+            captured.insert(
+                0,
+                ("__self".to_string(), ZigType::NamedStruct(class_name), true),
+            );
+        }
+
         let is_concise = af.expression;
         let return_type = self.infer_arrow_return_type(af, &captured);
         let params = self.lower_arrow_params(af);
         let arrow_fn_label = format!("_arrow_{}", self.name_mangler.next_name("arrow"));
+
+        // C5: Set in_closure_with_this flag during body lowering
+        let saved_closure_with_this = self.in_closure_with_this;
+        if captures_this {
+            self.in_closure_with_this = true;
+        }
 
         // Enter fn context with captured vars set up
         let (saved_fn, saved_captured) =
@@ -366,6 +392,7 @@ impl Lowerer {
         };
 
         self.exit_closure_context(&mut body, saved_fn, saved_captured);
+        self.in_closure_with_this = saved_closure_with_this;
 
         if !captured.is_empty() {
             let idx = self.name_mangler.peek_count("closure");
@@ -408,7 +435,26 @@ impl Lowerer {
                 format!("_fn_expr_{}", idx)
             });
 
-        let captured = self.detect_fn_body_captures(fe);
+        let mut captured = self.detect_fn_body_captures(fe);
+
+        // C5: Detect `this` usage inside function expression body within a class method.
+        // EXCEPTION: Inside a constructor (this_rewrite_fields is set), `this`
+        // is rewritten to local variables — no `self` exists in `init()`.
+        let captures_this = if let Some(body) = &fe.body {
+            self.current_class.is_some()
+                && self.this_rewrite_fields.is_none()
+                && Self::detect_this_in_body(&body.statements)
+        } else {
+            false
+        };
+        if captures_this {
+            let class_name = self.current_class.clone().unwrap();
+            captured.insert(
+                0,
+                ("__self".to_string(), ZigType::NamedStruct(class_name), true),
+            );
+        }
+
         let return_type = self
             .type_info
             .fn_return_types
@@ -417,6 +463,12 @@ impl Lowerer {
             .unwrap_or_else(|| self.infer_fn_expr_return_type(fe, &captured));
 
         let params = self.lower_fn_params(fe, &name);
+
+        // C5: Set in_closure_with_this flag during body lowering
+        let saved_closure_with_this = self.in_closure_with_this;
+        if captures_this {
+            self.in_closure_with_this = true;
+        }
 
         // Enter fn context with captured vars set up
         let (saved_fn, saved_captured) =
@@ -430,6 +482,7 @@ impl Lowerer {
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
         self.exit_closure_context(&mut body, saved_fn, saved_captured);
+        self.in_closure_with_this = saved_closure_with_this;
 
         if !captured.is_empty() {
             let struct_name = self.make_ident(&name);

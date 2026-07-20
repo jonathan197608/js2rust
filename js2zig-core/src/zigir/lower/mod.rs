@@ -107,6 +107,12 @@ pub struct Lowerer {
     /// because their `this` differs from the constructor's.
     pub(super) this_rewrite_fields: Option<Vec<String>>,
 
+    /// C5: When true, `this` inside a closure/arrow function body should be
+    /// lowered as `IrExpr::Ident("__self")` instead of `IrExpr::This`.
+    /// Set during lowering of arrow functions / function expressions that
+    /// capture `this` from their enclosing class method.
+    pub(super) in_closure_with_this: bool,
+
     /// Whether we're lowering inside an ExpressionStatement.
     /// Affects UpdateExpression lowering (e.g., `i++` → `i += 1` vs block expr).
     pub(super) in_expr_stmt: bool,
@@ -161,6 +167,7 @@ impl Lowerer {
             current_class: None,
             in_static_block: false,
             this_rewrite_fields: None,
+            in_closure_with_this: false,
             in_expr_stmt: false,
             anon_class_counter: 0,
             class_expr_var_name: None,

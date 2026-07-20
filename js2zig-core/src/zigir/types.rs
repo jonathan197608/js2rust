@@ -878,6 +878,10 @@ pub struct IrCapture {
     pub name: IrIdent,
     pub zig_type: ZigType,
     pub is_mut: bool,
+    /// C5: Override the init expression for the closure instance field.
+    /// When `None`, the default is used: `.{name} = {name}` (or `&{name}` if is_mut).
+    /// When `Some(expr)`, the init value is `expr` instead (e.g. `self` for __self capture).
+    pub init_expr: Option<String>,
 }
 
 // ── Arrow function ─────────────────────────────────────
@@ -1184,6 +1188,7 @@ mod tests {
                 name: IrIdent::new("a"),
                 zig_type: ZigType::I64,
                 is_mut: false,
+                init_expr: None,
             }],
             fn_params: vec![IrParam {
                 name: IrIdent::new("b"),

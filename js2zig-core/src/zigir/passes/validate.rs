@@ -410,6 +410,7 @@ mod tests {
                     name: IrIdent::new("unused_var"),
                     zig_type: ZigType::I64,
                     is_mut: false,
+                    init_expr: None,
                 }],
                 fn_params: vec![IrParam {
                     name: IrIdent::new("x"),

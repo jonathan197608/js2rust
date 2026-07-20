@@ -691,16 +691,19 @@ impl Emitter {
 
             crate::zigir::types::IrExpr::Closure(closure) => {
                 // Closure instance: `StructName { .captured = val, ... }`
+                // When a capture has init_expr, use that as the init value
+                // (e.g. `__self` capture uses `self` instead of `__self`).
                 self.write(&closure.struct_name.zig_name);
                 self.write("{ ");
                 for (i, cap) in closure.captured.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");
                     }
+                    let init_val = cap.init_expr.as_deref().unwrap_or(&cap.name.zig_name);
                     if cap.is_mut {
-                        self.write(&format!(".{} = &{}", cap.name.zig_name, cap.name.zig_name));
+                        self.write(&format!(".{} = &{}", cap.name.zig_name, init_val));
                     } else {
-                        self.write(&format!(".{} = {}", cap.name.zig_name, cap.name.zig_name));
+                        self.write(&format!(".{} = {}", cap.name.zig_name, init_val));
                     }
                 }
                 self.write(" }");

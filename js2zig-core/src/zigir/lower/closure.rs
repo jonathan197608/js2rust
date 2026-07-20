@@ -2,7 +2,7 @@
 // Closure struct lowering and capture analysis.
 
 use oxc_ast::ast::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use crate::types::ZigType;
@@ -565,5 +565,59 @@ impl Lowerer {
                 .or_else(|| self.infer_arrow_expr_type_with_captures(&ce.alternate, captured)),
             _ => None,
         }
+    }
+
+    /// C5: Detect whether a function body references `this`.
+    ///
+    /// Arrow functions inside class methods must capture the class instance
+    /// (`self` in Zig) as a synthetic `__self` capture variable, because
+    /// `IrExpr::This` (which emits `"self"`) would refer to the closure
+    /// struct itself, not the class instance.
+    ///
+    /// Recursively scans statement and expression children, but stops at
+    /// function/arrow scope boundaries (their `this` is their own).
+    pub(super) fn detect_this_in_body(stmts: &[Statement]) -> bool {
+        let found = Cell::new(false);
+        for stmt in stmts {
+            Self::scan_stmt_for_this(stmt, &found);
+            if found.get() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn scan_stmt_for_this(stmt: &Statement, found: &Cell<bool>) {
+        if found.get() {
+            return;
+        }
+        crate::infer::ast_walk::for_each_stmt_child(
+            stmt,
+            &mut |s| Self::scan_stmt_for_this(s, found),
+            &mut |e| Self::scan_expr_for_this(e, found),
+            &mut |vd| {
+                crate::infer::ast_walk::for_each_var_decl_init(vd, &mut |init| {
+                    Self::scan_expr_for_this(init, found);
+                });
+            },
+        );
+    }
+
+    fn scan_expr_for_this(expr: &Expression, found: &Cell<bool>) {
+        if found.get() {
+            return;
+        }
+        if matches!(expr, Expression::ThisExpression(_)) {
+            found.set(true);
+            return;
+        }
+        crate::infer::ast_walk::for_each_expr_child(
+            expr,
+            &mut |e| Self::scan_expr_for_this(e, found),
+            &mut |_| {},    // on_ident: not relevant
+            &mut |_| {},    // on_target: not relevant
+            &mut |_| {},    // on_simple_target: not relevant
+            &mut |_, _| {}, // on_fn_scope: stop — nested fn has its own this
+        );
     }
 }
