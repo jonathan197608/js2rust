@@ -311,21 +311,18 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                     }
                     *a % *b
                 }
-                BinOp::BitAnd => a & b,
-                BinOp::BitOr => a | b,
-                BinOp::BitXor => a ^ b,
-                BinOp::Shl => {
-                    if *b < 0 || *b >= 64 {
-                        return None;
-                    }
-                    a << *b
-                }
-                BinOp::Shr => {
-                    if *b < 0 || *b >= 64 {
-                        return None;
-                    }
-                    a >> *b
-                }
+                // JS bitwise ops operate on Int32 (32-bit signed), not i64.
+                // `*a as i32` truncates and sign-extends exactly like
+                // ToInt32, then we sign-extend the i32 result back to i64.
+                BinOp::BitAnd => (*a as i32 & *b as i32) as i64,
+                BinOp::BitOr => (*a as i32 | *b as i32) as i64,
+                BinOp::BitXor => (*a as i32 ^ *b as i32) as i64,
+                // JS shifts mask the count to 5 bits (& 0x1F), so any count
+                // is valid (no guard needed). wrapping_shl/wrapping_shr apply
+                // the mask and avoid debug-mode shift-overflow panics.
+                // Shl/Shr are Int32 (sign-propagating for >>).
+                BinOp::Shl => (*a as i32).wrapping_shl(*b as u32) as i64,
+                BinOp::Shr => (*a as i32).wrapping_shr(*b as u32) as i64,
                 BinOp::Eq | BinOp::StrictEq => return Some(IrExpr::BoolLiteral(a == b)),
                 BinOp::Ne | BinOp::StrictNe => return Some(IrExpr::BoolLiteral(a != b)),
                 BinOp::Lt => return Some(IrExpr::BoolLiteral(a < b)),
@@ -424,7 +421,11 @@ fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
         }
         (UnaOp::Neg, IrExpr::FloatLiteral(n)) => Some(IrExpr::FloatLiteral(-n)),
         (UnaOp::Not, IrExpr::BoolLiteral(b)) => Some(IrExpr::BoolLiteral(!b)),
-        (UnaOp::BitNot, IrExpr::IntLiteral(n)) => Some(IrExpr::IntLiteral(!n)),
+        // JS `~x` operates on Int32 (32-bit signed), not i64.
+        // `as i32` truncates/sign-extends like ToInt32, we bitwise-NOT
+        // the i32, then sign-extend back to i64. Example: ~0xFFFFFFFF
+        // → !(−1) = 0, whereas the old i64 fold gave −4294967296.
+        (UnaOp::BitNot, IrExpr::IntLiteral(n)) => Some(IrExpr::IntLiteral(!(*n as i32) as i64)),
         // Double negation: !!x → x (when inner is already a bool)
         (
             UnaOp::Not,
@@ -730,6 +731,107 @@ mod tests {
             IrExpr::BoolLiteral(b) => assert!(b),
             other => panic!("expected BoolLiteral(true), got {:?}", other),
         }
+    }
+
+    // ── P0-9: Int32 bitwise / shift / BitNot semantics ──
+
+    /// Helper: build `op(a, b)`, run the fold pass, assert the result is
+    /// `IntLiteral(expected)`. JS bitwise operators operate on Int32
+    /// (32-bit signed), so the folded i64 must match the sign-extended
+    /// Int32 result.
+    fn assert_fold_binary_int(op: BinOp, a: i64, b: i64, expected: i64) {
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op,
+                left: Box::new(IrExpr::IntLiteral(a)),
+                right: Box::new(IrExpr::IntLiteral(b)),
+                left_type: None,
+                right_type: None,
+            }),
+        }]);
+        let mut pass = ConstantFoldPass::new();
+        let result = pass.run(&mut module);
+        assert!(result.changed, "expected fold to fire");
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(n) => assert_eq!(
+                *n, expected,
+                "binary fold of ({a}, {b}) gave {n}, expected {expected}"
+            ),
+            other => panic!("expected IntLiteral({expected}), got {:?}", other),
+        }
+    }
+
+    /// Helper: build `op(n)`, run the fold pass, assert `IntLiteral(expected)`.
+    fn assert_fold_unary_int(op: UnaOp, n: i64, expected: i64) {
+        let mut module = make_module_with_body(vec![IrStmt::Return {
+            value: Some(IrExpr::Unary {
+                op,
+                operand: Box::new(IrExpr::IntLiteral(n)),
+                operand_type: Some(ZigType::I64),
+            }),
+        }]);
+        let mut pass = ConstantFoldPass::new();
+        let result = pass.run(&mut module);
+        assert!(result.changed, "expected fold to fire");
+        match first_return_value(&module) {
+            IrExpr::IntLiteral(got) => assert_eq!(
+                *got, expected,
+                "unary fold of ({n}) gave {got}, expected {expected}"
+            ),
+            other => panic!("expected IntLiteral({expected}), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_fold_bitand_int32() {
+        // 0xFFFFFFFF & 0xFFFFFFFF: ToInt32 = -1, -1 & -1 = -1.
+        // Old i64 fold gave 4294967295 (treated as 64-bit) — wrong.
+        assert_fold_binary_int(BinOp::BitAnd, 0xFFFF_FFFF, 0xFFFF_FFFF, -1);
+    }
+
+    #[test]
+    fn test_fold_bitand_truncates_above_i32() {
+        // 0x1_00000000 (2^32) as i32 = 0 (truncated to 32 bits). 0 & -1 = 0.
+        assert_fold_binary_int(BinOp::BitAnd, 0x1_0000_0000, 0xFFFF_FFFF, 0);
+    }
+
+    #[test]
+    fn test_fold_bitor_int32() {
+        // 0x80000000 | 0: ToInt32 = -2147483648 | 0 = -2147483648.
+        assert_fold_binary_int(BinOp::BitOr, 0x8000_0000, 0, -2147483648);
+    }
+
+    #[test]
+    fn test_fold_bitxor_int32() {
+        // 0xFFFFFFFF ^ 0xFFFFFFFF: -1 ^ -1 = 0.
+        assert_fold_binary_int(BinOp::BitXor, 0xFFFF_FFFF, 0xFFFF_FFFF, 0);
+    }
+
+    #[test]
+    fn test_fold_shl_int32() {
+        // 1 << 31: 0x80000000 as i32 = -2147483648 (sign-extended to i64).
+        assert_fold_binary_int(BinOp::Shl, 1, 31, -2147483648);
+    }
+
+    #[test]
+    fn test_fold_shl_masks_count() {
+        // 1 << 32: JS masks shift count to 5 bits → 32 & 0x1F = 0 → 1 << 0 = 1.
+        assert_fold_binary_int(BinOp::Shl, 1, 32, 1);
+    }
+
+    #[test]
+    fn test_fold_shr_int32() {
+        // -1 >> 1: arithmetic (sign-propagating) shift keeps the sign → -1.
+        assert_fold_binary_int(BinOp::Shr, -1, 1, -1);
+    }
+
+    #[test]
+    fn test_fold_bitnot_int32() {
+        // ~0 = -1 (coincidentally same as old i64 fold; sanity check).
+        assert_fold_unary_int(UnaOp::BitNot, 0, -1);
+        // ~0xFFFFFFFF: ToInt32 = -1, ~(-1) = 0.
+        // Old i64 fold gave -4294967296 — wrong.
+        assert_fold_unary_int(UnaOp::BitNot, 0xFFFF_FFFF, 0);
     }
 
     // Helper to create a module with a function wrapping the given body
