@@ -914,13 +914,13 @@ impl Lowerer {
         (Some((var_decl, blk_label)), new_target, read)
     }
 
-    /// Check if an IrExpr is a "simple lvalue path": an Ident, or a chain of
+    /// Check if an IrExpr is a "simple lvalue path": an Ident, This, or a chain of
     /// FieldAccess/IndexAccess over simple lvalue paths. Such expressions have
     /// no side effects and can be safely evaluated twice without a temp binding.
     fn ir_object_is_simple_lvalue(&self, expr: &crate::zigir::types::IrExpr) -> bool {
         use crate::zigir::types::IrExpr;
         match expr {
-            IrExpr::Ident(_) => true,
+            IrExpr::Ident(_) | IrExpr::This => true,
             IrExpr::FieldAccess { object, .. } => self.ir_object_is_simple_lvalue(object),
             IrExpr::IndexAccess { object, index, .. } => {
                 self.ir_object_is_simple_lvalue(object) && self.ir_object_is_simple_lvalue(index)

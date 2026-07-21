@@ -90,6 +90,276 @@ return re.lastIndex;
     );
 }
 
+// ── C9: this-rewrite is_const for update/compound/for-loop ──
+
+/// `this.field++` in constructor: field must be `var` (not `const`),
+/// and the update must be rewritten from `this.field++` to `field += 1`.
+#[test]
+fn test_c9_constructor_increment() {
+    let js = r#"
+class Counter {
+    constructor() {
+        this.count = 0;
+        this.count++;
+    }
+}
+
+/** @returns {i64} */
+export function testC9Increment() {
+    const c = new Counter();
+    return c.count;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_increment");
+    println!("=== C9: constructor this.count++ ===\n{}", zig);
+    assert!(
+        zig.contains("var count: i64 = 0;"),
+        "Expected 'var count: i64 = 0;' (not const) for mutated field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("count += 1"),
+        "Expected 'count += 1' for rewritten increment, got:\n{}",
+        zig
+    );
+}
+
+/// `this.field += val` in constructor: field must be `var` and the
+/// compound assignment must preserve `+=` (old bug: dropped to `=`).
+#[test]
+fn test_c9_constructor_compound_add() {
+    let js = r#"
+class Accumulator {
+    constructor() {
+        this.total = 0;
+        this.total += 5;
+    }
+}
+
+/** @returns {i64} */
+export function testC9CompoundAdd() {
+    const a = new Accumulator();
+    return a.total;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_compound_add");
+    println!("=== C9: constructor this.total += 5 ===\n{}", zig);
+    assert!(
+        zig.contains("var total: i64 = 0;"),
+        "Expected 'var total: i64 = 0;' for mutated field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("total += 5"),
+        "Expected 'total += 5' for compound assignment, got:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("total = 5;"),
+        "Should NOT have 'total = 5;' (old bug: compound op dropped to =), got:\n{}",
+        zig
+    );
+}
+
+/// `this.field *= val` in constructor: compound multiply.
+#[test]
+fn test_c9_constructor_compound_mul() {
+    let js = r#"
+class Multiplier {
+    constructor() {
+        this.val = 2;
+        this.val *= 3;
+    }
+}
+
+/** @returns {i64} */
+export function testC9CompoundMul() {
+    const m = new Multiplier();
+    return m.val;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_compound_mul");
+    println!("=== C9: constructor this.val *= 3 ===\n{}", zig);
+    assert!(
+        zig.contains("val *= 3"),
+        "Expected 'val *= 3' for compound multiply, got:\n{}",
+        zig
+    );
+}
+
+/// `for (...; ...; this.field++) { }` in constructor: the for-loop
+/// update expression must be rewritten to `field += 1`.
+#[test]
+fn test_c9_constructor_for_loop_update() {
+    let js = r#"
+class ForUpdater {
+    constructor() {
+        this.i = 0;
+        let j = 0;
+        for (; j < 3; this.i++) {
+            j++;
+        }
+    }
+}
+
+/** @returns {i64} */
+export function testC9ForLoopUpdate() {
+    const f = new ForUpdater();
+    return f.i;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_for_loop_update");
+    println!("=== C9: for-loop update this.i++ ===\n{}", zig);
+    assert!(
+        zig.contains("var i: i64 = 0;"),
+        "Expected 'var i: i64 = 0;' for mutated field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("i += 1"),
+        "Expected 'i += 1' in for-loop update, got:\n{}",
+        zig
+    );
+}
+
+/// `this.field++` inside a for-loop body in constructor.
+#[test]
+fn test_c9_constructor_for_body_increment() {
+    let js = r#"
+class LoopCounter {
+    constructor() {
+        this.count = 0;
+        for (let i = 0; i < 5; i++) {
+            this.count++;
+        }
+    }
+}
+
+/** @returns {i64} */
+export function testC9ForBodyIncrement() {
+    const l = new LoopCounter();
+    return l.count;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_for_body_increment");
+    println!("=== C9: for-body this.count++ ===\n{}", zig);
+    assert!(
+        zig.contains("var count: i64 = 0;"),
+        "Expected 'var count: i64 = 0;' for mutated field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("count += 1"),
+        "Expected 'count += 1' in for-body, got:\n{}",
+        zig
+    );
+}
+
+/// Method body `this.field++` should use `*@This()` (mutable self).
+#[test]
+fn test_c9_method_increment_mutates_self() {
+    let js = r#"
+class Clicker {
+    constructor() {
+        this.clicks = 0;
+    }
+    click() {
+        this.clicks++;
+    }
+}
+
+/** @returns {i64} */
+export function testC9MethodIncrement() {
+    const c = new Clicker();
+    c.click();
+    return c.clicks;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_method_increment_mutates_self");
+    println!("=== C9: method this.clicks++ ===\n{}", zig);
+    assert!(
+        zig.contains("self: *@This()"),
+        "Expected 'self: *@This()' for mutating method, got:\n{}",
+        zig
+    );
+}
+
+/// Method body `this.field++` in a for-loop update should also
+/// trigger `*@This()` (C9 fix for stmt_mutates_self for-loop check).
+#[test]
+fn test_c9_method_for_loop_update_mutates_self() {
+    let js = r#"
+class Stepper {
+    constructor() {
+        this.step = 0;
+    }
+    run() {
+        for (let i = 0; i < 3; this.step++) {}
+    }
+}
+
+/** @returns {i64} */
+export function testC9MethodForLoopUpdate() {
+    const s = new Stepper();
+    s.run();
+    return s.step;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_method_for_loop_update_mutates_self");
+    println!("=== C9: method for-loop update this.step++ ===\n{}", zig);
+    assert!(
+        zig.contains("self: *@This()"),
+        "Expected 'self: *@This()' for method with this.step++ in for-update, got:\n{}",
+        zig
+    );
+}
+
+/// `this.field -= val` and `this.field--` in constructor:
+/// decrement and compound subtract.
+#[test]
+fn test_c9_constructor_decrement_and_compound_sub() {
+    let js = r#"
+class Decrementer {
+    constructor() {
+        this.val = 10;
+        this.val--;
+        this.val -= 3;
+    }
+}
+
+/** @returns {i64} */
+export function testC9Decrement() {
+    const d = new Decrementer();
+    return d.val;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c9_constructor_decrement_and_compound_sub");
+    println!(
+        "=== C9: constructor this.val-- and this.val -= 3 ===\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("var val: i64 = 0;"),
+        "Expected 'var val: i64 = 0;' (not const) for mutated field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("val = 10"),
+        "Expected 'val = 10' for rewritten initial assignment, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("val -= 1"),
+        "Expected 'val -= 1' for decrement, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("val -= 3"),
+        "Expected 'val -= 3' for compound subtract, got:\n{}",
+        zig
+    );
+}
+
 // ── C8: Transitive needs_deinit propagation ──
 
 /// Class A has a field of type class B, and B has a Map field (needs deinit).

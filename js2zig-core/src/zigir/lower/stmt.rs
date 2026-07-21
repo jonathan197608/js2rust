@@ -319,9 +319,19 @@ impl Lowerer {
                 }
             }
             _ => {
-                // Expression init: lower as expression statement
+                // Expression init: lower as expression statement.
+                // In a constructor, `this.field = value` in the init
+                // position is rewritten to a local assignment.
                 if let Some(expr) = init.as_expression() {
-                    Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr)))
+                    let ctor_fields = self.this_rewrite_fields.clone();
+                    if let Some(fields) = &ctor_fields
+                        && let Some(rewritten) =
+                            self.try_rewrite_this_field_assignment(expr, fields)
+                    {
+                        Box::new(rewritten)
+                    } else {
+                        Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr)))
+                    }
                 } else {
                     Box::new(crate::zigir::types::IrStmt::Comment(
                         "// skipped init".to_string(),
@@ -331,10 +341,18 @@ impl Lowerer {
         });
 
         let cond = fs.test.as_ref().map(|expr| self.lower_expr(expr));
-        let update = fs
-            .update
-            .as_ref()
-            .map(|expr| Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr))));
+        let update = fs.update.as_ref().map(|expr| {
+            // C9: In a constructor, `this.field++` / `this.field += val`
+            // in the update position must be rewritten to local mutations.
+            let ctor_fields = self.this_rewrite_fields.clone();
+            if let Some(fields) = &ctor_fields
+                && let Some(rewritten) = self.try_rewrite_this_field_assignment(expr, fields)
+            {
+                Box::new(rewritten)
+            } else {
+                Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr)))
+            }
+        });
         let body = self.lower_stmt_as_block(&fs.body, None);
 
         crate::zigir::types::IrStmt::For {

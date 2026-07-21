@@ -68,6 +68,11 @@ fn collect_assigned_idents(stmts: &[IrStmt], out: &mut HashSet<String>) {
                 }
                 _ => {}
             },
+            // C9: IrStmt::Expr can contain IrExpr::Update (field++) or
+            // IrExpr::Assign (field += val) with Ident targets produced by
+            // try_rewrite_this_field_assignment. Also covers BlockExpr
+            // (BigInt postfix expansion).
+            IrStmt::Expr(expr) => collect_assigned_idents_in_expr(expr, out),
             IrStmt::If { then, else_, .. } => {
                 collect_assigned_idents(&then.stmts, out);
                 if let Some(eb) = else_ {
@@ -77,7 +82,18 @@ fn collect_assigned_idents(stmts: &[IrStmt], out: &mut HashSet<String>) {
             IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
                 collect_assigned_idents(&body.stmts, out);
             }
-            IrStmt::For { body, .. } => collect_assigned_idents(&body.stmts, out),
+            // C9: also scan init and update (e.g., for (this.x = 0; ...; this.x++) {})
+            IrStmt::For {
+                init, update, body, ..
+            } => {
+                if let Some(i) = init {
+                    collect_assigned_idents(std::slice::from_ref(i.as_ref()), out);
+                }
+                if let Some(u) = update {
+                    collect_assigned_idents(std::slice::from_ref(u.as_ref()), out);
+                }
+                collect_assigned_idents(&body.stmts, out);
+            }
             IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
                 collect_assigned_idents(&body.stmts, out);
             }
@@ -101,6 +117,25 @@ fn collect_assigned_idents(stmts: &[IrStmt], out: &mut HashSet<String>) {
             IrStmt::Block(b) => collect_assigned_idents(&b.stmts, out),
             _ => {}
         }
+    }
+}
+
+/// C9: Scan an IrExpr for Ident-targeted mutations (Update / Assign).
+/// Handles compound assignments (`field += val`) and increment/decrement
+/// (`field++`) that are lowered as `IrStmt::Expr(IrExpr::Assign/Update{...})`
+/// rather than `IrStmt::Assign{...}`. Also recurses into BlockExpr (BigInt
+/// postfix expansion).
+fn collect_assigned_idents_in_expr(expr: &IrExpr, out: &mut HashSet<String>) {
+    match expr {
+        IrExpr::Update { target, .. } | IrExpr::Assign { target, .. } => {
+            if let IrAssignTarget::Ident(id) = target.as_ref() {
+                out.insert(id.js_name.clone());
+            }
+        }
+        IrExpr::BlockExpr { body, .. } => {
+            collect_assigned_idents(body, out);
+        }
+        _ => {}
     }
 }
 
@@ -159,7 +194,14 @@ fn method_mutates_self(body: &IrBlock) -> bool {
             IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
                 stmts_mutate_self(&body.stmts)
             }
-            IrStmt::For { body, .. } => stmts_mutate_self(&body.stmts),
+            // C9: also check init and update for `this.field++` / `this.field += val`
+            IrStmt::For {
+                init, update, body, ..
+            } => {
+                init.as_ref().is_some_and(|i| stmt_mutates_self(i))
+                    || update.as_ref().is_some_and(|u| stmt_mutates_self(u))
+                    || stmts_mutate_self(&body.stmts)
+            }
             IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
                 stmts_mutate_self(&body.stmts)
             }

@@ -6,8 +6,8 @@ use std::collections::HashSet;
 use oxc_ast::ast::*;
 
 use crate::types::ZigType;
-use crate::zigir::ops::AssignOp;
-use crate::zigir::types::{IrAssignTarget, IrBlock, IrParam};
+use crate::zigir::ops::{AssignOp, BinOp, UpdateOp};
+use crate::zigir::types::{IrAssignTarget, IrBlock, IrExpr, IrParam, IrStmt};
 
 use super::Lowerer;
 use super::cabi::property_key_name;
@@ -507,59 +507,163 @@ impl Lowerer {
         }
     }
 
-    /// R8-C7: Rewrite `this.field = value` (or `this.#field = value`) into an
-    /// `Assign` statement that writes to a pre-declared local `var` in the
-    /// constructor, used during constructor body lowering so the Emitter can
-    /// collect field values for the struct return.
+    /// R8-C7/C9: Rewrite `this.field` mutations into local `field` operations
+    /// that write to a pre-declared `var` in the constructor, so the Emitter
+    /// can collect field values for the struct return.
     ///
-    /// Returns `Some(Assign)` when the expression is a this-field assignment
-    /// whose name is in `field_names`; otherwise `None` (caller lowers normally).
+    /// Handles three categories:
+    /// 1. `this.field = value` → `Assign { target: Ident(field), op: Assign }`
+    /// 2. `this.field += value` (and all compound ops) → `Assign { target: Ident(field), op: <compound> }`
+    ///    - BigInt compound: expanded to `field = field <op> value` (no Zig += for BigInt)
+    /// 3. `this.field++` / `this.field--` → `Expr(Update { target: Ident(field), is_expr_stmt: true })`
+    ///    - BigInt ++/--: expanded to `field = field.add/sub(BigInt(1))`
     ///
-    /// Unlike the previous `lower_block_with_this_rewrite` (which only recursed
-    /// into if/block/expression statements), this is invoked from
-    /// `lower_stmt`'s ExpressionStatement arm. Because `lower_stmt` is the
-    /// shared body-lowering path, the rewrite now also reaches `this.field =
-    /// value` nested inside for/while/for-of/for-in/switch/try bodies
-    /// (previously those fell through to plain `lower_stmt` and were missed).
+    /// `**=` and `>>>=` are NOT handled (they expand to BlockExpr in
+    /// lower_assignment) — these rare cases fall through to normal lowering.
     ///
-    /// The active field list lives on `self.this_rewrite_fields` and is
-    /// cleared inside nested function contexts (via `enter_fn`) so that `this`
-    /// in a nested function is not confused with the constructor's `this`.
+    /// Returns `Some(IrStmt)` when the expression is a rewriteable this-field
+    /// mutation whose name is in `field_names`; otherwise `None`.
     ///
-    /// ## Why Assign (not VarDecl)
-    ///
-    /// The previous implementation emitted `const field = value` (a fresh
-    /// VarDecl at the point of the assignment). That model only works when the
-    /// assignment is at the top level of the constructor body: any nested scope
-    /// (if/else, for/while/switch/try/block) produces `const field = ...` that
-    /// (a) shadows the outer constant from earlier in the body and (b) is out
-    /// of scope at the trailing `return .{ .field = field, ... }`. Both
-    /// conditions are Zig compile errors.
-    ///
-    /// Switching to `Assign { target: Ident(field), op: Assign, value }` makes
-    /// the rewrite a plain reassignment of an enclosing local — which is legal
-    /// at any nesting depth. The Emitter now pre-declares one `var field: T =
-    /// <default>;` per field at the very top of `init` (see `emit_class_init`),
-    /// so the `Assign` always has a target to write to. As a side effect, this
-    /// also folds in R8-E4/C6: the field's `default` initializer becomes the
-    /// `var`'s initial value, so a constructor that doesn't touch a field
-    /// still produces the field's default instead of an undefined slot.
+    /// Invoked from `lower_stmt`'s ExpressionStatement arm and from
+    /// `lower_for_statement`'s init/update. The active field list lives on
+    /// `self.this_rewrite_fields` and is cleared inside nested function
+    /// contexts (via `enter_fn`) so that `this` in a nested function is not
+    /// confused with the constructor's `this`.
     pub(super) fn try_rewrite_this_field_assignment(
         &mut self,
         expr: &Expression,
         field_names: &[String],
-    ) -> Option<crate::zigir::types::IrStmt> {
-        let Expression::AssignmentExpression(ae) = expr else {
-            return None;
-        };
-        let maybe_fname = match &ae.left {
-            // this.field = value
+    ) -> Option<IrStmt> {
+        match expr {
+            // this.field = value / this.field += value / etc.
+            Expression::AssignmentExpression(ae) => {
+                let fname = self.extract_this_field_name_from_assign_target(&ae.left)?;
+                if !field_names.contains(&fname) {
+                    return None;
+                }
+                // **= and >>>= are expanded by lower_assignment into
+                // BlockExpr — let them fall through to normal lowering.
+                if matches!(
+                    ae.operator,
+                    AssignmentOperator::Exponential | AssignmentOperator::ShiftRightZeroFill
+                ) {
+                    return None;
+                }
+                // BigInt compound assignments need expansion to
+                // field = field <op> value (no Zig += for BigInt).
+                if ae.operator != AssignmentOperator::Assign
+                    && self.infer_assign_target_type(&ae.left) == Some(ZigType::BigInt)
+                {
+                    let bin_op = match ae.operator {
+                        AssignmentOperator::Addition => BinOp::Add,
+                        AssignmentOperator::Subtraction => BinOp::Sub,
+                        AssignmentOperator::Multiplication => BinOp::Mul,
+                        AssignmentOperator::Division => BinOp::Div,
+                        AssignmentOperator::Remainder => BinOp::Mod,
+                        AssignmentOperator::BitwiseAnd => BinOp::BitAnd,
+                        AssignmentOperator::BitwiseOR => BinOp::BitOr,
+                        AssignmentOperator::BitwiseXOR => BinOp::BitXor,
+                        AssignmentOperator::ShiftLeft => BinOp::Shl,
+                        AssignmentOperator::ShiftRight => BinOp::Shr,
+                        _ => return None,
+                    };
+                    let value_ir = self.lower_expr(&ae.right);
+                    let read_expr = IrExpr::Ident(self.make_ident(&fname));
+                    return Some(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                        op: AssignOp::Assign,
+                        value: IrExpr::Binary {
+                            op: bin_op,
+                            left: Box::new(read_expr),
+                            right: Box::new(value_ir),
+                            left_type: Some(ZigType::BigInt),
+                            right_type: Some(ZigType::BigInt),
+                        },
+                    });
+                }
+                // Non-BigInt compound or plain =: map operator directly.
+                let op = match ae.operator {
+                    AssignmentOperator::Assign => AssignOp::Assign,
+                    AssignmentOperator::Addition => AssignOp::Add,
+                    AssignmentOperator::Subtraction => AssignOp::Sub,
+                    AssignmentOperator::Multiplication => AssignOp::Mul,
+                    AssignmentOperator::Division => AssignOp::Div,
+                    AssignmentOperator::Remainder => AssignOp::Mod,
+                    AssignmentOperator::ShiftLeft => AssignOp::Shl,
+                    AssignmentOperator::ShiftRight => AssignOp::Shr,
+                    AssignmentOperator::BitwiseAnd => AssignOp::BitAnd,
+                    AssignmentOperator::BitwiseOR => AssignOp::BitOr,
+                    AssignmentOperator::BitwiseXOR => AssignOp::BitXor,
+                    AssignmentOperator::LogicalAnd => AssignOp::LogicAnd,
+                    AssignmentOperator::LogicalOr => AssignOp::LogicOr,
+                    AssignmentOperator::LogicalNullish => AssignOp::Nullish,
+                    _ => return None,
+                };
+                let value_ir = self.lower_expr(&ae.right);
+                Some(IrStmt::Assign {
+                    target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                    op,
+                    value: value_ir,
+                })
+            }
+            // this.field++ / this.field-- / ++this.field / --this.field
+            Expression::UpdateExpression(ue) => {
+                let fname = self.extract_this_field_name_from_simple_target(&ue.argument)?;
+                if !field_names.contains(&fname) {
+                    return None;
+                }
+                // BigInt ++/-- needs expansion to field = field.add/sub(BigInt(1)).
+                // In statement context (which is the only context this function is
+                // called from), the return value is discarded, so prefix/postfix
+                // are equivalent — both just mutate the field.
+                if self.infer_simple_assign_target_type(&ue.argument) == Some(ZigType::BigInt) {
+                    let bin_op = if ue.operator == UpdateOperator::Increment {
+                        BinOp::Add
+                    } else {
+                        BinOp::Sub
+                    };
+                    let read_expr = IrExpr::Ident(self.make_ident(&fname));
+                    return Some(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                        op: AssignOp::Assign,
+                        value: IrExpr::Binary {
+                            op: bin_op,
+                            left: Box::new(read_expr),
+                            right: Box::new(IrExpr::BigIntLiteral("1".to_string())),
+                            left_type: Some(ZigType::BigInt),
+                            right_type: Some(ZigType::BigInt),
+                        },
+                    });
+                }
+                // Non-BigInt: emit field++ / field-- as a statement.
+                let op = if ue.operator == UpdateOperator::Increment {
+                    UpdateOp::Increment
+                } else {
+                    UpdateOp::Decrement
+                };
+                Some(IrStmt::Expr(IrExpr::Update {
+                    op,
+                    target: Box::new(IrAssignTarget::Ident(self.make_ident(&fname))),
+                    is_expr_stmt: true,
+                    prefix: ue.prefix,
+                }))
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract field name from `this.field` in an AssignmentTarget (for
+    /// `this.field = ...` or `this.field += ...`).
+    fn extract_this_field_name_from_assign_target(
+        &self,
+        target: &AssignmentTarget,
+    ) -> Option<String> {
+        match target {
             AssignmentTarget::StaticMemberExpression(sme)
                 if matches!(&sme.object, Expression::ThisExpression(_)) =>
             {
                 Some(sme.property.name.to_string())
             }
-            // this.#field = value
             AssignmentTarget::PrivateFieldExpression(pfe)
                 if matches!(&pfe.object, Expression::ThisExpression(_)) =>
             {
@@ -567,17 +671,27 @@ impl Lowerer {
                 Some(pfe.field.name.to_string())
             }
             _ => None,
-        };
-        let fname = maybe_fname?;
-        if !field_names.contains(&fname) {
-            return None;
         }
-        // this.field = value → field = value (reassign the pre-declared var)
-        let value_ir = self.lower_expr(&ae.right);
-        Some(crate::zigir::types::IrStmt::Assign {
-            target: IrAssignTarget::Ident(self.make_ident(&fname)),
-            op: AssignOp::Assign,
-            value: value_ir,
-        })
+    }
+
+    /// Extract field name from `this.field` in a SimpleAssignmentTarget (for
+    /// `this.field++` / `++this.field`).
+    fn extract_this_field_name_from_simple_target(
+        &self,
+        target: &SimpleAssignmentTarget,
+    ) -> Option<String> {
+        match target {
+            SimpleAssignmentTarget::StaticMemberExpression(sme)
+                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+            {
+                Some(sme.property.name.to_string())
+            }
+            SimpleAssignmentTarget::PrivateFieldExpression(pfe)
+                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+            {
+                Some(pfe.field.name.to_string())
+            }
+            _ => None,
+        }
     }
 }

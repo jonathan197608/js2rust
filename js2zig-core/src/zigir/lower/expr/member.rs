@@ -667,7 +667,7 @@ impl Lowerer {
 
     /// Infer the type of a simple assignment target (left-hand side of `++`/`--` etc.).
     /// Handles the same cases as `infer_assign_target_type` but for `SimpleAssignmentTarget`.
-    pub(super) fn infer_simple_assign_target_type(
+    pub(in crate::zigir::lower) fn infer_simple_assign_target_type(
         &self,
         target: &SimpleAssignmentTarget,
     ) -> Option<ZigType> {
@@ -685,7 +685,10 @@ impl Lowerer {
 
     /// Infer the type of an assignment target (left-hand side of `=` / `+=` etc.).
     /// Only handles the common cases: identifier and static member expression.
-    pub(super) fn infer_assign_target_type(&self, target: &AssignmentTarget) -> Option<ZigType> {
+    pub(in crate::zigir::lower) fn infer_assign_target_type(
+        &self,
+        target: &AssignmentTarget,
+    ) -> Option<ZigType> {
         use oxc_ast::ast::AssignmentTarget;
         match target {
             AssignmentTarget::AssignmentTargetIdentifier(id) => {
