@@ -129,7 +129,7 @@ return c.getCount();
 
 #[test]
 fn test_native_proto_private_field_no_default() {
-    // Private field without explicit default → falls back to 0
+    // Private field without explicit default → type is JsAny → zero is undefined
     let js = r#"
 class Widget {
 #id;
@@ -153,8 +153,12 @@ return w.getId();
     );
     // Verify: field exists (name without #)
     assert!(zig.contains("id:"), "Expected id field");
-    // Verify: default init uses 0
-    assert!(zig.contains(".id = 0"), "Expected default=0. Got:\n{}", zig);
+    // Verify: default init uses undefined (JsAny zero value, not 0)
+    assert!(
+        zig.contains(".id = undefined"),
+        "Expected default=undefined. Got:\n{}",
+        zig
+    );
 }
 
 #[test]

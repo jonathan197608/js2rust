@@ -501,4 +501,68 @@ mod tests {
         assert!(output.contains("pub fn deinit_js2rust() void {"));
         assert!(output.contains("__Registry_entries.deinit(js_allocator.allocator());"));
     }
+
+    #[test]
+    fn test_p0_6_default_init_uses_field_zero_value() {
+        use crate::zigir::types::{IrClassDecl, IrClassField};
+
+        let mut module = IrModule::new("test".to_string());
+        // Class with no constructor → emit_default_init generates init().
+        // Fields of various types with no default → must use field_zero_value
+        // (e.g. false for Bool, "" for Str, 0.0 for F64), not "0" for all.
+        module.declarations.push(IrDecl::Class(IrClassDecl {
+            name: IrIdent::new("Config"),
+            fields: vec![
+                IrClassField {
+                    name: "count".to_string(),
+                    zig_type: ZigType::I64,
+                    default: None,
+                },
+                IrClassField {
+                    name: "ratio".to_string(),
+                    zig_type: ZigType::F64,
+                    default: None,
+                },
+                IrClassField {
+                    name: "enabled".to_string(),
+                    zig_type: ZigType::Bool,
+                    default: None,
+                },
+                IrClassField {
+                    name: "label".to_string(),
+                    zig_type: ZigType::Str,
+                    default: None,
+                },
+            ],
+            constructor: None,
+            methods: vec![],
+            static_inits: vec![],
+            static_blocks: vec![],
+            extends: None,
+            needs_deinit: false,
+        }));
+        let output = Emitter::emit_module(&module);
+
+        // init() should use type-correct zero values, not "0" for all
+        assert!(
+            output.contains(".ratio = 0.0"),
+            "F64 field should use '0.0', got:\n{}",
+            output
+        );
+        assert!(
+            output.contains(".enabled = false"),
+            "Bool field should use 'false', got:\n{}",
+            output
+        );
+        assert!(
+            output.contains(".label = \"\""),
+            "Str field should use empty string, got:\n{}",
+            output
+        );
+        // Negative: the old bug emitted "0" for every type
+        assert!(
+            !output.contains(".enabled = 0"),
+            "Bool field should NOT use '0' (old bug)"
+        );
+    }
 }

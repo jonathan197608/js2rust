@@ -737,7 +737,7 @@ impl Emitter {
                         f.name.as_str(),
                         match &f.default {
                             Some(expr) => self.expr_to_string(expr),
-                            None => "0".to_string(),
+                            None => field_zero_value(&f.zig_type).to_string(),
                         },
                     )
                 })
