@@ -90,6 +90,210 @@ return re.lastIndex;
     );
 }
 
+// ── C8: Transitive needs_deinit propagation ──
+
+/// Class A has a field of type class B, and B has a Map field (needs deinit).
+/// A should get a deinit() method and `defer a.deinit(...)` for auto-cleanup,
+/// even though A has no direct Map/Set/ArrayList/BigInt fields.
+#[test]
+fn test_c8_transitive_deinit_map_field() {
+    let js = r#"
+class Inner {
+    constructor() {
+        this.m = new Map();
+    }
+}
+
+class Outer {
+    constructor() {
+        this.inner = new Inner();
+    }
+}
+
+/** @returns {i64} */
+export function testTransitiveDeinit() {
+    const o = new Outer();
+    return 1;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c8_transitive_deinit_map_field");
+    println!(
+        "=== C8: transitive deinit (Inner -> Map, Outer -> Inner) ===\n{}",
+        zig
+    );
+    // Outer variable should get auto-cleanup defer
+    assert!(
+        zig.contains("defer o.deinit(js_allocator.allocator())"),
+        "Expected 'defer o.deinit(...)' for Outer variable (transitive deinit), got:\n{}",
+        zig
+    );
+    // Outer's deinit method should call inner's deinit
+    assert!(
+        zig.contains("self.inner.deinit(alloc)"),
+        "Expected 'self.inner.deinit(alloc)' in Outer's deinit method, got:\n{}",
+        zig
+    );
+    // Inner's deinit method should call Map's deinit
+    assert!(
+        zig.contains("self.m.deinit(alloc)"),
+        "Expected 'self.m.deinit(alloc)' in Inner's deinit method, got:\n{}",
+        zig
+    );
+    // Both Inner and Outer structs should have deinit methods
+    let deinit_count = zig
+        .matches("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void")
+        .count();
+    assert!(
+        deinit_count == 2,
+        "Expected 2 deinit methods (Inner + Outer), got {}:\n{}",
+        deinit_count,
+        zig
+    );
+}
+
+/// Three-level nesting: Outermost -> Middle -> Deepest -> Map.
+/// The fixpoint propagation must reach all three levels.
+#[test]
+fn test_c8_three_level_deinit_chain() {
+    let js = r#"
+class Deepest {
+    constructor() {
+        this.m = new Map();
+    }
+}
+
+class Middle {
+    constructor() {
+        this.d = new Deepest();
+    }
+}
+
+class Outermost {
+    constructor() {
+        this.mid = new Middle();
+    }
+}
+
+/** @returns {i64} */
+export function testThreeLevelDeinit() {
+    const o = new Outermost();
+    return 1;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c8_three_level_deinit_chain");
+    println!("=== C8: three-level deinit chain ===\n{}", zig);
+    assert!(
+        zig.contains("defer o.deinit(js_allocator.allocator())"),
+        "Expected 'defer o.deinit(...)' for Outermost variable, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("self.mid.deinit(alloc)"),
+        "Expected 'self.mid.deinit(alloc)' in Outermost's deinit, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("self.d.deinit(alloc)"),
+        "Expected 'self.d.deinit(alloc)' in Middle's deinit, got:\n{}",
+        zig
+    );
+    let deinit_count = zig
+        .matches("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void")
+        .count();
+    assert!(
+        deinit_count == 3,
+        "Expected 3 deinit methods (Outermost + Middle + Deepest), got {}:\n{}",
+        deinit_count,
+        zig
+    );
+}
+
+/// A class wrapping another class that does NOT need deinit should NOT
+/// get a deinit() method, and its variables should NOT get defer deinit.
+#[test]
+fn test_c8_no_deinit_for_plain_class_field() {
+    let js = r#"
+class Plain {
+    constructor() {
+        this.x = 42;
+    }
+}
+
+class Wrapper {
+    constructor() {
+        this.p = new Plain();
+    }
+}
+
+/** @returns {i64} */
+export function testNoDeinit() {
+    const w = new Wrapper();
+    return w.p.x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c8_no_deinit_for_plain_class_field");
+    println!("=== C8: no deinit for plain class field ===\n{}", zig);
+    // Wrapper variable should NOT get defer deinit
+    assert!(
+        !zig.contains("defer w.deinit"),
+        "Wrapper variable should NOT get 'defer w.deinit(...)' (plain field), got:\n{}",
+        zig
+    );
+    // Neither class should have a deinit method
+    let deinit_count = zig
+        .matches("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void")
+        .count();
+    assert!(
+        deinit_count == 0,
+        "Expected 0 deinit methods (neither Plain nor Wrapper needs deinit), got {}:\n{}",
+        deinit_count,
+        zig
+    );
+}
+
+/// A class with both a direct Map field and a transitive (Inner) field.
+/// Both field-level deinit calls should be generated in the same deinit method.
+#[test]
+fn test_c8_mixed_direct_and_transitive_deinit() {
+    let js = r#"
+class Inner {
+    constructor() {
+        this.m = new Map();
+    }
+}
+
+class Mixed {
+    constructor() {
+        this.direct = new Map();
+        this.inner = new Inner();
+    }
+}
+
+/** @returns {i64} */
+export function testMixedDeinit() {
+    const obj = new Mixed();
+    return 1;
+}
+"#;
+    let zig = transpile_and_check(js, "test_c8_mixed_direct_and_transitive_deinit");
+    println!("=== C8: mixed direct + transitive deinit ===\n{}", zig);
+    assert!(
+        zig.contains("defer obj.deinit(js_allocator.allocator())"),
+        "Expected 'defer obj.deinit(...)' for Mixed variable, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("self.direct.deinit(alloc)"),
+        "Expected 'self.direct.deinit(alloc)' for direct Map field, got:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("self.inner.deinit(alloc)"),
+        "Expected 'self.inner.deinit(alloc)' for transitive Inner field, got:\n{}",
+        zig
+    );
+}
+
 /// RegExp variable should be emitted as 'var' (not 'const') to allow
 /// lastIndex mutation inside exec().
 #[test]

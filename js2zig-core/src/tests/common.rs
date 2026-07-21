@@ -85,6 +85,10 @@ pub fn assert_zig_ast_check(zig_code: &str, test_name: &str) {
         }
         if needs_js_collections {
             w.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
+            // Type aliases so class field type annotations (e.g. `m: Map,`) compile.
+            // The real project preamble should provide these too; see push_runtime_imports.
+            w.push_str("const Map = js_collections.JsMap;\n");
+            w.push_str("const Set = js_collections.JsSet;\n");
         }
         if needs_js_uri {
             w.push_str("const js_uri = @import(\"js_runtime/js_uri.zig\");\n");

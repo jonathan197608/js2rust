@@ -10,6 +10,7 @@ pub mod expr;
 pub mod helpers;
 pub mod stmt;
 
+use crate::types::ZigType;
 use crate::zigir::types::{IrDecl, IrModule};
 
 use std::collections::HashSet;
@@ -149,6 +150,46 @@ impl Emitter {
                         self.rest_param_names.insert(param.name.zig_name.clone());
                     }
                 }
+            }
+        }
+
+        // 0.5. Pre-scan: build class_needs_deinit set with propagation.
+        //     Initial values come from each class's needs_deinit flag (direct
+        //     Map/Set/ArrayList/BigInt fields). Then propagate transitively:
+        //     if a class has a field whose type is another class that needs
+        //     deinit, this class also needs deinit. Fixpoint iteration handles
+        //     Arbitrary nesting depth (A -> B -> C with Map field).
+        for decl in &module.declarations {
+            let IrDecl::Class(cls) = decl else {
+                continue;
+            };
+            if cls.needs_deinit {
+                self.class_needs_deinit.insert(cls.name.zig_name.clone());
+            }
+        }
+        loop {
+            let mut changed = false;
+            for decl in &module.declarations {
+                let IrDecl::Class(cls) = decl else {
+                    continue;
+                };
+                let name = &cls.name.zig_name;
+                if self.class_needs_deinit.contains(name) {
+                    continue;
+                }
+                let has_deinit_field = cls.fields.iter().any(|f| {
+                    matches!(
+                        &f.zig_type,
+                        ZigType::NamedStruct(n) if self.class_needs_deinit.contains(n.as_str())
+                    )
+                });
+                if has_deinit_field {
+                    self.class_needs_deinit.insert(name.clone());
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
             }
         }
 

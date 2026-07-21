@@ -476,7 +476,7 @@ impl Emitter {
     pub(crate) fn emit_class_decl(&mut self, class: &IrClassDecl) {
         let class_name = &class.name.zig_name;
 
-        // Register class in needs_deinit set if it contains Map/Set/ArrayList fields.
+        // Register class in needs_deinit set (redundant with pre-scan, but safe).
         if class.needs_deinit {
             self.class_needs_deinit.insert(class_name.clone());
         }
@@ -507,15 +507,19 @@ impl Emitter {
             self.emit_class_method(class_name, method);
         }
 
-        // deinit() method — generated when any field is Map, Set, or ArrayList.
-        if class.needs_deinit {
+        // deinit() method — generated when any field needs deinit (Map, Set,
+        // ArrayList, BigInt, or a NamedStruct class that itself needs deinit).
+        // Uses the propagated class_needs_deinit set from the pre-scan step.
+        if self.class_needs_deinit.contains(class_name.as_str()) {
             self.writeln("");
             self.writeln("pub fn deinit(self: *@This(), alloc: std.mem.Allocator) void {");
             self.indent_push();
             for field in &class.fields {
                 let needs_field_deinit = matches!(
                     &field.zig_type,
-                ZigType::NamedStruct(n) if n == "Map" || n == "Set"
+                    ZigType::NamedStruct(n)
+                        if n == "Map" || n == "Set"
+                            || self.class_needs_deinit.contains(n.as_str())
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
                     || matches!(&field.zig_type, ZigType::BigInt);
                 if needs_field_deinit {
@@ -539,10 +543,13 @@ impl Emitter {
             self.emit_expr(init_expr);
             self.writeln(";");
 
-            // Register static Map/Set/ArrayList/BigInt fields for deinit in deinit_js2rust()
+            // Register static fields needing deinit in deinit_js2rust():
+            // Map, Set, ArrayList, BigInt, or NamedStruct class that needs deinit.
             let needs_static_deinit = matches!(
                 field_ty,
-                ZigType::NamedStruct(n) if n == "Map" || n == "Set"
+                ZigType::NamedStruct(n)
+                    if n == "Map" || n == "Set"
+                        || self.class_needs_deinit.contains(n.as_str())
             ) || matches!(field_ty, ZigType::ArrayList(_))
                 || matches!(field_ty, ZigType::BigInt);
             if needs_static_deinit {

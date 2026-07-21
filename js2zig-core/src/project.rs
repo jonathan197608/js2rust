@@ -471,6 +471,10 @@ fn push_runtime_imports(out: &mut String, needs_regex: bool) {
     out.push_str("const js_date = @import(\"js_runtime/js_date.zig\");\n");
     out.push_str("const js_error = @import(\"js_runtime/js_error.zig\");\n");
     out.push_str("const js_collections = @import(\"js_runtime/js_collections.zig\");\n");
+    // Type aliases so class field type annotations (e.g. `m: Map,`) resolve.
+    // NamedStruct("Map")/("Set") emit unqualified names via to_zig_type().
+    out.push_str("const Map = js_collections.JsMap;\n");
+    out.push_str("const Set = js_collections.JsSet;\n");
     if needs_regex {
         out.push_str("const js_regexp = @import(\"js_runtime/js_regexp.zig\");\n");
         out.push_str("const js_string_regex = @import(\"js_runtime/js_string_regex.zig\");\n");
