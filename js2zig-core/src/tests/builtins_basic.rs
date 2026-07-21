@@ -436,6 +436,223 @@ return a + b + c + d + e + f + g + h + i + j + k;
     );
 }
 
+// ── P0-7: Math float-arg coercion (@floatFromInt on float args) ─────────
+// Before P0-7, Math.sin/cos/tan/atan/log/exp/asin/acos/hypot/fround/clz32/sign
+// unconditionally emitted `@floatFromInt(arg)`, which is a Zig compile error
+// when the argument is a float (e.g. `Math.sin(1.5)` → `@sin(@floatFromInt(1.5))`
+// fails: @floatFromInt expects an integer). P0-7 adds `expr_is_float` +
+// `emit_f64_coerced` to pick the correct coercion per arg shape.
+
+#[test]
+fn test_p0_7_float_literal_args() {
+    // Float-literal args: must emit `@as(f64, <literal>)`, NOT `@floatFromInt`.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07FloatLit() {
+    return Math.sin(1.5) + Math.cos(2.5) + Math.tan(0.5)
+         + Math.atan(0.5) + Math.asin(0.5) + Math.acos(0.5)
+         + Math.exp(1.5) + Math.log(2.5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_7_float_literal_args");
+
+    // Float-coercing builtins must be present
+    assert!(zig.contains("@sin("), "Expected '@sin(' in:\n{}", zig);
+    assert!(zig.contains("@cos("), "Expected '@cos(' in:\n{}", zig);
+    assert!(zig.contains("@tan("), "Expected '@tan(' in:\n{}", zig);
+    assert!(
+        zig.contains("std.math.atan("),
+        "Expected 'std.math.atan(' (atan is NOT a @-builtin) in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.asin("),
+        "Expected 'std.math.asin(' in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.math.acos("),
+        "Expected 'std.math.acos(' in:\n{}",
+        zig
+    );
+    assert!(zig.contains("@exp("), "Expected '@exp(' in:\n{}", zig);
+    assert!(zig.contains("@log("), "Expected '@log(' in:\n{}", zig);
+    // CRITICAL: @floatFromInt must NOT appear for float-literal args
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for float-literal args:\n{}",
+        zig
+    );
+    // Spot-check the identity-cast form for a float literal
+    assert!(
+        zig.contains("@as(f64, 1.5)"),
+        "Expected '@as(f64, 1.5)' identity cast for float literal in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_int_variable_arg() {
+    // i64 variable arg (@param {number}): must STILL use @floatFromInt.
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+export function p07IntVar(x) {
+    return Math.sin(x);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_7_int_variable_arg");
+
+    assert!(zig.contains("@sin("), "Expected '@sin(' in:\n{}", zig);
+    assert!(
+        zig.contains("@floatFromInt"),
+        "Expected @floatFromInt for i64 variable arg in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_float_expr_arg() {
+    // Arg is itself a float-returning BuiltinCall (Math.cos): must use
+    // `@as(f64, ...)` identity cast, NOT `@floatFromInt`.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07FloatExpr() {
+    return Math.sin(Math.cos(0.5));
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_7_float_expr_arg");
+
+    assert!(zig.contains("@sin("), "Expected '@sin(' in:\n{}", zig);
+    assert!(zig.contains("@cos("), "Expected '@cos(' in:\n{}", zig);
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for float-expr arg:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_hypot_float_args() {
+    // Math.hypot with float literals: squared terms use identity cast.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07HypotFloat() {
+    return Math.hypot(1.5, 2.5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_7_hypot_float_args");
+
+    assert!(
+        zig.contains("@sqrt("),
+        "Expected '@sqrt(' for hypot in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(f64, 1.5)"),
+        "Expected '@as(f64, 1.5)' squared term in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(f64, 2.5)"),
+        "Expected '@as(f64, 2.5)' squared term in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for hypot float args:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_clz32_float_arg() {
+    // Math.clz32(1.5): float arg must be reduced via @intFromFloat before @clz.
+    // Uses transpile_and_assert (no ast-check) because @clz's narrow integer
+    // return type interacts with the `@returns {number}` signature.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07Clz32Float() {
+    return Math.clz32(1.5);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p0_7_clz32_float_arg");
+
+    assert!(zig.contains("@clz("), "Expected '@clz(' in:\n{}", zig);
+    assert!(
+        zig.contains("@intFromFloat"),
+        "Expected @intFromFloat for clz32 float arg in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for clz32 float arg:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_fround_float_arg() {
+    // Math.fround(1.5): float arg → @as(f32, @floatCast(...)).
+    // Uses transpile_and_assert: fround yields f32 which may not match the
+    // inferred `@returns {number}` signature under ast-check.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07Fround() {
+    return Math.fround(1.5);
+}
+"#;
+    let zig = transpile_and_assert(js, "test_p0_7_fround_float_arg");
+
+    assert!(
+        zig.contains("@floatCast"),
+        "Expected @floatCast for fround float arg in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for fround float arg:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_7_sign_float_arg() {
+    // Math.sign(2.5): float-literal arg → cached value uses `@as(f64, 2.5)`.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p07Sign() {
+    return Math.sign(2.5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_7_sign_float_arg");
+
+    assert!(
+        zig.contains("@as(f64, 2.5)"),
+        "Expected '@as(f64, 2.5)' for sign float arg in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "P0-7 regression: @floatFromInt emitted for sign float arg:\n{}",
+        zig
+    );
+}
+
 // ── Test: AwaitExpression support ────────────
 
 #[test]

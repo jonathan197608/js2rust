@@ -9,18 +9,65 @@ use crate::zigir::emit::Emitter;
 // Direct Zig builtins: emit `@fn(args)`.
 const ZIG_BUILTINS: &[&str] = &["abs", "floor", "ceil", "round", "sqrt", "trunc"];
 
-// Float-wrap Zig builtins: emit `@fn(@as(f64, @floatFromInt(args)))`.
-const ZIG_FLOAT_BUILTINS: &[&str] = &["sin", "cos", "tan", "atan", "log", "log10", "log2", "exp"];
+// Float builtin Zig builtins: emit `@fn(emit_f64_coerced(arg))`.
+// Coercion handles both int and float inputs via type inspection.
+// NOTE: `@atan` is NOT a Zig builtin — single-arg atan uses `std.math.atan`
+// (see STD_MATH_FLOAT). Only `@sin`/`@cos`/`@tan`/`@log`/`@log10`/`@log2`/`@exp`
+// are real `@`-builtins in Zig 0.16.
+const ZIG_FLOAT_BUILTINS: &[&str] = &["sin", "cos", "tan", "log", "log10", "log2", "exp"];
 
 // std.math direct calls: emit `std.math.fn(args)`.
 const STD_MATH_DIRECT: &[&str] = &[
     "expm1", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "log1p", "cbrt",
 ];
 
-// Float-wrap std.math calls: emit `std.math.fn(@as(f64, @floatFromInt(args)))`.
-const STD_MATH_FLOAT: &[&str] = &["asin", "acos"];
+// Float builtin std.math calls: emit `std.math.fn(emit_f64_coerced(arg))`.
+// `atan` is here (not a `@`-builtin); `asin`/`acos` likewise use std.math.
+const STD_MATH_FLOAT: &[&str] = &["asin", "acos", "atan"];
+
+/// Determine whether an IrExpr likely produces an f64 value.
+/// Used to decide between `@as(f64, expr)` (identity cast for floats)
+/// and `@as(f64, @floatFromInt(expr))` (int→float conversion).
+fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
+    use crate::types::ZigType;
+    use crate::zigir::ops::BinOp;
+    use crate::zigir::types::IrExpr;
+    match expr {
+        IrExpr::FloatLiteral(_) => true,
+        IrExpr::Binary {
+            op,
+            left_type,
+            right_type,
+            ..
+        } => {
+            // Division always produces f64 in JS semantics
+            *op == BinOp::Div
+                || left_type.as_ref() == Some(&ZigType::F64)
+                || right_type.as_ref() == Some(&ZigType::F64)
+        }
+        IrExpr::Unary { operand_type, .. } => operand_type.as_ref() == Some(&ZigType::F64),
+        IrExpr::BuiltinCall(bc) => bc.return_type == ZigType::F64,
+        _ => false,
+    }
+}
 
 impl Emitter {
+    /// Emit an argument coerced to f64, handling both int and float inputs.
+    /// - Float expressions/literals: `@as(f64, expr)` (identity/comptime cast)
+    /// - Int literals: `@as(f64, literal)` (comptime coercion, no @floatFromInt)
+    /// - Int variables/expressions: `@as(f64, @floatFromInt(expr))` (int→float)
+    fn emit_f64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
+        if expr_is_float(arg) || matches!(arg, crate::zigir::types::IrExpr::IntLiteral(_)) {
+            self.write("@as(f64, ");
+            self.emit_expr(arg);
+            self.write(")");
+        } else {
+            self.write("@as(f64, @floatFromInt(");
+            self.emit_expr(arg);
+            self.write("))");
+        }
+    }
+
     pub(super) fn emit_math_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         // ── Data-driven: direct Zig builtins ──
         if ZIG_BUILTINS.contains(&method) {
@@ -30,11 +77,13 @@ impl Emitter {
             return;
         }
 
-        // ── Data-driven: float-wrap Zig builtins ──
+        // ── Data-driven: float builtin Zig builtins ──
         if ZIG_FLOAT_BUILTINS.contains(&method) {
-            self.write(&format!("@{}(@as(f64, @floatFromInt(", method));
-            self.emit_inline_args(args);
-            self.write(")))");
+            self.write(&format!("@{}(", method));
+            if let Some(a) = args.first() {
+                self.emit_f64_coerced(a);
+            }
+            self.write(")");
             return;
         }
 
@@ -46,11 +95,13 @@ impl Emitter {
             return;
         }
 
-        // ── Data-driven: float-wrap std.math calls ──
+        // ── Data-driven: float builtin std.math calls ──
         if STD_MATH_FLOAT.contains(&method) {
-            self.write(&format!("std.math.{}(@as(f64, @floatFromInt(", method));
-            self.emit_inline_args(args);
-            self.write(")))");
+            self.write(&format!("std.math.{}(", method));
+            if let Some(a) = args.first() {
+                self.emit_f64_coerced(a);
+            }
+            self.write(")");
             return;
         }
 
@@ -84,9 +135,9 @@ impl Emitter {
                     self.write("0");
                 }
                 1 => {
-                    self.write("@abs(@as(f64, @floatFromInt(");
-                    self.emit_expr(&args[0]);
-                    self.write(")))");
+                    self.write("@abs(");
+                    self.emit_f64_coerced(&args[0]);
+                    self.write(")");
                 }
                 _ => {
                     self.write("@sqrt(");
@@ -94,19 +145,33 @@ impl Emitter {
                         if _i > 0 {
                             self.write(" + ");
                         }
-                        self.write("@as(f64, @floatFromInt(");
-                        self.emit_expr(arg);
-                        self.write("))*@as(f64, @floatFromInt(");
-                        self.emit_expr(arg);
-                        self.write("))");
+                        self.emit_f64_coerced(arg);
+                        self.write("*");
+                        self.emit_f64_coerced(arg);
                     }
                     self.write(")");
                 }
             },
             "fround" => {
-                self.write("@as(f32, @floatFromInt(");
-                self.emit_inline_args(args);
-                self.write("))");
+                // Math.fround(x) → nearest f32 representation.
+                // @floatFromInt only works for int; @floatCast for float→f32.
+                if let Some(a) = args.first() {
+                    if expr_is_float(a) {
+                        self.write("@as(f32, @floatCast(");
+                        self.emit_expr(a);
+                        self.write("))");
+                    } else if matches!(a, crate::zigir::types::IrExpr::IntLiteral(_)) {
+                        self.write("@as(f32, ");
+                        self.emit_expr(a);
+                        self.write(")");
+                    } else {
+                        self.write("@as(f32, @floatFromInt(");
+                        self.emit_expr(a);
+                        self.write("))");
+                    }
+                } else {
+                    self.write("@as(f32, 0)");
+                }
             }
             "imul" => {
                 // Math.imul(a, b) → @as(i32, @intCast(@as(u32, @bitCast(@as(i32, a))) *% @as(u32, @bitCast(@as(i32, b)))))
@@ -121,24 +186,37 @@ impl Emitter {
                 self.write("))))");
             }
             "clz32" => {
-                self.write("@clz(");
-                self.emit_inline_args(args);
-                self.write(")");
+                // Math.clz32(x): convert x to Uint32, count leading zero bits.
+                // @clz requires an integer; float args must be converted first.
+                if let Some(a) = args.first() {
+                    if expr_is_float(a) {
+                        self.write("@clz(@as(u32, @intFromFloat(");
+                        self.emit_expr(a);
+                        self.write(")))");
+                    } else if matches!(a, crate::zigir::types::IrExpr::IntLiteral(_)) {
+                        self.write("@clz(@as(u32, ");
+                        self.emit_expr(a);
+                        self.write("))");
+                    } else {
+                        self.write("@clz(@as(u32, @intCast(");
+                        self.emit_expr(a);
+                        self.write(")))");
+                    }
+                } else {
+                    self.write("@clz(@as(u32, 0))");
+                }
             }
             "sign" => {
                 // Math.sign(x) → block with cached value to avoid re-evaluation.
                 // JS semantics: +1 if x>0, -1 if x<0, 0 if x==0, NaN otherwise.
                 let blk = self.next_label();
-                self.write(&format!(
-                    "({}: {{ const __sign_v = @as(f64, @floatFromInt(",
-                    blk
-                ));
+                self.write(&format!("({}: {{ const __sign_v = ", blk));
                 if let Some(a) = args.first() {
-                    self.emit_expr(a);
+                    self.emit_f64_coerced(a);
                 } else {
-                    self.write("0");
+                    self.write("@as(f64, 0)");
                 }
-                self.write(")); break :");
+                self.write("; break :");
                 self.write(&blk);
                 self.write(" if (__sign_v > 0) @as(f64, 1.0) else if (__sign_v < 0) @as(f64, -1.0) else if (__sign_v == 0) @as(f64, 0.0) else std.math.nan(f64); })");
             }
