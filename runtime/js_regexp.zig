@@ -20,6 +20,7 @@ pub const JsRegExp = struct {
     flags: []const u8,
     global: bool,
     ignoreCase: bool,
+    lastIndex: usize = 0,
 
     /// Create a new RegExp from a pattern string and flags string.
     /// Returns `error.InvalidRegExpFlags` if flags contain invalid characters
@@ -33,6 +34,7 @@ pub const JsRegExp = struct {
             .flags = owned_flags,
             .global = std.mem.indexOfScalar(u8, flags, 'g') != null,
             .ignoreCase = std.mem.indexOfScalar(u8, flags, 'i') != null,
+            .lastIndex = 0,
         };
     }
 
@@ -61,47 +63,50 @@ pub const JsRegExp = struct {
     /// Match the pattern against the subject, returning captured groups.
     /// Returns null if no match, or an array of matched substrings
     /// (index 0 = full match, indices 1+ = capture groups).
+    /// Note: match_ always searches from position 0 (no lastIndex tracking).
+    /// For global flag, use js_string_regex.matchStringGlobal instead.
     pub fn match_(self: *const JsRegExp, alloc: Allocator, subject: []const u8) !?[][]const u8 {
         var count: usize = 0;
         const result = host_regex_match(self.pattern.ptr, self.pattern.len, subject.ptr, subject.len, &count);
         if (count == 0) return null;
-
         const bytes = result.ptr[0..@intCast(result.len)];
-        var matches = std.ArrayList([]const u8).empty;
-        errdefer matches.deinit(alloc);
-
-        var start: usize = 0;
-        for (0..count) |_| {
-            var end: usize = start;
-            while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-            try matches.append(alloc, bytes[start..end]);
-            start = end + 1;
-        }
-
-        return try matches.toOwnedSlice(alloc);
+        return try parseNulSeparated(alloc, bytes, count);
     }
 
     /// Execute the pattern against the subject, returning captured groups.
     /// Returns null if no match, or an array of matched substrings
     /// (index 0 = full match, indices 1+ = capture groups).
-    pub fn exec(self: *const JsRegExp, alloc: Allocator, subject: []const u8) !?[][]const u8 {
+    ///
+    /// With the global flag, exec searches from `lastIndex` and advances it
+    /// to the end of the match (or resets to 0 on no match), enabling
+    /// iterative matching via repeated exec() calls.
+    /// Without the global flag, exec always searches from position 0.
+    pub fn exec(self: *JsRegExp, alloc: Allocator, subject: []const u8) !?[][]const u8 {
+        if (self.global) {
+            var count: usize = 0;
+            var end_pos: usize = 0;
+            const result = host_regex_exec(
+                self.pattern.ptr,
+                self.pattern.len,
+                subject.ptr,
+                subject.len,
+                self.lastIndex,
+                &count,
+                &end_pos,
+            );
+            if (count == 0) {
+                self.lastIndex = 0;
+                return null;
+            }
+            self.lastIndex = end_pos;
+            const bytes = result.ptr[0..@intCast(result.len)];
+            return try parseNulSeparated(alloc, bytes, count);
+        }
         var count: usize = 0;
         const result = host_regex_match(self.pattern.ptr, self.pattern.len, subject.ptr, subject.len, &count);
         if (count == 0) return null;
-
         const bytes = result.ptr[0..@intCast(result.len)];
-        var matches = std.ArrayList([]const u8).empty;
-        errdefer matches.deinit(alloc);
-
-        var start: usize = 0;
-        for (0..count) |_| {
-            var end: usize = start;
-            while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-            try matches.append(alloc, bytes[start..end]);
-            start = end + 1;
-        }
-
-        return try matches.toOwnedSlice(alloc);
+        return try parseNulSeparated(alloc, bytes, count);
     }
 
     /// Search for the pattern in the subject.
@@ -113,15 +118,22 @@ pub const JsRegExp = struct {
 
 /// Standalone exec for RegExp literal codegen: /pattern/.exec(str)
 /// Returns null if no match, or an array of matched substrings.
+/// Note: literal regex exec is stateless (no lastIndex tracking) because
+/// each call creates a fresh match without a persistent JsRegExp object.
 pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !?[][]const u8 {
     var count: usize = 0;
     const result = host_regex_match(pattern.ptr, pattern.len, subject.ptr, subject.len, &count);
     if (count == 0) return null;
-
     const bytes = result.ptr[0..@intCast(result.len)];
-    var matches: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
-    errdefer matches.deinit(alloc);
+    return try parseNulSeparated(alloc, bytes, count);
+}
 
+/// Parse NUL-separated substrings into an owned slice.
+/// `bytes` is the raw buffer from a host_regex_* function.
+/// `count` is the number of segments to extract.
+fn parseNulSeparated(alloc: Allocator, bytes: []const u8, count: usize) !?[][]const u8 {
+    var matches = std.ArrayList([]const u8).empty;
+    errdefer matches.deinit(alloc);
     var start: usize = 0;
     for (0..count) |_| {
         var end: usize = start;
@@ -129,7 +141,6 @@ pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !
         try matches.append(alloc, bytes[start..end]);
         start = end + 1;
     }
-
     return try matches.toOwnedSlice(alloc);
 }
 
@@ -178,6 +189,16 @@ extern fn host_regex_match(
     text_ptr: [*]const u8,
     text_len: usize,
     out_count: *usize,
+) extern struct { ptr: [*]const u8, len: isize };
+
+extern fn host_regex_exec(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    start: usize,
+    out_count: *usize,
+    out_end: *usize,
 ) extern struct { ptr: [*]const u8, len: isize };
 
 // ── Tests ──

@@ -409,7 +409,7 @@ impl Emitter {
         if vd.needs_deinit
             || matches!(&vd.zig_type, Some(ZigType::NamedStruct(name))
                 if name != "Map" && name != "Set" && name != "JsDate"
-                    && name != "JsBigInt" && name != "JsRegExp"
+                    && name != "JsBigInt" && name != "JsRegExp" && name != "RegExp"
                     && name != "Error" && name != "JsError"
                     && self.class_needs_deinit.contains(name))
             || matches!(&vd.zig_type, Some(ZigType::BigInt))

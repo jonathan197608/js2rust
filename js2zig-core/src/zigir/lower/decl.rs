@@ -351,7 +351,7 @@ impl Lowerer {
         let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(js_name) {
             match inferred_ty {
                 ZigType::ArrayList(_) => false,
-                ZigType::NamedStruct(n) if n == "Map" || n == "Set" => false,
+                ZigType::NamedStruct(n) if n == "Map" || n == "Set" || n == "RegExp" => false,
                 ZigType::NamedStruct(n) if self.class_names.contains(n) => false,
                 ZigType::BigInt => false,
                 _ => is_const,

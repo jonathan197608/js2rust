@@ -831,7 +831,7 @@ impl Lowerer {
             NewConstructor::Map => ZigType::NamedStruct("Map".to_string()),
             NewConstructor::Set => ZigType::NamedStruct("Set".to_string()),
             NewConstructor::Date(_) => ZigType::NamedStruct("JsDate".to_string()),
-            NewConstructor::RegExp => ZigType::JsAny,
+            NewConstructor::RegExp => ZigType::NamedStruct("JsRegExp".to_string()),
             NewConstructor::TypedArray(_) => ZigType::NamedStruct("TypedArray".to_string()),
             NewConstructor::Class(name) => ZigType::NamedStruct(name.clone()),
             NewConstructor::Error(_) => ZigType::JsAny,

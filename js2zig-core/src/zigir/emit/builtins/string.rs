@@ -254,6 +254,18 @@ impl Emitter {
             ));
             return;
         }
+        // Variable regex: runtime branch on .global to select matchStringGlobal vs matchString
+        if let Some(ri) = regex_info
+            && ri.is_var_ref
+            && let Some(var) = &ri.var_name
+        {
+            let receiver = obj.unwrap_or("\"\"");
+            self.write(&format!(
+                "(if ({}.global) js_string_regex.matchStringGlobal(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\") else js_string_regex.matchString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\"))",
+                var, receiver, var, receiver, var
+            ));
+            return;
+        }
         self.emit_string_match_like(obj, regex_info, "matchString");
     }
 

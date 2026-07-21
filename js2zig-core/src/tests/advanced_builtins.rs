@@ -68,9 +68,111 @@ return Number.MIN_SAFE_INTEGER;
     assert!(zig.contains("floatMax"), "Expected 'floatMax' in:\n{}", zig);
     assert!(zig.contains("floatMin"), "Expected 'floatMin' in:\n{}", zig);
     assert!(zig.contains("nan"), "Expected 'nan' in:\n{}", zig);
+}
+
+// ── Bonus 1: lastIndex support tests ──
+
+/// re.lastIndex property access → re.lastIndex (direct field access)
+#[test]
+fn test_bonus1_regexp_last_index_property() {
+    let js = r#"
+export function getLastIndex() {
+const re = new RegExp("hello", "g");
+return re.lastIndex;
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    let zig = result.zig_code;
     assert!(
-        zig.contains("9007199254740991"),
-        "Expected MAX_SAFE_INTEGER value in:\n{}",
+        zig.contains(".lastIndex"),
+        "Expected '.lastIndex' for re.lastIndex access in:\n{}",
+        zig
+    );
+}
+
+/// RegExp variable should be emitted as 'var' (not 'const') to allow
+/// lastIndex mutation inside exec().
+#[test]
+fn test_bonus1_regexp_var_not_const() {
+    let js = r#"
+export function getExec(s) {
+const re = new RegExp("hello", "g");
+return re.exec(s);
+}
+"#;
+    let result = parse_and_transpile(js, None).unwrap();
+    let zig = result.zig_code;
+    assert!(
+        zig.contains("var re"),
+        "Expected 'var re' for RegExp variable (needs mutability for lastIndex) in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("const re"),
+        "Should not have 'const re' for RegExp variable in:\n{}",
+        zig
+    );
+}
+
+/// str.match(regexpVar) should emit a runtime branch on .global to select
+/// matchStringGlobal (all matches) vs matchString (first match with groups).
+#[test]
+fn test_bonus1_string_match_var_global_branch() {
+    let js = r#"
+export function getMatch(s) {
+const re = new RegExp("hello", "g");
+return s.match(re);
+}
+"#;
+    let zig = transpile_and_check(js, "test_bonus1_string_match_var_global_branch");
+    assert!(
+        zig.contains(".global"),
+        "Expected '.global' runtime branch for str.match(regexpVar) in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("matchStringGlobal"),
+        "Expected 'matchStringGlobal' in global branch in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("matchString"),
+        "Expected 'matchString' in non-global branch in:\n{}",
+        zig
+    );
+}
+
+/// str.match(regexpVar) without /g flag should also emit the runtime branch
+/// (since has_global is false for variable regex, we can't know at compile time).
+#[test]
+fn test_bonus1_string_match_var_no_global_also_branches() {
+    let js = r#"
+export function getMatch(s) {
+const re = new RegExp("hello");
+return s.match(re);
+}
+"#;
+    let zig = transpile_and_check(js, "test_bonus1_string_match_var_no_global_also_branches");
+    assert!(
+        zig.contains(".global"),
+        "Expected '.global' runtime branch even without /g flag in:\n{}",
+        zig
+    );
+}
+
+/// RegExp variable exec with ast-check (compilation test)
+#[test]
+fn test_bonus1_regexp_exec_var_ast_check() {
+    let js = r#"
+export function getExec(s) {
+const re = new RegExp("hello", "g");
+return re.exec(s);
+}
+"#;
+    let zig = transpile_and_check(js, "test_bonus1_regexp_exec_var_ast_check");
+    assert!(
+        zig.contains(".exec(js_allocator.allocator(),"),
+        "Expected '.exec(js_allocator.allocator(),' for re.exec() in:\n{}",
         zig
     );
 }

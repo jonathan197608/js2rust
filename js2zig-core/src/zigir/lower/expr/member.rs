@@ -148,7 +148,10 @@ impl Lowerer {
             let var_name = id.name.as_str();
             if let Some(ctx) = &self.fn_ctx
                 && ctx.regexp_vars.contains(var_name)
-                && matches!(field_name, "source" | "flags" | "global" | "ignoreCase")
+                && matches!(
+                    field_name,
+                    "source" | "flags" | "global" | "ignoreCase" | "lastIndex"
+                )
             {
                 return self.make_field_access(
                     mem,

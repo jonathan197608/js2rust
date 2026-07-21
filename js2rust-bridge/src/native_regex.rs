@@ -323,6 +323,65 @@ pub unsafe extern "C" fn host_regex_match(
     }
 }
 
+/// regex.exec(str) with lastIndex support
+///
+/// Searches from `start` position. Returns match results as NUL-separated substrings
+/// (same format as host_regex_match), plus the absolute end position of the full match
+/// via `out_end` (for updating `lastIndex`).
+/// `out_count` receives the number of substrings (0 = no match).
+fn host_regex_exec_inner(pattern: HostStr, text: HostStr, start: usize) -> (String, usize, usize) {
+    let re = match fancy_regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return (String::new(), 0, 0),
+    };
+    let caps = match re.captures_from_pos(&text, start) {
+        Ok(Some(c)) => c,
+        _ => return (String::new(), 0, 0),
+    };
+    let mut result = String::new();
+    let mut is_first = true;
+    for i in 0..caps.len() {
+        if !is_first {
+            result.push('\0');
+        }
+        is_first = false;
+        if let Some(m) = caps.get(i) {
+            result.push_str(m.as_str());
+        }
+    }
+    let full_match = caps
+        .get(0)
+        .expect("full match group is guaranteed by captures_from_pos returning Some");
+    (result, caps.len(), full_match.end())
+}
+
+/// # Safety
+///
+/// Called from Zig via C ABI. ptr/len must be valid. out_count and out_end must be valid pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn host_regex_exec(
+    pattern_ptr: *const u8,
+    pattern_len: usize,
+    text_ptr: *const u8,
+    text_len: usize,
+    start: usize,
+    out_count: *mut usize,
+    out_end: *mut usize,
+) -> JsStr {
+    let pattern = unsafe { HostStr::from_raw(pattern_ptr, pattern_len) };
+    let text = unsafe { HostStr::from_raw(text_ptr, text_len) };
+    let (result_str, count, end) = host_regex_exec_inner(pattern, text, start);
+    unsafe {
+        *out_count = count;
+        *out_end = end;
+    }
+    if result_str.is_empty() {
+        JsStr::empty()
+    } else {
+        JsStr::new(&result_str)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +456,42 @@ mod tests {
             assert_eq!(*part, "");
         }
         assert_eq!(parts.len(), match_count * group_count);
+    }
+
+    #[test]
+    fn exec_inner_finds_first_match_from_start() {
+        let (result, count, end) = host_regex_exec_inner(hs(r"(\d+)"), hs("abc123def456"), 0);
+        assert_eq!(count, 2); // full match + 1 group
+        assert_eq!(end, 6); // "123" ends at index 6
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts, vec!["123", "123"]);
+    }
+
+    #[test]
+    fn exec_inner_finds_match_from_offset() {
+        // Search from position 6 (after "123") — should find "456"
+        let (result, count, end) = host_regex_exec_inner(hs(r"(\d+)"), hs("abc123def456"), 6);
+        assert_eq!(count, 2);
+        assert_eq!(end, 12); // "456" ends at index 12
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts, vec!["456", "456"]);
+    }
+
+    #[test]
+    fn exec_inner_no_match_returns_empty() {
+        let (result, count, _end) = host_regex_exec_inner(hs(r"(\d+)"), hs("abcdef"), 0);
+        assert_eq!(count, 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn exec_inner_unmatched_groups_as_empty() {
+        // (\d)(\w)? — group 2 is optional
+        let (result, count, _end) = host_regex_exec_inner(hs(r"(\d)(\w)?"), hs("3"), 0);
+        assert_eq!(count, 3); // full + 2 groups (including unmatched)
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts[0], "3"); // full match
+        assert_eq!(parts[1], "3"); // group 1
+        assert_eq!(parts[2], ""); // group 2 — unmatched
     }
 }
