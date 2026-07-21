@@ -198,7 +198,7 @@ try {
     let zig = transpile_and_assert(js, "test_native_proto_try_catch_no_throw");
     println!("=== Try-catch no throw ===\n{}", zig);
     // Body should be emitted (return x + 1)
-    assert!(zig.contains("return x + 1"), "Expected body:\n{}", zig);
+    assert!(zig.contains("return (x + 1)"), "Expected body:\n{}", zig);
     // When body always exits and there's no throw, the catch handler
     // is unreachable and the entire try-catch is inlined.
     // No catch handler should be generated in this case.
@@ -339,7 +339,7 @@ try {
     println!("=== Nested try-catch (no throw) ===\n{}", zig);
     // Body should contain return x + 1
     assert!(
-        zig.contains("return x + 1"),
+        zig.contains("return (x + 1)"),
         "Expected body for no-throw inner try:\n{}",
         zig
     );
@@ -631,7 +631,7 @@ return f(5);
         "Expected arrow function struct"
     );
     assert!(
-        zig.contains("return x + 1;"),
+        zig.contains("return (x + 1);"),
         "Expected return in block body"
     );
 }

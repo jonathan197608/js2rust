@@ -310,7 +310,7 @@ return a * b;
     assert!(!zig.contains("allocPrint"));
     assert!(!zig.contains("result_len"));
     // Should directly return the multiplication result
-    assert!(zig.contains("return a * b;"));
+    assert!(zig.contains("return (a * b);"));
 
     // Run zig ast-check to verify the code is syntactically correct
     zig_ast_check(&zig, "param_e2e_test.zig");

@@ -15,7 +15,11 @@ return z;
     let zig = transpile_and_check(js, "test_p3_mixed_decl_expr_basic");
     println!("=== Mix decl+expr (basic) ===\n{}", zig);
     // z should be used (returned), no suppression needed
-    assert!(zig.contains("z = x + y"), "Expected 'z = x + y':\n{}", zig);
+    assert!(
+        zig.contains("z = (x + y)"),
+        "Expected 'z = (x + y)':\n{}",
+        zig
+    );
 }
 
 #[test]
@@ -50,8 +54,16 @@ return a + b;
     let zig = transpile_and_check(js, "test_p3_mixed_decl_expr_call");
     println!("=== Mix decl+expr (call) ===\n{}", zig);
     // All variables are used, no suppression needed
-    assert!(zig.contains("a = x + 1"), "Expected 'a = x + 1':\n{}", zig);
-    assert!(zig.contains("b = x + 2"), "Expected 'b = x + 2':\n{}", zig);
+    assert!(
+        zig.contains("a = (x + 1)"),
+        "Expected 'a = (x + 1)':\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("b = (x + 2)"),
+        "Expected 'b = (x + 2)':\n{}",
+        zig
+    );
 }
 
 #[test]

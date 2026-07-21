@@ -15,7 +15,7 @@ return a + b;
     let zig = transpile_and_assert(js, "test_native_proto_basic");
     // Note: using anytype for parameters, i64 for return type (inferred)
     assert!(zig.contains("pub fn add(a: anytype, b: anytype) i64 {"));
-    assert!(zig.contains("return a + b;"));
+    assert!(zig.contains("return (a + b);"));
 }
 
 #[test]
@@ -34,7 +34,7 @@ if (x >= 0) {
     // Rule 6: return type is anytype (both return expressions have type anytype)
     assert!(zig.contains("fn abs(x: anytype) @TypeOf("));
     assert!(
-        zig.contains("if (x") && zig.contains(">= 0"),
+        zig.contains("if ((x") && zig.contains(">= 0"),
         "missing if: {}",
         zig
     );
@@ -58,7 +58,7 @@ if (score >= 90) {
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_elseif");
     assert!(
-        zig.contains("else") && zig.contains("if (score"),
+        zig.contains("else") && zig.contains("if ((score"),
         "missing else if: {}",
         zig
     );
@@ -80,7 +80,7 @@ return n;
     let zig = transpile_and_assert(js, "test_native_proto_while");
     assert!(zig.contains("while"), "missing while");
     assert!(zig.contains("n > 0"), "missing n > 0: {}", zig);
-    assert!(zig.contains("n = n - 1;"));
+    assert!(zig.contains("n = (n - 1);"));
 }
 
 #[test]
@@ -112,7 +112,7 @@ return total;
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_var_decl");
     assert!(zig.contains("var total: i64 = 0;"));
-    assert!(zig.contains("total = total + 1;"));
+    assert!(zig.contains("total = (total + 1);"));
 }
 
 #[test]
@@ -662,10 +662,10 @@ return n * rest;
     assert!(zig.contains("const PI = 3.14;"));
     assert!(zig.contains("fn circleArea(radius: anytype)"));
     // Rule 5: var type annotation only if type is definite (radius is anytype, so r2 type is indeterminate)
-    assert!(zig.contains("const r2 = radius * radius;"));
+    assert!(zig.contains("const r2 = (radius * radius);"));
     assert!(zig.contains("factorial(")); // function call (no try)
     assert!(
-        zig.contains("if (n") && zig.contains("<="),
+        zig.contains("if ((n") && zig.contains("<="),
         "missing if: {}",
         zig
     );
@@ -710,7 +710,7 @@ return x;
         zig
     );
     assert!(
-        zig.contains("while (__dw_first_0 or (x > 0))"),
+        zig.contains("while (__dw_first_0 or ((x > 0)))"),
         "missing do-while while condition: {}",
         zig
     );
@@ -2442,6 +2442,113 @@ export function testMutate() {
     assert!(
         zig.contains("var c = Counter.init()"),
         "Expected `var c = Counter.init()` for class instance (R8-E5/C1): {}",
+        zig
+    );
+}
+
+/// P0-5: Operator precedence — `(a + b) * c` must produce correct Zig with
+/// parenthesized sub-expressions. Without the fix, `emit_default_binop` emits
+/// `a + b * c` (flat, no parens), which Zig re-parses as `a + (b * c)` — wrong.
+/// Function parameters are used (not const) to prevent constant folding.
+#[test]
+fn test_p0_5_operator_precedence_mul_over_add() {
+    let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ * @returns {number}
+ */
+export function testParens(a, b, c) {
+    return (a + b) * c;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_5_operator_precedence_mul_over_add");
+    println!("=== P0-5 operator precedence (mul over add) ===\n{}", zig);
+    // The inner (a + b) must be parenthesized to protect against * binding
+    // more tightly than + in Zig.
+    assert!(
+        zig.contains("(a + b)"),
+        "Expected (a + b) to be parenthesized in: {}",
+        zig
+    );
+}
+
+/// P0-5: Shift precedence mismatch — JS `<<` has LOWER precedence than `+`,
+/// but Zig `<<` has HIGHER precedence than `+`. So `(a + b) << c` must have
+/// the addition parenthesized, otherwise Zig parses `a + b << c` as
+/// `a + (b << c)`.
+#[test]
+fn test_p0_5_shift_precedence_mismatch() {
+    let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ * @returns {number}
+ */
+export function testShiftPrec(a, b, c) {
+    return (a + b) << c;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_5_shift_precedence_mismatch");
+    println!("=== P0-5 shift precedence mismatch ===\n{}", zig);
+    assert!(
+        zig.contains("(a + b)"),
+        "Expected (a + b) to be parenthesized before << in: {}",
+        zig
+    );
+}
+
+/// P0-5: IMPLICIT precedence mismatch — JS `a + b << c` is parsed as
+/// `(a + b) << c` because `+` has higher precedence than `<<` in JS.
+/// But Zig `<<` has HIGHER precedence than `+`, so the flat emission
+/// `a + b << c` would be parsed by Zig as `a + (b << c)` — WRONG.
+/// The emitter must parenthesize sub-expressions to preserve JS semantics.
+#[test]
+fn test_p0_5_implicit_shift_precedence() {
+    let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ * @returns {number}
+ */
+export function testImplicitShift(a, b, c) {
+    return a + b << c;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_5_implicit_shift_precedence");
+    println!("=== P0-5 implicit shift precedence ===\n{}", zig);
+    // JS parses `a + b << c` as `(a + b) << c`. The emitter must produce
+    // Zig that evaluates the addition first. Without parens, Zig would
+    // evaluate `b << c` first (wrong).
+    assert!(
+        zig.contains("(a + b)"),
+        "Expected (a + b) to be parenthesized for JS implicit precedence: {}",
+        zig
+    );
+}
+
+/// P0-5: Subtraction in multiplication — `(a - b) * c` needs explicit parens
+#[test]
+fn test_p0_5_subtraction_in_multiplication() {
+    let js = r#"
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ * @returns {number}
+ */
+export function testSubMul(a, b, c) {
+    return (a - b) * c;
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_5_subtraction_in_multiplication");
+    println!("=== P0-5 subtraction in multiplication ===\n{}", zig);
+    assert!(
+        zig.contains("(a - b)"),
+        "Expected (a - b) to be parenthesized in: {}",
         zig
     );
 }

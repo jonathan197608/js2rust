@@ -41,20 +41,28 @@ impl Emitter {
         }
     }
 
-    /// Emit a default binary operator: `left OP right` (no parens).
+    /// Emit a default binary operator: `(left OP right)`.
     /// Shared by bigint/string/jsany fallback and the main Binary dispatch in mod.rs.
+    ///
+    /// The outer parentheses are MANDATORY: JS and Zig disagree on operator
+    /// precedence for some operator pairs (most notably, JS `+` > `<<` but
+    /// Zig `<<` > `+`). Without wrapping each binary expression in parens,
+    /// flat emission like `a + b << c` would be re-parsed by Zig with
+    /// different grouping than the JS AST intended.
     pub(super) fn emit_default_binop(
         &mut self,
         op: crate::zigir::ops::BinOp,
         left: &crate::zigir::types::IrExpr,
         right: &crate::zigir::types::IrExpr,
     ) {
+        self.write("(");
         self.emit_expr(left);
         self.write(&format!(
             " {} ",
             crate::zigir::emit::helpers::bin_op_to_zig(op)
         ));
         self.emit_expr(right);
+        self.write(")");
     }
 
     /// Emit an ordering comparison: `(order_expr == .lt)` / `!= .gt` etc.
@@ -293,6 +301,12 @@ impl Emitter {
         let left_coerce_f64 = left_is_jsany && right_type == Some(&ZigType::F64);
         let right_coerce_f64 = right_is_jsany && left_type == Some(&ZigType::F64);
 
+        // Outer parens protect against JS/Zig operator precedence mismatches
+        // (e.g. nested `JsAny + JsAny << JsAny` would be re-grouped by Zig
+        // without the wrapping). They also ensure `.asI64()`/`.asF64()` appended
+        // after emit_expr binds to the entire sub-expression, not just the
+        // trailing token.
+        self.write("(");
         // Left side
         if left_is_jsany {
             self.emit_expr(left);
@@ -316,6 +330,7 @@ impl Emitter {
         } else {
             self.emit_expr(right);
         }
+        self.write(")");
     }
 
     pub(super) fn emit_jsany_comparison(
