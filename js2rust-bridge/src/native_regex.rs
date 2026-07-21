@@ -63,7 +63,10 @@ pub unsafe extern "C" fn host_regex_search(
 ///
 /// Returns match results as NUL-separated substrings in a single Zig Arena buffer.
 /// Index 0 is the full match, indices 1+ are capture groups.
-/// `out_count` receives the number of substrings — 0 means no match (null in JS).
+/// Unmatched groups are included as empty strings (NUL-separated placeholders)
+/// so that the Zig-side parser can reconstruct the full array with correct indices.
+/// `out_count` receives the number of substrings (always = caps.len() when matched) —
+/// 0 means no match (null in JS).
 fn host_regex_match_inner(pattern: HostStr, text: HostStr) -> (String, usize) {
     let re = match fancy_regex::Regex::new(&pattern) {
         Ok(r) => r,
@@ -74,17 +77,18 @@ fn host_regex_match_inner(pattern: HostStr, text: HostStr) -> (String, usize) {
         _ => return (String::new(), 0),
     };
     let mut result = String::new();
-    let mut count = 0;
+    let mut is_first = true;
     for i in 0..caps.len() {
+        if !is_first {
+            result.push('\0');
+        }
+        is_first = false;
+        // Unmatched groups produce empty string (placeholder for JS undefined)
         if let Some(m) = caps.get(i) {
-            if count > 0 {
-                result.push('\0');
-            }
             result.push_str(m.as_str());
-            count += 1;
         }
     }
-    (result, count)
+    (result, caps.len())
 }
 
 /// # Safety
@@ -154,6 +158,8 @@ pub unsafe extern "C" fn host_regex_match_global(
 ///
 /// Returns all matches with capture groups as NUL-separated substrings.
 /// Groups within each match are NUL-separated; matches are concatenated sequentially.
+/// Unmatched groups are included as empty strings (NUL-separated placeholders)
+/// so that the Zig-side parser can reconstruct each match array with correct indices.
 /// `out_match_count` receives the number of matches.
 /// `out_group_count` receives the number of groups per match (including full match at index 0).
 /// Both counts are 0 if no match.
@@ -165,6 +171,7 @@ fn host_regex_match_all_inner(pattern: HostStr, text: HostStr) -> (String, usize
     let mut result = String::new();
     let mut match_count: usize = 0;
     let mut group_count: usize = 0;
+    let mut is_first_segment = true; // tracks whether this is the first NUL-separated segment overall
     let mut search_start: usize = 0;
     while let Ok(Some(caps)) = re.captures_from_pos(&text, search_start) {
         // Record group count from first match (all matches have same count)
@@ -172,13 +179,14 @@ fn host_regex_match_all_inner(pattern: HostStr, text: HostStr) -> (String, usize
             group_count = caps.len();
         }
         for i in 0..caps.len() {
-            if !result.is_empty() {
+            if !is_first_segment {
                 result.push('\0');
             }
+            is_first_segment = false;
+            // Unmatched groups produce empty string (placeholder for JS undefined)
             if let Some(m) = caps.get(i) {
                 result.push_str(m.as_str());
             }
-            // Missing groups produce empty string (NUL-separated placeholder)
         }
         match_count += 1;
         // Advance past this match
@@ -312,5 +320,82 @@ pub unsafe extern "C" fn host_regex_match(
         JsStr::empty()
     } else {
         JsStr::new(&result_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Safely create a HostStr from a Rust string for testing.
+    fn hs(s: &str) -> HostStr<'_> {
+        // SAFETY: s is a valid Rust string reference with valid UTF-8.
+        unsafe { HostStr::from_raw(s.as_ptr(), s.len()) }
+    }
+
+    #[test]
+    fn match_inner_includes_unmatched_groups_as_empty() {
+        // Pattern with 2 capture groups: (\d)(\w)?
+        // Text "3" — group 2 (\w)? is optional and won't match.
+        let (result, count) = host_regex_match_inner(hs(r"(\d)(\w)?"), hs("3"));
+        assert_eq!(count, 3); // full match + 2 groups (including unmatched)
+        // Result should be "3\0\0" — full match "3", group 1 "3", group 2 "" (unmatched)
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], "3"); // full match
+        assert_eq!(parts[1], "3"); // group 1 (\d)
+        assert_eq!(parts[2], ""); // group 2 (\w)? — unmatched → empty
+    }
+
+    #[test]
+    fn match_inner_all_groups_matched() {
+        let (result, count) = host_regex_match_inner(hs(r"(\d)(\w)"), hs("3a"));
+        assert_eq!(count, 3);
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts, vec!["3a", "3", "a"]);
+    }
+
+    #[test]
+    fn match_inner_no_match_returns_empty() {
+        let (result, count) = host_regex_match_inner(hs(r"(\d)"), hs("abc"));
+        assert_eq!(count, 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn match_all_inner_includes_unmatched_groups() {
+        // Pattern (\d)(\w)? with /g — group 2 is optional.
+        // Text "3a5" — first match: "3a" (both groups), second match: "5" (group 2 unmatched)
+        let (result, match_count, group_count) =
+            host_regex_match_all_inner(hs(r"(\d)(\w)?"), hs("3a5"));
+        assert_eq!(match_count, 2);
+        assert_eq!(group_count, 3); // full + 2 groups
+        // 2 matches × 3 groups = 6 segments
+        let parts: Vec<&str> = result.split('\0').collect();
+        assert_eq!(parts.len(), 6);
+        // First match: "3a", "3", "a"
+        assert_eq!(parts[0], "3a");
+        assert_eq!(parts[1], "3");
+        assert_eq!(parts[2], "a");
+        // Second match: "5", "5", "" (group 2 unmatched → empty)
+        assert_eq!(parts[3], "5");
+        assert_eq!(parts[4], "5");
+        assert_eq!(parts[5], "");
+    }
+
+    #[test]
+    fn match_all_inner_empty_string_group() {
+        // Pattern (\d*) with /g — group 1 can match empty string.
+        // This tests that empty-string matches are correctly NUL-separated.
+        let (result, match_count, group_count) = host_regex_match_all_inner(hs(r"(\d*)"), hs("ab"));
+        // \d* matches empty at positions 0, 1, 2 (before 'a', between 'a'/'b', after 'b')
+        assert!(match_count >= 1);
+        assert_eq!(group_count, 2); // full match + 1 group
+        let parts: Vec<&str> = result.split('\0').collect();
+        // Each match has 2 segments (full + group), all should be empty strings
+        for part in &parts {
+            assert_eq!(*part, "");
+        }
+        assert_eq!(parts.len(), match_count * group_count);
     }
 }
