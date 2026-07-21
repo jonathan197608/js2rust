@@ -653,6 +653,109 @@ export function p07Sign() {
     );
 }
 
+// ── P0-8: Math.min/max float-variable detection + mixed-type coercion ────
+// Before P0-8, emit_min_max's `any_float` only matched FloatLiteral, so a
+// float-typed variable arg (division result, BuiltinCall returning f64) fell
+// into the i64 branch and emitted `@as(i64, <f64 expr>)` — a Zig compile
+// error. Mixed int+float args (e.g. Math.max(x, 1.5)) also broke: the float
+// branch emitted raw args without coercion, producing an i64-vs-f64
+// comparison. P0-8 routes `any_float` through `expr_is_float` and coerces
+// every arg in the float branch via `emit_f64_coerced`.
+
+#[test]
+fn test_p0_8_min_max_float_expr_arg() {
+    // Arg is a float-returning BuiltinCall (Math.cos): must take the f64
+    // branch, producing f64-typed comparisons — NOT the i64 branch.
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function p08MaxBuiltin() {
+    return Math.max(Math.cos(0.5), 1.5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_8_min_max_float_expr_arg");
+
+    assert!(
+        zig.contains("@cos("),
+        "Expected '@cos(' for float-expr arg in:\n{}",
+        zig
+    );
+    // Float branch coerces args to f64; @as(i64, ...) must NOT appear.
+    assert!(
+        !zig.contains("@as(i64,"),
+        "P0-8 regression: i64 branch used for float-expr arg in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(f64, 1.5)"),
+        "Expected '@as(f64, 1.5)' coercion for float literal in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_8_min_max_mixed_int_float() {
+    // Mixed i64 variable + float literal: must coerce the i64 arg via
+    // @floatFromInt so the comparison is f64-vs-f64 (Zig cannot compare
+    // i64 with f64). Before P0-8 this emitted a bare `if (1.5 > __max)` on
+    // an i64-typed variable — a compile error.
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {number}
+ */
+export function p08MaxMixed(x) {
+    return Math.max(x, 1.5);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_8_min_max_mixed_int_float");
+
+    assert!(
+        zig.contains("@floatFromInt"),
+        "Expected @floatFromInt for i64 arg in mixed min/max in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(f64, 1.5)"),
+        "Expected '@as(f64, 1.5)' for float literal in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@as(i64,"),
+        "P0-8 regression: i64 branch used for mixed int/float args in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_p0_8_min_max_int_args_unchanged() {
+    // All-int args (i64 variables): must STILL use the i64 branch with
+    // @as(i64, ...) wrapping — the common case must not regress.
+    let js = r#"
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export function p08MaxInt(x, y) {
+    return Math.max(x, y);
+}
+"#;
+    let zig = transpile_and_check(js, "test_p0_8_min_max_int_args_unchanged");
+
+    assert!(
+        zig.contains("@as(i64,"),
+        "Expected @as(i64, ...) in i64 min/max branch in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("@floatFromInt"),
+        "i64 min/max branch must not emit @floatFromInt in:\n{}",
+        zig
+    );
+}
+
 // ── Test: AwaitExpression support ────────────
 
 #[test]

@@ -68,6 +68,17 @@ impl Emitter {
         }
     }
 
+    /// Render `emit_f64_coerced(arg)` to a String without writing to the main
+    /// output buffer. Used by `emit_min_max` where each coerced arg text is
+    /// needed twice (in the `if` condition and the assignment).
+    fn render_f64_coerced_to_string(&mut self, arg: &crate::zigir::types::IrExpr) -> String {
+        let saved_output = std::mem::take(&mut self.output);
+        self.emit_f64_coerced(arg);
+        let result = std::mem::take(&mut self.output);
+        self.output = saved_output;
+        result
+    }
+
     pub(super) fn emit_math_builtin(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         // ── Data-driven: direct Zig builtins ──
         if ZIG_BUILTINS.contains(&method) {
@@ -245,22 +256,24 @@ impl Emitter {
     /// `f64` when:
     /// - there are zero args (JS spec: `Math.max()` -> `-Infinity`,
     ///   `Math.min()` -> `+Infinity`); or
-    /// - any arg is a float literal (i64 -> `@as(i64, 1.5)` would not compile).
+    /// - any arg is float-shaped — a float literal, a division result, an F64
+    ///   unary, or an f64-returning BuiltinCall (detected via `expr_is_float`).
+    ///   In this branch every arg is coerced to f64 via `emit_f64_coerced` so
+    ///   mixed int/float args compile (Zig cannot compare/assign i64 vs f64).
     ///
     /// Otherwise -- the common case where every arg is i64-shaped -- we preserve
     /// the existing i64-typed block: it round-trips cleanly through the inferred
     /// `f64` return type at call sites via Zig's implicit int->float coercion on
     /// assignment, and the integer literal/`number`-JSDoc args are i64.
     fn emit_min_max(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
-        use crate::zigir::types::IrExpr;
         let is_min = method == "min";
         let blk = self.next_label();
         let var = if is_min { "__min" } else { "__max" };
         let cmp_op = if is_min { "<" } else { ">" };
 
-        // Any float literal in args ⇒ use f64 emit (Zig cannot `@as(i64, x)`
-        // a non-int value; `1.5` etc. would fail to compile).
-        let any_float = args.iter().any(|a| matches!(a, IrExpr::FloatLiteral(_)));
+        // Any float-shaped arg ⇒ use f64 emit for all args (Zig cannot
+        // `@as(i64, x)` a non-int value, and cannot compare i64 vs f64).
+        let any_float = args.iter().any(expr_is_float);
 
         match args.len() {
             0 => {
@@ -273,10 +286,11 @@ impl Emitter {
             }
             _ if any_float => {
                 self.write(&format!("({}: {{ var {} = ", blk, var));
-                self.emit_expr(&args[0]);
+                let first = self.render_f64_coerced_to_string(&args[0]);
+                self.write(&first);
                 self.write("; ");
                 for arg in &args[1..] {
-                    let arg_str = self.render_expr_to_string(arg);
+                    let arg_str = self.render_f64_coerced_to_string(arg);
                     self.write(&format!(
                         "if ({} {} {}) {} = {}; ",
                         arg_str, cmp_op, var, var, arg_str
