@@ -22,7 +22,10 @@ pub const JsRegExp = struct {
     ignoreCase: bool,
 
     /// Create a new RegExp from a pattern string and flags string.
+    /// Returns `error.InvalidRegExpFlags` if flags contain invalid characters
+    /// or duplicates. Valid flags: g, i, m, s, u, y, d, v (ES2024).
     pub fn init(alloc: Allocator, pattern: []const u8, flags: []const u8) !JsRegExp {
+        try validateFlags(flags);
         const owned_pattern = try alloc.dupe(u8, pattern);
         const owned_flags = try alloc.dupe(u8, flags);
         return JsRegExp{
@@ -130,6 +133,29 @@ pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !
     return try matches.toOwnedSlice(alloc);
 }
 
+/// Validate RegExp flags per ES2024 spec.
+/// Valid flags: g, i, m, s, u, y, d, v.
+/// Returns `error.InvalidRegExpFlags` if any character is invalid or duplicated.
+fn validateFlags(flags: []const u8) !void {
+    // Track seen flags using a simple bitmask (8 possible flags).
+    var seen: u8 = 0;
+    for (flags) |f| {
+        const bit: u8 = switch (f) {
+            'g' => 1 << 0,
+            'i' => 1 << 1,
+            'm' => 1 << 2,
+            's' => 1 << 3,
+            'u' => 1 << 4,
+            'y' => 1 << 5,
+            'd' => 1 << 6,
+            'v' => 1 << 7,
+            else => return error.InvalidRegExpFlags,
+        };
+        if (seen & bit != 0) return error.InvalidRegExpFlags; // duplicate
+        seen |= bit;
+    }
+}
+
 // ── Host C ABI function declarations ──
 
 extern fn host_regex_test(
@@ -189,4 +215,46 @@ test "execLiteral no match" {
         }
     }
     try std.testing.expectEqual(@as(?[][]const u8, null), result);
+}
+
+// ── Flag validation tests (Bonus 3) ──
+
+test "validateFlags accepts all valid flags" {
+    try validateFlags("");
+    try validateFlags("g");
+    try validateFlags("i");
+    try validateFlags("gi");
+    try validateFlags("gimsuy");
+    try validateFlags("gimsuydv");
+    try validateFlags("d");
+    try validateFlags("v");
+}
+
+test "validateFlags rejects invalid characters" {
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("x"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("gx"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("G"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("g i"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("g1"));
+}
+
+test "validateFlags rejects duplicates" {
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("gg"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("gii"));
+    try std.testing.expectError(error.InvalidRegExpFlags, validateFlags("gig"));
+}
+
+test "JsRegExp.init with valid flags" {
+    const alloc = std.testing.allocator;
+    var re = try JsRegExp.init(alloc, "pattern", "gim");
+    defer re.deinit(alloc);
+    try std.testing.expect(re.global);
+    try std.testing.expect(re.ignoreCase);
+    try std.testing.expectEqualStrings("gim", re.flags);
+}
+
+test "JsRegExp.init rejects invalid flags" {
+    const alloc = std.testing.allocator;
+    try std.testing.expectError(error.InvalidRegExpFlags, JsRegExp.init(alloc, "pattern", "gg"));
+    try std.testing.expectError(error.InvalidRegExpFlags, JsRegExp.init(alloc, "pattern", "x"));
 }
