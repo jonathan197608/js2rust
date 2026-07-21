@@ -40,7 +40,7 @@ pub fn collect_stmt_idents(stmt: &IrStmt, names: &mut HashSet<String>) {
             if let Some(closure) = instance {
                 collect_block_idents(&closure.body, names);
                 for cap in &closure.captured {
-                    names.insert(cap.name.js_name.clone());
+                    names.insert(cap.name.zig_name.clone());
                 }
             }
         }
@@ -92,4 +92,72 @@ pub fn collect_target_idents(target: &IrAssignTarget, names: &mut HashSet<String
     walk::for_each_target_child(target, &mut |expr| {
         collect_expr_idents(expr, *names.borrow_mut())
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ZigType;
+    use crate::zigir::ident::IrIdent;
+    use crate::zigir::types::{IrBlock, IrCapture, IrClosure, IrClosureStruct, IrExpr, IrStmt};
+
+    /// Bug #3: `collect_stmt_idents` for `NestedFnDecl` inserted the
+    /// **js_name** of each captured variable instead of the **zig_name**.
+    /// When a JS identifier collides with a Zig reserved keyword
+    /// (e.g. `comptime` → zig_name `_comptime`), the mismatch caused
+    /// `dead_code` to check `zig_name` against a set containing `js_name`
+    /// and potentially remove a referenced top-level const.
+    #[test]
+    fn test_nested_fn_decl_capture_uses_zig_name() {
+        let cap_ident = IrIdent {
+            js_name: "comptime".to_string(),
+            zig_name: "_comptime".to_string(),
+        };
+        let capture = IrCapture {
+            name: cap_ident.clone(),
+            zig_type: ZigType::I64,
+            is_mut: false,
+            init_expr: None,
+        };
+
+        // Bodies intentionally avoid referencing the captured ident so
+        // the ONLY path that inserts the capture name is the captured-vec
+        // loop in `collect_stmt_idents`.
+        let struct_def = IrClosureStruct {
+            name: IrIdent::new("inner"),
+            captured: vec![capture.clone()],
+            fn_params: vec![],
+            return_type: ZigType::I64,
+            typeof_return_body: None,
+            body: IrBlock::new(vec![IrStmt::Return {
+                value: Some(IrExpr::IntLiteral(0)),
+            }]),
+        };
+        let instance = IrClosure {
+            struct_name: IrIdent::new("inner"),
+            captured: vec![capture],
+            fn_params: vec![],
+            return_type: ZigType::I64,
+            body: IrBlock::new(vec![]),
+            instance_name: IrIdent::new("inner_inst"),
+        };
+        let nested = IrStmt::NestedFnDecl {
+            struct_def,
+            instance: Some(instance),
+        };
+
+        let mut names = HashSet::new();
+        collect_stmt_idents(&nested, &mut names);
+
+        assert!(
+            names.contains("_comptime"),
+            "captured name should use zig_name '_comptime', got: {:?}",
+            names
+        );
+        assert!(
+            !names.contains("comptime"),
+            "captured name should NOT use js_name 'comptime', got: {:?}",
+            names
+        );
+    }
 }
