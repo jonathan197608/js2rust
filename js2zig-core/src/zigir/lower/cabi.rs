@@ -652,7 +652,7 @@ impl Lowerer {
                             let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
                             Some(crate::zigir::types::IrRegexInfo {
                                 pattern: Some(escaped),
-                                has_global: false,
+                                has_global: Self::regexp_has_global(re),
                                 is_var_ref: false,
                                 var_name: None,
                             })
@@ -679,13 +679,7 @@ impl Lowerer {
                 Expression::RegExpLiteral(re) => {
                     let pattern = re.regex.pattern.text.as_str();
                     let escaped = pattern.replace('\\', "\\\\").replace('"', "\\\"");
-                    let has_global = re.raw.as_ref().is_some_and(|raw| {
-                        let raw_str = raw.as_str();
-                        raw_str.rfind('/').is_some_and(|idx| {
-                            let flags_part = &raw_str[idx + 1..];
-                            flags_part.contains('g')
-                        })
-                    });
+                    let has_global = Self::regexp_has_global(re);
                     Some(crate::zigir::types::IrRegexInfo {
                         pattern: Some(escaped),
                         has_global,
@@ -706,7 +700,14 @@ impl Lowerer {
         }
     }
 
-    // ï¿½ï¿½ï¿½ï¿½ AST ident-usage helpers ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    /// Check whether a RegExp literal has the `g` (global) flag set.
+    /// Uses `re.regex.flags` (the parsed AST flags) rather than string-parsing
+    /// `re.raw`, which is more robust and consistent with how flags are
+    /// extracted in `lower_expr` (`mod.rs:44`).
+    fn regexp_has_global(re: &oxc_ast::ast::RegExpLiteral) -> bool {
+        re.regex.flags.to_string().contains('g')
+    }
+
     // AST ident-usage helpers — used to check whether a callback parameter is actually referenced.
 
     pub(super) fn ast_stmt_uses_ident(ident: &str, stmt: &Statement) -> bool {
