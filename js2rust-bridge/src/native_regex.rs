@@ -231,14 +231,148 @@ pub unsafe extern "C" fn host_regex_match_all(
     }
 }
 
+/// Expand a replacement string per ECMA-262 Table 52 ($$ $& $` $' $n $nn $<name>).
+///
+/// Supports every standard JS replacement pattern:
+/// - `$$` → literal `$`
+/// - `$&` → the full matched substring
+/// - `` $` `` → the portion of `text` before the match
+/// - `$'` → the portion of `text` after the match
+/// - `$1`-`$99` → the nth capture group; empty if the group exists but did
+///   not participate; literal `$n` if the group number exceeds
+///   `num_captures`
+/// - `$<name>` → named capture group value; empty if the group did not
+///   participate or does not exist; literal `$` if no closing `>`
+///
+/// `$0` is NOT a capture reference — it is treated as a literal `$`
+/// followed by `0`, matching JS engine behaviour (the full match is
+/// accessed via `$&`).
+fn expand_replacement(
+    text: &str,
+    caps: &fancy_regex::Captures,
+    num_captures: usize,
+    match_start: usize,
+    match_end: usize,
+    replacement: &str,
+) -> String {
+    let mut result = String::new();
+    let bytes = replacement.as_bytes();
+    let mut i: usize = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'$' {
+            if i + 1 >= bytes.len() {
+                // Trailing $ — literal
+                result.push('$');
+                i += 1;
+                continue;
+            }
+            match bytes[i + 1] {
+                // $$ → literal $
+                b'$' => {
+                    result.push('$');
+                    i += 2;
+                }
+                // $& → full match
+                b'&' => {
+                    result.push_str(&text[match_start..match_end]);
+                    i += 2;
+                }
+                // $` → text before match
+                b'`' => {
+                    result.push_str(&text[..match_start]);
+                    i += 2;
+                }
+                // $' → text after match
+                b'\'' => {
+                    result.push_str(&text[match_end..]);
+                    i += 2;
+                }
+                // $1..$9 — capture group reference (1 or 2 digits)
+                b'1'..=b'9' => {
+                    let n1 = (bytes[i + 1] - b'0') as usize;
+                    // Try two-digit first ($nn)
+                    if i + 2 < bytes.len() && bytes[i + 2].is_ascii_digit() {
+                        let n2 = n1 * 10 + (bytes[i + 2] - b'0') as usize;
+                        if n2 <= num_captures {
+                            if let Some(m) = caps.get(n2) {
+                                result.push_str(m.as_str());
+                            }
+                            i += 3;
+                            continue;
+                        }
+                    }
+                    // Fall back to one-digit ($n)
+                    if n1 <= num_captures {
+                        if let Some(m) = caps.get(n1) {
+                            result.push_str(m.as_str());
+                        }
+                        i += 2;
+                        continue;
+                    }
+                    // Group doesn't exist → literal $
+                    result.push('$');
+                    i += 1;
+                }
+                // $<name> — named capture group
+                b'<' => {
+                    if let Some(close_rel) = replacement[i + 2..].find('>') {
+                        let name = &replacement[i + 2..i + 2 + close_rel];
+                        if let Some(m) = caps.name(name) {
+                            result.push_str(m.as_str());
+                        }
+                        i += 2 + close_rel + 1;
+                    } else {
+                        // No closing > — literal $
+                        result.push('$');
+                        i += 1;
+                    }
+                }
+                // Any other $X — literal $
+                _ => {
+                    result.push('$');
+                    i += 1;
+                }
+            }
+        } else {
+            // Copy literal run until next $
+            let start = i;
+            while i < bytes.len() && bytes[i] != b'$' {
+                i += 1;
+            }
+            result.push_str(&replacement[start..i]);
+        }
+    }
+    result
+}
+
 /// str.replace(regex, replacement) → string
 ///
-/// Replaces the first match of the regex pattern with the replacement string.
-/// On pattern compilation error or no match, returns the original text.
+/// Replaces the first match of the regex pattern with the expansion of
+/// the replacement string per ECMA-262 replacement patterns ($$, $&, $1,
+/// $<name>, etc.). On pattern compilation error or no match, returns the
+/// original text unchanged.
 fn host_regex_replace_inner(pattern: HostStr, text: HostStr, replacement: HostStr) -> String {
-    match fancy_regex::Regex::new(&pattern) {
-        Ok(re) => re.replace(&text, replacement.as_ref()).to_string(),
-        Err(_) => text.to_string(),
+    let re = match fancy_regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return text.to_string(),
+    };
+    match re.captures(&text) {
+        Ok(Some(caps)) => {
+            let num_captures = caps.len() - 1; // exclude group 0
+            let m = caps
+                .get(0)
+                .expect("captures returning Some guarantees group 0");
+            let expanded =
+                expand_replacement(&text, &caps, num_captures, m.start(), m.end(), &replacement);
+            // Pre-allocate for single allocation
+            let mut result = String::with_capacity(text.len() + expanded.len());
+            result.push_str(&text[..m.start()]);
+            result.push_str(&expanded);
+            result.push_str(&text[m.end()..]);
+            result
+        }
+        _ => text.to_string(),
     }
 }
 
@@ -267,13 +401,60 @@ pub unsafe extern "C" fn host_regex_replace(
 
 /// str.replaceAll(regex, replacement) → string
 ///
-/// Replaces all matches of the regex pattern with the replacement string.
-/// On pattern compilation error or no match, returns the original text.
+/// Replaces all matches of the regex pattern with the expansion of the
+/// replacement string per ECMA-262 replacement patterns. On pattern
+/// compilation error or no match, returns the original text unchanged.
 fn host_regex_replace_all_inner(pattern: HostStr, text: HostStr, replacement: HostStr) -> String {
-    match fancy_regex::Regex::new(&pattern) {
-        Ok(re) => re.replace_all(&text, replacement.as_ref()).to_string(),
-        Err(_) => text.to_string(),
+    let re = match fancy_regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return text.to_string(),
+    };
+    let mut result = String::new();
+    let mut last_end: usize = 0;
+    let mut search_pos: usize = 0;
+
+    while search_pos <= text.len() {
+        match re.captures_from_pos(&text, search_pos) {
+            Ok(Some(caps)) => {
+                let num_captures = caps.len() - 1;
+                let m = caps
+                    .get(0)
+                    .expect("captures_from_pos returning Some guarantees group 0");
+                // Append text before this match
+                result.push_str(&text[last_end..m.start()]);
+                // Expand and append replacement
+                let expanded = expand_replacement(
+                    &text,
+                    &caps,
+                    num_captures,
+                    m.start(),
+                    m.end(),
+                    &replacement,
+                );
+                result.push_str(&expanded);
+                // Advance past the match
+                last_end = m.end();
+                search_pos = m.end();
+                // Zero-width match: advance past one character to avoid
+                // infinite loop. The character will be included in the next
+                // iteration's text-before-match copy.
+                if m.start() == m.end() {
+                    if search_pos < text.len() {
+                        search_pos += 1;
+                        while search_pos < text.len() && !text.is_char_boundary(search_pos) {
+                            search_pos += 1;
+                        }
+                    } else {
+                        // At end of string — done
+                        break;
+                    }
+                }
+            }
+            _ => break,
+        }
     }
+    result.push_str(&text[last_end..]);
+    result
 }
 
 /// # Safety
@@ -493,5 +674,137 @@ mod tests {
         assert_eq!(parts[0], "3"); // full match
         assert_eq!(parts[1], "3"); // group 1
         assert_eq!(parts[2], ""); // group 2 — unmatched
+    }
+
+    // ── P1-24: Replacement pattern expansion tests ──
+
+    #[test]
+    fn replace_dollar_dollar_produces_literal_dollar() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("$$"));
+        assert_eq!(result, "abc$def");
+    }
+
+    #[test]
+    fn replace_dollar_amp_produces_full_match() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("[$&]"));
+        assert_eq!(result, "abc[123]def");
+    }
+
+    #[test]
+    fn replace_dollar_backtick_produces_before_match() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("$`"));
+        assert_eq!(result, "abcabcdef"); // "abc" (before) replaces "123"
+    }
+
+    #[test]
+    fn replace_dollar_quote_produces_after_match() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("$'"));
+        assert_eq!(result, "abcdefdef"); // "def" (after) replaces "123"
+    }
+
+    #[test]
+    fn replace_dollar_n_produces_capture_group() {
+        let result = host_regex_replace_inner(hs(r"(\d)(\w)"), hs("3a"), hs("$2$1"));
+        assert_eq!(result, "a3"); // swap groups
+    }
+
+    #[test]
+    fn replace_dollar_nn_two_digit_capture_group() {
+        // 12 capture groups: $1=a, $2=b, ..., $10=j, $11=k, $12=l
+        let pattern = r"(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)";
+        let text = "abcdefghijkl";
+        let result = host_regex_replace_inner(hs(pattern), hs(text), hs("$10$11"));
+        assert_eq!(result, "jk"); // group 10 = "j", group 11 = "k"
+    }
+
+    #[test]
+    fn replace_dollar_n_nonexistent_group_is_literal() {
+        // Only 1 capture group; $2 is out of range → should be literal "$2"
+        let result = host_regex_replace_inner(hs(r"(\d)"), hs("3"), hs("$1$2"));
+        assert_eq!(result, "3$2"); // $1 → "3", $2 → literal "$2"
+    }
+
+    #[test]
+    fn replace_dollar_zero_is_literal() {
+        // $0 is NOT a capture reference — treated as literal $0
+        let result = host_regex_replace_inner(hs(r"(\d)"), hs("3"), hs("$0"));
+        assert_eq!(result, "$0");
+    }
+
+    #[test]
+    fn replace_dollar_name_named_capture() {
+        let result = host_regex_replace_inner(hs(r"(?<year>\d{4})"), hs("2026"), hs("$<year>!"));
+        assert_eq!(result, "2026!");
+    }
+
+    #[test]
+    fn replace_dollar_name_nonexistent_is_empty() {
+        // Named group "year" exists but we reference "month" which doesn't exist
+        // → empty string (not literal $<month>)
+        let result = host_regex_replace_inner(hs(r"(?<year>\d{4})"), hs("2026"), hs("$<month>"));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn replace_no_match_returns_original() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abcdef"), hs("X"));
+        assert_eq!(result, "abcdef");
+    }
+
+    #[test]
+    fn replace_empty_replacement_removes_match() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs(""));
+        assert_eq!(result, "abcdef");
+    }
+
+    #[test]
+    fn replace_trailing_dollar_is_literal() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("X$"));
+        assert_eq!(result, "abcX$def");
+    }
+
+    #[test]
+    fn replace_unknown_dollar_pattern_is_literal_dollar() {
+        // $x is not a recognized pattern → literal $ + x
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("abc123def"), hs("$x"));
+        assert_eq!(result, "abc$xdef");
+    }
+
+    #[test]
+    fn replace_all_replaces_all_matches() {
+        let result = host_regex_replace_all_inner(hs(r"\d"), hs("a1b2c3"), hs("X"));
+        assert_eq!(result, "aXbXcX");
+    }
+
+    #[test]
+    fn replace_all_dollar_amp_each_match() {
+        let result = host_regex_replace_all_inner(hs(r"\d"), hs("a1b2c3"), hs("[$&]"));
+        assert_eq!(result, "a[1]b[2]c[3]");
+    }
+
+    #[test]
+    fn replace_all_dollar_n_capture_groups() {
+        // Swap two capture groups in all matches
+        let result = host_regex_replace_all_inner(hs(r"(\d)(\w)"), hs("1a2b3c"), hs("$2$1"));
+        assert_eq!(result, "a1b2c3");
+    }
+
+    #[test]
+    fn replace_all_no_match_returns_original() {
+        let result = host_regex_replace_all_inner(hs(r"\d"), hs("abc"), hs("X"));
+        assert_eq!(result, "abc");
+    }
+
+    #[test]
+    fn replace_preserves_unicode_around_match() {
+        let result = host_regex_replace_inner(hs(r"\d+"), hs("café123naïve"), hs("X"));
+        assert_eq!(result, "caféXnaïve");
+    }
+
+    #[test]
+    fn replace_all_zero_width_match() {
+        // Empty-match regex inserts replacement at each position
+        let result = host_regex_replace_all_inner(hs(r""), hs("ab"), hs("X"));
+        assert_eq!(result, "XaXbX");
     }
 }

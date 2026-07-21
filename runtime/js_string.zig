@@ -436,18 +436,105 @@ pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
     return parts.toOwnedSlice(alloc);
 }
 
+    /// Expand replacement string for plain-string replace per ECMA-262 Table 52.
+    ///
+    /// For plain-string (non-RegExp) replacement, only these patterns apply:
+    /// - `$$` → literal `$`
+    /// - `$&` → the matched substring (= `matched`)
+    /// - `` $` `` → text before match (= `before`)
+    /// - `$'` → text after match (= `after`)
+    /// - `$n` / `$<name>` → literal (no capture groups exist)
+    ///
+    /// Any `$` followed by an unrecognised escape, or a trailing `$`, is
+    /// emitted as a literal `$`.
+    fn expandReplacementPlain(
+        alloc: Allocator,
+        replacement: []const u8,
+        matched: []const u8,
+        before: []const u8,
+        after: []const u8,
+    ) ![]const u8 {
+        var result = std.ArrayList(u8).empty;
+        defer result.deinit(alloc);
+
+        var i: usize = 0;
+        while (i < replacement.len) {
+            if (replacement[i] == '$') {
+                if (i + 1 >= replacement.len) {
+                    // Trailing $ — literal
+                    try result.append(alloc, '$');
+                    i += 1;
+                    continue;
+                }
+                switch (replacement[i + 1]) {
+                    '$' => {
+                        try result.append(alloc, '$');
+                        i += 2;
+                    },
+                    '&' => {
+                        try result.appendSlice(alloc, matched);
+                        i += 2;
+                    },
+                    '`' => {
+                        try result.appendSlice(alloc, before);
+                        i += 2;
+                    },
+                    '\'' => {
+                        try result.appendSlice(alloc, after);
+                        i += 2;
+                    },
+                    '<' => {
+                        // $<name> with no RegExp → literal "$<name>"
+                        // Check for closing >
+                        if (std.mem.indexOfScalar(u8, replacement[i + 2 ..], '>')) |close_rel| {
+                            try result.appendSlice(alloc, replacement[i .. i + 2 + close_rel + 1]);
+                            i += 2 + close_rel + 1;
+                        } else {
+                            try result.append(alloc, '$');
+                            i += 1;
+                        }
+                    },
+                    else => {
+                        // Unrecognised → literal $
+                        try result.append(alloc, '$');
+                        i += 1;
+                    },
+                }
+            } else {
+                // Copy literal run until next $
+                const start = i;
+                while (i < replacement.len and replacement[i] != '$') {
+                    i += 1;
+                }
+                try result.appendSlice(alloc, replacement[start..i]);
+            }
+        }
+
+        return result.toOwnedSlice(alloc);
+    }
+
     /// Replace the first occurrence of old with new. Returns newly allocated string.
     /// R8-P1-22: JS String.prototype.replace() (without /g) replaces only the
     /// first occurrence. Previously used std.mem.replaceOwned which replaced ALL
     /// occurrences — identical to replaceAll. Now uses indexOf to find only the
     /// first match, then builds the replacement via allocPrint.
+    /// P1-24: Now expands $$ $& $` $' patterns in the replacement string per
+    /// ECMA-262 Table 52 for plain-string matches.
     pub fn replace(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
         if (old.len == 0) {
-            // Empty search string → prepend replacement before first char
-            return std.fmt.allocPrint(alloc, "{s}{s}", .{ new, s });
+            // Empty search string → prepend replacement before first char.
+            // matched="", before="", after=s
+            const expanded = try expandReplacementPlain(alloc, new, "", "", s);
+            defer alloc.free(expanded);
+            return std.fmt.allocPrint(alloc, "{s}{s}", .{ expanded, s });
         }
         const idx = std.mem.indexOf(u8, s, old) orelse return alloc.dupe(u8, s);
-        return std.fmt.allocPrint(alloc, "{s}{s}{s}", .{ s[0..idx], new, s[idx + old.len ..] });
+        const matched = s[idx .. idx + old.len];
+        const before = s[0..idx];
+        const after = s[idx + old.len ..];
+        const expanded = try expandReplacementPlain(alloc, new, matched, before, after);
+        defer alloc.free(expanded);
+        return std.fmt.allocPrint(alloc, "{s}{s}{s}", .{ before, expanded, after });
     }
 
 /// Trim whitespace from both ends. Returns borrowed slice.
@@ -918,8 +1005,45 @@ test "padEnd no-op" {
 }
 
 /// Replace all occurrences of old with new. Returns newly allocated string.
+/// P1-24: Now expands $$ $& $` $' patterns in the replacement string per
+/// ECMA-262 Table 52 for each match. Previously used std.mem.replaceOwned
+/// which performed zero pattern processing — identical to a literal paste.
 pub fn replaceAll(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
-    return std.mem.replaceOwned(u8, alloc, s, old, new);
+    if (old.len == 0) {
+        // Empty search string: insert replacement at every position
+        // (before each char and at the end), per JS spec.
+        // "abc".replaceAll("", "X") → "XaXbXcX"
+        var result = std.ArrayList(u8).empty;
+        defer result.deinit(alloc);
+        var pos: usize = 0;
+        while (pos <= s.len) : (pos += 1) {
+            const expanded = try expandReplacementPlain(alloc, new, "", s[0..pos], s[pos..]);
+            defer alloc.free(expanded);
+            try result.appendSlice(alloc, expanded);
+            if (pos < s.len) {
+                try result.appendSlice(alloc, s[pos .. pos + 1]);
+            }
+        }
+        return result.toOwnedSlice(alloc);
+    }
+
+    var result = std.ArrayList(u8).empty;
+    defer result.deinit(alloc);
+
+    var last_end: usize = 0;
+    while (std.mem.indexOf(u8, s[last_end..], old)) |rel_idx| {
+        const pos = last_end + rel_idx;
+        const matched = s[pos .. pos + old.len];
+        const before = s[0..pos];
+        const after = s[pos + old.len ..];
+        const expanded = try expandReplacementPlain(alloc, new, matched, before, after);
+        defer alloc.free(expanded);
+        try result.appendSlice(alloc, s[last_end..pos]);
+        try result.appendSlice(alloc, expanded);
+        last_end = pos + old.len;
+    }
+    try result.appendSlice(alloc, s[last_end..]);
+    return result.toOwnedSlice(alloc);
 }
 
 /// Create string from character code(s). Takes UTF-16 code units and returns a UTF-8 string.
@@ -1090,4 +1214,158 @@ test "fromCodePoint" {
     const result = try fromCodePoint(std.testing.allocator, &[_]i64{ 72, 101, 108, 108, 111 });
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("Hello", result);
+}
+
+// ── P1-24: replace / replaceAll $ pattern tests ──
+
+test "replace dollar-dollar" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "$$");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he$lo", r);
+}
+
+test "replace dollar-ampersand" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "[$&]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he[l]lo", r);
+}
+
+test "replace dollar-backtick" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "[$`]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he[he]lo", r);
+}
+
+test "replace dollar-quote" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "[$']");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he[lo]lo", r);
+}
+
+test "replace dollar-n literal (no capture groups)" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "$1");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he$1lo", r);
+}
+
+test "replace dollar-name literal (no named captures)" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "$<name>");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he$<name>lo", r);
+}
+
+test "replace unknown dollar escape" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "$X");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he$Xlo", r);
+}
+
+test "replace trailing dollar" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "end$");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("heend$lo", r);
+}
+
+test "replace plain no dollar" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "l", "L");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("heLlo", r);
+}
+
+test "replace no match" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "hello", "z", "$&");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("hello", r);
+}
+
+test "replace empty search string" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "abc", "", "X");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("Xabc", r);
+}
+
+test "replace empty search with dollar-ampersand" {
+    const a = std.testing.allocator;
+    const r = try replace(a, "abc", "", "[$&]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("[]abc", r);
+}
+
+// ── replaceAll tests ──
+
+test "replaceAll dollar-dollar" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "hello", "l", "$$");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he$$o", r);
+}
+
+test "replaceAll dollar-ampersand" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "hello", "l", "[$&]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("he[l][l]o", r);
+}
+
+test "replaceAll dollar-backtick" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "aXbXc", "X", "[$`]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("a[a]b[aXb]c", r);
+}
+
+test "replaceAll dollar-quote" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "aXbXc", "X", "[$']");
+    defer a.free(r);
+    // $' = full text after match in original string.
+    // X at pos 1: $' = "bXc"; X at pos 3: $' = "c".
+    try std.testing.expectEqualStrings("a[bXc]b[c]c", r);
+}
+
+test "replaceAll plain no dollar" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "hello", "l", "L");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("heLLo", r);
+}
+
+test "replaceAll no match" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "hello", "z", "$&");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("hello", r);
+}
+
+test "replaceAll empty search string" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "abc", "", "X");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("XaXbXcX", r);
+}
+
+test "replaceAll empty search with dollar-ampersand" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "abc", "", "[$&]");
+    defer a.free(r);
+    try std.testing.expectEqualStrings("[]a[]b[]c[]", r);
+}
+
+test "replaceAll dollar-backtick empty search" {
+    const a = std.testing.allocator;
+    const r = try replaceAll(a, "ab", "", "[$`]");
+    defer a.free(r);
+    // pos=0: $` = "" → []; pos=1: $` = "a" → [a]; pos=2: $` = "ab" → [ab]
+    try std.testing.expectEqualStrings("[]a[a]b[ab]", r);
 }

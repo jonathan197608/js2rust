@@ -90,6 +90,256 @@ return re.lastIndex;
     );
 }
 
+// ── P1-24: $ replacement pattern pass-through tests ──
+// These verify the emit layer correctly passes $ patterns as Zig string
+// literals to js_string.replace / js_string.replaceAll / replaceRegex /
+// replaceAllRegex. The actual $ expansion is tested via Zig runtime tests
+// in js_string.zig and Rust bridge tests in native_regex.rs.
+
+/// Plain-string replace with $& — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_plain_dollar_amp() {
+    let js = r#"
+export function replaceDollarAmp(s) {
+    return s.replace("l", "[$&]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_amp");
+    println!("=== replace plain $& ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace for plain-string replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$&"),
+        "Expected $& pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replace with $$ — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_plain_dollar_dollar() {
+    let js = r#"
+export function replaceDollarDollar(s) {
+    return s.replace("l", "$$");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_dollar");
+    println!("=== replace plain $$ ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$$"),
+        "Expected $$ pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replace with $` — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_plain_dollar_backtick() {
+    let js = r#"
+export function replaceDollarBacktick(s) {
+    return s.replace("l", "[$`]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_backtick");
+    println!("=== replace plain $` ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$`"),
+        "Expected $` pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replace with $' — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_plain_dollar_quote() {
+    let js = r#"
+export function replaceDollarQuote(s) {
+    return s.replace("l", "[$']");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_quote");
+    println!("=== replace plain $' ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$'"),
+        "Expected $' pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replace with $1 (capture group ref, no groups for plain) —
+/// must survive emit unchanged for runtime to handle as literal.
+#[test]
+fn test_p1_24_replace_plain_dollar_n() {
+    let js = r#"
+export function replaceDollarN(s) {
+    return s.replace("l", "$1");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_n");
+    println!("=== replace plain $1 ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$1"),
+        "Expected $1 pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replace with $<name> — must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_plain_dollar_name() {
+    let js = r#"
+export function replaceDollarName(s) {
+    return s.replace("l", "$<name>");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_plain_dollar_name");
+    println!("=== replace plain $<name> ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replace("),
+        "Expected js_string.replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$<name>"),
+        "Expected $<name> pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replaceAll with $& — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_all_plain_dollar_amp() {
+    let js = r#"
+export function replaceAllDollarAmp(s) {
+    return s.replaceAll("l", "[$&]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_all_plain_dollar_amp");
+    println!("=== replaceAll plain $& ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replaceAll("),
+        "Expected js_string.replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$&"),
+        "Expected $& pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Plain-string replaceAll with $` — pattern must survive emit unchanged.
+#[test]
+fn test_p1_24_replace_all_plain_dollar_backtick() {
+    let js = r#"
+export function replaceAllDollarBacktick(s) {
+    return s.replaceAll("x", "[$`]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_all_plain_dollar_backtick");
+    println!("=== replaceAll plain $` ===\n{}", zig);
+    assert!(
+        zig.contains("js_string.replaceAll("),
+        "Expected js_string.replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$`"),
+        "Expected $` pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Literal RegExp replace with $& — pattern must survive emit unchanged
+/// and route through replaceRegex.
+#[test]
+fn test_p1_24_replace_regex_dollar_amp() {
+    let js = r#"
+export function replaceRegexDollarAmp(s) {
+    return s.replace(/(\d)/, "[$&]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_regex_dollar_amp");
+    println!("=== replace regex $& ===\n{}", zig);
+    assert!(
+        zig.contains("replaceRegex("),
+        "Expected replaceRegex for literal RegExp replace:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$&"),
+        "Expected $& pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Literal RegExp replace with $1 (capture group ref) — must survive emit.
+#[test]
+fn test_p1_24_replace_regex_dollar_one() {
+    let js = r#"
+export function replaceRegexDollarOne(s) {
+    return s.replace(/(\d)/, "$1");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_regex_dollar_one");
+    println!("=== replace regex $1 ===\n{}", zig);
+    assert!(
+        zig.contains("replaceRegex("),
+        "Expected replaceRegex:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$1"),
+        "Expected $1 pattern in generated code:\n{}",
+        zig
+    );
+}
+
+/// Literal /g RegExp replaceAll with $& — must route through replaceAllRegex.
+#[test]
+fn test_p1_24_replace_all_regex_dollar_amp() {
+    let js = r#"
+export function replaceAllRegexDollarAmp(s) {
+    return s.replaceAll(/(\d)/g, "[$&]");
+}
+"#;
+    let zig = transpile_and_check(js, "test_p1_24_replace_all_regex_dollar_amp");
+    println!("=== replaceAll regex $& ===\n{}", zig);
+    assert!(
+        zig.contains("replaceAllRegex("),
+        "Expected replaceAllRegex for literal /g RegExp replaceAll:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("$&"),
+        "Expected $& pattern in generated code:\n{}",
+        zig
+    );
+}
+
 // ── C9: this-rewrite is_const for update/compound/for-loop ──
 
 /// `this.field++` in constructor: field must be `var` (not `const`),
