@@ -25,7 +25,19 @@ fn convertArray(comptime OutType: type, alloc: Allocator, arr: anytype) ![]OutTy
         arr;
     const result = try alloc.alloc(OutType, slice.len);
     for (slice, 0..) |val, i| {
-        result[i] = @intCast(val);
+        if (OutType == @TypeOf(val)) {
+            result[i] = val;
+        } else {
+            // JS integer wrapping semantics (ToInt8/ToUint8/etc.):
+            // @truncate in Zig 0.16.0 requires unsigned input, so we bit-cast
+            // to unsigned, truncate the low bits, then bit-cast back to the
+            // (possibly signed) target type.
+            const SrcUnsigned = std.meta.Int(.unsigned, @bitSizeOf(@TypeOf(val)));
+            const DstUnsigned = std.meta.Int(.unsigned, @bitSizeOf(OutType));
+            const unsigned_val: SrcUnsigned = @bitCast(val);
+            const truncated: DstUnsigned = @truncate(unsigned_val);
+            result[i] = @bitCast(truncated);
+        }
     }
     return result;
 }
@@ -67,16 +79,7 @@ pub fn fromI32(alloc: Allocator, arr: []const i32) ![]i32 {
 /// Accept i64 array and convert to []i32.
 /// Used by code generator which generates i64 arrays for JS number literals.
 pub fn fromI64AsI32(alloc: Allocator, arr: anytype) ![]i32 {
-    const T = @TypeOf(arr);
-    const slice = if (@typeInfo(T) == .array)
-        arr[0..]
-    else
-        arr;
-    const result = try alloc.alloc(i32, slice.len);
-    for (slice, 0..) |val, i| {
-        result[i] = @intCast(val);
-    }
-    return result;
+    return convertArray(i32, alloc, arr);
 }
 
 pub fn fromI64AsI8(alloc: Allocator, arr: anytype) ![]i8 {
@@ -465,7 +468,7 @@ test "sliceI32" {
 
 test "copyWithinI32" {
     var arr = [_]i32{ 1, 2, 3, 4, 5 };
-    copyWithinI32(&arr, 0, 3, 5);
+    _ = copyWithinI32(&arr, 0, 3, 5);
     try std.testing.expectEqual(@as(i32, 4), arr[0]);
     try std.testing.expectEqual(@as(i32, 5), arr[1]);
     try std.testing.expectEqual(@as(i32, 3), arr[2]);
@@ -473,9 +476,60 @@ test "copyWithinI32" {
 
 test "fillI32" {
     var arr = [_]i32{ 1, 2, 3, 4, 5 };
-    fillI32(&arr, 0, 1, 4);
+    _ = fillI32(&arr, 0, 1, 4);
     try std.testing.expectEqual(@as(i32, 1), arr[0]);
     try std.testing.expectEqual(@as(i32, 0), arr[1]);
     try std.testing.expectEqual(@as(i32, 0), arr[3]);
     try std.testing.expectEqual(@as(i32, 5), arr[4]);
+}
+
+// ── Integer wrapping tests (RT-1: @intCast to @truncate) ──
+
+test "fromI64AsI32: i64 to i32 wrapping (ToInt32 semantics)" {
+    const alloc = std.testing.allocator;
+    const input = [_]i64{ 0, 1, -1, 2147483647, -2147483648, 2147483648, 4294967296 };
+    const result = try fromI64AsI32(alloc, &input);
+    defer alloc.free(result);
+    try std.testing.expectEqual(@as(i32, 0), result[0]);
+    try std.testing.expectEqual(@as(i32, 1), result[1]);
+    try std.testing.expectEqual(@as(i32, -1), result[2]);
+    try std.testing.expectEqual(@as(i32, 2147483647), result[3]);
+    try std.testing.expectEqual(@as(i32, -2147483648), result[4]);
+    // 2147483648 wraps to -2147483648
+    try std.testing.expectEqual(@as(i32, -2147483648), result[5]);
+    // 4294967296 wraps to 0
+    try std.testing.expectEqual(@as(i32, 0), result[6]);
+}
+
+test "fromI64AsU8: i64 to u8 wrapping (ToUint8 semantics)" {
+    const alloc = std.testing.allocator;
+    const input = [_]i64{ 0, 255, 256, 257, -1 };
+    const result = try fromI64AsU8(alloc, &input);
+    defer alloc.free(result);
+    try std.testing.expectEqual(@as(u8, 0), result[0]);
+    try std.testing.expectEqual(@as(u8, 255), result[1]);
+    // 256 wraps to 0
+    try std.testing.expectEqual(@as(u8, 0), result[2]);
+    // 257 wraps to 1
+    try std.testing.expectEqual(@as(u8, 1), result[3]);
+    // -1 wraps to 255 (unsigned)
+    try std.testing.expectEqual(@as(u8, 255), result[4]);
+}
+
+test "fromI64AsI8: i64 to i8 wrapping (ToInt8 semantics)" {
+    const alloc = std.testing.allocator;
+    const input = [_]i64{ 0, 127, 128, -128, -129, 256, -256 };
+    const result = try fromI64AsI8(alloc, &input);
+    defer alloc.free(result);
+    try std.testing.expectEqual(@as(i8, 0), result[0]);
+    try std.testing.expectEqual(@as(i8, 127), result[1]);
+    // 128 wraps to -128
+    try std.testing.expectEqual(@as(i8, -128), result[2]);
+    try std.testing.expectEqual(@as(i8, -128), result[3]);
+    // -129 wraps to 127
+    try std.testing.expectEqual(@as(i8, 127), result[4]);
+    // 256 wraps to 0
+    try std.testing.expectEqual(@as(i8, 0), result[5]);
+    // -256 wraps to 0
+    try std.testing.expectEqual(@as(i8, 0), result[6]);
 }

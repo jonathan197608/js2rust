@@ -588,6 +588,12 @@ pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i6
 /// Repeat string n times. Returns newly allocated string.
 pub fn repeat(alloc: Allocator, s: []const u8, n: i64) ![]const u8 {
     const count: usize = @intCast(@max(0, n));
+    if (count == 0 or s.len == 0) return try alloc.dupe(u8, "");
+    // Overflow check: s.len * count must fit in usize.
+    // Without this, the multiplication wraps silently and alloc.alloc
+    // succeeds with a tiny buffer, causing a heap buffer overflow in the
+    // @memcpy loop below.
+    if (s.len > std.math.maxInt(usize) / count) return error.Overflow;
     const result = try alloc.alloc(u8, s.len * count);
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -1368,4 +1374,41 @@ test "replaceAll dollar-backtick empty search" {
     defer a.free(r);
     // pos=0: $` = "" → []; pos=1: $` = "a" → [a]; pos=2: $` = "ab" → [ab]
     try std.testing.expectEqualStrings("[]a[a]b[ab]", r);
+}
+
+// ── repeat overflow tests (RT-3: multiplication overflow check) ──
+
+test "repeat: basic operation" {
+    const a = std.testing.allocator;
+    const r = try repeat(a, "abc", 3);
+    defer a.free(r);
+    try std.testing.expectEqualStrings("abcabcabc", r);
+}
+
+test "repeat: zero count returns empty string" {
+    const a = std.testing.allocator;
+    const r = try repeat(a, "abc", 0);
+    defer a.free(r);
+    try std.testing.expectEqualStrings("", r);
+}
+
+test "repeat: negative count returns empty string" {
+    const a = std.testing.allocator;
+    const r = try repeat(a, "abc", -5);
+    defer a.free(r);
+    try std.testing.expectEqualStrings("", r);
+}
+
+test "repeat: empty string returns empty string" {
+    const a = std.testing.allocator;
+    const r = try repeat(a, "", 1000);
+    defer a.free(r);
+    try std.testing.expectEqualStrings("", r);
+}
+
+test "repeat: overflow detection (s.len * count exceeds usize)" {
+    const a = std.testing.allocator;
+    // 3 * maxInt(i64) overflows usize on 64-bit
+    const result = repeat(a, "abc", std.math.maxInt(i64));
+    try std.testing.expectError(error.Overflow, result);
 }

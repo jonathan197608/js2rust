@@ -64,23 +64,29 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
     }
     var out = std.ArrayList(u8).empty;
     defer out.deinit(alloc);
-    try stringifyValue(value, alloc, &out);
+    try stringifyValue(value, alloc, &out, 0);
     return out.toOwnedSlice(alloc);
 }
 
-fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8)) !void {
+/// Maximum nesting depth before rejecting as cyclic (or excessively deep).
+/// Protects against stack overflow from self-referential structures.
+const MAX_STRINGIFY_DEPTH: u32 = 1000;
+
+fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth: u32) !void {
     switch (value) {
         .null => try out.appendSlice(alloc, "null"),
         .value => |v| try stringifyJsValue(v, alloc, out),
         .array => |arr| {
+            if (depth >= MAX_STRINGIFY_DEPTH) return JSONError.CyclicObject;
             try out.appendSlice(alloc, "[");
             for (arr.items, 0..) |item, i| {
                 if (i > 0) try out.appendSlice(alloc, ",");
-                try stringifyValue(item, alloc, out);
+                try stringifyValue(item, alloc, out, depth + 1);
             }
             try out.appendSlice(alloc, "]");
         },
         .object => |obj| {
+            if (depth >= MAX_STRINGIFY_DEPTH) return JSONError.CyclicObject;
             try out.appendSlice(alloc, "{");
             var iter = obj.iterator();
             var first = true;
@@ -93,7 +99,7 @@ fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8)) !void
                 const key_part = try std.fmt.allocPrint(alloc, "\"{s}\":", .{entry.key_ptr.*});
                 defer alloc.free(key_part);
                 try out.appendSlice(alloc, key_part);
-                try stringifyValue(val, alloc, out);
+                try stringifyValue(val, alloc, out, depth + 1);
             }
             try out.appendSlice(alloc, "}");
         },
@@ -346,4 +352,55 @@ test "parse: integer overflow → f64 not 0 (R7-4)" {
     try std.testing.expect(v == .value and v.value == .float);
     const f = v.asF64();
     try std.testing.expect(f > 1e18);
+}
+
+// ── Cycle detection tests (RT-2: stringifyValue depth tracking) ──
+
+test "stringify: self-referential object triggers CyclicObject (RT-2)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var obj = try JsAny.newObject(alloc);
+    try obj.objectPut("self", obj, alloc);
+    // obj -> {self: {self: {self: ...}}} infinite cycle
+
+    const result = stringify(alloc, obj, null, null);
+    try std.testing.expectError(JSONError.CyclicObject, result);
+}
+
+test "stringify: mutual array cycle triggers CyclicObject (RT-2)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var arr = try JsAny.newArray(alloc);
+    var child = try JsAny.newArray(alloc);
+    try arr.arrayPush(alloc, child);
+    try child.arrayPush(alloc, arr);
+    // arr -> [child] -> [[arr]] -> [[[child]]] -> ... infinite cycle
+
+    const result = stringify(alloc, arr, null, null);
+    try std.testing.expectError(JSONError.CyclicObject, result);
+}
+
+test "stringify: deep but non-cyclic structure succeeds (RT-2)" {
+    const alloc = std.testing.allocator;
+
+    // Create a moderately nested array (well within MAX_STRINGIFY_DEPTH)
+    var root = try JsAny.newArray(alloc);
+    defer root.deinitDeep(alloc);
+    var current = root;
+    var i: u32 = 0;
+    while (i < 100) : (i += 1) {
+        const nested = try JsAny.newArray(alloc);
+        try current.arrayPush(alloc, nested);
+        current = nested;
+    }
+    try current.arrayPush(alloc, JsAny.fromI64(42));
+
+    const s = try stringify(alloc, root, null, null);
+    defer alloc.free(s);
+    // Should succeed: 100 levels is within the 1000 depth limit
+    try std.testing.expect(s.len > 0);
 }
