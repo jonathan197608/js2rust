@@ -169,6 +169,7 @@ macro_rules! leaf_expr_variants {
             | IrExpr::Null
             | IrExpr::Undefined
             | IrExpr::Ident(_)
+            | IrExpr::TypedIdent { .. }
             | IrExpr::This
             | IrExpr::CompileError { .. }
     };

@@ -438,11 +438,16 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
         "boolean" => "bool".to_string(),
         // Built-in runtime types
         "Symbol" => "JsSymbol".to_string(),
-        "Date" => "js_date.JsDate".to_string(),
+        "Date" => "Date".to_string(),
+        "BigInt" => "bigint".to_string(),
         // JS "Object" is a generic catch-all — emit as anytype (C ABI wrapper
         // generation skips validation for Anytype params, handling them via
         // const-aliasing in the wrapper layer)
         "Object" => "anytype".to_string(),
+        // null/undefined → JsAny (both are JsAny in the runtime)
+        "null" | "undefined" => "jsany".to_string(),
+        // Generic Array/Function → JsAny (element/return type unknown)
+        "Array" | "Function" => "jsany".to_string(),
         // 自定义类型名（@typedef 定义的），直接返回
         _ => jsdoc_ty.to_string(),
     }
@@ -525,6 +530,10 @@ export function mathFloor(x) { return Math.floor(x); }
         assert_eq!(jsdoc_type_to_zig("number", &empty_typedefs), "f64");
         assert_eq!(jsdoc_type_to_zig("boolean", &empty_typedefs), "bool");
         assert_eq!(jsdoc_type_to_zig("User", &empty_typedefs), "User");
+        assert_eq!(jsdoc_type_to_zig("null", &empty_typedefs), "jsany");
+        assert_eq!(jsdoc_type_to_zig("undefined", &empty_typedefs), "jsany");
+        assert_eq!(jsdoc_type_to_zig("Array", &empty_typedefs), "jsany");
+        assert_eq!(jsdoc_type_to_zig("Function", &empty_typedefs), "jsany");
     }
 
     #[test]

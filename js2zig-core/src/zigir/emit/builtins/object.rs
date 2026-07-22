@@ -235,12 +235,13 @@ impl Emitter {
             "hasOwn" => {
                 // If args are (Ident, StringLiteral), emit comptime @hasField
                 if args.len() == 2 {
-                    if let (IrExpr::Ident(ident), IrExpr::StringLiteral(key)) = (&args[0], &args[1])
-                    {
-                        self.write(&format!(
-                            "@hasField(@TypeOf({}), \"{}\")",
-                            ident.zig_name, key
-                        ));
+                    let ident_name = match &args[0] {
+                        IrExpr::Ident(ident) => Some(&ident.zig_name),
+                        IrExpr::TypedIdent { ident, .. } => Some(&ident.zig_name),
+                        _ => None,
+                    };
+                    if let (Some(ident_name), IrExpr::StringLiteral(key)) = (ident_name, &args[1]) {
+                        self.write(&format!("@hasField(@TypeOf({}), \"{}\")", ident_name, key));
                     } else {
                         self.write("js_object.hasOwn(");
                         self.emit_inline_args(args);

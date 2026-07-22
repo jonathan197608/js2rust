@@ -132,9 +132,13 @@ pub fn expr_depends_on_anytype(expr: &Expression, anytype_params: &HashSet<Strin
         | Expression::NullLiteral(_)
         | Expression::BigIntLiteral(_)
         | Expression::RegExpLiteral(_)
-        | Expression::TemplateLiteral(_)
         | Expression::FunctionExpression(_)
         | Expression::ArrowFunctionExpression(_) => false,
+        // Template literal: check interpolated expressions
+        Expression::TemplateLiteral(tl) => tl
+            .expressions
+            .iter()
+            .any(|e| expr_depends_on_anytype(e, anytype_params)),
         // Conservative: assume no dependency for unhandled expression types
         _ => false,
     }

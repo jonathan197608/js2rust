@@ -1387,7 +1387,7 @@ impl Lowerer {
             // extract the i64 value from the JsAny union.
             IrExpr::Call(call) => {
                 let returns_jsany = match &*call.callee {
-                    IrExpr::Ident(ident) => {
+                    IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
                         self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
                     }
                     _ => false,
@@ -1450,6 +1450,22 @@ impl Lowerer {
                 }
             }
             // Already-coerced or other expressions: pass through unchanged
+            // TypedIdent with F64 → wrap to i64
+            IrExpr::TypedIdent {
+                ident,
+                ty: ZigType::F64,
+            } => Self::wrap_f64_to_i64(IrExpr::TypedIdent {
+                ident,
+                ty: ZigType::F64,
+            }),
+            // TypedIdent with JsAny → wrap via .asI64()
+            IrExpr::TypedIdent {
+                ident,
+                ty: ZigType::JsAny,
+            } => Self::wrap_jsany_to_i64(IrExpr::TypedIdent {
+                ident,
+                ty: ZigType::JsAny,
+            }),
             other => other,
         }
     }
@@ -1526,6 +1542,15 @@ impl Lowerer {
                     Self::wrap_i64_to_f64(IrExpr::Ident(ident))
                 } else {
                     IrExpr::Ident(ident)
+                }
+            }
+
+            // TypedIdent — use embedded ty field directly (no lookup needed)
+            IrExpr::TypedIdent { ident, ty } => {
+                if ty == ZigType::I64 {
+                    Self::wrap_i64_to_f64(IrExpr::TypedIdent { ident, ty })
+                } else {
+                    IrExpr::TypedIdent { ident, ty }
                 }
             }
 
@@ -1666,7 +1691,7 @@ impl Lowerer {
             // Already JsAny — pass through
             IrExpr::Call(call) => {
                 let returns_jsany = match &*call.callee {
-                    IrExpr::Ident(ident) => {
+                    IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
                         self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
                     }
                     _ => false,
@@ -1689,6 +1714,15 @@ impl Lowerer {
                     IrExpr::Ident(ident)
                 } else {
                     Self::wrap_in_jsany_from(IrExpr::Ident(ident))
+                }
+            }
+
+            // TypedIdent — use embedded ty field directly
+            IrExpr::TypedIdent { ident, ty } => {
+                if ty == ZigType::JsAny {
+                    IrExpr::TypedIdent { ident, ty }
+                } else {
+                    Self::wrap_in_jsany_from(IrExpr::TypedIdent { ident, ty })
                 }
             }
 

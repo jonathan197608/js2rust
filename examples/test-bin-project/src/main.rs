@@ -62,10 +62,7 @@ fn main() {
     assert_eq!(r1, 1012.0);
 
     let r2 = testNestedTryCatchWithThrow().unwrap();
-    println!(
-        "testNestedTryCatchWithThrow() = {} (expected: 1012)",
-        r2
-    );
+    println!("testNestedTryCatchWithThrow() = {} (expected: 1012)", r2);
     assert_eq!(r2, 1012.0);
 
     let r3 = testTryCatchWithResource().unwrap();

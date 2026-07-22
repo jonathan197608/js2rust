@@ -473,7 +473,9 @@ impl TypeInferrer {
             // LHS type for &&=/||= (conditional assignment returns LHS type).
             Expression::AssignmentExpression(ae) => match ae.operator {
                 AssignmentOperator::Exponential => InferResult::Definite(ZigType::F64),
-                AssignmentOperator::LogicalAnd | AssignmentOperator::LogicalOr => {
+                AssignmentOperator::LogicalAnd
+                | AssignmentOperator::LogicalOr
+                | AssignmentOperator::LogicalNullish => {
                     // For logical assignments (x &&= y, x ||= y),
                     // result is either the original LHS (short-circuit) or the RHS.
                     // Return the LHS variable's type as the most likely result.
@@ -837,8 +839,8 @@ impl TypeInferrer {
     pub(crate) fn infer_array_method_return(&self, method: &str, elem_ty: &ZigType) -> InferResult {
         match method {
             // Methods that return a new array (same element type)
-            "slice" | "map" | "filter" | "concat" | "reverse" | "sort" | "splice" | "flat"
-            | "flatMap" | "toReversed" | "toSorted" | "toSpliced" => {
+            "slice" | "map" | "filter" | "concat" | "flat" | "flatMap" | "toReversed"
+            | "toSorted" | "toSpliced" => {
                 InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone())))
             }
             // Array.prototype.with(index, value) returns same element type array
@@ -858,10 +860,14 @@ impl TypeInferrer {
             "push" | "unshift" => InferResult::Definite(ZigType::I64),
             // findLastIndex: returns index or -1
             "findLastIndex" => InferResult::Definite(ZigType::I64),
-            // Iterator methods: return iterator objects (JsAny)
-            "keys" | "values" | "entries" => InferResult::Definite(ZigType::JsAny),
-            // copyWithin/fill: return the modified array → JsAny
-            "copyWithin" | "fill" => InferResult::Definite(ZigType::JsAny),
+            // Iterator methods: return ArrayList(JsAny) — matches builtin_return_type
+            "keys" | "values" | "entries" => {
+                InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+            }
+            // Mutation methods that return the receiver as JsAny — matches builtin_return_type
+            "reverse" | "sort" | "copyWithin" | "fill" => InferResult::Definite(ZigType::JsAny),
+            // splice: returns deleted elements as ArrayList(JsAny) — matches builtin_return_type
+            "splice" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny))),
             // forEach: returns undefined
             "forEach" => InferResult::Definite(ZigType::Void),
             _ => InferResult::Indeterminate,
@@ -934,11 +940,16 @@ impl TypeInferrer {
             }
             // String methods called on a str-typed variable
             ZigType::Str => match method {
-                "indexOf" | "lastIndexOf" => InferResult::Definite(ZigType::I64),
+                "indexOf" | "lastIndexOf" | "search" => InferResult::Definite(ZigType::I64),
+                "charCodeAt" => InferResult::Definite(ZigType::F64), // Number (0-65535 or NaN)
+                "codePointAt" => InferResult::Definite(ZigType::JsAny), // Number or undefined
+                "localeCompare" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
                 "trim" | "trimStart" | "trimEnd" | "split" | "padStart" | "padEnd" | "charAt"
                 | "at" | "toUpperCase" | "toLowerCase" | "slice" | "substring" | "replace"
-                | "replaceAll" | "concat" | "repeat" => InferResult::Definite(ZigType::Str),
+                | "replaceAll" | "concat" | "repeat" | "normalize" | "toLocaleUpperCase"
+                | "toLocaleLowerCase" => InferResult::Definite(ZigType::Str),
+                "match" | "matchAll" => InferResult::Definite(ZigType::JsAny),
                 _ => InferResult::Indeterminate,
             },
             // JsSymbol methods
@@ -958,7 +969,35 @@ impl TypeInferrer {
             // (toFixed/toExponential/toPrecision) are statically dispatched
             // at detection time and never reach this fallback resolver.
             ZigType::F64 | ZigType::I64 => match method {
-                "toString" => InferResult::Definite(ZigType::Str),
+                "toString" | "toFixed" | "toExponential" | "toPrecision" => {
+                    InferResult::Definite(ZigType::Str)
+                }
+                "valueOf" => InferResult::Definite(var_ty.clone()),
+                _ => InferResult::Indeterminate,
+            },
+            // ArrayList methods — fallback for when array methods aren't
+            // statically detected as BuiltinCalls. Types match builtin_return_type.
+            ZigType::ArrayList(_) => match method {
+                "push" | "unshift" => InferResult::Definite(ZigType::I64),
+                "pop" | "shift" | "find" | "findLast" | "at" => {
+                    InferResult::Definite(ZigType::JsAny)
+                }
+                "indexOf" | "lastIndexOf" | "findIndex" | "findLastIndex" => {
+                    InferResult::Definite(ZigType::I64)
+                }
+                "includes" | "some" | "every" => InferResult::Definite(ZigType::Bool),
+                "join" => InferResult::Definite(ZigType::Str),
+                "forEach" => InferResult::Definite(ZigType::Void),
+                "map" | "filter" | "slice" | "concat" | "flat" | "flatMap" | "with"
+                | "toReversed" | "toSorted" | "toSpliced" => {
+                    InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+                }
+                "reverse" | "sort" | "copyWithin" | "fill" => InferResult::Definite(ZigType::JsAny),
+                "splice" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny))),
+                "keys" | "values" | "entries" => {
+                    InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+                }
+                "reduce" | "reduceRight" => InferResult::Definite(ZigType::JsAny),
                 _ => InferResult::Indeterminate,
             },
             _ => InferResult::Indeterminate,

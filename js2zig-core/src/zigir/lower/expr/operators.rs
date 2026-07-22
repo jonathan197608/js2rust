@@ -922,7 +922,7 @@ impl Lowerer {
     fn ir_object_is_simple_lvalue(&self, expr: &crate::zigir::types::IrExpr) -> bool {
         use crate::zigir::types::IrExpr;
         match expr {
-            IrExpr::Ident(_) | IrExpr::This => true,
+            IrExpr::Ident(_) | IrExpr::TypedIdent { .. } | IrExpr::This => true,
             IrExpr::FieldAccess { object, .. } => self.ir_object_is_simple_lvalue(object),
             IrExpr::IndexAccess { object, index, .. } => {
                 self.ir_object_is_simple_lvalue(object) && self.ir_object_is_simple_lvalue(index)

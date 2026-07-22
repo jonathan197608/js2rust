@@ -1214,6 +1214,16 @@ pub fn builtin_call_to_ir(
         BuiltinCall::DateToLocaleString => {
             (BuiltinModule::JsDate, "toLocaleString".into(), ZigType::Str)
         }
+        BuiltinCall::DateToLocaleDateString => (
+            BuiltinModule::JsDate,
+            "toLocaleDateString".into(),
+            ZigType::Str,
+        ),
+        BuiltinCall::DateToLocaleTimeString => (
+            BuiltinModule::JsDate,
+            "toLocaleTimeString".into(),
+            ZigType::Str,
+        ),
         BuiltinCall::DateGetUTCFullYear => {
             (BuiltinModule::JsDate, "getUTCFullYear".into(), ZigType::I64)
         }

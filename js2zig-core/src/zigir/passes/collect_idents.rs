@@ -63,6 +63,9 @@ pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
         IrExpr::Ident(id) => {
             names.insert(id.zig_name.clone());
         }
+        IrExpr::TypedIdent { ident, .. } => {
+            names.insert(ident.zig_name.clone());
+        }
         // IrExpr::New stores the class name as a plain String in
         // NewConstructor::Class(name), not as a child IrExpr::Ident.
         // walk.rs only visits .args, so we must extract it here.

@@ -608,20 +608,25 @@ impl TypeInferrer {
                     // Check if this is JSON.parse(@type)
                     if let Some(type_name) = self.get_json_parse_type(name, init) {
                         self.has_json_parse_types.insert(name.to_string());
-                        // Validate that the @type name refers to a known type
-                        let is_known = self.class_names.contains(&type_name)
-                            || self.host_struct_fields.contains_key(&type_name)
-                            || self
-                                .jsdoc_data
-                                .as_ref()
-                                .is_some_and(|d| d.typedefs.contains_key(&type_name));
-                        let zig_type = if is_known {
-                            ZigType::NamedStruct(type_name)
+                        // Resolve the JSDoc type properly (handles arrays, named types, etc.)
+                        let typedefs = self.jsdoc_data.as_ref().map(|d| &d.typedefs);
+                        let zig_type = if let Some(td) = typedefs {
+                            Self::jsdoc_str_to_zig_type(&type_name, td)
                         } else {
-                            // Unknown type name — fall back to JsAny to avoid
-                            // Zig compile errors from referencing undefined structs
-                            ZigType::JsAny
+                            // No typedefs available — use direct mapping
+                            if self.class_names.contains(&type_name)
+                                || self.host_struct_fields.contains_key(&type_name)
+                            {
+                                ZigType::NamedStruct(type_name)
+                            } else {
+                                ZigType::JsAny
+                            }
                         };
+                        // Populate array_element_types for typed arrays (e.g., @type {User[]})
+                        if let ZigType::ArrayList(elem_ty) = &zig_type {
+                            self.array_element_types
+                                .insert(name.to_string(), (**elem_ty).clone());
+                        }
                         self.var_types.insert(name.to_string(), zig_type);
                         continue;
                     }
@@ -631,6 +636,11 @@ impl TypeInferrer {
                         && let Some(ty_str) = jsdoc_data.type_annotations.get(name)
                     {
                         let zig_ty = Self::jsdoc_str_to_zig_type(ty_str, &jsdoc_data.typedefs);
+                        // Populate array_element_types for typed arrays (e.g., @type {string[]})
+                        if let ZigType::ArrayList(elem_ty) = &zig_ty {
+                            self.array_element_types
+                                .insert(name.to_string(), (**elem_ty).clone());
+                        }
                         self.var_types.insert(name.to_string(), zig_ty);
                         continue;
                     }

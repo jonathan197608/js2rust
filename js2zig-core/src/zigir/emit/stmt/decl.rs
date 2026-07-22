@@ -461,7 +461,7 @@ impl Emitter {
         // that contain Map/Set/ArrayList/BigInt fields, to prevent memory leaks.
         if vd.needs_deinit
             || matches!(&vd.zig_type, Some(ZigType::NamedStruct(name))
-                if name != "Map" && name != "Set" && name != "JsDate"
+                if name != "Map" && name != "Set" && name != "Date"
                     && name != "JsBigInt" && name != "JsRegExp" && name != "RegExp"
                     && name != "Error" && name != "JsError"
                     && self.class_needs_deinit.contains(name))

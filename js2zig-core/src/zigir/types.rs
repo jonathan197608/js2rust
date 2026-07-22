@@ -551,6 +551,13 @@ pub enum IrExpr {
 
     // ── Identifier reference ────────────────────────
     Ident(IrIdent),
+    /// Identifier with known type — created by the lowerer when the variable's
+    /// type is known at lowering time. Enables type-aware emission (e.g.,
+    /// float coercion in Math builtins via `expr_is_float`).
+    TypedIdent {
+        ident: IrIdent,
+        ty: ZigType,
+    },
     This,
 
     // ── Arithmetic / comparison ─────────────────────
@@ -767,6 +774,7 @@ impl IrExpr {
                 | Self::Null
                 | Self::Undefined
                 | Self::Ident(_)
+                | Self::TypedIdent { .. }
                 | Self::This
                 | Self::CompileError { .. }
         )
@@ -1208,7 +1216,7 @@ mod tests {
         let ne = IrNewExpr {
             constructor: NewConstructor::Date(DateConstructorKind::FromMillis),
             args: vec![IrExpr::IntLiteral(1000)],
-            result_type: ZigType::NamedStruct("JsDate".to_string()),
+            result_type: ZigType::NamedStruct("Date".to_string()),
         };
         assert!(matches!(
             ne.constructor,

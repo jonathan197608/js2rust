@@ -116,7 +116,7 @@ impl Lowerer {
     ) {
         use crate::zigir::types::{IrExpr, IrObjectItem};
         match expr {
-            IrExpr::Ident(ident) => {
+            IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
                 names.insert(ident.zig_name.clone());
             }
             IrExpr::ObjectLiteral(ol) => {
@@ -363,7 +363,7 @@ impl Lowerer {
     ) {
         use crate::zigir::types::IrExpr;
         match expr {
-            IrExpr::Ident(name) => {
+            IrExpr::Ident(name) | IrExpr::TypedIdent { ident: name, .. } => {
                 idents.insert(name.js_name.clone());
             }
             IrExpr::Binary { left, right, .. } | IrExpr::Logical { left, right, .. } => {

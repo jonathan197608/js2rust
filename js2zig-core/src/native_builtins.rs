@@ -149,21 +149,23 @@ pub enum BuiltinCall {
     DateUTC,   // Date.UTC(y, m, d) → i64
 
     // Date methods (instance — called on a JsDate struct)
-    DateGetTime,           // date.getTime()
-    DateGetFullYear,       // date.getFullYear()
-    DateGetMonth,          // date.getMonth()
-    DateGetDate,           // date.getDate()
-    DateGetDay,            // date.getDay()
-    DateGetHours,          // date.getHours()
-    DateGetMinutes,        // date.getMinutes()
-    DateGetSeconds,        // date.getSeconds()
-    DateGetMilliseconds,   // date.getMilliseconds()
-    DateGetTimezoneOffset, // date.getTimezoneOffset()
-    DateToISOString,       // date.toISOString()
-    DateToString,          // date.toString()
-    DateToDateString,      // date.toDateString()
-    DateToTimeString,      // date.toTimeString()
-    DateToLocaleString,    // date.toLocaleString()
+    DateGetTime,            // date.getTime()
+    DateGetFullYear,        // date.getFullYear()
+    DateGetMonth,           // date.getMonth()
+    DateGetDate,            // date.getDate()
+    DateGetDay,             // date.getDay()
+    DateGetHours,           // date.getHours()
+    DateGetMinutes,         // date.getMinutes()
+    DateGetSeconds,         // date.getSeconds()
+    DateGetMilliseconds,    // date.getMilliseconds()
+    DateGetTimezoneOffset,  // date.getTimezoneOffset()
+    DateToISOString,        // date.toISOString()
+    DateToString,           // date.toString()
+    DateToDateString,       // date.toDateString()
+    DateToTimeString,       // date.toTimeString()
+    DateToLocaleString,     // date.toLocaleString()
+    DateToLocaleDateString, // date.toLocaleDateString()
+    DateToLocaleTimeString, // date.toLocaleTimeString()
 
     // Date methods (UTC getters)
     DateGetUTCFullYear,     // date.getUTCFullYear()
@@ -734,6 +736,8 @@ pub fn detect_builtin_call(ce: &oxc_ast::ast::CallExpression) -> Option<BuiltinC
             "toDateString" => Some(BuiltinCall::DateToDateString),
             "toTimeString" => Some(BuiltinCall::DateToTimeString),
             "toLocaleString" => Some(BuiltinCall::DateToLocaleString),
+            "toLocaleDateString" => Some(BuiltinCall::DateToLocaleDateString),
+            "toLocaleTimeString" => Some(BuiltinCall::DateToLocaleTimeString),
             "toFixed" => Some(BuiltinCall::NumberToFixed),
             "toExponential" => Some(BuiltinCall::NumberToExponential),
             "toPrecision" => Some(BuiltinCall::NumberToPrecision),
@@ -860,7 +864,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         }
         BuiltinCall::StringMatch => None, // returns ?[][]const u8 — complex type, defer to inference
         BuiltinCall::StringMatchAll => Some(ZigType::JsAny), // returns JsAny array of arrays
-        BuiltinCall::StringCodePointAt => Some(ZigType::I64),
+        BuiltinCall::StringCodePointAt => Some(ZigType::JsAny), // Number or undefined
         BuiltinCall::StringIncludes
         | BuiltinCall::StringStartsWith
         | BuiltinCall::StringEndsWith => Some(ZigType::Bool),
@@ -920,6 +924,9 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::DateToDateString => Some(ZigType::Str),
         BuiltinCall::DateToTimeString => Some(ZigType::Str),
         BuiltinCall::DateToLocaleString => Some(ZigType::Str),
+        BuiltinCall::DateToLocaleDateString | BuiltinCall::DateToLocaleTimeString => {
+            Some(ZigType::Str)
+        }
         BuiltinCall::DateToUTCString => Some(ZigType::Str),
         // Date toJSON/valueOf
         BuiltinCall::DateToJSON => Some(ZigType::Str),
@@ -1004,7 +1011,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Symbol methods
         BuiltinCall::SymbolConstructor | BuiltinCall::SymbolFor => Some(ZigType::JsSymbol),
-        BuiltinCall::SymbolKeyFor => Some(ZigType::Str), // Returns ?[]const u8 (description or null)
+        BuiltinCall::SymbolKeyFor => Some(ZigType::JsAny), // Returns string or undefined
 
         // Global type constructors (used as functions)
         BuiltinCall::NumberConstructor => Some(ZigType::F64),
@@ -1068,6 +1075,13 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // TypedArray view method
         BuiltinCall::TypedArraySubarray => Some(ZigType::JsAny), // returns a view — type depends on input
+
+        // Methods that return void
+        BuiltinCall::MapClear => Some(ZigType::Void), // map.clear() / set.clear() → undefined
+        BuiltinCall::ArrayForEach => Some(ZigType::Void), // arr.forEach(fn) → undefined
+        BuiltinCall::ConsoleLog | BuiltinCall::ConsoleError | BuiltinCall::ConsoleWarn => {
+            Some(ZigType::Void)
+        }
 
         // Methods that return void or complex types — can't infer
         // ES2025 Set operations — intercepted before reaching emit, but must be covered

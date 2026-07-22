@@ -302,7 +302,10 @@ fn main() {
     println!("  testDynamicArraySum() = {} (expected 15)", dsum);
 
     let dsi = testDynamicStringIndex("Hello World", 0);
-    println!("  testDynamicStringIndex('Hello World',0) = {} (expected 1, checks byte 72='H')", dsi);
+    println!(
+        "  testDynamicStringIndex('Hello World',0) = {} (expected 1, checks byte 72='H')",
+        dsi
+    );
 
     let dsw = testDynamicArraySwap(0, 2);
     println!("  testDynamicArraySwap(0,2) = {} (expected 300)", dsw);

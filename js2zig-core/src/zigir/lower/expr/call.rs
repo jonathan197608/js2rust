@@ -285,8 +285,13 @@ impl Lowerer {
             let method = if module == BuiltinModule::JsObject
                 && (method == "keys" || method == "getOwnPropertyNames")
             {
-                if let Some(IrExpr::Ident(ident)) = args.first() {
-                    if let Some(var_type) = self.type_info.var_types.get(ident.zig_name.as_str()) {
+                let ident_name = match args.first() {
+                    Some(IrExpr::Ident(ident)) => Some(ident.zig_name.as_str()),
+                    Some(IrExpr::TypedIdent { ident, .. }) => Some(ident.zig_name.as_str()),
+                    _ => None,
+                };
+                if let Some(name) = ident_name {
+                    if let Some(var_type) = self.type_info.var_types.get(name) {
                         if matches!(var_type, ZigType::Struct(_)) {
                             if method == "keys" {
                                 "keysStruct".into()
@@ -612,7 +617,7 @@ impl Lowerer {
                         ZigType::NamedStruct(name) => match name.as_str() {
                             "Map" => MethodObjectKind::Map,
                             "Set" => MethodObjectKind::Set,
-                            "Date" | "JsDate" => MethodObjectKind::Date,
+                            "Date" => MethodObjectKind::Date,
                             other => {
                                 if self.class_names.contains(other) {
                                     MethodObjectKind::Class(other.to_string())
@@ -833,7 +838,7 @@ impl Lowerer {
         let result_type = match &constructor {
             NewConstructor::Map => ZigType::NamedStruct("Map".to_string()),
             NewConstructor::Set => ZigType::NamedStruct("Set".to_string()),
-            NewConstructor::Date(_) => ZigType::NamedStruct("JsDate".to_string()),
+            NewConstructor::Date(_) => ZigType::NamedStruct("Date".to_string()),
             NewConstructor::RegExp => ZigType::NamedStruct("JsRegExp".to_string()),
             NewConstructor::TypedArray(_) => ZigType::NamedStruct("TypedArray".to_string()),
             NewConstructor::Class(name) => ZigType::NamedStruct(name.clone()),

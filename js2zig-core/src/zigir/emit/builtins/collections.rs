@@ -79,7 +79,7 @@ impl Emitter {
             }
             // Instance methods that need allocator
             "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
-            | "toLocaleString" | "toUTCString" => {
+            | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" | "toUTCString" => {
                 if let Some(name) = obj {
                     self.write(&format!(
                         "try {}.{}(js_allocator.allocator())",

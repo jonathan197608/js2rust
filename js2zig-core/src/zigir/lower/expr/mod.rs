@@ -389,6 +389,14 @@ impl Lowerer {
             };
         }
 
-        IrExpr::Ident(self.make_ident(var_name))
+        let ident = self.make_ident(var_name);
+        if let Some(ty) = self.type_info.var_types.get(var_name) {
+            IrExpr::TypedIdent {
+                ident,
+                ty: ty.clone(),
+            }
+        } else {
+            IrExpr::Ident(ident)
+        }
     }
 }

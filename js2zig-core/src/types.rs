@@ -84,7 +84,10 @@ impl ZigType {
                 s.push_str(" }");
                 Cow::Owned(s)
             }
-            ZigType::NamedStruct(name) => Cow::Owned(name.clone()),
+            ZigType::NamedStruct(name) => match name.as_str() {
+                "Date" => Cow::Borrowed("js_date.JsDate"),
+                _ => Cow::Owned(name.clone()),
+            },
             ZigType::Anytype => Cow::Borrowed("anytype"),
             ZigType::JsAny => Cow::Borrowed("JsAny"),
             ZigType::JsSymbol => Cow::Borrowed("JsSymbol"),

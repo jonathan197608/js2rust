@@ -269,7 +269,11 @@ return n;
 fn test_native_proto_typeof_object() {
     let js = r#"
 /**
- * @param {Object} o
+ * @typedef {Object} User
+ * @property {string} name
+ */
+/**
+ * @param {User} o
  * @param {Array} a
  */
 export function typeof_obj(o, a) {
@@ -279,10 +283,16 @@ return t1;
 }
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_typeof_object");
-    // typeof object → should emit "object" string literal
+    // typeof named struct (User) → should emit "object" string literal
     assert!(
         zig.contains("\"object\""),
         "typeof object should emit \"object\" string: {}",
+        zig
+    );
+    // typeof Array (now JsAny after P2-5) → should use runtime jsTypeof
+    assert!(
+        zig.contains("js_runtime.jsTypeof"),
+        "typeof Array (JsAny) should use js_runtime.jsTypeof(): {}",
         zig
     );
 }

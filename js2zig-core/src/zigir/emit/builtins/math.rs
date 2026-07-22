@@ -47,6 +47,14 @@ pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
         }
         IrExpr::Unary { operand_type, .. } => operand_type.as_ref() == Some(&ZigType::F64),
         IrExpr::BuiltinCall(bc) => bc.return_type == ZigType::F64,
+        // TypedIdent with F64 type — the lowerer annotates known-type variables
+        IrExpr::TypedIdent {
+            ty: ZigType::F64, ..
+        } => true,
+        // DivExpr / RemExpr always produce f64 (JS `/` and `%` return float)
+        IrExpr::DivExpr { .. } | IrExpr::RemExpr { .. } => true,
+        // PowExpr produces f64 when result_type is None (not coerced to i64)
+        IrExpr::PowExpr { result_type, .. } => result_type.is_none(),
         _ => false,
     }
 }

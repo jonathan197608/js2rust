@@ -1309,7 +1309,13 @@ fn run_all(binary: &str) {
                     // Zig panic or non-zero exit.
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     errors += 1;
-                    eprintln!("[{}/{}] {} ... CRASH ({})", i + 1, total, frag, stderr.lines().next().unwrap_or("unknown"));
+                    eprintln!(
+                        "[{}/{}] {} ... CRASH ({})",
+                        i + 1,
+                        total,
+                        frag,
+                        stderr.lines().next().unwrap_or("unknown")
+                    );
                     continue;
                 }
                 // console.log goes to stderr via std.debug.print; stdout may also have output.

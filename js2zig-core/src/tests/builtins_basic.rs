@@ -495,11 +495,9 @@ export function p07FloatLit() {
 
 #[test]
 fn test_p0_7_int_variable_arg() {
-    // @param {number} variable arg: with P1-B6, x is now f64 (was i64).
-    // NOTE: expr_is_float() does not yet detect f64-typed IrExpr::Ident, so
-    // @floatFromInt is still emitted on the f64 variable — a latent code bug.
-    // The assertion matches the current (buggy) output; fix expr_is_float to
-    // detect f64 Identifiers and update this assertion to !@floatFromInt.
+    // @param {number} → x is f64. With P0-1 fix, expr_is_float() now detects
+    // f64-typed TypedIdent, so @as(f64, x) identity cast is used instead of
+    // the invalid @floatFromInt on an already-f64 variable.
     let js = r#"
 /**
  * @param {number} x
@@ -513,8 +511,8 @@ export function p07IntVar(x) {
 
     assert!(zig.contains("@sin("), "Expected '@sin(' in:\n{}", zig);
     assert!(
-        zig.contains("@floatFromInt"),
-        "Expected @floatFromInt for i64 variable arg in:\n{}",
+        !zig.contains("@floatFromInt"),
+        "Expected NO @floatFromInt for f64 variable arg in:\n{}",
         zig
     );
 }
@@ -703,10 +701,10 @@ export function p08MaxBuiltin() {
 
 #[test]
 fn test_p0_8_min_max_mixed_int_float() {
-    // Mixed f64 variable (@param {number}) + float literal: should coerce
-    // via @as(f64, x) identity cast. NOTE: expr_is_float() does not yet
-    // detect f64-typed IrExpr::Ident, so @floatFromInt is still emitted —
-    // a latent code bug. The assertions match the current (buggy) output.
+    // Mixed f64 variable (@param {number}) + float literal: with P0-1 fix,
+    // expr_is_float() now detects f64-typed TypedIdent, so the f64 branch
+    // runs and wraps both args with @as(f64, ...) identity casts.
+    // No @floatFromInt is needed since x is already f64.
     let js = r#"
 /**
  * @param {number} x
@@ -719,8 +717,13 @@ export function p08MaxMixed(x) {
     let zig = transpile_and_check(js, "test_p0_8_min_max_mixed_int_float");
 
     assert!(
-        zig.contains("@floatFromInt"),
-        "Expected @floatFromInt for i64 arg in mixed min/max in:\n{}",
+        !zig.contains("@floatFromInt"),
+        "P0-1 fix: no @floatFromInt needed for f64 arg in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("@as(f64, x)"),
+        "Expected '@as(f64, x)' identity cast for f64 variable in:\n{}",
         zig
     );
     assert!(
@@ -737,10 +740,9 @@ export function p08MaxMixed(x) {
 
 #[test]
 fn test_p0_8_min_max_int_args_unchanged() {
-    // All-f64 args (@param {number} variables): should use the f64 branch.
-    // NOTE: expr_is_float() does not yet detect f64-typed IrExpr::Ident, so
-    // the i64 branch is still used — a latent code bug. The assertions match
-    // the current (buggy) output; fix expr_is_float and update assertions.
+    // All-f64 args (@param {number} variables): with P0-1 fix,
+    // expr_is_float() now detects f64-typed TypedIdent, so the f64 branch is
+    // used for min/max. No @floatFromInt since variables are already f64.
     let js = r#"
 /**
  * @param {number} x
@@ -754,13 +756,8 @@ export function p08MaxInt(x, y) {
     let zig = transpile_and_check(js, "test_p0_8_min_max_int_args_unchanged");
 
     assert!(
-        zig.contains("@as(i64,"),
-        "Expected @as(i64, ...) in i64 min/max branch in:\n{}",
-        zig
-    );
-    assert!(
         !zig.contains("@floatFromInt"),
-        "i64 min/max branch must not emit @floatFromInt in:\n{}",
+        "f64 min/max branch must not emit @floatFromInt in:\n{}",
         zig
     );
 }

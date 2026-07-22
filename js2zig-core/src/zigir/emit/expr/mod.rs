@@ -59,6 +59,10 @@ impl Emitter {
                 self.write(&ident.zig_name);
             }
 
+            crate::zigir::types::IrExpr::TypedIdent { ident, .. } => {
+                self.write(&ident.zig_name);
+            }
+
             crate::zigir::types::IrExpr::This => {
                 self.write("self");
             }
@@ -1071,6 +1075,11 @@ impl Emitter {
                 IrExpr::Ident(ident) if self.rest_param_names.contains(&ident.zig_name) => {
                     self.emit_expr(inner);
                 }
+                IrExpr::TypedIdent { ident, .. }
+                    if self.rest_param_names.contains(&ident.zig_name) =>
+                {
+                    self.emit_expr(inner);
+                }
                 // Array literal spread: emit as &[_]JsAny{ ... }
                 // Each element must be wrapped in JsAny.from() since the
                 // array literal type is explicitly JsAny.
@@ -1199,7 +1208,7 @@ fn is_jsany_from_call(expr: &crate::zigir::types::IrExpr) -> bool {
     use crate::zigir::types::{IrCallExpr, IrExpr};
     if let IrExpr::Call(IrCallExpr { callee, .. }) = expr
         && let IrExpr::FieldAccess { object, field, .. } = &**callee
-        && let IrExpr::Ident(ident) = &**object
+        && let IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } = &**object
     {
         return ident.zig_name == "JsAny" && field == "from";
     }
