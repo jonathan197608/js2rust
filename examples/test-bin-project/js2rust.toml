@@ -8,13 +8,13 @@ js_files = ["main.js"]
 
 [[host_functions]]
 name = "host_add"
-params = ["i64", "i64"]
-returns = "i64"
+params = ["f64", "f64"]
+returns = "f64"
 
 [[host_functions]]
 name = "host_multiply"
-params = ["i64", "i64"]
-returns = "i64"
+params = ["f64", "f64"]
+returns = "f64"
 
 [[host_functions]]
 name = "host_concat"
@@ -24,7 +24,7 @@ returns = "str"
 [[host_functions]]
 name = "host_strlen"
 params = ["str"]
-returns = "i64"
+returns = "f64"
 
 [[host_functions]]
 name = "fetch_user"

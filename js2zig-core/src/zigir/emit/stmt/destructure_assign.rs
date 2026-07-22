@@ -107,12 +107,28 @@ impl Emitter {
 
     /// Infer the HashMap value conversion method based on the default expression type.
     /// Returns ".asBool()" for bool defaults, ".value.string" for string defaults,
-    /// and ".asI64()" for numeric defaults.
+    /// ".asF64()" for float defaults, and ".asI64()" for integer defaults.
     pub(super) fn infer_hashmap_conv(&self, default: &crate::zigir::types::IrExpr) -> &'static str {
+        use crate::types::ZigType;
+        use crate::zigir::ops::BinOp;
         use crate::zigir::types::IrExpr;
         match default {
             IrExpr::BoolLiteral(_) => ".asBool()",
             IrExpr::StringLiteral(_) => ".value.string",
+            IrExpr::FloatLiteral(_) => ".asF64()",
+            // Division always produces f64 in JS semantics
+            IrExpr::Binary {
+                op,
+                left_type,
+                right_type,
+                ..
+            } if *op == BinOp::Div
+                || left_type.as_ref() == Some(&ZigType::F64)
+                || right_type.as_ref() == Some(&ZigType::F64) =>
+            {
+                ".asF64()"
+            }
+            IrExpr::Binary { .. } => ".asI64()",
             _ => ".asI64()",
         }
     }

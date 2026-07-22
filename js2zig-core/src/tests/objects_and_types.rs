@@ -150,7 +150,7 @@ return user.name;
     // Should generate struct definition at the top.
     assert!(zig.contains("const User = struct {"));
     assert!(zig.contains("name: []const u8,"));
-    assert!(zig.contains("age: i64,"));
+    assert!(zig.contains("age: f64,"));
     assert!(zig.contains("active: bool,"));
     // Should still generate the function.
     assert!(zig.contains("fn formatUser"));
@@ -220,7 +220,7 @@ export function log(msg) {
     let zig = transpile_and_assert(js, "test_native_proto_export_fn_signature");
     // Export function: should use real types from JSDoc
     // For export functions without @param: default to i64 (not anytype)
-    assert!(zig.contains("pub fn add(a: i64, b: i64) i64 {"));
+    assert!(zig.contains("pub fn add(a: i64, b: i64) f64 {"));
     // Export function with @returns {void}: should be void.
     assert!(zig.contains("pub fn log(_msg: i64) void {"));
     // Export function: should NOT generate C ABI conversion code
@@ -243,10 +243,10 @@ return "Hello " + name + ", age " + age;
 "#;
     let zig = transpile_and_check(js, "test_native_proto_param_annotation");
     // @param {string} name: should use []const u8 directly
-    // @param {number} age: should use i64 directly
+    // @param {number} age: should use f64 directly
     // NOTE: native_proto adds 'export ' prefix to export functions
     // Rule 1: JSDoc @returns should be used correctly (now fixed)
-    assert!(zig.contains("pub fn greet(name: []const u8, age: i64) []const u8 {"));
+    assert!(zig.contains("pub fn greet(name: []const u8, age: f64) []const u8 {"));
     // Should NOT generate parseInt code (types are already correct)
     assert!(!zig.contains("parseInt"));
     // Should use std.fmt.allocPrint for string concatenation (Zig 0.16.0: ++ requires comptime-known slices)
@@ -303,10 +303,10 @@ return a * b;
     println!("=== @param E2E Test ===\n{}", zig);
 
     // Verify the generated code has correct structure with real types
-    assert!(zig.contains("fn multiply(a: i64, b: i64) i64 {"));
-    // Should NOT generate parseInt code (types are already i64)
+    assert!(zig.contains("fn multiply(a: f64, b: f64) f64 {"));
+    // Should NOT generate parseInt code (types are already f64)
     assert!(!zig.contains("parseInt"));
-    // Should NOT generate allocPrint code (return type is i64, not string)
+    // Should NOT generate allocPrint code (return type is f64, not string)
     assert!(!zig.contains("allocPrint"));
     assert!(!zig.contains("result_len"));
     // Should directly return the multiplication result
@@ -506,7 +506,7 @@ return JSON.stringify(user);
         zig
     );
     assert!(
-        zig.contains("zip: i64,"),
+        zig.contains("zip: f64,"),
         "Expected zip field, got:\n{}",
         zig
     );
@@ -530,7 +530,7 @@ return JSON.stringify(user);
         zig
     );
     assert!(
-        zig.contains("age: i64,"),
+        zig.contains("age: f64,"),
         "Expected age field, got:\n{}",
         zig
     );
@@ -540,7 +540,7 @@ return JSON.stringify(user);
         zig
     );
     assert!(
-        zig.contains("scores: []const i64,"),
+        zig.contains("scores: []const f64,"),
         "Expected scores field (number[]), got:\n{}",
         zig
     );

@@ -447,10 +447,11 @@ return base ** exp;
         "Expected std.math.pow for exponentiation:\n{}",
         zig
     );
-    // Should cast operands to f64
+    // With @param {number} → f64 (P1-B6), params are already f64, so no cast is needed.
+    // Verify the function signature uses f64 for both params and return type.
     assert!(
-        zig.contains("@as(f64,"),
-        "Expected @as(f64, ...) cast for exponentiation:\n{}",
+        zig.contains("pub fn intPow(base: f64, exp: f64) f64 {"),
+        "Expected f64 params and return type for ** operator:\n{}",
         zig
     );
     assert_zig_ast_check(&zig, "test_native_proto_exponential_operator");

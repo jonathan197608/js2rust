@@ -451,15 +451,14 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let acc_name = format!("_acc_{}", self.peek_label_id());
-        // Determine init value and accumulator type
+        // Determine init value and accumulator type using type-aware detection
         let init_expr_str = match &data.reduce_init {
             Some(expr) => self.render_expr_to_string(expr),
             None => "0".to_string(),
         };
-        let acc_type = if init_expr_str.contains('.') {
-            "f64"
-        } else {
-            "i64"
+        let acc_type = match &data.reduce_init {
+            Some(expr) if super::math::expr_is_float(expr) => "f64",
+            _ => "i64",
         };
         self.write(&format!(
             "var {}: {} = {}; ",
@@ -524,15 +523,14 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let acc_name = format!("_acc_{}", self.peek_label_id());
-        // Determine init value and accumulator type
+        // Determine init value and accumulator type using type-aware detection
         let init_expr_str = match &data.reduce_init {
             Some(expr) => self.render_expr_to_string(expr),
             None => "0".to_string(),
         };
-        let acc_type = if init_expr_str.contains('.') {
-            "f64"
-        } else {
-            "i64"
+        let acc_type = match &data.reduce_init {
+            Some(expr) if super::math::expr_is_float(expr) => "f64",
+            _ => "i64",
         };
         self.write(&format!(
             "var {}: {} = {}; ",
@@ -700,9 +698,13 @@ impl Emitter {
     // ── flatMap ───────────────────────────────────────
     //
     //  arr.flatMap(fn) → map + flatten(depth=1).
-    //  Since our type system uses uniform element types (ArrayList(i64), etc.),
-    //  the callback returns a scalar, so flatMap is semantically equivalent to map
-    //  (flatten(1) on a flat array of scalars is a no-op).
+    //  Known limitation: since our type system uses uniform element types
+    //  (ArrayList(i64), etc.), we cannot distinguish at compile time whether
+    //  the callback returns an array (which should be flattened) or a scalar
+    //  (which should be appended as-is). A proper fix would require runtime
+    //  type checking on each callback result. For now, flatMap delegates to
+    //  emit_collect_inline (same as map), which appends each result as a
+    //  single element — meaning array results are NOT flattened.
     //  Delegates to emit_collect_inline with __fmap prefix.
 
     pub(super) fn emit_flat_map_inline(

@@ -63,6 +63,7 @@ pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny 
     const result = host_regex_match(pattern.ptr, pattern.len, s.ptr, s.len, &count);
     if (count == 0) return JsAny.fromNull();
 
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     var arr = try JsAny.newArray(alloc);
     errdefer arr.array.deinit(alloc);
@@ -85,6 +86,7 @@ pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !
     const result = host_regex_match_global(pattern.ptr, pattern.len, s.ptr, s.len, &count);
     if (count == 0) return JsAny.fromNull();
 
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     var arr = try JsAny.newArray(alloc);
     errdefer arr.array.deinit(alloc);
@@ -114,6 +116,7 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
 
     if (match_count == 0 or group_count == 0) return outer_arr;
 
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
 
     // Parse NUL-separated groups into match arrays
@@ -144,6 +147,7 @@ pub fn replaceRegex(alloc: Allocator, s: []const u8, pattern: []const u8, replac
         // Both input and result are empty — nothing to dupe
         return alloc.dupe(u8, "");
     }
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     return alloc.dupe(u8, bytes);
 }
@@ -156,6 +160,7 @@ pub fn replaceAllRegex(alloc: Allocator, s: []const u8, pattern: []const u8, rep
         // Both input and result are empty — nothing to dupe
         return alloc.dupe(u8, "");
     }
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     return alloc.dupe(u8, bytes);
 }

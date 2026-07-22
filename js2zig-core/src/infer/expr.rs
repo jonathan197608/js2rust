@@ -496,6 +496,27 @@ impl TypeInferrer {
                 InferResult::Indeterminate
             }
 
+            Expression::UpdateExpression(ue) => {
+                // ++x / x-- always returns a number. Try to look up the variable type.
+                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
+                    if let Some(t) = self.var_types.get(id.name.as_str()) {
+                        InferResult::Definite(t.clone())
+                    } else {
+                        InferResult::Indeterminate
+                    }
+                } else {
+                    InferResult::Indeterminate
+                }
+            }
+
+            Expression::SequenceExpression(se) => {
+                if let Some(last) = se.expressions.last() {
+                    self.infer_expr_type(last)
+                } else {
+                    InferResult::Indeterminate
+                }
+            }
+
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
         }
@@ -520,6 +541,76 @@ impl TypeInferrer {
             }
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
+            // CallExpression: check if the function/method returns a string
+            Expression::CallExpression(ce) => match &ce.callee {
+                Expression::Identifier(id) => {
+                    // Check user-defined and host function return types
+                    if let Some(ret_ty) = self.fn_return_types.get(id.name.as_str()) {
+                        return *ret_ty == ZigType::Str;
+                    }
+                    if let Some(ret_ty) = self.host_return_types.get(id.name.as_str()) {
+                        return *ret_ty == ZigType::Str;
+                    }
+                    // Built-in functions known to return strings
+                    matches!(
+                        id.name.as_str(),
+                        "String"
+                            | "decodeURI"
+                            | "decodeURIComponent"
+                            | "encodeURI"
+                            | "encodeURIComponent"
+                    )
+                }
+                // Method calls: obj.method() — check method return type
+                Expression::StaticMemberExpression(mem) => {
+                    if let Some(obj_name) =
+                        super::helpers::extract_expr_identifier_name(&mem.object)
+                    {
+                        // Array methods that return strings
+                        if let Some(elem_ty) = self.array_element_types.get(&obj_name) {
+                            let result =
+                                self.infer_array_method_return(mem.property.name.as_str(), elem_ty);
+                            if let InferResult::Definite(ZigType::Str) = result {
+                                return true;
+                            }
+                        }
+                        // Map/Set/Date/Str/etc. methods
+                        if let Some(var_ty) = self.var_types.get(&obj_name) {
+                            let result =
+                                self.infer_named_method_return(var_ty, mem.property.name.as_str());
+                            if let InferResult::Definite(ZigType::Str) = result {
+                                return true;
+                            }
+                        }
+                    }
+                    // Built-in method calls (String.xxx, Math.xxx, etc.)
+                    if let Some(builtin) = builtins::detect_builtin_call(ce)
+                        && let Some(ret_ty) = builtins::builtin_return_type(&builtin)
+                    {
+                        return ret_ty == ZigType::Str;
+                    }
+                    false
+                }
+                // TODO: Function return type tracking for complex callees (e.g.,
+                // chained calls, computed member calls) requires full expression
+                // type inference which is not available in this &self context.
+                _ => false,
+            },
+            // StaticMemberExpression: check known string properties by object type
+            Expression::StaticMemberExpression(mem) => {
+                if let Some(obj_name) = super::helpers::extract_expr_identifier_name(&mem.object)
+                    && let Some(var_ty) = self.var_types.get(&obj_name)
+                {
+                    return match var_ty {
+                        ZigType::JsError => {
+                            matches!(mem.property.name.as_str(), "name" | "message" | "stack")
+                        }
+                        ZigType::JsSymbol => mem.property.name.as_str() == "description",
+                        _ => false,
+                    };
+                }
+                false
+            }
             _ => false,
         }
     }
@@ -745,6 +836,16 @@ impl TypeInferrer {
             "join" => InferResult::Definite(ZigType::Str),
             // push/unshift: return new length (i64)
             "push" | "unshift" => InferResult::Definite(ZigType::I64),
+            // findLastIndex: returns index or -1
+            "findLastIndex" => InferResult::Definite(ZigType::I64),
+            // at/findLast: return element or undefined → JsAny
+            "at" | "findLast" => InferResult::Definite(ZigType::JsAny),
+            // Iterator methods: return iterator objects (JsAny)
+            "keys" | "values" | "entries" => InferResult::Definite(ZigType::JsAny),
+            // copyWithin/fill: return the modified array → JsAny
+            "copyWithin" | "fill" => InferResult::Definite(ZigType::JsAny),
+            // forEach: returns undefined
+            "forEach" => InferResult::Definite(ZigType::Void),
             _ => InferResult::Indeterminate,
         }
     }
@@ -758,11 +859,14 @@ impl TypeInferrer {
                         "set" => InferResult::Definite(ZigType::NamedStruct("Map".into())),
                         "get" => InferResult::Definite(ZigType::JsAny), // Map.get() returns JsAny
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
+                        "clear" | "forEach" => InferResult::Definite(ZigType::Void),
+                        "keys" | "values" | "entries" => InferResult::Definite(ZigType::JsAny),
                         _ => InferResult::Indeterminate,
                     },
                     "Set" => match method {
                         "add" => InferResult::Definite(ZigType::NamedStruct("Set".into())),
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
+                        "clear" | "forEach" => InferResult::Definite(ZigType::Void),
                         "keys" | "values" => {
                             InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
                         }
@@ -773,8 +877,15 @@ impl TypeInferrer {
                     },
                     "Date" => match method {
                         "getTime" | "getFullYear" | "getMonth" | "getDate" | "getDay"
-                        | "getHours" | "getMinutes" | "getSeconds" | "valueOf" => {
-                            InferResult::Definite(ZigType::I64)
+                        | "getHours" | "getMinutes" | "getSeconds" | "getMilliseconds"
+                        | "valueOf" => InferResult::Definite(ZigType::I64),
+                        "setFullYear" | "setMonth" | "setDate" | "setHours" | "setMinutes"
+                        | "setSeconds" | "setMilliseconds" | "setTime" => {
+                            InferResult::Definite(ZigType::F64)
+                        }
+                        "toString" | "toISOString" | "toDateString" | "toTimeString"
+                        | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" => {
+                            InferResult::Definite(ZigType::Str)
                         }
                         _ => InferResult::Indeterminate,
                     },

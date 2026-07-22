@@ -475,9 +475,10 @@ impl Emitter {
                     self.write("js_symbol.JsSymbol.initAnonymous()");
                 } else {
                     // Symbol("desc") → js_symbol.JsSymbol.init("desc")
-                    self.write("js_symbol.JsSymbol.init(");
+                    // init returns !JsSymbol (can fail with OOM) — unwrap with catch.
+                    self.write("(js_symbol.JsSymbol.init(");
                     self.emit_inline_args(args);
-                    self.write(")");
+                    self.write(") catch @panic(\"Symbol init OOM\"))");
                 }
             }
             // Instance methods that use the receiver: sym.toString(), sym.description, etc.
@@ -498,7 +499,13 @@ impl Emitter {
                     self.write(&format!("js_symbol.{}", zig_method));
                 }
             }
-            // Static methods: js_symbol.symbolFor(key), js_symbol.symbolKeyFor(sym), etc.
+            // Symbol.for(key) → js_symbol.symbolFor(key)
+            // symbolFor returns !JsSymbol (can fail with OOM) — unwrap with catch.
+            "for" => {
+                self.write("(js_symbol.symbolFor(");
+                self.emit_inline_args(args);
+                self.write(") catch @panic(\"Symbol.for OOM\"))");
+            }
             // Symbol.keyFor returns ?[]const u8 — unwrap with .? (caller ensures symbol
             // was created via Symbol.for, so key is always present).
             "keyFor" => {

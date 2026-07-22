@@ -123,10 +123,27 @@ impl Lowerer {
                     let mut val = self.lower_expr(expr);
                     // When the function return type is i64, RemExpr, DivExpr, and PowExpr need
                     // result_type = Some(I64) so the emitter wraps in @intFromFloat.
+                    // Also, calls to JsAny-returning functions need .asI64() wrapping.
                     if let Some(ref fn_ctx) = self.fn_ctx
                         && fn_ctx.return_type == Some(ZigType::I64)
                     {
-                        val = Self::coerce_i64_result_type(val);
+                        val = self.coerce_i64_result_type(val);
+                    }
+                    // When the function return type is f64, I64 expressions
+                    // (IntLiteral, Ident, BuiltinCall, HostCall, Date methods)
+                    // need wrapping in @floatFromInt so the return type matches.
+                    if let Some(ref fn_ctx) = self.fn_ctx
+                        && fn_ctx.return_type == Some(ZigType::F64)
+                    {
+                        val = self.coerce_f64_result_type(val);
+                    }
+                    // When the function return type is JsAny (e.g., P1-B7 default
+                    // for non-export functions without JSDoc), wrap non-JsAny
+                    // expressions in JsAny.from() so the types match.
+                    if let Some(ref fn_ctx) = self.fn_ctx
+                        && fn_ctx.return_type == Some(ZigType::JsAny)
+                    {
+                        val = self.coerce_jsany_result_type(val);
                     }
                     val
                 });
@@ -308,7 +325,12 @@ impl Lowerer {
                     })
                     .collect();
                 if stmts.len() == 1 {
-                    Box::new(stmts.into_iter().next().unwrap())
+                    Box::new(
+                        stmts
+                            .into_iter()
+                            .next()
+                            .expect("stmts.len()==1 guarantees one element"),
+                    )
                 } else {
                     // Transparent block: emits flat without {} braces so that
                     // `for (let i = 0, j = 10; ...)` doesn't create a new Zig scope.
@@ -398,6 +420,27 @@ impl Lowerer {
             };
         }
 
+        // Save old var_types entries for loop-scoped variables to restore after body lowering.
+        // Without this, Map/Set (JsAny) and String (I64) types leak to code after the loop.
+        let loop_var_keys: Vec<String> = if matches!(kind, IrForOfKind::MapSetIter { .. }) {
+            if destructure_vars.is_empty() {
+                vec![var.js_name.clone()]
+            } else {
+                destructure_vars
+                    .iter()
+                    .map(|dv| dv.js_name.clone())
+                    .collect()
+            }
+        } else if let IrForOfKind::Str { .. } = &kind {
+            vec![var.js_name.clone()]
+        } else {
+            Vec::new()
+        };
+        let saved_types: Vec<(String, Option<ZigType>)> = loop_var_keys
+            .iter()
+            .map(|k| (k.clone(), self.type_info.var_types.get(k).cloned()))
+            .collect();
+
         // For Map/Set iteration, destructure variables and the primary variable
         // are JsAny (from __kv.key_ptr.* / __kv.value_ptr.*). Set var_types so
         // the body's binary expressions have correct type info.
@@ -425,6 +468,15 @@ impl Lowerer {
 
         let iterable = self.lower_expr(&fos.right);
         let body = self.lower_stmt_as_block(&fos.body, None);
+
+        // Restore var_types to pre-loop state (loop variables are not visible outside)
+        for (key, old_type) in &saved_types {
+            if let Some(t) = old_type {
+                self.type_info.var_types.insert(key.clone(), t.clone());
+            } else {
+                self.type_info.var_types.remove(key);
+            }
+        }
 
         // For String for-of, determine if the loop variable is actually used
         // in the body. If not, emit |_| to avoid Zig 0.16 unused-capture error.
@@ -1262,14 +1314,22 @@ impl Lowerer {
     }
 
     /// When an i64-returning function contains a `return expr` where `expr`
-    /// is a RemExpr, DivExpr, or PowExpr with `result_type: None`, set `result_type`
-    /// to `Some(I64)` so the emitter wraps the f64 result in
-    /// `@as(i64, @intFromFloat(...))`.
+    /// is a RemExpr, DivExpr, PowExpr, or a BuiltinCall returning f64, ensure
+    /// the emitter wraps the f64 result in `@as(i64, @intFromFloat(...))`.
+    ///
+    /// For RemExpr/DivExpr/PowExpr: set `result_type` to `Some(I64)`.
+    /// For BuiltinCall with F64 return type (e.g., Math.sqrt, parseFloat):
+    /// wrap in a DivExpr with divisor 1 and `result_type: Some(I64)`.
+    /// `x / 1.0` is the IEEE 754 identity for all f64 values (including NaN,
+    /// Infinity, -0), so Zig optimizes the division away at comptime.
     ///
     /// Also recurses into Conditional and Sequence expressions to find
-    /// nested RemExpr/DivExpr/PowExpr in value-producing positions
+    /// nested expressions in value-producing positions
     /// (e.g., `return cond ? a % b : 0`).
-    fn coerce_i64_result_type(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+    fn coerce_i64_result_type(
+        &self,
+        expr: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::IrExpr;
         match expr {
             // Direct matches: coerce result_type to I64
@@ -1312,22 +1372,268 @@ impl Lowerer {
                 exp_type,
                 result_type: Some(ZigType::I64),
             },
+            // BuiltinCall returning F64 (e.g., Math.sqrt, parseFloat):
+            // wrap in DivExpr with divisor 1 and result_type I64 to trigger
+            // @as(i64, @intFromFloat(...)) in the emitter.
+            // `x / 1.0` is the identity for all IEEE 754 f64 values.
+            IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::F64 => IrExpr::DivExpr {
+                left: Box::new(IrExpr::BuiltinCall(bc)),
+                right: Box::new(IrExpr::IntLiteral(1)),
+                left_type: ZigType::F64,
+                right_type: ZigType::I64,
+                result_type: Some(ZigType::I64),
+            },
+            // Call to a JsAny-returning function: wrap in .asI64() to
+            // extract the i64 value from the JsAny union.
+            IrExpr::Call(call) => {
+                let returns_jsany = match &*call.callee {
+                    IrExpr::Ident(ident) => {
+                        self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
+                    }
+                    _ => false,
+                };
+                if returns_jsany {
+                    Self::wrap_jsany_to_i64(IrExpr::Call(call))
+                } else {
+                    IrExpr::Call(call)
+                }
+            }
             // Conditional: recurse into both branches (value-producing).
-            // `cond` is not value-producing in the i64-coercion sense, so we
-            // leave it as-is and only re-wrap the two outcome branches.
             IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {
                 cond,
-                then: Box::new(Self::coerce_i64_result_type(*then)),
-                else_: Box::new(Self::coerce_i64_result_type(*else_)),
+                then: Box::new(self.coerce_i64_result_type(*then)),
+                else_: Box::new(self.coerce_i64_result_type(*else_)),
             },
             // Sequence: only the last element is the return value
             IrExpr::Sequence(mut exprs) => {
                 if let Some(last) = exprs.pop() {
-                    exprs.push(Self::coerce_i64_result_type(last));
+                    exprs.push(self.coerce_i64_result_type(last));
                 }
                 IrExpr::Sequence(exprs)
             }
             // Already-coerced or other expressions: pass through unchanged
+            other => other,
+        }
+    }
+
+    /// Coerce an I64 expression to f64 when the function's return type is f64.
+    /// This is the inverse of `coerce_i64_result_type`: it wraps I64-producing
+    /// expressions in a DivExpr with divisor 1, which the emitter renders as
+    /// `(@as(f64, @floatFromInt(expr)) / @as(f64, @floatFromInt(1)))`.
+    /// Zig optimizes `/ 1.0` at comptime, leaving just the `@floatFromInt` cast.
+    fn coerce_f64_result_type(
+        &self,
+        expr: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::kinds::{CallKind, MethodObjectKind};
+        use crate::zigir::types::IrExpr;
+
+        // I64-returning Date methods (from infer layer)
+        const I64_DATE_METHODS: &[&str] = &[
+            "getTime",
+            "getFullYear",
+            "getMonth",
+            "getDate",
+            "getDay",
+            "getHours",
+            "getMinutes",
+            "getSeconds",
+            "getMilliseconds",
+            "valueOf",
+        ];
+
+        match expr {
+            // Already F64 — pass through
+            IrExpr::FloatLiteral(_) => expr,
+            IrExpr::DivExpr { .. } | IrExpr::RemExpr { .. } | IrExpr::PowExpr { .. } => expr,
+            IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::F64 => IrExpr::BuiltinCall(bc),
+            IrExpr::HostCall(hc) if hc.return_type == ZigType::F64 => IrExpr::HostCall(hc),
+
+            // I64 BuiltinCall — wrap
+            IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::I64 => {
+                Self::wrap_i64_to_f64(IrExpr::BuiltinCall(bc))
+            }
+            // I64 HostCall — wrap
+            IrExpr::HostCall(hc) if hc.return_type == ZigType::I64 => {
+                Self::wrap_i64_to_f64(IrExpr::HostCall(hc))
+            }
+
+            // Date method call returning I64 — wrap
+            IrExpr::Call(call) => {
+                let is_date_method = matches!(
+                    call.call_kind,
+                    CallKind::Method {
+                        object_type: MethodObjectKind::Date
+                    }
+                );
+                let method_name = match &*call.callee {
+                    IrExpr::FieldAccess { field, .. } => Some(field.as_str()),
+                    _ => None,
+                };
+                let needs_wrap = is_date_method
+                    && method_name.is_some_and(|name| I64_DATE_METHODS.contains(&name));
+
+                if needs_wrap {
+                    Self::wrap_i64_to_f64(IrExpr::Call(call))
+                } else {
+                    IrExpr::Call(call)
+                }
+            }
+
+            // Ident — check variable type in type_info
+            IrExpr::Ident(ident) => {
+                let needs_wrap =
+                    self.type_info.var_types.get(&ident.js_name) == Some(&ZigType::I64);
+                if needs_wrap {
+                    Self::wrap_i64_to_f64(IrExpr::Ident(ident))
+                } else {
+                    IrExpr::Ident(ident)
+                }
+            }
+
+            // IntLiteral — always I64, wrap
+            IrExpr::IntLiteral(_) => Self::wrap_i64_to_f64(expr),
+
+            // Conditional — recurse into both branches
+            IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {
+                cond,
+                then: Box::new(self.coerce_f64_result_type(*then)),
+                else_: Box::new(self.coerce_f64_result_type(*else_)),
+            },
+
+            // Sequence — only the last element is the return value
+            IrExpr::Sequence(mut exprs) => {
+                if let Some(last) = exprs.pop() {
+                    exprs.push(self.coerce_f64_result_type(last));
+                }
+                IrExpr::Sequence(exprs)
+            }
+
+            // Other expressions — pass through unchanged
+            other => other,
+        }
+    }
+
+    /// Wrap an I64 expression in a DivExpr that converts it to f64.
+    /// The emitter generates `(@as(f64, @floatFromInt(expr)) / @as(f64, @floatFromInt(1)))`.
+    fn wrap_i64_to_f64(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+        crate::zigir::types::IrExpr::DivExpr {
+            left: Box::new(expr),
+            right: Box::new(crate::zigir::types::IrExpr::IntLiteral(1)),
+            left_type: ZigType::I64,
+            right_type: ZigType::I64,
+            result_type: None,
+        }
+    }
+
+    /// Wrap a JsAny-producing expression in `.asI64()` so the result is `i64`.
+    /// The emitter renders `Call(FieldAccess(object, "asI64"), [])` as
+    /// `object.asI64()`.
+    fn wrap_jsany_to_i64(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+        use crate::zigir::kinds::CallKind;
+        use crate::zigir::types::{IrCallExpr, IrExpr};
+        IrExpr::Call(IrCallExpr {
+            callee: Box::new(IrExpr::FieldAccess {
+                object: Box::new(expr),
+                field: "asI64".to_string(),
+                field_kind: crate::zigir::kinds::FieldKind::StructField,
+            }),
+            args: vec![],
+            call_kind: CallKind::Direct,
+        })
+    }
+
+    /// Wrap an expression in `JsAny.from(...)` so the result is `JsAny`.
+    /// The emitter renders `Call(FieldAccess(Ident("JsAny"), "from"), [expr])`
+    /// as `JsAny.from(expr)`.
+    fn wrap_in_jsany_from(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+        use crate::zigir::kinds::{CallKind, FieldKind};
+        use crate::zigir::types::{IrCallExpr, IrExpr};
+        IrExpr::Call(IrCallExpr {
+            callee: Box::new(IrExpr::FieldAccess {
+                object: Box::new(IrExpr::Ident(crate::zigir::ident::IrIdent::new("JsAny"))),
+                field: "from".to_string(),
+                field_kind: FieldKind::StructField,
+            }),
+            args: vec![expr],
+            call_kind: CallKind::Direct,
+        })
+    }
+
+    /// Coerce a return expression to `JsAny` when the function's return type
+    /// is `JsAny` (e.g., P1-B7 default for non-export functions without JSDoc).
+    /// Wraps non-JsAny expressions in `JsAny.from(...)`.
+    fn coerce_jsany_result_type(
+        &self,
+        expr: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+
+        match expr {
+            // Already JsAny — pass through
+            IrExpr::Call(call) => {
+                let returns_jsany = match &*call.callee {
+                    IrExpr::Ident(ident) => {
+                        self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
+                    }
+                    _ => false,
+                };
+                if returns_jsany {
+                    IrExpr::Call(call)
+                } else {
+                    // Non-JsAny-returning call — wrap
+                    Self::wrap_in_jsany_from(IrExpr::Call(call))
+                }
+            }
+            IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::JsAny => IrExpr::BuiltinCall(bc),
+            IrExpr::HostCall(hc) if hc.return_type == ZigType::JsAny => IrExpr::HostCall(hc),
+
+            // Ident — check variable type in type_info
+            IrExpr::Ident(ident) => {
+                let is_jsany =
+                    self.type_info.var_types.get(&ident.js_name) == Some(&ZigType::JsAny);
+                if is_jsany {
+                    IrExpr::Ident(ident)
+                } else {
+                    Self::wrap_in_jsany_from(IrExpr::Ident(ident))
+                }
+            }
+
+            // Primitives and typed expressions — wrap in JsAny.from()
+            IrExpr::IntLiteral(_)
+            | IrExpr::FloatLiteral(_)
+            | IrExpr::BoolLiteral(_)
+            | IrExpr::StringLiteral(_) => Self::wrap_in_jsany_from(expr),
+            IrExpr::BuiltinCall(bc)
+                if matches!(bc.return_type, ZigType::I64 | ZigType::F64 | ZigType::Bool) =>
+            {
+                Self::wrap_in_jsany_from(IrExpr::BuiltinCall(bc))
+            }
+            IrExpr::HostCall(hc)
+                if matches!(hc.return_type, ZigType::I64 | ZigType::F64 | ZigType::Bool) =>
+            {
+                Self::wrap_in_jsany_from(IrExpr::HostCall(hc))
+            }
+            IrExpr::Binary { .. } | IrExpr::Unary { .. } => Self::wrap_in_jsany_from(expr),
+            IrExpr::FieldAccess { .. } => Self::wrap_in_jsany_from(expr),
+            IrExpr::IndexAccess { .. } => Self::wrap_in_jsany_from(expr),
+
+            // Conditional — recurse into both branches
+            IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {
+                cond,
+                then: Box::new(self.coerce_jsany_result_type(*then)),
+                else_: Box::new(self.coerce_jsany_result_type(*else_)),
+            },
+
+            // Sequence — only the last element is the return value
+            IrExpr::Sequence(mut exprs) => {
+                if let Some(last) = exprs.pop() {
+                    exprs.push(self.coerce_jsany_result_type(last));
+                }
+                IrExpr::Sequence(exprs)
+            }
+
+            // Other expressions — pass through unchanged
             other => other,
         }
     }

@@ -16,14 +16,14 @@ fn main() {
     let result = greet("World").unwrap();
     println!("greet('World') = {}", result);
 
-    let sum = add(1, 2);
+    let sum = add(1.0, 2.0);
     println!("add(1, 2) = {}", sum);
 
-    // ── Synchronous host functions (integer) ──────────────────
-    let host_sum = useHostAdd(1, 2);
+    // ── Synchronous host functions (number) ───────────────────
+    let host_sum = useHostAdd(1.0, 2.0);
     println!("useHostAdd(1, 2) = {}", host_sum);
 
-    let host_product = useHostMultiply(3, 4);
+    let host_product = useHostMultiply(3.0, 4.0);
     println!("useHostMultiply(3, 4) = {}", host_product);
 
     // ── Synchronous host functions (string) ───────────────────
@@ -59,62 +59,62 @@ fn main() {
     println!("\n── Try-catch nesting tests ──");
     let r1 = testNestedTryCatch().unwrap();
     println!("testNestedTryCatch() = {} (expected: 1012)", r1);
-    assert_eq!(r1, 1012);
+    assert_eq!(r1, 1012.0);
 
     let r2 = testNestedTryCatchWithThrow().unwrap();
     println!(
         "testNestedTryCatchWithThrow() = {} (expected: 1012)",
         r2
     );
-    assert_eq!(r2, 1012);
+    assert_eq!(r2, 1012.0);
 
     let r3 = testTryCatchWithResource().unwrap();
     println!("testTryCatchWithResource() = {} (expected: 43)", r3);
-    assert_eq!(r3, 43);
+    assert_eq!(r3, 43.0);
 
     let r4 = testNestedTryCatchReThrow().unwrap();
     println!("testNestedTryCatchReThrow() = {} (expected: 1112)", r4);
-    assert_eq!(r4, 1112);
+    assert_eq!(r4, 1112.0);
 
     // ── Date tests ──────────────────────────────────────────
     println!("\n── Date tests ──");
     let d1 = testNewDate();
     println!("testNewDate() = {} (expected: > 0)", d1);
     assert!(
-        d1 > 0,
+        d1 > 0.0,
         "testNewDate: expected positive timestamp, got {}",
         d1
     );
 
     let d2 = testNewDateWithMillis();
     println!("testNewDateWithMillis() = {} (expected: 1000)", d2);
-    assert_eq!(d2, 1000);
+    assert_eq!(d2, 1000.0);
 
     let d3 = testDateGetFullYear();
     println!("testDateGetFullYear() = {} (expected: 1970)", d3);
-    assert_eq!(d3, 1970);
+    assert_eq!(d3, 1970.0);
 
     let d4 = testDateGetDay();
     println!("testDateGetDay() = {} (expected: 4 = Thursday)", d4);
-    assert_eq!(d4, 4);
+    assert_eq!(d4, 4.0);
 
     let d5 = testDateGetHours();
     println!("testDateGetHours() = {} (expected: 0)", d5);
-    assert_eq!(d5, 0);
+    assert_eq!(d5, 0.0);
 
     let d6 = testDateGetMonth();
     println!("testDateGetMonth() = {} (expected: 0 = January)", d6);
-    assert_eq!(d6, 0);
+    assert_eq!(d6, 0.0);
 
     let d7 = testDateGetDate();
     println!("testDateGetDate() = {} (expected: 1)", d7);
-    assert_eq!(d7, 1);
+    assert_eq!(d7, 1.0);
 
     let d8 = testDateGetMinutes();
     println!("testDateGetMinutes() = {} (expected: 0)", d8);
-    assert_eq!(d8, 0);
+    assert_eq!(d8, 0.0);
 
     let d9 = testDateGetSeconds();
     println!("testDateGetSeconds() = {} (expected: 0)", d9);
-    assert_eq!(d9, 0);
+    assert_eq!(d9, 0.0);
 }

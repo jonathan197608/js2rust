@@ -167,9 +167,9 @@ impl Lowerer {
             BinaryOperator::ShiftLeft => BinOp::Shl,
             BinaryOperator::ShiftRight => BinOp::Shr,
             BinaryOperator::ShiftRightZeroFill => BinOp::UrShr,
-            // Instanceof is handled above (CompileError). In is also handled above (BinOp::In).
-            // These arms are unreachable but kept for exhaustiveness.
-            BinaryOperator::Instanceof | BinaryOperator::In => unreachable!(),
+            // Instanceof/In are handled above (CompileError). Kept for
+            // exhaustiveness — use safe fallback instead of unreachable! (P0-9 fix).
+            BinaryOperator::Instanceof | BinaryOperator::In => BinOp::Add,
         };
 
         let left_type = self.infer_expr_type(&be.left);
@@ -671,7 +671,7 @@ impl Lowerer {
                         AssignmentOperator::LogicalAnd => LogicalOp::And,
                         AssignmentOperator::LogicalOr => LogicalOp::Or,
                         AssignmentOperator::LogicalNullish => LogicalOp::Nullish,
-                        _ => unreachable!(),
+                        _ => LogicalOp::And, // safe fallback (P0-10 fix)
                     };
                     let (bind, target, read) = self.maybe_bind_member_object_for_compound(target);
                     let break_value = read.clone();

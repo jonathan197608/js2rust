@@ -13,6 +13,8 @@ const JsAny = @import("jsany.zig").JsAny;
 
 /// Decode a single UTF-8 code point starting at position i.
 /// Returns the decoded code point and the byte sequence length, or null if invalid.
+/// Validates continuation bytes, rejects overlong encodings, and rejects
+/// surrogate code points (U+D800–U+DFFF) per RFC 3629 (P1-5 fix).
 fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: u8 } {
     if (i >= s.len) return null;
     const c = s[i];
@@ -26,17 +28,28 @@ fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: 
     } else if (c & 0xE0 == 0xC0) {
         // 2-byte: 110xxxxx 10xxxxxx
         if (i + 1 >= s.len) return null;
+        if (s[i + 1] & 0xC0 != 0x80) return null; // validate continuation byte
         code_point = (@as(u32, c & 0x1F) << 6) | @as(u32, s[i + 1] & 0x3F);
+        if (code_point < 0x80) return null; // reject overlong encoding
         seq_len = 2;
     } else if (c & 0xF0 == 0xE0) {
         // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
         if (i + 2 >= s.len) return null;
+        if (s[i + 1] & 0xC0 != 0x80) return null;
+        if (s[i + 2] & 0xC0 != 0x80) return null;
         code_point = (@as(u32, c & 0x0F) << 12) | (@as(u32, s[i + 1] & 0x3F) << 6) | @as(u32, s[i + 2] & 0x3F);
+        if (code_point < 0x800) return null; // reject overlong encoding
+        if (code_point >= 0xD800 and code_point <= 0xDFFF) return null; // reject surrogates
         seq_len = 3;
     } else if (c & 0xF8 == 0xF0) {
         // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
         if (i + 3 >= s.len) return null;
+        if (s[i + 1] & 0xC0 != 0x80) return null;
+        if (s[i + 2] & 0xC0 != 0x80) return null;
+        if (s[i + 3] & 0xC0 != 0x80) return null;
         code_point = (@as(u32, c & 0x07) << 18) | (@as(u32, s[i + 1] & 0x3F) << 12) | (@as(u32, s[i + 2] & 0x3F) << 6) | @as(u32, s[i + 3] & 0x3F);
+        if (code_point < 0x10000) return null; // reject overlong encoding
+        if (code_point > 0x10FFFF) return null; // reject out-of-range
         seq_len = 4;
     } else {
         return null;

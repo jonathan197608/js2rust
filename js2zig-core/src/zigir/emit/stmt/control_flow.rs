@@ -521,14 +521,13 @@ impl Emitter {
     /// Used when any case test is a `StringLiteral` — Zig's `switch` cannot
     /// operate on `[]const u8`.
     fn emit_string_switch(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
-        // Bind the discriminant to a temp so each mem.eql call doesn't
-        // re-evaluate it (especially if it has side effects).
-        // We don't have access to a local scope here at the statement level;
-        // emit a labeled-block inline that captures the value. Simpler: emit
-        // each test as `std.mem.eql(u8, <expr>, "literal")` and chain with
-        // `else if`. The expr is emitted N times — but for string switches
-        // the discriminant is virtually always a variable or a cheap literal
-        // (the AST lowerer already lowered it once before handing to us).
+        // Bind the discriminant to a const so it is evaluated only once,
+        // avoiding repeated side-effects if the expression is non-trivial.
+        self.write_indent();
+        self.write("const __sw = ");
+        self.emit_expr(expr);
+        self.write(";\n");
+
         let mut written_first = false;
         let mut has_default = false;
         for case in cases {
@@ -541,9 +540,7 @@ impl Emitter {
                     } else {
                         self.write("} else if (");
                     }
-                    self.write("std.mem.eql(u8, ");
-                    self.emit_expr(expr);
-                    self.write(", ");
+                    self.write("std.mem.eql(u8, __sw, ");
                     self.emit_expr(test);
                     self.write(")) {\n");
                     // Body must be emitted INSIDE the string-literal arm —

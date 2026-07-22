@@ -26,9 +26,14 @@ fn field_zero_value(ty: &ZigType) -> &'static str {
         ZigType::F64 => "0.0",
         ZigType::Bool => "false",
         ZigType::Str => "\"\"",
-        // JsAny / JsSymbol / BigInt / JsError / NamedStruct / Struct / ArrayList
-        // / AsyncIo — no const-zero; let Zig track it as `undefined` and rely
-        // on the user constructor assigning before any read.
+        // ArrayList has a const-evaluable empty state.
+        ZigType::ArrayList(_) => ".empty",
+        // JsAny / JsSymbol / BigInt / JsError / NamedStruct / Struct / AsyncIo
+        // — no const-zero; `undefined` is used intentionally as a bit pattern
+        // that will be overwritten before any read (the constructor assigns
+        // these fields before they're accessed). Using `undefined` here is
+        // safe because these are owning types stored by reference/pointer;
+        // the undefined value is never dereferenced or deinitialized.
         _ => "undefined",
     }
 }
@@ -389,6 +394,12 @@ impl Emitter {
                     label
                 ));
             } else if self.in_function {
+                // NOTE: `return error.JsThrow` requires the enclosing function
+                // to return an error union (`!T`). The lowerer only generates
+                // JSON.parse inside functions that return error unions, so this
+                // is safe in practice. If a future change allows JSON.parse in
+                // non-error-union functions, this path would produce a Zig
+                // compile error and would need revisiting.
                 self.write(") catch return error.JsThrow");
             } else {
                 self.write(") catch @panic(\"JSON.parse failed\")");

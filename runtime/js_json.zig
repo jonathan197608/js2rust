@@ -184,7 +184,7 @@ pub fn parse(alloc: Allocator, text: []const u8, reviver: ?JsAny) ParseError!JsA
     defer scanner.deinit();
 
     const token = try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096);
-    return parseToken(alloc, &scanner, token) catch |err| {
+    return parseToken(alloc, &scanner, token, 0) catch |err| {
         if (err == error.UnexpectedEndOfInput or err == error.SyntaxError) {
             return JSONError.InvalidJSON;
         }
@@ -192,10 +192,10 @@ pub fn parse(alloc: Allocator, text: []const u8, reviver: ?JsAny) ParseError!JsA
     };
 }
 
-fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Token) ParseError!JsAny {
+fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Token, depth: u32) ParseError!JsAny {
     switch (token) {
-        .object_begin => return parseObject(alloc, scanner),
-        .array_begin => return parseArray(alloc, scanner),
+        .object_begin => return parseObject(alloc, scanner, depth),
+        .array_begin => return parseArray(alloc, scanner, depth),
         .true => return JsAny.fromBool(true),
         .false => return JsAny.fromBool(false),
         .null => return JsAny.fromNull(),
@@ -227,7 +227,8 @@ fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Toke
     }
 }
 
-fn parseObject(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
+fn parseObject(alloc: Allocator, scanner: *std.json.Scanner, depth: u32) ParseError!JsAny {
+    if (depth >= MAX_STRINGIFY_DEPTH) return JSONError.MaxDepthExceeded;
     var obj = try JsAny.newObject(alloc);
     errdefer obj.deinit(alloc);
 
@@ -238,13 +239,13 @@ fn parseObject(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
             .string, .allocated_string => {
                 switch (token) {
                     .string => |s| {
-                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));
+                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
                         try obj.objectPut(s, val, alloc);
                     },
                     .allocated_string => |s| {
                         // Free scanner-allocated key buffer after use (P1-2)
                         defer alloc.free(s);
-                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));
+                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
                         try obj.objectPut(s, val, alloc);
                     },
                     else => return JSONError.UnexpectedToken,
@@ -255,7 +256,8 @@ fn parseObject(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
     }
 }
 
-fn parseArray(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
+fn parseArray(alloc: Allocator, scanner: *std.json.Scanner, depth: u32) ParseError!JsAny {
+    if (depth >= MAX_STRINGIFY_DEPTH) return JSONError.MaxDepthExceeded;
     var arr = try JsAny.newArray(alloc);
     errdefer arr.deinit(alloc);
 
@@ -264,7 +266,7 @@ fn parseArray(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
         switch (token) {
             .array_end => return arr,
             else => {
-                const val = try parseToken(alloc, scanner, token);
+                const val = try parseToken(alloc, scanner, token, depth + 1);
                 try arr.arrayPush(alloc, val);
             },
         }
@@ -274,13 +276,13 @@ fn parseArray(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
 fn parseNumber(s: []const u8) JsAny {
     // If the number contains '.', 'e', 'E' → f64
     if (std.mem.indexOfAny(u8, s, ".eE")) |_| {
-        const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromI64(0);
+        const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromF64(std.math.nan(f64));
         return JsAny.fromF64(f);
     }
     // Integer: try i64 first; on overflow fall back to f64
     // (e.g. "9999999999999999999" exceeds i64 range → f64 ~1e19)
     const i = std.fmt.parseInt(i64, s, 10) catch {
-        const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromI64(0);
+        const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromF64(std.math.nan(f64));
         return JsAny.fromF64(f);
     };
     return JsAny.fromI64(i);

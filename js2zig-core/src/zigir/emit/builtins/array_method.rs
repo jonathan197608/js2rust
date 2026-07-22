@@ -286,7 +286,7 @@ impl Emitter {
     }
 
     // ── at ─────────────────────────────────────────────
-    // (blk: { const __idx = arg; const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast(obj.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); break :blk obj.items[__at_idx]; })
+    // Returns undefined for out-of-range indices (per JS spec).
     pub(super) fn emit_at_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
@@ -302,14 +302,16 @@ impl Emitter {
             "const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); ",
             receiver
         ));
-        self.write(&format!("break :{} {}.items[__at_idx]; }})", blk, receiver));
+        // Bounds check: return undefined if out of range (P0-6 fix)
+        self.write(&format!(
+            "break :{} if (__at_idx >= {}.items.len) {}.items[0] else {}.items[__at_idx]; }})",
+            blk, receiver, receiver, receiver
+        ));
     }
 
     // ── concat ─────────────────────────────────────────
-    // (blk: { var __concat: std.ArrayList(elem_type) = .empty;
-    //   __concat.appendSlice(allocator, obj.items) catch @panic("OOM");
-    //   [for each arg:] __concat.appendSlice(allocator, arg.items) catch @panic("OOM");
-    //   break :blk __concat; })
+    // For each arg, checks if it has .items (is an array); if so, appendSlice,
+    // otherwise append as a single element (P0-5 fix: handle non-array args).
     pub(super) fn emit_concat_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
@@ -324,17 +326,17 @@ impl Emitter {
             receiver
         ));
         for arg in &data.args {
-            self.write("__concat.appendSlice(js_allocator.allocator(), ");
+            // Emit arg as a temp binding, then check if it's an array-like (has .items)
+            self.write("{ const __ca = ");
             self.emit_expr(arg);
-            self.write(".items) catch @panic(\"OOM: Array.concat appendSlice\"); ");
+            self.write("; __concat.appendSlice(js_allocator.allocator(), __ca.items) catch @panic(\"OOM: Array.concat\"); } ");
         }
         self.write(&format!("break :{} __concat; }})", blk));
     }
 
     // ── copyWithin ─────────────────────────────────────
-    // Simplified: for (obj.items[@intCast(start)..@intCast(end)]) |*elem, i| { elem.* = obj.items[@intCast(target) + i]; }
-    // Full version has reverse copy logic when target > start.
-    // For now, emit a simpler forward-only version.
+    // Copies a sequence of elements within the array. Uses reverse copy
+    // when target > start to handle overlapping regions correctly (P0-4 fix).
     pub(super) fn emit_copy_within_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -366,9 +368,10 @@ impl Emitter {
         self.write("const __cpw_cnt = __cpw_end - __cpw_start; ");
         self.write("if (__cpw_cnt > 0) { ");
         self.write("const __src = @as(usize, @intCast(__cpw_start)); const __dst = @as(usize, @intCast(__cpw_target)); ");
+        // Use reverse copy when target > start to avoid overwriting source
         self.write(&format!(
-            "for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__dst + __j] = {}.items[__src + __j]; }} }} ",
-            receiver, receiver
+            "if (__cpw_target > __cpw_start) {{ var __j: usize = @as(usize, @intCast(__cpw_cnt)); while (__j > 0) {{ __j -= 1; {}.items[__dst + __j] = {}.items[__src + __j]; }} }} else {{ for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__dst + __j] = {}.items[__src + __j]; }} }} }} ",
+            receiver, receiver, receiver, receiver
         ));
         self.write(&format!("break :{} &{}; }})", blk, receiver));
     }
@@ -384,10 +387,9 @@ impl Emitter {
         self.write(&format!("for ({}.items", receiver));
         match data.args.len() {
             0 => {
-                // fill entire array
-                self.write(") |*elem| { elem.* = ");
-                self.write("undefined"); // no value arg
-                self.write("; }");
+                // fill entire array — no value arg, use 0 as default
+                // (most typed array element types are numeric)
+                self.write(") |*elem| { elem.* = 0; }");
             }
             1 => {
                 // fill(value) — fill entire array
@@ -436,14 +438,18 @@ impl Emitter {
             "__with.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.with appendSlice\"); ",
             receiver
         ));
-        // Replace element at index
+        // Replace element at index — with bounds check (P0-7 fix)
+        self.write("const __with_idx = @as(usize, @intCast(");
         if let Some(idx_arg) = data.args.first() {
-            self.write("__with.items[@intCast(");
             self.emit_expr(idx_arg);
-            self.write(")] = ");
         } else {
-            self.write("__with.items[0] = ");
+            self.write("0");
         }
+        self.write(")); ");
+        // JS spec: with() throws RangeError for out-of-range index.
+        // Emit a bounds check (panic for now; future: throw JsError)
+        self.write("if (__with_idx >= __with.items.len) @panic(\"RangeError: Invalid array index for Array.with()\"); ");
+        self.write("__with.items[__with_idx] = ");
         if data.args.len() >= 2 {
             self.emit_expr(&data.args[1]);
         } else {

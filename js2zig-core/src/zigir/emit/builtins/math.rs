@@ -28,7 +28,7 @@ const STD_MATH_FLOAT: &[&str] = &["asin", "acos", "atan"];
 /// Determine whether an IrExpr likely produces an f64 value.
 /// Used to decide between `@as(f64, expr)` (identity cast for floats)
 /// and `@as(f64, @floatFromInt(expr))` (int→float conversion).
-fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
+pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
     use crate::types::ZigType;
     use crate::zigir::ops::BinOp;
     use crate::zigir::types::IrExpr;

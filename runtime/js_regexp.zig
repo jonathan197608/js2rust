@@ -69,6 +69,7 @@ pub const JsRegExp = struct {
         var count: usize = 0;
         const result = host_regex_match(self.pattern.ptr, self.pattern.len, subject.ptr, subject.len, &count);
         if (count == 0) return null;
+        if (result.len < 0) return error.NegativeSize;
         const bytes = result.ptr[0..@intCast(result.len)];
         return try parseNulSeparated(alloc, bytes, count);
     }
@@ -99,12 +100,14 @@ pub const JsRegExp = struct {
                 return null;
             }
             self.lastIndex = end_pos;
+            if (result.len < 0) return error.NegativeSize;
             const bytes = result.ptr[0..@intCast(result.len)];
             return try parseNulSeparated(alloc, bytes, count);
         }
         var count: usize = 0;
         const result = host_regex_match(self.pattern.ptr, self.pattern.len, subject.ptr, subject.len, &count);
         if (count == 0) return null;
+        if (result.len < 0) return error.NegativeSize;
         const bytes = result.ptr[0..@intCast(result.len)];
         return try parseNulSeparated(alloc, bytes, count);
     }
@@ -124,6 +127,7 @@ pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !
     var count: usize = 0;
     const result = host_regex_match(pattern.ptr, pattern.len, subject.ptr, subject.len, &count);
     if (count == 0) return null;
+    if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     return try parseNulSeparated(alloc, bytes, count);
 }

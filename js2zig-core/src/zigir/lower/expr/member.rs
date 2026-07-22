@@ -449,13 +449,10 @@ impl Lowerer {
             Expression::CallExpression(ce) => {
                 // Try to infer from known method calls
                 if let Expression::StaticMemberExpression(mem) = &ce.callee {
-                    if let Expression::Identifier(id) = &mem.object {
-                        match id.name.as_str() {
-                            "parseInt" | "Number" => return Some(ZigType::I64),
-                            "parseFloat" => return Some(ZigType::F64),
-                            _ => {}
-                        }
-                    }
+                    // Number.* methods: let the builtin detection path
+                    // (detect_builtin_call + builtin_return_type) handle
+                    // them correctly. Previously "Number" returned I64 for
+                    // ALL methods including isInteger/isNaN/isFinite (P0-8 fix).
                     // Method return type from object type
                     let obj_ty = self.infer_expr_type(&mem.object);
                     if let Some(ZigType::NamedStruct(name)) = &obj_ty {
@@ -478,9 +475,9 @@ impl Lowerer {
                             "charAt" | "substring" | "slice" | "toLowerCase" | "toUpperCase"
                             | "trim" | "repeat" | "replace" | "replaceAll" | "padStart"
                             | "padEnd" => return Some(ZigType::Str),
-                            "indexOf" | "lastIndexOf" | "charCodeAt" | "codePointAt" => {
-                                return Some(ZigType::I64);
-                            }
+                            // charCodeAt/codePointAt can return NaN → F64 (P1-9 fix)
+                            "charCodeAt" | "codePointAt" => return Some(ZigType::F64),
+                            "indexOf" | "lastIndexOf" => return Some(ZigType::I64),
                             "includes" | "startsWith" | "endsWith" => return Some(ZigType::Bool),
                             _ => {}
                         }

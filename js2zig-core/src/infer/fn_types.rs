@@ -261,12 +261,12 @@ impl TypeInferrer {
                 ) {
                     return InferResult::Definite(ZigType::AnytypeReturn);
                 }
-                // Default to i64
+                // Default to JsAny
                 self.errors.push(format!(
-                    "Cannot infer return type of '{}' (Rule 8). Defaulting to i64.",
+                    "Cannot infer return type of '{}' (Rule 8). Defaulting to JsAny.",
                     fn_name
                 ));
-                InferResult::Definite(ZigType::I64)
+                InferResult::Definite(ZigType::JsAny)
             }
         }
     }
@@ -699,7 +699,7 @@ impl TypeInferrer {
 
     /// Convert a JSDoc type string to ZigType.
     /// Supports:
-    /// - Basic types: "string" → Str, "number" → I64, "boolean" → Bool
+    /// - Basic types: "string" → Str, "number" → F64, "boolean" → Bool
     /// - Named types: "User" → NamedStruct (if in typedefs)
     /// - Array types: "string[]" → ArrayList(Str), "User[]" → ArrayList(NamedStruct)
     /// - Anonymous object types: "{name: string, age: number}" → Struct

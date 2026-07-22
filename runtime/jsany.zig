@@ -264,10 +264,24 @@ pub const JsAny = union(enum) {
                     if (i > 0) buf.append(alloc, ',') catch break :blk "";
                     if (item.isString()) {
                         buf.append(alloc, '"') catch break :blk "";
-                        buf.appendSlice(alloc, item.asString(alloc)) catch break :blk "";
+                        buf.appendSlice(alloc, item.value.string) catch break :blk "";
                         buf.append(alloc, '"') catch break :blk "";
                     } else {
-                        buf.appendSlice(alloc, item.asString(alloc)) catch break :blk "";
+                        const tmp = item.asString(alloc);
+                        const owns_tmp = switch (item) {
+                            .value => |v| switch (v) {
+                                .int => tmp.len > 0,
+                                .float => |f| tmp.len > 0 and !std.math.isNan(f) and !std.math.isInf(f),
+                                else => false,
+                            },
+                            .array, .object => tmp.len > 0,
+                            .null => false,
+                        };
+                        buf.appendSlice(alloc, tmp) catch {
+                            if (owns_tmp) alloc.free(tmp);
+                            break :blk "";
+                        };
+                        if (owns_tmp) alloc.free(tmp);
                     }
                 }
                 buf.append(alloc, ']') catch break :blk "";
@@ -287,10 +301,24 @@ pub const JsAny = union(enum) {
                     buf.appendSlice(alloc, "\":") catch break :blk "";
                     if (entry.value_ptr.isString()) {
                         buf.append(alloc, '"') catch break :blk "";
-                        buf.appendSlice(alloc, entry.value_ptr.asString(alloc)) catch break :blk "";
+                        buf.appendSlice(alloc, entry.value_ptr.value.string) catch break :blk "";
                         buf.append(alloc, '"') catch break :blk "";
                     } else {
-                        buf.appendSlice(alloc, entry.value_ptr.asString(alloc)) catch break :blk "";
+                        const tmp = entry.value_ptr.asString(alloc);
+                        const owns_tmp = switch (entry.value_ptr.*) {
+                            .value => |v| switch (v) {
+                                .int => tmp.len > 0,
+                                .float => |f| tmp.len > 0 and !std.math.isNan(f) and !std.math.isInf(f),
+                                else => false,
+                            },
+                            .array, .object => tmp.len > 0,
+                            .null => false,
+                        };
+                        buf.appendSlice(alloc, tmp) catch {
+                            if (owns_tmp) alloc.free(tmp);
+                            break :blk "";
+                        };
+                        if (owns_tmp) alloc.free(tmp);
                     }
                 }
                 buf.append(alloc, '}') catch break :blk "";

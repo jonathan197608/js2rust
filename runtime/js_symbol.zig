@@ -51,12 +51,12 @@ pub const JsSymbol = struct {
     /// Create a new unique Symbol with optional description.
     /// Equivalent to JS: Symbol([description])
     /// Requires initRegistry() to have been called first.
-    pub fn init(description: ?[]const u8) JsSymbol {
+    pub fn init(description: ?[]const u8) !JsSymbol {
         const alloc = getGlobalAlloc();
         const new_id = getNextId();
         // Duplicate description so the symbol owns its memory
         const desc: ?[]const u8 = if (description) |d|
-            alloc.dupe(u8, d) catch @panic("JsSymbol.init: out of memory")
+            try alloc.dupe(u8, d)
         else
             null;
         return JsSymbol{ .id = new_id, .description = desc };
@@ -145,19 +145,23 @@ fn getGlobalAlloc() Allocator {
 /// Symbol.for(key) — returns an existing symbol for the given key,
 /// or creates a new one if none exists.
 /// JS: Symbol.for("key") → Symbol
-pub fn symbolFor(key: []const u8) JsSymbol {
+pub fn symbolFor(key: []const u8) !JsSymbol {
     if (registry) |*r| {
         const alloc = registry_alloc orelse @panic("js_symbol: registry allocator not set.");
 
         if (r.get(key)) |existing_id| {
-            return JsSymbol{ .id = existing_id, .description = alloc.dupe(u8, key) catch @panic("js_symbol.symbolFor: out of memory") };
+            const desc = alloc.dupe(u8, key) catch return error.OutOfMemory;
+            return JsSymbol{ .id = existing_id, .description = desc };
         }
 
         // Create new symbol for this key
         const id = getNextId();
-        const key_copy = alloc.dupe(u8, key) catch @panic("js_symbol.symbolFor: out of memory");
-        r.put(key_copy, id) catch @panic("js_symbol.symbolFor: out of memory");
-        const desc = alloc.dupe(u8, key) catch @panic("js_symbol.symbolFor: out of memory");
+        const key_copy = alloc.dupe(u8, key) catch return error.OutOfMemory;
+        r.put(key_copy, id) catch {
+            alloc.free(key_copy);
+            return error.OutOfMemory;
+        };
+        const desc = alloc.dupe(u8, key) catch return error.OutOfMemory;
         return JsSymbol{ .id = id, .description = desc };
     }
     @panic("js_symbol: registry not initialized. Call initRegistry() first.");
@@ -259,7 +263,7 @@ test "JsSymbol init with description" {
     initRegistry(alloc);
     defer deinitRegistry();
 
-    const sym = JsSymbol.init("test");
+    const sym = try JsSymbol.init("test");
     defer {
         var s = sym;
         s.deinit(alloc);
@@ -301,7 +305,7 @@ test "JsSymbol toString" {
     initRegistry(alloc);
     defer deinitRegistry();
 
-    var sym = JsSymbol.init("foo");
+    var sym = try JsSymbol.init("foo");
     defer sym.deinit(alloc);
 
     const s = try sym.toString(alloc);
@@ -322,12 +326,12 @@ test "Symbol.for basic" {
     initRegistry(alloc);
     defer deinitRegistry();
 
-    const sym1 = symbolFor("shared");
+    const sym1 = try symbolFor("shared");
     defer {
         var s = sym1;
         s.deinit(alloc);
     }
-    const sym2 = symbolFor("shared");
+    const sym2 = try symbolFor("shared");
     defer {
         var s = sym2;
         s.deinit(alloc);
@@ -340,12 +344,12 @@ test "Symbol.for different keys" {
     initRegistry(alloc);
     defer deinitRegistry();
 
-    const sym_a = symbolFor("a");
+    const sym_a = try symbolFor("a");
     defer {
         var s = sym_a;
         s.deinit(alloc);
     }
-    const sym_b = symbolFor("b");
+    const sym_b = try symbolFor("b");
     defer {
         var s = sym_b;
         s.deinit(alloc);
@@ -369,7 +373,7 @@ test "Symbol.keyFor finds registered symbol" {
     initRegistry(alloc);
     defer deinitRegistry();
 
-    const sym = symbolFor("registered");
+    const sym = try symbolFor("registered");
     defer {
         var s = sym;
         s.deinit(alloc);

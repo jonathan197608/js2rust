@@ -197,6 +197,10 @@ pub const MultiArenaAllocator = struct {
         if (node_count < 2) {
             node_count = 2;
         }
+        // Clamp to MAX_STATS_NODES to prevent Stats.nodes array overflow (P0-3 fix).
+        if (node_count > 64) {
+            node_count = 64;
+        }
 
         // 分配 MultiArenaAllocator 本身
         const da = try backing.create(MultiArenaAllocator);
@@ -308,15 +312,13 @@ pub const Stats = struct {
     total_limit: usize = 0,
     nodes: [64]NodeStat,
 
-    pub fn format(self: Stats, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("MultiArenaAllocator Stats:\n", .{});
-        try writer.print("  Total bytes: {}\n", .{std.fmt.fmtIntSizeDec(self.total_bytes)});
-        try writer.print("  Node count: {}\n", .{self.node_count});
-        try writer.print("  Total limit: {}\n", .{std.fmt.fmtIntSizeDec(self.total_limit)});
+    pub fn format(self: Stats, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("MultiArenaAllocator Stats:\n", .{});
+        try w.print("  Total bytes: {}\n", .{std.fmt.fmtIntSizeDec(self.total_bytes)});
+        try w.print("  Node count: {}\n", .{self.node_count});
+        try w.print("  Total limit: {}\n", .{std.fmt.fmtIntSizeDec(self.total_limit)});
         for (self.nodes[0..self.node_count], 0..) |node_stat, i| {
-            try writer.print("  Node[{}]: state={s}, bytes={}\n", .{ i, @tagName(node_stat.state), std.fmt.fmtIntSizeDec(node_stat.bytes) });
+            try w.print("  Node[{}]: state={s}, bytes={}\n", .{ i, @tagName(node_stat.state), std.fmt.fmtIntSizeDec(node_stat.bytes) });
         }
     }
 };

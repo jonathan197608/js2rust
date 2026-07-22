@@ -404,10 +404,10 @@ fn parse_property(s: &str) -> TypedefField {
 
 /// 将 JSDoc 类型字符串转为 Zig 类型字符串
 /// "string"  → "[]const u8"
-/// "number"  → "i64"
+/// "number"  → "f64"
 /// "boolean" → "bool"
 /// "string[]" → "[]const []const u8"
-/// "number[]" → "[]const i64"
+/// "number[]" → "[]const f64"
 /// "User[]"  → "[]const User"  (自定义类型的数组)
 pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>) -> String {
     let trimmed = jsdoc_ty.trim();
@@ -425,7 +425,7 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
         // 基本类型的数组
         return match base_type {
             "string" => "[]const []const u8".to_string(),
-            "number" => "[]const i64".to_string(),
+            "number" => "[]const f64".to_string(),
             "boolean" => "[]const bool".to_string(),
             _ => format!("[]const {}", base_type), // 未知类型，按自定义类型处理
         };
@@ -434,7 +434,7 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
     // 非数组类型
     match trimmed {
         "string" | "str" => "[]const u8".to_string(),
-        "number" => "i64".to_string(),
+        "number" => "f64".to_string(),
         "boolean" => "bool".to_string(),
         // Built-in runtime types
         "Symbol" => "JsSymbol".to_string(),
@@ -520,7 +520,7 @@ export function mathFloor(x) { return Math.floor(x); }
     fn test_jsdoc_type_to_zig() {
         let empty_typedefs = HashMap::new();
         assert_eq!(jsdoc_type_to_zig("string", &empty_typedefs), "[]const u8");
-        assert_eq!(jsdoc_type_to_zig("number", &empty_typedefs), "i64");
+        assert_eq!(jsdoc_type_to_zig("number", &empty_typedefs), "f64");
         assert_eq!(jsdoc_type_to_zig("boolean", &empty_typedefs), "bool");
         assert_eq!(jsdoc_type_to_zig("User", &empty_typedefs), "User");
     }

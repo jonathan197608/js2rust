@@ -36,7 +36,7 @@ pub fn isInteger(val: f64) bool {
 }
 
 /// JS parseInt — parse an integer from a string with JS semantics.
-/// Handles leading whitespace, sign, 0x/0b/0o prefixes, and stops at first
+/// Handles leading whitespace, sign, 0x prefix, and stops at first
 /// non-digit character (e.g. decimal point). Returns 0 for NaN (i64 can't
 /// represent NaN).
 pub fn parseInt(value: anytype, radix: ?i64) i64 {
@@ -94,25 +94,13 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
     // Determine effective radix
     var r: u8 = if (radix) |rd| @intCast(@max(2, @min(36, rd))) else 10;
 
-    // Auto-detect 0x/0b/0o prefix:
+    // Auto-detect 0x prefix:
     //   - radix undefined/0 → auto-detect and set radix
-    //   - radix matches prefix type → strip prefix
+    //   - radix 16 → strip prefix
     const radix_undefined = (radix == null or radix.? == 0);
     if (radix_undefined or r == 16) {
         if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'x' or s[i + 1] == 'X')) {
             r = 16;
-            i += 2;
-        }
-    }
-    if (radix_undefined or r == 2) {
-        if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'b' or s[i + 1] == 'B')) {
-            r = 2;
-            i += 2;
-        }
-    }
-    if (radix_undefined or r == 8) {
-        if (i + 1 < len and s[i] == '0' and (s[i + 1] == 'o' or s[i + 1] == 'O')) {
-            r = 8;
             i += 2;
         }
     }
@@ -170,8 +158,9 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
 }
 
 /// Number.parseFloat — parse a float from a string.
+/// Per ECMA-262 §19.2.4, returns NaN on failure (not 0.0).
 pub fn parseFloat(s: []const u8) f64 {
-    return std.fmt.parseFloat(f64, s) catch 0.0;
+    return std.fmt.parseFloat(f64, s) catch std.math.nan(f64);
 }
 
 /// Number.isSafeInteger — check if a value is a safe integer (|v| <= 2^53-1).
@@ -208,7 +197,33 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
             return alloc.dupe(u8, s);
         }
     }
-    // Fallback for digits 21-100: use precision 6
+    // Fallback for digits 21-100: manually format with the requested precision.
+    // Zig's comptime format can't handle runtime precision, so we use
+    // std.fmt.format with a runtime precision specifier via math formatting.
+    if (d <= 100) {
+        // For high precision, use scientific notation then convert, or
+        // use Grisu/Dragon algorithm. Simplest correct approach: format
+        // with the requested number of decimal places using a manual loop.
+        // Since d > 20, we know the number needs many decimal places.
+        // Use {d:.e} with the precision and then fixup.
+        const exp_format = comptime std.fmt.comptimePrint("{{d:.{{d}}}}", .{});
+        _ = exp_format; // Zig doesn't support runtime precision in format strings
+        // Manual approach: format with max comptime precision (20) then pad with zeros
+        const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
+        // Pad to requested precision with zeros
+        const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
+            return alloc.dupe(u8, s);
+        };
+        const existing_digits = s.len - dot_idx - 1;
+        if (d > existing_digits) {
+            const result = try alloc.alloc(u8, dot_idx + 1 + d);
+            @memcpy(result[0..s.len], s);
+            @memset(result[s.len..], '0');
+            return result;
+        }
+        return alloc.dupe(u8, s);
+    }
+    // digits > 100: use precision 6 as safe fallback
     const s = try std.fmt.bufPrint(&buf, "{d:.6}", .{val});
     return alloc.dupe(u8, s);
 }
@@ -539,6 +554,22 @@ test "parseInt" {
     try std.testing.expectEqual(@as(i64, 77), parseInt("077", null));
     // JS semantics: hex digits with explicit radix
     try std.testing.expectEqual(@as(i64, 255), parseInt("ff", 16));
+}
+
+test "parseInt does not recognize 0b/0o prefixes (P2-8)" {
+    // Per ECMAScript spec, parseInt only recognizes 0x/0X prefix.
+    // 0b/0B and 0o/0O are NOT recognized — "0" is parsed as digit 0,
+    // then 'b'/'o' stops parsing. Only Number() recognizes these prefixes.
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0b1010", null));
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0B1010", null));
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0o17", null));
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0O17", null));
+    // Even with matching radix, prefix is not stripped.
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0b1010", 2));
+    try std.testing.expectEqual(@as(i64, 0), parseInt("0o17", 8));
+    // 0x prefix still works.
+    try std.testing.expectEqual(@as(i64, 255), parseInt("0xFF", null));
+    try std.testing.expectEqual(@as(i64, 255), parseInt("0xFF", 16));
 }
 
 test "parseInt overflow does not panic (R6-7)" {

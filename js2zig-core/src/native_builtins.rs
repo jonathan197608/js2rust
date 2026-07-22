@@ -961,7 +961,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Array static methods
         BuiltinCall::ArrayFrom | BuiltinCall::ArrayOf => {
-            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
         }
         BuiltinCall::ArrayIsArray => Some(ZigType::Bool),
         BuiltinCall::ArrayIncludes | BuiltinCall::ArraySome | BuiltinCall::ArrayEvery => Some(ZigType::Bool),
@@ -1038,7 +1038,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringPadStart | BuiltinCall::StringPadEnd => Some(ZigType::Str),
 
         // Map/Set mutation methods that return the receiver (for chaining)
-        BuiltinCall::MapSet | BuiltinCall::SetAdd => Some(ZigType::JsAny), // returns receiver
+        BuiltinCall::MapSet | BuiltinCall::SetAdd => None, // returns receiver — handled by caller
 
         // Array methods returning the mutated array (JsAny — type depends on input)
         BuiltinCall::ArrayReverse
@@ -1048,12 +1048,12 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // Array methods returning a new array
         BuiltinCall::ArraySlice | BuiltinCall::ArrayConcat => {
-            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
         }
-        BuiltinCall::ArraySplice => Some(ZigType::ArrayList(Box::new(ZigType::Anytype))), // deleted elements
-        BuiltinCall::ArrayFilter => Some(ZigType::ArrayList(Box::new(ZigType::Anytype))),
+        BuiltinCall::ArraySplice => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))), // deleted elements
+        BuiltinCall::ArrayFilter => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
         BuiltinCall::ArrayMap | BuiltinCall::ArrayFlatMap | BuiltinCall::ArrayFlat => {
-            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
         }
 
         // Array methods returning an element or unknown type
@@ -1063,7 +1063,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
 
         // ES2023 immutable array methods — return new array
         BuiltinCall::ArrayWith | BuiltinCall::ArrayToReversed | BuiltinCall::ArrayToSorted | BuiltinCall::ArrayToSpliced => {
-            Some(ZigType::ArrayList(Box::new(ZigType::Anytype)))
+            Some(ZigType::ArrayList(Box::new(ZigType::JsAny)))
         }
 
         // TypedArray view method

@@ -284,7 +284,7 @@ pub const JsDate = struct {
         const d = if (date) |dd| dd else cd.d;
         const new_days = daysFromCivil(year, m, d);
         const time = @mod(self.millis, 86400000);
-        return new_days * 86400000 + time;
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setMonth(month, date?) → new milliseconds.
@@ -294,7 +294,7 @@ pub const JsDate = struct {
         const d = if (date) |dd| dd else cd.d;
         const new_days = daysFromCivil(cd.y, m, d);
         const time = @mod(self.millis, 86400000);
-        return new_days * 86400000 + time;
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setDate(date) → new milliseconds.
@@ -302,7 +302,7 @@ pub const JsDate = struct {
         const cd = civilFromDays(dayCount(self.millis));
         const new_days = daysFromCivil(cd.y, cd.m, date);
         const time = @mod(self.millis, 86400000);
-        return new_days * 86400000 + time;
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setHours(hours, min?, sec?, ms?) → new milliseconds.
@@ -598,7 +598,14 @@ pub fn parse(s: []const u8) i64 {
     }
 
     const days = daysFromCivil(year, month, day);
-    var utc_millis = days * 86400 * 1000 + hours * 3600 * 1000 + minutes * 60 * 1000 + seconds * 1000 + millis;
+    // Use i128 intermediates to prevent overflow on extreme year values (P0-2 fix).
+    var utc_millis = clampToI64(
+        @as(i128, days) * 86400000 +
+        @as(i128, hours) * 3600000 +
+        @as(i128, minutes) * 60000 +
+        @as(i128, seconds) * 1000 +
+        @as(i128, millis),
+    );
 
     // ── Handle timezone indicator ──
     // Check for timezone starting at end_pos
@@ -616,7 +623,7 @@ pub fn parse(s: []const u8) i64 {
             } else if (end_pos + 5 <= s.len) {
                 tz_minutes = parseDigits2(s[end_pos + 3 .. end_pos + 5]) orelse return 0;
             }
-            const tz_offset_ms = (tz_hours * 60 + tz_minutes) * 60 * 1000;
+            const tz_offset_ms = clampToI64(@as(i128, tz_hours) * 3600000 + @as(i128, tz_minutes) * 60000);
             if (tz_char == '+') {
                 utc_millis -= tz_offset_ms; // e.g., +08:00 means local is ahead, subtract to get UTC
             } else {

@@ -13,8 +13,8 @@ return a + b;
 }
 "#;
     let zig = transpile_and_assert(js, "test_native_proto_basic");
-    // Note: using anytype for parameters, i64 for return type (inferred)
-    assert!(zig.contains("pub fn add(a: anytype, b: anytype) i64 {"));
+    // Note: using anytype for parameters, f64 for return type (inferred)
+    assert!(zig.contains("pub fn add(a: anytype, b: anytype) f64 {"));
     assert!(zig.contains("return (a + b);"));
 }
 
@@ -719,7 +719,11 @@ return x;
         "missing do-while continuation: {}",
         zig
     );
-    assert!(zig.contains("return x;"));
+    assert!(
+        zig.contains("JsAny.from(x)"),
+        "expected JsAny.from(x) coercion for JsAny-returning function: {}",
+        zig
+    );
 }
 
 #[test]

@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const js_number = @import("js_number.zig");
 
 /// Percent-encode a string (encodeURIComponent).
 /// Escapes all characters except: A-Z a-z 0-9 - _ . ! ~ * ' ( )
@@ -170,7 +171,7 @@ fn parseIntStr(s: []const u8, radix: ?i64) f64 {
     var i: usize = 0;
 
     // Skip leading whitespace
-    while (i < s.len and s[i] == ' ') : (i += 1) {}
+    while (i < s.len and std.ascii.isWhitespace(s[i])) : (i += 1) {}
 
     // Handle sign
     var neg = false;
@@ -229,40 +230,10 @@ fn parseIntStr(s: []const u8, radix: ?i64) f64 {
     return if (neg) -f else f;
 }
 
-/// parseFloat stub: parse a float from a string.
-/// Simplified implementation — handles basic decimal notation.
+/// parseFloat: parse a float from a string.
+/// Delegates to js_number.parseFloat which handles exponents, Infinity, and NaN.
 pub fn parseFloat(s: []const u8) f64 {
-    var result: f64 = 0.0;
-    var frac: f64 = 0.0;
-    var div: f64 = 10.0;
-    var neg = false;
-    var in_frac = false;
-    var i: usize = 0;
-    // Skip whitespace
-    while (i < s.len and s[i] == ' ') : (i += 1) {}
-    if (i < s.len and s[i] == '-') {
-        neg = true;
-        i += 1;
-    } else if (i < s.len and s[i] == '+') {
-        i += 1;
-    }
-    while (i < s.len) : (i += 1) {
-        const c = s[i];
-        if (c == '.' and !in_frac) {
-            in_frac = true;
-        } else if (c >= '0' and c <= '9') {
-            if (in_frac) {
-                frac += @as(f64, @floatFromInt(c - '0')) / div;
-                div *= 10.0;
-            } else {
-                result = result * 10.0 + @as(f64, @floatFromInt(c - '0'));
-            }
-        } else {
-            break;
-        }
-    }
-    result += frac;
-    return if (neg) -result else result;
+    return js_number.parseFloat(s);
 }
 
 /// isNaN stub: check if a float is NaN.
@@ -342,4 +313,20 @@ test "decodeURI roundtrip" {
     const decoded = try decodeURI(std.testing.allocator, encoded);
     defer std.testing.allocator.free(decoded);
     try std.testing.expectEqualStrings(original, decoded);
+}
+
+test "parseInt skips all whitespace types (P2-1)" {
+    // Tab, newline, vertical tab, form feed, carriage return
+    try std.testing.expectEqual(@as(f64, 42), parseInt("\t42", null));
+    try std.testing.expectEqual(@as(f64, 42), parseInt("\n42", null));
+    try std.testing.expectEqual(@as(f64, 42), parseInt("\r\n42", null));
+    try std.testing.expectEqual(@as(f64, 42), parseInt("  \t 42", null));
+}
+
+test "parseFloat delegates to js_number (P2-2)" {
+    // Exponents and Infinity are now handled via delegation to js_number.parseFloat
+    try std.testing.expectEqual(@as(f64, 100000), parseFloat("1e5"));
+    try std.testing.expectEqual(@as(f64, 3.14), parseFloat("3.14"));
+    // Invalid input returns NaN (not 0.0 as in the old local implementation)
+    try std.testing.expect(std.math.isNan(parseFloat("abc")));
 }

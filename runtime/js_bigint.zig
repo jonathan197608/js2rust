@@ -175,6 +175,11 @@ pub const JsBigInt = struct {
     }
 
     fn shiftLeftRaw(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+        // Cap shift to prevent huge memory allocation.
+        // A shift of 1M bits on a 1-bit value allocates ~125KB; shifts of
+        // billions would exhaust memory. JS allows arbitrary shifts in
+        // principle, but this cap prevents OOM crashes.
+        if (shift > 1_000_000) return error.RangeError;
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         try result.shiftLeft(&self.value, shift);

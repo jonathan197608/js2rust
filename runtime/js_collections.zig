@@ -68,18 +68,29 @@ const JsAnyHashMapContext = struct {
         const tag_b = std.meta.activeTag(b);
         if (tag_a != tag_b) return false;
         switch (a) {
-            .value => |va| switch (va) {
-                .int => |ia| return b.value.int == ia,
-                .float => |fa| {
-                    // SameValueZero: NaN === NaN → true
-                    const fb = b.value.float;
-                    if (std.math.isNan(fa) and std.math.isNan(fb)) return true;
-                    return fb == fa;
+            .value => |va| switch (b.value) {
+                .int => |ib| return switch (va) {
+                    .int => |ia| return ia == ib,
+                    else => false,
                 },
-                .bool => |ba| return b.value.bool == ba,
-                .string => |sa| return std.mem.eql(u8, sa, b.value.string),
-                .null => return true,
-                .undefined => return true,
+                .float => |fb| return switch (va) {
+                    .float => |fa| {
+                        // SameValueZero: NaN === NaN → true
+                        if (std.math.isNan(fa) and std.math.isNan(fb)) return true;
+                        return fa == fb;
+                    },
+                    else => false,
+                },
+                .bool => |bb| return switch (va) {
+                    .bool => |ba| return ba == bb,
+                    else => false,
+                },
+                .string => |sb| return switch (va) {
+                    .string => |sa| return std.mem.eql(u8, sa, sb),
+                    else => false,
+                },
+                .null => return va == .null,
+                .undefined => return va == .undefined,
             },
             .array => |pa| return pa == b.array,
             .object => |po| return po == b.object,

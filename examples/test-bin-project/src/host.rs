@@ -18,15 +18,15 @@ static HANDLE: Lazy<Handle> = Lazy::new(|| RUNTIME.handle().clone());
 
 // ── Sync host functions ─────────────────────────────
 
-/// Add two integers (no SDK types needed — plain C ABI).
+/// Add two numbers (no SDK types needed — plain C ABI).
 #[host_fn]
-fn host_add(a: i64, b: i64) -> i64 {
+fn host_add(a: f64, b: f64) -> f64 {
     a + b
 }
 
-/// Multiply two integers.
+/// Multiply two numbers.
 #[host_fn]
-fn host_multiply(a: i64, b: i64) -> i64 {
+fn host_multiply(a: f64, b: f64) -> f64 {
     a * b
 }
 
@@ -38,8 +38,8 @@ fn host_concat(s1: HostStr, s2: HostStr) -> JsStr {
 
 /// Return string length.
 #[host_fn]
-fn host_strlen(s: HostStr) -> i64 {
-    s.len() as i64
+fn host_strlen(s: HostStr) -> f64 {
+    s.len() as f64
 }
 
 // ── Async host functions ────────────────────────────

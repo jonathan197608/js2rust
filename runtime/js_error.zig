@@ -33,8 +33,8 @@ pub const JsError = struct {
 
     /// Custom format: prints "name: message" (matching Node.js console output).
     /// Without this, std.fmt defaults to `.{ .field = value, ... }`.
-    pub fn format(self: JsError, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try writer.print("{s}: {s}", .{ self.name, self.message });
+    pub fn format(self: JsError, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{s}: {s}", .{ self.name, self.message });
     }
 
     /// Construct a JsError from a Zig error union value.

@@ -6,6 +6,7 @@ pub mod call_member;
 pub mod container;
 pub mod template_new;
 
+use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers as emit_helpers;
 use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, update_op_to_zig};
@@ -573,21 +574,35 @@ impl Emitter {
                         }
                     }
                     crate::zigir::ops::LogicalOp::Nullish => {
-                        // a ?? b: if a is not null/undefined → a, else → b
-                        self.write(&format!("if (!_lv_{id}.isNullish())"));
-                        self.write(&format!(" break :{blk} "));
-                        if same_type {
-                            self.write(&format!("_lv_{id}"));
+                        // a ?? b: if a is not null/undefined → a, else → b.
+                        // When same_type is true but the type is a concrete
+                        // non-nullable scalar (I64/F64/Str/Bool etc.), the
+                        // value can never be nullish, so skip the check and
+                        // just return the left value directly. Only JsAny
+                        // values (or unknown types) need the runtime
+                        // isNullish() check.
+                        let is_jsany = lt == Some(&ZigType::JsAny);
+                        if same_type && !is_jsany {
+                            // Non-nullable concrete type — left is always
+                            // the result; right expression is never evaluated.
+                            self.write(&format!("break :{blk} _lv_{id}"));
                         } else {
-                            self.write(&format!("JsAny.from(_lv_{id})"));
-                        }
-                        self.write(&format!(" else break :{blk} "));
-                        if same_type {
-                            self.emit_expr(right);
-                        } else {
-                            self.write("JsAny.from(");
-                            self.emit_expr(right);
-                            self.write(")");
+                            // JsAny or unknown type — runtime nullish check
+                            self.write(&format!("if (!_lv_{id}.isNullish())"));
+                            self.write(&format!(" break :{blk} "));
+                            if same_type {
+                                self.write(&format!("_lv_{id}"));
+                            } else {
+                                self.write(&format!("JsAny.from(_lv_{id})"));
+                            }
+                            self.write(&format!(" else break :{blk} "));
+                            if same_type {
+                                self.emit_expr(right);
+                            } else {
+                                self.write("JsAny.from(");
+                                self.emit_expr(right);
+                                self.write(")");
+                            }
                         }
                     }
                 }
@@ -682,11 +697,8 @@ impl Emitter {
             }
 
             // ── Function expressions ────────────────
-            // NOTE: Dead code path — Lowerer always converts ArrowFn to IrExpr::Ident
-            // + pending_arrow_structs before reaching the emitter.
             crate::zigir::types::IrExpr::ArrowFn(_arrow) => {
-                // Should never be reached; emit a placeholder to avoid panic.
-                self.write("/* ArrowFn — should be lowered to closure struct */");
+                unreachable!("ArrowFn should be lowered to Closure before emit")
             }
 
             crate::zigir::types::IrExpr::Closure(closure) => {
@@ -1075,9 +1087,18 @@ impl Emitter {
                                 "@compileError(\"nested spread in call args not supported\")",
                             );
                         } else {
-                            self.write("JsAny.from(");
+                            // The lowerer's pack_rest_args_if_needed already
+                            // wraps each element in JsAny.from() at the IR level.
+                            // Check if already wrapped to avoid double-wrapping
+                            // (JsAny.from(JsAny.from(x))).
+                            let already_wrapped = is_jsany_from_call(elem);
+                            if !already_wrapped {
+                                self.write("JsAny.from(");
+                            }
                             self.emit_expr(elem);
-                            self.write(")");
+                            if !already_wrapped {
+                                self.write(")");
+                            }
                         }
                     }
                     self.write(" }");
@@ -1170,4 +1191,17 @@ pub(super) fn typed_array_init(
         TypedArrayKind::BigInt64Array => ("js_runtime.js_typedarray", "fromI64AsI64"),
         TypedArrayKind::BigUint64Array => ("js_runtime.js_typedarray", "fromI64AsU64"),
     }
+}
+
+/// Check if an IrExpr is a `JsAny.from(...)` call — used to avoid double-wrapping
+/// in `emit_one_arg`'s array literal spread path.
+fn is_jsany_from_call(expr: &crate::zigir::types::IrExpr) -> bool {
+    use crate::zigir::types::{IrCallExpr, IrExpr};
+    if let IrExpr::Call(IrCallExpr { callee, .. }) = expr
+        && let IrExpr::FieldAccess { object, field, .. } = &**callee
+        && let IrExpr::Ident(ident) = &**object
+    {
+        return ident.zig_name == "JsAny" && field == "from";
+    }
+    false
 }
