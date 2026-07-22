@@ -470,9 +470,20 @@ impl TypeInferrer {
             Expression::ChainExpression(_chain) => InferResult::Indeterminate,
 
             // AssignmentExpression: result type = RHS type for simple, F64 for **=,
-            // LHS type for &&=/||=/??= (conditional assignment returns LHS type).
+            // LHS type for &&=/||= (conditional assignment returns LHS type).
             Expression::AssignmentExpression(ae) => match ae.operator {
                 AssignmentOperator::Exponential => InferResult::Definite(ZigType::F64),
+                AssignmentOperator::LogicalAnd | AssignmentOperator::LogicalOr => {
+                    // For logical assignments (x &&= y, x ||= y),
+                    // result is either the original LHS (short-circuit) or the RHS.
+                    // Return the LHS variable's type as the most likely result.
+                    if let oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id) = &ae.left
+                        && let Some(t) = self.var_types.get(id.name.as_str())
+                    {
+                        return InferResult::Definite(t.clone());
+                    }
+                    InferResult::Indeterminate
+                }
                 _ => self.infer_expr_type(&ae.right),
             },
 
@@ -497,15 +508,23 @@ impl TypeInferrer {
             }
 
             Expression::UpdateExpression(ue) => {
-                // ++x / x-- always returns a number. Try to look up the variable type.
+                // ++x / x-- always returns a number.
+                // Return the variable's type only if it's numeric (I64/F64);
+                // otherwise default to F64 (JS numbers are always float64).
                 if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
                     if let Some(t) = self.var_types.get(id.name.as_str()) {
-                        InferResult::Definite(t.clone())
+                        match t {
+                            ZigType::I64 => InferResult::Definite(ZigType::I64),
+                            ZigType::F64 => InferResult::Definite(ZigType::F64),
+                            // Non-numeric variable: ++ still produces a number (f64)
+                            _ => InferResult::Definite(ZigType::F64),
+                        }
                     } else {
-                        InferResult::Indeterminate
+                        // Unknown variable: default to f64 (JS number)
+                        InferResult::Definite(ZigType::F64)
                     }
                 } else {
-                    InferResult::Indeterminate
+                    InferResult::Definite(ZigType::F64)
                 }
             }
 
@@ -830,16 +849,15 @@ impl TypeInferrer {
             "indexOf" | "lastIndexOf" | "findIndex" => InferResult::Definite(ZigType::I64),
             // reduce: returns accumulator type (default JsAny since accumulator can be any type)
             "reduce" | "reduceRight" => InferResult::Definite(ZigType::JsAny),
-            // pop/shift: return element type
-            "pop" | "shift" | "find" => InferResult::Definite(elem_ty.clone()),
+            // pop/shift/find/findLast/at: return element or undefined → JsAny
+            // (matches native_builtins which all return JsAny for these methods)
+            "pop" | "shift" | "find" | "findLast" | "at" => InferResult::Definite(ZigType::JsAny),
             // join: returns string
             "join" => InferResult::Definite(ZigType::Str),
             // push/unshift: return new length (i64)
             "push" | "unshift" => InferResult::Definite(ZigType::I64),
             // findLastIndex: returns index or -1
             "findLastIndex" => InferResult::Definite(ZigType::I64),
-            // at/findLast: return element or undefined → JsAny
-            "at" | "findLast" => InferResult::Definite(ZigType::JsAny),
             // Iterator methods: return iterator objects (JsAny)
             "keys" | "values" | "entries" => InferResult::Definite(ZigType::JsAny),
             // copyWithin/fill: return the modified array → JsAny
@@ -860,7 +878,15 @@ impl TypeInferrer {
                         "get" => InferResult::Definite(ZigType::JsAny), // Map.get() returns JsAny
                         "has" | "delete" => InferResult::Definite(ZigType::Bool),
                         "clear" | "forEach" => InferResult::Definite(ZigType::Void),
-                        "keys" | "values" | "entries" => InferResult::Definite(ZigType::JsAny),
+                        "keys" => {
+                            InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+                        }
+                        "values" => {
+                            InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+                        }
+                        "entries" => InferResult::Definite(ZigType::ArrayList(Box::new(
+                            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+                        ))),
                         _ => InferResult::Indeterminate,
                     },
                     "Set" => match method {
@@ -878,15 +904,21 @@ impl TypeInferrer {
                     "Date" => match method {
                         "getTime" | "getFullYear" | "getMonth" | "getDate" | "getDay"
                         | "getHours" | "getMinutes" | "getSeconds" | "getMilliseconds"
-                        | "valueOf" => InferResult::Definite(ZigType::I64),
-                        "setFullYear" | "setMonth" | "setDate" | "setHours" | "setMinutes"
-                        | "setSeconds" | "setMilliseconds" | "setTime" => {
-                            InferResult::Definite(ZigType::F64)
+                        | "valueOf"
+                        // UTC getters
+                        | "getUTCFullYear" | "getUTCMonth" | "getUTCDate" | "getUTCDay"
+                        | "getUTCHours" | "getUTCMinutes" | "getUTCSeconds"
+                        | "getUTCMilliseconds" | "getTimezoneOffset"
+                        // Setters return the new timestamp (i64, same as getTime)
+                        | "setFullYear" | "setMonth" | "setDate" | "setHours" | "setMinutes"
+                        | "setSeconds" | "setMilliseconds" | "setTime"
+                        | "setUTCFullYear" | "setUTCMonth" | "setUTCDate" | "setUTCHours"
+                        | "setUTCMinutes" | "setUTCSeconds" | "setUTCMilliseconds" => {
+                            InferResult::Definite(ZigType::I64)
                         }
                         "toString" | "toISOString" | "toDateString" | "toTimeString"
-                        | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" => {
-                            InferResult::Definite(ZigType::Str)
-                        }
+                        | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString"
+                        | "toUTCString" | "toJSON" => InferResult::Definite(ZigType::Str),
                         _ => InferResult::Indeterminate,
                     },
                     // User-defined class: look up "ClassName.methodName" in fn_return_types

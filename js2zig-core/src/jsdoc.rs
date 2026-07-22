@@ -439,7 +439,9 @@ pub fn jsdoc_type_to_zig(jsdoc_ty: &str, typedefs: &HashMap<String, TypedefDef>)
         // Built-in runtime types
         "Symbol" => "JsSymbol".to_string(),
         "Date" => "js_date.JsDate".to_string(),
-        // JS "Object" is a generic catch-all — emit as anytype
+        // JS "Object" is a generic catch-all — emit as anytype (C ABI wrapper
+        // generation skips validation for Anytype params, handling them via
+        // const-aliasing in the wrapper layer)
         "Object" => "anytype".to_string(),
         // 自定义类型名（@typedef 定义的），直接返回
         _ => jsdoc_ty.to_string(),

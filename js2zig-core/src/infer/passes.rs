@@ -341,6 +341,26 @@ impl TypeInferrer {
                     self.walk_fn_for_types(fd.as_ref(), fn_name, true);
                 }
             }
+            Statement::ExportDefaultDeclaration(export_decl) => {
+                // export default function/class declarations
+                match &export_decl.declaration {
+                    ExportDefaultDeclarationKind::FunctionDeclaration(fd) => {
+                        let fn_name = fd
+                            .id
+                            .as_ref()
+                            .map(|id| id.name.as_str())
+                            .unwrap_or("default");
+                        self.walk_fn_for_types(fd.as_ref(), fn_name, true);
+                    }
+                    ExportDefaultDeclarationKind::ClassDeclaration(cd) => {
+                        if let Some(id) = &cd.id {
+                            let class_name = id.name.to_string();
+                            self.process_class_for_types(&class_name, cd.as_ref());
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Statement::IfStatement(is) => {
                 self.walk_stmt_for_types(&is.consequent);
                 if let Some(alt) = &is.alternate {

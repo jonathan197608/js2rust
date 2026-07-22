@@ -188,7 +188,7 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     }
     const d: usize = @intCast(@max(0, @min(100, digits)));
 
-    var buf: [128]u8 = undefined;
+    var buf: [512]u8 = undefined;
     // Use inline for to generate all precision cases at comptime
     inline for (0..21) |p| {
         if (d == p) {
@@ -256,7 +256,7 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
 
     const digits: usize = if (fraction_digits) |d| @intCast(@max(0, @min(100, d))) else 6;
 
-    var buf: [128]u8 = undefined;
+    var buf: [512]u8 = undefined;
 
     // R8-P1-2: Zig `{e}` emits `e2` for positive exponents, but JS requires
     // `e+2`. Format into the buffer, then post-process via fixupExp.
@@ -305,7 +305,7 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
 
     // Format in exponential notation with (p-1) digits after the decimal,
     // yielding exactly p significant digits.
-    var buf: [128]u8 = undefined;
+    var buf: [512]u8 = undefined;
     const exp_s: []const u8 = blk: {
         inline for (0..21) |prec| {
             if (p - 1 == prec) {
@@ -436,7 +436,7 @@ pub fn toString(alloc: std.mem.Allocator, val: f64, radix: i64) ![]const u8 {
     // Radix 10: defer to Zig's shortest-round-trip default formatter, which
     // matches JS Number.prototype.toString() for the common range.
     if (radix == 10) {
-        var buf: [128]u8 = undefined;
+        var buf: [512]u8 = undefined;
         const s = try std.fmt.bufPrint(&buf, "{}", .{abs_val});
         if (prefix.len == 0) return alloc.dupe(u8, s);
         const result = try alloc.alloc(u8, prefix.len + s.len);
@@ -593,7 +593,7 @@ test "parseInt overflow does not panic (R6-7)" {
 
 test "parseFloat" {
     try std.testing.expectEqual(@as(f64, 3.14), parseFloat("3.14"));
-    try std.testing.expectEqual(@as(f64, 0.0), parseFloat("abc"));
+    try std.testing.expect(std.math.isNan(parseFloat("abc")));
 }
 
 test "isSafeInteger" {

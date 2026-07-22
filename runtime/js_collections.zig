@@ -26,10 +26,13 @@ const js_allocator = @import("js_allocator.zig");
 
 const JsAnyHashMapContext = struct {
     pub fn hash(_: JsAnyHashMapContext, key: JsAny) u64 {
+        // R12-P1-3: Normalize JsAny.null and JsAny.value(.null) to the same
+        // representation so they hash identically as Map/Set keys.
+        const k: JsAny = if (key == .null) .{ .value = .null } else key;
         var hasher = std.hash.Wyhash.init(0);
-        const tag_id = @intFromEnum(std.meta.activeTag(key));
+        const tag_id = @intFromEnum(std.meta.activeTag(k));
         hasher.update(std.mem.asBytes(&tag_id));
-        switch (key) {
+        switch (k) {
             .value => |v| switch (v) {
                 .int => |i| hasher.update(std.mem.asBytes(&i)),
                 .float => |f| {
@@ -64,11 +67,15 @@ const JsAnyHashMapContext = struct {
     }
 
     pub fn eql(_: JsAnyHashMapContext, a: JsAny, b: JsAny) bool {
-        const tag_a = std.meta.activeTag(a);
-        const tag_b = std.meta.activeTag(b);
+        // R12-P1-3: Normalize JsAny.null and JsAny.value(.null) to the same
+        // representation so they compare equal as Map/Set keys.
+        const na: JsAny = if (a == .null) .{ .value = .null } else a;
+        const nb: JsAny = if (b == .null) .{ .value = .null } else b;
+        const tag_a = std.meta.activeTag(na);
+        const tag_b = std.meta.activeTag(nb);
         if (tag_a != tag_b) return false;
-        switch (a) {
-            .value => |va| switch (b.value) {
+        switch (na) {
+            .value => |va| switch (nb.value) {
                 .int => |ib| return switch (va) {
                     .int => |ia| return ia == ib,
                     else => false,
@@ -92,8 +99,8 @@ const JsAnyHashMapContext = struct {
                 .null => return va == .null,
                 .undefined => return va == .undefined,
             },
-            .array => |pa| return pa == b.array,
-            .object => |po| return po == b.object,
+            .array => |pa| return pa == nb.array,
+            .object => |po| return po == nb.object,
             .null => return true,
         }
     }
@@ -192,67 +199,61 @@ pub fn JsCollection(comptime Value: type) type {
 
         // ── Iterators (keys / values / entries) ────────────────
 
-        /// Return array of keys. Caller must free.
-        pub fn keys(self: *const @This(), alloc: Allocator) ![]JsAny {
-            var result = try alloc.alloc(JsAny, self.inner.count());
-            var i: usize = 0;
+        /// Return ArrayList of keys. Caller must call deinit(alloc).
+        pub fn keys(self: *const @This(), alloc: Allocator) !std.ArrayList(JsAny) {
+            var result: std.ArrayList(JsAny) = .empty;
+            try result.ensureTotalCapacity(alloc, self.inner.count());
             var iter = self.inner.keyIterator();
             while (iter.next()) |key_ptr| {
-                result[i] = key_ptr.*;
-                i += 1;
+                try result.append(alloc, key_ptr.*);
             }
             return result;
         }
 
-        /// Return array of values. Caller must free.
+        /// Return ArrayList of values. Caller must call deinit(alloc).
         /// For Set (Value == void): identical to keys().
         /// For Map (Value == JsAny): returns the values.
-        pub fn values(self: *const @This(), alloc: Allocator) ![]JsAny {
+        pub fn values(self: *const @This(), alloc: Allocator) !std.ArrayList(JsAny) {
             if (is_set) {
                 return self.keys(alloc);
             } else {
-                var result = try alloc.alloc(JsAny, self.inner.count());
-                var i: usize = 0;
+                var result: std.ArrayList(JsAny) = .empty;
+                try result.ensureTotalCapacity(alloc, self.inner.count());
                 var iter = self.inner.valueIterator();
                 while (iter.next()) |val_ptr| {
-                    result[i] = val_ptr.*;
-                    i += 1;
+                    try result.append(alloc, val_ptr.*);
                 }
                 return result;
             }
         }
 
-        /// Return array of [k, v] pairs. Caller must free inner slices and outer slice.
+        /// Return ArrayList of [k, v] pairs (each pair is an ArrayList(JsAny)).
+        /// Caller must deinit inner ArrayLists and the outer ArrayList.
         /// Set:  each pair is [value, value]  (MDN spec)
         /// Map:  each pair is [key, value]  (MDN spec)
-        pub fn entries(self: *const @This(), alloc: Allocator) ![][]JsAny {
+        pub fn entries(self: *const @This(), alloc: Allocator) !std.ArrayList(std.ArrayList(JsAny)) {
+            var result: std.ArrayList(std.ArrayList(JsAny)) = .empty;
+            try result.ensureTotalCapacity(alloc, self.inner.count());
             if (is_set) {
                 // Set: [value, value]
-                var result = try alloc.alloc([]JsAny, self.inner.count());
-                var i: usize = 0;
                 var iter = self.inner.keyIterator();
                 while (iter.next()) |key_ptr| {
-                    const pair = try alloc.alloc(JsAny, 2);
-                    pair[0] = key_ptr.*;
-                    pair[1] = key_ptr.*; // [value, value]
-                    result[i] = pair;
-                    i += 1;
+                    var pair: std.ArrayList(JsAny) = .empty;
+                    try pair.append(alloc, key_ptr.*);
+                    try pair.append(alloc, key_ptr.*); // [value, value]
+                    try result.append(alloc, pair);
                 }
-                return result;
             } else {
                 // Map: [key, value]
-                var result = try alloc.alloc([]JsAny, self.inner.count());
-                var i: usize = 0;
                 var iter = self.inner.iterator();
                 while (iter.next()) |entry| {
-                    const pair = try alloc.alloc(JsAny, 2);
-                    pair[0] = entry.key_ptr.*;
-                    pair[1] = entry.value_ptr.*;
-                    result[i] = pair;
-                    i += 1;
+                    var pair: std.ArrayList(JsAny) = .empty;
+                    try pair.append(alloc, entry.key_ptr.*);
+                    try pair.append(alloc, entry.value_ptr.*);
+                    try result.append(alloc, pair);
                 }
-                return result;
             }
+            return result;
         }
 
         // ── Set-only methods ───────────────────────────────────
@@ -386,10 +387,10 @@ test "JsSet values()" {
     try s.add(JsAny.fromI64(20));
     try s.add(JsAny.fromString("hello"));
 
-    const vals = try s.values(alloc);
-    defer alloc.free(vals);
+    var vals = try s.values(alloc);
+    defer vals.deinit(alloc);
 
-    try std.testing.expectEqual(@as(usize, 3), vals.len);
+    try std.testing.expectEqual(@as(usize, 3), vals.items.len);
 }
 
 test "JsSet keys() same as values()" {
@@ -400,12 +401,12 @@ test "JsSet keys() same as values()" {
     try s.add(JsAny.fromI64(1));
     try s.add(JsAny.fromI64(2));
 
-    const keys = try s.keys(alloc);
-    defer alloc.free(keys);
-    const vals = try s.values(alloc);
-    defer alloc.free(vals);
+    var keys = try s.keys(alloc);
+    defer keys.deinit(alloc);
+    var vals = try s.values(alloc);
+    defer vals.deinit(alloc);
 
-    try std.testing.expectEqual(keys.len, vals.len);
+    try std.testing.expectEqual(keys.items.len, vals.items.len);
 }
 
 test "JsSet entries()" {
@@ -416,17 +417,17 @@ test "JsSet entries()" {
     try s.add(JsAny.fromI64(5));
     try s.add(JsAny.fromI64(10));
 
-    const ents = try s.entries(alloc);
+    var ents = try s.entries(alloc);
     defer {
-        for (ents) |pair| alloc.free(pair);
-        alloc.free(ents);
+        for (ents.items) |*pair| pair.deinit(alloc);
+        ents.deinit(alloc);
     }
 
-    try std.testing.expectEqual(@as(usize, 2), ents.len);
-    for (ents) |pair| {
-        try std.testing.expectEqual(@as(usize, 2), pair.len);
+    try std.testing.expectEqual(@as(usize, 2), ents.items.len);
+    for (ents.items) |pair| {
+        try std.testing.expectEqual(@as(usize, 2), pair.items.len);
         // In JS Set entries, pair[0] == pair[1]
-        try std.testing.expect(pair[0].eq(pair[1]));
+        try std.testing.expect(pair.items[0].eq(pair.items[1]));
     }
 }
 
@@ -491,10 +492,10 @@ test "JsMap keys()" {
     try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
     try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
 
-    const keys = try m.keys(alloc);
-    defer alloc.free(keys);
+    var keys = try m.keys(alloc);
+    defer keys.deinit(alloc);
 
-    try std.testing.expectEqual(@as(usize, 2), keys.len);
+    try std.testing.expectEqual(@as(usize, 2), keys.items.len);
 }
 
 test "JsMap values()" {
@@ -505,10 +506,10 @@ test "JsMap values()" {
     try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
     try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
 
-    const vals = try m.values(alloc);
-    defer alloc.free(vals);
+    var vals = try m.values(alloc);
+    defer vals.deinit(alloc);
 
-    try std.testing.expectEqual(@as(usize, 2), vals.len);
+    try std.testing.expectEqual(@as(usize, 2), vals.items.len);
 }
 
 test "JsMap entries()" {
@@ -519,15 +520,15 @@ test "JsMap entries()" {
     try m.set(JsAny.fromI64(5), JsAny.fromString("five"));
     try m.set(JsAny.fromI64(10), JsAny.fromString("ten"));
 
-    const ents = try m.entries(alloc);
+    var ents = try m.entries(alloc);
     defer {
-        for (ents) |pair| alloc.free(pair);
-        alloc.free(ents);
+        for (ents.items) |*pair| pair.deinit(alloc);
+        ents.deinit(alloc);
     }
 
-    try std.testing.expectEqual(@as(usize, 2), ents.len);
-    for (ents) |pair| {
-        try std.testing.expectEqual(@as(usize, 2), pair.len);
+    try std.testing.expectEqual(@as(usize, 2), ents.items.len);
+    for (ents.items) |pair| {
+        try std.testing.expectEqual(@as(usize, 2), pair.items.len);
     }
 }
 
@@ -572,4 +573,32 @@ test "NaN SameValueZero: NaN === NaN in Map/Set (R7-6)" {
     try std.testing.expectEqual(@as(usize, 1), m.size());
     const v = m.get(JsAny.fromF64(std.math.nan(f64)));
     try std.testing.expect(v.eq(JsAny.fromI64(2)));
+}
+
+test "null key normalization: JsAny.null and JsAny.value(.null) are same key (R12-P1-3)" {
+    const alloc = std.testing.allocator;
+
+    // Map: set with JsAny.fromNull(), then has with JsAny.fromValue(.null)
+    var m = JsMap.init(alloc);
+    defer m.deinit(alloc);
+    try m.set(JsAny.fromNull(), JsAny.fromI64(1));
+    try std.testing.expect(m.has(JsAny.fromValue(.null)));
+    try std.testing.expectEqual(@as(usize, 1), m.size());
+
+    // Overwrite via the other representation
+    try m.set(JsAny.fromValue(.null), JsAny.fromI64(2));
+    try std.testing.expectEqual(@as(usize, 1), m.size());
+    const v = m.get(JsAny.fromNull());
+    try std.testing.expect(v.eq(JsAny.fromI64(2)));
+
+    // Set: add both representations → size 1
+    var s = JsSet.init(alloc);
+    defer s.deinit(alloc);
+    try s.add(JsAny.fromNull());
+    try s.add(JsAny.fromValue(.null));
+    try std.testing.expectEqual(@as(usize, 1), s.size());
+
+    // null ≠ undefined as keys
+    try s.add(JsAny.fromUndefined());
+    try std.testing.expectEqual(@as(usize, 2), s.size());
 }

@@ -192,34 +192,26 @@ pub const JsAny = union(enum) {
     /// Custom formatter so `std.fmt.allocPrint("{f}", .{jsany})` outputs the JS string representation.
     /// Note: in Zig 0.16.0, only the `{f}` specifier dispatches to this method;
     /// `{}`/`{any}` emit the debug representation for tagged unions.
-    /// R8-P1-14: Arrays and objects now stream their contents (JSON-like)
-    /// instead of outputting the useless "[Array]"/"[Object]" labels.
+    /// R12-P1-2: Arrays use Array.toString() semantics (comma-join, no brackets,
+    /// null/undefined elements → empty string). Objects use "[object Object]".
     /// No allocator needed — writes directly to the writer.
     pub fn format(self: JsAny, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .value => |v| try v.format(writer),
             .array => |a| {
-                try writer.writeAll("[");
                 for (a.items, 0..) |item, i| {
                     if (i > 0) try writer.writeAll(",");
-                    try item.format(writer);
+                    switch (item) {
+                        .null => {},
+                        .value => |iv| switch (iv) {
+                            .null, .undefined => {},
+                            else => try item.format(writer),
+                        },
+                        else => try item.format(writer),
+                    }
                 }
-                try writer.writeAll("]");
             },
-            .object => |o| {
-                try writer.writeAll("{");
-                var iter = o.iterator();
-                var first = true;
-                while (iter.next()) |entry| {
-                    if (!first) try writer.writeAll(",");
-                    first = false;
-                    try writer.writeAll("\"");
-                    try writer.writeAll(entry.key_ptr.*);
-                    try writer.writeAll("\":");
-                    try entry.value_ptr.*.format(writer);
-                }
-                try writer.writeAll("}");
-            },
+            .object => try writer.writeAll("[object Object]"),
             .null => try writer.writeAll("null"),
         }
     }
@@ -259,71 +251,29 @@ pub const JsAny = union(enum) {
             .array => |a| blk: {
                 var buf: std.ArrayList(u8) = .empty;
                 defer buf.deinit(alloc);
-                buf.append(alloc, '[') catch break :blk "";
                 for (a.items, 0..) |item, i| {
                     if (i > 0) buf.append(alloc, ',') catch break :blk "";
-                    if (item.isString()) {
-                        buf.append(alloc, '"') catch break :blk "";
-                        buf.appendSlice(alloc, item.value.string) catch break :blk "";
-                        buf.append(alloc, '"') catch break :blk "";
-                    } else {
-                        const tmp = item.asString(alloc);
-                        const owns_tmp = switch (item) {
-                            .value => |v| switch (v) {
-                                .int => tmp.len > 0,
-                                .float => |f| tmp.len > 0 and !std.math.isNan(f) and !std.math.isInf(f),
-                                else => false,
+                    switch (item) {
+                        .null => {},
+                        .value => |iv| switch (iv) {
+                            .null, .undefined => {},
+                            else => {
+                                const tmp = std.fmt.allocPrint(alloc, "{f}", .{item}) catch break :blk "";
+                                defer alloc.free(tmp);
+                                buf.appendSlice(alloc, tmp) catch break :blk "";
                             },
-                            .array, .object => tmp.len > 0,
-                            .null => false,
-                        };
-                        buf.appendSlice(alloc, tmp) catch {
-                            if (owns_tmp) alloc.free(tmp);
-                            break :blk "";
-                        };
-                        if (owns_tmp) alloc.free(tmp);
+                        },
+                        else => {
+                            const tmp = std.fmt.allocPrint(alloc, "{f}", .{item}) catch break :blk "";
+                            defer alloc.free(tmp);
+                            buf.appendSlice(alloc, tmp) catch break :blk "";
+                        },
                     }
                 }
-                buf.append(alloc, ']') catch break :blk "";
                 break :blk buf.toOwnedSlice(alloc) catch "";
             },
-            .object => |o| blk: {
-                var buf: std.ArrayList(u8) = .empty;
-                defer buf.deinit(alloc);
-                buf.append(alloc, '{') catch break :blk "";
-                var iter = o.iterator();
-                var first = true;
-                while (iter.next()) |entry| {
-                    if (!first) buf.append(alloc, ',') catch break :blk "";
-                    first = false;
-                    buf.append(alloc, '"') catch break :blk "";
-                    buf.appendSlice(alloc, entry.key_ptr.*) catch break :blk "";
-                    buf.appendSlice(alloc, "\":") catch break :blk "";
-                    if (entry.value_ptr.isString()) {
-                        buf.append(alloc, '"') catch break :blk "";
-                        buf.appendSlice(alloc, entry.value_ptr.value.string) catch break :blk "";
-                        buf.append(alloc, '"') catch break :blk "";
-                    } else {
-                        const tmp = entry.value_ptr.asString(alloc);
-                        const owns_tmp = switch (entry.value_ptr.*) {
-                            .value => |v| switch (v) {
-                                .int => tmp.len > 0,
-                                .float => |f| tmp.len > 0 and !std.math.isNan(f) and !std.math.isInf(f),
-                                else => false,
-                            },
-                            .array, .object => tmp.len > 0,
-                            .null => false,
-                        };
-                        buf.appendSlice(alloc, tmp) catch {
-                            if (owns_tmp) alloc.free(tmp);
-                            break :blk "";
-                        };
-                        if (owns_tmp) alloc.free(tmp);
-                    }
-                }
-                buf.append(alloc, '}') catch break :blk "";
-                break :blk buf.toOwnedSlice(alloc) catch "";
-            },
+            // R12-P1-2: JS Object.toString → "[object Object]"
+            .object => "[object Object]",
             .null => "null",
         };
     }
@@ -1286,10 +1236,10 @@ test "instanceOf null and undefined" {
     try std.testing.expect(!instanceOf(JsAny.undefined_value, "Object"));
 }
 
-test "JsAny.format array and object output (R8-P1-14)" {
+test "JsAny.format array and object output (R12-P1-2)" {
     const alloc = std.testing.allocator;
 
-    // Array: [1,2,3]
+    // Array: JS Array.toString() → comma-join, no brackets
     var arr = try JsAny.newArray(alloc);
     defer arr.deinit(alloc);
     try arr.arrayPush(alloc, JsAny.fromI64(1));
@@ -1297,15 +1247,25 @@ test "JsAny.format array and object output (R8-P1-14)" {
     try arr.arrayPush(alloc, JsAny.fromI64(3));
     const arr_str = try std.fmt.allocPrint(alloc, "{f}", .{arr});
     defer alloc.free(arr_str);
-    try std.testing.expectEqualStrings("[1,2,3]", arr_str);
+    try std.testing.expectEqualStrings("1,2,3", arr_str);
 
-    // Object: {"x":42}
+    // Array with null/undefined elements → empty string in join
+    var arr2 = try JsAny.newArray(alloc);
+    defer arr2.deinit(alloc);
+    try arr2.arrayPush(alloc, JsAny.fromI64(1));
+    try arr2.arrayPush(alloc, JsAny.fromNull());
+    try arr2.arrayPush(alloc, JsAny.fromI64(3));
+    const arr2_str = try std.fmt.allocPrint(alloc, "{f}", .{arr2});
+    defer alloc.free(arr2_str);
+    try std.testing.expectEqualStrings("1,,3", arr2_str);
+
+    // Object: JS Object.toString() → "[object Object]"
     var obj = try JsAny.newObject(alloc);
     defer obj.deinit(alloc);
     try obj.set("x", JsAny.fromI64(42), alloc);
     const obj_str = try std.fmt.allocPrint(alloc, "{f}", .{obj});
     defer alloc.free(obj_str);
-    try std.testing.expectEqualStrings("{\"x\":42}", obj_str);
+    try std.testing.expectEqualStrings("[object Object]", obj_str);
 
     // Null
     const null_str = try std.fmt.allocPrint(alloc, "{f}", .{JsAny.fromNull()});
@@ -1342,7 +1302,7 @@ test "JsAny.add fallback concat with array operand (R8-P1-10)" {
     try arr.arrayPush(alloc, JsAny.fromI64(2));
     const result = arr.add(JsAny.fromString("x"), alloc);
     defer alloc.free(result.value.string);
-    try std.testing.expectEqualStrings("[1,2]x", result.value.string);
+    try std.testing.expectEqualStrings("1,2x", result.value.string);
 }
 
 test "JsAny.eq reference identity for arrays and objects (R8-P1-15)" {

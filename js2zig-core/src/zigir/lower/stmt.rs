@@ -1411,6 +1411,44 @@ impl Lowerer {
                 }
                 IrExpr::Sequence(exprs)
             }
+            // Binary with f64 result → wrap in @intFromFloat
+            IrExpr::Binary {
+                ref left_type,
+                ref right_type,
+                ..
+            } => {
+                let is_f64 = left_type.as_ref() == Some(&ZigType::F64)
+                    || right_type.as_ref() == Some(&ZigType::F64);
+                if is_f64 {
+                    Self::wrap_f64_to_i64(expr)
+                } else {
+                    expr
+                }
+            }
+            // Unary with f64 operand → wrap
+            IrExpr::Unary {
+                ref operand_type, ..
+            } => {
+                if operand_type.as_ref() == Some(&ZigType::F64) {
+                    Self::wrap_f64_to_i64(expr)
+                } else {
+                    expr
+                }
+            }
+            // Logical with f64 same-type → wrap
+            IrExpr::Logical {
+                ref left_type,
+                ref right_type,
+                ..
+            } => {
+                let same_type =
+                    left_type.is_some() && right_type.is_some() && left_type == right_type;
+                if same_type && left_type.as_ref() == Some(&ZigType::F64) {
+                    Self::wrap_f64_to_i64(expr)
+                } else {
+                    expr
+                }
+            }
             // Already-coerced or other expressions: pass through unchanged
             other => other,
         }
@@ -1509,6 +1547,48 @@ impl Lowerer {
                 IrExpr::Sequence(exprs)
             }
 
+            // Binary: wrap only if definitely I64 (known numeric type, not F64, not Anytype).
+            // Unknown/Anytype types → pass through (Zig handles coercion).
+            IrExpr::Binary {
+                ref left_type,
+                ref right_type,
+                ..
+            } => {
+                let is_f64 = left_type.as_ref() == Some(&ZigType::F64)
+                    || right_type.as_ref() == Some(&ZigType::F64);
+                let is_known_i64 = left_type.as_ref() == Some(&ZigType::I64)
+                    || right_type.as_ref() == Some(&ZigType::I64);
+                if is_f64 || !is_known_i64 {
+                    expr
+                } else {
+                    Self::wrap_i64_to_f64(expr)
+                }
+            }
+            // Unary: wrap only if operand type is known I64
+            IrExpr::Unary {
+                ref operand_type, ..
+            } => {
+                if operand_type.as_ref() == Some(&ZigType::I64) {
+                    Self::wrap_i64_to_f64(expr)
+                } else {
+                    expr
+                }
+            }
+            // Logical: wrap only if known I64 same-type
+            IrExpr::Logical {
+                ref left_type,
+                ref right_type,
+                ..
+            } => {
+                let same_type =
+                    left_type.is_some() && right_type.is_some() && left_type == right_type;
+                if same_type && left_type.as_ref() == Some(&ZigType::I64) {
+                    Self::wrap_i64_to_f64(expr)
+                } else {
+                    expr
+                }
+            }
+
             // Other expressions — pass through unchanged
             other => other,
         }
@@ -1523,6 +1603,19 @@ impl Lowerer {
             left_type: ZigType::I64,
             right_type: ZigType::I64,
             result_type: None,
+        }
+    }
+
+    /// Wrap an f64-producing expression so the result is `i64`.
+    /// The emitter generates `@as(i64, @intFromFloat((expr / @as(f64, @floatFromInt(1)))))`.
+    /// The `/ 1.0` is a no-op for IEEE 754 floats; Zig optimizes it away at comptime.
+    fn wrap_f64_to_i64(expr: crate::zigir::types::IrExpr) -> crate::zigir::types::IrExpr {
+        crate::zigir::types::IrExpr::DivExpr {
+            left: Box::new(expr),
+            right: Box::new(crate::zigir::types::IrExpr::IntLiteral(1)),
+            left_type: ZigType::F64,
+            right_type: ZigType::I64,
+            result_type: Some(ZigType::I64),
         }
     }
 
@@ -1617,6 +1710,24 @@ impl Lowerer {
             IrExpr::Binary { .. } | IrExpr::Unary { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::FieldAccess { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::IndexAccess { .. } => Self::wrap_in_jsany_from(expr),
+            // Arithmetic expressions producing f64 or i64 — wrap
+            IrExpr::RemExpr { .. } | IrExpr::DivExpr { .. } | IrExpr::PowExpr { .. } => {
+                Self::wrap_in_jsany_from(expr)
+            }
+            // Logical expressions (same_type path produces operand type)
+            IrExpr::Logical { .. } => Self::wrap_in_jsany_from(expr),
+            // Update (++, --) and assignment expressions produce i64/f64
+            IrExpr::Update { .. } | IrExpr::Assign { .. } => Self::wrap_in_jsany_from(expr),
+            // Literals — wrap
+            IrExpr::ArrayLiteral(_) | IrExpr::ObjectLiteral(_) => Self::wrap_in_jsany_from(expr),
+            IrExpr::TemplateLiteral { .. } | IrExpr::AllocPrint { .. } => {
+                Self::wrap_in_jsany_from(expr)
+            }
+            IrExpr::BigIntLiteral(_) => Self::wrap_in_jsany_from(expr),
+            IrExpr::New(_) => Self::wrap_in_jsany_from(expr),
+            IrExpr::BlockExpr { .. } => Self::wrap_in_jsany_from(expr),
+            // Null/Undefined already emit as JsAny — pass through
+            IrExpr::Null | IrExpr::Undefined => expr,
 
             // Conditional — recurse into both branches
             IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {

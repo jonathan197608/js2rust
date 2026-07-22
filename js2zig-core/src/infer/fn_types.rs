@@ -422,7 +422,14 @@ impl TypeInferrer {
             match (&ty, &expr_ty) {
                 (None, InferResult::Definite(et)) => ty = Some(et.clone()),
                 (Some(t), InferResult::Definite(et)) if *t != *et => {
-                    return InferResult::Indeterminate; // mismatched types
+                    // Numeric promotion: I64 + F64 → F64
+                    if matches!(t, ZigType::I64) && matches!(et, ZigType::F64)
+                        || matches!(t, ZigType::F64) && matches!(et, ZigType::I64)
+                    {
+                        ty = Some(ZigType::F64);
+                    } else {
+                        return InferResult::Indeterminate; // mismatched types
+                    }
                 }
                 _ => {}
             }

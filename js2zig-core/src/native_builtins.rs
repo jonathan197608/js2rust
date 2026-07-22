@@ -889,7 +889,7 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         // Map methods
         BuiltinCall::MapGet => Some(ZigType::JsAny), // JsMap.get() returns JsAny (undefined if not found)
         BuiltinCall::MapHas => Some(ZigType::Bool),
-        BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
+        BuiltinCall::MapKeys => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
 
         // Date static methods
         BuiltinCall::DateNow | BuiltinCall::DateParse | BuiltinCall::DateUTC => Some(ZigType::I64),

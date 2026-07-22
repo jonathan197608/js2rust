@@ -1,11 +1,26 @@
 // zigir/emit/builtins/string.rs
 // String builtin method emission.
 
+use crate::zigir::emit::builtins::math::expr_is_float;
 use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
 impl Emitter {
+    /// Emit an argument coerced to i64, handling both int and float inputs.
+    /// Used by fromCharCode/fromCodePoint which take `[]const i64`.
+    /// - Float expressions: `@as(i64, @intFromFloat(expr))`
+    /// - Int expressions/literals: emit directly (already i64)
+    fn emit_i64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
+        if expr_is_float(arg) {
+            self.write("@as(i64, @intFromFloat(");
+            self.emit_expr(arg);
+            self.write("))");
+        } else {
+            self.emit_expr(arg);
+        }
+    }
+
     pub(super) fn emit_string_builtin(
         &mut self,
         method: &str,
@@ -16,7 +31,7 @@ impl Emitter {
         // ── Regex-dependent methods: match / matchAll / search ──
         match method {
             "match" => {
-                self.emit_string_match(obj, regex_info);
+                self.emit_string_match(obj, args, regex_info);
                 return;
             }
             "matchAll" => {
@@ -51,7 +66,7 @@ impl Emitter {
                     if i > 0 {
                         self.write(", ");
                     }
-                    self.emit_expr(arg);
+                    self.emit_i64_coerced(arg);
                 }
                 self.write("}) catch @panic(\"OOM: string method\")");
                 return;
@@ -67,7 +82,7 @@ impl Emitter {
                     if i > 0 {
                         self.write(", ");
                     }
-                    self.emit_expr(arg);
+                    self.emit_i64_coerced(arg);
                 }
                 self.write(
                     "}) catch |err| switch (err) { \
@@ -239,6 +254,7 @@ impl Emitter {
     pub(super) fn emit_string_match(
         &mut self,
         obj: Option<&str>,
+        args: &[crate::zigir::types::IrExpr],
         regex_info: Option<&crate::zigir::types::IrRegexInfo>,
     ) {
         // match has an extra global-flag branch → matchStringGlobal
@@ -266,6 +282,31 @@ impl Emitter {
             ));
             return;
         }
+        // Non-RegExp argument (string literal, expression) or no regex_info.
+        // Only reach here when regex_info is None (non-RegExp argument).
+        // Use the first argument as the pattern string, or empty string if no args.
+        // JS spec: str.match(x) converts x to RegExp via new RegExp(x), which
+        // uses String(x) as the pattern. We pass the arg directly as the pattern.
+        if regex_info.is_none() {
+            let receiver = obj.unwrap_or("\"\"");
+            let pattern = match args.first() {
+                Some(arg) => {
+                    // Render the arg expression to a string for inline embedding
+                    let mut buf = String::new();
+                    std::mem::swap(&mut self.output, &mut buf);
+                    self.emit_expr(arg);
+                    std::mem::swap(&mut self.output, &mut buf);
+                    buf.trim().to_string()
+                }
+                None => "\"\"".to_string(),
+            };
+            self.write(&format!(
+                "js_string_regex.matchString(js_allocator.allocator(), {}, {}) catch @panic(\"OOM: allocation\")",
+                receiver, pattern
+            ));
+            return;
+        }
+        // Literal RegExp without global flag — delegate to shared helper
         self.emit_string_match_like(obj, regex_info, "matchString");
     }
 

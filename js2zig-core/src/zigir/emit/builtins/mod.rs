@@ -21,10 +21,15 @@ impl Emitter {
     pub(crate) fn emit_builtin_call(&mut self, bc: &crate::zigir::types::IrBuiltinCall) {
         // When obj_name is None but obj_expr is set (method chaining), render the
         // receiver expression to a string and use it as the inline object reference.
-        let obj_inline = if bc.obj_name.is_none() {
-            bc.obj_expr
-                .as_ref()
-                .map(|obj_expr| Self::emit_expr_inline(obj_expr))
+        let obj_inline: Option<String> = if bc.obj_name.is_none() {
+            if let Some(obj_expr) = &bc.obj_expr {
+                let (rendered, new_counter) =
+                    Self::emit_expr_inline_with_label_offset(obj_expr, self.label_counter);
+                self.label_counter = new_counter;
+                Some(rendered)
+            } else {
+                None
+            }
         } else {
             None
         };

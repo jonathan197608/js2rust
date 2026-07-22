@@ -184,12 +184,30 @@ pub fn parse(alloc: Allocator, text: []const u8, reviver: ?JsAny) ParseError!JsA
     defer scanner.deinit();
 
     const token = try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096);
-    return parseToken(alloc, &scanner, token, 0) catch |err| {
+    var result = parseToken(alloc, &scanner, token, 0) catch |err| {
         if (err == error.UnexpectedEndOfInput or err == error.SyntaxError) {
             return JSONError.InvalidJSON;
         }
         return err;
     };
+    // R12-P1-1: Check for trailing non-whitespace tokens.
+    // JS spec: JSON.parse("123 abc") must throw SyntaxError.
+    const trailing = scanner.nextAllocMax(alloc, .alloc_if_needed, 4096) catch |err| {
+        result.deinit(alloc);
+        if (err == error.UnexpectedEndOfInput or err == error.SyntaxError) {
+            return JSONError.InvalidJSON;
+        }
+        return err;
+    };
+    if (trailing != .end_of_document) {
+        switch (trailing) {
+            .allocated_string, .allocated_number => |buf| alloc.free(buf),
+            else => {},
+        }
+        result.deinit(alloc);
+        return JSONError.InvalidJSON;
+    }
+    return result;
 }
 
 fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Token, depth: u32) ParseError!JsAny {
@@ -486,4 +504,32 @@ test "stringify: escape special characters in object keys (P0-3)" {
     const s = try stringify(alloc, obj, null, null);
     defer alloc.free(s);
     try std.testing.expect(std.mem.indexOf(u8, s, "\\\"") != null);
+}
+
+test "parse: trailing non-whitespace content → InvalidJSON (R12-P1-1)" {
+    const alloc = std.testing.allocator;
+
+    // "123 abc" → SyntaxError in JS
+    try std.testing.expectError(JSONError.InvalidJSON, parse(alloc, "123 abc", null));
+
+    // "123 456" → SyntaxError (two values)
+    try std.testing.expectError(JSONError.InvalidJSON, parse(alloc, "123 456", null));
+
+    // "[1,2] extra" → SyntaxError
+    try std.testing.expectError(JSONError.InvalidJSON, parse(alloc, "[1,2] extra", null));
+
+    // "{} garbage" → SyntaxError
+    try std.testing.expectError(JSONError.InvalidJSON, parse(alloc, "{} garbage", null));
+
+    // Trailing whitespace is OK
+    {
+        var v = try parse(alloc, "42  ", null);
+        defer v.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 42), v.asI64());
+    }
+    {
+        var v = try parse(alloc, "  [1,2]\n", null);
+        defer v.deinitDeep(alloc);
+        try std.testing.expect(v.isArray());
+    }
 }
