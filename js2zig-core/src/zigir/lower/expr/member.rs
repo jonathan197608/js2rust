@@ -342,14 +342,9 @@ impl Lowerer {
         match expr {
             Expression::Identifier(id) => self.infer_ident_type(id.name.as_str()),
             Expression::NumericLiteral(nl) => {
-                // Match lower_expr's logic: fract()==0 and fits in i64 → I64, else F64.
-                // Using the value (not the source string) avoids mismatches when
-                // Rust's Display omits 'e' for large values like 1e19.
-                if nl.value.fract() == 0.0 && nl.value.abs() < i64::MAX as f64 {
-                    Some(ZigType::I64)
-                } else {
-                    Some(ZigType::F64)
-                }
+                // Shared logic (P2-2): value-based detection via
+                // crate::types::numeric_literal_type.
+                Some(crate::types::numeric_literal_type(nl.value))
             }
             Expression::StringLiteral(_) => Some(ZigType::Str),
             Expression::TemplateLiteral(_) => Some(ZigType::Str),
@@ -591,76 +586,70 @@ impl Lowerer {
     }
 
     /// Infer the result type of a binary operation from operand types.
+    ///
+    /// Delegates to `TypeInferrer::infer_binary_type` for the core type-mapping
+    /// logic when both operand types are known (P2-2: eliminates ~70 lines of
+    /// duplicated operator→type match arms). Falls back to conservative defaults
+    /// when one or both types are unknown.
     pub(super) fn infer_binary_result_type(
         op: &BinaryOperator,
         left_ty: Option<ZigType>,
         right_ty: Option<ZigType>,
     ) -> Option<ZigType> {
-        match op {
-            // Comparison operators always produce bool
+        // Comparison operators (including `in` and `instanceof`) always
+        // produce bool, even when operand types are unknown.
+        if matches!(
+            op,
             BinaryOperator::Equality
-            | BinaryOperator::Inequality
-            | BinaryOperator::StrictEquality
-            | BinaryOperator::StrictInequality
-            | BinaryOperator::LessThan
-            | BinaryOperator::GreaterThan
-            | BinaryOperator::LessEqualThan
-            | BinaryOperator::GreaterEqualThan
-            | BinaryOperator::In => Some(ZigType::Bool),
+                | BinaryOperator::Inequality
+                | BinaryOperator::StrictEquality
+                | BinaryOperator::StrictInequality
+                | BinaryOperator::LessThan
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::LessEqualThan
+                | BinaryOperator::GreaterEqualThan
+                | BinaryOperator::In
+                | BinaryOperator::Instanceof
+        ) {
+            return Some(ZigType::Bool);
+        }
 
-            // Addition: string if either operand is string, otherwise numeric.
-            // BigInt + BigInt preserves BigInt (JS spec).
-            BinaryOperator::Addition => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::Str), _) | (_, Some(ZigType::Str)) => Some(ZigType::Str),
-                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
-                (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
-                (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
-                _ => None,
-            },
+        // When both operand types are known, delegate to the shared core logic.
+        // `infer_binary_type` must not take `&self` (it's a pure function of
+        // operator + types), so we call it as an associated function.
+        if let (Some(l), Some(r)) = (&left_ty, &right_ty) {
+            let result = crate::infer::TypeInferrer::infer_binary_type(*op, l.clone(), r.clone());
+            // JsAny is the catch-all "unknown" return from infer_binary_type
+            // (for operators not explicitly handled); convert to None for the
+            // Option-based API used by the lowerer.
+            return (result != ZigType::JsAny).then_some(result);
+        }
 
-            // Subtraction/Multiplication: BigInt preserves BigInt, F64 if
-            // either F64, else I64.
-            BinaryOperator::Subtraction | BinaryOperator::Multiplication => {
-                match (left_ty.as_ref(), right_ty.as_ref()) {
-                    (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
-                    (Some(ZigType::F64), _) | (_, Some(ZigType::F64)) => Some(ZigType::F64),
-                    (Some(ZigType::I64), Some(ZigType::I64)) => Some(ZigType::I64),
-                    _ => None,
+        // Partial knowledge: produce conservative defaults for operators with
+        // predictable results regardless of the missing operand type.
+        let both_bigint = left_ty == Some(ZigType::BigInt) && right_ty == Some(ZigType::BigInt);
+        match op {
+            // Remainder/Division/Exponential: BigInt if both BigInt, else F64.
+            BinaryOperator::Remainder | BinaryOperator::Division | BinaryOperator::Exponential => {
+                if both_bigint {
+                    Some(ZigType::BigInt)
+                } else {
+                    Some(ZigType::F64)
                 }
             }
-
-            // Remainder: JS `%` always uses f64 semantics (to preserve -0).
-            // The Emitter generates js_runtime.jsRem() for integer operands,
-            // which returns f64, so the inferred type must be F64 to avoid
-            // type mismatches when the result is used in a larger expression.
-            // BigInt % BigInt preserves BigInt.
-            BinaryOperator::Remainder => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
-                _ => Some(ZigType::F64),
-            },
-
-            // Division: JS `/` always returns float (5/2 === 2.5),
-            // even when both operands are integers.
-            BinaryOperator::Division => Some(ZigType::F64),
-
-            // Exponential: BigInt only if BOTH operands are BigInt (JS spec:
-            // mixed BigInt ** Number is a TypeError). Otherwise f64.
-            BinaryOperator::Exponential => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
-                _ => Some(ZigType::F64),
-            },
-
-            // Bitwise: BigInt if both operands are BigInt, otherwise I64.
+            // Bitwise/Shift: BigInt if both BigInt, else I64.
             BinaryOperator::BitwiseAnd
             | BinaryOperator::BitwiseOR
             | BinaryOperator::BitwiseXOR
             | BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => match (left_ty.as_ref(), right_ty.as_ref()) {
-                (Some(ZigType::BigInt), Some(ZigType::BigInt)) => Some(ZigType::BigInt),
-                _ => Some(ZigType::I64),
-            },
-
+            | BinaryOperator::ShiftRightZeroFill => {
+                if both_bigint {
+                    Some(ZigType::BigInt)
+                } else {
+                    Some(ZigType::I64)
+                }
+            }
             _ => None,
         }
     }

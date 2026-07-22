@@ -354,8 +354,7 @@ impl Lowerer {
         let captures_this = self.current_class.is_some()
             && self.this_rewrite_fields.is_none()
             && Self::detect_this_in_body(&af.body.statements);
-        if captures_this {
-            let class_name = self.current_class.clone().unwrap();
+        if captures_this && let Some(class_name) = self.current_class.clone() {
             captured.insert(
                 0,
                 ("__self".to_string(), ZigType::NamedStruct(class_name), true),
@@ -447,8 +446,7 @@ impl Lowerer {
         } else {
             false
         };
-        if captures_this {
-            let class_name = self.current_class.clone().unwrap();
+        if captures_this && let Some(class_name) = self.current_class.clone() {
             captured.insert(
                 0,
                 ("__self".to_string(), ZigType::NamedStruct(class_name), true),

@@ -604,3 +604,331 @@ test "BigInt.toString with radix (R8-P1-4)" {
         try std.testing.expectError(error.RangeError, b.toString(alloc, 37));
     }
 }
+
+test "BigInt arithmetic: add" {
+    const alloc = std.testing.allocator;
+
+    // 42 + 58 = 100
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 58);
+        defer b.deinit(alloc);
+        var result = try a.add(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 100), try result.toI64());
+    }
+
+    // -10 + 5 = -5
+    {
+        var a = try JsBigInt.fromI64(alloc, -10);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 5);
+        defer b.deinit(alloc);
+        var result = try a.add(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -5), try result.toI64());
+    }
+
+    // 0 + 0 = 0
+    {
+        var a = try JsBigInt.fromI64(alloc, 0);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 0);
+        defer b.deinit(alloc);
+        var result = try a.add(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+}
+
+test "BigInt arithmetic: sub" {
+    const alloc = std.testing.allocator;
+
+    // 100 - 42 = 58
+    {
+        var a = try JsBigInt.fromI64(alloc, 100);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 42);
+        defer b.deinit(alloc);
+        var result = try a.sub(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 58), try result.toI64());
+    }
+
+    // 5 - (-5) = 10
+    {
+        var a = try JsBigInt.fromI64(alloc, 5);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, -5);
+        defer b.deinit(alloc);
+        var result = try a.sub(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 10), try result.toI64());
+    }
+}
+
+test "BigInt arithmetic: mul" {
+    const alloc = std.testing.allocator;
+
+    // 7 * 6 = 42
+    {
+        var a = try JsBigInt.fromI64(alloc, 7);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 6);
+        defer b.deinit(alloc);
+        var result = try a.mul(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 42), try result.toI64());
+    }
+
+    // -3 * 4 = -12
+    {
+        var a = try JsBigInt.fromI64(alloc, -3);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 4);
+        defer b.deinit(alloc);
+        var result = try a.mul(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -12), try result.toI64());
+    }
+
+    // 5 * 0 = 0
+    {
+        var a = try JsBigInt.fromI64(alloc, 5);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 0);
+        defer b.deinit(alloc);
+        var result = try a.mul(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+}
+
+test "BigInt arithmetic: div" {
+    const alloc = std.testing.allocator;
+
+    // 100 / 7 = 14 (truncated toward zero)
+    {
+        var a = try JsBigInt.fromI64(alloc, 100);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 7);
+        defer b.deinit(alloc);
+        var result = try a.div(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 14), try result.toI64());
+    }
+
+    // -100 / 7 = -14 (truncated toward zero, JS semantics)
+    {
+        var a = try JsBigInt.fromI64(alloc, -100);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 7);
+        defer b.deinit(alloc);
+        var result = try a.div(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -14), try result.toI64());
+    }
+
+    // Division by zero → error
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 0);
+        defer b.deinit(alloc);
+        try std.testing.expectError(error.DivisionByZero, a.div(&b, alloc));
+    }
+}
+
+test "BigInt arithmetic: rem" {
+    const alloc = std.testing.allocator;
+
+    // 100 % 7 = 2
+    {
+        var a = try JsBigInt.fromI64(alloc, 100);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 7);
+        defer b.deinit(alloc);
+        var result = try a.rem(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 2), try result.toI64());
+    }
+
+    // -100 % 7 = -2 (sign of dividend, JS semantics)
+    {
+        var a = try JsBigInt.fromI64(alloc, -100);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 7);
+        defer b.deinit(alloc);
+        var result = try a.rem(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -2), try result.toI64());
+    }
+
+    // Remainder by zero → error
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 0);
+        defer b.deinit(alloc);
+        try std.testing.expectError(error.DivisionByZero, a.rem(&b, alloc));
+    }
+}
+
+test "BigInt arithmetic: neg and bitwiseNot" {
+    const alloc = std.testing.allocator;
+
+    // neg(42) = -42
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var result = try a.neg(alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -42), try result.toI64());
+    }
+
+    // neg(0) = 0
+    {
+        var a = try JsBigInt.fromI64(alloc, 0);
+        defer a.deinit(alloc);
+        var result = try a.neg(alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+
+    // ~0 = -1 (two's complement: -(0+1) = -1)
+    {
+        var a = try JsBigInt.fromI64(alloc, 0);
+        defer a.deinit(alloc);
+        var result = try a.bitwiseNot(alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, -1), try result.toI64());
+    }
+
+    // ~(-1) = 0 (two's complement: -(-1+1) = 0)
+    {
+        var a = try JsBigInt.fromI64(alloc, -1);
+        defer a.deinit(alloc);
+        var result = try a.bitwiseNot(alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.isZero());
+    }
+}
+
+test "BigInt bitwise: and, or, xor" {
+    const alloc = std.testing.allocator;
+
+    // 0b1100 & 0b1010 = 0b1000 (12 & 10 = 8)
+    {
+        var a = try JsBigInt.fromI64(alloc, 12);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 10);
+        defer b.deinit(alloc);
+        var result = try a.bitwiseAnd(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 8), try result.toI64());
+    }
+
+    // 0b1100 | 0b1010 = 0b1110 (12 | 10 = 14)
+    {
+        var a = try JsBigInt.fromI64(alloc, 12);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 10);
+        defer b.deinit(alloc);
+        var result = try a.bitwiseOr(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 14), try result.toI64());
+    }
+
+    // 0b1100 ^ 0b1010 = 0b0110 (12 ^ 10 = 6)
+    {
+        var a = try JsBigInt.fromI64(alloc, 12);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 10);
+        defer b.deinit(alloc);
+        var result = try a.bitwiseXor(&b, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 6), try result.toI64());
+    }
+}
+
+test "BigInt comparison: eq and order" {
+    const alloc = std.testing.allocator;
+
+    // eq: 42 == 42
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 42);
+        defer b.deinit(alloc);
+        try std.testing.expect(a.eq(&b));
+    }
+
+    // eq: 42 != 43
+    {
+        var a = try JsBigInt.fromI64(alloc, 42);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 43);
+        defer b.deinit(alloc);
+        try std.testing.expect(!a.eq(&b));
+    }
+
+    // order: 10 < 20 → .lt
+    {
+        var a = try JsBigInt.fromI64(alloc, 10);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 20);
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(std.math.Order.lt, a.order(&b));
+    }
+
+    // order: 30 > 20 → .gt
+    {
+        var a = try JsBigInt.fromI64(alloc, 30);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 20);
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(std.math.Order.gt, a.order(&b));
+    }
+
+    // order: 25 == 25 → .eq
+    {
+        var a = try JsBigInt.fromI64(alloc, 25);
+        defer a.deinit(alloc);
+        var b = try JsBigInt.fromI64(alloc, 25);
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(std.math.Order.eq, a.order(&b));
+    }
+}
+
+test "BigInt init with hex, octal, binary prefixes" {
+    const alloc = std.testing.allocator;
+
+    // Hex: 0xFF = 255
+    {
+        var b = try JsBigInt.init(alloc, "0xFF");
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 255), try b.toI64());
+    }
+
+    // Octal: 0o77 = 63
+    {
+        var b = try JsBigInt.init(alloc, "0o77");
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 63), try b.toI64());
+    }
+
+    // Binary: 0b1010 = 10
+    {
+        var b = try JsBigInt.init(alloc, "0b1010");
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 10), try b.toI64());
+    }
+
+    // Decimal: "12345" = 12345
+    {
+        var b = try JsBigInt.init(alloc, "12345");
+        defer b.deinit(alloc);
+        try std.testing.expectEqual(@as(i64, 12345), try b.toI64());
+    }
+}

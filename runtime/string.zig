@@ -51,3 +51,44 @@ pub const StrRet = extern struct {
         return self.ptr[0..@intCast(self.len)];
     }
 };
+
+// ── Tests ─────────────────────────────────────────────────────
+
+test "StrRet.from produces normal string" {
+    const s = "hello world";
+    const ret = StrRet.from(s);
+    try std.testing.expect(!ret.is_panic());
+    try std.testing.expectEqual(@as(isize, 11), ret.len);
+    try std.testing.expectEqualStrings("hello world", ret.toSlice());
+}
+
+test "StrRet.from empty string" {
+    const ret = StrRet.from("");
+    try std.testing.expect(!ret.is_panic());
+    try std.testing.expectEqual(@as(isize, 0), ret.len);
+    try std.testing.expectEqualStrings("", ret.toSlice());
+}
+
+test "StrRet.from_panic signals error" {
+    const ret = StrRet.from_panic(error.OutOfMemory);
+    try std.testing.expect(ret.is_panic());
+    const msg = ret.panic_msg();
+    try std.testing.expect(msg != null);
+    try std.testing.expectEqualStrings("OutOfMemory", msg.?);
+}
+
+test "StrRet.toSlice on panic returns empty" {
+    const ret = StrRet.from_panic(error.OutOfMemory);
+    try std.testing.expectEqualStrings("", ret.toSlice());
+}
+
+test "StrRet.panic_msg on normal string returns null" {
+    const ret = StrRet.from("test");
+    try std.testing.expect(ret.panic_msg() == null);
+}
+
+test "StrRet roundtrip: from → toSlice preserves content" {
+    const original = "zig-zag-42";
+    const ret = StrRet.from(original);
+    try std.testing.expectEqualStrings(original, ret.toSlice());
+}

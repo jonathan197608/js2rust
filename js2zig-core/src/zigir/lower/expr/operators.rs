@@ -880,7 +880,9 @@ impl Lowerer {
         // Simple lvalue paths (Ident, FieldAccess chain, IndexAccess of simple)
         // have no side effects — safe to evaluate twice without binding.
         if self.ir_object_is_simple_lvalue(object) {
-            let read = target.to_read_expr().unwrap();
+            let read = target
+                .to_read_expr()
+                .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
             return (None, target, read);
         }
 
@@ -1126,6 +1128,14 @@ impl Lowerer {
     }
 
     /// Check if an expression is a string type (for string concatenation detection).
+    ///
+    /// NOTE: A parallel implementation exists on `TypeInferrer` (infer/expr.rs).
+    /// The two are NOT merged because they use different type-lookup mechanisms:
+    /// - `TypeInferrer` checks `self.var_types` (built during analysis pass)
+    /// - `Lowerer` calls `self.infer_expr_type` (reads from TypeCheckResult snapshot)
+    ///
+    /// The match structure (literals, binary `+`, conditional, paren) is aligned
+    /// between the two (P2-2).
     pub(super) fn expr_is_string(&self, expr: &Expression) -> bool {
         match expr {
             Expression::StringLiteral(_) => true,
@@ -1136,6 +1146,10 @@ impl Lowerer {
             }
             Expression::BinaryExpression(be) if be.operator == BinaryOperator::Addition => {
                 self.expr_is_string(&be.left) || self.expr_is_string(&be.right)
+            }
+            // ConditionalExpression: result is string only if both branches are strings
+            Expression::ConditionalExpression(ce) => {
+                self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
             }
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             _ => self.infer_expr_type(expr) == Some(ZigType::Str),

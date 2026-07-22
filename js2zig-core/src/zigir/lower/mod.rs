@@ -126,10 +126,6 @@ pub struct Lowerer {
     /// allows field type lookups to fall back to the variable name.
     pub(super) class_expr_var_name: Option<String>,
 
-    /// Source file name (for `import.meta.url`). Empty string if unavailable.
-    #[allow(dead_code)]
-    pub(super) source_name: String,
-
     // ── Diagnostics ───────────────────────────────────
     pub(super) diagnostics: Vec<IrDiagnostic>,
 }
@@ -171,7 +167,6 @@ impl Lowerer {
             in_expr_stmt: false,
             anon_class_counter: 0,
             class_expr_var_name: None,
-            source_name: String::new(),
             diagnostics: Vec::new(),
         }
     }

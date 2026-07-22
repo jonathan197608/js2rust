@@ -472,7 +472,7 @@ impl TypeInferrer {
         for (annot_name, type_name) in param_list {
             if annot_name == param_name {
                 let zig_ty = jsdoc::jsdoc_type_to_zig(type_name, &data.typedefs);
-                return Some(Self::zig_str_to_type(&zig_ty));
+                return Some(ZigType::from_zig_str(&zig_ty));
             }
         }
         None
@@ -729,7 +729,7 @@ impl TypeInferrer {
         }
 
         // Basic types
-        Self::zig_str_to_type(&zig_str)
+        ZigType::from_zig_str(&zig_str)
     }
 
     /// Parse anonymous object type: "{name: string, age: number}" → Struct
@@ -771,10 +771,6 @@ impl TypeInferrer {
             ret_type_name,
             &jsdoc_data.typedefs,
         ))
-    }
-
-    pub(crate) fn zig_str_to_type(s: &str) -> ZigType {
-        ZigType::from_zig_str(s)
     }
 
     // ============================================================

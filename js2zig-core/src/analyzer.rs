@@ -95,7 +95,7 @@ impl fmt::Debug for AnalysisResult {
 /// `js_files` must be non-empty; the first entry is the primary root whose
 /// sanitized stem becomes the project name. All entries are treated as
 /// starting points for dependency discovery.
-pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
+pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> Result<AnalysisResult, String> {
     assert!(!js_files.is_empty(), "js_files must not be empty");
 
     let primary_root = &js_files[0];
@@ -122,7 +122,7 @@ pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
         }
 
         let src = std::fs::read_to_string(in_dir.join(&cur))
-            .unwrap_or_else(|e| panic!("Cannot read '{}': {}", cur, e));
+            .map_err(|e| format!("Cannot read '{}': {}", cur, e))?;
 
         // Parse ONCE: leak source for 'static lifetime, so the Program can be
         // stored in the HashMap and reused by the Lowerer later.
@@ -170,7 +170,7 @@ pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
         .cloned()
         .unwrap_or_else(|| sanitize_name(primary_root));
 
-    AnalysisResult {
+    Ok(AnalysisResult {
         entry_name,
         members,
         name_map: sanitized,
@@ -179,7 +179,7 @@ pub fn analyze_project(in_dir: &Path, js_files: &[String]) -> AnalysisResult {
         all_fn_names,
         file_sources,
         parsed_programs,
-    }
+    })
 }
 
 /// Compute transitive dependencies starting from multiple root files.

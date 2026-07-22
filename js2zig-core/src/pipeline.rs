@@ -133,7 +133,7 @@ pub fn transpile_project(config: &ProjectConfig) -> Result<ProjectResult, String
     })?;
 
     // === Phase 1: Analyze project (entry file + transitive deps) ===
-    let analysis = analyze_project(in_dir, js_files);
+    let analysis = analyze_project(in_dir, js_files)?;
 
     // Emit cargo:rerun-if-changed for every JS file discovered by the analyzer
     // (including transitive dependencies not listed in js2rust.toml).

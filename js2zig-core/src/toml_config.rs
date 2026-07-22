@@ -138,19 +138,20 @@ impl Js2rustConfig {
     /// Convert `host_functions` TOML entries to `HostConfig`.
     ///
     /// Returns `None` if there are no host functions.
-    pub fn to_host_config(&self) -> Option<HostConfig> {
+    pub fn to_host_config(&self) -> Result<Option<HostConfig>, String> {
         if self.host_functions.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let functions: Vec<HostFunction> = self
+        let functions: Result<Vec<HostFunction>, String> = self
             .host_functions
             .iter()
             .map(|hf| {
-                let params: Vec<HostType> = hf
+                let params: Result<Vec<HostType>, String> = hf
                     .params
                     .iter()
                     .map(|t| HostType::from_toml_str(t))
                     .collect();
+                let params = params?;
 
                 let return_type = hf.returns.as_deref().and_then(|t| {
                     if t == "void" {
@@ -159,24 +160,27 @@ impl Js2rustConfig {
                         Some(HostType::from_toml_str(t))
                     }
                 });
+                let return_type = return_type.transpose()?;
 
-                let async_return_fields: Vec<(String, HostType)> = hf
+                let async_return_fields: Result<Vec<(String, HostType)>, String> = hf
                     .async_returns
                     .iter()
-                    .map(|(name, ty)| (name.clone(), HostType::from_toml_str(ty)))
+                    .map(|(name, ty)| Ok((name.clone(), HostType::from_toml_str(ty)?)))
                     .collect();
+                let async_return_fields = async_return_fields?;
 
-                HostFunction {
+                Ok(HostFunction {
                     name: hf.name.clone(),
                     params,
                     return_type,
                     is_async: hf.is_async,
                     async_return_fields,
-                }
+                })
             })
             .collect();
+        let functions = functions?;
 
-        Some(HostConfig { functions })
+        Ok(Some(HostConfig { functions }))
     }
 }
 
@@ -205,19 +209,22 @@ impl HostType {
     ///
     /// Used by both bridge and bridge-macro to parse `js2rust.toml` host function types.
     /// This was previously duplicated as `type_name_to_host_type()` in both crates.
-    pub fn from_toml_str(name: &str) -> HostType {
+    ///
+    /// Returns `Err` with a descriptive message for unknown type names (P3-1:
+    /// previously used `panic!`, which produced a less informative build failure).
+    pub fn from_toml_str(name: &str) -> Result<HostType, String> {
         match name {
-            "i64" => HostType::I64,
-            "i32" => HostType::I32,
-            "f64" => HostType::F64,
-            "bool" => HostType::Bool,
-            "str" => HostType::Str,
-            "void" => HostType::Void,
-            other => panic!(
+            "i64" => Ok(HostType::I64),
+            "i32" => Ok(HostType::I32),
+            "f64" => Ok(HostType::F64),
+            "bool" => Ok(HostType::Bool),
+            "str" => Ok(HostType::Str),
+            "void" => Ok(HostType::Void),
+            other => Err(format!(
                 "js2rust.toml: unknown host type '{}'. \
                  Valid types: i64, i32, f64, bool, str, void",
                 other
-            ),
+            )),
         }
     }
 }

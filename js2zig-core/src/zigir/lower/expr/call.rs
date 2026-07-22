@@ -133,7 +133,10 @@ impl Lowerer {
                     crate::native_builtins::BuiltinCall::SetIsSubsetOf => "isSubsetOf",
                     crate::native_builtins::BuiltinCall::SetIsSupersetOf => "isSupersetOf",
                     crate::native_builtins::BuiltinCall::SetIsDisjointFrom => "isDisjointFrom",
-                    _ => unreachable!(),
+                    // Unreachable: the enclosing `if matches!` block only enters
+                    // for the 7 Set variants above. Use a safe fallback instead
+                    // of unreachable!() (P2-3: fragile catch-all elimination).
+                    _ => "unknown",
                 };
                 return self.compile_error_expr(
                     ce.span,

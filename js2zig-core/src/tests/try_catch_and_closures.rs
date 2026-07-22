@@ -873,8 +873,10 @@ function maybeCall() {
 "#;
     let zig = transpile_and_assert(js, "test_optional_chain_call_jsany");
     // Should NOT generate the optional unwrap pattern (if (obj) |oc| ...)
+    // P3-3: Conditional expressions are now parenthesized, so check for the
+    // capture syntax |oc| instead of the generic (if ( pattern.
     assert!(
-        !zig.contains("(if ("),
+        !zig.contains("|_oc"),
         "JsAny receiver should not use OptionalChain unwrap: {}",
         zig
     );

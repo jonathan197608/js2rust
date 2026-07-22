@@ -533,7 +533,7 @@ impl Emitter {
         let mut has_default = false;
         for case in cases {
             match &case.test {
-                Some(crate::zigir::types::IrExpr::StringLiteral(_)) => {
+                Some(test @ crate::zigir::types::IrExpr::StringLiteral(_)) => {
                     self.write_indent();
                     if !written_first {
                         self.write("if (");
@@ -544,7 +544,7 @@ impl Emitter {
                     self.write("std.mem.eql(u8, ");
                     self.emit_expr(expr);
                     self.write(", ");
-                    self.emit_expr(case.test.as_ref().unwrap());
+                    self.emit_expr(test);
                     self.write(")) {\n");
                     // Body must be emitted INSIDE the string-literal arm —
                     // otherwise the default case body leaks into the previous

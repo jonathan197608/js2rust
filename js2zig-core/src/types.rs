@@ -139,8 +139,8 @@ impl ZigType {
     /// Complex types (ArrayList, Struct) are not supported by this method;
     /// they should be constructed directly.
     ///
-    /// Replaces the previously duplicated `parse_type_str()` (host.rs)
-    /// and `zig_str_to_type()` (infer/fn_types.rs).
+    /// Replaces previously duplicated `parse_type_str()` (host.rs)
+    /// — now all callers use `ZigType::from_zig_str()` directly (P2-3).
     pub fn from_zig_str(s: &str) -> ZigType {
         match s {
             "i64" => ZigType::I64,
@@ -165,6 +165,23 @@ impl ZigType {
             }
             _ => ZigType::Anytype, // default fallback for unknown types
         }
+    }
+}
+
+/// Determine the ZigType for a numeric literal value.
+///
+/// Integer-valued numbers that fit in i64 → I64; all others → F64.
+/// Uses value-based detection (not string-based) to correctly classify
+/// values like `1e19` whose `to_string()` omits the exponent (P1-1 fix).
+///
+/// Called by the type inferrer (`infer/expr.rs`), the lowerer's expression
+/// lowering (`lower/expr/mod.rs`), and the lowerer's type inference
+/// (`lower/expr/member.rs`).
+pub fn numeric_literal_type(value: f64) -> ZigType {
+    if value.fract() == 0.0 && value.abs() < (i64::MAX as f64) {
+        ZigType::I64
+    } else {
+        ZigType::F64
     }
 }
 

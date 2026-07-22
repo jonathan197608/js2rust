@@ -409,37 +409,39 @@ pub fn bufferF64(arr: []const f64) []const u8 {
 }
 
 // ── byteLength() — size in bytes of the typed array ──
+// Uses std.math.cast to safely convert usize → i64, avoiding @intCast
+// panic on 64-bit platforms with arrays exceeding i64 range (P1-6).
 
 pub fn byteLengthI8(arr: []const i8) i64 {
-    return @intCast(arr.len * @sizeOf(i8));
+    return std.math.cast(i64, arr.len * @sizeOf(i8)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthU8(arr: []const u8) i64 {
-    return @intCast(arr.len * @sizeOf(u8));
+    return std.math.cast(i64, arr.len * @sizeOf(u8)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthI16(arr: []const i16) i64 {
-    return @intCast(arr.len * @sizeOf(i16));
+    return std.math.cast(i64, arr.len * @sizeOf(i16)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthU16(arr: []const u16) i64 {
-    return @intCast(arr.len * @sizeOf(u16));
+    return std.math.cast(i64, arr.len * @sizeOf(u16)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthI32(arr: []const i32) i64 {
-    return @intCast(arr.len * @sizeOf(i32));
+    return std.math.cast(i64, arr.len * @sizeOf(i32)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthU32(arr: []const u32) i64 {
-    return @intCast(arr.len * @sizeOf(u32));
+    return std.math.cast(i64, arr.len * @sizeOf(u32)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthF32(arr: []const f32) i64 {
-    return @intCast(arr.len * @sizeOf(f32));
+    return std.math.cast(i64, arr.len * @sizeOf(f32)) orelse std.math.maxInt(i64);
 }
 
 pub fn byteLengthF64(arr: []const f64) i64 {
-    return @intCast(arr.len * @sizeOf(f64));
+    return std.math.cast(i64, arr.len * @sizeOf(f64)) orelse std.math.maxInt(i64);
 }
 
 // ── Tests ──

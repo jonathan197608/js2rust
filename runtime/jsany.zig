@@ -504,6 +504,27 @@ pub const JsAny = union(enum) {
         };
     }
 
+    /// SameValue (ECMA-262 §7.2.10): used by Object.is.
+    /// Differs from === in two cases:
+    ///   - NaN sameValue NaN → true  (=== returns false)
+    ///   - +0 sameValue -0  → false  (=== returns true)
+    pub fn sameValue(self: JsAny, other: JsAny) bool {
+        // Different top-level tags → check null/undefined equivalence
+        const self_tag: std.meta.Tag(JsAny) = self;
+        const other_tag: std.meta.Tag(JsAny) = other;
+        if (self_tag != other_tag) {
+            // .null and .value(.null) are both JS null
+            if (self.isNull() and other.isNull()) return true;
+            return false;
+        }
+        return switch (self) {
+            .value => |v| v.sameValue(other.value),
+            .array => |a| a == other.array, // pointer identity
+            .object => |o| o == other.object, // pointer identity
+            .null => true,
+        };
+    }
+
     pub fn neq(self: JsAny, other: JsAny) bool {
         return !self.eq(other);
     }

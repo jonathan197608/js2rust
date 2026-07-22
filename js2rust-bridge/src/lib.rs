@@ -83,7 +83,9 @@ pub fn build() {
     let diagnostics_file = cache_dir.join(".last_emitted_diagnostics.json");
     println!("cargo:rerun-if-changed={}", diagnostics_file.display());
 
-    let host_config = config.to_host_config();
+    let host_config = config.to_host_config().unwrap_or_else(|e| {
+        panic!("js2rust.toml configuration error: {}", e);
+    });
 
     // Determine Zig optimization level: TOML override > Cargo PROFILE auto-detect.
     let zig_optimize = config.build.zig_optimize.clone().unwrap_or_else(|| {

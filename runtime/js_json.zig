@@ -96,9 +96,10 @@ fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth
                 if (val == .value and val.value == .undefined) continue;
                 if (!first) try out.appendSlice(alloc, ",");
                 first = false;
-                const key_part = try std.fmt.allocPrint(alloc, "\"{s}\":", .{entry.key_ptr.*});
-                defer alloc.free(key_part);
-                try out.appendSlice(alloc, key_part);
+                // Escape the key per ECMA-262 §25.5.1.1 (same as string values).
+                try out.append(alloc, '"');
+                try jsonEscapeString(alloc, out, entry.key_ptr.*);
+                try out.appendSlice(alloc, "\":");
                 try stringifyValue(val, alloc, out, depth + 1);
             }
             try out.appendSlice(alloc, "}");
@@ -128,12 +129,38 @@ fn stringifyJsValue(val: JsValue, alloc: Allocator, out: *std.ArrayList(u8)) !vo
         },
         .bool => |v| try out.appendSlice(alloc, if (v) "true" else "false"),
         .string => |s| {
-            const quoted = try std.fmt.allocPrint(alloc, "\"{s}\"", .{s});
-            defer alloc.free(quoted);
-            try out.appendSlice(alloc, quoted);
+            // ECMA-262 §24.5.2/§25.5.1.1: escape special characters.
+            try out.append(alloc, '"');
+            try jsonEscapeString(alloc, out, s);
+            try out.append(alloc, '"');
         },
         .null => try out.appendSlice(alloc, "null"),
         .undefined => try out.appendSlice(alloc, "null"),
+    }
+}
+
+/// Escape a string for JSON output per ECMA-262 §25.5.1.1:
+///   " → \",  \ → \\,  \n → \\n,  \r → \\r,  \t → \\t,
+///   \b → \\b,  \f → \\f,
+///   U+0000–U+001F (other control chars) → \uXXXX
+fn jsonEscapeString(alloc: Allocator, out: *std.ArrayList(u8), s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try out.appendSlice(alloc, "\\\""),
+            '\\' => try out.appendSlice(alloc, "\\\\"),
+            '\n' => try out.appendSlice(alloc, "\\n"),
+            '\r' => try out.appendSlice(alloc, "\\r"),
+            '\t' => try out.appendSlice(alloc, "\\t"),
+            '\x08' => try out.appendSlice(alloc, "\\b"), // backspace
+            '\x0C' => try out.appendSlice(alloc, "\\f"), // form feed
+            0x00...0x07, 0x0B, 0x0E...0x1F => {
+                // Other control characters → \uXXXX
+                var buf: [6]u8 = undefined;
+                _ = try std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c});
+                try out.appendSlice(alloc, &buf);
+            },
+            else => try out.append(alloc, c),
+        }
     }
 }
 
@@ -173,20 +200,28 @@ fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Toke
         .false => return JsAny.fromBool(false),
         .null => return JsAny.fromNull(),
         .number, .allocated_number => {
-            const s = switch (token) {
-                .number => |n| n,
-                .allocated_number => |n| n,
+            return switch (token) {
+                .number => |n| parseNumber(n),
+                .allocated_number => |n| blk: {
+                    // Use the string before freeing scanner-allocated buffer (P1-2)
+                    const r = parseNumber(n);
+                    alloc.free(n);
+                    break :blk r;
+                },
                 else => return JSONError.UnexpectedToken,
             };
-            return parseNumber(s);
         },
         .string, .allocated_string => {
-            const s = switch (token) {
-                .string => |str| str,
-                .allocated_string => |str| str,
+            return switch (token) {
+                .string => |str| JsAny.fromString(try alloc.dupe(u8, str)),
+                .allocated_string => |str| blk: {
+                    // Dupe the string, then free scanner-allocated buffer (P1-2)
+                    const r = JsAny.fromString(try alloc.dupe(u8, str));
+                    alloc.free(str);
+                    break :blk r;
+                },
                 else => return JSONError.UnexpectedToken,
             };
-            return JsAny.fromString(try alloc.dupe(u8, s));
         },
         else => return JSONError.UnexpectedToken,
     }
@@ -201,14 +236,19 @@ fn parseObject(alloc: Allocator, scanner: *std.json.Scanner) ParseError!JsAny {
         switch (token) {
             .object_end => return obj,
             .string, .allocated_string => {
-                const key_raw = switch (token) {
-                    .string => |s| s,
-                    .allocated_string => |s| s,
+                switch (token) {
+                    .string => |s| {
+                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));
+                        try obj.objectPut(s, val, alloc);
+                    },
+                    .allocated_string => |s| {
+                        // Free scanner-allocated key buffer after use (P1-2)
+                        defer alloc.free(s);
+                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));
+                        try obj.objectPut(s, val, alloc);
+                    },
                     else => return JSONError.UnexpectedToken,
-                };
-
-                const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096));
-                try obj.objectPut(key_raw, val, alloc);
+                }
             },
             else => return JSONError.UnexpectedToken,
         }
@@ -403,4 +443,45 @@ test "stringify: deep but non-cyclic structure succeeds (RT-2)" {
     defer alloc.free(s);
     // Should succeed: 100 levels is within the 1000 depth limit
     try std.testing.expect(s.len > 0);
+}
+
+test "stringify: escape special characters in string values (P0-3)" {
+    const alloc = std.testing.allocator;
+
+    // String with quotes, backslash, and control characters
+    {
+        const val = JsAny.fromString(try alloc.dupe(u8, "hello\"world\\test\n"));
+        defer alloc.free(val.value.string);
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("\"hello\\\"world\\\\test\\n\"", s);
+    }
+    // Tab, carriage return, backspace, form feed
+    {
+        const val = JsAny.fromString(try alloc.dupe(u8, "\t\r\x08\x0C"));
+        defer alloc.free(val.value.string);
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("\"\\t\\r\\b\\f\"", s);
+    }
+    // Other control characters → \uXXXX
+    {
+        const val = JsAny.fromString(try alloc.dupe(u8, "\x01\x1F"));
+        defer alloc.free(val.value.string);
+        const s = try stringify(alloc, val, null, null);
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("\"\\u0001\\u001f\"", s);
+    }
+}
+
+test "stringify: escape special characters in object keys (P0-3)" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("key\"with\"quotes", JsAny.fromI64(1), alloc);
+
+    const s = try stringify(alloc, obj, null, null);
+    defer alloc.free(s);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\\\"") != null);
 }

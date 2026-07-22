@@ -1,10 +1,78 @@
 // zigir/emit/builtins/object.rs
 // Object, JSON, Number, Symbol, Console builtin method emission.
 
+use crate::types::ZigType;
 use crate::zigir::emit::helpers::EmitterHelpers;
 use crate::zigir::types::IrExpr;
 
 use crate::zigir::emit::Emitter;
+
+/// Type kind for Object.is argument dispatch.
+enum ObjectIsKind {
+    Numeric, // i64 or f64
+    String,  // []const u8
+    Bool,    // bool
+    Unknown, // type not determinable at emit time (Ident, etc.)
+}
+
+/// Determine the comparison kind for Object.is(a, b) by inspecting the IrExpr
+/// variants and any type annotations attached during lowering.
+/// If the two args disagree (e.g. one numeric, one string), the result is
+/// `Unknown` which falls through to the runtime JsAny.sameValue path.
+fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
+    let a = match args.first() {
+        Some(e) => e,
+        None => return ObjectIsKind::Unknown,
+    };
+    let b = match args.get(1) {
+        Some(e) => e,
+        None => return ObjectIsKind::Unknown,
+    };
+    let ka = expr_type_kind(a);
+    let kb = expr_type_kind(b);
+    match (ka, kb) {
+        (ObjectIsKind::Numeric, ObjectIsKind::Numeric) => ObjectIsKind::Numeric,
+        (ObjectIsKind::String, ObjectIsKind::String) => ObjectIsKind::String,
+        (ObjectIsKind::Bool, ObjectIsKind::Bool) => ObjectIsKind::Bool,
+        _ => ObjectIsKind::Unknown,
+    }
+}
+
+/// Inspect a single IrExpr to determine its type kind for Object.is dispatch.
+fn expr_type_kind(expr: &IrExpr) -> ObjectIsKind {
+    match expr {
+        IrExpr::IntLiteral(_) | IrExpr::FloatLiteral(_) => ObjectIsKind::Numeric,
+        IrExpr::StringLiteral(_) => ObjectIsKind::String,
+        IrExpr::BoolLiteral(_) => ObjectIsKind::Bool,
+        IrExpr::Binary {
+            left_type,
+            right_type,
+            ..
+        } => {
+            if let Some(t) = left_type.as_ref().or(right_type.as_ref()) {
+                return zig_type_to_kind(t);
+            }
+            ObjectIsKind::Unknown
+        }
+        IrExpr::Unary { operand_type, .. } => {
+            if let Some(t) = operand_type.as_ref() {
+                return zig_type_to_kind(t);
+            }
+            ObjectIsKind::Unknown
+        }
+        IrExpr::BuiltinCall(bc) => zig_type_to_kind(&bc.return_type),
+        _ => ObjectIsKind::Unknown,
+    }
+}
+
+fn zig_type_to_kind(t: &ZigType) -> ObjectIsKind {
+    match t {
+        ZigType::I64 | ZigType::F64 => ObjectIsKind::Numeric,
+        ZigType::Str => ObjectIsKind::String,
+        ZigType::Bool => ObjectIsKind::Bool,
+        _ => ObjectIsKind::Unknown,
+    }
+}
 
 impl Emitter {
     /// Emit `js_object.method(js_allocator.allocator(), args) catch @panic("OOM: Object.method")`.
@@ -77,24 +145,91 @@ impl Emitter {
             }
             // ── Object.is — NaN-safe SameValue comparison ──
             "is" => {
-                // Object.is(a, b) → (std.math.isNan(a) and std.math.isNan(b)) or (a == b)
-                self.write("((std.math.isNan(");
-                if let Some(a) = args.first() {
-                    self.emit_expr(a);
+                // Object.is(a, b) implements ECMA-262 §7.2.10 SameValue:
+                //   NaN === NaN → true (unlike ===)
+                //   +0 vs -0  → false (unlike ===)
+                //   Otherwise same as ===
+                //
+                // Dispatch based on the inferred type of each argument so that
+                // the generated Zig code is type-correct.  The previous code
+                // unconditionally emitted `std.math.isNan(a)…` which fails to
+                // compile for `[]const u8` (strings) and `bool` arguments.
+                let kind = object_is_arg_kind(args);
+                match kind {
+                    ObjectIsKind::Numeric => {
+                        // Both args are numeric (i64 or f64).  std.math.isNan
+                        // works on comptime_int, i64, and f64.  For +0/-0 we
+                        // add a signbit guard.
+                        self.write("((std.math.isNan(");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(") and std.math.isNan(");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write(")) or (");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(" == ");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        // +0 vs -0: when both are zero, also check signbit
+                        self.write(" and (");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(" != 0 or std.math.signbit(");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(") == std.math.signbit(");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write(")))");
+                        self.write(")");
+                    }
+                    ObjectIsKind::String => {
+                        // Both args are []const u8 — use content comparison.
+                        self.write("std.mem.eql(u8, ");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(", ");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write(")");
+                    }
+                    ObjectIsKind::Bool => {
+                        // Both args are bool — direct ==.
+                        self.write("(");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(" == ");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write(")");
+                    }
+                    ObjectIsKind::Unknown => {
+                        // Type not known at emit time — wrap in JsAny and use
+                        // the runtime sameValue method which handles all cases.
+                        self.write("JsAny.from(");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(").sameValue(JsAny.from(");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write("))");
+                    }
                 }
-                self.write(") and std.math.isNan(");
-                if args.len() >= 2 {
-                    self.emit_expr(&args[1]);
-                }
-                self.write(")) or (");
-                if let Some(a) = args.first() {
-                    self.emit_expr(a);
-                }
-                self.write(" == ");
-                if args.len() >= 2 {
-                    self.emit_expr(&args[1]);
-                }
-                self.write("))");
             }
             // ── Object.hasOwn — comptime @hasField for struct+string, else runtime ──
             "hasOwn" => {

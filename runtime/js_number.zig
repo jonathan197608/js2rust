@@ -447,7 +447,10 @@ pub fn toString(alloc: std.mem.Allocator, val: f64, radix: i64) ![]const u8 {
             while (dividend >= 1.0) {
                 const q: f64 = @floor(dividend / base);
                 const r: f64 = dividend - q * base;
-                const digit_idx: usize = @intFromFloat(r);
+                // Clamp to valid digit range to prevent @intFromFloat panic
+                // from floating-point precision edge cases (P1-3).
+                const r_clamped: f64 = @max(0.0, @min(r, base - 1.0));
+                const digit_idx: usize = @intFromFloat(r_clamped);
                 int_digits_buf[int_digits_len] = digit_chars[digit_idx];
                 int_digits_len += 1;
                 dividend = q;
@@ -473,7 +476,9 @@ pub fn toString(alloc: std.mem.Allocator, val: f64, radix: i64) ![]const u8 {
         while (f != 0.0 and frac_digits_len < max_frac_digits) {
             f *= base;
             const d: f64 = @floor(f);
-            const d_idx: usize = @intFromFloat(d);
+            // Clamp to valid digit range (P1-3).
+            const d_clamped: f64 = @max(0.0, @min(d, base - 1.0));
+            const d_idx: usize = @intFromFloat(d_clamped);
             frac_digits_buf[frac_digits_len] = digit_chars[d_idx];
             frac_digits_len += 1;
             f -= d;

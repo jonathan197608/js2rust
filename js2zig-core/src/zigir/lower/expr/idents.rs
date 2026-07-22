@@ -41,14 +41,9 @@ impl Lowerer {
     ) {
         use crate::zigir::types::IrStmt;
         match stmt {
-            IrStmt::Return {
-                value: Some(crate::zigir::types::IrExpr::Ident(ident)),
-            } => {
-                names.insert(ident.zig_name.clone());
+            IrStmt::Return { value: Some(expr) } => {
+                Self::collect_returned_idents_in_expr(expr, names);
             }
-            IrStmt::Return {
-                value: None | Some(_),
-            } => {}
             IrStmt::If { then, else_, .. } => {
                 for s in &then.stmts {
                     Self::collect_returned_var_zig_names_in_stmt(s, names);
@@ -106,6 +101,56 @@ impl Lowerer {
             }
             // VarDecl, Assign, Expr, Throw, Break, Continue, Comment, etc.
             // do not contain return statements in their structure.
+            _ => {}
+        }
+    }
+
+    /// Recursively collect identifiers from expressions where ownership is
+    /// transferred to the caller (e.g., `return { map: m }` or `return [arr]`).
+    /// Direct identifiers, object/array literals, parenthesized expressions,
+    /// conditional branches, and comma sequences can embed owned variables
+    /// whose `needs_deinit` must be cleared to prevent double-free.
+    fn collect_returned_idents_in_expr(
+        expr: &crate::zigir::types::IrExpr,
+        names: &mut HashSet<String>,
+    ) {
+        use crate::zigir::types::{IrExpr, IrObjectItem};
+        match expr {
+            IrExpr::Ident(ident) => {
+                names.insert(ident.zig_name.clone());
+            }
+            IrExpr::ObjectLiteral(ol) => {
+                for item in &ol.items {
+                    match item {
+                        IrObjectItem::Field(f) => {
+                            Self::collect_returned_idents_in_expr(&f.value, names);
+                        }
+                        IrObjectItem::Spread(e) => {
+                            Self::collect_returned_idents_in_expr(e, names);
+                        }
+                    }
+                }
+            }
+            IrExpr::ArrayLiteral(al) => {
+                for e in &al.elements {
+                    Self::collect_returned_idents_in_expr(e, names);
+                }
+            }
+            IrExpr::Paren(inner) => {
+                Self::collect_returned_idents_in_expr(inner, names);
+            }
+            IrExpr::Conditional { then, else_, .. } => {
+                Self::collect_returned_idents_in_expr(then, names);
+                Self::collect_returned_idents_in_expr(else_, names);
+            }
+            IrExpr::Sequence(exprs) => {
+                for e in exprs {
+                    Self::collect_returned_idents_in_expr(e, names);
+                }
+            }
+            // Binary, Call, FieldAccess, etc. — the variable's value is
+            // consumed to compute a new value; ownership of the variable
+            // itself is NOT transferred, so needs_deinit should remain true.
             _ => {}
         }
     }
@@ -554,5 +599,97 @@ mod tests {
         })]);
         let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_collect_returned_var_nested_object() {
+        // return { map: m }; → m should be collected (P0-1 fix)
+        use crate::zigir::types::{IrObjectField, IrObjectItem, IrObjectLiteral};
+        let block = IrBlock::new(vec![
+            IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new("m"),
+                is_const: true,
+                zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+                init: None,
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_deinit: true,
+            }),
+            IrStmt::Return {
+                value: Some(IrExpr::ObjectLiteral(IrObjectLiteral {
+                    items: vec![IrObjectItem::Field(IrObjectField {
+                        key: "map".to_string(),
+                        value: IrExpr::Ident(IrIdent::new("m")),
+                        is_computed: false,
+                    })],
+                })),
+            },
+        ]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(
+            names.contains("m"),
+            "nested object field ident should be collected"
+        );
+    }
+
+    #[test]
+    fn test_collect_returned_var_nested_array() {
+        // return [m]; → m should be collected (P0-1 fix)
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::ArrayLiteral(crate::zigir::types::IrArrayLiteral {
+                elements: vec![IrExpr::Ident(IrIdent::new("m"))],
+                spread_indices: vec![],
+            })),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(
+            names.contains("m"),
+            "nested array element ident should be collected"
+        );
+    }
+
+    #[test]
+    fn test_collect_returned_var_paren() {
+        // return (m); → m should be collected
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::Paren(Box::new(IrExpr::Ident(IrIdent::new("m"))))),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.contains("m"));
+    }
+
+    #[test]
+    fn test_collect_returned_var_conditional() {
+        // return cond ? a : b; → both a and b should be collected
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::Conditional {
+                cond: Box::new(IrExpr::BoolLiteral(true)),
+                then: Box::new(IrExpr::Ident(IrIdent::new("a"))),
+                else_: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+            }),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(names.contains("a"));
+        assert!(names.contains("b"));
+    }
+
+    #[test]
+    fn test_collect_returned_var_not_method_call() {
+        // return m + 1; → m should NOT be collected (ownership not transferred)
+        use crate::zigir::ops::BinOp;
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::Binary {
+                op: BinOp::Add,
+                left: Box::new(IrExpr::Ident(IrIdent::new("m"))),
+                right: Box::new(IrExpr::IntLiteral(1)),
+                left_type: None,
+                right_type: None,
+            }),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(
+            !names.contains("m"),
+            "binary expression should not transfer ownership"
+        );
     }
 }

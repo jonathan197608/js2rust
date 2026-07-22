@@ -220,6 +220,37 @@ pub const JsValue = union(enum) {
             .undefined => true,
         };
     }
+
+    /// SameValue (ECMA-262 §7.2.10): used by Object.is.
+    /// Differs from === in two cases:
+    ///   - NaN sameValue NaN → true  (=== returns false)
+    ///   - +0 sameValue -0  → false  (=== returns true)
+    pub fn sameValue(self: JsValue, other: JsValue) bool {
+        // Different tags (after number unification) → false
+        const self_is_num = self.isNumber();
+        const other_is_num = other.isNumber();
+        if (self_is_num and other_is_num) {
+            const a = self.asF64();
+            const b = other.asF64();
+            // NaN === NaN → true (unlike ===)
+            if (std.math.isNan(a) and std.math.isNan(b)) return true;
+            // +0 vs -0 → false (unlike ===)
+            if (a == 0.0 and b == 0.0) {
+                return std.math.signbit(a) == std.math.signbit(b);
+            }
+            return a == b;
+        }
+        if (@as(std.meta.Tag(JsValue), self) != @as(std.meta.Tag(JsValue), other))
+            return false;
+        return switch (self) {
+            .int => |a| a == other.int,
+            .float => unreachable, // handled above
+            .bool => |a| a == other.bool,
+            .string => |a| std.mem.eql(u8, a, other.string),
+            .null => true,
+            .undefined => true,
+        };
+    }
 };
 
 // ═══════════════════════════════════════════════════════

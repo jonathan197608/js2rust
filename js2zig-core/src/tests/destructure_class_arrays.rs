@@ -1395,14 +1395,13 @@ return Object.is(a, b);
 "#;
     let zig = transpile_and_check(js, "test_native_proto_object_is");
 
+    // P0-2: Object.is now dispatches by type. For untyped params (JsAny),
+    // it uses JsAny.sameValue() which implements ECMA-262 §7.2.10
+    // (NaN===NaN→true, +0 vs -0→false) internally.
+    assert!(zig.contains("sameValue"), "Expected sameValue in:\n{}", zig);
     assert!(
-        zig.contains("std.math.isNan"),
-        "Expected std.math.isNan in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("=="),
-        "Expected equality comparison in:\n{}",
+        zig.contains("Object.is") || zig.contains("sameValue"),
+        "Expected Object.is or sameValue in:\n{}",
         zig
     );
 }

@@ -45,8 +45,10 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
             // JS ToLength semantics: negative, NaN, or undefined → 0; very
             // large values are capped at maxInt(usize). Without these guards,
             // a negative i64 would panic in `@intCast` below (R8 P0-3).
+            // P1-5: Also cap at a reasonable upper bound (2^31-1) to prevent
+            // excessive allocation / @intCast panic on 32-bit platforms.
             const len_signed = len_val.asI64();
-            if (len_signed <= 0) {
+            if (len_signed <= 0 or len_signed > 0x7FFFFFFF) {
                 return result;
             }
             const len = @as(usize, @intCast(len_signed));

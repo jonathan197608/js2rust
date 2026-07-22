@@ -112,7 +112,9 @@ fn generate() -> Result<TokenStream, proc_macro2::TokenStream> {
     let cache_dir = std::path::Path::new(&manifest_dir).join(".js2zig-cache");
 
     // Convert host function declarations — now uses js2zig_core canonical implementation
-    let host_config = config.to_host_config();
+    let host_config = config
+        .to_host_config()
+        .map_err(|e| syn::Error::new(proc_macro2::Span::call_site(), e).to_compile_error())?;
 
     // Determine Zig optimization level: TOML override > CARGO_CFG_DEBUG_ASSERTIONS auto-detect.
     // In proc-macro context, `PROFILE` is not available, but `CARGO_CFG_DEBUG_ASSERTIONS`

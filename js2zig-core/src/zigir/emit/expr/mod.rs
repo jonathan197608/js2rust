@@ -526,8 +526,8 @@ impl Emitter {
                 // as proper runtime types (e.g., i64, f64). Without this, Zig
                 // rejects comptime-only values in runtime control flow branches.
                 self.write(&format!("({blk}: {{ const _lv_{id}"));
-                if same_type {
-                    self.write(&format!(": {}", lt.unwrap().to_zig_type()));
+                if same_type && let Some(lt_val) = lt {
+                    self.write(&format!(": {}", lt_val.to_zig_type()));
                 }
                 self.write(" = ");
                 self.emit_expr(left);
@@ -721,12 +721,18 @@ impl Emitter {
 
             // ── Conditional / template ───────────────
             crate::zigir::types::IrExpr::Conditional { cond, then, else_ } => {
-                self.write("if (");
+                // Wrap in parentheses for defensive safety: when this expression
+                // is nested inside a larger expression (e.g. `a + (b ? c : d)`),
+                // unparenthesized `if ... else ...` is invalid Zig syntax in
+                // expression position. All sibling multi-token expressions
+                // (BlockExpr, Await, Sequence, OptionalChain) also wrap in (..).
+                self.write("(if (");
                 self.emit_expr_as_bool(cond);
                 self.write(") ");
                 self.emit_expr(then);
                 self.write(" else ");
                 self.emit_expr(else_);
+                self.write(")");
             }
 
             crate::zigir::types::IrExpr::TemplateLiteral {

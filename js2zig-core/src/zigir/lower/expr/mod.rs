@@ -28,10 +28,11 @@ impl Lowerer {
                 // Zig considers `-0` ambiguous; emit `-0.0` explicitly for negative zero
                 if n.value == -0.0 && n.value.is_sign_negative() {
                     IrExpr::FloatLiteral(-0.0)
-                } else if n.value.fract() == 0.0 && n.value.abs() < i64::MAX as f64 {
-                    IrExpr::IntLiteral(n.value as i64)
                 } else {
-                    IrExpr::FloatLiteral(n.value)
+                    match crate::types::numeric_literal_type(n.value) {
+                        crate::types::ZigType::I64 => IrExpr::IntLiteral(n.value as i64),
+                        _ => IrExpr::FloatLiteral(n.value),
+                    }
                 }
             }
             Expression::StringLiteral(s) => IrExpr::StringLiteral(s.value.to_string()),

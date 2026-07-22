@@ -618,7 +618,14 @@ pub fn padStart(alloc: Allocator, s: []const u8, target_len: i64, pad_str: []con
     // Byte size of the partial prefix of pad_str (first `partial_units` UTF-16 code units)
     const partial_slice = if (partial_units > 0) firstUtf16CodeUnits(pad_str, partial_units) else &[0]u8{};
 
-    const total_pad_bytes = full_reps * pad_str.len + partial_slice.len;
+    // Overflow-safe byte size: full_reps * pad_str.len can overflow usize
+    // on absurd target_len (e.g. 1e18), leading to a tiny alloc followed by
+    // heap buffer overflow from @memcpy. Use std.math.mul to catch overflow
+    // (P0-4 fix). Additionally guard against in-range but absurdly large
+    // allocation sizes that would cause OutOfMemory instead of overflow.
+    const full_bytes = std.math.mul(usize, full_reps, pad_str.len) catch return error.OutOfRange;
+    const total_pad_bytes = full_bytes + partial_slice.len;
+    if (total_pad_bytes + s.len > 0x7FFFFFFF) return error.OutOfRange;
     const result = try alloc.alloc(u8, total_pad_bytes + s.len);
     var pos: usize = 0;
 
@@ -653,7 +660,10 @@ pub fn padEnd(alloc: Allocator, s: []const u8, target_len: i64, pad_str: []const
 
     const partial_slice = if (partial_units > 0) firstUtf16CodeUnits(pad_str, partial_units) else &[0]u8{};
 
-    const total_pad_bytes = full_reps * pad_str.len + partial_slice.len;
+    // Overflow-safe byte size (P0-4 fix — same as padStart).
+    const full_bytes = std.math.mul(usize, full_reps, pad_str.len) catch return error.OutOfRange;
+    const total_pad_bytes = full_bytes + partial_slice.len;
+    if (total_pad_bytes + s.len > 0x7FFFFFFF) return error.OutOfRange;
     const result = try alloc.alloc(u8, s.len + total_pad_bytes);
 
     // Write original string
@@ -1008,6 +1018,18 @@ test "padEnd no-op" {
     const result = try padEnd(std.testing.allocator, "abc", 3, ".");
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("abc", result);
+}
+
+test "padStart overflow guard (P0-4)" {
+    // target_len so large that full_reps * pad_str.len overflows usize.
+    // Should return error.OutOfRange, not crash with heap buffer overflow.
+    const result = padStart(std.testing.allocator, "x", std.math.maxInt(i64), "pad");
+    try std.testing.expectError(error.OutOfRange, result);
+}
+
+test "padEnd overflow guard (P0-4)" {
+    const result = padEnd(std.testing.allocator, "x", std.math.maxInt(i64), "pad");
+    try std.testing.expectError(error.OutOfRange, result);
 }
 
 /// Replace all occurrences of old with new. Returns newly allocated string.

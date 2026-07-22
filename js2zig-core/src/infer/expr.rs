@@ -17,12 +17,9 @@ impl TypeInferrer {
     pub(crate) fn infer_expr_type(&mut self, expr: &Expression) -> InferResult {
         match expr {
             Expression::NumericLiteral(n) => {
-                let s = n.value.to_string();
-                if s.contains('.') || s.contains('e') || s.contains('E') {
-                    InferResult::Definite(ZigType::F64)
-                } else {
-                    InferResult::Definite(ZigType::I64)
-                }
+                // Value-based detection via shared function (P2-2: deduplicated
+                // to ensure consistency with lower/expr/mod.rs and member.rs).
+                InferResult::Definite(crate::types::numeric_literal_type(n.value))
             }
             Expression::StringLiteral(_) => InferResult::Definite(ZigType::Str),
             Expression::TemplateLiteral(_) => InferResult::Definite(ZigType::Str),
@@ -135,31 +132,39 @@ impl TypeInferrer {
                 }
             }
 
-            Expression::UnaryExpression(ue) => match ue.operator {
-                UnaryOperator::LogicalNot => InferResult::Definite(ZigType::Bool),
-                UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
-                    // Unary `+` performs ToNumber: bool/str/etc → number.
-                    // Unary `-` also performs ToNumber then negates.
-                    match self.infer_expr_type(&ue.argument) {
-                        InferResult::Definite(ty) => match ty {
-                            // Numbers pass through unchanged.
-                            ZigType::I64 | ZigType::F64 => InferResult::Definite(ty),
-                            // Bool/Str/JsAny → number (I64 for bool, F64 for
-                            // str/others, matching the lowerer's emission).
-                            ZigType::Bool => InferResult::Definite(ZigType::I64),
-                            ZigType::Str | ZigType::JsAny => InferResult::Definite(ZigType::F64),
-                            // BigInt stays BigInt (unary -); unary + on BigInt
-                            // is a JS TypeError but we let it pass through.
-                            _ => InferResult::Definite(ty),
-                        },
-                        InferResult::Indeterminate => InferResult::Indeterminate,
+            Expression::UnaryExpression(ue) => {
+                #[allow(unreachable_patterns)] // defensive: oxc may add new variants
+                match ue.operator {
+                    UnaryOperator::LogicalNot => InferResult::Definite(ZigType::Bool),
+                    UnaryOperator::UnaryNegation | UnaryOperator::UnaryPlus => {
+                        // Unary `+` performs ToNumber: bool/str/etc → number.
+                        // Unary `-` also performs ToNumber then negates.
+                        match self.infer_expr_type(&ue.argument) {
+                            InferResult::Definite(ty) => match ty {
+                                // Numbers pass through unchanged.
+                                ZigType::I64 | ZigType::F64 => InferResult::Definite(ty),
+                                // Bool/Str/JsAny → number (I64 for bool, F64 for
+                                // str/others, matching the lowerer's emission).
+                                ZigType::Bool => InferResult::Definite(ZigType::I64),
+                                ZigType::Str | ZigType::JsAny => {
+                                    InferResult::Definite(ZigType::F64)
+                                }
+                                // BigInt stays BigInt (unary -); unary + on BigInt
+                                // is a JS TypeError but we let it pass through.
+                                _ => InferResult::Definite(ty),
+                            },
+                            InferResult::Indeterminate => InferResult::Indeterminate,
+                        }
                     }
+                    UnaryOperator::Void => InferResult::Definite(ZigType::JsAny),
+                    UnaryOperator::Delete => InferResult::Definite(ZigType::Bool),
+                    UnaryOperator::Typeof => InferResult::Definite(ZigType::Str),
+                    // Bitwise NOT always returns Int32 (I64 in our type system).
+                    // BigInt operands are intercepted by the lowerer before reaching here.
+                    UnaryOperator::BitwiseNot => InferResult::Definite(ZigType::I64),
+                    _ => InferResult::Indeterminate,
                 }
-                UnaryOperator::Void => InferResult::Definite(ZigType::JsAny),
-                UnaryOperator::Delete => InferResult::Definite(ZigType::Bool),
-                UnaryOperator::Typeof => InferResult::Definite(ZigType::Str),
-                _ => InferResult::Indeterminate,
-            },
+            }
 
             // Array: definite if all elements have same definite type
             Expression::ArrayExpression(ae) => self.infer_array_type(ae),
@@ -617,6 +622,7 @@ impl TypeInferrer {
     }
 
     pub(crate) fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
+        #[allow(unreachable_patterns)] // defensive: oxc may add new variants
         match op {
             BinaryOperator::Addition => {
                 // JS `+`: if either operand is String, the result is a String
@@ -690,13 +696,25 @@ impl TypeInferrer {
             | BinaryOperator::LessThan
             | BinaryOperator::LessEqualThan
             | BinaryOperator::GreaterThan
-            | BinaryOperator::GreaterEqualThan => ZigType::Bool,
+            | BinaryOperator::GreaterEqualThan
+            | BinaryOperator::In
+            | BinaryOperator::Instanceof => ZigType::Bool,
             BinaryOperator::BitwiseAnd | BinaryOperator::BitwiseOR | BinaryOperator::BitwiseXOR => {
+                // BigInt bitwise ops preserve BigInt (lowerer generates .bitAnd() etc.)
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
                 ZigType::I64
             }
             BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
-            | BinaryOperator::ShiftRightZeroFill => ZigType::I64,
+            | BinaryOperator::ShiftRightZeroFill => {
+                // BigInt shifts preserve BigInt (lowerer generates .shl() etc.)
+                if left == ZigType::BigInt && right == ZigType::BigInt {
+                    return ZigType::BigInt;
+                }
+                ZigType::I64
+            }
             _ => ZigType::JsAny,
         }
     }
