@@ -67,17 +67,20 @@ impl Emitter {
                 self.write(".size()");
             }
             FieldKind::MathConstant(val) => {
-                // Zig 0.16.0: math constants are lowercase (pi, e, tau, etc.)
+                // Zig 0.16.0: std.math constants are comptime_float with higher
+                // precision than f64. Wrap in @as(f64, ...) so string formatting
+                // and template literals produce JS-compatible output (e.g. PI =>
+                // "3.141592653589793", not the full-precision comptime value).
                 match val.as_str() {
-                    "PI" => self.write("std.math.pi"),
-                    "E" => self.write("std.math.e"),
-                    "LN2" => self.write("std.math.ln2"),
-                    "LN10" => self.write("std.math.ln10"),
-                    "LOG2E" => self.write("std.math.log2e"),
-                    "LOG10E" => self.write("std.math.log10e"),
-                    "SQRT1_2" => self.write("std.math.sqrt1_2"),
-                    "SQRT2" => self.write("std.math.sqrt2"),
-                    _ => self.write(&format!("std.math.{}", val.to_lowercase())),
+                    "PI" => self.write("@as(f64, std.math.pi)"),
+                    "E" => self.write("@as(f64, std.math.e)"),
+                    "LN2" => self.write("@as(f64, std.math.ln2)"),
+                    "LN10" => self.write("@as(f64, std.math.ln10)"),
+                    "LOG2E" => self.write("@as(f64, std.math.log2e)"),
+                    "LOG10E" => self.write("@as(f64, std.math.log10e)"),
+                    "SQRT1_2" => self.write("@as(f64, std.math.sqrt1_2)"),
+                    "SQRT2" => self.write("@as(f64, std.math.sqrt2)"),
+                    _ => self.write(&format!("@as(f64, std.math.{})", val.to_lowercase())),
                 }
             }
             FieldKind::NumberConstant(val) => {
