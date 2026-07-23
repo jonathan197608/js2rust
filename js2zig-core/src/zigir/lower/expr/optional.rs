@@ -89,6 +89,47 @@ impl Lowerer {
         let inner = self.lower_optional_chain_object(&cme.object);
         let index = self.lower_expr(&cme.expression);
 
+        // When the object type is JsAny, use isNullish() + Conditional instead
+        // of OptionalChain. OptionalChain emits (if (obj) |oc| ... else null)
+        // which requires a Zig optional type — JsAny is a union, not an optional.
+        if self.expr_type_is_jsany(&cme.object) {
+            use crate::zigir::kinds::MethodObjectKind;
+            use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
+
+            let temp_name = self.name_mangler.next_name("_oc");
+            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+
+            let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));
+
+            return IrExpr::BlockExpr {
+                label: block_label,
+                body: vec![IrStmt::VarDecl(IrVarDecl::new_const(
+                    &temp_name,
+                    Some(ZigType::JsAny),
+                    Some(inner),
+                ))],
+                result: Box::new(IrExpr::Conditional {
+                    cond: Box::new(IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(temp_ident(&temp_name)),
+                            field: "isNullish".to_string(),
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args: vec![],
+                        call_kind: CallKind::Method {
+                            object_type: MethodObjectKind::JsAny,
+                        },
+                    })),
+                    then: Box::new(IrExpr::Undefined),
+                    else_: Box::new(IrExpr::IndexAccess {
+                        object: Box::new(temp_ident(&temp_name)),
+                        index: Box::new(index),
+                        index_kind: IndexKind::SliceIndex,
+                    }),
+                }),
+            };
+        }
+
         let capture_var = self.name_mangler.next_name("_oc");
         let needs_null_check = self.expr_might_be_null(&cme.object);
         let access_target = if needs_null_check {

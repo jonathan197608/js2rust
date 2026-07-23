@@ -1383,6 +1383,19 @@ impl Lowerer {
                 right_type: ZigType::I64,
                 result_type: Some(ZigType::I64),
             },
+            // HostCall returning F64: wrap in DivExpr, same as BuiltinCall above.
+            IrExpr::HostCall(hc) if hc.return_type == ZigType::F64 => IrExpr::DivExpr {
+                left: Box::new(IrExpr::HostCall(hc)),
+                right: Box::new(IrExpr::IntLiteral(1)),
+                left_type: ZigType::F64,
+                right_type: ZigType::I64,
+                result_type: Some(ZigType::I64),
+            },
+            // HostCall returning JsAny: wrap in .asI64() to extract the i64
+            // value from the JsAny union, same as Call with JsAny return.
+            IrExpr::HostCall(hc) if hc.return_type == ZigType::JsAny => {
+                Self::wrap_jsany_to_i64(IrExpr::HostCall(hc))
+            }
             // Call to a JsAny-returning function: wrap in .asI64() to
             // extract the i64 value from the JsAny union.
             IrExpr::Call(call) => {

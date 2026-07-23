@@ -302,10 +302,13 @@ impl Emitter {
             "const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); ",
             receiver
         ));
-        // Bounds check: return undefined if out of range (P0-6 fix)
+        // Bounds check: return undefined if out of range (P0-R13-1 fix).
+        // Previously returned items[0] which is wrong and panics on empty arrays.
+        // `undefined` coerces to any element type at comptime — safe for all
+        // ArrayList(T) variants.
         self.write(&format!(
-            "break :{} if (__at_idx >= {}.items.len) {}.items[0] else {}.items[__at_idx]; }})",
-            blk, receiver, receiver, receiver
+            "break :{} if (__at_idx >= {}.items.len) undefined else {}.items[__at_idx]; }})",
+            blk, receiver, receiver
         ));
     }
 
@@ -326,10 +329,20 @@ impl Emitter {
             receiver
         ));
         for arg in &data.args {
-            // Emit arg as a temp binding, then check if it's an array-like (has .items)
+            // Use @hasField comptime check: if arg has .items (is an array),
+            // appendSlice; otherwise append as a single element.
+            // For JsAny element arrays, wrap non-array args in JsAny.from().
             self.write("{ const __ca = ");
             self.emit_expr(arg);
-            self.write("; __concat.appendSlice(js_allocator.allocator(), __ca.items) catch @panic(\"OOM: Array.concat\"); } ");
+            self.write("; if (@hasField(@TypeOf(__ca), \"items\")) { ");
+            self.write("__concat.appendSlice(js_allocator.allocator(), __ca.items) catch @panic(\"OOM: Array.concat\"); ");
+            self.write("} else { ");
+            if matches!(data.elem_type, ZigType::JsAny) {
+                self.write("__concat.append(js_allocator.allocator(), JsAny.from(__ca)) catch @panic(\"OOM: Array.concat\"); ");
+            } else {
+                self.write("__concat.append(js_allocator.allocator(), __ca) catch @panic(\"OOM: Array.concat\"); ");
+            }
+            self.write("} } ");
         }
         self.write(&format!("break :{} __concat; }})", blk));
     }

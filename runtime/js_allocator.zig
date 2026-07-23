@@ -339,10 +339,13 @@ fn allocImpl(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
     // Delegate to the arena allocator's vtable, passing alignment through.
     // This ensures ArrayList(i64) etc. get properly aligned memory.
     const ptr = arena_alloc.vtable.alloc(arena_alloc.ptr, len, alignment, ret_addr) orelse return null;
-    // Note: tryMarkCoolingIfFull is intentionally NOT called here.
-    // allocImpl is the vtable path; the public allocBytes() already calls
-    // tryMarkCoolingIfFull after allocation. Calling it here would
-    // double-trigger the cooling check for each allocation.
+    // Call tryMarkCoolingIfFull after allocation. This is essential for the
+    // vtable path: when code uses the allocator via std.mem.Allocator interface
+    // (e.g., ArrayList.append), it goes through allocImpl, not allocBytes().
+    // Without this call, arena cooling never triggers for vtable-path allocations,
+    // eventually causing OOM with no recovery. tryMarkCoolingIfFull is idempotent
+    // (returns false if node is not .ready), so double-calling via allocBytes is harmless.
+    _ = node.tryMarkCoolingIfFull();
     return ptr;
 }
 

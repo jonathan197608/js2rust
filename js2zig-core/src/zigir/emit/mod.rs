@@ -113,6 +113,9 @@ impl Emitter {
 
     /// Emit an IrExpr to a separate string (for inline embedding in templates).
     /// Temporarily swaps the output buffer so the expression is captured alone.
+    /// Kept for future use; current callers use `emit_expr_inline_with_label_offset`
+    /// to avoid label conflicts.
+    #[allow(dead_code)]
     pub(crate) fn emit_expr_inline(expr: &crate::zigir::types::IrExpr) -> String {
         let mut sub_emitter = Self::new();
         sub_emitter.emit_expr(expr);

@@ -276,12 +276,13 @@ impl Emitter {
         match method {
             // ── Map instance methods (use receiver) ──
             "set" => {
-                // map.set(key, val) → (blk: { map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation"); break :blk map })
+                // map.set(key, val) → (blk_N: { map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N map })
                 // Returns the map object for chaining (JS semantics).
+                let blk = self.next_label();
                 if let Some(name) = obj {
-                    self.write(&format!("(blk: {{ {}.set(", name));
+                    self.write(&format!("({blk}: {{ {}.set(", name));
                 } else {
-                    self.write("(blk: { js_collections.set(");
+                    self.write(&format!("({blk}: {{ js_collections.set("));
                 }
                 if let Some(key) = args.first() {
                     self.write("JsAny.from(");
@@ -295,7 +296,7 @@ impl Emitter {
                 }
                 self.write(") catch @panic(\"OOM: allocation\"); ");
                 if let Some(name) = obj {
-                    self.write(&format!("break :blk {}; }})", name));
+                    self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the map.
                     // Emit as a non-chaining call (result ignored).
@@ -350,12 +351,13 @@ impl Emitter {
             }
             // ── Set instance methods ──
             "add" => {
-                // set.add(val) → (blk: { set.add(JsAny.from(val)) catch @panic("OOM: allocation"); break :blk set })
+                // set.add(val) → (blk_N: { set.add(JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N set })
                 // Returns the set object for chaining (JS semantics).
+                let blk = self.next_label();
                 if let Some(name) = obj {
-                    self.write(&format!("(blk: {{ {}.add(", name));
+                    self.write(&format!("({blk}: {{ {}.add(", name));
                 } else {
-                    self.write("(blk: { js_collections.add(");
+                    self.write(&format!("({blk}: {{ js_collections.add("));
                 }
                 if let Some(val) = args.first() {
                     self.write("JsAny.from(");
@@ -364,7 +366,7 @@ impl Emitter {
                 }
                 self.write(") catch @panic(\"OOM: allocation\"); ");
                 if let Some(name) = obj {
-                    self.write(&format!("break :blk {}; }})", name));
+                    self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the set.
                     self.write("})");

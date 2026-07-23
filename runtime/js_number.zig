@@ -186,7 +186,9 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
-    const d: usize = @intCast(@max(0, @min(100, digits)));
+    // ECMA-262 §22.1.3.3: Throw RangeError if digits < 0 or digits > 100
+    if (digits < 0 or digits > 100) return error.RangeError;
+    const d: usize = @intCast(digits);
 
     var buf: [512]u8 = undefined;
     // Use inline for to generate all precision cases at comptime
@@ -198,33 +200,19 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
         }
     }
     // Fallback for digits 21-100: manually format with the requested precision.
-    // Zig's comptime format can't handle runtime precision, so we use
-    // std.fmt.format with a runtime precision specifier via math formatting.
-    if (d <= 100) {
-        // For high precision, use scientific notation then convert, or
-        // use Grisu/Dragon algorithm. Simplest correct approach: format
-        // with the requested number of decimal places using a manual loop.
-        // Since d > 20, we know the number needs many decimal places.
-        // Use {d:.e} with the precision and then fixup.
-        const exp_format = comptime std.fmt.comptimePrint("{{d:.{{d}}}}", .{});
-        _ = exp_format; // Zig doesn't support runtime precision in format strings
-        // Manual approach: format with max comptime precision (20) then pad with zeros
-        const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
-        // Pad to requested precision with zeros
-        const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
-            return alloc.dupe(u8, s);
-        };
-        const existing_digits = s.len - dot_idx - 1;
-        if (d > existing_digits) {
-            const result = try alloc.alloc(u8, dot_idx + 1 + d);
-            @memcpy(result[0..s.len], s);
-            @memset(result[s.len..], '0');
-            return result;
-        }
+    // Zig's comptime format can't handle runtime precision, so format with
+    // max comptime precision (20) then pad with zeros.
+    const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
+    const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
         return alloc.dupe(u8, s);
+    };
+    const existing_digits = s.len - dot_idx - 1;
+    if (d > existing_digits) {
+        const result = try alloc.alloc(u8, dot_idx + 1 + d);
+        @memcpy(result[0..s.len], s);
+        @memset(result[s.len..], '0');
+        return result;
     }
-    // digits > 100: use precision 6 as safe fallback
-    const s = try std.fmt.bufPrint(&buf, "{d:.6}", .{val});
     return alloc.dupe(u8, s);
 }
 

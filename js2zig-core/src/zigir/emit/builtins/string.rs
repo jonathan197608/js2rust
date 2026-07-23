@@ -379,7 +379,9 @@ impl Emitter {
             None => {
                 // Non-regex argument: render the first arg as a string pattern
                 if let Some(arg) = args.first() {
-                    let pattern = Self::emit_expr_inline(arg);
+                    let (pattern, new_counter) =
+                        Self::emit_expr_inline_with_label_offset(arg, self.label_counter);
+                    self.label_counter = new_counter;
                     self.write(&format!(
                         "host_regex.regex_search({}, {})",
                         pattern, receiver

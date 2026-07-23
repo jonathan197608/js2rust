@@ -265,7 +265,8 @@ impl Emitter {
                 // Object.groupBy(items, callbackFn) — fully inline emission
                 // Uses StringArrayHashMap (managed wrapper, insertion-order-preserving)
                 // so that Object.keys on the result iterates in insertion order.
-                self.write("blk: { var _grp_map = StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); ");
+                let blk = self.next_label();
+                self.write(&format!("{blk}: {{ var _grp_map = StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); "));
                 if let Some(items_arg) = args.first() {
                     self.write("for (");
                     self.emit_expr(items_arg);
@@ -277,7 +278,7 @@ impl Emitter {
                     }
                     self.write("; if (_grp_map.getPtr(_grp_key)) |_grp_list| { _grp_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); } else { var _grp_new_list = std.ArrayList(JsAny).init(js_allocator.allocator()); _grp_new_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); _grp_map.put(_grp_key, _grp_new_list) catch @panic(\"OOM\"); } } ");
                 }
-                self.write("break :blk _grp_map; }");
+                self.write(&format!("break :{blk} _grp_map; }}"));
             }
             // ── Object.getOwnPropertyDescriptor — needs allocator prefix ──
             "getOwnPropertyDescriptor" => {
