@@ -5,6 +5,9 @@
 // Transpile with js2rust: cargo build -p mdn-test-project
 
 export function testBuiltins_frag_71() {
-
+    try {
         "abc".repeat(-1); // RangeError
+    } catch (e) {
+        // RangeError expected
     }
+}

@@ -263,7 +263,30 @@ impl Emitter {
             }
         }
         if is_fallible {
-            self.write(") catch @panic(\"OOM: string method\")");
+            // repeat() can return error.RangeError (negative count or overflow).
+            // In a try-catch block, route RangeError as a JS throw (break with
+            // error.JsThrow) so catch can intercept it. Outside try-catch, the
+            // enclosing export function cannot return an error union, so we
+            // use @panic with a RangeError message (matching JS behavior of
+            // an uncaught RangeError).
+            if method == "repeat" {
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| switch (err) {{ \
+                         error.RangeError => break :{} @as(anyerror!void, error.JsThrow), \
+                         else => @panic(\"OOM: string repeat\") }}",
+                        label
+                    ));
+                } else {
+                    self.write(
+                        ") catch |err| switch (err) { \
+                         error.RangeError => @panic(\"RangeError: Invalid count value for String.repeat()\"), \
+                         else => @panic(\"OOM: string repeat\") }",
+                    );
+                }
+            } else {
+                self.write(") catch @panic(\"OOM: string method\")");
+            }
         } else {
             self.write(")");
         }
