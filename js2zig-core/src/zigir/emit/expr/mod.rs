@@ -310,9 +310,22 @@ impl Emitter {
                 // ── Unsigned right shift (non-BigInt) ──
                 else if *op == BinOp::UrShr {
                     self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
-                    self.emit_expr(left);
+                    // Coerce JsAny operands to i64 before @truncate
+                    if left_is_jsany {
+                        self.write("(");
+                        self.emit_expr(left);
+                        self.write(").asI64()");
+                    } else {
+                        self.emit_expr(left);
+                    }
                     self.write(")))) >> @intCast(");
-                    self.emit_expr(right);
+                    if right_is_jsany {
+                        self.write("(");
+                        self.emit_expr(right);
+                        self.write(").asI64()");
+                    } else {
+                        self.emit_expr(right);
+                    }
                     self.write(" & 31)))");
                 }
                 // ── `in` operator: key in obj → obj.has(JsAny.from(key)) for Map/Set, obj.contains(key) otherwise ──

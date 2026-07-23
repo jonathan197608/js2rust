@@ -323,6 +323,9 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 // Shl/Shr are Int32 (sign-propagating for >>).
                 BinOp::Shl => (*a as i32).wrapping_shl(*b as u32) as i64,
                 BinOp::Shr => (*a as i32).wrapping_shr(*b as u32) as i64,
+                // JS >>> converts to UInt32, shifts right (zero-fill), result is
+                // always 0..2^32-1. wrapping_shr on u32 handles the 5-bit mask.
+                BinOp::UrShr => (*a as u32).wrapping_shr(*b as u32) as i64,
                 BinOp::Eq | BinOp::StrictEq => return Some(IrExpr::BoolLiteral(a == b)),
                 BinOp::Ne | BinOp::StrictNe => return Some(IrExpr::BoolLiteral(a != b)),
                 BinOp::Lt => return Some(IrExpr::BoolLiteral(a < b)),
@@ -364,6 +367,7 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Sub => a_f - b,
                 BinOp::Mul => a_f * b,
                 BinOp::Div => a_f / b,
+                BinOp::Mod => a_f % b,
                 _ => return None,
             };
             Some(IrExpr::FloatLiteral(result))
@@ -375,6 +379,7 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Sub => a - b_f,
                 BinOp::Mul => a * b_f,
                 BinOp::Div => a / b_f,
+                BinOp::Mod => a % b_f,
                 _ => return None,
             };
             Some(IrExpr::FloatLiteral(result))

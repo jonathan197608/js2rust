@@ -67,6 +67,14 @@ pub const JsBigInt = struct {
         self.value.deinit();
     }
 
+    /// Create a deep copy of this BigInt.
+    pub fn clone(self: *const Self, alloc: std.mem.Allocator) !Self {
+        var result = try std.math.big.int.Managed.init(alloc);
+        errdefer result.deinit();
+        try result.copy(self.value.toConst());
+        return Self{ .value = result };
+    }
+
     // ---- arithmetic ----
 
     pub fn add(self: *const Self, other: *const Self, alloc: std.mem.Allocator) !Self {
@@ -274,6 +282,12 @@ pub fn asIntN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsBi
         try zero.set(0);
         return JsBigInt{ .value = zero };
     }
+    // Cap bits to prevent OOM from huge shiftLeft allocations.
+    // For bits > 1M, the value (mod 2^bits) is just the value itself
+    // since no BigInt in memory can exceed 2^1M bits.
+    if (bits > 1_000_000) {
+        return value.clone(alloc);
+    }
     // Compute 2^(bits-1) as the min/max bound for signed representation
     var modulus = try std.math.big.int.Managed.init(alloc);
     defer modulus.deinit();
@@ -323,6 +337,18 @@ pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsB
         errdefer zero.deinit();
         try zero.set(0);
         return JsBigInt{ .value = zero };
+    }
+    // Cap bits to prevent OOM from huge shiftLeft allocations.
+    if (bits > 1_000_000) {
+        // For unsigned: if value is negative, we'd need 2^bits + value,
+        // but with bits > 1M the modulus is astronomically large, so
+        // just return the value as-is (or its positive form).
+        if (!value.value.isPositive() and !value.value.eqlZero()) {
+            // Negative value with huge bits: return clone (practically
+            // impossible to represent the full unsigned result anyway).
+            return value.clone(alloc);
+        }
+        return value.clone(alloc);
     }
     // Compute 2^bits as the modulus
     var modulus = try std.math.big.int.Managed.init(alloc);

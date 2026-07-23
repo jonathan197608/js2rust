@@ -54,6 +54,17 @@ impl Emitter {
                 self.emit_expr(arg);
                 self.write("))");
             }
+            // Math/Number constants emit as @as(f64, ...) → need @intFromFloat
+            IrExpr::FieldAccess {
+                field_kind:
+                    crate::zigir::kinds::FieldKind::MathConstant(_)
+                    | crate::zigir::kinds::FieldKind::NumberConstant(_),
+                ..
+            } => {
+                self.write("@as(i64, @intFromFloat(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
             // Already i64 or unknown — pass through
             _ => {
                 self.emit_expr(arg);

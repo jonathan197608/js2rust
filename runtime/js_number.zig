@@ -91,8 +91,22 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
     }
     if (i >= len) return 0;
 
-    // Determine effective radix
-    var r: u8 = if (radix) |rd| @intCast(@max(2, @min(36, rd))) else 10;
+    // Determine effective radix.
+    // JS spec: radix 0 or undefined → auto-detect (0x → 16, else 10).
+    // Valid radix range is 2..36; out-of-range values are treated as 10
+    // (matching V8 behavior for parseInt(str, 1) which returns NaN in JS
+    // but our i64 return type can't express NaN — we return 0 instead).
+    var r: u8 = 10;
+    if (radix) |rd| {
+        if (rd == 0) {
+            // radix 0 = auto-detect (same as undefined)
+        } else if (rd >= 2 and rd <= 36) {
+            r = @intCast(rd);
+        } else {
+            // Invalid radix: JS returns NaN, we return 0
+            return 0;
+        }
+    }
 
     // Auto-detect 0x prefix:
     //   - radix undefined/0 → auto-detect and set radix
@@ -104,7 +118,6 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
             i += 2;
         }
     }
-    if (r == 0) r = 10;
 
     // Parse digits using i128 accumulator to avoid panic on overflow.
     // JS parseInt returns a Number (f64); when the parsed magnitude exceeds
@@ -158,9 +171,71 @@ fn parseIntStr(s: []const u8, radix: ?i64) i64 {
 }
 
 /// Number.parseFloat — parse a float from a string.
-/// Per ECMA-262 §19.2.4, returns NaN on failure (not 0.0).
+/// Per ECMA-262 §19.2.4, parses the longest prefix of the string that is
+/// a valid float literal, and returns NaN if no valid prefix is found.
 pub fn parseFloat(s: []const u8) f64 {
-    return std.fmt.parseFloat(f64, s) catch std.math.nan(f64);
+    // Trim leading whitespace (JS trimStart)
+    var start: usize = 0;
+    while (start < s.len and std.ascii.isWhitespace(s[start])) {
+        start += 1;
+    }
+    const trimmed = s[start..];
+    if (trimmed.len == 0) return std.math.nan(f64);
+
+    // Find the longest valid float prefix by scanning forward.
+    // Valid float syntax: [+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?
+    // Also handle "Infinity" and "NaN" literals.
+    if (std.mem.startsWith(u8, trimmed, "Infinity") or std.mem.startsWith(u8, trimmed, "+Infinity")) {
+        return std.math.inf(f64);
+    }
+    if (std.mem.startsWith(u8, trimmed, "-Infinity")) {
+        return -std.math.inf(f64);
+    }
+
+    var end: usize = 0;
+    // Optional sign
+    if (end < trimmed.len and (trimmed[end] == '+' or trimmed[end] == '-')) end += 1;
+
+    const digits_start = end;
+    var has_digits = false;
+    // Integer part digits
+    while (end < trimmed.len and std.ascii.isDigit(trimmed[end])) {
+        end += 1;
+        has_digits = true;
+    }
+    // Decimal point and fractional digits
+    if (end < trimmed.len and trimmed[end] == '.') {
+        end += 1;
+        while (end < trimmed.len and std.ascii.isDigit(trimmed[end])) {
+            end += 1;
+            has_digits = true;
+        }
+    }
+    if (!has_digits) {
+        // Check for ".digits" pattern (digits_start points to '.')
+        if (digits_start < trimmed.len and trimmed[digits_start] == '.') {
+            // Already handled above, has_digits would be true if any digits followed
+        }
+        return std.math.nan(f64);
+    }
+    // Exponent part
+    if (end < trimmed.len and (trimmed[end] == 'e' or trimmed[end] == 'E')) {
+        const exp_start = end;
+        end += 1;
+        if (end < trimmed.len and (trimmed[end] == '+' or trimmed[end] == '-')) end += 1;
+        var has_exp_digits = false;
+        while (end < trimmed.len and std.ascii.isDigit(trimmed[end])) {
+            end += 1;
+            has_exp_digits = true;
+        }
+        if (!has_exp_digits) {
+            // Roll back exponent part — 'e' without digits is not valid
+            end = exp_start;
+        }
+    }
+
+    const prefix = trimmed[0..end];
+    return std.fmt.parseFloat(f64, prefix) catch std.math.nan(f64);
 }
 
 /// Number.isSafeInteger — check if a value is a safe integer (|v| <= 2^53-1).
@@ -243,7 +318,11 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
 
-    const digits: usize = if (fraction_digits) |d| @intCast(@max(0, @min(100, d))) else 6;
+    // ECMA-262 §22.1.3.3: Throw RangeError if fraction_digits < 0 or > 100
+    const digits: usize = if (fraction_digits) |d| blk: {
+        if (d < 0 or d > 100) return error.RangeError;
+        break :blk @intCast(d);
+    } else 6;
 
     var buf: [512]u8 = undefined;
 
@@ -289,7 +368,11 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
 
-    const p: usize = if (precision) |d| @intCast(@max(1, @min(100, d))) else 6;
+    // ECMA-262 §22.1.3.5: Throw RangeError if precision < 1 or > 100
+    const p: usize = if (precision) |d| blk: {
+        if (d < 1 or d > 100) return error.RangeError;
+        break :blk @intCast(d);
+    } else 6;
 
     if (val == 0.0) {
         // Zero: "0" for p=1, else "0." + (p-1) zeros. No sign for ±0.

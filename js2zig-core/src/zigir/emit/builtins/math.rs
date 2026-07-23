@@ -30,6 +30,7 @@ const STD_MATH_FLOAT: &[&str] = &["asin", "acos", "atan"];
 /// and `@as(f64, @floatFromInt(expr))` (int→float conversion).
 pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
     use crate::types::ZigType;
+    use crate::zigir::kinds::FieldKind;
     use crate::zigir::ops::BinOp;
     use crate::zigir::types::IrExpr;
     match expr {
@@ -55,6 +56,11 @@ pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
         IrExpr::DivExpr { .. } | IrExpr::RemExpr { .. } => true,
         // PowExpr produces f64 when result_type is None (not coerced to i64)
         IrExpr::PowExpr { result_type, .. } => result_type.is_none(),
+        // Math/Number constants are emitted as @as(f64, ...) → always f64
+        IrExpr::FieldAccess {
+            field_kind: FieldKind::MathConstant(_) | FieldKind::NumberConstant(_),
+            ..
+        } => true,
         _ => false,
     }
 }

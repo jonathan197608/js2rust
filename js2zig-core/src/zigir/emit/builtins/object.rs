@@ -71,6 +71,7 @@ fn expr_type_kind(expr: &IrExpr) -> ObjectIsKind {
             ObjectIsKind::Unknown
         }
         IrExpr::BuiltinCall(bc) => zig_type_to_kind(&bc.return_type),
+        IrExpr::TypedIdent { ty, .. } => zig_type_to_kind(ty),
         _ => ObjectIsKind::Unknown,
     }
 }

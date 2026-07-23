@@ -1497,6 +1497,16 @@ impl Lowerer {
                 body: Box::new(self.coerce_i64_result_type(*body)),
                 needs_null_check,
             },
+            // Math/Number constants emit as @as(f64, ...) → wrap to i64
+            IrExpr::FieldAccess { ref field_kind, .. }
+                if matches!(
+                    field_kind,
+                    crate::zigir::kinds::FieldKind::MathConstant(_)
+                        | crate::zigir::kinds::FieldKind::NumberConstant(_)
+                ) =>
+            {
+                Self::wrap_f64_to_i64(expr)
+            }
             other => other,
         }
     }

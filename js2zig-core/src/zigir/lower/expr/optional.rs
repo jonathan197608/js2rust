@@ -5,7 +5,7 @@ use oxc_ast::ast::*;
 
 use crate::types::ZigType;
 use crate::zigir::ident::IrIdent;
-use crate::zigir::kinds::{CallKind, FieldKind, IndexKind};
+use crate::zigir::kinds::{CallKind, ComputedKeyKind, FieldKind, IndexKind};
 
 use super::Lowerer;
 
@@ -121,10 +121,10 @@ impl Lowerer {
                         },
                     })),
                     then: Box::new(IrExpr::Undefined),
-                    else_: Box::new(IrExpr::IndexAccess {
+                    else_: Box::new(IrExpr::ComputedField {
                         object: Box::new(temp_ident(&temp_name)),
-                        index: Box::new(index),
-                        index_kind: IndexKind::SliceIndex,
+                        key: Box::new(index),
+                        key_kind: ComputedKeyKind::JsAnyGetByKey,
                     }),
                 }),
             };
@@ -248,6 +248,63 @@ impl Lowerer {
             };
         }
 
+        // JsAny CME call: obj?.["method"]() — method_name is None for CME.
+        // Use isNullish() + Conditional + ComputedField(JsAnyGetByKey) to
+        // avoid OptionalChain which requires a Zig optional type.
+        if needs_null_check
+            && method_name.is_none()
+            && receiver_expr.is_some_and(|e| self.expr_type_is_jsany(e))
+        {
+            use crate::zigir::kinds::MethodObjectKind;
+            use crate::zigir::types::{IrCallExpr, IrStmt, IrVarDecl};
+
+            let temp_name = self.name_mangler.next_name("_oc");
+            let block_label = format!("_oc_blk_{}", self.name_mangler.peek_count("_oc"));
+            let args = self.lower_args(&call_ce.arguments);
+
+            let temp_ident = |n: &str| IrExpr::Ident(IrIdent::new(n));
+
+            // Extract the computed key from the CME callee
+            let key_expr = match &call_ce.callee {
+                Expression::ComputedMemberExpression(cme) => self.lower_expr(&cme.expression),
+                _ => IrExpr::Undefined,
+            };
+
+            return IrExpr::BlockExpr {
+                label: block_label,
+                body: vec![IrStmt::VarDecl(IrVarDecl::new_const(
+                    &temp_name,
+                    Some(ZigType::JsAny),
+                    Some(object),
+                ))],
+                result: Box::new(IrExpr::Conditional {
+                    cond: Box::new(IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(temp_ident(&temp_name)),
+                            field: "isNullish".to_string(),
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args: vec![],
+                        call_kind: CallKind::Method {
+                            object_type: MethodObjectKind::JsAny,
+                        },
+                    })),
+                    then: Box::new(IrExpr::Undefined),
+                    else_: Box::new(IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::ComputedField {
+                            object: Box::new(temp_ident(&temp_name)),
+                            key: Box::new(key_expr),
+                            key_kind: ComputedKeyKind::JsAnyGetByKey,
+                        }),
+                        args,
+                        call_kind: CallKind::Method {
+                            object_type: MethodObjectKind::JsAny,
+                        },
+                    })),
+                }),
+            };
+        }
+
         let capture_var = self.name_mangler.next_name("_oc");
         let access_target = if needs_null_check {
             IrExpr::Ident(IrIdent::new(&capture_var))
@@ -269,7 +326,32 @@ impl Lowerer {
                     object_type: crate::zigir::kinds::MethodObjectKind::Unknown,
                 },
             })
+        } else if let Expression::ComputedMemberExpression(cme) = &call_ce.callee {
+            // CME call: obj?.[key]() — build the call using access_target
+            // (already bound to capture_var or object clone) instead of
+            // re-lowering the entire call from AST via self.lower_call(call_ce),
+            // which would double-evaluate the object expression.
+            let key_expr = self.lower_expr(&cme.expression);
+            let key_kind = match self.infer_expr_type(&cme.object) {
+                Some(ZigType::NamedStruct(ref n)) if n == "Map" => ComputedKeyKind::MapGet,
+                Some(ZigType::ArrayList(_)) => ComputedKeyKind::ArrayListItem,
+                Some(ZigType::Str) => ComputedKeyKind::StringCharAt,
+                Some(ZigType::Struct(_) | ZigType::NamedStruct(_)) => ComputedKeyKind::StructField,
+                _ => ComputedKeyKind::JsAnyGetByKey,
+            };
+            IrExpr::Call(crate::zigir::types::IrCallExpr {
+                callee: Box::new(IrExpr::ComputedField {
+                    object: Box::new(access_target),
+                    key: Box::new(key_expr),
+                    key_kind,
+                }),
+                args,
+                call_kind: CallKind::Method {
+                    object_type: crate::zigir::kinds::MethodObjectKind::Unknown,
+                },
+            })
         } else {
+            // Fallback for non-member call expressions
             self.lower_call(call_ce)
         };
 

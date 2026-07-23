@@ -377,6 +377,13 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
+                    // ArrayList property access: .length
+                    InferResult::Definite(ZigType::ArrayList(_)) => {
+                        match mem.property.name.as_str() {
+                            "length" => InferResult::Definite(ZigType::I64),
+                            _ => InferResult::Indeterminate,
+                        }
+                    }
                     // JsAny property access: dynamic, returns JsAny
                     InferResult::Definite(ZigType::JsAny) => {
                         // Property access on JsAny returns JsAny
