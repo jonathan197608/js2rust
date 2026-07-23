@@ -167,6 +167,8 @@ fn encodeCodeUnit(alloc: Allocator, cu: u16) ![]const u8 {
 }
 
 /// Convert string to uppercase. Returns newly allocated string.
+/// NOTE: Only handles ASCII characters (A-Z). Full Unicode case mapping
+/// requires ICU4X (enable the `icu` feature for locale-aware uppercasing).
 pub fn toUpper(alloc: Allocator, s: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, s.len);
     for (s, 0..) |c, i| {
@@ -176,6 +178,8 @@ pub fn toUpper(alloc: Allocator, s: []const u8) ![]const u8 {
 }
 
 /// Convert string to lowercase. Returns newly allocated string.
+/// NOTE: Only handles ASCII characters (a-z). Full Unicode case mapping
+/// requires ICU4X (enable the `icu` feature for locale-aware lowercasing).
 pub fn toLower(alloc: Allocator, s: []const u8) ![]const u8 {
     const result = try alloc.alloc(u8, s.len);
     for (s, 0..) |c, i| {
@@ -226,7 +230,7 @@ pub fn charAt(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
 /// Negative indices count from the end: at(-1) returns the last character.
 /// Uses UTF-16 code unit indexing (JS semantics).
 pub fn at(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
-    const len: i64 = @intCast(utf16Len(s));
+    const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
     const adjusted_idx: i64 = if (idx < 0) len + idx else idx;
     if (adjusted_idx < 0 or adjusted_idx >= len) return &[0]u8{};
     return charAt(alloc, s, adjusted_idx);
@@ -312,7 +316,8 @@ pub fn codePointAt(s: []const u8, idx: i64) i64 {
 
 /// Concatenate two strings. Returns newly allocated string.
 pub fn concat(alloc: Allocator, a: []const u8, b: []const u8) ![]const u8 {
-    const result = try alloc.alloc(u8, a.len + b.len);
+    const total_len = std.math.add(usize, a.len, b.len) catch return error.OutOfMemory;
+    const result = try alloc.alloc(u8, total_len);
     @memcpy(result[0..a.len], a);
     @memcpy(result[a.len..], b);
     return result;
@@ -333,7 +338,7 @@ pub fn includes(haystack: []const u8, needle: []const u8) bool {
 /// The emitter always supplies `from_index` (default `0` when JS omits it),
 /// matching the `slice` convention; direct Zig callers must pass it too.
 pub fn indexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
-    const hay_len: i64 = @intCast(utf16Len(haystack));
+    const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
     // start = clamp(from_index, 0, len)
     const start: i64 = if (from_index < 0) 0 else if (from_index > hay_len) hay_len else from_index;
     if (needle.len == 0) return start;
@@ -360,7 +365,7 @@ pub fn endsWith(s: []const u8, suffix: []const u8) bool {
 /// Negative indices count from the end. Returns borrowed slice (no allocation).
 /// Uses UTF-16 code unit indexing (JS semantics).
 pub fn slice(s: []const u8, start: i64, end: i64) []const u8 {
-    const len: i64 = @intCast(utf16Len(s));
+    const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
     var st: i64 = start;
     var en: i64 = end;
 
@@ -383,7 +388,7 @@ pub fn slice(s: []const u8, start: i64, end: i64) []const u8 {
 /// Returns borrowed slice (no allocation).
 /// Uses UTF-16 code unit indexing (JS semantics).
 pub fn substring(s: []const u8, start: i64, end: i64) []const u8 {
-    const len: i64 = @intCast(utf16Len(s));
+    const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
     var st: i64 = start;
     var en: i64 = end;
 
@@ -575,7 +580,7 @@ pub fn trimEnd(s: []const u8) []const u8 {
 /// Empty needle matches at `start` (which may equal `len` when
 /// `from_index >= len`).
 pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
-    const hay_len: i64 = @intCast(utf16Len(haystack));
+    const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
     const start: i64 = if (from_index < 0) hay_len + from_index else @min(from_index, hay_len);
     if (start < 0) return -1;
     if (needle.len == 0) return start;

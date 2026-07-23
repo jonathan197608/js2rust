@@ -199,9 +199,10 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
             return alloc.dupe(u8, s);
         }
     }
-    // Fallback for digits 21-100: manually format with the requested precision.
-    // Zig's comptime format can't handle runtime precision, so format with
-    // max comptime precision (20) then pad with zeros.
+    // Fallback for digits 21-100: format with max comptime precision (20)
+    // then pad the fractional part with zeros.  f64 has ~15.95 decimal digits
+    // of mantissa precision, so digits beyond 20 after the decimal point are
+    // zero for the exact binary value — padding is correct.
     const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
     const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
         return alloc.dupe(u8, s);
@@ -255,9 +256,24 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
             return fixupExp(alloc, s);
         }
     }
-    // Fallback for digits >= 21
-    const s = std.fmt.bufPrint(&buf, "{e}", .{val}) catch "0e0";
-    return fixupExp(alloc, s);
+    // Fallback for digits >= 21 (or rare buffer overflow for digits < 21):
+    // Format with max comptime precision (20), then pad fractional digits
+    // with zeros to reach the requested precision.  f64 has ~15.95 decimal
+    // digits of mantissa precision, so digits beyond 20 are effectively zero
+    // for the exact binary value — padding is correct.
+    const s = std.fmt.bufPrint(&buf, "{e:.20}", .{val}) catch "0.00000000000000000000e0";
+    const fixed = try fixupExp(alloc, s);
+    const e_pos = std.mem.indexOfScalar(u8, fixed, 'e') orelse return fixed;
+    const dot_pos = std.mem.indexOfScalar(u8, fixed[0..e_pos], '.') orelse return fixed;
+    const existing_frac = e_pos - dot_pos - 1;
+    if (digits <= existing_frac) return fixed;
+    const pad = digits - existing_frac;
+    const result = try alloc.alloc(u8, fixed.len + pad);
+    @memcpy(result[0..e_pos], fixed[0..e_pos]);
+    @memset(result[e_pos..e_pos + pad], '0');
+    @memcpy(result[e_pos + pad..], fixed[e_pos..]);
+    alloc.free(fixed);
+    return result;
 }
 
 /// Number.prototype.toPrecision — format with specified significant digits.
@@ -302,7 +318,10 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
                 break :blk s;
             }
         }
-        break :blk std.fmt.bufPrint(&buf, "{e}", .{abs_val}) catch "0e0";
+        // Use max comptime precision (20) for the fallback. The code below
+        // extracts exactly p significant digits from the mantissa, padding
+        // with zeros if p > 21 (f64 precision is ~15.95 decimal digits).
+        break :blk std.fmt.bufPrint(&buf, "{e:.20}", .{abs_val}) catch "0.00000000000000000000e0";
     };
 
     // Locate 'e' to split mantissa and exponent.

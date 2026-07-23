@@ -267,7 +267,7 @@ pub const MultiArenaAllocator = struct {
     /// 如果所有节点都处于 cooling 且未过冷却时间，返回 null
     fn selectNode(self: *MultiArenaAllocator) ?*ArenaNode {
         const start_val = global_counter.fetchAdd(1, .monotonic);
-        const start_idx = @as(usize, @intCast(start_val)) % self.node_count;
+        const start_idx = @as(usize, @truncate(start_val)) % self.node_count;
 
         var idx = start_idx;
         var count: usize = 0;

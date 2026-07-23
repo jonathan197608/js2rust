@@ -59,11 +59,14 @@ pub fn decodeURI(alloc: Allocator, input: []const u8) ![]u8 {
 
 /// Internal: decode percent-encoded string.
 fn decodePercent(alloc: Allocator, input: []const u8) ![]u8 {
-    // Count decoded length
+    // Count decoded length (validate %-sequences so we don't over-allocate)
     var decoded_len: usize = 0;
     var j: usize = 0;
     while (j < input.len) {
         if (input[j] == '%') {
+            if (j + 2 >= input.len) return error.InvalidUriEncoding;
+            _ = hexDigit(input[j + 1]) orelse return error.InvalidUriEncoding;
+            _ = hexDigit(input[j + 2]) orelse return error.InvalidUriEncoding;
             decoded_len += 1;
             j += 3;
         } else {

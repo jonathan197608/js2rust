@@ -247,12 +247,12 @@ pub fn subarrayF64(arr: []const f64, start: i64, end: i64) []const f64 {
 
 pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) []i8 {
     const len: i64 = @intCast(arr.len);
-    const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const t: usize = @intCast(if (target < 0) @max(0, len + target) else @min(target, len));
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e or t >= arr.len) return arr;
 
@@ -263,12 +263,12 @@ pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) []i8 {
 
 pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) []u8 {
     const len: i64 = @intCast(arr.len);
-    const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const t: usize = @intCast(if (target < 0) @max(0, len + target) else @min(target, len));
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e or t >= arr.len) return arr;
 
@@ -279,12 +279,12 @@ pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) []u8 {
 
 pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) []i32 {
     const len: i64 = @intCast(arr.len);
-    const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const t: usize = @intCast(if (target < 0) @max(0, len + target) else @min(target, len));
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e or t >= arr.len) return arr;
 
@@ -295,12 +295,12 @@ pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) []i32 {
 
 pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) []f64 {
     const len: i64 = @intCast(arr.len);
-    const t = @min(@as(usize, @intCast(if (target < 0) @max(0, len + target) else target)), arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const t: usize = @intCast(if (target < 0) @max(0, len + target) else @min(target, len));
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e or t >= arr.len) return arr;
 
@@ -313,11 +313,11 @@ pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) []f64 {
 
 pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) []i8 {
     const len: i64 = @intCast(arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e) return arr;
     @memset(arr[s..e], value);
@@ -326,11 +326,11 @@ pub fn fillI8(arr: []i8, value: i8, start: i64, end: i64) []i8 {
 
 pub fn fillU8(arr: []u8, value: u8, start: i64, end: i64) []u8 {
     const len: i64 = @intCast(arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e) return arr;
     @memset(arr[s..e], value);
@@ -339,11 +339,11 @@ pub fn fillU8(arr: []u8, value: u8, start: i64, end: i64) []u8 {
 
 pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) []i32 {
     const len: i64 = @intCast(arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e) return arr;
     for (arr[s..e]) |*item| {
@@ -354,11 +354,11 @@ pub fn fillI32(arr: []i32, value: i32, start: i64, end: i64) []i32 {
 
 pub fn fillF64(arr: []f64, value: f64, start: i64, end: i64) []f64 {
     const len: i64 = @intCast(arr.len);
-    const s = @min(@as(usize, @intCast(if (start < 0) @max(0, len + start) else start)), arr.len);
-    const e = if (end == std.math.maxInt(i64))
+    const s: usize = @intCast(if (start < 0) @max(0, len + start) else @min(start, len));
+    const e: usize = if (end == std.math.maxInt(i64))
         arr.len
     else
-        @min(@as(usize, @intCast(if (end < 0) @max(0, len + end) else end)), arr.len);
+        @intCast(if (end < 0) @max(0, len + end) else @min(end, len));
 
     if (s >= e) return arr;
     for (arr[s..e]) |*item| {

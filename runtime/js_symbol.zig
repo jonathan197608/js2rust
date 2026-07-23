@@ -150,6 +150,12 @@ pub fn symbolFor(key: []const u8) !JsSymbol {
         const alloc = registry_alloc orelse @panic("js_symbol: registry allocator not set.");
 
         if (r.get(key)) |existing_id| {
+            // NOTE: We dupe the key for each call to give JsSymbol its own
+            // owned description (freed by deinit).  Under the arena allocator
+            // (the common case) free() is a no-op, so this is harmless.
+            // With a non-arena allocator this re-allocates per call — a
+            // known P2 limitation that could be addressed by adding an
+            // owns_description flag to JsSymbol.
             const desc = alloc.dupe(u8, key) catch return error.OutOfMemory;
             return JsSymbol{ .id = existing_id, .description = desc };
         }

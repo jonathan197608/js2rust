@@ -1484,6 +1484,19 @@ impl Lowerer {
                 ident,
                 ty: ZigType::JsAny,
             }),
+            // OptionalChain — recurse into body to coerce the non-null result to I64.
+            // The else branch (null) will be handled by the surrounding context.
+            IrExpr::OptionalChain {
+                object,
+                capture_var,
+                body,
+                needs_null_check,
+            } => IrExpr::OptionalChain {
+                object,
+                capture_var,
+                body: Box::new(self.coerce_i64_result_type(*body)),
+                needs_null_check,
+            },
             other => other,
         }
     }
@@ -1656,6 +1669,19 @@ impl Lowerer {
                 }
             }
 
+            // OptionalChain — recurse into body to coerce the non-null result to f64.
+            IrExpr::OptionalChain {
+                object,
+                capture_var,
+                body,
+                needs_null_check,
+            } => IrExpr::OptionalChain {
+                object,
+                capture_var,
+                body: Box::new(self.coerce_f64_result_type(*body)),
+                needs_null_check,
+            },
+
             // Other expressions — pass through unchanged
             other => other,
         }
@@ -1789,6 +1815,9 @@ impl Lowerer {
             {
                 Self::wrap_in_jsany_from(IrExpr::HostCall(hc))
             }
+            // BuiltinCall/HostCall with other return types (ArrayList, NamedStruct, etc.)
+            // — wrap in JsAny.from() for safety
+            IrExpr::BuiltinCall(_) | IrExpr::HostCall(_) => Self::wrap_in_jsany_from(expr),
             IrExpr::Binary { .. } | IrExpr::Unary { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::FieldAccess { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::IndexAccess { .. } => Self::wrap_in_jsany_from(expr),
@@ -1811,6 +1840,48 @@ impl Lowerer {
             // Null/Undefined already emit as JsAny — pass through
             IrExpr::Null | IrExpr::Undefined => expr,
 
+            // OptionalChain — the else branch is always null (JsAny compatible),
+            // but the then branch might produce a non-JsAny type. Wrap the whole
+            // expression to ensure the result is always JsAny.
+            IrExpr::OptionalChain { .. } => Self::wrap_in_jsany_from(expr),
+
+            // Await — the awaited value might be a non-JsAny type; wrap to ensure
+            // the result is JsAny when the function returns JsAny.
+            IrExpr::Await(_) => Self::wrap_in_jsany_from(expr),
+
+            // Array callback/method inline — produces ArrayList or specific element
+            // type. Wrap to convert to JsAny when function returns JsAny.
+            IrExpr::ArrayCallbackInline(_) | IrExpr::ArrayMethodInline(_) => {
+                Self::wrap_in_jsany_from(expr)
+            }
+
+            // ComputedField — produces a value that may not be JsAny. Wrap.
+            IrExpr::ComputedField { .. } => Self::wrap_in_jsany_from(expr),
+
+            // Paren — recurse into the inner expression
+            IrExpr::Paren(inner) => self.coerce_jsany_result_type(*inner),
+
+            // Typeof returns []const u8 — wrap in JsAny.from()
+            IrExpr::Typeof(_) => Self::wrap_in_jsany_from(expr),
+
+            // Void returns JsAny (fromUndefined) — pass through
+            IrExpr::Void(_) => expr,
+
+            // Spread is always non-JsAny — wrap
+            IrExpr::Spread(_) => Self::wrap_in_jsany_from(expr),
+
+            // FnExpr produces a struct name — wrap
+            IrExpr::FnExpr(_) => Self::wrap_in_jsany_from(expr),
+
+            // This — depends on context, wrap to be safe
+            IrExpr::This => Self::wrap_in_jsany_from(expr),
+
+            // ArrowFn/Closure — produce struct types, wrap
+            IrExpr::ArrowFn(_) | IrExpr::Closure(_) => Self::wrap_in_jsany_from(expr),
+
+            // CompileError — pass through (will fail at Zig compile time anyway)
+            IrExpr::CompileError { .. } => expr,
+
             // Conditional — recurse into both branches
             IrExpr::Conditional { cond, then, else_ } => IrExpr::Conditional {
                 cond,
@@ -1825,9 +1896,6 @@ impl Lowerer {
                 }
                 IrExpr::Sequence(exprs)
             }
-
-            // Other expressions — pass through unchanged
-            other => other,
         }
     }
 }

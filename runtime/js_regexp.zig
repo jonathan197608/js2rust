@@ -137,12 +137,16 @@ pub fn execLiteral(alloc: Allocator, subject: []const u8, pattern: []const u8) !
 /// `count` is the number of segments to extract.
 fn parseNulSeparated(alloc: Allocator, bytes: []const u8, count: usize) !?[][]const u8 {
     var matches = std.ArrayList([]const u8).empty;
-    errdefer matches.deinit(alloc);
+    errdefer {
+        for (matches.items) |s| alloc.free(s);
+        matches.deinit(alloc);
+    }
     var start: usize = 0;
     for (0..count) |_| {
+        if (start >= bytes.len) break;
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try matches.append(alloc, bytes[start..end]);
+        try matches.append(alloc, try alloc.dupe(u8, bytes[start..end]));
         start = end + 1;
     }
     return try matches.toOwnedSlice(alloc);

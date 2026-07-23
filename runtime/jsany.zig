@@ -297,7 +297,7 @@ pub const JsAny = union(enum) {
         // Previously self.asString(alloc) + other.asString(alloc) leaked
         // heap-allocated temporaries for int/float/array/object operands.
         if (self.isString() or other.isString()) {
-            const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch "";
+            const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch return JsAny.undefined_value;
             return .{ .value = .{ .string = result } };
         }
         // Numeric: int + int = int (with overflow → f64), otherwise float.
@@ -317,7 +317,7 @@ pub const JsAny = union(enum) {
         }
         // Array + Array → concat (JS semantics: converts to string first)
         // Fallback: string concat — same {f} pattern avoids temp allocations.
-        const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch "";
+        const result = std.fmt.allocPrint(alloc, "{f}{f}", .{ self, other }) catch return JsAny.undefined_value;
         return .{ .value = .{ .string = result } };
     }
 

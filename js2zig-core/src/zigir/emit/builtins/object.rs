@@ -9,7 +9,8 @@ use crate::zigir::emit::Emitter;
 
 /// Type kind for Object.is argument dispatch.
 enum ObjectIsKind {
-    Numeric, // i64 or f64
+    Integer, // i64 (never NaN, no signbit issues)
+    Float,   // f64 (NaN === NaN, +0 vs -0)
     String,  // []const u8
     Bool,    // bool
     Unknown, // type not determinable at emit time (Ident, etc.)
@@ -30,8 +31,16 @@ fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
     };
     let ka = expr_type_kind(a);
     let kb = expr_type_kind(b);
+    // Merge Integer+Float into the appropriate kind:
+    // - Both Integer → Integer (simple ==, no NaN/signbit concerns)
+    // - Both Float → Float (NaN, +0/-0)
+    // - Mixed Integer+Float → Float (treat as float for correctness)
+    // - Otherwise → Unknown
     match (ka, kb) {
-        (ObjectIsKind::Numeric, ObjectIsKind::Numeric) => ObjectIsKind::Numeric,
+        (ObjectIsKind::Integer, ObjectIsKind::Integer) => ObjectIsKind::Integer,
+        (ObjectIsKind::Float, ObjectIsKind::Float)
+        | (ObjectIsKind::Integer, ObjectIsKind::Float)
+        | (ObjectIsKind::Float, ObjectIsKind::Integer) => ObjectIsKind::Float,
         (ObjectIsKind::String, ObjectIsKind::String) => ObjectIsKind::String,
         (ObjectIsKind::Bool, ObjectIsKind::Bool) => ObjectIsKind::Bool,
         _ => ObjectIsKind::Unknown,
@@ -41,7 +50,8 @@ fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
 /// Inspect a single IrExpr to determine its type kind for Object.is dispatch.
 fn expr_type_kind(expr: &IrExpr) -> ObjectIsKind {
     match expr {
-        IrExpr::IntLiteral(_) | IrExpr::FloatLiteral(_) => ObjectIsKind::Numeric,
+        IrExpr::IntLiteral(_) => ObjectIsKind::Integer,
+        IrExpr::FloatLiteral(_) => ObjectIsKind::Float,
         IrExpr::StringLiteral(_) => ObjectIsKind::String,
         IrExpr::BoolLiteral(_) => ObjectIsKind::Bool,
         IrExpr::Binary {
@@ -67,7 +77,8 @@ fn expr_type_kind(expr: &IrExpr) -> ObjectIsKind {
 
 fn zig_type_to_kind(t: &ZigType) -> ObjectIsKind {
     match t {
-        ZigType::I64 | ZigType::F64 => ObjectIsKind::Numeric,
+        ZigType::I64 => ObjectIsKind::Integer,
+        ZigType::F64 => ObjectIsKind::Float,
         ZigType::Str => ObjectIsKind::String,
         ZigType::Bool => ObjectIsKind::Bool,
         _ => ObjectIsKind::Unknown,
@@ -156,10 +167,24 @@ impl Emitter {
                 // compile for `[]const u8` (strings) and `bool` arguments.
                 let kind = object_is_arg_kind(args);
                 match kind {
-                    ObjectIsKind::Numeric => {
-                        // Both args are numeric (i64 or f64).  std.math.isNan
-                        // works on comptime_int, i64, and f64.  For +0/-0 we
-                        // add a signbit guard.
+                    ObjectIsKind::Integer => {
+                        // Both args are i64 — simple equality. Integers are never NaN,
+                        // and +0/-0 distinction doesn't exist in i64 (both are 0).
+                        self.write("(");
+                        if let Some(a) = args.first() {
+                            self.emit_expr(a);
+                        }
+                        self.write(" == ");
+                        if args.len() >= 2 {
+                            self.emit_expr(&args[1]);
+                        }
+                        self.write(")");
+                    }
+                    ObjectIsKind::Float => {
+                        // Both args are f64 (or mixed i64/f64).  std.math.isNan
+                        // works on f64.  For +0/-0 we add a signbit guard.
+                        // Note: for i64 args mixed with f64, Zig auto-coerces
+                        // i64 to f64, so std.math.isNan still compiles.
                         self.write("((std.math.isNan(");
                         if let Some(a) = args.first() {
                             self.emit_expr(a);

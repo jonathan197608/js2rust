@@ -66,13 +66,15 @@ pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny 
     if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     var arr = try JsAny.newArray(alloc);
-    errdefer arr.array.deinit(alloc);
+    errdefer arr.deinitDeep(alloc);
 
     var start: usize = 0;
     for (0..count) |_| {
+        if (start >= bytes.len) break;
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try arr.array.append(alloc, JsAny.from(bytes[start..end]));
+        const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);
+        try arr.array.append(alloc, JsAny.from(owned));
         start = end + 1;
     }
 
@@ -89,13 +91,15 @@ pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !
     if (result.len < 0) return error.NegativeSize;
     const bytes = result.ptr[0..@intCast(result.len)];
     var arr = try JsAny.newArray(alloc);
-    errdefer arr.array.deinit(alloc);
+    errdefer arr.deinitDeep(alloc);
 
     var start: usize = 0;
     for (0..count) |_| {
+        if (start >= bytes.len) break;
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try arr.array.append(alloc, JsAny.from(bytes[start..end]));
+        const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);
+        try arr.array.append(alloc, JsAny.from(owned));
         start = end + 1;
     }
 
@@ -112,7 +116,7 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
 
     // matchAll always returns an iterator (empty if no matches)
     var outer_arr = try JsAny.newArray(alloc);
-    errdefer outer_arr.array.deinit(alloc);
+    errdefer outer_arr.deinitDeep(alloc);
 
     if (match_count == 0 or group_count == 0) return outer_arr;
 
@@ -124,13 +128,15 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
     for (0..match_count) |_| {
         var inner_arr = try JsAny.newArray(alloc);
         for (0..group_count) |_| {
+            if (pos >= bytes.len) {
+                const empty: []const u8 = try alloc.dupe(u8, "");
+                try inner_arr.array.append(alloc, JsAny.from(empty));
+                continue;
+            }
             var end: usize = pos;
             while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-            if (pos < bytes.len) {
-                try inner_arr.array.append(alloc, JsAny.from(bytes[pos..end]));
-            } else {
-                try inner_arr.array.append(alloc, JsAny.from(""));
-            }
+            const owned: []const u8 = try alloc.dupe(u8, bytes[pos..end]);
+            try inner_arr.array.append(alloc, JsAny.from(owned));
             pos = end + 1;
         }
         try outer_arr.array.append(alloc, inner_arr);
