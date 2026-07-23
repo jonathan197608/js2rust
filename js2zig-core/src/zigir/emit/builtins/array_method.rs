@@ -94,21 +94,56 @@ impl Emitter {
     }
 
     // ── includes ───────────────────────────────────────
-    // For string arrays: (std.mem.indexOf(u8, obj, target) != null)
+    // For string: delegate to js_string.includes (UTF-16 aware) or inline byte search.
     // For i64 arrays: (blk: { for (obj.items) |item| { if (item == target) break :blk true; } break :blk false; })
+    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
+    // R16-P2-EM #2: Str path uses begin_labeled_block to emit chain binding.
     pub(super) fn emit_includes_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+        let has_from = data.args.len() >= 2;
 
-        // If the array is a string type, use std.mem.indexOf
+        // If the array is a string type, use std.mem.indexOf or runtime
         if matches!(data.elem_type, ZigType::Str) {
-            self.write("(std.mem.indexOf(u8, ");
-            self.write(&receiver);
-            self.write(", ");
+            let blk = self.begin_labeled_block(&binding);
+            if has_from {
+                // With fromIndex: delegate to runtime for UTF-16 semantics
+                self.write(&format!("break :{} js_string.includes(", blk));
+                self.write(&receiver);
+                self.write(", ");
+                if let Some(arg) = data.args.first() {
+                    self.emit_expr(arg);
+                }
+                self.write(", ");
+                self.emit_expr(&data.args[1]);
+                self.write("); })");
+            } else {
+                // No fromIndex: fast inline byte search
+                self.write(&format!("break :{} (std.mem.indexOf(u8, ", blk));
+                self.write(&receiver);
+                self.write(", ");
+                if let Some(arg) = data.args.first() {
+                    self.emit_expr(arg);
+                }
+                self.write(") != null); })");
+            }
+        } else if has_from {
+            // Array path with fromIndex: clamp to [0, len] and iterate from start
+            let blk = self.begin_labeled_block(&binding);
+            self.write("const __from: isize = @intCast(");
+            self.emit_expr(&data.args[1]);
+            self.write(&format!(
+                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
+                receiver, receiver
+            ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
             }
-            self.write(") != null)");
+            self.write(&format!(
+                ") break :{} true; }} break :{} false; }})",
+                blk, blk
+            ));
         } else {
+            // Array path without fromIndex: original for-loop behavior
             let blk = self.begin_labeled_block(&binding);
             self.write(&format!("for ({}.items) |item| ", receiver));
             self.write("{\n");
@@ -126,20 +161,55 @@ impl Emitter {
     }
 
     // ── indexOf ────────────────────────────────────────
-    // For string: (if (std.mem.indexOf(u8, obj, target)) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))
+    // For string: js_string.indexOf (UTF-16 aware) or inline byte search.
     // For i64: (blk: { for (obj.items, 0..) |item, i| { if (item == target) break :blk @as(i64, @intCast(i)); } break :blk @as(i64, -1); })
+    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
+    // R16-P2-EM #2: Str path uses begin_labeled_block to emit chain binding.
     pub(super) fn emit_index_of_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
+        let has_from = data.args.len() >= 2;
 
         if matches!(data.elem_type, ZigType::Str) {
-            self.write("(if (std.mem.indexOf(u8, ");
-            self.write(&receiver);
-            self.write(", ");
+            let blk = self.begin_labeled_block(&binding);
+            if has_from {
+                // With fromIndex: delegate to runtime for UTF-16 semantics
+                self.write(&format!("break :{} js_string.indexOf(", blk));
+                self.write(&receiver);
+                self.write(", ");
+                if let Some(arg) = data.args.first() {
+                    self.emit_expr(arg);
+                }
+                self.write(", ");
+                self.emit_expr(&data.args[1]);
+                self.write("); })");
+            } else {
+                // No fromIndex: fast inline byte search
+                self.write(&format!("break :{} (if (std.mem.indexOf(u8, ", blk));
+                self.write(&receiver);
+                self.write(", ");
+                if let Some(arg) = data.args.first() {
+                    self.emit_expr(arg);
+                }
+                self.write(")) |idx| @as(i64, @intCast(idx)) else @as(i64, -1)); })");
+            }
+        } else if has_from {
+            // Array path with fromIndex: clamp to [0, len] and iterate from start
+            let blk = self.begin_labeled_block(&binding);
+            self.write("const __from: isize = @intCast(");
+            self.emit_expr(&data.args[1]);
+            self.write(&format!(
+                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
+                receiver, receiver
+            ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
             }
-            self.write(")) |idx| @as(i64, @intCast(idx)) else @as(i64, -1))");
+            self.write(&format!(
+                ") break :{} @as(i64, @intCast(__i)); }} break :{} @as(i64, -1); }})",
+                blk, blk
+            ));
         } else {
+            // Array path without fromIndex: original for-loop behavior
             let blk = self.begin_labeled_block(&binding);
             self.write(&format!("for ({}.items, 0..) |item, i| ", receiver));
             self.write("{\n");
@@ -157,7 +227,10 @@ impl Emitter {
     }
 
     // ── lastIndexOf ────────────────────────────────────
-    // (blk: { var __i: isize = @as(isize, @intCast(obj.items.len)) - 1; while (__i >= 0) : (__i -= 1) { if (obj.items[@as(usize, @intCast(__i))] == target) break :blk @as(i64, __i); } break :blk @as(i64, -1); })
+    // (blk: { var __i: isize = ...; while (__i >= 0) : (__i -= 1) { if (obj.items[__i] == target) break :blk @as(i64, __i); } break :blk @as(i64, -1); })
+    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
+    //   - fromIndex >= len → search from len-1 (entire array)
+    //   - fromIndex < 0    → search from len+fromIndex (clamps to -1 → not found)
     pub(super) fn emit_last_index_of_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -165,10 +238,21 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write(&format!(
-            "var __i: isize = @as(isize, @intCast({}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
-            receiver, receiver
-        ));
+        if data.args.len() >= 2 {
+            // With fromIndex: compute start position per JS spec
+            self.write("const __from: isize = @intCast(");
+            self.emit_expr(&data.args[1]);
+            self.write(&format!(
+                "); const __len = {}.items.len; var __i: isize = if (__from < 0) @as(isize, @intCast(__len)) + __from else @min(__from, @as(isize, @intCast(__len)) - 1); while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
+                receiver, receiver
+            ));
+        } else {
+            // Default: search entire array from end
+            self.write(&format!(
+                "var __i: isize = @as(isize, @intCast({}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
+                receiver, receiver
+            ));
+        }
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
         }

@@ -164,7 +164,7 @@ impl Emitter {
             "trimStart" => ("trimStart", false, false, 0, 0, &[], "js_string"),
             "trimEnd" => ("trimEnd", false, false, 0, 0, &[], "js_string"),
             // ── No allocator, 1 arg, non-fallible ──
-            "includes" => ("includes", false, false, 1, 1, &[], "js_string"),
+            "includes" => ("includes", false, false, 1, 2, &["0"], "js_string"),
             "startsWith" => ("startsWith", false, false, 1, 1, &[], "js_string"),
             "endsWith" => ("endsWith", false, false, 1, 1, &[], "js_string"),
             "charCodeAt" => ("charCodeAt", false, false, 1, 1, &[], "js_string"),

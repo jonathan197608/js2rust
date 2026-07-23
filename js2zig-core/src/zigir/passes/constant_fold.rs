@@ -463,22 +463,54 @@ fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
     }
 }
 
-fn fold_logical(op: LogicalOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
-    match (op, left, right) {
-        // Short-circuit on known booleans
-        (LogicalOp::And, IrExpr::BoolLiteral(false), _) => Some(IrExpr::BoolLiteral(false)),
-        (LogicalOp::And, IrExpr::BoolLiteral(true), _) => {
-            // true && right → right
-            Some(right.clone())
-        }
-        (LogicalOp::Or, IrExpr::BoolLiteral(true), _) => Some(IrExpr::BoolLiteral(true)),
-        (LogicalOp::Or, IrExpr::BoolLiteral(false), _) => {
-            // false || right → right
-            Some(right.clone())
-        }
-        (LogicalOp::Nullish, IrExpr::Null, right) => Some(right.clone()),
-        (LogicalOp::Nullish, IrExpr::Undefined, right) => Some(right.clone()),
+/// Returns Some(true) if the literal is truthy, Some(false) if falsy,
+/// None if truthiness cannot be determined at compile time.
+fn literal_truthiness(expr: &IrExpr) -> Option<bool> {
+    match expr {
+        IrExpr::BoolLiteral(b) => Some(*b),
+        IrExpr::Null => Some(false),
+        IrExpr::Undefined => Some(false),
+        IrExpr::IntLiteral(n) => Some(*n != 0),
+        IrExpr::FloatLiteral(n) => Some(*n != 0.0 && !n.is_nan()),
+        IrExpr::StringLiteral(s) => Some(!s.is_empty()),
+        // BigIntLiteral: 0n is falsy, non-zero is truthy — but parsing
+        // the string value is left for future work. Leave as None for safety.
         _ => None,
+    }
+}
+
+fn fold_logical(op: LogicalOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
+    // Nullish coalescing: only null/undefined trigger short-circuit.
+    if op == LogicalOp::Nullish {
+        return match left {
+            IrExpr::Null | IrExpr::Undefined => Some(right.clone()),
+            _ => None,
+        };
+    }
+
+    // And/Or: use JS truthiness for all literal types, not just booleans.
+    let left_truthy = literal_truthiness(left)?;
+
+    match op {
+        LogicalOp::And => {
+            if left_truthy {
+                // truthy && right → right
+                Some(right.clone())
+            } else {
+                // falsy && right → left (short-circuit)
+                Some(left.clone())
+            }
+        }
+        LogicalOp::Or => {
+            if left_truthy {
+                // truthy || right → left (short-circuit)
+                Some(left.clone())
+            } else {
+                // falsy || right → right
+                Some(right.clone())
+            }
+        }
+        LogicalOp::Nullish => unreachable!(),
     }
 }
 

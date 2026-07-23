@@ -620,6 +620,10 @@ impl TypeInferrer {
                 // e.g. `(await foo())[await bar()]`
                 Self::expr_contains_await(&cme.object) || Self::expr_contains_await(&cme.expression)
             }
+            Expression::PrivateFieldExpression(pfe) => {
+                // e.g. `(await foo()).#field`
+                Self::expr_contains_await(&pfe.object)
+            }
             Expression::SequenceExpression(se) => {
                 se.expressions.iter().any(|e| Self::expr_contains_await(e))
             }

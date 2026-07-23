@@ -1018,6 +1018,8 @@ impl Emitter {
     /// Emit a compound assignment (LogicAnd/LogicOr/Nullish or simple op).
     /// Shared by IrExpr::Assign (expression context) and emit_assign_inline (statement context).
     /// Note: Mod (%) is expanded to RemExpr and Div (/) to DivExpr in the lowerer.
+    /// R16-P2-EM #3: For Index targets with logical ops, evaluate object and
+    /// index expressions once into temps to avoid triple-evaluation side effects.
     pub(super) fn emit_compound_assign(
         &mut self,
         target: &crate::zigir::types::IrAssignTarget,
@@ -1025,6 +1027,63 @@ impl Emitter {
         value: &crate::zigir::types::IrExpr,
     ) {
         use crate::zigir::ops::AssignOp;
+        use crate::zigir::types::IrAssignTarget;
+
+        // P2-EM #3: Index targets with logical ops must not triple-evaluate
+        // the index/object expressions (e.g. `arr[i++] &&= val` would
+        // increment i three times). Evaluate once into temps.
+        let is_logical = matches!(
+            op,
+            AssignOp::LogicAnd | AssignOp::LogicOr | AssignOp::Nullish
+        );
+        if is_logical
+            && let IrAssignTarget::Index {
+                object,
+                index,
+                index_kind,
+            } = target
+        {
+            use crate::zigir::kinds::IndexKind;
+            let blk = self.next_label();
+            self.write(&format!("({}: {{ ", blk));
+            // Evaluate object and index once
+            self.write("const __asg_obj = ");
+            self.emit_expr(object);
+            self.write("; const __asg_idx: usize = @as(usize, @intCast(");
+            self.emit_expr(index);
+            self.write(")); ");
+            let access = match index_kind {
+                IndexKind::ArrayListItem => "__asg_obj.items[__asg_idx]",
+                IndexKind::SliceIndex => "__asg_obj[__asg_idx]",
+            };
+            let (fn_name, negate) = match op {
+                AssignOp::LogicAnd => ("isTruthy", false),
+                AssignOp::LogicOr => ("isTruthy", true),
+                AssignOp::Nullish => ("isNullish", false),
+                _ => unreachable!(),
+            };
+            if negate {
+                self.write(&format!(
+                    "{a} = if (!js_runtime.{f}({a})) ",
+                    a = access,
+                    f = fn_name
+                ));
+            } else {
+                self.write(&format!(
+                    "{a} = if (js_runtime.{f}({a})) ",
+                    a = access,
+                    f = fn_name
+                ));
+            }
+            self.emit_expr(value);
+            self.write(&format!(
+                " else {a}; break :{blk} {a}; }})",
+                a = access,
+                blk = blk
+            ));
+            return;
+        }
+
         if op == AssignOp::LogicAnd {
             // a &&= b → a = if (js_runtime.isTruthy(a)) b else a
             // Use isTruthy (works for anytype: i64, f64, bool, JsAny, string, ...)

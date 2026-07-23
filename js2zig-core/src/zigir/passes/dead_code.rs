@@ -351,12 +351,9 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
             let _ = inline_data;
             true
         }
-        IrExpr::OptionalChain {
-            object,
-            body,
-            needs_null_check,
-            ..
-        } => expr_has_side_effects(object) || (*needs_null_check || expr_has_side_effects(body)),
+        IrExpr::OptionalChain { object, body, .. } => {
+            expr_has_side_effects(object) || expr_has_side_effects(body)
+        }
         IrExpr::PowExpr { base, exp, .. } => {
             expr_has_side_effects(base) || expr_has_side_effects(exp)
         }

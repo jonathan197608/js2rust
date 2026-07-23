@@ -125,6 +125,21 @@ impl TypeInferrer {
                 // Recurse into labeled statement body (e.g. `outer: for(...) {...}`)
                 self.walk_stmt_for_analysis(&ls.body);
             }
+            Statement::ClassDeclaration(cd) => {
+                // Walk class method bodies for analysis (mutations, dynamic access)
+                for elem in &cd.body.body {
+                    if let ClassElement::MethodDefinition(md) = elem
+                        && let Some(body) = &md.value.body
+                    {
+                        let saved_fn = std::mem::take(&mut self.current_fn);
+                        self.current_fn = md.key.name().map(|s| s.to_string());
+                        for s in &body.statements {
+                            self.walk_stmt_for_analysis(s);
+                        }
+                        self.current_fn = saved_fn;
+                    }
+                }
+            }
             _ => {}
         }
     }

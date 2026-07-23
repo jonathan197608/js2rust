@@ -7,6 +7,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsValue = @import("jsvalue.zig").JsValue;
 const js_allocator = @import("js_allocator.zig");
+const js_string = @import("js_string.zig");
 const StringArrayHashMap = @import("string_array_hash_map.zig").StringArrayHashMap;
 
 /// Type alias for a dynamic JS array.
@@ -510,16 +511,18 @@ pub const JsAny = union(enum) {
     /// Ordering comparison (<): JS spec §7.2.14 Abstract Relational Comparison.
     /// R8-P1-16: Both-strings → lexicographic; otherwise → numeric via asF64().
     /// Previously always used asF64(), making string<string always return false.
+    /// P2-6: Uses utf16Order instead of std.mem.order for correct UTF-16
+    /// code unit comparison (matches JS spec for supplementary characters).
     pub fn lt(self: JsAny, other: JsAny) bool {
         if (self.isString() and other.isString()) {
-            return std.mem.order(u8, self.value.string, other.value.string) == .lt;
+            return js_string.utf16Order(self.value.string, other.value.string) == .lt;
         }
         return self.asF64() < other.asF64();
     }
 
     pub fn le(self: JsAny, other: JsAny) bool {
         if (self.isString() and other.isString()) {
-            const ord = std.mem.order(u8, self.value.string, other.value.string);
+            const ord = js_string.utf16Order(self.value.string, other.value.string);
             return ord == .lt or ord == .eq;
         }
         return self.asF64() <= other.asF64();
@@ -527,14 +530,14 @@ pub const JsAny = union(enum) {
 
     pub fn gt(self: JsAny, other: JsAny) bool {
         if (self.isString() and other.isString()) {
-            return std.mem.order(u8, self.value.string, other.value.string) == .gt;
+            return js_string.utf16Order(self.value.string, other.value.string) == .gt;
         }
         return self.asF64() > other.asF64();
     }
 
     pub fn ge(self: JsAny, other: JsAny) bool {
         if (self.isString() and other.isString()) {
-            const ord = std.mem.order(u8, self.value.string, other.value.string);
+            const ord = js_string.utf16Order(self.value.string, other.value.string);
             return ord == .gt or ord == .eq;
         }
         return self.asF64() >= other.asF64();

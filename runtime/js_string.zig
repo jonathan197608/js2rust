@@ -123,6 +123,60 @@ pub fn byteOffsetToUtf16Index(s: []const u8, byte_off: usize) usize {
     return utf16_idx;
 }
 
+/// Compare two UTF-8 strings by UTF-16 code unit order (JS spec §7.2.14).
+/// Unlike std.mem.order(u8, ...) which compares raw UTF-8 bytes, this function
+/// decodes code points and compares their UTF-16 code unit values, matching
+/// JavaScript's string comparison semantics.
+/// Returns .lt, .eq, or .gt.
+pub fn utf16Order(a: []const u8, b: []const u8) std.math.Order {
+    var ai: usize = 0;
+    var bi: usize = 0;
+    var pending_lo_a: ?u16 = null;
+    var pending_lo_b: ?u16 = null;
+
+    while (true) {
+        // Get next UTF-16 code unit from a
+        const ua: u32 = if (pending_lo_a) |lo| @as(u32, lo) else blk: {
+            if (ai >= a.len) {
+                const b_has_more = pending_lo_b != null or bi < b.len;
+                return if (b_has_more) .lt else .eq;
+            }
+            const decoded = decodeUtf8CodePoint(a, ai) orelse {
+                const raw: u32 = a[ai];
+                ai += 1;
+                break :blk raw;
+            };
+            ai += decoded.len;
+            if (decoded.code_point <= 0xFFFF) {
+                break :blk decoded.code_point;
+            }
+            pending_lo_a = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
+            break :blk 0xD800 + ((decoded.code_point - 0x10000) >> 10);
+        };
+
+        // Get next UTF-16 code unit from b
+        const ub: u32 = if (pending_lo_b) |lo| @as(u32, lo) else blk: {
+            if (bi >= b.len) {
+                return .gt;
+            }
+            const decoded = decodeUtf8CodePoint(b, bi) orelse {
+                const raw: u32 = b[bi];
+                bi += 1;
+                break :blk raw;
+            };
+            bi += decoded.len;
+            if (decoded.code_point <= 0xFFFF) {
+                break :blk decoded.code_point;
+            }
+            pending_lo_b = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
+            break :blk 0xD800 + ((decoded.code_point - 0x10000) >> 10);
+        };
+
+        if (ua < ub) return .lt;
+        if (ua > ub) return .gt;
+    }
+}
+
 /// Return the byte slice containing exactly the first `n` UTF-16 code units of `s`.
 /// Used by padStart/padEnd for partial padding truncation.
 pub fn firstUtf16CodeUnits(s: []const u8, n: usize) []const u8 {
@@ -323,9 +377,13 @@ pub fn concat(alloc: Allocator, a: []const u8, b: []const u8) ![]const u8 {
     return result;
 }
 
-/// Check if haystack contains needle.
-pub fn includes(haystack: []const u8, needle: []const u8) bool {
-    return std.mem.indexOf(u8, haystack, needle) != null;
+/// Check if haystack contains needle starting at UTF-16 index `from_index`.
+/// P2: Added from_index parameter matching String.prototype.includes(searchString, position).
+pub fn includes(haystack: []const u8, needle: []const u8, from_index: i64) bool {
+    const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
+    const start: i64 = if (from_index < 0) 0 else if (from_index > hay_len) hay_len else from_index;
+    const byte_start = utf16IndexToByteOffset(haystack, @intCast(start)) orelse haystack.len;
+    return std.mem.indexOf(u8, haystack[byte_start..], needle) != null;
 }
 
 /// Find index of needle in haystack starting at UTF-16 index `from_index`,
@@ -414,33 +472,54 @@ pub fn substring(s: []const u8, start: i64, end: i64) []const u8 {
 
 /// Split string by separator. Returns newly allocated array of strings.
 ///
-/// Per ECMAScript spec, `split("")` splits the string into individual code units.
-/// Since the runtime strings are UTF-8, we split into UTF-8 code point sequences
-/// (equivalent for BMP characters). An empty separator must NOT be fed to
-/// `std.mem.indexOf`, which would match at position 0 forever and hang.
+/// Per ECMAScript spec, `split("")` splits the string into individual UTF-16
+/// code units. For BMP characters, these are borrowed slices of the original
+/// UTF-8 string. For supplementary characters (U+10000+), two allocated
+/// 3-byte UTF-8 strings are produced (one per surrogate half), since valid
+/// UTF-8 cannot contain surrogate code points.
+/// An empty separator must NOT be fed to `std.mem.indexOf`, which would match
+/// at position 0 forever and hang.
 pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
     var parts = std.ArrayList([]const u8).empty;
     errdefer parts.deinit(alloc);
 
     if (sep.len == 0) {
-        // Split into individual UTF-8 code point sequences (matches JS `split("")`
-        // for BMP characters; the runtime stores strings as UTF-8). We walk by
-        // leading-byte pattern rather than std.unicode.Utf8View to avoid the
-        // error-returning `init` and to keep allocations as borrowed slices of
-        // the original string buffer.
+        // Split into individual UTF-16 code units per ECMAScript spec.
+        // BMP characters (U+0000–U+FFFF) are borrowed slices of the original
+        // string. Supplementary characters produce two allocated 3-byte UTF-8
+        // strings (one per UTF-16 surrogate half) via encodeCodeUnit.
+        var allocated: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (allocated.items) |str| alloc.free(str);
+            allocated.deinit(alloc);
+        }
+
         var i: usize = 0;
         while (i < s.len) {
-            const cp_len: usize = switch (s[i] >> 4) {
-                0x0...0x7 => 1,
-                0xC...0xD => 2,
-                0xE => 3,
-                0xF => 4,
-                else => 1, // invalid leading byte; consume one byte
+            const decoded = decodeUtf8CodePoint(s, i) orelse {
+                // Invalid byte — treat as single code unit (raw byte)
+                try parts.append(alloc, s[i .. i + 1]);
+                i += 1;
+                continue;
             };
-            const end = @min(i + cp_len, s.len);
-            try parts.append(alloc, s[i..end]);
-            i = end;
+            if (decoded.code_point <= 0xFFFF) {
+                // BMP: borrow slice from original string
+                try parts.append(alloc, s[i .. i + decoded.len]);
+            } else {
+                // Supplementary: emit two surrogate halves as UTF-8 strings
+                const high: u16 = @intCast(0xD800 + ((decoded.code_point - 0x10000) >> 10));
+                const low: u16 = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
+                const hi_str = try encodeCodeUnit(alloc, high);
+                try allocated.append(alloc, hi_str);
+                try parts.append(alloc, hi_str);
+                const lo_str = try encodeCodeUnit(alloc, low);
+                try allocated.append(alloc, lo_str);
+                try parts.append(alloc, lo_str);
+            }
+            i += decoded.len;
         }
+        // Success: free the tracking list (strings are now owned by result)
+        allocated.deinit(alloc);
         return parts.toOwnedSlice(alloc);
     }
 

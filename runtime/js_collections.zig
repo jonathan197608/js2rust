@@ -163,15 +163,18 @@ pub fn JsCollection(comptime Value: type) type {
         }
 
         pub fn delete(self: *@This(), alloc: Allocator, key: JsAny) bool {
-            // Deep-free the existing entry before removing it
-            if (self.inner.getEntry(key)) |entry| {
-                var k = entry.key_ptr.*;
+            // Remove first, then deinit — avoids use-after-free when values are
+            // heap-allocated (arrays/objects). fetchRemove atomically removes
+            // the entry and returns the KV pair, so the map no longer references
+            // the freed memory during subsequent lookups or iteration.
+            if (self.inner.fetchRemove(key)) |removed| {
+                var k = removed.key;
                 k.deinit(alloc);
                 if (is_map) {
-                    var v = entry.value_ptr.*;
+                    var v = removed.value;
                     v.deinit(alloc);
                 }
-                return self.inner.remove(key);
+                return true;
             }
             return false;
         }

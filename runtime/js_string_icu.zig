@@ -22,10 +22,11 @@ const JsAny = @import("jsany.zig").JsAny;
 /// Import the basic toUpper/toLower for the simplified locale methods.
 const js_string_internal = @import("js_string.zig");
 
-/// Locale-sensitive string comparison (simplified: byte-wise comparison).
+/// Locale-sensitive string comparison (simplified: UTF-16 code unit comparison).
+/// For proper locale-aware collation, enable the `icu` feature.
 /// Returns -1 if self < other, 0 if equal, 1 if self > other.
 pub fn localeCompare(self: []const u8, other: []const u8) i64 {
-    return switch (std.mem.order(u8, self, other)) {
+    return switch (js_string_internal.utf16Order(self, other)) {
         .lt => -1,
         .eq => 0,
         .gt => 1,
