@@ -161,12 +161,19 @@ impl Emitter {
         //   { ...a, b: 1 }                 → js_runtime.spreadMerge(a, .{ .b = 1 })
         //   { ...a, ...b, c: 1 }           → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
 
-        // Collect spread expression texts
+        // Collect spread expression texts.
+        // Use emit_expr_inline_with_label_offset to avoid label conflicts
+        // when spread expressions contain labeled blocks (e.g., callback inlining).
         let mut parts: Vec<String> = obj
             .items
             .iter()
             .filter_map(|item| match item {
-                IrObjectItem::Spread(expr) => Some(self.expr_to_string(expr)),
+                IrObjectItem::Spread(expr) => {
+                    let (text, new_counter) =
+                        Self::emit_expr_inline_with_label_offset(expr, self.label_counter);
+                    self.label_counter = new_counter;
+                    Some(text)
+                }
                 _ => None,
             })
             .collect();

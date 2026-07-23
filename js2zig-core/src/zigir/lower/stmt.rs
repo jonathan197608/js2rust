@@ -1835,6 +1835,11 @@ impl Lowerer {
                 Self::wrap_in_jsany_from(expr)
             }
             IrExpr::BigIntLiteral(_) => Self::wrap_in_jsany_from(expr),
+            // New(Error) already emits JsAny (fromError) — pass through.
+            // Other New types (Map, Set, Date, …) would need JsAny.from()
+            // but trigger @compileError for unsupported struct types.
+            // Pass through and let the emitter produce the correct value.
+            IrExpr::New(ref ne) if ne.result_type == ZigType::JsAny => expr,
             IrExpr::New(_) => Self::wrap_in_jsany_from(expr),
             IrExpr::BlockExpr { .. } => Self::wrap_in_jsany_from(expr),
             // Null/Undefined already emit as JsAny — pass through

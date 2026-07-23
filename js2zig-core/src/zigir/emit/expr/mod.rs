@@ -1033,11 +1033,13 @@ impl Emitter {
             self.write(" else ");
             self.emit_assign_target_inner(target);
         } else if op == AssignOp::Nullish {
-            // a ??= b → a = if (a.isNullish()) b else a
+            // a ??= b → a = if (js_runtime.isNullish(a)) b else a
+            // Use js_runtime.isNullish (anytype) so it works for JsAny,
+            // optionals (?i64), and primitives (i64, f64, … → always false).
             self.emit_assign_target_inner(target);
-            self.write(" = if (");
+            self.write(" = if (js_runtime.isNullish(");
             self.emit_assign_target_inner(target);
-            self.write(".isNullish()) ");
+            self.write(")) ");
             self.emit_expr(value);
             self.write(" else ");
             self.emit_assign_target_inner(target);

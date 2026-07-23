@@ -19,7 +19,11 @@ impl Emitter {
             | "getUTCFullYear" | "getUTCMonth" | "getUTCDate" | "getUTCDay" | "getUTCHours"
             | "getUTCMinutes" | "getUTCSeconds" | "getUTCMilliseconds" | "setDate"
             | "setMilliseconds" | "setUTCDate" | "setUTCMilliseconds" | "setTime" | "valueOf" => {
-                self.emit_receiver_or_module_call(obj, "js_date", method, args);
+                if method.starts_with("set") {
+                    self.emit_date_setter_simple(obj, method, args);
+                } else {
+                    self.emit_receiver_or_module_call(obj, "js_date", method, args);
+                }
             }
             // Date setters with optional params — pad missing args with null:
             // setFullYear(year, month?, date?) → 3 slots
@@ -30,7 +34,7 @@ impl Emitter {
                     self.write(&format!("js_date.{}(", method));
                 }
                 let defaults = ["0", "null", "null"];
-                self.emit_args_with_defaults(args, 3, &defaults);
+                self.emit_args_with_defaults_i64(args, 3, &defaults);
                 self.write(")");
             }
             // setMonth(month, date?) → 2 slots
@@ -41,7 +45,7 @@ impl Emitter {
                     self.write(&format!("js_date.{}(", method));
                 }
                 let defaults = ["0", "null"];
-                self.emit_args_with_defaults(args, 2, &defaults);
+                self.emit_args_with_defaults_i64(args, 2, &defaults);
                 self.write(")");
             }
             // setHours(hours, min?, sec?, ms?) → 4 slots
@@ -52,7 +56,7 @@ impl Emitter {
                     self.write(&format!("js_date.{}(", method));
                 }
                 let defaults = ["0", "null", "null", "null"];
-                self.emit_args_with_defaults(args, 4, &defaults);
+                self.emit_args_with_defaults_i64(args, 4, &defaults);
                 self.write(")");
             }
             // setMinutes(min, sec?, ms?) → 3 slots
@@ -63,7 +67,7 @@ impl Emitter {
                     self.write(&format!("js_date.{}(", method));
                 }
                 let defaults = ["0", "null", "null"];
-                self.emit_args_with_defaults(args, 3, &defaults);
+                self.emit_args_with_defaults_i64(args, 3, &defaults);
                 self.write(")");
             }
             // setSeconds(sec, ms?) → 2 slots
@@ -74,7 +78,7 @@ impl Emitter {
                     self.write(&format!("js_date.{}(", method));
                 }
                 let defaults = ["0", "null"];
-                self.emit_args_with_defaults(args, 2, &defaults);
+                self.emit_args_with_defaults_i64(args, 2, &defaults);
                 self.write(")");
             }
             // Instance methods that need allocator
@@ -97,7 +101,7 @@ impl Emitter {
                 self.write("js_date.utc(");
                 // Defaults: [y=1970, m=0, d=1, h=0, min=0, s=0, ms=0]
                 let defaults = ["1970", "0", "1", "0", "0", "0", "0"];
-                self.emit_args_with_defaults(args, 7, &defaults);
+                self.emit_args_with_defaults_i64(args, 7, &defaults);
                 self.write(")");
             }
             _ => {
@@ -105,6 +109,27 @@ impl Emitter {
                 self.emit_module_call("js_date", method, args);
             }
         }
+    }
+
+    /// Emit a simple Date setter (single i64 argument): `obj.method(arg)`.
+    /// Coerces the argument to i64 to handle JsAny/F64 variables.
+    fn emit_date_setter_simple(
+        &mut self,
+        obj: Option<&str>,
+        method: &str,
+        args: &[crate::zigir::types::IrExpr],
+    ) {
+        if let Some(name) = obj {
+            self.write(&format!("{}.{}(", name, method));
+        } else {
+            self.write(&format!("js_date.{}(", method));
+        }
+        if let Some(arg) = args.first() {
+            self.emit_i64_coerced(arg);
+        } else {
+            self.write("0");
+        }
+        self.write(")");
     }
     pub(super) fn emit_typedarray_builtin(
         &mut self,

@@ -63,8 +63,19 @@ impl Emitter {
     /// Emit an argument coerced to f64, handling both int and float inputs.
     /// - Float expressions/literals: `@as(f64, expr)` (identity/comptime cast)
     /// - Int literals: `@as(f64, literal)` (comptime coercion, no @floatFromInt)
+    /// - JsAny expressions: `expr.asF64()` (preserves float payload)
     /// - Int variables/expressions: `@as(f64, @floatFromInt(expr))` (int→float)
     fn emit_f64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
+        // JsAny-typed expressions: use .asF64() to preserve float payload
+        if let crate::zigir::types::IrExpr::TypedIdent {
+            ty: crate::types::ZigType::JsAny,
+            ..
+        } = arg
+        {
+            self.emit_expr(arg);
+            self.write(".asF64()");
+            return;
+        }
         if expr_is_float(arg) || matches!(arg, crate::zigir::types::IrExpr::IntLiteral(_)) {
             self.write("@as(f64, ");
             self.emit_expr(arg);
@@ -297,11 +308,15 @@ impl Emitter {
                 let first = self.render_f64_coerced_to_string(&args[0]);
                 self.write(&first);
                 self.write("; ");
-                for arg in &args[1..] {
+                for (i, arg) in args[1..].iter().enumerate() {
+                    // Cache each arg in a temp to avoid double-evaluation and
+                    // duplicate label names when the expression contains blocks.
+                    let tmp = format!("__{}_{}", var, i + 1);
                     let arg_str = self.render_f64_coerced_to_string(arg);
+                    self.write(&format!("const {} = {}; ", tmp, arg_str));
                     self.write(&format!(
                         "if ({} {} {}) {} = {}; ",
-                        arg_str, cmp_op, var, var, arg_str
+                        tmp, cmp_op, var, var, tmp
                     ));
                 }
                 self.write(&format!(" break :{} {}; }})", blk, var));
@@ -310,11 +325,15 @@ impl Emitter {
                 self.write(&format!("({}: {{ var {} = @as(i64, ", blk, var));
                 self.emit_expr(&args[0]);
                 self.write("); ");
-                for arg in &args[1..] {
+                for (i, arg) in args[1..].iter().enumerate() {
+                    // Cache each arg in a temp to avoid double-evaluation and
+                    // duplicate label names when the expression contains blocks.
+                    let tmp = format!("__{}_{}", var, i + 1);
                     let arg_str = self.render_expr_to_string(arg);
+                    self.write(&format!("const {} = @as(i64, {}); ", tmp, arg_str));
                     self.write(&format!(
-                        "if (@as(i64, {}) {} {}) {} = @as(i64, {}); ",
-                        arg_str, cmp_op, var, var, arg_str
+                        "if ({} {} {}) {} = {}; ",
+                        tmp, cmp_op, var, var, tmp
                     ));
                 }
                 self.write(&format!(" break :{} {}; }})", blk, var));

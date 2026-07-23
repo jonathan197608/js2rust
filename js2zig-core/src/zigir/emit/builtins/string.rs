@@ -1,23 +1,63 @@
 // zigir/emit/builtins/string.rs
 // String builtin method emission.
 
-use crate::zigir::emit::builtins::math::expr_is_float;
 use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
 
 impl Emitter {
-    /// Emit an argument coerced to i64, handling both int and float inputs.
-    /// Used by fromCharCode/fromCodePoint which take `[]const i64`.
-    /// - Float expressions: `@as(i64, @intFromFloat(expr))`
+    /// Emit an argument coerced to i64, handling int, float, and JsAny inputs.
+    /// Used by fromCharCode/fromCodePoint (take `[]const i64`) and Date setters.
+    /// - JsAny expressions: `expr.asI64()` (extract i64 from union)
+    /// - Float expressions: `@as(i64, @intFromFloat(expr))` (truncation)
     /// - Int expressions/literals: emit directly (already i64)
-    fn emit_i64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
-        if expr_is_float(arg) {
-            self.write("@as(i64, @intFromFloat(");
-            self.emit_expr(arg);
-            self.write("))");
-        } else {
-            self.emit_expr(arg);
+    pub(crate) fn emit_i64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
+        use crate::zigir::types::IrExpr;
+        match arg {
+            // JsAny-typed: use .asI64() to extract the integer value
+            IrExpr::TypedIdent {
+                ty: crate::types::ZigType::JsAny,
+                ..
+            } => {
+                self.emit_expr(arg);
+                self.write(".asI64()");
+            }
+            // JsAny-returning builtins → .asI64()
+            IrExpr::BuiltinCall(bc) if bc.return_type == crate::types::ZigType::JsAny => {
+                self.emit_expr(arg);
+                self.write(".asI64()");
+            }
+            // Float-typed: @intFromFloat
+            IrExpr::TypedIdent {
+                ty: crate::types::ZigType::F64,
+                ..
+            } => {
+                self.write("@as(i64, @intFromFloat(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
+            // FloatLiteral → @intFromFloat
+            IrExpr::FloatLiteral(_) => {
+                self.write("@as(i64, @intFromFloat(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
+            // Division/Rem/Pow produce f64 in JS → @intFromFloat
+            IrExpr::DivExpr { .. } | IrExpr::RemExpr { .. } | IrExpr::PowExpr { .. } => {
+                self.write("@as(i64, @intFromFloat(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
+            // Float-producing builtins → @intFromFloat
+            IrExpr::BuiltinCall(bc) if bc.return_type == crate::types::ZigType::F64 => {
+                self.write("@as(i64, @intFromFloat(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
+            // Already i64 or unknown — pass through
+            _ => {
+                self.emit_expr(arg);
+            }
         }
     }
 

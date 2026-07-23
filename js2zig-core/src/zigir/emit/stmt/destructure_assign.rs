@@ -116,6 +116,14 @@ impl Emitter {
             IrExpr::BoolLiteral(_) => ".asBool()",
             IrExpr::StringLiteral(_) => ".value.string",
             IrExpr::FloatLiteral(_) => ".asF64()",
+            // TypedIdent with F64 → float extraction
+            IrExpr::TypedIdent {
+                ty: ZigType::F64, ..
+            } => ".asF64()",
+            // TypedIdent with JsAny → assume i64 (most common JS number default)
+            IrExpr::TypedIdent {
+                ty: ZigType::JsAny, ..
+            } => ".asI64()",
             // Division always produces f64 in JS semantics
             IrExpr::Binary {
                 op,

@@ -523,10 +523,13 @@ impl Emitter {
     fn emit_string_switch(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
         // Bind the discriminant to a const so it is evaluated only once,
         // avoiding repeated side-effects if the expression is non-trivial.
+        // `_ = &__sw;` suppresses "unused variable" when all cases are default.
         self.write_indent();
         self.write("const __sw = ");
         self.emit_expr(expr);
         self.write(";\n");
+        self.write_indent();
+        self.write("_ = &__sw;\n");
 
         let mut written_first = false;
         let mut has_default = false;

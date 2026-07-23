@@ -106,6 +106,21 @@ pub fn isTruthy(value: anytype) bool {
     return true; // fallback: objects, struct instances are truthy
 }
 
+/// JS nullish check (null or undefined).  Works for any type:
+/// - `null` literal → true
+/// - JsAny → delegates to JsAny.isNullish()
+/// - Optional types → value == null
+/// - All other types (i64, f64, bool, string, structs) → false
+pub fn isNullish(value: anytype) bool {
+    const T = @TypeOf(value);
+    if (T == @TypeOf(null)) return true;
+    if (T == jsany.JsAny) return value.isNullish();
+    switch (@typeInfo(T)) {
+        .optional => return value == null,
+        else => return false,
+    }
+}
+
 /// JS remainder operator: always uses f64 to preserve signed zero (-0).
 /// In JavaScript, `-4 % 2` produces `-0` (IEEE 754), but Zig's `@rem` on
 /// integers returns `0` (no signed zero concept). This helper ensures

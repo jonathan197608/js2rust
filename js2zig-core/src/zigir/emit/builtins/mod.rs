@@ -149,6 +149,28 @@ impl Emitter {
         total_slots: usize,
         defaults: &[&str],
     ) {
+        self.emit_args_with_defaults_coerced(args, total_slots, defaults, false);
+    }
+
+    /// Same as `emit_args_with_defaults` but coerces each provided argument
+    /// to i64 via `emit_i64_coerced`. Used by Date setter methods whose Zig
+    /// runtime signatures expect `i64` parameters.
+    pub(super) fn emit_args_with_defaults_i64(
+        &mut self,
+        args: &[crate::zigir::types::IrExpr],
+        total_slots: usize,
+        defaults: &[&str],
+    ) {
+        self.emit_args_with_defaults_coerced(args, total_slots, defaults, true);
+    }
+
+    fn emit_args_with_defaults_coerced(
+        &mut self,
+        args: &[crate::zigir::types::IrExpr],
+        total_slots: usize,
+        defaults: &[&str],
+        coerce_i64: bool,
+    ) {
         let n_args = args.len();
         #[allow(clippy::needless_range_loop)]
         for i in 0..total_slots {
@@ -156,7 +178,11 @@ impl Emitter {
                 self.write(", ");
             }
             if i < n_args {
-                self.emit_expr(&args[i]);
+                if coerce_i64 {
+                    self.emit_i64_coerced(&args[i]);
+                } else {
+                    self.emit_expr(&args[i]);
+                }
             } else if let Some(default) = defaults.get(i) {
                 self.write(default);
             }
