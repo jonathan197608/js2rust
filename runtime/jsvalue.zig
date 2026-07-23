@@ -109,7 +109,14 @@ pub const JsValue = union(enum) {
                 break :blk @as(i64, @intFromFloat(v));
             },
             .bool => |v| if (v) 1 else 0,
-            .string => |v| std.fmt.parseInt(i64, v, 10) catch 0,
+            .string => |v| blk: {
+                // JS ToInteger/ToInt32 trims whitespace before parsing.
+                // Pre-fix: std.fmt.parseInt on "  42" fails → returns 0.
+                var start: usize = 0;
+                while (start < v.len and std.ascii.isWhitespace(v[start])) start += 1;
+                const trimmed = v[start..];
+                break :blk std.fmt.parseInt(i64, trimmed, 10) catch 0;
+            },
             .null => 0,
             .undefined => 0,
         };
@@ -124,18 +131,30 @@ pub const JsValue = union(enum) {
             // (parseFloat fails for these; ECMA-262 StringNumericLiteral
             // returns +0 after trimming WhiteSpace+LineTerminator).
             // Non-numeric ("abc") still yields NaN per R7-5.
-            .string => |v| std.fmt.parseFloat(f64, v) catch blk: {
-                var all_ws = true;
-                for (v) |byte| {
-                    switch (byte) {
-                        ' ', '\t', '\n', '\r', 0x0B, 0x0C => {},
-                        else => {
-                            all_ws = false;
-                            break;
-                        },
-                    }
+            // R16: Trim leading whitespace before parsing (JS ToNumber trims).
+            // Also handle "0x"/"0X" hex prefix (JS Number("0xFF") === 255).
+            .string => |v| blk: {
+                var start: usize = 0;
+                while (start < v.len and std.ascii.isWhitespace(v[start])) start += 1;
+                const trimmed = v[start..];
+                if (trimmed.len == 0) break :blk 0.0;
+                // Handle 0x/0X hex prefix
+                if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'x' or trimmed[1] == 'X')) {
+                    break :blk @as(f64, @floatFromInt(std.fmt.parseInt(i64, trimmed[2..], 16) catch break :blk std.math.nan(f64)));
                 }
-                break :blk if (all_ws) 0.0 else std.math.nan(f64);
+                break :blk std.fmt.parseFloat(f64, trimmed) catch blk2: {
+                    var all_ws = true;
+                    for (trimmed) |byte| {
+                        switch (byte) {
+                            ' ', '\t', '\n', '\r', 0x0B, 0x0C => {},
+                            else => {
+                                all_ws = false;
+                                break;
+                            },
+                        }
+                    }
+                    break :blk2 if (all_ws) 0.0 else std.math.nan(f64);
+                };
             },
             .null => 0.0,
             .undefined => std.math.nan(f64),
@@ -327,6 +346,32 @@ test "asF64: empty/whitespace string → 0 not NaN (R8-P1-6)" {
     // Non-numeric, non-whitespace still → NaN (regression guard).
     try std.testing.expect(std.math.isNan(Jv.fromString("abc").asF64()));
     try std.testing.expect(std.math.isNan(Jv.fromString("12abc").asF64()));
+}
+
+test "asI64: whitespace-prefixed string trims before parsing (R16)" {
+    // JS: "  42" | 0 → 42 (ToInt32 trims whitespace).
+    // Pre-fix: std.fmt.parseInt("  42") fails → returned 0.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(i64, 42), Jv.fromString("  42").asI64());
+    try std.testing.expectEqual(@as(i64, -7), Jv.fromString("\t-7").asI64());
+    try std.testing.expectEqual(@as(i64, 0), Jv.fromString("  abc").asI64());
+}
+
+test "asF64: whitespace-prefixed string trims before parsing (R16)" {
+    // JS: Number("  42") === 42, Number("\t3.14") === 3.14.
+    // Pre-fix: parseFloat("  42") fails → NaN.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(f64, 42.0), Jv.fromString("  42").asF64());
+    try std.testing.expectEqual(@as(f64, 3.14), Jv.fromString("\t3.14").asF64());
+}
+
+test "asF64: 0x hex string parses to integer (R16)" {
+    // JS: Number("0xFF") === 255, Number("0x1A") === 26.
+    // Pre-fix: parseFloat("0xFF") fails → NaN.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(f64, 255.0), Jv.fromString("0xFF").asF64());
+    try std.testing.expectEqual(@as(f64, 26.0), Jv.fromString("0x1A").asF64());
+    try std.testing.expect(std.math.isNan(Jv.fromString("0x").asF64()));
 }
 
 test "format/asString emit NaN/Infinity not nan/inf (R8-P1-7)" {

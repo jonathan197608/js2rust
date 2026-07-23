@@ -567,6 +567,11 @@ pub fn parse(s: []const u8) i64 {
     if (s[7] != '-') return 0;
     const day = parseDigits2(s[8..10]) orelse return 0;
 
+    // R16: Validate month/day ranges per ECMA-262 Date Time String Format.
+    // Month must be 1-12; day must be 1-31 (simplified check; daysInMonth
+    // would be ideal but 31 catches obvious invalid dates like "2024-13-45").
+    if (month < 1 or month > 12 or day < 1 or day > 31) return 0;
+
     var hours: i64 = 0;
     var minutes: i64 = 0;
     var seconds: i64 = 0;
@@ -851,6 +856,19 @@ test "parse invalid string" {
     try std.testing.expectEqual(@as(i64, 0), parse("not a date"));
     try std.testing.expectEqual(@as(i64, 0), parse(""));
     try std.testing.expectEqual(@as(i64, 0), parse("2024"));
+}
+
+test "parse rejects out-of-range month/day (R16)" {
+    // JS: Date.parse("2024-13-45") returns NaN (0 in our i64 representation).
+    // Pre-fix: parse accepted invalid month/day and computed a wrong timestamp.
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-13-01")); // month 13
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-00-01")); // month 0
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-01-00")); // day 0
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-01-32")); // day 32
+    // Valid dates still parse correctly (no regression).
+    const d = parse("2024-06-15");
+    const expected = daysFromCivil(2024, 6, 15) * 86400 * 1000;
+    try std.testing.expectEqual(expected, d);
 }
 
 // ── Tests for new Date methods (Phase 5) ──

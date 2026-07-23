@@ -34,7 +34,8 @@ impl Emitter {
     }
 
     /// Emit the start-index and delete-count computation shared by splice/toSpliced.
-    /// Writes: `const {start_var} = @as(usize, @intCast(@max(0, start_expr)));  const {cnt_var} = @as(usize, @intCast(@min(@max(0, count_expr), {receiver}.items.len -| {start_var})));  `
+    /// R16: Negative start uses JS from-end conversion instead of @max(0, start).
+    /// Writes: `const {start_var} = if (start < 0) max(0, len+start) else min(start, len); const {cnt_var} = min(max(0, count), len - start);  `
     fn emit_splice_start_count(
         &mut self,
         start_var: &str,
@@ -42,18 +43,19 @@ impl Emitter {
         receiver: &str,
         args: &[crate::zigir::types::IrExpr],
     ) {
-        self.write(&format!(
-            "const {} = @as(usize, @intCast(@max(0, ",
-            start_var
-        ));
+        // Emit start as isize const first to avoid double evaluation
+        self.write(&format!("const {}_raw: isize = @intCast(", start_var));
         if let Some(arg) = args.first() {
             self.emit_expr(arg);
         } else {
             self.write("0");
         }
-        self.write("))); ");
         self.write(&format!(
-            "const {} = @as(usize, @intCast(@min(@max(0, ",
+            "); const __spl_len = {}.items.len; const {}: usize = @intCast(if ({}_raw < 0) @max(0, @as(isize, @intCast(__spl_len)) + {}_raw) else @min(@as(usize, @intCast({}_raw)), __spl_len)); ",
+            receiver, start_var, start_var, start_var, start_var
+        ));
+        self.write(&format!(
+            "const {}: usize = @intCast(@min(@max(0, ",
             cnt_var
         ));
         if args.len() >= 2 {
@@ -61,7 +63,7 @@ impl Emitter {
         } else {
             self.write("0");
         }
-        self.write(&format!("), {}.items.len -| {}))); ", receiver, start_var));
+        self.write(&format!("), {}.items.len -| {})); ", receiver, start_var));
     }
 
     /// Emit an inlined array non-callback method as a Zig block expression or
@@ -223,7 +225,9 @@ impl Emitter {
 
     // ── slice ──────────────────────────────────────────
     // (blk: { var __slice: std.ArrayList(elem_type) = .empty;
-    //   __slice.appendSlice(js_allocator.allocator(), obj.items[start..end]) catch @panic("OOM");
+    //   const __len = obj.items.len; const __s = if (start < 0) max(0, len+start) else min(start, len);
+    //   const __e = if (end < 0) max(0, len+end) else min(end, len);
+    //   __slice.appendSlice(allocator, obj.items[__s..__e]) catch @panic("OOM");
     //   break :blk __slice; })
     pub(super) fn emit_slice_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
@@ -235,26 +239,43 @@ impl Emitter {
             elem_type_str
         ));
 
-        // Build the slice expression: obj.items, obj.items[start..], or obj.items[start..end]
-        self.write("__slice.appendSlice(js_allocator.allocator(), ");
-        self.write(&receiver);
-        self.write(".items");
+        // R16: Handle negative indices via JS from-end conversion.
         match data.args.len() {
-            0 => {}
+            0 => {
+                self.write(&format!(
+                    "__slice.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    receiver
+                ));
+            }
             1 => {
-                self.write("[");
+                // slice(start): store start in a const, compute from-end
+                self.write("const __slice_start: isize = @intCast(");
                 self.emit_expr(&data.args[0]);
-                self.write("..]");
+                self.write(&format!(
+                    "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); ",
+                    receiver
+                ));
+                self.write(&format!(
+                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    receiver
+                ));
             }
             _ => {
-                self.write("[");
+                // slice(start, end): store both, compute from-end
+                self.write("const __slice_start: isize = @intCast(");
                 self.emit_expr(&data.args[0]);
-                self.write("..");
+                self.write("); const __slice_end: isize = @intCast(");
                 self.emit_expr(&data.args[1]);
-                self.write("]");
+                self.write(&format!(
+                    "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); const __e: usize = @intCast(if (__slice_end < 0) @max(0, @as(isize, @intCast(__len)) + __slice_end) else @min(@as(usize, @intCast(__slice_end)), __len)); ",
+                    receiver
+                ));
+                self.write(&format!(
+                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..__e]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    receiver
+                ));
             }
         }
-        self.write(") catch @panic(\"OOM: Array.slice appendSlice\"); ");
         self.write(&format!("break :{} __slice; }})", blk));
     }
 
@@ -350,6 +371,7 @@ impl Emitter {
     // ── copyWithin ─────────────────────────────────────
     // Copies a sequence of elements within the array. Uses reverse copy
     // when target > start to handle overlapping regions correctly (P0-4 fix).
+    // R16: Negative target/start/end use JS from-end conversion.
     pub(super) fn emit_copy_within_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -357,33 +379,36 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write("const __cpw_target = @as(isize, @intCast(");
+        // Emit target, start, end as isize consts for from-end conversion
+        self.write("const __cpw_target_raw: isize = @intCast(");
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
         } else {
             self.write("0");
         }
-        self.write(")); ");
-        self.write("const __cpw_start = @as(isize, @intCast(");
+        self.write("); const __cpw_start_raw: isize = @intCast(");
         if data.args.len() >= 2 {
             self.emit_expr(&data.args[1]);
         } else {
             self.write("0");
         }
-        self.write(")); ");
-        self.write("const __cpw_end = @as(isize, @intCast(");
+        self.write("); const __cpw_end_raw: isize = @intCast(");
         if data.args.len() >= 3 {
             self.emit_expr(&data.args[2]);
         } else {
             self.write(&format!("@as(i64, @intCast({}.items.len))", receiver));
         }
-        self.write(")); ");
+        // Convert negative indices via from-end
+        self.write(&format!(
+            "); const __len = {}.items.len; const __cpw_target: usize = @intCast(if (__cpw_target_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_target_raw) else @min(@as(usize, @intCast(__cpw_target_raw)), __len)); const __cpw_start: usize = @intCast(if (__cpw_start_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_start_raw) else @min(@as(usize, @intCast(__cpw_start_raw)), __len)); const __cpw_end: usize = @intCast(if (__cpw_end_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_end_raw) else @min(@as(usize, @intCast(__cpw_end_raw)), __len)); ",
+            receiver
+        ));
+        // Use existing copyWithin logic with forward/backward copy based on overlap
         self.write("const __cpw_cnt = __cpw_end - __cpw_start; ");
         self.write("if (__cpw_cnt > 0) { ");
-        self.write("const __src = @as(usize, @intCast(__cpw_start)); const __dst = @as(usize, @intCast(__cpw_target)); ");
         // Use reverse copy when target > start to avoid overwriting source
         self.write(&format!(
-            "if (__cpw_target > __cpw_start) {{ var __j: usize = @as(usize, @intCast(__cpw_cnt)); while (__j > 0) {{ __j -= 1; {}.items[__dst + __j] = {}.items[__src + __j]; }} }} else {{ for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__dst + __j] = {}.items[__src + __j]; }} }} }} ",
+            "if (__cpw_target > __cpw_start) {{ var __j: usize = @as(usize, @intCast(__cpw_cnt)); while (__j > 0) {{ __j -= 1; {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} else {{ for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} }} ",
             receiver, receiver, receiver, receiver
         ));
         self.write(&format!("break :{} &{}; }})", blk, receiver));
@@ -392,39 +417,55 @@ impl Emitter {
     // ── fill ───────────────────────────────────────────
     // for (obj.items[@intCast(start)..@intCast(end)]) |*elem| { elem.* = val; }
     // Returns receiver for JS chaining semantics (arr.fill(v) === arr).
+    // R16: Negative start/end use JS from-end conversion.
     // Wraps in labeled block so the const binding is scoped and receiver is returned.
     pub(super) fn emit_fill_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write(&format!("for ({}.items", receiver));
         match data.args.len() {
             0 => {
                 // fill entire array — no value arg, use 0 as default
-                // (most typed array element types are numeric)
-                self.write(") |*elem| { elem.* = 0; }");
+                self.write(&format!(
+                    "for ({}.items) |*elem| {{ elem.* = 0; }}",
+                    receiver
+                ));
             }
             1 => {
                 // fill(value) — fill entire array
-                self.write(") |*elem| { elem.* = ");
+                self.write(&format!("for ({}.items) |*elem| {{ elem.* = ", receiver));
                 self.emit_expr(&data.args[0]);
                 self.write("; }");
             }
             2 => {
-                // fill(value, start)
-                self.write("[@intCast(");
+                // fill(value, start) — with negative index support
+                self.write("const __fill_start: isize = @intCast(");
                 self.emit_expr(&data.args[1]);
-                self.write(")..]) |*elem| { elem.* = ");
+                self.write(&format!(
+                    "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); ",
+                    receiver
+                ));
+                self.write(&format!(
+                    "for ({}.items[__fs..]) |*elem| {{ elem.* = ",
+                    receiver
+                ));
                 self.emit_expr(&data.args[0]);
                 self.write("; }");
             }
             _ => {
-                // fill(value, start, end)
-                self.write("[@intCast(");
+                // fill(value, start, end) — with negative index support
+                self.write("const __fill_start: isize = @intCast(");
                 self.emit_expr(&data.args[1]);
-                self.write(")..@intCast(");
+                self.write("); const __fill_end: isize = @intCast(");
                 self.emit_expr(&data.args[2]);
-                self.write(")]) |*elem| { elem.* = ");
+                self.write(&format!(
+                    "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); const __fe: usize = @intCast(if (__fill_end < 0) @max(0, @as(isize, @intCast(__len)) + __fill_end) else @min(@as(usize, @intCast(__fill_end)), __len)); ",
+                    receiver
+                ));
+                self.write(&format!(
+                    "for ({}.items[__fs..__fe]) |*elem| {{ elem.* = ",
+                    receiver
+                ));
                 self.emit_expr(&data.args[0]);
                 self.write("; }");
             }
@@ -434,9 +475,11 @@ impl Emitter {
 
     // ── with ───────────────────────────────────────────
     // arr.with(index, value) → clone the array, replace element at index
+    // R16: Negative index uses JS from-end conversion.
     // (blk: { var __with: std.ArrayList(elem_type) = .empty;
     //   __with.appendSlice(allocator, obj.items) catch @panic("OOM");
-    //   __with.items[@intCast(idx)] = value;
+    //   const __with_idx = if (idx < 0) max(0, len+idx) else min(idx, len);
+    //   __with.items[__with_idx] = value;
     //   break :blk __with; })
     pub(super) fn emit_with_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
@@ -451,16 +494,17 @@ impl Emitter {
             "__with.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.with appendSlice\"); ",
             receiver
         ));
-        // Replace element at index — with bounds check (P0-7 fix)
-        self.write("const __with_idx = @as(usize, @intCast(");
+        // Compute index with from-end conversion for negative indices
+        self.write("const __with_raw: isize = @intCast(");
         if let Some(idx_arg) = data.args.first() {
             self.emit_expr(idx_arg);
         } else {
             self.write("0");
         }
-        self.write(")); ");
+        self.write(
+            "); const __with_len = __with.items.len; const __with_idx: usize = @intCast(if (__with_raw < 0) @max(0, @as(isize, @intCast(__with_len)) + __with_raw) else @min(@as(usize, @intCast(__with_raw)), __with_len)); "
+        );
         // JS spec: with() throws RangeError for out-of-range index.
-        // Emit a bounds check (panic for now; future: throw JsError)
         self.write("if (__with_idx >= __with.items.len) @panic(\"RangeError: Invalid array index for Array.with()\"); ");
         self.write("__with.items[__with_idx] = ");
         if data.args.len() >= 2 {

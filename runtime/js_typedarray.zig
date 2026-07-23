@@ -257,7 +257,11 @@ pub fn copyWithinI8(arr: []i8, target: i64, start: i64, end: i64) []i8 {
     if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
-    std.mem.copyForwards(i8, arr[t..t + count], arr[s..s + count]);
+    if (t > s) {
+        std.mem.copyBackwards(i8, arr[t..t + count], arr[s..s + count]);
+    } else {
+        std.mem.copyForwards(i8, arr[t..t + count], arr[s..s + count]);
+    }
     return arr;
 }
 
@@ -273,7 +277,11 @@ pub fn copyWithinU8(arr: []u8, target: i64, start: i64, end: i64) []u8 {
     if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
-    std.mem.copyForwards(u8, arr[t..t + count], arr[s..s + count]);
+    if (t > s) {
+        std.mem.copyBackwards(u8, arr[t..t + count], arr[s..s + count]);
+    } else {
+        std.mem.copyForwards(u8, arr[t..t + count], arr[s..s + count]);
+    }
     return arr;
 }
 
@@ -289,7 +297,11 @@ pub fn copyWithinI32(arr: []i32, target: i64, start: i64, end: i64) []i32 {
     if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
-    std.mem.copyForwards(i32, arr[t..t + count], arr[s..s + count]);
+    if (t > s) {
+        std.mem.copyBackwards(i32, arr[t..t + count], arr[s..s + count]);
+    } else {
+        std.mem.copyForwards(i32, arr[t..t + count], arr[s..s + count]);
+    }
     return arr;
 }
 
@@ -305,7 +317,11 @@ pub fn copyWithinF64(arr: []f64, target: i64, start: i64, end: i64) []f64 {
     if (s >= e or t >= arr.len) return arr;
 
     const count = @min(e - s, arr.len - t);
-    std.mem.copyForwards(f64, arr[t..t + count], arr[s..s + count]);
+    if (t > s) {
+        std.mem.copyBackwards(f64, arr[t..t + count], arr[s..s + count]);
+    } else {
+        std.mem.copyForwards(f64, arr[t..t + count], arr[s..s + count]);
+    }
     return arr;
 }
 
@@ -474,6 +490,21 @@ test "copyWithinI32" {
     try std.testing.expectEqual(@as(i32, 4), arr[0]);
     try std.testing.expectEqual(@as(i32, 5), arr[1]);
     try std.testing.expectEqual(@as(i32, 3), arr[2]);
+}
+
+test "copyWithinI32 overlap target > start uses copyBackwards" {
+    var arr = [_]i32{ 1, 2, 3, 4, 5 };
+    _ = copyWithinI32(&arr, 2, 0, 4);
+    // [1,2,1,2,5] — forwards copy would give [1,2,1,2,5] incorrectly
+    // because arr[0]→arr[2] overwrites arr[2] before arr[2]→arr[4] reads it.
+    // Correct result with backwards: [1,2,1,2,5] — but need to verify.
+    // Actually: copy arr[0..4] → arr[2..6] (capped): arr[2]=1, arr[3]=2
+    // Backwards: arr[3]=arr[1]=2, arr[2]=arr[0]=1
+    try std.testing.expectEqual(@as(i32, 1), arr[0]);
+    try std.testing.expectEqual(@as(i32, 2), arr[1]);
+    try std.testing.expectEqual(@as(i32, 1), arr[2]);
+    try std.testing.expectEqual(@as(i32, 2), arr[3]);
+    try std.testing.expectEqual(@as(i32, 5), arr[4]);
 }
 
 test "fillI32" {

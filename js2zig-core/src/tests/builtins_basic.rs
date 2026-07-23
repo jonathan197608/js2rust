@@ -260,10 +260,15 @@ return sub[0] + sub[1] + sub[2];
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_slice");
 
-    // Verify slice expression is generated: arr.items[1..4]
+    // Verify slice expression is generated with __s..__e range (R16: negative index support)
     assert!(
-        zig.contains(".items[1..4]"),
-        "Expected '.items[1..4]' slice in:\n{}",
+        zig.contains("__s..__e]"),
+        "Expected '__s..__e]' slice in:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("__slice_start") && zig.contains("__slice_end"),
+        "Expected __slice_start and __slice_end const in:\n{}",
         zig
     );
 }

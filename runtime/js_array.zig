@@ -27,13 +27,30 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
         return result;
     }
 
-    // If string, split into characters
+    // If string, split into characters (JS: by UTF-16 code units, not UTF-8 bytes).
+    // R16: Pre-fix iterated UTF-8 bytes, so "café" produced 5 elements
+    // (é = 2 UTF-8 bytes). JS Array.from splits by UTF-16 code units;
+    // for BMP characters this is the same as Unicode code points.
     if (arrayLike.isString()) {
         const str = arrayLike.value.string;
-        try result.ensureTotalCapacity(alloc, str.len);
-        for (str) |ch| {
-            const chr = try alloc.dupe(u8, &[1]u8{ch});
+        // First pass: count UTF-8 code points (≈ UTF-16 code units for BMP).
+        var cp_count: usize = 0;
+        var si: usize = 0;
+        while (si < str.len) {
+            const cp_len = std.unicode.utf8ByteSequenceLength(str[si]) catch 1;
+            si += @min(@as(usize, cp_len), str.len - si);
+            cp_count += 1;
+        }
+        try result.ensureTotalCapacity(alloc, cp_count);
+        // Second pass: emit each code point as a string.
+        si = 0;
+        while (si < str.len) {
+            const cp_len = std.unicode.utf8ByteSequenceLength(str[si]) catch 1;
+            const end = @min(si + @as(usize, cp_len), str.len);
+            const char_slice = str[si..end];
+            const chr = try alloc.dupe(u8, char_slice);
             result.appendAssumeCapacity(JsAny.fromString(chr));
+            si = end;
         }
         return result;
     }

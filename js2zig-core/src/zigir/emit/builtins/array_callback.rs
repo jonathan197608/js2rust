@@ -1,6 +1,7 @@
 // zigir/emit/builtins/array_callback.rs
 // Array callback method inlining (forEach, some, every, filter, find, map, reduce, etc.).
 
+use crate::types::ZigType;
 use crate::zigir::emit::helpers::EmitterHelpers;
 
 use crate::zigir::emit::Emitter;
@@ -451,14 +452,24 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let acc_name = format!("_acc_{}", self.peek_label_id());
+        let has_init = data.reduce_init.is_some();
         // Determine init value and accumulator type using type-aware detection
-        let init_expr_str = match &data.reduce_init {
-            Some(expr) => self.render_expr_to_string(expr),
-            None => "0".to_string(),
-        };
-        let acc_type = match &data.reduce_init {
-            Some(expr) if super::math::expr_is_float(expr) => "f64",
-            _ => "i64",
+        let (init_expr_str, acc_type) = match &data.reduce_init {
+            Some(expr) => {
+                let ty = if super::math::expr_is_float(expr) {
+                    "f64".to_string()
+                } else if matches!(data.elem_type, ZigType::JsAny) {
+                    "JsAny".to_string()
+                } else {
+                    "i64".to_string()
+                };
+                (self.render_expr_to_string(expr), ty)
+            }
+            None => {
+                // JS spec: no initial value → use arr[0] as accumulator, iterate from index 1
+                let ty = data.elem_type.to_zig_type().into_owned();
+                (format!("{}.items[0]", receiver), ty)
+            }
         };
         self.write(&format!(
             "var {}: {} = {}; ",
@@ -476,7 +487,12 @@ impl Emitter {
             data.elem_param.clone()
         };
 
-        self.write(&format!("for ({}.items) |{}| ", receiver, loop_var));
+        if has_init {
+            self.write(&format!("for ({}.items) |{}| ", receiver, loop_var));
+        } else {
+            // Skip index 0 (used as initial accumulator value)
+            self.write(&format!("for ({}.items[1..]) |{}| ", receiver, loop_var));
+        }
         self.write("{\n");
         self.indent_push();
 
@@ -523,14 +539,27 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let acc_name = format!("_acc_{}", self.peek_label_id());
+        let has_init = data.reduce_init.is_some();
         // Determine init value and accumulator type using type-aware detection
-        let init_expr_str = match &data.reduce_init {
-            Some(expr) => self.render_expr_to_string(expr),
-            None => "0".to_string(),
-        };
-        let acc_type = match &data.reduce_init {
-            Some(expr) if super::math::expr_is_float(expr) => "f64",
-            _ => "i64",
+        let (init_expr_str, acc_type) = match &data.reduce_init {
+            Some(expr) => {
+                let ty = if super::math::expr_is_float(expr) {
+                    "f64".to_string()
+                } else if matches!(data.elem_type, ZigType::JsAny) {
+                    "JsAny".to_string()
+                } else {
+                    "i64".to_string()
+                };
+                (self.render_expr_to_string(expr), ty)
+            }
+            None => {
+                // JS spec: no initial value → use arr[len-1] as accumulator, iterate from len-2
+                let ty = data.elem_type.to_zig_type().into_owned();
+                (
+                    format!("{}.items[{}.items.len - 1]", receiver, receiver),
+                    ty,
+                )
+            }
         };
         self.write(&format!(
             "var {}: {} = {}; ",
@@ -545,7 +574,15 @@ impl Emitter {
             data.elem_param.clone()
         };
         // Reverse loop header: var __i: usize = receiver.items.len; while (__i > 0) { __i -= 1; const loop_var = receiver.items[__i];
-        self.emit_reverse_loop_header(&receiver, &loop_var, "");
+        // When no initial value: start from len-2 (last element is the initial accumulator)
+        if has_init {
+            self.emit_reverse_loop_header(&receiver, &loop_var, "");
+        } else {
+            self.write(&format!(
+                "var __i: usize = {}.items.len - 1; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
+                receiver, loop_var, receiver
+            ));
+        }
         self.indent_push();
 
         // Bind elem_param to the accumulator when it differs from the loop variable

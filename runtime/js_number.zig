@@ -276,19 +276,46 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
             return alloc.dupe(u8, s);
         }
     }
-    // Fallback for digits 21-100: format with max comptime precision (20)
-    // then pad the fractional part with zeros.  f64 has ~15.95 decimal digits
-    // of mantissa precision, so digits beyond 20 after the decimal point are
-    // zero for the exact binary value — padding is correct.
+    // Fallback for digits 21-100: format with max comptime precision (20),
+    // then compute additional digits via successive multiplication of the
+    // fractional remainder.  Pre-fix: padded zeros after position 20, so
+    // (0.1).toFixed(30) gave "0.100000000000000000000000000000" instead of
+    // "0.100000000000000005551115123126".
     const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
     const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
         return alloc.dupe(u8, s);
     };
-    const existing_digits = s.len - dot_idx - 1;
-    if (d > existing_digits) {
-        const result = try alloc.alloc(u8, dot_idx + 1 + d);
-        @memcpy(result[0..s.len], s);
-        @memset(result[s.len..], '0');
+    // Extract the integer part and existing fractional digits.
+    const int_part = s[0..dot_idx];
+    const existing_frac = s[dot_idx + 1 ..];
+    // Parse the existing fractional digits as f64 remainder.
+    const remainder: f64 = std.fmt.parseFloat(f64, existing_frac) catch 0.0;
+    // Compute additional digits needed beyond 20.
+    if (d > existing_frac.len) {
+        // Multiply remainder by 10^(additional) to get the extra digits.
+        // We extract one digit at a time: digit = floor(rem * 10), rem -= digit/10.
+        var extra_buf: [80]u8 = undefined; // max 80 extra (100 - 20)
+        var extra_len: usize = 0;
+        var rem = remainder;
+        const needed = d - existing_frac.len;
+        while (extra_len < needed and extra_len < extra_buf.len) {
+            rem *= 10.0;
+            const dgt: u8 = @intFromFloat(@floor(rem));
+            extra_buf[extra_len] = '0' + @min(dgt, 9);
+            extra_len += 1;
+            rem -= @as(f64, @floatFromInt(dgt));
+        }
+        // Build result: int_part + "." + existing_frac + extra_digits
+        const total_len = int_part.len + 1 + d; // +1 for dot, d total frac digits
+        const result = try alloc.alloc(u8, total_len);
+        @memcpy(result[0..int_part.len], int_part);
+        result[int_part.len] = '.';
+        @memcpy(result[int_part.len + 1 .. int_part.len + 1 + existing_frac.len], existing_frac);
+        @memcpy(result[int_part.len + 1 + existing_frac.len .. int_part.len + 1 + existing_frac.len + extra_len], extra_buf[0..extra_len]);
+        // Pad any remaining with '0' (shouldn't happen since d <= 100)
+        if (int_part.len + 1 + d > int_part.len + 1 + existing_frac.len + extra_len) {
+            @memset(result[int_part.len + 1 + existing_frac.len + extra_len ..], '0');
+        }
         return result;
     }
     return alloc.dupe(u8, s);
@@ -340,21 +367,37 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
         }
     }
     // Fallback for digits >= 21 (or rare buffer overflow for digits < 21):
-    // Format with max comptime precision (20), then pad fractional digits
-    // with zeros to reach the requested precision.  f64 has ~15.95 decimal
-    // digits of mantissa precision, so digits beyond 20 are effectively zero
-    // for the exact binary value — padding is correct.
+    // Format with max comptime precision (20), then compute additional digits
+    // via successive multiplication of the fractional remainder.
+    // Pre-fix: padded zeros after position 20, which was wrong for values
+    // like 0.1 where the exact binary representation has non-zero digits
+    // beyond 15 decimal places.
     const s = std.fmt.bufPrint(&buf, "{e:.20}", .{safe_val}) catch "0.00000000000000000000e0";
     const fixed = try fixupExp(alloc, s);
     const e_pos = std.mem.indexOfScalar(u8, fixed, 'e') orelse return fixed;
     const dot_pos = std.mem.indexOfScalar(u8, fixed[0..e_pos], '.') orelse return fixed;
     const existing_frac = e_pos - dot_pos - 1;
     if (digits <= existing_frac) return fixed;
-    const pad = digits - existing_frac;
-    const result = try alloc.alloc(u8, fixed.len + pad);
+    const needed = digits - existing_frac;
+    // Parse existing fractional digits after the dot as the remainder.
+    const frac_str = fixed[dot_pos + 1 .. e_pos];
+    const remainder: f64 = std.fmt.parseFloat(f64, frac_str) catch 0.0;
+    // Compute additional digits.
+    var extra_buf: [80]u8 = undefined;
+    var extra_len: usize = 0;
+    var rem = remainder;
+    while (extra_len < needed and extra_len < extra_buf.len) {
+        rem *= 10.0;
+        const dgt: u8 = @intFromFloat(@floor(rem));
+        extra_buf[extra_len] = '0' + @min(dgt, 9);
+        extra_len += 1;
+        rem -= @as(f64, @floatFromInt(dgt));
+    }
+    // Insert extra digits before the 'e'.
+    const result = try alloc.alloc(u8, fixed.len + extra_len);
     @memcpy(result[0..e_pos], fixed[0..e_pos]);
-    @memset(result[e_pos..e_pos + pad], '0');
-    @memcpy(result[e_pos + pad..], fixed[e_pos..]);
+    @memcpy(result[e_pos..e_pos + extra_len], extra_buf[0..extra_len]);
+    @memcpy(result[e_pos + extra_len ..], fixed[e_pos..]);
     alloc.free(fixed);
     return result;
 }
@@ -431,6 +474,33 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
             digits_buf[digits_len] = c;
             digits_len += 1;
         }
+    }
+    // R16: When p > digits_len (p > 21), compute additional significant digits
+    // via successive multiplication instead of padding with zeros.
+    // Pre-fix: "0" padding made (0.1).toPrecision(30) produce "0." + 28 zeros
+    // instead of "0.1000000000000000055511151231".
+    if (digits_len < p and digits_len > 0) {
+        // Parse the digits we have so far as f64, compute the remainder,
+        // then extract additional digits.
+        // The mantissa from {e:.20} gives us 21 significant digits.
+        // We reconstruct the fractional part of the normalized mantissa.
+        const dot_pos_m = std.mem.indexOfScalar(u8, mantissa_str, '.') orelse mantissa_str.len;
+        const frac_str_m = if (dot_pos_m < mantissa_str.len) mantissa_str[dot_pos_m + 1 ..] else "";
+        var rem: f64 = std.fmt.parseFloat(f64, frac_str_m) catch 0.0;
+        var extra_buf: [80]u8 = undefined;
+        var extra_len: usize = 0;
+        const needed = p - digits_len;
+        while (extra_len < needed and extra_len < extra_buf.len) {
+            rem *= 10.0;
+            const dgt: u8 = @intFromFloat(@floor(rem));
+            extra_buf[extra_len] = '0' + @min(dgt, 9);
+            extra_len += 1;
+            rem -= @as(f64, @floatFromInt(dgt));
+        }
+        for (0..extra_len) |i| {
+            digits_buf[digits_len + i] = extra_buf[i];
+        }
+        digits_len += extra_len;
     }
     if (digits_len > p) digits_len = p;
     while (digits_len < p) {
