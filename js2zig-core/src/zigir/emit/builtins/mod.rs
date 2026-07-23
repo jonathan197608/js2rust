@@ -258,13 +258,13 @@ impl Emitter {
         negate: bool,
     ) {
         if negate {
-            self.write("if (!(");
+            self.write("if (!(js_runtime.isTruthy(");
+            self.emit_expr(expr);
+            self.write(&format!("))) break :{} {};", blk, value));
+        } else {
+            self.write("if (js_runtime.isTruthy(");
             self.emit_expr(expr);
             self.write(&format!(")) break :{} {};", blk, value));
-        } else {
-            self.write("if (");
-            self.emit_expr(expr);
-            self.write(&format!(") break :{} {};", blk, value));
         }
     }
 

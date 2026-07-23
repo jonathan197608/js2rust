@@ -605,7 +605,8 @@ pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i6
 
 /// Repeat string n times. Returns newly allocated string.
 pub fn repeat(alloc: Allocator, s: []const u8, n: i64) ![]const u8 {
-    const count: usize = @intCast(@max(0, n));
+    if (n < 0) return error.RangeError;
+    const count: usize = @intCast(n);
     if (count == 0 or s.len == 0) return try alloc.dupe(u8, "");
     // Overflow check: s.len * count must fit in usize.
     // Without this, the multiplication wraps silently and alloc.alloc

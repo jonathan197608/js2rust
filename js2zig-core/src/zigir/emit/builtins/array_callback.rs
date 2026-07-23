@@ -247,10 +247,10 @@ impl Emitter {
         self.indent_push();
         let loop_elem_clone = loop_elem.clone();
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write("if (");
+            emitter.write("if (js_runtime.isTruthy(");
             emitter.emit_expr(expr);
             emitter.write(&format!(
-                ") {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
+                ")) {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
                 loop_elem_clone
             ));
         });

@@ -545,6 +545,15 @@ impl TypeInferrer {
                 }
             }
 
+            // this expression inside a class method → NamedStruct(className)
+            Expression::ThisExpression(_) => {
+                if let Some(class_name) = &self.current_class {
+                    InferResult::Definite(ZigType::NamedStruct(class_name.clone()))
+                } else {
+                    InferResult::Indeterminate
+                }
+            }
+
             // Everything else → indeterminate
             _ => InferResult::Indeterminate,
         }
@@ -1005,6 +1014,11 @@ impl TypeInferrer {
                     InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
                 }
                 "reduce" | "reduceRight" => InferResult::Definite(ZigType::JsAny),
+                _ => InferResult::Indeterminate,
+            },
+            // JsError methods: name, message, stack are strings; toString returns string
+            ZigType::JsError => match method {
+                "name" | "message" | "stack" | "toString" => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
             _ => InferResult::Indeterminate,

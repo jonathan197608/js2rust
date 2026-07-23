@@ -261,6 +261,8 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
+    // Handle -0: JS requires "0" not "-0"
+    if (val == 0.0) return try toFixed(alloc, 0.0, digits);
     // ECMA-262 §22.1.3.3: Throw RangeError if digits < 0 or digits > 100
     if (digits < 0 or digits > 100) return error.RangeError;
     const d: usize = @intCast(digits);
@@ -317,6 +319,8 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
+    // Handle -0: JS requires "0e+0" not "-0e+0"
+    const safe_val: f64 = if (val == 0.0) 0.0 else val;
 
     // ECMA-262 §22.1.3.3: Throw RangeError if fraction_digits < 0 or > 100
     const digits: usize = if (fraction_digits) |d| blk: {
@@ -331,7 +335,7 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     inline for (0..21) |p| {
         if (digits == p) {
             const fmt = comptime std.fmt.comptimePrint("{{e:.{d}}}", .{p});
-            const s = std.fmt.bufPrint(&buf, fmt, .{val}) catch break;
+            const s = std.fmt.bufPrint(&buf, fmt, .{safe_val}) catch break;
             return fixupExp(alloc, s);
         }
     }
@@ -340,7 +344,7 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     // with zeros to reach the requested precision.  f64 has ~15.95 decimal
     // digits of mantissa precision, so digits beyond 20 are effectively zero
     // for the exact binary value — padding is correct.
-    const s = std.fmt.bufPrint(&buf, "{e:.20}", .{val}) catch "0.00000000000000000000e0";
+    const s = std.fmt.bufPrint(&buf, "{e:.20}", .{safe_val}) catch "0.00000000000000000000e0";
     const fixed = try fixupExp(alloc, s);
     const e_pos = std.mem.indexOfScalar(u8, fixed, 'e') orelse return fixed;
     const dot_pos = std.mem.indexOfScalar(u8, fixed[0..e_pos], '.') orelse return fixed;

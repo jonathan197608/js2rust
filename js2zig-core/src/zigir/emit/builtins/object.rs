@@ -8,26 +8,46 @@ use crate::zigir::types::IrExpr;
 use crate::zigir::emit::Emitter;
 
 /// Type kind for Object.is argument dispatch.
+#[derive(Clone, Copy)]
 enum ObjectIsKind {
     Integer, // i64 (never NaN, no signbit issues)
     Float,   // f64 (NaN === NaN, +0 vs -0)
     String,  // []const u8
     Bool,    // bool
-    Unknown, // type not determinable at emit time (Ident, etc.)
+    Unknown, // anytype / JsAny — use runtime
+}
+
+/// Result of Object.is argument kind analysis: merged kind + individual kinds.
+struct ObjectIsKinds {
+    merged: ObjectIsKind,
+    a: ObjectIsKind,
+    b: ObjectIsKind,
 }
 
 /// Determine the comparison kind for Object.is(a, b) by inspecting the IrExpr
 /// variants and any type annotations attached during lowering.
 /// If the two args disagree (e.g. one numeric, one string), the result is
 /// `Unknown` which falls through to the runtime JsAny.sameValue path.
-fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
+fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKinds {
     let a = match args.first() {
         Some(e) => e,
-        None => return ObjectIsKind::Unknown,
+        None => {
+            return ObjectIsKinds {
+                merged: ObjectIsKind::Unknown,
+                a: ObjectIsKind::Unknown,
+                b: ObjectIsKind::Unknown,
+            };
+        }
     };
     let b = match args.get(1) {
         Some(e) => e,
-        None => return ObjectIsKind::Unknown,
+        None => {
+            return ObjectIsKinds {
+                merged: ObjectIsKind::Unknown,
+                a: ObjectIsKind::Unknown,
+                b: ObjectIsKind::Unknown,
+            };
+        }
     };
     let ka = expr_type_kind(a);
     let kb = expr_type_kind(b);
@@ -36,7 +56,7 @@ fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
     // - Both Float → Float (NaN, +0/-0)
     // - Mixed Integer+Float → Float (treat as float for correctness)
     // - Otherwise → Unknown
-    match (ka, kb) {
+    let merged = match (ka, kb) {
         (ObjectIsKind::Integer, ObjectIsKind::Integer) => ObjectIsKind::Integer,
         (ObjectIsKind::Float, ObjectIsKind::Float)
         | (ObjectIsKind::Integer, ObjectIsKind::Float)
@@ -44,6 +64,11 @@ fn object_is_arg_kind(args: &[IrExpr]) -> ObjectIsKind {
         (ObjectIsKind::String, ObjectIsKind::String) => ObjectIsKind::String,
         (ObjectIsKind::Bool, ObjectIsKind::Bool) => ObjectIsKind::Bool,
         _ => ObjectIsKind::Unknown,
+    };
+    ObjectIsKinds {
+        merged,
+        a: ka,
+        b: kb,
     }
 }
 
@@ -87,6 +112,22 @@ fn zig_type_to_kind(t: &ZigType) -> ObjectIsKind {
 }
 
 impl Emitter {
+    /// Emit an Object.is argument coerced to f64.
+    /// For Integer-typed args, wrap in `@as(f64, @floatFromInt(...))`.
+    /// For Float-typed args, emit directly.
+    fn emit_object_is_f64_arg(&mut self, arg: &IrExpr, kind: ObjectIsKind) {
+        match kind {
+            ObjectIsKind::Integer => {
+                self.write("@as(f64, @floatFromInt(");
+                self.emit_expr(arg);
+                self.write("))");
+            }
+            _ => {
+                self.emit_expr(arg);
+            }
+        }
+    }
+
     /// Emit `js_object.method(js_allocator.allocator(), args) catch @panic("OOM: Object.method")`.
     /// Shared by keys, values, entries, getOwnPropertyNames.
     fn emit_object_alloc_method(&mut self, method: &str, args: &[IrExpr]) {
@@ -166,8 +207,8 @@ impl Emitter {
                 // the generated Zig code is type-correct.  The previous code
                 // unconditionally emitted `std.math.isNan(a)…` which fails to
                 // compile for `[]const u8` (strings) and `bool` arguments.
-                let kind = object_is_arg_kind(args);
-                match kind {
+                let kinds = object_is_arg_kind(args);
+                match kinds.merged {
                     ObjectIsKind::Integer => {
                         // Both args are i64 — simple equality. Integers are never NaN,
                         // and +0/-0 distinction doesn't exist in i64 (both are 0).
@@ -184,36 +225,35 @@ impl Emitter {
                     ObjectIsKind::Float => {
                         // Both args are f64 (or mixed i64/f64).  std.math.isNan
                         // works on f64.  For +0/-0 we add a signbit guard.
-                        // Note: for i64 args mixed with f64, Zig auto-coerces
-                        // i64 to f64, so std.math.isNan still compiles.
+                        // For i64 args mixed with f64, we coerce to f64 first.
                         self.write("((std.math.isNan(");
                         if let Some(a) = args.first() {
-                            self.emit_expr(a);
+                            self.emit_object_is_f64_arg(a, kinds.a);
                         }
                         self.write(") and std.math.isNan(");
                         if args.len() >= 2 {
-                            self.emit_expr(&args[1]);
+                            self.emit_object_is_f64_arg(&args[1], kinds.b);
                         }
                         self.write(")) or (");
                         if let Some(a) = args.first() {
-                            self.emit_expr(a);
+                            self.emit_object_is_f64_arg(a, kinds.a);
                         }
                         self.write(" == ");
                         if args.len() >= 2 {
-                            self.emit_expr(&args[1]);
+                            self.emit_object_is_f64_arg(&args[1], kinds.b);
                         }
                         // +0 vs -0: when both are zero, also check signbit
                         self.write(" and (");
                         if let Some(a) = args.first() {
-                            self.emit_expr(a);
+                            self.emit_object_is_f64_arg(a, kinds.a);
                         }
                         self.write(" != 0 or std.math.signbit(");
                         if let Some(a) = args.first() {
-                            self.emit_expr(a);
+                            self.emit_object_is_f64_arg(a, kinds.a);
                         }
                         self.write(") == std.math.signbit(");
                         if args.len() >= 2 {
-                            self.emit_expr(&args[1]);
+                            self.emit_object_is_f64_arg(&args[1], kinds.b);
                         }
                         self.write(")))");
                         self.write(")");

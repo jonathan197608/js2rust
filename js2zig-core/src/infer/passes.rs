@@ -336,9 +336,20 @@ impl TypeInferrer {
             Statement::ExportNamedDeclaration(export_decl) => {
                 // export function declarations are parsed as ExportNamedDeclaration
                 // containing a Declaration::FunctionDeclaration
-                if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
-                    let fn_name = fd.id.as_ref().map(|id| id.name.as_str()).unwrap_or("");
-                    self.walk_fn_for_types(fd.as_ref(), fn_name, true);
+                if let Some(decl) = &export_decl.declaration {
+                    match decl {
+                        Declaration::FunctionDeclaration(fd) => {
+                            let fn_name = fd.id.as_ref().map(|id| id.name.as_str()).unwrap_or("");
+                            self.walk_fn_for_types(fd.as_ref(), fn_name, true);
+                        }
+                        Declaration::ClassDeclaration(cd) => {
+                            if let Some(id) = &cd.id {
+                                let class_name = id.name.to_string();
+                                self.process_class_for_types(&class_name, cd.as_ref());
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
             Statement::ExportDefaultDeclaration(export_decl) => {
@@ -413,6 +424,17 @@ impl TypeInferrer {
                     self.walk_stmt_for_types(s);
                 }
                 if let Some(handler) = &ts.handler {
+                    // Register catch parameter in var_types as JsError
+                    if let Some(param) = &handler.param {
+                        if let BindingPattern::BindingIdentifier(id) = &param.pattern {
+                            self.var_types.insert(id.name.to_string(), ZigType::JsError);
+                        } else if let BindingPattern::AssignmentPattern(ap) = &param.pattern {
+                            // catch(e = defaultValue) — extract name from left
+                            if let BindingPattern::BindingIdentifier(id) = &ap.left {
+                                self.var_types.insert(id.name.to_string(), ZigType::JsError);
+                            }
+                        }
+                    }
                     for s in &handler.body.body {
                         self.walk_stmt_for_types(s);
                     }

@@ -8,6 +8,7 @@ use std::collections::HashSet;
 pub fn binding_name<'a>(pattern: &BindingPattern<'a>) -> Option<&'a str> {
     match pattern {
         BindingPattern::BindingIdentifier(id) => Some(id.name.as_str()),
+        BindingPattern::AssignmentPattern(ap) => binding_name(&ap.left),
         _ => None,
     }
 }
@@ -139,6 +140,12 @@ pub fn expr_depends_on_anytype(expr: &Expression, anytype_params: &HashSet<Strin
             .expressions
             .iter()
             .any(|e| expr_depends_on_anytype(e, anytype_params)),
+        // Await expression: check the awaited value
+        Expression::AwaitExpression(ae) => expr_depends_on_anytype(&ae.argument, anytype_params),
+        // Private field access: check the receiver
+        Expression::PrivateFieldExpression(pfe) => {
+            expr_depends_on_anytype(&pfe.object, anytype_params)
+        }
         // Conservative: assume no dependency for unhandled expression types
         _ => false,
     }

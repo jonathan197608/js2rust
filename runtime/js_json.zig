@@ -292,6 +292,8 @@ fn parseArray(alloc: Allocator, scanner: *std.json.Scanner, depth: u32) ParseErr
 }
 
 fn parseNumber(s: []const u8) JsAny {
+    // Special case: "-0" → negative zero (i64 cannot represent -0)
+    if (std.mem.eql(u8, s, "-0")) return JsAny.fromF64(-0.0);
     // If the number contains '.', 'e', 'E' → f64
     if (std.mem.indexOfAny(u8, s, ".eE")) |_| {
         const f = std.fmt.parseFloat(f64, s) catch return JsAny.fromF64(std.math.nan(f64));

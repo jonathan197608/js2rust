@@ -288,6 +288,10 @@ pub fn for_each_expr_child(
                 on_expr(e);
             }
         }
+        // Private field access: traverse the receiver object
+        Expression::PrivateFieldExpression(pfe) => {
+            on_expr(&pfe.object);
+        }
         // Literals, ThisExpression, etc. — leaf nodes with no children
         _ => {}
     }
