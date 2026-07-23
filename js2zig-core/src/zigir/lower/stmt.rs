@@ -1372,6 +1372,11 @@ impl Lowerer {
                 exp_type,
                 result_type: Some(ZigType::I64),
             },
+            // BuiltinCall returning JsAny (e.g., arr.pop(), arr.shift()):
+            // wrap in .asI64() to extract the i64 value.
+            IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::JsAny => {
+                Self::wrap_jsany_to_i64(IrExpr::BuiltinCall(bc))
+            }
             // BuiltinCall returning F64 (e.g., Math.sqrt, parseFloat):
             // wrap in DivExpr with divisor 1 and result_type I64 to trigger
             // @as(i64, @intFromFloat(...)) in the emitter.
@@ -1506,7 +1511,31 @@ impl Lowerer {
             "getMinutes",
             "getSeconds",
             "getMilliseconds",
+            "getTimezoneOffset",
             "valueOf",
+            "getUTCFullYear",
+            "getUTCMonth",
+            "getUTCDate",
+            "getUTCDay",
+            "getUTCHours",
+            "getUTCMinutes",
+            "getUTCSeconds",
+            "getUTCMilliseconds",
+            "setFullYear",
+            "setMonth",
+            "setDate",
+            "setHours",
+            "setMinutes",
+            "setSeconds",
+            "setMilliseconds",
+            "setUTCFullYear",
+            "setUTCMonth",
+            "setUTCDate",
+            "setUTCHours",
+            "setUTCMinutes",
+            "setUTCSeconds",
+            "setUTCMilliseconds",
+            "setTime",
         ];
 
         match expr {
@@ -1745,12 +1774,18 @@ impl Lowerer {
             | IrExpr::BoolLiteral(_)
             | IrExpr::StringLiteral(_) => Self::wrap_in_jsany_from(expr),
             IrExpr::BuiltinCall(bc)
-                if matches!(bc.return_type, ZigType::I64 | ZigType::F64 | ZigType::Bool) =>
+                if matches!(
+                    bc.return_type,
+                    ZigType::I64 | ZigType::F64 | ZigType::Bool | ZigType::Str
+                ) =>
             {
                 Self::wrap_in_jsany_from(IrExpr::BuiltinCall(bc))
             }
             IrExpr::HostCall(hc)
-                if matches!(hc.return_type, ZigType::I64 | ZigType::F64 | ZigType::Bool) =>
+                if matches!(
+                    hc.return_type,
+                    ZigType::I64 | ZigType::F64 | ZigType::Bool | ZigType::Str
+                ) =>
             {
                 Self::wrap_in_jsany_from(IrExpr::HostCall(hc))
             }

@@ -988,11 +988,13 @@ pub fn builtin_call_to_ir(
         }
         BuiltinCall::StringCharAt => (BuiltinModule::JsString, "charAt".into(), ZigType::Str),
         BuiltinCall::StringCharCodeAt => {
-            (BuiltinModule::JsString, "charCodeAt".into(), ZigType::I64)
+            (BuiltinModule::JsString, "charCodeAt".into(), ZigType::F64)
         }
-        BuiltinCall::StringCodePointAt => {
-            (BuiltinModule::JsString, "codePointAt".into(), ZigType::I64)
-        }
+        BuiltinCall::StringCodePointAt => (
+            BuiltinModule::JsString,
+            "codePointAt".into(),
+            ZigType::JsAny,
+        ),
         BuiltinCall::StringConcat => (BuiltinModule::JsString, "concat".into(), ZigType::Str),
         BuiltinCall::StringSlice => (BuiltinModule::JsString, "slice".into(), ZigType::Str),
         BuiltinCall::StringReplace => (BuiltinModule::JsString, "replace".into(), ZigType::Str),

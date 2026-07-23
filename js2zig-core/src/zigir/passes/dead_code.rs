@@ -556,8 +556,18 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         | IrStmt::Continue { .. }
         | IrStmt::CompileError { .. }
         | IrStmt::Comment(_) => false,
-        IrStmt::DestructureDecl(_) => false,
-        IrStmt::NestedFnDecl { .. } => false,
+        IrStmt::DestructureDecl(data) => eliminate_unreachable_in_expr(&mut data.init),
+        IrStmt::NestedFnDecl {
+            struct_def,
+            instance,
+        } => {
+            let mut changed =
+                DeadCodeElimPass::eliminate_unreachable_in_block(&mut struct_def.body);
+            if let Some(inst) = instance {
+                changed |= DeadCodeElimPass::eliminate_unreachable_in_block(&mut inst.body);
+            }
+            changed
+        }
     }
 }
 

@@ -309,7 +309,7 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                     if *b == 0 {
                         return None;
                     }
-                    *a % *b
+                    return Some(IrExpr::FloatLiteral(*a as f64 % *b as f64));
                 }
                 // JS bitwise ops operate on Int32 (32-bit signed), not i64.
                 // `*a as i32` truncates and sign-extends exactly like
