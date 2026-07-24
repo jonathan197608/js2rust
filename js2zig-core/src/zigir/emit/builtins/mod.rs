@@ -278,13 +278,14 @@ impl Emitter {
     ) where
         F: FnMut(&mut Self, &crate::zigir::types::IrExpr),
     {
-        for stmt in stmts {
+        let last_idx = stmts.len().saturating_sub(1);
+        for (i, stmt) in stmts.iter().enumerate() {
             self.writeln("");
             match stmt {
                 crate::zigir::types::IrStmt::Return { value: Some(expr) } => {
                     emit_pred(self, expr);
                 }
-                crate::zigir::types::IrStmt::Expr(expr) => {
+                crate::zigir::types::IrStmt::Expr(expr) if i == last_idx => {
                     emit_pred(self, expr);
                 }
                 _ => self.emit_stmt(stmt),

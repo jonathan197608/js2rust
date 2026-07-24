@@ -89,6 +89,8 @@ impl TypeInferrer {
                         | BinaryOperator::LessEqualThan
                         | BinaryOperator::GreaterThan
                         | BinaryOperator::GreaterEqualThan
+                        | BinaryOperator::In
+                        | BinaryOperator::Instanceof
                 );
                 let is_addition = be.operator == BinaryOperator::Addition;
                 let is_string_concat = is_addition
@@ -102,8 +104,14 @@ impl TypeInferrer {
                     _ if is_compare_op => InferResult::Definite(ZigType::Bool),
                     // String concatenation
                     _ if is_string_concat => InferResult::Definite(ZigType::Str),
-                    // Numeric promotion: if one operand is F64, result is F64
-                    _ if is_numeric_op && has_f64 => InferResult::Definite(ZigType::F64),
+                    // Numeric promotion: if one operand is F64, result is F64.
+                    // Exception: Addition (+) with an indeterminate operand could
+                    // be string concatenation (e.g., 3.14 + x where x is anytype),
+                    // so we cannot be certain the result is F64. Non-addition
+                    // numeric ops always return number regardless of operand types.
+                    _ if is_numeric_op && has_f64 && !is_addition => {
+                        InferResult::Definite(ZigType::F64)
+                    }
                     _ => InferResult::Indeterminate,
                 }
             }
@@ -576,6 +584,12 @@ impl TypeInferrer {
             Expression::ConditionalExpression(ce) => {
                 self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
             }
+            // LogicalExpression (||, &&, ??): result is string if either branch is string.
+            // All logical operators return one of their operands, so if either side
+            // is a string, the result could be a string.
+            Expression::LogicalExpression(le) => {
+                self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
+            }
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             // CallExpression: check if the function/method returns a string
@@ -855,9 +869,14 @@ impl TypeInferrer {
     pub(crate) fn infer_array_method_return(&self, method: &str, elem_ty: &ZigType) -> InferResult {
         match method {
             // Methods that return a new array (same element type)
-            "slice" | "map" | "filter" | "concat" | "flat" | "flatMap" | "toReversed"
-            | "toSorted" | "toSpliced" => {
+            "slice" | "filter" | "concat" | "flat" | "toReversed" | "toSorted" | "toSpliced" => {
                 InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone())))
+            }
+            // map/flatMap: callback transforms elements — return type depends on
+            // callback, not source element type. Default to ArrayList(JsAny)
+            // to match builtin_return_type (ArrayMap/ArrayFlatMap).
+            "map" | "flatMap" => {
+                InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
             }
             // Array.prototype.with(index, value) returns same element type array
             "with" => InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone()))),
@@ -961,10 +980,12 @@ impl TypeInferrer {
                 "codePointAt" => InferResult::Definite(ZigType::JsAny), // Number or undefined
                 "localeCompare" => InferResult::Definite(ZigType::I64),
                 "includes" | "startsWith" | "endsWith" => InferResult::Definite(ZigType::Bool),
-                "trim" | "trimStart" | "trimEnd" | "split" | "padStart" | "padEnd" | "charAt"
-                | "at" | "toUpperCase" | "toLowerCase" | "slice" | "substring" | "replace"
+                "trim" | "trimStart" | "trimEnd" | "padStart" | "padEnd" | "charAt" | "at"
+                | "toUpperCase" | "toLowerCase" | "slice" | "substring" | "replace"
                 | "replaceAll" | "concat" | "repeat" | "normalize" | "toLocaleUpperCase"
                 | "toLocaleLowerCase" => InferResult::Definite(ZigType::Str),
+                // split() returns an array of strings, not a single string
+                "split" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::Str))),
                 "match" | "matchAll" => InferResult::Definite(ZigType::JsAny),
                 _ => InferResult::Indeterminate,
             },

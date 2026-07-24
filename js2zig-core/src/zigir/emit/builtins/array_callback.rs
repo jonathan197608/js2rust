@@ -467,6 +467,26 @@ impl Emitter {
             Some(expr) => {
                 let ty = if super::math::expr_is_float(expr) {
                     "f64".to_string()
+                } else if matches!(expr, crate::zigir::types::IrExpr::BigIntLiteral(_))
+                    || matches!(
+                        expr,
+                        crate::zigir::types::IrExpr::TypedIdent {
+                            ty: ZigType::BigInt,
+                            ..
+                        }
+                    )
+                {
+                    "js_bigint.JsBigInt".to_string()
+                } else if matches!(expr, crate::zigir::types::IrExpr::StringLiteral(_))
+                    || matches!(
+                        expr,
+                        crate::zigir::types::IrExpr::TypedIdent {
+                            ty: ZigType::Str,
+                            ..
+                        }
+                    )
+                {
+                    "[]const u8".to_string()
                 } else if data.elem_type == ZigType::F64 {
                     // P2-EM-5: Init is integer but array elements are f64 —
                     // callback produces f64 results, accumulator must be f64.
@@ -563,6 +583,26 @@ impl Emitter {
             Some(expr) => {
                 let ty = if super::math::expr_is_float(expr) {
                     "f64".to_string()
+                } else if matches!(expr, crate::zigir::types::IrExpr::BigIntLiteral(_))
+                    || matches!(
+                        expr,
+                        crate::zigir::types::IrExpr::TypedIdent {
+                            ty: ZigType::BigInt,
+                            ..
+                        }
+                    )
+                {
+                    "js_bigint.JsBigInt".to_string()
+                } else if matches!(expr, crate::zigir::types::IrExpr::StringLiteral(_))
+                    || matches!(
+                        expr,
+                        crate::zigir::types::IrExpr::TypedIdent {
+                            ty: ZigType::Str,
+                            ..
+                        }
+                    )
+                {
+                    "[]const u8".to_string()
                 } else if data.elem_type == ZigType::F64 {
                     // P2-EM-5: Init is integer but array elements are f64 —
                     // callback produces f64 results, accumulator must be f64.

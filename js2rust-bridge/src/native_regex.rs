@@ -118,9 +118,14 @@ fn host_regex_match_global_inner(pattern: HostStr, text: HostStr) -> (String, us
         count += 1;
         // Move search start past this match
         search_start = absolute_end;
-        // If the match is empty, move forward to avoid infinite loop
+        // If the match is empty, move forward to avoid infinite loop.
+        // R18-BR-1: Skip past multi-byte UTF-8 continuation bytes to avoid
+        // landing in the middle of a character (which would panic on slicing).
         if m.start() == m.end() {
             search_start += 1;
+            while search_start < text.len() && !text.is_char_boundary(search_start) {
+                search_start += 1;
+            }
         }
         // Check if we've reached the end
         if search_start >= text.len() {
@@ -194,9 +199,14 @@ fn host_regex_match_all_inner(pattern: HostStr, text: HostStr) -> (String, usize
             .get(0)
             .expect("full match group is guaranteed by captures_from_pos returning Some");
         search_start = full_match.end();
-        // If empty match, advance by 1 to avoid infinite loop
+        // If empty match, advance by 1 to avoid infinite loop.
+        // R18-BR-2: Skip past multi-byte UTF-8 continuation bytes to avoid
+        // landing in the middle of a character (which would panic on slicing).
         if full_match.start() == full_match.end() {
             search_start += 1;
+            while search_start < text.len() && !text.is_char_boundary(search_start) {
+                search_start += 1;
+            }
         }
         if search_start >= text.len() {
             break;
@@ -806,5 +816,38 @@ mod tests {
         // Empty-match regex inserts replacement at each position
         let result = host_regex_replace_all_inner(hs(r""), hs("ab"), hs("X"));
         assert_eq!(result, "XaXbX");
+    }
+
+    // ── R18-BR-1/BR-2: Zero-width match with multi-byte UTF-8 ──
+
+    #[test]
+    fn match_global_zero_width_utf8_multibyte() {
+        // Pre-fix: zero-width match advanced search_start by 1 byte, which
+        // could land inside a multi-byte UTF-8 char and panic on slicing.
+        // Text "héllo" — 'é' is 2 bytes (0xC3 0xA9).
+        let (result, count) = host_regex_match_global_inner(hs(r""), hs("héllo"));
+        // Empty match at each position; should not panic.
+        assert!(count > 0);
+        // All matches are empty strings → result is NUL-separated empties
+        let parts: Vec<&str> = result.split('\0').collect();
+        for p in &parts {
+            assert_eq!(*p, "");
+        }
+    }
+
+    #[test]
+    fn match_all_zero_width_utf8_multibyte() {
+        // Same UTF-8 boundary issue for matchAll path.
+        let (result, match_count, group_count) =
+            host_regex_match_all_inner(hs(r"(\d*)"), hs("héllo"));
+        // \d* matches empty at each position including inside 'é'.
+        // Pre-fix: advancing by 1 byte after empty match at 'é' start
+        // would land on the 2nd byte of 'é' → panic.
+        assert!(match_count > 0);
+        assert_eq!(group_count, 2); // full + 1 group
+        let parts: Vec<&str> = result.split('\0').collect();
+        for p in &parts {
+            assert_eq!(*p, "");
+        }
     }
 }

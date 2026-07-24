@@ -115,7 +115,15 @@ pub const JsValue = union(enum) {
                 var start: usize = 0;
                 while (start < v.len and std.ascii.isWhitespace(v[start])) start += 1;
                 const trimmed = v[start..];
-                break :blk std.fmt.parseInt(i64, trimmed, 10) catch 0;
+                // R18-RT-1: parseInt("3.14") fails → returns 0, but JS ToNumber("3.14")|0 = 3.
+                // Try integer parse first, then fall back to float parse + @trunc.
+                if (std.fmt.parseInt(i64, trimmed, 10)) |n| {
+                    break :blk n;
+                } else |_| {
+                    const f = stringToNumber(trimmed) catch break :blk 0;
+                    if (std.math.isNan(f) or std.math.isInf(f)) break :blk 0;
+                    break :blk @as(i64, @intFromFloat(@trunc(f)));
+                }
             },
             .null => 0,
             .undefined => 0,
@@ -132,17 +140,15 @@ pub const JsValue = union(enum) {
             // returns +0 after trimming WhiteSpace+LineTerminator).
             // Non-numeric ("abc") still yields NaN per R7-5.
             // R16: Trim leading whitespace before parsing (JS ToNumber trims).
-            // Also handle "0x"/"0X" hex prefix (JS Number("0xFF") === 255).
+            // R18: Use shared stringToNumber helper that handles 0x/0o/0b prefixes.
             .string => |v| blk: {
                 var start: usize = 0;
                 while (start < v.len and std.ascii.isWhitespace(v[start])) start += 1;
                 const trimmed = v[start..];
-                if (trimmed.len == 0) break :blk 0.0;
-                // Handle 0x/0X hex prefix
-                if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'x' or trimmed[1] == 'X')) {
-                    break :blk @as(f64, @floatFromInt(std.fmt.parseInt(i64, trimmed[2..], 16) catch break :blk std.math.nan(f64)));
-                }
-                break :blk std.fmt.parseFloat(f64, trimmed) catch blk2: {
+                if (stringToNumber(trimmed)) |f| {
+                    break :blk f;
+                } else |_| {
+                    // Check if it's all whitespace → 0, otherwise NaN
                     var all_ws = true;
                     for (trimmed) |byte| {
                         switch (byte) {
@@ -153,8 +159,8 @@ pub const JsValue = union(enum) {
                             },
                         }
                     }
-                    break :blk2 if (all_ws) 0.0 else std.math.nan(f64);
-                };
+                    break :blk if (all_ws) 0.0 else std.math.nan(f64);
+                }
             },
             .null => 0.0,
             .undefined => std.math.nan(f64),
@@ -272,6 +278,29 @@ pub const JsValue = union(enum) {
     }
 };
 
+/// R18: Shared string-to-number conversion per ECMA-262 §7.1.4.1.
+/// Handles hex ("0x"), octal ("0o"), binary ("0b") prefixes and float literals.
+/// `trimmed` must already have leading whitespace removed.
+fn stringToNumber(trimmed: []const u8) error{ParseError}!f64 {
+    if (trimmed.len == 0) return 0.0;
+    // Handle 0x/0X hex prefix
+    if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'x' or trimmed[1] == 'X')) {
+        const n = std.fmt.parseInt(i64, trimmed[2..], 16) catch return error.ParseError;
+        return @as(f64, @floatFromInt(n));
+    }
+    // R18-RT-2: Handle 0o/0O octal prefix (ECMA-262 §7.1.4.1)
+    if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'o' or trimmed[1] == 'O')) {
+        const n = std.fmt.parseInt(i64, trimmed[2..], 8) catch return error.ParseError;
+        return @as(f64, @floatFromInt(n));
+    }
+    // R18-RT-2: Handle 0b/0B binary prefix (ECMA-262 §7.1.4.1)
+    if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'b' or trimmed[1] == 'B')) {
+        const n = std.fmt.parseInt(i64, trimmed[2..], 2) catch return error.ParseError;
+        return @as(f64, @floatFromInt(n));
+    }
+    return std.fmt.parseFloat(f64, trimmed) catch error.ParseError;
+}
+
 // ═══════════════════════════════════════════════════════
 //  Tests
 // ═══════════════════════════════════════════════════════
@@ -372,6 +401,28 @@ test "asF64: 0x hex string parses to integer (R16)" {
     try std.testing.expectEqual(@as(f64, 255.0), Jv.fromString("0xFF").asF64());
     try std.testing.expectEqual(@as(f64, 26.0), Jv.fromString("0x1A").asF64());
     try std.testing.expect(std.math.isNan(Jv.fromString("0x").asF64()));
+}
+
+test "asI64: float string truncates to integer (R18-RT-1)" {
+    // JS: "3.14" | 0 → 3, "1e5" | 0 → 100000, "0xFF" | 0 → 255.
+    // Pre-fix: parseInt("3.14") fails → 0.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(i64, 3), Jv.fromString("3.14").asI64());
+    try std.testing.expectEqual(@as(i64, 100000), Jv.fromString("1e5").asI64());
+    try std.testing.expectEqual(@as(i64, 255), Jv.fromString("0xFF").asI64());
+    try std.testing.expectEqual(@as(i64, -3), Jv.fromString("-3.9").asI64());
+    try std.testing.expectEqual(@as(i64, 0), Jv.fromString("0xZZ").asI64());
+}
+
+test "asF64: 0o octal and 0b binary string parses (R18-RT-2)" {
+    // JS: Number("0o17") === 15, Number("0b101") === 5.
+    // Pre-fix: parseFloat("0o17") fails → NaN.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(f64, 15.0), Jv.fromString("0o17").asF64());
+    try std.testing.expectEqual(@as(f64, 15.0), Jv.fromString("0O17").asF64());
+    try std.testing.expectEqual(@as(f64, 5.0), Jv.fromString("0b101").asF64());
+    try std.testing.expectEqual(@as(f64, 5.0), Jv.fromString("0B101").asF64());
+    try std.testing.expect(std.math.isNan(Jv.fromString("0o").asF64()));
 }
 
 test "format/asString emit NaN/Infinity not nan/inf (R8-P1-7)" {

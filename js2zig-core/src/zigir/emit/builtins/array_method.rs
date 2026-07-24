@@ -46,7 +46,7 @@ impl Emitter {
         // Emit start as isize const first to avoid double evaluation
         self.write(&format!("const {}_raw: isize = @intCast(", start_var));
         if let Some(arg) = args.first() {
-            self.emit_expr(arg);
+            self.emit_i64_coerced(arg);
         } else {
             self.write("0");
         }
@@ -59,7 +59,7 @@ impl Emitter {
             cnt_var
         ));
         if args.len() >= 2 {
-            self.emit_expr(&args[1]);
+            self.emit_i64_coerced(&args[1]);
         } else {
             self.write("0");
         }
@@ -130,7 +130,7 @@ impl Emitter {
             // Array path with fromIndex: clamp to [0, len] and iterate from start
             let blk = self.begin_labeled_block(&binding);
             self.write("const __from: isize = @intCast(");
-            self.emit_expr(&data.args[1]);
+            self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
                 "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
                 receiver, receiver
@@ -196,7 +196,7 @@ impl Emitter {
             // Array path with fromIndex: clamp to [0, len] and iterate from start
             let blk = self.begin_labeled_block(&binding);
             self.write("const __from: isize = @intCast(");
-            self.emit_expr(&data.args[1]);
+            self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
                 "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
                 receiver, receiver
@@ -241,7 +241,7 @@ impl Emitter {
         if data.args.len() >= 2 {
             // With fromIndex: compute start position per JS spec
             self.write("const __from: isize = @intCast(");
-            self.emit_expr(&data.args[1]);
+            self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
                 "); const __len = {}.items.len; var __i: isize = if (__from < 0) @as(isize, @intCast(__len)) + __from else @min(__from, @as(isize, @intCast(__len)) - 1); while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
                 receiver, receiver
@@ -335,7 +335,7 @@ impl Emitter {
             1 => {
                 // slice(start): store start in a const, compute from-end
                 self.write("const __slice_start: isize = @intCast(");
-                self.emit_expr(&data.args[0]);
+                self.emit_i64_coerced(&data.args[0]);
                 self.write(&format!(
                     "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); ",
                     receiver
@@ -348,9 +348,9 @@ impl Emitter {
             _ => {
                 // slice(start, end): store both, compute from-end
                 self.write("const __slice_start: isize = @intCast(");
-                self.emit_expr(&data.args[0]);
+                self.emit_i64_coerced(&data.args[0]);
                 self.write("); const __slice_end: isize = @intCast(");
-                self.emit_expr(&data.args[1]);
+                self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
                     "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); const __e: usize = @intCast(if (__slice_end < 0) @max(0, @as(isize, @intCast(__len)) + __slice_end) else @min(@as(usize, @intCast(__slice_end)), __len)); ",
                     receiver
@@ -398,13 +398,13 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write("const __idx = ");
+        self.write("const __idx: isize = @intCast(");
         if let Some(arg) = data.args.first() {
-            self.emit_expr(arg);
+            self.emit_i64_coerced(arg);
         } else {
             self.write("0");
         }
-        self.write("; ");
+        self.write("); ");
         self.write(&format!(
             "const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); ",
             receiver
@@ -475,19 +475,19 @@ impl Emitter {
         // Emit target, start, end as isize consts for from-end conversion
         self.write("const __cpw_target_raw: isize = @intCast(");
         if let Some(arg) = data.args.first() {
-            self.emit_expr(arg);
+            self.emit_i64_coerced(arg);
         } else {
             self.write("0");
         }
         self.write("); const __cpw_start_raw: isize = @intCast(");
         if data.args.len() >= 2 {
-            self.emit_expr(&data.args[1]);
+            self.emit_i64_coerced(&data.args[1]);
         } else {
             self.write("0");
         }
         self.write("); const __cpw_end_raw: isize = @intCast(");
         if data.args.len() >= 3 {
-            self.emit_expr(&data.args[2]);
+            self.emit_i64_coerced(&data.args[2]);
         } else {
             self.write(&format!("@as(i64, @intCast({}.items.len))", receiver));
         }
@@ -505,7 +505,7 @@ impl Emitter {
             "if (__cpw_target > __cpw_start) {{ var __j: usize = @as(usize, @intCast(__cpw_cnt)); while (__j > 0) {{ __j -= 1; {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} else {{ for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} }} ",
             receiver, receiver, receiver, receiver
         ));
-        self.write(&format!("break :{} &{}; }})", blk, receiver));
+        self.write(&format!("break :{} {}; }})", blk, receiver));
     }
 
     // ── fill ───────────────────────────────────────────
@@ -542,7 +542,7 @@ impl Emitter {
             2 => {
                 // fill(value, start) — with negative index support
                 self.write("const __fill_start: isize = @intCast(");
-                self.emit_expr(&data.args[1]);
+                self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
                     "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); ",
                     receiver
@@ -557,9 +557,9 @@ impl Emitter {
             _ => {
                 // fill(value, start, end) — with negative index support
                 self.write("const __fill_start: isize = @intCast(");
-                self.emit_expr(&data.args[1]);
+                self.emit_i64_coerced(&data.args[1]);
                 self.write("); const __fill_end: isize = @intCast(");
-                self.emit_expr(&data.args[2]);
+                self.emit_i64_coerced(&data.args[2]);
                 self.write(&format!(
                     "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); const __fe: usize = @intCast(if (__fill_end < 0) @max(0, @as(isize, @intCast(__len)) + __fill_end) else @min(@as(usize, @intCast(__fill_end)), __len)); ",
                     receiver
@@ -600,7 +600,7 @@ impl Emitter {
         // Compute index with from-end conversion for negative indices
         self.write("const __with_raw: isize = @intCast(");
         if let Some(idx_arg) = data.args.first() {
-            self.emit_expr(idx_arg);
+            self.emit_i64_coerced(idx_arg);
         } else {
             self.write("0");
         }

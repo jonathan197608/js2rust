@@ -871,7 +871,6 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         BuiltinCall::StringTrim
         | BuiltinCall::StringTrimStart
         | BuiltinCall::StringTrimEnd
-        | BuiltinCall::StringSplit
         | BuiltinCall::StringToUpperCase
         | BuiltinCall::StringToLowerCase
         | BuiltinCall::StringCharAt
@@ -884,6 +883,8 @@ pub fn builtin_return_type(builtin: &BuiltinCall) -> Option<ZigType> {
         | BuiltinCall::StringAt
         | BuiltinCall::StringToLocaleUpperCase
         | BuiltinCall::StringToLocaleLowerCase => Some(ZigType::Str),
+        // split() returns an array of strings, not a single string
+        BuiltinCall::StringSplit => Some(ZigType::ArrayList(Box::new(ZigType::Str))),
         // charCodeAt returns u16 — no ZigType variant, defer to inference
 
         // RegExp instance methods

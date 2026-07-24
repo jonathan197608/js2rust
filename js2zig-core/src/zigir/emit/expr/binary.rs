@@ -410,7 +410,7 @@ impl Emitter {
                 s.write("\") catch @panic(\"OOM: BigInt init\"))");
             } else {
                 s.write("(js_bigint.JsBigInt.fromI64(js_allocator.allocator(), ");
-                s.emit_expr(expr);
+                s.emit_i64_coerced(expr);
                 s.write(") catch @panic(\"BigInt fromI64 OOM\"))");
             }
         };
