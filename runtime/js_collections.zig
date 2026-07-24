@@ -463,8 +463,8 @@ test "JsMap set/get/has" {
     var m = JsMap.init(std.testing.allocator);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
-    try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
+    try m.set(std.testing.allocator, JsAny.fromI64(1), JsAny.fromString("one"));
+    try m.set(std.testing.allocator, JsAny.fromI64(2), JsAny.fromString("two"));
 
     try std.testing.expect(m.has(JsAny.fromI64(1)));
     try std.testing.expect(m.has(JsAny.fromI64(2)));
@@ -477,7 +477,7 @@ test "JsMap get returns undefined for missing key" {
     var m = JsMap.init(std.testing.allocator);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromString("a"), JsAny.fromI64(1));
     try std.testing.expect(m.get(JsAny.fromString("missing")).isUndefined());
 }
 
@@ -485,7 +485,7 @@ test "JsMap delete" {
     var m = JsMap.init(std.testing.allocator);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromString("x"), JsAny.fromI64(10));
+    try m.set(std.testing.allocator, JsAny.fromString("x"), JsAny.fromI64(10));
     try std.testing.expect(m.delete(std.testing.allocator, JsAny.fromString("x")));
     try std.testing.expect(!m.has(JsAny.fromString("x")));
     try std.testing.expect(!m.delete(std.testing.allocator, JsAny.fromString("x")));
@@ -495,8 +495,8 @@ test "JsMap clear" {
     var m = JsMap.init(std.testing.allocator);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
-    try m.set(JsAny.fromString("b"), JsAny.fromI64(2));
+    try m.set(std.testing.allocator, JsAny.fromString("a"), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromString("b"), JsAny.fromI64(2));
     m.clear(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 0), m.size());
 }
@@ -506,7 +506,7 @@ test "JsMap size" {
     defer m.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), m.size());
-    try m.set(JsAny.fromString("a"), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromString("a"), JsAny.fromI64(1));
     try std.testing.expectEqual(@as(usize, 1), m.size());
 }
 
@@ -515,8 +515,8 @@ test "JsMap keys()" {
     var m = JsMap.init(alloc);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
-    try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
+    try m.set(std.testing.allocator, JsAny.fromI64(1), JsAny.fromString("one"));
+    try m.set(std.testing.allocator, JsAny.fromI64(2), JsAny.fromString("two"));
 
     var keys = try m.keys(alloc);
     defer keys.deinit(alloc);
@@ -529,8 +529,8 @@ test "JsMap values()" {
     var m = JsMap.init(alloc);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromI64(1), JsAny.fromString("one"));
-    try m.set(JsAny.fromI64(2), JsAny.fromString("two"));
+    try m.set(std.testing.allocator, JsAny.fromI64(1), JsAny.fromString("one"));
+    try m.set(std.testing.allocator, JsAny.fromI64(2), JsAny.fromString("two"));
 
     var vals = try m.values(alloc);
     defer vals.deinit(alloc);
@@ -543,8 +543,8 @@ test "JsMap entries()" {
     var m = JsMap.init(alloc);
     defer m.deinit(std.testing.allocator);
 
-    try m.set(JsAny.fromI64(5), JsAny.fromString("five"));
-    try m.set(JsAny.fromI64(10), JsAny.fromString("ten"));
+    try m.set(std.testing.allocator, JsAny.fromI64(5), JsAny.fromString("five"));
+    try m.set(std.testing.allocator, JsAny.fromI64(10), JsAny.fromString("ten"));
 
     var ents = try m.entries(alloc);
     defer {
@@ -563,11 +563,11 @@ test "JsMap key can be any JsAny type" {
     defer m.deinit(std.testing.allocator);
 
     // key as number
-    try m.set(JsAny.fromI64(42), JsAny.fromString("answer"));
+    try m.set(std.testing.allocator, JsAny.fromI64(42), JsAny.fromString("answer"));
     // key as string
-    try m.set(JsAny.fromString("name"), JsAny.fromString("Alice"));
+    try m.set(std.testing.allocator, JsAny.fromString("name"), JsAny.fromString("Alice"));
     // key as bool
-    try m.set(JsAny.fromBool(true), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromBool(true), JsAny.fromI64(1));
 
     try std.testing.expect(m.has(JsAny.fromI64(42)));
     try std.testing.expect(m.has(JsAny.fromString("name")));
@@ -594,8 +594,8 @@ test "NaN SameValueZero: NaN === NaN in Map/Set (R7-6)" {
     // Map with NaN key
     var m = JsMap.init(alloc);
     defer m.deinit(alloc);
-    try m.set(JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(1));
-    try m.set(JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(2)); // overwrites
+    try m.set(std.testing.allocator, JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromF64(std.math.nan(f64)), JsAny.fromI64(2)); // overwrites
     try std.testing.expectEqual(@as(usize, 1), m.size());
     const v = m.get(JsAny.fromF64(std.math.nan(f64)));
     try std.testing.expect(v.eq(JsAny.fromI64(2)));
@@ -607,12 +607,12 @@ test "null key normalization: JsAny.null and JsAny.value(.null) are same key (R1
     // Map: set with JsAny.fromNull(), then has with JsAny.fromValue(.null)
     var m = JsMap.init(alloc);
     defer m.deinit(alloc);
-    try m.set(JsAny.fromNull(), JsAny.fromI64(1));
+    try m.set(std.testing.allocator, JsAny.fromNull(), JsAny.fromI64(1));
     try std.testing.expect(m.has(JsAny.fromValue(.null)));
     try std.testing.expectEqual(@as(usize, 1), m.size());
 
     // Overwrite via the other representation
-    try m.set(JsAny.fromValue(.null), JsAny.fromI64(2));
+    try m.set(std.testing.allocator, JsAny.fromValue(.null), JsAny.fromI64(2));
     try std.testing.expectEqual(@as(usize, 1), m.size());
     const v = m.get(JsAny.fromNull());
     try std.testing.expect(v.eq(JsAny.fromI64(2)));

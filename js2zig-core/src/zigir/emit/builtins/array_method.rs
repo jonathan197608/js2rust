@@ -295,10 +295,17 @@ impl Emitter {
             self.write("\",\"");
         }
         self.writeln(&format!(") catch break :{} \"\";", blk));
-        self.writeln(&format!(
-            "__join_buf.writer().print(\"{}\", .{{__item}}) catch break :{} \"\";",
-            fmt_spec, blk
-        ));
+        if matches!(data.elem_type, ZigType::F64) {
+            self.writeln(&format!(
+                "__join_buf.writer().writeAll(js_number.toString(js_allocator.allocator(), __item, 10) catch break :{} \"\") catch break :{} \"\";",
+                blk, blk
+            ));
+        } else {
+            self.writeln(&format!(
+                "__join_buf.writer().print(\"{}\", .{{__item}}) catch break :{} \"\";",
+                fmt_spec, blk
+            ));
+        }
         self.indent_pop();
         self.writeln("");
         self.write("}");
