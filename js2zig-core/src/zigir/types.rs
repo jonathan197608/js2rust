@@ -445,6 +445,15 @@ impl IrAssignTarget {
                 field: field.clone(),
                 field_kind: field_kind.clone(),
             }),
+            IrAssignTarget::Index {
+                object,
+                index,
+                index_kind,
+            } => Some(IrExpr::IndexAccess {
+                object: object.clone(),
+                index: index.clone(),
+                index_kind: *index_kind,
+            }),
             _ => None,
         }
     }

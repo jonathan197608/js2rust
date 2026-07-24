@@ -543,6 +543,12 @@ impl Lowerer {
         // Register loop variable type so body expressions have correct type info.
         // - MapIter: key is JsAny (from std.HashMap(JsAny, JsAny, ...))
         // - HashMapIter: key is []const u8 (from JsObjectMap = StringArrayHashMap(JsAny))
+        //
+        // Save old var_types entry for the loop variable to restore after body
+        // lowering (same pattern as for-of). Without this, the loop variable's
+        // type leaks to code after the loop, causing type inference corruption.
+        let loop_var_key = var.js_name.clone();
+        let saved_type = self.type_info.var_types.get(&loop_var_key).cloned();
         match &kind {
             IrForInKind::MapIter => {
                 self.type_info
@@ -569,6 +575,13 @@ impl Lowerer {
             self.lower_expr(&fis.right)
         };
         let body = self.lower_stmt_as_block(&fis.body, None);
+
+        // Restore var_types to pre-loop state (loop variable not visible outside)
+        if let Some(t) = saved_type {
+            self.type_info.var_types.insert(loop_var_key, t);
+        } else {
+            self.type_info.var_types.remove(&loop_var_key);
+        }
 
         crate::zigir::types::IrStmt::ForIn {
             var,
@@ -1105,6 +1118,9 @@ impl Lowerer {
                 Self::chain_element_references_name(&ce.expression, name)
             }
             Expression::AwaitExpression(ae) => Self::expr_references_name(&ae.argument, name),
+            Expression::ParenthesizedExpression(pe) => {
+                Self::expr_references_name(&pe.expression, name)
+            }
             Expression::TaggedTemplateExpression(tte) => {
                 Self::expr_references_name(&tte.tag, name)
                     || tte
@@ -1520,11 +1536,18 @@ impl Lowerer {
             IrExpr::ArrayMethodInline(data) if data.elem_type == ZigType::F64 => {
                 Self::wrap_f64_to_i64(IrExpr::ArrayMethodInline(data))
             }
+            // BoolLiteral → convert to IntLiteral (true=1, false=0)
+            IrExpr::BoolLiteral(b) => IrExpr::IntLiteral(if b { 1 } else { 0 }),
+            // Assign: recurse into the assigned value
+            IrExpr::Assign { op, target, value } => IrExpr::Assign {
+                op,
+                target,
+                value: Box::new(self.coerce_i64_result_type(*value)),
+            },
             other => other,
         }
     }
 
-    /// Coerce an I64 expression to f64 when the function's return type is f64.
     /// This is the inverse of `coerce_i64_result_type`: it wraps I64-producing
     /// expressions in a DivExpr with divisor 1, which the emitter renders as
     /// `(@as(f64, @floatFromInt(expr)) / @as(f64, @floatFromInt(1)))`.
@@ -1712,6 +1735,18 @@ impl Lowerer {
             IrExpr::ArrayMethodInline(data) if data.elem_type == ZigType::I64 => {
                 Self::wrap_i64_to_f64(IrExpr::ArrayMethodInline(data))
             }
+
+            // BoolLiteral → convert to IntLiteral (true=1, false=0), then
+            // the existing IntLiteral arm wraps it to f64 via wrap_i64_to_f64.
+            IrExpr::BoolLiteral(b) => {
+                Self::wrap_i64_to_f64(IrExpr::IntLiteral(if b { 1 } else { 0 }))
+            }
+            // Assign: recurse into the assigned value
+            IrExpr::Assign { op, target, value } => IrExpr::Assign {
+                op,
+                target,
+                value: Box::new(self.coerce_f64_result_type(*value)),
+            },
 
             // Other expressions — pass through unchanged
             other => other,

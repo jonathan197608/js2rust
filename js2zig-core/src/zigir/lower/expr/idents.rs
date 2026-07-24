@@ -148,6 +148,16 @@ impl Lowerer {
                     Self::collect_returned_idents_in_expr(e, names);
                 }
             }
+            // Closure: non-mut captures transfer ownership (the closure struct
+            // stores a copy of the value). Mut captures use pointers, so
+            // ownership stays with the original variable.
+            IrExpr::Closure(closure) => {
+                for cap in &closure.captured {
+                    if !cap.is_mut {
+                        names.insert(cap.name.zig_name.clone());
+                    }
+                }
+            }
             // Binary, Call, FieldAccess, etc. — the variable's value is
             // consumed to compute a new value; ownership of the variable
             // itself is NOT transferred, so needs_deinit should remain true.
@@ -343,12 +353,18 @@ impl Lowerer {
             }
             Expression::CallExpression(ce) => {
                 Self::collect_ast_expr_idents(&ce.callee, idents);
+                for arg in &ce.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        Self::collect_ast_expr_idents(e, idents);
+                    }
+                }
             }
             Expression::StaticMemberExpression(me) => {
                 Self::collect_ast_expr_idents(&me.object, idents);
             }
             Expression::ComputedMemberExpression(me) => {
                 Self::collect_ast_expr_idents(&me.object, idents);
+                Self::collect_ast_expr_idents(&me.expression, idents);
             }
             Expression::ParenthesizedExpression(pe) => {
                 Self::collect_ast_expr_idents(&pe.expression, idents);

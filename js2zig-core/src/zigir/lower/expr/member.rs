@@ -698,6 +698,8 @@ impl Lowerer {
                 self.infer_ident_type(id.name.as_str())
             }
             AssignmentTarget::StaticMemberExpression(mem) => self.infer_static_member_type(mem),
+            AssignmentTarget::ComputedMemberExpression(mem) => self.infer_computed_member_type(mem),
+            AssignmentTarget::PrivateFieldExpression(pfe) => self.infer_private_field_type(pfe),
             _ => None,
         }
     }
@@ -719,6 +721,28 @@ impl Lowerer {
             }
         }
         self.infer_expr_type(&mem.object)
+    }
+
+    /// Infer the type of a computed member expression used as an assignment
+    /// target (`obj[idx] = ...` or `obj[idx] += ...`).
+    fn infer_computed_member_type(&self, mem: &ComputedMemberExpression) -> Option<ZigType> {
+        // arguments[i] → JsAny
+        if let Expression::Identifier(id) = &mem.object
+            && (id.name.as_str() == "arguments" || id.name.as_str() == "__arguments")
+        {
+            return Some(ZigType::JsAny);
+        }
+        // ArrayList(T)[i] → T
+        if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&mem.object) {
+            return Some(*elem);
+        }
+        None
+    }
+
+    /// Infer the type of a private field expression used as an assignment
+    /// target (`this.#field = ...` or `this.#field += ...`).
+    fn infer_private_field_type(&self, pfe: &PrivateFieldExpression) -> Option<ZigType> {
+        self.infer_expr_type(&pfe.object)
     }
 
     /// Determine FieldKind for a member assignment target (`obj.field = ...`).

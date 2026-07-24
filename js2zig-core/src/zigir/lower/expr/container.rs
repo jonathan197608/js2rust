@@ -69,12 +69,17 @@ impl Lowerer {
                         PropertyKind::Get => {
                             // Getter: extract return expression from function body
                             // { get x() { return expr; } } → .x = expr
+                            // { get x() { return; } } → .x = undefined
                             // Only single-return getters are inlined; complex ones get @compileError
                             if let Expression::FunctionExpression(func) = &op.value
                                 && let Some(body) = &func.body
-                                && let Some(return_expr) = Self::extract_return_expr_from_body(body)
+                                && body.statements.len() == 1
+                                && let Statement::ReturnStatement(ret) = &body.statements[0]
                             {
-                                let value = self.lower_expr(return_expr);
+                                let value = match &ret.argument {
+                                    Some(return_expr) => self.lower_expr(return_expr),
+                                    None => crate::zigir::types::IrExpr::Undefined,
+                                };
                                 items.push(IrObjectItem::Field(
                                     crate::zigir::types::IrObjectField {
                                         key,
@@ -123,19 +128,6 @@ impl Lowerer {
         }
 
         crate::zigir::types::IrExpr::ObjectLiteral(crate::zigir::types::IrObjectLiteral { items })
-    }
-
-    /// Extract the return expression from a function body with a single return statement.
-    /// Used by getter property lowering: `{ get x() { return expr; } }` → `.x = expr`.
-    pub(super) fn extract_return_expr_from_body<'a>(
-        body: &'a FunctionBody<'a>,
-    ) -> Option<&'a Expression<'a>> {
-        if body.statements.len() == 1
-            && let Statement::ReturnStatement(ret) = &body.statements[0]
-        {
-            return ret.argument.as_ref();
-        }
-        None
     }
 
     /// Lower a template literal.

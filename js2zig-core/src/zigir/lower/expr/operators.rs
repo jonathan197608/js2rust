@@ -706,11 +706,12 @@ impl Lowerer {
             let target_type = self.infer_assign_target_type(&ae.left);
             if target_type == Some(ZigType::BigInt) {
                 let target = self.lower_assign_target(&ae.left);
-                // Only expand for Member/Ident targets (to_read_expr returns Some).
+                // Only expand for Member/Ident/Index targets (to_read_expr returns Some).
                 if matches!(
                     target,
                     crate::zigir::types::IrAssignTarget::Member { .. }
                         | crate::zigir::types::IrAssignTarget::Ident(_)
+                        | crate::zigir::types::IrAssignTarget::Index { .. }
                 ) {
                     let value = Box::new(self.lower_expr(&ae.right));
                     let (bind, target, read) = self.maybe_bind_member_object_for_compound(target);
