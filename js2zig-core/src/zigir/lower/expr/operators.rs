@@ -288,8 +288,19 @@ impl Lowerer {
                             ZigType::F64,
                         ))
                     }
-                    // Already numeric or BigInt: no-op (BigInt + is a JS
-                    // TypeError, but we let Zig surface the type mismatch).
+                    // BigInt: JS spec says +BigInt throws TypeError.
+                    Some(ZigType::BigInt) => {
+                        let span = self.span_to_source_span(ue.span);
+                        self.add_error(
+                            span.clone(),
+                            "unary + on BigInt is a TypeError in JavaScript",
+                        );
+                        IrExpr::CompileError {
+                            span,
+                            msg: "unary + on BigInt is not supported (TypeError in JS)".to_string(),
+                        }
+                    }
+                    // Already numeric (i64/f64): no-op.
                     _ => self.lower_expr(arg),
                 }
             }

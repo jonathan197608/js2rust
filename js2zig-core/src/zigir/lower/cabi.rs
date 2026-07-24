@@ -881,8 +881,18 @@ impl Lowerer {
         // new FnContext and restored by `exit_fn`.
         let saved_rewrite = self.this_rewrite_fields.take();
         self.this_rewrite_fields = None;
+        // LOW-2: Reset in_static_block inside the new function context.
+        // A nested non-arrow function has its own `this` (undefined/globals),
+        // not the enclosing static method's class. Without resetting
+        // in_static_block, `this` would be incorrectly rewritten to the class
+        // name. Note: current_class is intentionally NOT reset here — class
+        // methods also call enter_fn, and resetting it would break `this`
+        // rewriting in regular (non-static) methods.
+        let saved_static_block = self.in_static_block;
+        self.in_static_block = false;
         let mut new_ctx = FnContext::new(name, is_export, return_type);
         new_ctx.saved_this_rewrite_fields = saved_rewrite;
+        new_ctx.saved_in_static_block = saved_static_block;
         self.fn_ctx = Some(new_ctx);
         old
     }
@@ -893,6 +903,8 @@ impl Lowerer {
         // R8-C7: Restore the this-rewrite flag that was active before this fn.
         // `.take()` leaves None in the ctx so it can still be returned whole.
         self.this_rewrite_fields = ctx.saved_this_rewrite_fields.take();
+        // LOW-2: Restore in_static_block from before entering this fn.
+        self.in_static_block = ctx.saved_in_static_block;
         self.fn_ctx = saved;
         ctx
     }

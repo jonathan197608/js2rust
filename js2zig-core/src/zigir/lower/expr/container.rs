@@ -22,7 +22,9 @@ impl Lowerer {
                     )));
                 }
                 ArrayExpressionElement::Elision(_) => {
-                    elements.push(crate::zigir::types::IrExpr::Null);
+                    // JS spec: array holes are `undefined`, NOT `null`.
+                    // `[1, , 3]` has holes at index 1 (sparse array behavior).
+                    elements.push(crate::zigir::types::IrExpr::Undefined);
                 }
                 _ => {
                     if let Some(expr) = elem.as_expression() {

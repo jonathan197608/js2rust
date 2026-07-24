@@ -19,6 +19,31 @@ pub fn constructor(value: anytype) f64 {
     return std.math.nan(f64);
 }
 
+/// Boolean(x) — convert a value to boolean (truthiness check).
+/// Implements ECMA-262 §7.1.2 ToBoolean. Must not import js_runtime (circular
+/// dependency), so we inline the same dispatch logic.
+pub fn booleanConstructor(value: anytype) bool {
+    const T = @TypeOf(value);
+    if (T == bool) return value;
+    if (T == i64) return value != 0;
+    if (T == f64) return value != 0.0 and !std.math.isNan(value);
+    if (T == []const u8) return value.len > 0;
+    // String literals: *const [N:0]u8 — coerce to slice and check length
+    if (switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => switch (@typeInfo(p.child)) {
+                .array => |a| a.child == u8,
+                else => false,
+            },
+            else => false,
+        },
+        else => false,
+    }) return value.len > 0;
+    if (T == JsAny) return value.toBool();
+    if (T == @TypeOf(null)) return false;
+    return true; // fallback: objects, struct instances are truthy
+}
+
 /// Number.isNaN — check if a value is NaN.
 pub fn isNaN(val: f64) bool {
     return std.math.isNan(val);
@@ -1083,4 +1108,22 @@ test "toString rejects out-of-range radix (R8-NumberToString)" {
     // `(NaN).toString(10)` returns "NaN".
     try std.testing.expectError(error.RangeError, toString(a, std.math.nan(f64), 1));
     try std.testing.expectError(error.RangeError, toString(a, std.math.inf(f64), 0));
+}
+
+test "Boolean constructor: truthiness conversion (LOW-3)" {
+    // falsy values (ECMA-262 §7.1.2)
+    try std.testing.expect(!booleanConstructor(false));
+    try std.testing.expect(!booleanConstructor(@as(i64, 0)));
+    try std.testing.expect(!booleanConstructor(@as(f64, 0.0)));
+    try std.testing.expect(!booleanConstructor(@as(f64, -0.0)));
+    try std.testing.expect(!booleanConstructor(std.math.nan(f64)));
+    try std.testing.expect(!booleanConstructor(""));
+    try std.testing.expect(!booleanConstructor(JsAny.fromNull()));
+    try std.testing.expect(!booleanConstructor(JsAny.fromUndefined()));
+    // truthy values
+    try std.testing.expect(booleanConstructor(true));
+    try std.testing.expect(booleanConstructor(@as(i64, 1)));
+    try std.testing.expect(booleanConstructor(@as(f64, 1.5)));
+    try std.testing.expect(booleanConstructor("hello"));
+    try std.testing.expect(booleanConstructor(JsAny.fromI64(42)));
 }

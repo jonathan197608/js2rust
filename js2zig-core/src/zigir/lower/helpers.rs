@@ -90,6 +90,11 @@ pub struct FnContext {
     /// `this.field = value` inside a NESTED function is NOT rewritten (its
     /// `this` differs from the constructor's). `exit_fn` restores it.
     pub saved_this_rewrite_fields: Option<Vec<String>>,
+    /// Saved `in_static_block` value from before entering this function's
+    /// context. `enter_fn` resets it to `false` so that `this` inside a
+    /// nested non-arrow function is NOT rewritten to the class name (its
+    /// `this` is undefined/globals, not the class). `exit_fn` restores it.
+    pub saved_in_static_block: bool,
 }
 
 impl FnContext {
@@ -118,6 +123,7 @@ impl FnContext {
             rest_param_name: None,
             compile_time_referenced_idents: HashSet::new(),
             saved_this_rewrite_fields: None,
+            saved_in_static_block: false,
         }
     }
 

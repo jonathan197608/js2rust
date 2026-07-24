@@ -2566,3 +2566,75 @@ export function testSubMul(a, b, c) {
         zig
     );
 }
+
+// ── Round 19 tests ──────────────────────────────────────────
+
+#[test]
+fn test_low1_array_hole_uses_undefined_not_null() {
+    // Array holes (`[, ,]`) are `undefined` in JS, not `null`.
+    // LOW-1: IrExpr::Null was used instead of IrExpr::Undefined.
+    let js = r#"
+function arrayHole() {
+return [1, , 3];
+}
+"#;
+    let zig = transpile_and_assert(js, "test_low1_array_hole_uses_undefined_not_null");
+    assert!(
+        zig.contains("JsAny.fromUndefined()"),
+        "Expected JsAny.fromUndefined() for array hole in:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("JsAny.fromNull()"),
+        "Should NOT have JsAny.fromNull() for array hole in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_low2_static_block_this_not_leaked_to_nested_fn() {
+    // In a static method, `this` → ClassName. But inside a nested non-arrow
+    // function, `this` should NOT be rewritten to ClassName (it's undefined).
+    // LOW-2: in_static_block was not saved/restored by enter_fn/exit_fn.
+    let js = r#"
+class Foo {
+  static method() {
+    function inner() {
+      return this;
+    }
+    return inner();
+  }
+}
+"#;
+    let zig = transpile_and_assert(js, "test_low2_static_block_this_not_leaked_to_nested_fn");
+    // The nested function's `this` should NOT be rewritten to Foo.
+    // (It may become IrExpr::This → a compile-error or self reference,
+    //  which is a pre-existing limitation — the key assertion is that
+    //  in_static_block doesn't leak into nested non-arrow functions.)
+    assert!(
+        !zig.contains("return Foo;"),
+        "Nested function `this` should NOT be rewritten to class name in:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_low3_boolean_constructor() {
+    // Boolean(x) should call js_number.booleanConstructor(x).
+    // LOW-3: BooleanConstructor mapped to non-existent runtime function.
+    let js = r#"
+/**
+ * @param {number} x
+ * @returns {boolean}
+ */
+export function testBoolean(x) {
+return Boolean(x);
+}
+"#;
+    let zig = transpile_and_check(js, "test_low3_boolean_constructor");
+    assert!(
+        zig.contains("booleanConstructor"),
+        "Expected booleanConstructor call in:\n{}",
+        zig
+    );
+}

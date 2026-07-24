@@ -111,8 +111,11 @@ impl Emitter {
                 self.write(", ");
             }
             first = false;
-            if field.is_computed {
-                self.write(&format!("@\"{}\" = ", field.key));
+            // Computed keys and keys starting with a digit need Zig's escaped
+            // identifier syntax: .@"key" = value (dot prefix is required in
+            // struct initialization). Normal identifiers use .key = value.
+            if field.is_computed || field.key.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                self.write(&format!(".@\"{}\" = ", field.key));
             } else {
                 self.write(&format!(".{} = ", field.key));
             }
