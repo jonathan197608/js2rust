@@ -338,16 +338,12 @@ pub fn asUintN(bits: u64, value: *const JsBigInt, alloc: std.mem.Allocator) !JsB
         try zero.set(0);
         return JsBigInt{ .value = zero };
     }
-    // Cap bits to prevent OOM from huge shiftLeft allocations.
-    if (bits > 1_000_000) {
-        // For unsigned: if value is negative, we'd need 2^bits + value,
-        // but with bits > 1M the modulus is astronomically large, so
-        // just return the value as-is (or its positive form).
-        if (!value.value.isPositive() and !value.value.eqlZero()) {
-            // Negative value with huge bits: return clone (practically
-            // impossible to represent the full unsigned result anyway).
-            return value.clone(alloc);
-        }
+    // R20-RT-7: Raised cap from 1M to 100M. 2^100M needs ~12.5MB, which is
+    // acceptable. Previous cap of 1M caused negative values with bits > 1M
+    // to return a clone (negative) instead of the correct positive result.
+    if (bits > 100_000_000) {
+        // 2^bits would require >12.5MB. Return clone as a practical
+        // approximation for astronomically large bits values.
         return value.clone(alloc);
     }
     // Compute 2^bits as the modulus
@@ -549,6 +545,30 @@ test "asUintN wraps negative values correctly (R8-P1-5)" {
         var result = try asUintN(0, &input, alloc);
         defer result.deinit(alloc);
         try std.testing.expect(result.isZero());
+    }
+}
+
+test "asUintN with large bits and negative value (R20-RT-7)" {
+    const alloc = std.testing.allocator;
+    // Pre-fix: bits > 1M with negative value returned clone (negative).
+    // Now: bits up to 100M go through normal modulus → positive result.
+    {
+        var input = try JsBigInt.fromI64(alloc, -1);
+        defer input.deinit(alloc);
+        var result = try asUintN(2_000_000, &input, alloc);
+        defer result.deinit(alloc);
+        try std.testing.expect(result.value.isPositive());
+        try std.testing.expect(!result.value.eqlZero());
+    }
+    // Positive value with large bits → unchanged (still correct).
+    {
+        var input = try JsBigInt.fromI64(alloc, 42);
+        defer input.deinit(alloc);
+        var result = try asUintN(2_000_000, &input, alloc);
+        defer result.deinit(alloc);
+        var expected = try JsBigInt.fromI64(alloc, 42);
+        defer expected.deinit(alloc);
+        try std.testing.expect(result.eq(&expected));
     }
 }
 

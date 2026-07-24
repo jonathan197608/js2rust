@@ -342,7 +342,7 @@ impl Emitter {
                     } else {
                         self.write("const _grp_key = _grp_item");
                     }
-                    self.write("; if (_grp_map.getPtr(_grp_key)) |_grp_list| { _grp_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); } else { var _grp_new_list = std.ArrayList(JsAny).init(js_allocator.allocator()); _grp_new_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); _grp_map.put(_grp_key, _grp_new_list) catch @panic(\"OOM\"); } } ");
+                    self.write("; if (_grp_map.getPtr(_grp_key)) |_grp_list| { _grp_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); } else { var _grp_new_list: std.ArrayList(JsAny) = .empty; _grp_new_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); _grp_map.put(_grp_key, _grp_new_list) catch @panic(\"OOM\"); } } ");
                 }
                 self.write(&format!("break :{blk} _grp_map; }}"));
             }

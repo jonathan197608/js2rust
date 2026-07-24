@@ -188,9 +188,10 @@ fn parseIntStr(s: []const u8, radix: ?i64) f64 {
     // Determine the base
     var base: u8 = 10;
     if (radix) |r| {
-        // Radix must be 2..36; outside that range → NaN
-        if (r < 2 or r > 36) return std.math.nan(f64);
-        base = @intCast(r);
+        // R20-RT-6: radix 0 = auto-detect (same as undefined per ECMA-262).
+        // Only reject non-zero values outside 2..36.
+        if (r != 0 and (r < 2 or r > 36)) return std.math.nan(f64);
+        if (r != 0) base = @intCast(r);
     }
 
     // Handle "0x" / "0X" prefix for hex when radix is 0, 16, or unspecified
@@ -332,4 +333,15 @@ test "parseFloat delegates to js_number (P2-2)" {
     try std.testing.expectEqual(@as(f64, 3.14), parseFloat("3.14"));
     // Invalid input returns NaN (not 0.0 as in the old local implementation)
     try std.testing.expect(std.math.isNan(parseFloat("abc")));
+}
+
+test "parseInt radix 0 acts as auto-detect (R20-RT-6)" {
+    // ECMA-262: radix 0 = auto-detect (same as undefined).
+    // Pre-fix: radix 0 was rejected (r < 2 → NaN).
+    try std.testing.expectEqual(@as(f64, 255), parseInt("0xFF", 0));
+    try std.testing.expectEqual(@as(f64, 42), parseInt("42", 0));
+    try std.testing.expectEqual(@as(f64, 255), parseInt("0xFF", null));
+    // Out-of-range non-zero radix still returns NaN.
+    try std.testing.expect(std.math.isNan(parseInt("42", 1)));
+    try std.testing.expect(std.math.isNan(parseInt("42", 37)));
 }

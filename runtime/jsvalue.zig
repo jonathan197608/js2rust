@@ -122,6 +122,9 @@ pub const JsValue = union(enum) {
                 } else |_| {
                     const f = stringToNumber(trimmed) catch break :blk 0;
                     if (std.math.isNan(f) or std.math.isInf(f)) break :blk 0;
+                    const max_i64_f: f64 = 9.223372036854776e18;
+                    const min_i64_f: f64 = -9.223372036854776e18;
+                    if (f > max_i64_f or f < min_i64_f) break :blk 0;
                     break :blk @as(i64, @intFromFloat(@trunc(f)));
                 }
             },
@@ -412,6 +415,16 @@ test "asI64: float string truncates to integer (R18-RT-1)" {
     try std.testing.expectEqual(@as(i64, 255), Jv.fromString("0xFF").asI64());
     try std.testing.expectEqual(@as(i64, -3), Jv.fromString("-3.9").asI64());
     try std.testing.expectEqual(@as(i64, 0), Jv.fromString("0xZZ").asI64());
+}
+
+test "asI64: huge float string does not panic (R20-RT-1)" {
+    // JS: "99999999999999999999" | 0 → 0 (out of i64 range).
+    // Pre-fix: @intFromFloat(@trunc(f)) panicked on out-of-range f64.
+    const Jv = JsValue;
+    try std.testing.expectEqual(@as(i64, 0), Jv.fromString("99999999999999999999").asI64());
+    try std.testing.expectEqual(@as(i64, 0), Jv.fromString("-99999999999999999999").asI64());
+    try std.testing.expectEqual(@as(i64, 0), Jv.fromString("1e30").asI64());
+    try std.testing.expectEqual(@as(i64, 42), Jv.fromString("42.9").asI64());
 }
 
 test "asF64: 0o octal and 0b binary string parses (R18-RT-2)" {

@@ -47,6 +47,13 @@ pub struct FnContext {
     /// (BigInt mixed types, BigInt >>>, JSON.parse). These need to be converted to
     /// `return error.JsThrow` so they can be caught by JS try/catch.
     pub has_catchable_error: bool,
+    /// Accumulates has_catchable_error across all try-catch-finally blocks.
+    /// has_catchable_error is reset to pre-try state after each try body (and
+    /// again after catch/finally) so subsequent try statements correctly detect
+    /// their own catchable errors. fn_ever_catchable preserves the function-level
+    /// signal for can_throw: if ANY try-catch-finally body contained catchable
+    /// operations, the function needs `return error.JsThrow` support.
+    pub fn_ever_catchable: bool,
     /// JS-const variables that are reassigned (emit runtime TypeError guard).
     /// In JS, `const x = 1; x = 2` throws TypeError at runtime, but Zig uses
     /// `var` for reassigned variables so the assignment succeeds. We track these
@@ -108,6 +115,7 @@ impl FnContext {
             fn_has_throw: false,
             has_bigint_div: false,
             has_catchable_error: false,
+            fn_ever_catchable: false,
             js_const_reassigned: HashSet::new(),
             in_return_expr: false,
             in_expr_stmt: false,

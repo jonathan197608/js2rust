@@ -906,17 +906,33 @@ impl Lowerer {
                 .map(|name| self.make_ident(name));
             // Register catch variable type as JsError so member access
             // (e.name, e.message, e.stack) works correctly.
-            if let Some(ref v) = var {
+            // Save old type to restore after catch body — prevents the
+            // JsError type from leaking into the outer scope.
+            let saved_catch_type = if let Some(ref v) = var {
                 self.type_info
                     .var_types
-                    .insert(v.zig_name.clone(), ZigType::JsError);
-            }
+                    .insert(v.zig_name.clone(), ZigType::JsError)
+            } else {
+                None
+            };
             let stmts = handler
                 .body
                 .body
                 .iter()
                 .map(|s| self.lower_stmt(s))
                 .collect();
+            // Restore the catch variable's pre-try type (if any) so the
+            // JsError type doesn't leak into the outer scope.
+            if let Some(ref v) = var {
+                match saved_catch_type {
+                    Some(old_ty) => {
+                        self.type_info.var_types.insert(v.zig_name.clone(), old_ty);
+                    }
+                    None => {
+                        self.type_info.var_types.remove(&v.zig_name);
+                    }
+                }
+            }
             // Check if catch variable is referenced in the catch body
             let catch_var_referenced = if let Some(ref cv) = var {
                 let js_name = &cv.js_name;
@@ -933,10 +949,29 @@ impl Lowerer {
             (None, false, IrBlock::new(vec![]))
         };
 
+        // Catch body may have set has_catchable_error (e.g., JSON.parse or
+        // BigInt ops inside catch). OR it into fn_ever_catchable for
+        // function-level can_throw, then reset to catchable_before so
+        // subsequent try statements see correct catchable_before state.
+        if let Some(ctx) = self.fn_ctx.as_mut()
+            && ctx.has_catchable_error
+        {
+            ctx.fn_ever_catchable = true;
+            ctx.has_catchable_error = catchable_before;
+        }
+
         let finally = ts.finalizer.as_ref().map(|f| {
             let stmts = f.body.iter().map(|s| self.lower_stmt(s)).collect();
             IrBlock::new(stmts)
         });
+
+        // Finally body may have set has_catchable_error. Same treatment.
+        if let Some(ctx) = self.fn_ctx.as_mut()
+            && ctx.has_catchable_error
+        {
+            ctx.fn_ever_catchable = true;
+            ctx.has_catchable_error = catchable_before;
+        }
 
         // Detect break/continue in finally that would escape the defer.
         // The emit layer already catches return/throw via block_has_return_or_throw,

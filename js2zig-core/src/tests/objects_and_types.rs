@@ -557,15 +557,10 @@ return JSON.stringify(user);
         zig
     );
 
-    // Verify toJson() uses std.json.fmt() for serialization
+    // Verify toJson() uses std.json.Stringify.valueAlloc for serialization
     assert!(
-        zig.contains("std.json.fmt"),
-        "Expected std.json.fmt() in toJson(), got:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("Writer.Allocating"),
-        "Expected Writer.Allocating in toJson(), got:\n{}",
+        zig.contains("std.json.Stringify.valueAlloc"),
+        "Expected std.json.Stringify.valueAlloc in toJson(), got:\n{}",
         zig
     );
 

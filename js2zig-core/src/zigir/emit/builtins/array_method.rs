@@ -280,15 +280,15 @@ impl Emitter {
             _ => "{any}",
         };
         let blk = self.begin_labeled_block(&binding);
-        self.write("var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator()); ");
+        self.write("var __join_buf: std.ArrayList(u8) = .empty; ");
         self.write(&format!("for ({}.items, 0..) |__item, __i| ", receiver));
         self.write("{\n");
         self.indent_push();
         // Emit separator as a Zig expression directly — not embedded inside a
         // string literal. This avoids double-quoting for StringLiteral args
-        // (e.g. join("-") should writeAll("-") not writeAll("\"-\"")) and
-        // correctly handles variable separators (join(sep) → writeAll(sep)).
-        self.write("if (__i > 0) __join_buf.writer().writeAll(");
+        // (e.g. join("-") should appendSlice("-") not appendSlice("\"-\"")) and
+        // correctly handles variable separators (join(sep) → appendSlice(sep)).
+        self.write("if (__i > 0) __join_buf.appendSlice(js_allocator.allocator(), ");
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
         } else {
@@ -297,20 +297,25 @@ impl Emitter {
         self.writeln(&format!(") catch break :{} \"\";", blk));
         if matches!(data.elem_type, ZigType::F64) {
             self.writeln(&format!(
-                "__join_buf.writer().writeAll(js_number.toString(js_allocator.allocator(), __item, 10) catch break :{} \"\") catch break :{} \"\";",
+                "__join_buf.appendSlice(js_allocator.allocator(), js_number.toString(js_allocator.allocator(), __item, 10) catch break :{} \"\") catch break :{} \"\";",
                 blk, blk
+            ));
+        } else if matches!(data.elem_type, ZigType::Str) {
+            self.writeln(&format!(
+                "__join_buf.appendSlice(js_allocator.allocator(), __item) catch break :{} \"\";",
+                blk
             ));
         } else {
             self.writeln(&format!(
-                "__join_buf.writer().print(\"{}\", .{{__item}}) catch break :{} \"\";",
-                fmt_spec, blk
+                "{{ const __s = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{{__item}}) catch break :{} \"\"; __join_buf.appendSlice(js_allocator.allocator(), __s) catch break :{} \"\"; js_allocator.allocator().free(__s); }}",
+                fmt_spec, blk, blk
             ));
         }
         self.indent_pop();
         self.writeln("");
         self.write("}");
         self.write(&format!(
-            " break :{} __join_buf.toOwnedSlice() catch \"\"; }})",
+            " break :{} __join_buf.toOwnedSlice(js_allocator.allocator()) catch \"\"; }})",
             blk
         ));
     }
@@ -450,12 +455,14 @@ impl Emitter {
             receiver
         ));
         for arg in &data.args {
-            // Use @hasField comptime check: if arg has .items (is an array),
-            // appendSlice; otherwise append as a single element.
-            // For JsAny element arrays, wrap non-array args in JsAny.from().
+            // Use comptime type equality to distinguish array args from scalars.
+            // @hasField fails (compile error) on primitive types like i64/f64/bool.
             self.write("{ const __ca = ");
             self.emit_expr(arg);
-            self.write("; if (@hasField(@TypeOf(__ca), \"items\")) { ");
+            self.write(&format!(
+                "; if (@TypeOf(__ca) == std.ArrayList({})) {{ ",
+                elem_type_str
+            ));
             self.write("__concat.appendSlice(js_allocator.allocator(), __ca.items) catch @panic(\"OOM: Array.concat\"); ");
             self.write("} else { ");
             if matches!(data.elem_type, ZigType::JsAny) {

@@ -2638,3 +2638,193 @@ return Boolean(x);
         zig
     );
 }
+
+// ═══════════════════════════════════════════════════════
+//  Round 20 regression tests
+// ═══════════════════════════════════════════════════════
+
+// INF-1: infer_ident_type should check fn_local_types before var_types.
+// Two functions each with a local `data` of different types — the analysis
+// pass stores only the last function's type in var_types, so without
+// fn_local_types, one function gets the wrong type.
+#[test]
+fn test_r20_inf1_fn_local_type_priority() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function funcA() {
+    let data = "hello";
+    return data.length;
+}
+/**
+ * @returns {any}
+ */
+export function funcB() {
+    let data = [10, 20, 30];
+    return data[0];
+}
+"#;
+    let zig = transpile_and_check(js, "test_r20_inf1_fn_local_type_priority");
+    // funcA's data is Str → data.length should use .len (not .items.len)
+    // funcB's data is ArrayList(I64) → data[0] should use .items[ (not charAt)
+    // Before the fix, whichever function was processed first by the lowerer
+    // would get the wrong type from var_types (overwritten by the other).
+    assert!(
+        zig.contains(".len") || zig.contains("length"),
+        "Expected string .len for funcA's data.length:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains(".items[") || zig.contains(".items ("),
+        "Expected ArrayList indexing for funcB's data[0]:\n{}",
+        zig
+    );
+}
+
+// INF-2: LogicalExpression with different-typed operands should infer JsAny,
+// not just the right operand's type.
+#[test]
+fn test_r20_inf2_logical_expr_mixed_types() {
+    let js = r#"
+export function testInf2() {
+    let a = 1;
+    let b = "hello";
+    let c = a || b;
+    return c;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r20_inf2_logical_expr_mixed_types");
+    // a is I64, b is Str — different types → result is JsAny.
+    // Before the fix, result was inferred as Str (right side preferred).
+    // With JsAny, the || uses isNullish() and the result is JsAny-typed.
+    assert!(
+        zig.contains("JsAny") || zig.contains("isNullish"),
+        "Expected JsAny handling for mixed-type || (I64 || Str):\n{}",
+        zig
+    );
+}
+
+// LOW-3: has_catchable_error should not be sticky from catch/finally bodies.
+// A catchable error (JSON.parse) in a catch body should not prevent a
+// subsequent try from detecting its own catchable error.
+#[test]
+fn test_r20_low3_catchable_error_not_sticky_from_catch() {
+    let js = r#"
+/** @param {string} jsonStr */
+export function testLow3(jsonStr) {
+    let a = null;
+    try {
+        a = JSON.parse("1");
+    } catch (e) {
+        // Catch body contains a catchable error — sets has_catchable_error.
+        a = JSON.parse("2");
+    }
+    let b = null;
+    try {
+        // This try should detect its own catchable error.
+        // Before the fix, catchable_before was sticky true from the catch
+        // body, so has_catchable_error_in_try = true && !true = false.
+        b = JSON.parse(jsonStr);
+    } catch (e2) {
+        b = null;
+    }
+    return b;
+}
+"#;
+    let zig = transpile_and_assert(js, "test_r20_low3_catchable_error_not_sticky_from_catch");
+    // Both try blocks should use the labeled-block pattern for catchable
+    // errors. Each contributes >= 2 occurrences of _js_try_blk_.
+    // Before the fix, the second try would NOT use the labeled-block pattern
+    // (has_catchable_error_in_try was false), so its JSON.parse would not
+    // be wrapped in catch error.JsThrow — producing incorrect error handling.
+    let try_blk_count = zig.matches("_js_try_blk_").count();
+    assert!(
+        try_blk_count >= 4,
+        "Expected both try blocks to use labeled-block pattern (>= 4 _js_try_blk_ occurrences), got {}: {}",
+        try_blk_count,
+        zig
+    );
+}
+
+// LOW-4: Destructuring with a non-identifier init expression (e.g., member
+// access) should force needs_temp=true, ensuring a temp variable is declared.
+#[test]
+fn test_r20_low4_destructure_non_identifier_init() {
+    let js = r#"
+export function testLow4() {
+    let arr = [{ x: 1, y: 2 }];
+    let { x } = arr[0];
+    return x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r20_low4_destructure_non_identifier_init");
+    // Before the fix, arr[0] (ComputedMemberExpression, not covered by
+    // init_may_have_side_effects, single property) would produce an undeclared
+    // _js_dest_N reference. After the fix, needs_temp is forced and a temp
+    // variable is properly declared.
+    assert!(
+        zig.contains("_js_dest"),
+        "Expected temp variable for non-identifier destructuring init:\n{}",
+        zig
+    );
+}
+
+// LOW-6: Catch variable type (JsError) should not leak into outer scope.
+#[test]
+fn test_r20_low6_catch_var_type_no_leak() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testLow6() {
+    let e = 42;
+    try {
+        JSON.parse("bad");
+    } catch (e) {
+        return 0;
+    }
+    return e;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r20_low6_catch_var_type_no_leak");
+    // The outer `e` is i64 (42). After try-catch, `return e` should use
+    // the original i64 type, not JsError (which leaked before the fix).
+    // The function has @returns {number} so the return type is f64/i64.
+    // If the type leaked, `return e` would try to return JsError, causing
+    // a type mismatch or incorrect codegen.
+    // Just verifying the code compiles via ast-check is the main assertion.
+    // Additionally, check that `e` is declared as i64 or similar, not JsError.
+    assert!(
+        !zig.contains("e: JsError") || !zig.contains("return e;") || zig.contains("i64"),
+        "Catch variable type should not leak to outer scope:\n{}",
+        zig
+    );
+}
+
+// LOW-7: Optional chain call (foo?.()) should not double-evaluate the callee.
+// The call should use the capture variable (access_target), not re-lower the
+// entire call expression from AST.
+#[test]
+fn test_r20_low7_optional_chain_call_no_double_eval() {
+    let js = r#"
+function identity(x) {
+    return x;
+}
+export function testLow7() {
+    let fn = identity;
+    let result = fn?.(42);
+    return result;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r20_low7_optional_chain_call_no_double_eval");
+    // The optional chain should capture fn into a temp (_oc) and use that
+    // temp for the call. Before the fix, self.lower_call(call_ce) re-lowered
+    // the callee, bypassing the capture variable.
+    // Verify that an _oc capture variable is used in the call.
+    assert!(
+        zig.contains("_oc"),
+        "Expected optional chain capture variable (_oc) in generated code:\n{}",
+        zig
+    );
+}

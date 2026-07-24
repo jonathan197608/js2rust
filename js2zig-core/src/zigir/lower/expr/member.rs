@@ -315,6 +315,17 @@ impl Lowerer {
             "arguments" => return Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
             _ => {}
         }
+        // Check fn_local_types first (takes priority over global var_types).
+        // This prevents cross-function name collisions where a local variable
+        // in one function shadows a global variable of the same name but
+        // different type.
+        if let Some(ty) = self
+            .fn_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.fn_local_types.get(name))
+        {
+            return Some(ty.clone());
+        }
         // Exact match
         if let Some(ty) = self.type_info.var_types.get(name) {
             return Some(ty.clone());
@@ -579,10 +590,19 @@ impl Lowerer {
                 None
             }
             Expression::LogicalExpression(le) => {
-                // || and &&: result type is whichever operand is returned.
-                // Prefer the right side (common case: `x || 0` → I64).
-                self.infer_expr_type(&le.right)
-                    .or_else(|| self.infer_expr_type(&le.left))
+                // || and &&: result type depends on both operands.
+                // If both sides have the same type, that's the result type.
+                // If they differ, return JsAny (runtime decides which value
+                // is returned). This matches the analysis pass behavior in
+                // infer/expr.rs.
+                let left_ty = self.infer_expr_type(&le.left);
+                let right_ty = self.infer_expr_type(&le.right);
+                match (left_ty, right_ty) {
+                    (Some(l), Some(r)) if l == r => Some(l),
+                    (Some(_), Some(_)) => Some(ZigType::JsAny),
+                    (Some(t), None) | (None, Some(t)) => Some(t),
+                    (None, None) => None,
+                }
             }
             Expression::AssignmentExpression(ae) => {
                 // Assignment returns the assigned value.
@@ -593,7 +613,43 @@ impl Lowerer {
                 // Type is that of the last expression.
                 se.expressions.last().and_then(|e| self.infer_expr_type(e))
             }
-            Expression::NewExpression(_) => Some(ZigType::JsAny),
+            Expression::NewExpression(ne) => {
+                // Infer constructor type for known built-in constructors.
+                match &ne.callee {
+                    Expression::Identifier(id) => match id.name.as_str() {
+                        "Map" => Some(ZigType::NamedStruct("Map".to_string())),
+                        "Set" => Some(ZigType::NamedStruct("Set".to_string())),
+                        "Date" => Some(ZigType::NamedStruct("JsDate".to_string())),
+                        "RegExp" => Some(ZigType::NamedStruct("JsRegExp".to_string())),
+                        "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError" => {
+                            Some(ZigType::JsError)
+                        }
+                        "BigInt" => Some(ZigType::BigInt),
+                        // Wrapper constructors return primitives
+                        "String" => {
+                            if let Some(first_arg) = ne.arguments.first()
+                                && let Some(expr) = first_arg.as_expression()
+                            {
+                                self.infer_expr_type(expr)
+                            } else {
+                                Some(ZigType::Str)
+                            }
+                        }
+                        "Number" => {
+                            if let Some(first_arg) = ne.arguments.first()
+                                && let Some(expr) = first_arg.as_expression()
+                            {
+                                self.infer_expr_type(expr)
+                            } else {
+                                Some(ZigType::F64)
+                            }
+                        }
+                        "Boolean" => Some(ZigType::Bool),
+                        _ => Some(ZigType::JsAny),
+                    },
+                    _ => Some(ZigType::JsAny),
+                }
+            }
             Expression::AwaitExpression(_) => Some(ZigType::JsAny),
             _ => None,
         }

@@ -480,31 +480,31 @@ impl Emitter {
         // label 'blk'` in Zig.
         let label = self.next_label();
         self.write(&format!(
-            "({}: {{ var __buf = std.ArrayList(u8).init(js_allocator.allocator()); errdefer __buf.deinit(); ",
+            "({}: {{ var __buf: std.ArrayList(u8) = .empty; errdefer __buf.deinit(js_allocator.allocator()); ",
             label
         ));
         // Write the first part
         if str_on_left {
-            self.write("__buf.writer().print(\"{s}\", .{");
+            self.write("__buf.appendSlice(js_allocator.allocator(), ");
             self.emit_expr(str_expr);
-            self.write("}) catch @panic(\"OOM: string concat\"); ");
+            self.write(") catch @panic(\"OOM: string concat\"); ");
         } else {
-            self.write("__buf.writer().print(\"{}\", .{");
+            self.write("{ const __part = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{");
             self.emit_expr(bigint_expr);
-            self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
+            self.write("}) catch @panic(\"OOM: bigint string concat\"); __buf.appendSlice(js_allocator.allocator(), __part) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free(__part); } ");
         }
         // Write the second part
         if str_on_left {
-            self.write("__buf.writer().print(\"{}\", .{");
+            self.write("{ const __part = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{");
             self.emit_expr(bigint_expr);
-            self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
+            self.write("}) catch @panic(\"OOM: bigint string concat\"); __buf.appendSlice(js_allocator.allocator(), __part) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free(__part); } ");
         } else {
-            self.write("__buf.writer().print(\"{s}\", .{");
+            self.write("__buf.appendSlice(js_allocator.allocator(), ");
             self.emit_expr(str_expr);
-            self.write("}) catch @panic(\"OOM: string concat\"); ");
+            self.write(") catch @panic(\"OOM: string concat\"); ");
         }
         self.write(&format!(
-            "break :{} __buf.toOwnedSlice() catch @panic(\"OOM: string concat\"); }})",
+            "break :{} __buf.toOwnedSlice(js_allocator.allocator()) catch @panic(\"OOM: string concat\"); }})",
             label
         ));
     }

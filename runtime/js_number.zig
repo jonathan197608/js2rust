@@ -314,8 +314,13 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     // Extract the integer part and existing fractional digits.
     const int_part = s[0..dot_idx];
     const existing_frac = s[dot_idx + 1 ..];
-    // Parse the existing fractional digits as f64 remainder.
-    const remainder: f64 = std.fmt.parseFloat(f64, existing_frac) catch 0.0;
+    // Parse the existing fractional digits as a fraction in [0,1).
+    // R20-RT-2: parseFloat("00000000000000005551") = 5551.0 (integer!),
+    // not 0.00000000000000005551. Prepending "0." makes it a proper
+    // fraction so successive *10 extraction yields digits 0-9.
+    var frac_buf_2: [32]u8 = undefined;
+    const frac_parse_str = std.fmt.bufPrint(&frac_buf_2, "0.{s}", .{existing_frac}) catch "0.0";
+    const remainder: f64 = std.fmt.parseFloat(f64, frac_parse_str) catch 0.0;
     // Compute additional digits needed beyond 20.
     if (d > existing_frac.len) {
         // Multiply remainder by 10^(additional) to get the extra digits.
@@ -375,6 +380,15 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     // Handle -0: JS requires "0e+0" not "-0e+0"
     const safe_val: f64 = if (val == 0.0) 0.0 else val;
 
+    // R20-RT-8: When fraction_digits is undefined, ECMA-262 says use the
+    // minimum number of digits necessary to represent the number uniquely.
+    // Zig's {e} format (no precision) gives this shortest round-trip form.
+    if (fraction_digits == null) {
+        var buf0: [64]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf0, "{e}", .{safe_val}) catch "0e0";
+        return fixupExp(alloc, s);
+    }
+
     // ECMA-262 §22.1.3.3: Throw RangeError if fraction_digits < 0 or > 100
     const digits: usize = if (fraction_digits) |d| blk: {
         if (d < 0 or d > 100) return error.RangeError;
@@ -406,8 +420,11 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     if (digits <= existing_frac) return fixed;
     const needed = digits - existing_frac;
     // Parse existing fractional digits after the dot as the remainder.
+    // R20-RT-3: Must prepend "0." so it's parsed as a fraction, not integer.
     const frac_str = fixed[dot_pos + 1 .. e_pos];
-    const remainder: f64 = std.fmt.parseFloat(f64, frac_str) catch 0.0;
+    var frac_buf_3: [32]u8 = undefined;
+    const frac_parse_str = std.fmt.bufPrint(&frac_buf_3, "0.{s}", .{frac_str}) catch "0.0";
+    const remainder: f64 = std.fmt.parseFloat(f64, frac_parse_str) catch 0.0;
     // Compute additional digits.
     var extra_buf: [80]u8 = undefined;
     var extra_len: usize = 0;
@@ -439,6 +456,11 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
     if (std.math.isNan(val)) return alloc.dupe(u8, "NaN");
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
+    }
+
+    // R20-RT-8: When precision is undefined, ECMA-262 says return toString().
+    if (precision == null) {
+        return toString(alloc, val, 10);
     }
 
     // ECMA-262 §22.1.3.5: Throw RangeError if precision < 1 or > 100
@@ -512,7 +534,13 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
         // We reconstruct the fractional part of the normalized mantissa.
         const dot_pos_m = std.mem.indexOfScalar(u8, mantissa_str, '.') orelse mantissa_str.len;
         const frac_str_m = if (dot_pos_m < mantissa_str.len) mantissa_str[dot_pos_m + 1 ..] else "";
-        var rem: f64 = std.fmt.parseFloat(f64, frac_str_m) catch 0.0;
+        var rem: f64 = blk: {
+            // R20-RT-4: Must prepend "0." so fractional digits are parsed as
+            // a fraction in [0,1), not as a huge integer.
+            var fb: [32]u8 = undefined;
+            const fs = std.fmt.bufPrint(&fb, "0.{s}", .{frac_str_m}) catch "0.0";
+            break :blk std.fmt.parseFloat(f64, fs) catch 0.0;
+        };
         var extra_buf: [80]u8 = undefined;
         var extra_len: usize = 0;
         const needed = p - digits_len;
@@ -870,6 +898,74 @@ test "toPrecision" {
     const r3 = try toPrecision(a, std.math.nan(f64), 3);
     defer a.free(r3);
     try std.testing.expectEqualStrings("NaN", r3);
+}
+
+test "toFixed digits 21-100 does not panic (R20-RT-2)" {
+    const a = std.testing.allocator;
+    // Pre-fix: parseFloat("00000000000000005551") = 5551.0 (integer),
+    // @intFromFloat(@floor(55510)) overflowed u8 → panic.
+    const r1 = try toFixed(a, 0.1, 21);
+    defer a.free(r1);
+    try std.testing.expect(r1.len > 0);
+
+    const r2 = try toFixed(a, 0.1, 30);
+    defer a.free(r2);
+    try std.testing.expect(r2.len > 0);
+
+    const r3 = try toFixed(a, 1.0, 100);
+    defer a.free(r3);
+    try std.testing.expect(r3.len > 0);
+}
+
+test "toExponential digits 21-100 does not panic (R20-RT-3)" {
+    const a = std.testing.allocator;
+    // Pre-fix: same root cause as RT-2 — fractional digits parsed as integer.
+    const r1 = try toExponential(a, 0.1, 21);
+    defer a.free(r1);
+    try std.testing.expect(r1.len > 0);
+
+    const r2 = try toExponential(a, 0.1, 30);
+    defer a.free(r2);
+    try std.testing.expect(r2.len > 0);
+}
+
+test "toPrecision precision 22-100 does not panic (R20-RT-4)" {
+    const a = std.testing.allocator;
+    // Pre-fix: same root cause as RT-2/3.
+    const r1 = try toPrecision(a, 0.1, 22);
+    defer a.free(r1);
+    try std.testing.expect(r1.len > 0);
+
+    const r2 = try toPrecision(a, 0.1, 30);
+    defer a.free(r2);
+    try std.testing.expect(r2.len > 0);
+}
+
+test "toExponential undefined uses minimum digits (R20-RT-8)" {
+    const a = std.testing.allocator;
+    // ECMA-262: toExponential() without arg uses minimum digits for unique ID.
+    // Pre-fix: defaulted to 6 digits → "1.00000e+0" instead of "1e+0".
+    const r1 = try toExponential(a, 1.0, null);
+    defer a.free(r1);
+    try std.testing.expectEqualStrings("1e+0", r1);
+
+    const r2 = try toExponential(a, 12345.0, null);
+    defer a.free(r2);
+    // Should not have trailing zeros
+    try std.testing.expect(!std.mem.endsWith(u8, r2, "000e+4"));
+}
+
+test "toPrecision undefined delegates to toString (R20-RT-8)" {
+    const a = std.testing.allocator;
+    // ECMA-262: toPrecision() without arg = toString().
+    // Pre-fix: defaulted to 6 significant digits.
+    const r1 = try toPrecision(a, 123.456, null);
+    defer a.free(r1);
+    try std.testing.expectEqualStrings("123.456", r1);
+
+    const r2 = try toPrecision(a, 42.0, null);
+    defer a.free(r2);
+    try std.testing.expectEqualStrings("42", r2);
 }
 
 test "toExponential emits e+ sign for positive exponents (R8-P1-2)" {

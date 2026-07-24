@@ -520,7 +520,9 @@ impl Lowerer {
                 let is_struct = struct_field_names.is_some();
 
                 // Decide if we need a temp variable
-                let needs_temp = init_may_have_side_effects(init_expr) || op.properties.len() > 1;
+                let needs_temp = init_may_have_side_effects(init_expr)
+                    || op.properties.len() > 1
+                    || !matches!(init_expr, Expression::Identifier(_));
                 let temp_name = self.name_mangler.next_name("_js_dest");
 
                 // Source for access patterns: temp var name or inline the init expr
@@ -630,7 +632,9 @@ impl Lowerer {
 
                 // Decide if we need a temp variable
                 let element_count = ap.elements.iter().filter(|e| e.is_some()).count();
-                let needs_temp = init_may_have_side_effects(init_expr) || element_count > 1;
+                let needs_temp = init_may_have_side_effects(init_expr)
+                    || element_count > 1
+                    || !matches!(init_expr, Expression::Identifier(_));
                 let temp_name = self.name_mangler.next_name("_js_dest");
 
                 let source = self.compute_destructure_source(needs_temp, &temp_name, init_expr);
@@ -831,6 +835,10 @@ impl Lowerer {
             .fn_ctx
             .as_ref()
             .is_some_and(|ctx| ctx.has_catchable_error);
+        let fn_ever_catchable = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.fn_ever_catchable);
         let has_js_const_reassign = self
             .fn_ctx
             .as_ref()
@@ -850,7 +858,11 @@ impl Lowerer {
             body,
             is_export,
             is_async,
-            can_throw: has_throw || has_bigint_div || has_catchable_error || has_js_const_reassign,
+            can_throw: has_throw
+                || has_bigint_div
+                || has_catchable_error
+                || fn_ever_catchable
+                || has_js_const_reassign,
             is_cabi,
         })
     }

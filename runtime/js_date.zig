@@ -729,6 +729,11 @@ pub fn parse(s: []const u8) i64 {
         end_pos = 10;
     }
 
+    // R20-RT-5: Validate time component ranges per ECMA-262.
+    // Hours must be 0-23, minutes/seconds 0-59.
+    if (hours < 0 or hours > 23 or minutes < 0 or minutes > 59 or
+        seconds < 0 or seconds > 59) return 0;
+
     const days = daysFromCivil(year, month, day);
     // Use i128 intermediates to prevent overflow on extreme year values (P0-2 fix).
     var utc_millis = clampToI64(
@@ -999,6 +1004,16 @@ test "parse rejects out-of-range month/day (R16)" {
     const d = parse("2024-06-15");
     const expected = daysFromCivil(2024, 6, 15) * 86400 * 1000;
     try std.testing.expectEqual(expected, d);
+}
+
+test "parse rejects out-of-range time components (R20-RT-5)" {
+    // ECMA-262: hours 0-23, minutes/seconds 0-59.
+    // Pre-fix: parse accepted invalid time ranges like "2024-01-01T25:99:99Z".
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-01-01T25:00:00Z")); // hours 25
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-01-01T00:60:00Z")); // minutes 60
+    try std.testing.expectEqual(@as(i64, 0), parse("2024-01-01T00:00:60Z")); // seconds 60
+    // Valid time still parses correctly (no regression).
+    try std.testing.expect(parse("2024-01-01T23:59:59Z") != 0);
 }
 
 // ── Tests for new Date methods (Phase 5) ──

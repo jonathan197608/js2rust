@@ -282,10 +282,9 @@ impl Emitter {
             self.writeln("");
             self.writeln("pub fn toJson(self: *const @This()) ![]u8 {");
             self.indent_push();
-            self.writeln("var string = std.io.Writer.Allocating.init(js_allocator.allocator());");
-            self.writeln("errdefer string.deinit();");
-            self.writeln("try string.writer().print(\"{f}\", .{std.json.fmt(self.*, .{})});");
-            self.writeln("return string.toOwnedSlice();");
+            self.writeln(
+                "return std.json.Stringify.valueAlloc(js_allocator.allocator(), self.*, .{});",
+            );
             self.indent_pop();
             self.writeln("}");
         }

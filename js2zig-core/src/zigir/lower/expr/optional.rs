@@ -351,8 +351,15 @@ impl Lowerer {
                 },
             })
         } else {
-            // Fallback for non-member call expressions
-            self.lower_call(call_ce)
+            // Fallback for non-member call expressions (e.g., foo?.()).
+            // Build the call directly using pre-lowered access_target and
+            // args, avoiding self.lower_call(call_ce) which would re-lower
+            // the entire AST node and double-evaluate arguments.
+            IrExpr::Call(crate::zigir::types::IrCallExpr {
+                callee: Box::new(access_target),
+                args,
+                call_kind: CallKind::Direct,
+            })
         };
 
         if !needs_null_check {

@@ -219,10 +219,10 @@ return arr.join(", ");
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_join");
 
-    // Verify std.io.Writer.Allocating is used
+    // Verify std.ArrayList(u8) with .empty is used (Zig 0.16.0 API)
     assert!(
-        zig.contains("std.io.Writer.Allocating"),
-        "Expected std.io.Writer.Allocating in:\n{}",
+        zig.contains("std.ArrayList(u8) = .empty"),
+        "Expected std.ArrayList(u8) = .empty in:\n{}",
         zig
     );
     assert!(
@@ -231,8 +231,8 @@ return arr.join(", ");
         zig
     );
     assert!(
-        zig.contains("writeAll"),
-        "Expected writeAll for separator in:\n{}",
+        zig.contains("appendSlice"),
+        "Expected appendSlice for separator in:\n{}",
         zig
     );
     // i64 elements should use {d} format
