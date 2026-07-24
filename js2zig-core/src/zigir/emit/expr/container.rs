@@ -154,35 +154,42 @@ impl Emitter {
             return;
         }
 
-        // Has spread: build a left-fold spreadMerge(...) chain.
-        // Strategy:
-        //   { ...a }                       → a
-        //   { ...a, ...b }                 → js_runtime.spreadMerge(a, b)
-        //   { ...a, b: 1 }                 → js_runtime.spreadMerge(a, .{ .b = 1 })
-        //   { ...a, ...b, c: 1 }           → js_runtime.spreadMerge(spreadMerge(a, b), .{ .c = 1 })
+        // Has spread: build a left-fold spreadMerge(...) chain preserving source order.
+        // P0-R17: Process items in source order so spread interleaving is correct.
+        //   { a: 1, ...b, c: 2 } → spreadMerge(spreadMerge(.{ .a = 1 }, b), .{ .c = 2 })
+        // Consecutive inline fields are grouped into a single .{ ... } part.
+        let mut parts: Vec<String> = Vec::new();
+        let mut pending_fields: Vec<&crate::zigir::types::IrObjectField> = Vec::new();
 
-        // Collect spread expression texts.
-        // Use emit_expr_inline_with_label_offset to avoid label conflicts
-        // when spread expressions contain labeled blocks (e.g., callback inlining).
-        let mut parts: Vec<String> = obj
-            .items
-            .iter()
-            .filter_map(|item| match item {
+        for item in &obj.items {
+            match item {
                 IrObjectItem::Spread(expr) => {
+                    // Flush any accumulated inline fields as a single .{ } part
+                    if !pending_fields.is_empty() {
+                        let saved_output = std::mem::take(&mut self.output);
+                        self.write(".{ ");
+                        self.emit_object_fields(pending_fields.iter().copied());
+                        self.write(" }");
+                        let text = std::mem::take(&mut self.output);
+                        self.output = saved_output;
+                        parts.push(text);
+                        pending_fields.clear();
+                    }
                     let (text, new_counter) =
                         Self::emit_expr_inline_with_label_offset(expr, self.label_counter);
                     self.label_counter = new_counter;
-                    Some(text)
+                    parts.push(text);
                 }
-                _ => None,
-            })
-            .collect();
-
-        // Append inline fields as a single .{ .key = val } text, if any
-        if !inline_fields.is_empty() {
+                IrObjectItem::Field(f) => {
+                    pending_fields.push(f);
+                }
+            }
+        }
+        // Flush trailing inline fields
+        if !pending_fields.is_empty() {
             let saved_output = std::mem::take(&mut self.output);
             self.write(".{ ");
-            self.emit_object_fields(inline_fields.iter().copied());
+            self.emit_object_fields(pending_fields.iter().copied());
             self.write(" }");
             let text = std::mem::take(&mut self.output);
             self.output = saved_output;

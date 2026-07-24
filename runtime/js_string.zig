@@ -808,8 +808,8 @@ test "concat" {
 }
 
 test "includes" {
-    try std.testing.expect(includes("hello world", "world"));
-    try std.testing.expect(!includes("hello world", "xyz"));
+    try std.testing.expect(includes("hello world", "world", 0));
+    try std.testing.expect(!includes("hello world", "xyz", 0));
 }
 
 test "indexOf" {
@@ -1512,11 +1512,11 @@ test "repeat: zero count returns empty string" {
     try std.testing.expectEqualStrings("", r);
 }
 
-test "repeat: negative count returns empty string" {
+test "repeat: negative count throws RangeError" {
     const a = std.testing.allocator;
-    const r = try repeat(a, "abc", -5);
-    defer a.free(r);
-    try std.testing.expectEqualStrings("", r);
+    // P1-RT-5: Implementation throws error.RangeError for n < 0,
+    // matching JS spec (String.prototype.repeat(-1) throws RangeError).
+    try std.testing.expectError(error.RangeError, repeat(a, "abc", -5));
 }
 
 test "repeat: empty string returns empty string" {

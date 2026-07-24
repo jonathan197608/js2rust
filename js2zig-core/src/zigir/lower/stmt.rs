@@ -1507,6 +1507,19 @@ impl Lowerer {
             {
                 Self::wrap_f64_to_i64(expr)
             }
+            // P2-EM-6: Inlined array callback/method — wrap by elem_type.
+            IrExpr::ArrayCallbackInline(data) if data.elem_type == ZigType::JsAny => {
+                Self::wrap_jsany_to_i64(IrExpr::ArrayCallbackInline(data))
+            }
+            IrExpr::ArrayCallbackInline(data) if data.elem_type == ZigType::F64 => {
+                Self::wrap_f64_to_i64(IrExpr::ArrayCallbackInline(data))
+            }
+            IrExpr::ArrayMethodInline(data) if data.elem_type == ZigType::JsAny => {
+                Self::wrap_jsany_to_i64(IrExpr::ArrayMethodInline(data))
+            }
+            IrExpr::ArrayMethodInline(data) if data.elem_type == ZigType::F64 => {
+                Self::wrap_f64_to_i64(IrExpr::ArrayMethodInline(data))
+            }
             other => other,
         }
     }
@@ -1691,6 +1704,14 @@ impl Lowerer {
                 body: Box::new(self.coerce_f64_result_type(*body)),
                 needs_null_check,
             },
+
+            // P2-EM-6: Inlined array callback/method — wrap I64 to f64.
+            IrExpr::ArrayCallbackInline(data) if data.elem_type == ZigType::I64 => {
+                Self::wrap_i64_to_f64(IrExpr::ArrayCallbackInline(data))
+            }
+            IrExpr::ArrayMethodInline(data) if data.elem_type == ZigType::I64 => {
+                Self::wrap_i64_to_f64(IrExpr::ArrayMethodInline(data))
+            }
 
             // Other expressions — pass through unchanged
             other => other,

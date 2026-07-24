@@ -347,9 +347,21 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
                     .is_some_and(|e| expr_has_side_effects(e))
         }
         IrExpr::ArrayMethodInline(inline_data) => {
-            // All array method inlines have side effects (loops, allocs, mutations)
-            let _ = inline_data;
-            true
+            // Only mutating methods (splice, copyWithin, fill) have real side
+            // effects on the array. Read-only methods (includes, indexOf, at,
+            // join, etc.) and allocating methods (slice, concat, with, etc.)
+            // are side-effect-free if their receiver expr and args are too.
+            use crate::zigir::types::ArrayMethodKind;
+            let mutates = matches!(
+                inline_data.kind,
+                ArrayMethodKind::Splice | ArrayMethodKind::CopyWithin | ArrayMethodKind::Fill
+            );
+            mutates
+                || inline_data
+                    .obj_expr
+                    .as_ref()
+                    .is_some_and(|e| expr_has_side_effects(e))
+                || inline_data.args.iter().any(expr_has_side_effects)
         }
         IrExpr::OptionalChain { object, body, .. } => {
             expr_has_side_effects(object) || expr_has_side_effects(body)

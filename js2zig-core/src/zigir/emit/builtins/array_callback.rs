@@ -290,11 +290,18 @@ impl Emitter {
         self.indent_pop();
         self.writeln("");
 
+        // For JsAny arrays, use JsAny.fromUndefined() instead of `undefined`
+        // to properly initialize the union type tag (P1-EM-6).
+        let not_found = if matches!(data.elem_type, ZigType::JsAny) {
+            "JsAny.fromUndefined()"
+        } else {
+            "undefined"
+        };
         if reverse {
-            self.write(&format!("}} break :{} undefined; }})", blk));
+            self.write(&format!("}} break :{} {}; }})", blk, not_found));
         } else {
             self.write("}");
-            self.write(&format!(" break :{} undefined; }})", blk));
+            self.write(&format!(" break :{} {}; }})", blk, not_found));
         }
     }
 
@@ -458,6 +465,10 @@ impl Emitter {
             Some(expr) => {
                 let ty = if super::math::expr_is_float(expr) {
                     "f64".to_string()
+                } else if data.elem_type == ZigType::F64 {
+                    // P2-EM-5: Init is integer but array elements are f64 —
+                    // callback produces f64 results, accumulator must be f64.
+                    "f64".to_string()
                 } else if matches!(data.elem_type, ZigType::JsAny) {
                     "JsAny".to_string()
                 } else {
@@ -467,6 +478,11 @@ impl Emitter {
             }
             None => {
                 // JS spec: no initial value → use arr[0] as accumulator, iterate from index 1
+                // P0-R17: Guard against empty array (TypeError: Reduce of empty array with no initial value)
+                self.write(&format!(
+                    "if ({}.items.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
+                    receiver
+                ));
                 let ty = data.elem_type.to_zig_type().into_owned();
                 (format!("{}.items[0]", receiver), ty)
             }
@@ -545,6 +561,10 @@ impl Emitter {
             Some(expr) => {
                 let ty = if super::math::expr_is_float(expr) {
                     "f64".to_string()
+                } else if data.elem_type == ZigType::F64 {
+                    // P2-EM-5: Init is integer but array elements are f64 —
+                    // callback produces f64 results, accumulator must be f64.
+                    "f64".to_string()
                 } else if matches!(data.elem_type, ZigType::JsAny) {
                     "JsAny".to_string()
                 } else {
@@ -554,6 +574,11 @@ impl Emitter {
             }
             None => {
                 // JS spec: no initial value → use arr[len-1] as accumulator, iterate from len-2
+                // P0-R17: Guard against empty array (TypeError: Reduce of empty array with no initial value)
+                self.write(&format!(
+                    "if ({}.items.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
+                    receiver
+                ));
                 let ty = data.elem_type.to_zig_type().into_owned();
                 (
                     format!("{}.items[{}.items.len - 1]", receiver, receiver),

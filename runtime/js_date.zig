@@ -590,10 +590,15 @@ pub fn parse(s: []const u8) i64 {
             var frac: i64 = 0;
             var mult: i64 = 100;
             var i: usize = 20;
-            while (i < s.len and i < 23 and s[i] >= '0' and s[i] <= '9') : (i += 1) {
-                const d = s[i] - '0';
-                frac += @as(i64, d) * mult;
-                mult = @divTrunc(mult, 10);
+            // P1-RT-4: Consume ALL fractional digits so end_pos points past
+            // them to the timezone indicator. Only the first 3 digits
+            // contribute to millis (mult becomes 0 after 3 iterations).
+            while (i < s.len and s[i] >= '0' and s[i] <= '9') : (i += 1) {
+                if (mult > 0) {
+                    const d = s[i] - '0';
+                    frac += @as(i64, d) * mult;
+                    mult = @divTrunc(mult, 10);
+                }
             }
             millis = frac;
             end_pos = i;
@@ -635,8 +640,9 @@ pub fn parse(s: []const u8) i64 {
                 utc_millis += tz_offset_ms; // e.g., -05:00 means local is behind, add to get UTC
             }
         } else {
-            // No recognized timezone indicator → treat as local time
-            utc_millis -= localOffsetMinutes() * 60 * 1000;
+            // Unrecognized trailing character after datetime — invalid format.
+            // Per ECMA-262, return NaN (0) for unrecognized timezone indicators.
+            return 0;
         }
     } else {
         // No timezone portion at all (e.g., "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm:ss" without tz)

@@ -663,6 +663,23 @@ impl TypeInferrer {
                 }
                 _ => false,
             },
+            Expression::UpdateExpression(ue) => {
+                // e.g. `obj[await foo()]++` — the target may contain await
+                // inside a computed member expression
+                match &ue.argument {
+                    SimpleAssignmentTarget::StaticMemberExpression(sme) => {
+                        Self::expr_contains_await(&sme.object)
+                    }
+                    SimpleAssignmentTarget::ComputedMemberExpression(cme) => {
+                        Self::expr_contains_await(&cme.object)
+                            || Self::expr_contains_await(&cme.expression)
+                    }
+                    SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                        Self::expr_contains_await(&pfe.object)
+                    }
+                    _ => false,
+                }
+            }
             // Note: ArrowFunctionExpression / FunctionExpression intentionally
             // NOT recursed into — their bodies introduce a new function scope
             // whose awaits belong to the nested function's own async-ness

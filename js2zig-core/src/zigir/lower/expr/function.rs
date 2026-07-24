@@ -188,7 +188,7 @@ impl Lowerer {
                     Self::scan_stmt_for_closure_overlap(s, own, overlap);
                 }
             }
-            IrStmt::For { body, .. } | IrStmt::ForOf { body, .. } => {
+            IrStmt::For { body, .. } | IrStmt::ForOf { body, .. } | IrStmt::ForIn { body, .. } => {
                 for s in &body.stmts {
                     Self::scan_stmt_for_closure_overlap(s, own, overlap);
                 }
@@ -324,7 +324,84 @@ impl Lowerer {
                 }
                 Self::scan_expr_for_closure_overlap(result, own, overlap);
             }
-            // Literals, Ident, This, Null, Undefined, etc. — safe to skip
+            IrExpr::BuiltinCall(bc) => {
+                if let Some(obj_expr) = &bc.obj_expr {
+                    Self::scan_expr_for_closure_overlap(obj_expr, own, overlap);
+                }
+                for arg in &bc.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::HostCall(hc) => {
+                for arg in &hc.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::Assign { value, .. } => {
+                Self::scan_expr_for_closure_overlap(value, own, overlap);
+            }
+            IrExpr::New(n) => {
+                for arg in &n.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::Await(ae) => {
+                Self::scan_expr_for_closure_overlap(&ae.callee, own, overlap);
+                for arg in &ae.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::ComputedField { object, key, .. } => {
+                Self::scan_expr_for_closure_overlap(object, own, overlap);
+                Self::scan_expr_for_closure_overlap(key, own, overlap);
+            }
+            IrExpr::AllocPrint { args, .. } => {
+                for arg in args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::Sequence(exprs) => {
+                for e in exprs {
+                    Self::scan_expr_for_closure_overlap(e, own, overlap);
+                }
+            }
+            IrExpr::ArrayCallbackInline(inline_data) => {
+                if let Some(obj_expr) = &inline_data.obj_expr {
+                    Self::scan_expr_for_closure_overlap(obj_expr, own, overlap);
+                }
+                for stmt in &inline_data.body {
+                    Self::scan_stmt_for_closure_overlap(stmt, own, overlap);
+                }
+                if let Some(reduce_init) = &inline_data.reduce_init {
+                    Self::scan_expr_for_closure_overlap(reduce_init, own, overlap);
+                }
+            }
+            IrExpr::ArrayMethodInline(inline_data) => {
+                if let Some(obj_expr) = &inline_data.obj_expr {
+                    Self::scan_expr_for_closure_overlap(obj_expr, own, overlap);
+                }
+                for arg in &inline_data.args {
+                    Self::scan_expr_for_closure_overlap(arg, own, overlap);
+                }
+            }
+            IrExpr::OptionalChain { object, body, .. } => {
+                Self::scan_expr_for_closure_overlap(object, own, overlap);
+                Self::scan_expr_for_closure_overlap(body, own, overlap);
+            }
+            IrExpr::PowExpr { base, exp, .. } => {
+                Self::scan_expr_for_closure_overlap(base, own, overlap);
+                Self::scan_expr_for_closure_overlap(exp, own, overlap);
+            }
+            IrExpr::RemExpr { left, right, .. } => {
+                Self::scan_expr_for_closure_overlap(left, own, overlap);
+                Self::scan_expr_for_closure_overlap(right, own, overlap);
+            }
+            IrExpr::DivExpr { left, right, .. } => {
+                Self::scan_expr_for_closure_overlap(left, own, overlap);
+                Self::scan_expr_for_closure_overlap(right, own, overlap);
+            }
+            // Literals, Ident, TypedIdent, This, Null, Undefined, CompileError,
+            // Update (IrAssignTarget target — no nested Closure possible) — safe to skip
             _ => {}
         }
     }

@@ -542,8 +542,18 @@ impl Lowerer {
 
                 // Direct user function call
                 let args = self.pack_rest_args_if_needed(name, args);
+                // Annotate callee with known return type so the emitter can
+                // apply correct int↔float coercion (P1-EM-4/5).
+                let callee = if let Some(ret_ty) = self.type_info.fn_return_types.get(name) {
+                    IrExpr::TypedIdent {
+                        ident: IrIdent::new(name),
+                        ty: ret_ty.clone(),
+                    }
+                } else {
+                    IrExpr::Ident(IrIdent::new(name))
+                };
                 IrExpr::Call(crate::zigir::types::IrCallExpr {
-                    callee: Box::new(IrExpr::Ident(IrIdent::new(name))),
+                    callee: Box::new(callee),
                     args,
                     call_kind: CallKind::Direct,
                 })

@@ -599,7 +599,8 @@ impl Emitter {
                         // values (or unknown types) need the runtime
                         // isNullish() check.
                         let is_jsany = lt == Some(&ZigType::JsAny);
-                        if same_type && !is_jsany {
+                        let is_anytype = lt == Some(&ZigType::Anytype);
+                        if same_type && !is_jsany && !is_anytype {
                             // Non-nullable concrete type — left is always
                             // the result; right expression is never evaluated.
                             self.write(&format!("break :{blk} _lv_{id}"));
@@ -1029,59 +1030,107 @@ impl Emitter {
         use crate::zigir::ops::AssignOp;
         use crate::zigir::types::IrAssignTarget;
 
-        // P2-EM #3: Index targets with logical ops must not triple-evaluate
-        // the index/object expressions (e.g. `arr[i++] &&= val` would
-        // increment i three times). Evaluate once into temps.
+        // P2-EM #3 / P1-EM-1: Index AND Member targets with logical ops must not
+        // triple-evaluate the object/field expressions. Evaluate once into temps.
         let is_logical = matches!(
             op,
             AssignOp::LogicAnd | AssignOp::LogicOr | AssignOp::Nullish
         );
-        if is_logical
-            && let IrAssignTarget::Index {
+        if is_logical {
+            use crate::zigir::kinds::FieldKind;
+            if let IrAssignTarget::Member {
+                object,
+                field,
+                is_pointer,
+                field_kind,
+            } = target
+            {
+                // Only handle non-static member fields (static fields can't have
+                // side-effecting object expressions).
+                if !matches!(field_kind, FieldKind::StaticField { .. }) {
+                    let blk = self.next_label();
+                    self.write(&format!("({}: {{ ", blk));
+                    self.write("const __asg_obj = ");
+                    self.emit_expr(object);
+                    self.write("; ");
+                    let access = if *is_pointer {
+                        format!("__asg_obj.{}.{}", field, "*")
+                    } else {
+                        format!("__asg_obj.{}", field)
+                    };
+                    let (fn_name, negate) = match op {
+                        AssignOp::LogicAnd => ("isTruthy", false),
+                        AssignOp::LogicOr => ("isTruthy", true),
+                        AssignOp::Nullish => ("isNullish", false),
+                        _ => unreachable!(),
+                    };
+                    if negate {
+                        self.write(&format!(
+                            "{a} = if (!js_runtime.{f}({a})) ",
+                            a = access,
+                            f = fn_name
+                        ));
+                    } else {
+                        self.write(&format!(
+                            "{a} = if (js_runtime.{f}({a})) ",
+                            a = access,
+                            f = fn_name
+                        ));
+                    }
+                    self.emit_expr(value);
+                    self.write(&format!(
+                        " else {a}; break :{blk} {a}; }})",
+                        a = access,
+                        blk = blk
+                    ));
+                    return;
+                }
+            } else if let IrAssignTarget::Index {
                 object,
                 index,
                 index_kind,
             } = target
-        {
-            use crate::zigir::kinds::IndexKind;
-            let blk = self.next_label();
-            self.write(&format!("({}: {{ ", blk));
-            // Evaluate object and index once
-            self.write("const __asg_obj = ");
-            self.emit_expr(object);
-            self.write("; const __asg_idx: usize = @as(usize, @intCast(");
-            self.emit_expr(index);
-            self.write(")); ");
-            let access = match index_kind {
-                IndexKind::ArrayListItem => "__asg_obj.items[__asg_idx]",
-                IndexKind::SliceIndex => "__asg_obj[__asg_idx]",
-            };
-            let (fn_name, negate) = match op {
-                AssignOp::LogicAnd => ("isTruthy", false),
-                AssignOp::LogicOr => ("isTruthy", true),
-                AssignOp::Nullish => ("isNullish", false),
-                _ => unreachable!(),
-            };
-            if negate {
+            {
+                use crate::zigir::kinds::IndexKind;
+                let blk = self.next_label();
+                self.write(&format!("({}: {{ ", blk));
+                // Evaluate object and index once
+                self.write("const __asg_obj = ");
+                self.emit_expr(object);
+                self.write("; const __asg_idx: usize = @as(usize, @intCast(");
+                self.emit_expr(index);
+                self.write(")); ");
+                let access = match index_kind {
+                    IndexKind::ArrayListItem => "__asg_obj.items[__asg_idx]",
+                    IndexKind::SliceIndex => "__asg_obj[__asg_idx]",
+                };
+                let (fn_name, negate) = match op {
+                    AssignOp::LogicAnd => ("isTruthy", false),
+                    AssignOp::LogicOr => ("isTruthy", true),
+                    AssignOp::Nullish => ("isNullish", false),
+                    _ => unreachable!(),
+                };
+                if negate {
+                    self.write(&format!(
+                        "{a} = if (!js_runtime.{f}({a})) ",
+                        a = access,
+                        f = fn_name
+                    ));
+                } else {
+                    self.write(&format!(
+                        "{a} = if (js_runtime.{f}({a})) ",
+                        a = access,
+                        f = fn_name
+                    ));
+                }
+                self.emit_expr(value);
                 self.write(&format!(
-                    "{a} = if (!js_runtime.{f}({a})) ",
+                    " else {a}; break :{blk} {a}; }})",
                     a = access,
-                    f = fn_name
+                    blk = blk
                 ));
-            } else {
-                self.write(&format!(
-                    "{a} = if (js_runtime.{f}({a})) ",
-                    a = access,
-                    f = fn_name
-                ));
+                return;
             }
-            self.emit_expr(value);
-            self.write(&format!(
-                " else {a}; break :{blk} {a}; }})",
-                a = access,
-                blk = blk
-            ));
-            return;
         }
 
         if op == AssignOp::LogicAnd {

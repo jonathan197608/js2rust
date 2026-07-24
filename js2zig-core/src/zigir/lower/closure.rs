@@ -442,23 +442,110 @@ impl Lowerer {
     }
 
     /// Scan statements for the first ReturnStatement and infer its type.
+    /// P2-EM-3: Now recurses into compound statements (If, For, While, Try,
+    /// Switch, Block, Labeled) to find returns nested inside control flow.
     fn scan_return_type_from_stmts(
         &self,
         stmts: &[Statement],
         captured: &[(String, ZigType, bool)],
         default_type: ZigType,
     ) -> ZigType {
+        self.scan_return_type_from_stmts_inner(stmts, captured, &default_type)
+            .unwrap_or(ZigType::Void)
+    }
+
+    /// Inner version returning Option<ZigType> (None = no return found).
+    fn scan_return_type_from_stmts_inner(
+        &self,
+        stmts: &[Statement],
+        captured: &[(String, ZigType, bool)],
+        default_type: &ZigType,
+    ) -> Option<ZigType> {
         for stmt in stmts {
-            if let Statement::ReturnStatement(rs) = stmt {
-                if let Some(ref arg) = rs.argument {
-                    return self
-                        .infer_arrow_expr_type_with_captures(arg, captured)
-                        .unwrap_or(default_type);
-                }
-                return ZigType::Void;
+            if let Some(ty) = self.scan_return_type_from_stmt(stmt, captured, default_type) {
+                return Some(ty);
             }
         }
-        ZigType::Void
+        None
+    }
+
+    /// Scan a single statement for a return type, recursing into compound
+    /// statements (If, For, While, Try, Switch, Block, Labeled, etc.).
+    fn scan_return_type_from_stmt(
+        &self,
+        stmt: &Statement,
+        captured: &[(String, ZigType, bool)],
+        default_type: &ZigType,
+    ) -> Option<ZigType> {
+        match stmt {
+            Statement::ReturnStatement(rs) => {
+                if let Some(ref arg) = rs.argument {
+                    Some(
+                        self.infer_arrow_expr_type_with_captures(arg, captured)
+                            .unwrap_or_else(|| default_type.clone()),
+                    )
+                } else {
+                    Some(ZigType::Void)
+                }
+            }
+            Statement::BlockStatement(bs) => {
+                self.scan_return_type_from_stmts_inner(&bs.body, captured, default_type)
+            }
+            Statement::IfStatement(is) => self
+                .scan_return_type_from_stmt(&is.consequent, captured, default_type)
+                .or_else(|| {
+                    is.alternate.as_ref().and_then(|alt| {
+                        self.scan_return_type_from_stmt(alt, captured, default_type)
+                    })
+                }),
+            Statement::ForStatement(fs) => {
+                self.scan_return_type_from_stmt(&fs.body, captured, default_type)
+            }
+            Statement::ForOfStatement(fs) => {
+                self.scan_return_type_from_stmt(&fs.body, captured, default_type)
+            }
+            Statement::ForInStatement(fs) => {
+                self.scan_return_type_from_stmt(&fs.body, captured, default_type)
+            }
+            Statement::WhileStatement(ws) => {
+                self.scan_return_type_from_stmt(&ws.body, captured, default_type)
+            }
+            Statement::DoWhileStatement(ds) => {
+                self.scan_return_type_from_stmt(&ds.body, captured, default_type)
+            }
+            Statement::SwitchStatement(ss) => {
+                for case in &ss.cases {
+                    for s in &case.consequent {
+                        if let Some(ty) = self.scan_return_type_from_stmt(s, captured, default_type)
+                        {
+                            return Some(ty);
+                        }
+                    }
+                }
+                None
+            }
+            Statement::TryStatement(ts) => {
+                if let Some(ty) =
+                    self.scan_return_type_from_stmts_inner(&ts.block.body, captured, default_type)
+                {
+                    return Some(ty);
+                }
+                if let Some(ref handler) = ts.handler
+                    && let Some(ty) = self.scan_return_type_from_stmts_inner(
+                        &handler.body.body,
+                        captured,
+                        default_type,
+                    )
+                {
+                    return Some(ty);
+                }
+                None
+            }
+            Statement::LabeledStatement(ls) => {
+                self.scan_return_type_from_stmt(&ls.body, captured, default_type)
+            }
+            _ => None,
+        }
     }
 
     /// Infer the return type of an arrow function.
@@ -563,6 +650,36 @@ impl Lowerer {
             Expression::ConditionalExpression(ce) => self
                 .infer_arrow_expr_type_with_captures(&ce.consequent, captured)
                 .or_else(|| self.infer_arrow_expr_type_with_captures(&ce.alternate, captured)),
+            Expression::TemplateLiteral(_) => Some(ZigType::Str),
+            Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
+            Expression::NullLiteral(_) => Some(ZigType::JsAny),
+            Expression::ParenthesizedExpression(pe) => {
+                self.infer_arrow_expr_type_with_captures(&pe.expression, captured)
+            }
+            Expression::ArrayExpression(_) => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
+            Expression::ObjectExpression(_) => Some(ZigType::JsAny),
+            Expression::LogicalExpression(le) => self
+                .infer_arrow_expr_type_with_captures(&le.right, captured)
+                .or_else(|| self.infer_arrow_expr_type_with_captures(&le.left, captured)),
+            Expression::NewExpression(_) => Some(ZigType::JsAny),
+            Expression::AssignmentExpression(ae) => {
+                self.infer_arrow_expr_type_with_captures(&ae.right, captured)
+            }
+            Expression::UpdateExpression(_) => Some(ZigType::I64),
+            Expression::ComputedMemberExpression(cme) => {
+                // Delegate to infer_expr_type which handles ArrayList element
+                // extraction and arguments[i] → JsAny.
+                if let Expression::Identifier(id) = &cme.object
+                    && (id.name.as_str() == "arguments" || id.name.as_str() == "__arguments")
+                {
+                    return Some(ZigType::JsAny);
+                }
+                if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&cme.object) {
+                    return Some(*elem);
+                }
+                None
+            }
+            Expression::AwaitExpression(_) => Some(ZigType::JsAny),
             _ => None,
         }
     }

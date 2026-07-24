@@ -65,6 +65,28 @@ impl Emitter {
                 self.emit_expr(arg);
                 self.write("))");
             }
+            // Direct function calls: check callee's annotated return type
+            // (lowerer wraps direct calls in TypedIdent when return type is known).
+            IrExpr::Call(call) => match call.callee.as_ref() {
+                IrExpr::TypedIdent {
+                    ty: crate::types::ZigType::F64,
+                    ..
+                } => {
+                    self.write("@as(i64, @intFromFloat(");
+                    self.emit_expr(arg);
+                    self.write("))");
+                }
+                IrExpr::TypedIdent {
+                    ty: crate::types::ZigType::JsAny,
+                    ..
+                } => {
+                    self.emit_expr(arg);
+                    self.write(".asI64()");
+                }
+                _ => {
+                    self.emit_expr(arg);
+                }
+            },
             // Already i64 or unknown — pass through
             _ => {
                 self.emit_expr(arg);
@@ -103,6 +125,37 @@ impl Emitter {
                 return;
             }
             _ => {}
+        }
+
+        // ── concat with multiple args: chain nested concat calls ──
+        // js_string.concat only accepts 2 strings (+allocator).
+        // "s".concat("a","b") → concat(alloc, concat(alloc, s, "a") catch panic, "b") catch panic
+        if method == "concat" && args.len() > 1 {
+            let receiver = obj.unwrap_or("\"\"");
+            // Open (args.len() - 1) nesting levels, then the innermost concat
+            for _ in 0..args.len() - 1 {
+                self.write("js_string.concat(js_allocator.allocator(), ");
+            }
+            self.write("js_string.concat(js_allocator.allocator(), ");
+            self.write(receiver);
+            self.write(", ");
+            self.emit_expr(&args[0]);
+            self.write(") catch @panic(\"OOM: string method\")");
+            for arg in args.iter().skip(1) {
+                self.write(", ");
+                self.emit_expr(arg);
+                self.write(") catch @panic(\"OOM: string method\")");
+            }
+            return;
+        }
+        // concat with 0 args: just return the receiver unchanged
+        if method == "concat" && args.is_empty() {
+            if let Some(name) = obj {
+                self.write(name);
+            } else {
+                self.write("\"\"");
+            }
+            return;
         }
 
         // ── Static variadic calls: String.fromCharCode / String.fromCodePoint ──

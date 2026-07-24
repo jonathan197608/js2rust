@@ -301,13 +301,18 @@ impl Emitter {
         match method {
             // ── Map instance methods (use receiver) ──
             "set" => {
-                // map.set(key, val) → (blk_N: { map.set(JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N map })
+                // map.set(key, val) → (blk_N: { map.set(alloc, JsAny.from(key), JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N map })
                 // Returns the map object for chaining (JS semantics).
                 let blk = self.next_label();
                 if let Some(name) = obj {
-                    self.write(&format!("({blk}: {{ {}.set(", name));
+                    self.write(&format!(
+                        "({blk}: {{ {}.set(js_allocator.allocator(), ",
+                        name
+                    ));
                 } else {
-                    self.write(&format!("({blk}: {{ js_collections.set("));
+                    self.write(&format!(
+                        "({blk}: {{ js_collections.set(js_allocator.allocator(), "
+                    ));
                 }
                 if let Some(key) = args.first() {
                     self.write("JsAny.from(");
@@ -324,8 +329,7 @@ impl Emitter {
                     self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the map.
-                    // Emit as a non-chaining call (result ignored).
-                    self.write("})");
+                    self.write(&format!("break :{blk} JsAny.undefined_value; }})"));
                 }
             }
             "get" | "has" => {
@@ -394,7 +398,7 @@ impl Emitter {
                     self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the set.
-                    self.write("})");
+                    self.write(&format!("break :{blk} JsAny.undefined_value; }})"));
                 }
             }
             // ── forEach — handled by IrArrayCallbackInline, not here ──

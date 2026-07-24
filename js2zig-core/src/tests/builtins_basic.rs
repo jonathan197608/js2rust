@@ -260,10 +260,10 @@ return sub[0] + sub[1] + sub[2];
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_slice");
 
-    // Verify slice expression is generated with __s..__e range (R16: negative index support)
+    // Verify slice expression is generated with __s..@max(__s, __e) range (R17: clamp end >= start)
     assert!(
-        zig.contains("__s..__e]"),
-        "Expected '__s..__e]' slice in:\n{}",
+        zig.contains("__s..@max(__s, __e)]"),
+        "Expected '__s..@max(__s, __e)]' slice in:\n{}",
         zig
     );
     assert!(

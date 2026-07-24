@@ -32,18 +32,24 @@ impl TypeInferrer {
             Statement::FunctionDeclaration(fd) => {
                 self.walk_fn_body_for_analysis(fd);
             }
-            Statement::ExportNamedDeclaration(export_decl) => {
-                if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
+            Statement::ExportNamedDeclaration(export_decl) => match &export_decl.declaration {
+                Some(Declaration::FunctionDeclaration(fd)) => {
                     self.walk_fn_body_for_analysis(fd);
                 }
-            }
-            Statement::ExportDefaultDeclaration(export_decl) => {
-                if let ExportDefaultDeclarationKind::FunctionDeclaration(fd) =
-                    &export_decl.declaration
-                {
+                Some(Declaration::ClassDeclaration(cd)) => {
+                    self.walk_class_body_for_analysis(cd);
+                }
+                _ => {}
+            },
+            Statement::ExportDefaultDeclaration(export_decl) => match &export_decl.declaration {
+                ExportDefaultDeclarationKind::FunctionDeclaration(fd) => {
                     self.walk_fn_body_for_analysis(fd);
                 }
-            }
+                ExportDefaultDeclarationKind::ClassDeclaration(cd) => {
+                    self.walk_class_body_for_analysis(cd);
+                }
+                _ => {}
+            },
             Statement::ExpressionStatement(es) => {
                 self.walk_expr_for_analysis(&es.expression);
             }
@@ -127,20 +133,34 @@ impl TypeInferrer {
             }
             Statement::ClassDeclaration(cd) => {
                 // Walk class method bodies for analysis (mutations, dynamic access)
-                for elem in &cd.body.body {
-                    if let ClassElement::MethodDefinition(md) = elem
-                        && let Some(body) = &md.value.body
-                    {
-                        let saved_fn = std::mem::take(&mut self.current_fn);
-                        self.current_fn = md.key.name().map(|s| s.to_string());
-                        for s in &body.statements {
-                            self.walk_stmt_for_analysis(s);
-                        }
-                        self.current_fn = saved_fn;
-                    }
+                self.walk_class_body_for_analysis(cd);
+            }
+            Statement::ThrowStatement(ts) => {
+                self.walk_expr_for_analysis(&ts.argument);
+            }
+            Statement::ReturnStatement(rs) => {
+                if let Some(arg) = &rs.argument {
+                    self.walk_expr_for_analysis(arg);
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Walk a class's method bodies for analysis (mutations, dynamic access).
+    /// Used by ClassDeclaration, ExportNamedDeclaration, and ExportDefaultDeclaration.
+    fn walk_class_body_for_analysis(&mut self, cd: &Class) {
+        for elem in &cd.body.body {
+            if let ClassElement::MethodDefinition(md) = elem
+                && let Some(body) = &md.value.body
+            {
+                let saved_fn = std::mem::take(&mut self.current_fn);
+                self.current_fn = md.key.name().map(|s| s.to_string());
+                for s in &body.statements {
+                    self.walk_stmt_for_analysis(s);
+                }
+                self.current_fn = saved_fn;
+            }
         }
     }
 
@@ -229,11 +249,93 @@ impl TypeInferrer {
             }
             Expression::UpdateExpression(ue) => {
                 // i++, i--, ++i, --i → mark the argument as mutated and reassigned
-                let prefix = self.current_fn.as_deref().unwrap_or("__toplevel__");
-                if let SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = &ue.argument {
-                    self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
-                    self.reassigned_vars
-                        .insert(format!("{}::{}", prefix, id.name));
+                let prefix = self
+                    .current_fn
+                    .as_deref()
+                    .unwrap_or("__toplevel__")
+                    .to_string();
+                match &ue.argument {
+                    SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
+                        self.reassigned_vars
+                            .insert(format!("{}::{}", prefix, id.name));
+                    }
+                    SimpleAssignmentTarget::StaticMemberExpression(sme) => {
+                        self.walk_expr_for_analysis(&sme.object);
+                        if let Expression::Identifier(id) = &sme.object {
+                            self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
+                        }
+                    }
+                    SimpleAssignmentTarget::ComputedMemberExpression(cme) => {
+                        self.walk_expr_for_analysis(&cme.object);
+                        self.walk_expr_for_analysis(&cme.expression);
+                        if let Expression::Identifier(id) = &cme.object {
+                            self.mutated_vars.insert(format!("{}::{}", prefix, id.name));
+                        }
+                    }
+                    SimpleAssignmentTarget::PrivateFieldExpression(pfe) => {
+                        self.walk_expr_for_analysis(&pfe.object);
+                    }
+                    _ => {}
+                }
+            }
+            Expression::NewExpression(ne) => {
+                self.walk_expr_for_analysis(&ne.callee);
+                for arg in &ne.arguments {
+                    if let Some(e) = arg.as_expression() {
+                        self.walk_expr_for_analysis(e);
+                    }
+                }
+            }
+            Expression::SequenceExpression(se) => {
+                for e in &se.expressions {
+                    self.walk_expr_for_analysis(e);
+                }
+            }
+            Expression::TemplateLiteral(tl) => {
+                for e in &tl.expressions {
+                    self.walk_expr_for_analysis(e);
+                }
+            }
+            Expression::TaggedTemplateExpression(tte) => {
+                self.walk_expr_for_analysis(&tte.tag);
+                for e in &tte.quasi.expressions {
+                    self.walk_expr_for_analysis(e);
+                }
+            }
+            Expression::AwaitExpression(ae) => {
+                self.walk_expr_for_analysis(&ae.argument);
+            }
+            Expression::ChainExpression(ce) => match &ce.expression {
+                ChainElement::CallExpression(cce) => {
+                    self.walk_expr_for_analysis(&cce.callee);
+                    for arg in &cce.arguments {
+                        if let Some(e) = arg.as_expression() {
+                            self.walk_expr_for_analysis(e);
+                        }
+                    }
+                }
+                ChainElement::StaticMemberExpression(sme) => {
+                    self.walk_expr_for_analysis(&sme.object);
+                }
+                ChainElement::ComputedMemberExpression(cme) => {
+                    self.walk_expr_for_analysis(&cme.object);
+                    self.walk_expr_for_analysis(&cme.expression);
+                }
+                _ => {}
+            },
+            Expression::PrivateFieldExpression(pfe) => {
+                self.walk_expr_for_analysis(&pfe.object);
+            }
+            Expression::FunctionExpression(fe) => {
+                // Walk function expression body to detect mutations to outer variables.
+                if let Some(body) = &fe.body {
+                    let saved_fn = std::mem::take(&mut self.current_fn);
+                    self.current_fn = fe.id.as_ref().map(|id| id.name.to_string());
+                    for stmt in &body.statements {
+                        self.walk_stmt_for_analysis(stmt);
+                    }
+                    self.current_fn = saved_fn;
                 }
             }
             _ => {}
@@ -275,15 +377,47 @@ impl TypeInferrer {
                 Statement::FunctionDeclaration(fd) => {
                     Self::collect_idents_from_function(fd, &names);
                 }
-                Statement::ExportNamedDeclaration(export_decl) => {
-                    if let Some(Declaration::FunctionDeclaration(fd)) = &export_decl.declaration {
+                Statement::ClassDeclaration(cd) => {
+                    Self::collect_idents_from_class(cd, &names);
+                }
+                Statement::ExportNamedDeclaration(export_decl) => match &export_decl.declaration {
+                    Some(Declaration::FunctionDeclaration(fd)) => {
                         Self::collect_idents_from_function(fd.as_ref(), &names);
+                    }
+                    Some(Declaration::ClassDeclaration(cd)) => {
+                        Self::collect_idents_from_class(cd.as_ref(), &names);
+                    }
+                    _ => {}
+                },
+                Statement::ExportDefaultDeclaration(export_decl) => {
+                    match &export_decl.declaration {
+                        ExportDefaultDeclarationKind::FunctionDeclaration(fd) => {
+                            Self::collect_idents_from_function(fd, &names);
+                        }
+                        ExportDefaultDeclarationKind::ClassDeclaration(cd) => {
+                            Self::collect_idents_from_class(cd, &names);
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
             }
         }
         self.used_names = names.into_inner();
+    }
+
+    /// Collect identifier references from class method bodies.
+    /// Ensures top-level consts used only in class methods are not eliminated.
+    fn collect_idents_from_class(class: &Class, names: &RefCell<HashSet<String>>) {
+        for elem in &class.body.body {
+            if let ClassElement::MethodDefinition(md) = elem
+                && let Some(body) = &md.value.body
+            {
+                for stmt in &body.statements {
+                    Self::collect_idents_from_stmt(stmt, names);
+                }
+            }
+        }
     }
 
     pub(crate) fn collect_idents_from_function(fd: &Function, names: &RefCell<HashSet<String>>) {
@@ -627,6 +761,47 @@ impl TypeInferrer {
                 }
                 Statement::BlockStatement(bs) => {
                     self.collect_this_fields_from_body(&bs.body, field_types);
+                }
+                Statement::ForStatement(fs) => {
+                    self.collect_this_fields_from_body(std::slice::from_ref(&fs.body), field_types);
+                }
+                Statement::ForOfStatement(fos) => {
+                    self.collect_this_fields_from_body(
+                        std::slice::from_ref(&fos.body),
+                        field_types,
+                    );
+                }
+                Statement::ForInStatement(fis) => {
+                    self.collect_this_fields_from_body(
+                        std::slice::from_ref(&fis.body),
+                        field_types,
+                    );
+                }
+                Statement::WhileStatement(ws) => {
+                    self.collect_this_fields_from_body(std::slice::from_ref(&ws.body), field_types);
+                }
+                Statement::DoWhileStatement(dws) => {
+                    self.collect_this_fields_from_body(
+                        std::slice::from_ref(&dws.body),
+                        field_types,
+                    );
+                }
+                Statement::TryStatement(ts) => {
+                    self.collect_this_fields_from_body(&ts.block.body, field_types);
+                    if let Some(handler) = &ts.handler {
+                        self.collect_this_fields_from_body(&handler.body.body, field_types);
+                    }
+                    if let Some(finalizer) = &ts.finalizer {
+                        self.collect_this_fields_from_body(&finalizer.body, field_types);
+                    }
+                }
+                Statement::SwitchStatement(ss) => {
+                    for case in &ss.cases {
+                        self.collect_this_fields_from_body(&case.consequent, field_types);
+                    }
+                }
+                Statement::LabeledStatement(ls) => {
+                    self.collect_this_fields_from_body(std::slice::from_ref(&ls.body), field_types);
                 }
                 _ => {}
             }

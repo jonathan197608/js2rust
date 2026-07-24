@@ -34,13 +34,22 @@ const JsAnyHashMapContext = struct {
         hasher.update(std.mem.asBytes(&tag_id));
         switch (k) {
             .value => |v| switch (v) {
-                .int => |i| hasher.update(std.mem.asBytes(&i)),
+                .int => |i| {
+                    // P1-RT-2: Normalize int to float so that int(1) and
+                    // float(1.0) hash identically (SameValueZero).
+                    const as_float: f64 = @floatFromInt(i);
+                    hasher.update(std.mem.asBytes(&as_float));
+                },
                 .float => |f| {
                     // SameValueZero: NaN === NaN → true. Use a canonical
                     // bit pattern for all NaN values so they hash identically.
                     if (std.math.isNan(f)) {
                         const canonical: f64 = std.math.nan(f64);
                         hasher.update(std.mem.asBytes(&canonical));
+                    } else if (f == 0.0) {
+                        // P1-RT-1: SameValueZero: +0 === -0 → hash identically.
+                        const zero: f64 = 0.0;
+                        hasher.update(std.mem.asBytes(&zero));
                     } else {
                         hasher.update(std.mem.asBytes(&f));
                     }
@@ -78,6 +87,8 @@ const JsAnyHashMapContext = struct {
             .value => |va| switch (nb.value) {
                 .int => |ib| return switch (va) {
                     .int => |ia| return ia == ib,
+                    // P1-RT-2: Cross-type int/float comparison (SameValueZero)
+                    .float => |fa| return fa == @as(f64, @floatFromInt(ib)),
                     else => false,
                 },
                 .float => |fb| return switch (va) {
@@ -86,6 +97,8 @@ const JsAnyHashMapContext = struct {
                         if (std.math.isNan(fa) and std.math.isNan(fb)) return true;
                         return fa == fb;
                     },
+                    // P1-RT-2: Cross-type int/float comparison (SameValueZero)
+                    .int => |ia| return @as(f64, @floatFromInt(ia)) == fb,
                     else => false,
                 },
                 .bool => |bb| return switch (va) {
@@ -276,11 +289,21 @@ pub fn JsCollection(comptime Value: type) type {
         /// Map.set(key, value) — insert or update a key-value pair.
         /// Only valid when Value == JsAny (i.e., JsMap).
         /// Calling on JsSet is a compile error.
-        pub fn set(self: *@This(), key: JsAny, value: JsAny) !void {
+        /// P1-RT-3 / P2-RT-8: Deinit old value when overwriting to prevent memory leak.
+        /// P2-RT-8 fix: use fetchPut (atomic replace) instead of fetchRemove+put,
+        /// and deinit ONLY the old value, not the old key. The new key may share
+        /// heap-allocated data with the old key (e.g., same JsAny wrapping the
+        /// same pointer), so deiniting the old key would be a use-after-free
+        /// under GPA. Leaking the old key is acceptable: production uses arena
+        /// allocation, and arena reset reclaims all memory at once.
+        pub fn set(self: *@This(), alloc: Allocator, key: JsAny, value: JsAny) !void {
             if (!is_map) {
                 @compileError("set() is only valid for Map (JsMap)");
             }
-            try self.inner.put(key, value);
+            if (try self.inner.fetchPut(key, value)) |old_kv| {
+                var v = old_kv.value;
+                v.deinit(alloc);
+            }
         }
 
         /// Map.get(key) — return value or undefined_value if not found.

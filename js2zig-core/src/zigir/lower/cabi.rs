@@ -720,7 +720,82 @@ impl Lowerer {
             Statement::BlockStatement(b) => {
                 b.body.iter().any(|s| Self::ast_stmt_uses_ident(ident, s))
             }
-            _ => false,
+            Statement::IfStatement(is) => {
+                Self::ast_expr_uses_ident(ident, &is.test)
+                    || Self::ast_stmt_uses_ident(ident, &is.consequent)
+                    || is
+                        .alternate
+                        .as_ref()
+                        .is_some_and(|a| Self::ast_stmt_uses_ident(ident, a))
+            }
+            Statement::ForStatement(fs) => {
+                if let Some(init) = &fs.init
+                    && let Some(expr) = init.as_expression()
+                    && Self::ast_expr_uses_ident(ident, expr)
+                {
+                    return true;
+                }
+                fs.test
+                    .as_ref()
+                    .is_some_and(|e| Self::ast_expr_uses_ident(ident, e))
+                    || fs
+                        .update
+                        .as_ref()
+                        .is_some_and(|e| Self::ast_expr_uses_ident(ident, e))
+                    || Self::ast_stmt_uses_ident(ident, &fs.body)
+            }
+            Statement::ForOfStatement(fos) => {
+                Self::ast_expr_uses_ident(ident, &fos.right)
+                    || Self::ast_stmt_uses_ident(ident, &fos.body)
+            }
+            Statement::ForInStatement(fis) => {
+                Self::ast_expr_uses_ident(ident, &fis.right)
+                    || Self::ast_stmt_uses_ident(ident, &fis.body)
+            }
+            Statement::WhileStatement(ws) => {
+                Self::ast_expr_uses_ident(ident, &ws.test)
+                    || Self::ast_stmt_uses_ident(ident, &ws.body)
+            }
+            Statement::DoWhileStatement(dws) => {
+                Self::ast_stmt_uses_ident(ident, &dws.body)
+                    || Self::ast_expr_uses_ident(ident, &dws.test)
+            }
+            Statement::SwitchStatement(ss) => {
+                Self::ast_expr_uses_ident(ident, &ss.discriminant)
+                    || ss.cases.iter().any(|c| {
+                        c.test
+                            .as_ref()
+                            .is_some_and(|e| Self::ast_expr_uses_ident(ident, e))
+                            || c.consequent
+                                .iter()
+                                .any(|s| Self::ast_stmt_uses_ident(ident, s))
+                    })
+            }
+            Statement::TryStatement(ts) => {
+                ts.block
+                    .body
+                    .iter()
+                    .any(|s| Self::ast_stmt_uses_ident(ident, s))
+                    || ts.handler.as_ref().is_some_and(|h| {
+                        h.body
+                            .body
+                            .iter()
+                            .any(|s| Self::ast_stmt_uses_ident(ident, s))
+                    })
+                    || ts
+                        .finalizer
+                        .as_ref()
+                        .is_some_and(|f| f.body.iter().any(|s| Self::ast_stmt_uses_ident(ident, s)))
+            }
+            Statement::LabeledStatement(ls) => Self::ast_stmt_uses_ident(ident, &ls.body),
+            Statement::ThrowStatement(ts) => Self::ast_expr_uses_ident(ident, &ts.argument),
+            Statement::VariableDeclaration(vd) => vd.declarations.iter().any(|d| {
+                d.init
+                    .as_ref()
+                    .is_some_and(|e| Self::ast_expr_uses_ident(ident, e))
+            }),
+            // Conservative: assume identifier MAY appear in unhandled variants
+            _ => true,
         }
     }
 
@@ -1384,6 +1459,13 @@ pub fn init_may_have_side_effects(init: &Expression) -> bool {
             | Expression::NewExpression(_)
             | Expression::AssignmentExpression(_)
             | Expression::UpdateExpression(_)
+            | Expression::ConditionalExpression(_)
+            | Expression::LogicalExpression(_)
+            | Expression::TaggedTemplateExpression(_)
+            | Expression::AwaitExpression(_)
+            | Expression::SequenceExpression(_)
+            | Expression::ArrayExpression(_)
+            | Expression::ObjectExpression(_)
     )
 }
 

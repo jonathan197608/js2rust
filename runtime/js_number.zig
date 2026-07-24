@@ -261,8 +261,9 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     if (std.math.isInf(val)) {
         return if (val > 0) alloc.dupe(u8, "Infinity") else alloc.dupe(u8, "-Infinity");
     }
-    // Handle -0: JS requires "0" not "-0"
-    if (val == 0.0) return try toFixed(alloc, 0.0, digits);
+    // Handle -0: IEEE 754 -0 == +0, so normalize to +0.0 before formatting
+    // to avoid "-0" output. Must NOT recurse (would infinitely loop).
+    const safe_val: f64 = if (val == 0.0) 0.0 else val;
     // ECMA-262 §22.1.3.3: Throw RangeError if digits < 0 or digits > 100
     if (digits < 0 or digits > 100) return error.RangeError;
     const d: usize = @intCast(digits);
@@ -272,7 +273,7 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     inline for (0..21) |p| {
         if (d == p) {
             const format = comptime std.fmt.comptimePrint("{{d:.{d}}}", .{p});
-            const s = try std.fmt.bufPrint(&buf, format, .{val});
+            const s = try std.fmt.bufPrint(&buf, format, .{safe_val});
             return alloc.dupe(u8, s);
         }
     }
@@ -281,7 +282,7 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
     // fractional remainder.  Pre-fix: padded zeros after position 20, so
     // (0.1).toFixed(30) gave "0.100000000000000000000000000000" instead of
     // "0.100000000000000005551115123126".
-    const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{val});
+    const s = try std.fmt.bufPrint(&buf, "{d:.20}", .{safe_val});
     const dot_idx = std.mem.indexOfScalar(u8, s, '.') orelse {
         return alloc.dupe(u8, s);
     };
@@ -301,7 +302,7 @@ pub fn toFixed(alloc: std.mem.Allocator, val: f64, digits: i64) ![]const u8 {
         while (extra_len < needed and extra_len < extra_buf.len) {
             rem *= 10.0;
             const dgt: u8 = @intFromFloat(@floor(rem));
-            extra_buf[extra_len] = '0' + @min(dgt, 9);
+            extra_buf[extra_len] = '0' + @as(u8, @intCast(@min(dgt, 9)));
             extra_len += 1;
             rem -= @as(f64, @floatFromInt(dgt));
         }
@@ -389,7 +390,7 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     while (extra_len < needed and extra_len < extra_buf.len) {
         rem *= 10.0;
         const dgt: u8 = @intFromFloat(@floor(rem));
-        extra_buf[extra_len] = '0' + @min(dgt, 9);
+        extra_buf[extra_len] = '0' + @as(u8, @intCast(@min(dgt, 9)));
         extra_len += 1;
         rem -= @as(f64, @floatFromInt(dgt));
     }
@@ -493,7 +494,7 @@ pub fn toPrecision(alloc: std.mem.Allocator, val: f64, precision: ?i64) ![]const
         while (extra_len < needed and extra_len < extra_buf.len) {
             rem *= 10.0;
             const dgt: u8 = @intFromFloat(@floor(rem));
-            extra_buf[extra_len] = '0' + @min(dgt, 9);
+            extra_buf[extra_len] = '0' + @as(u8, @intCast(@min(dgt, 9)));
             extra_len += 1;
             rem -= @as(f64, @floatFromInt(dgt));
         }

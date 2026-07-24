@@ -284,16 +284,17 @@ impl Emitter {
         self.write(&format!("for ({}.items, 0..) |__item, __i| ", receiver));
         self.write("{\n");
         self.indent_push();
-        let sep = if let Some(arg) = data.args.first() {
-            self.render_expr_to_string(arg)
+        // Emit separator as a Zig expression directly — not embedded inside a
+        // string literal. This avoids double-quoting for StringLiteral args
+        // (e.g. join("-") should writeAll("-") not writeAll("\"-\"")) and
+        // correctly handles variable separators (join(sep) → writeAll(sep)).
+        self.write("if (__i > 0) __join_buf.writer().writeAll(");
+        if let Some(arg) = data.args.first() {
+            self.emit_expr(arg);
         } else {
-            ",".to_string()
-        };
-        self.writeln(&format!(
-            "if (__i > 0) __join_buf.writer().writeAll(\"{}\") catch break :{} \"\";",
-            sep.replace('\\', "\\\\").replace('"', "\\\""),
-            blk
-        ));
+            self.write("\",\"");
+        }
+        self.writeln(&format!(") catch break :{} \"\";", blk));
         self.writeln(&format!(
             "__join_buf.writer().print(\"{}\", .{{__item}}) catch break :{} \"\";",
             fmt_spec, blk
@@ -354,8 +355,9 @@ impl Emitter {
                     "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); const __e: usize = @intCast(if (__slice_end < 0) @max(0, @as(isize, @intCast(__len)) + __slice_end) else @min(@as(usize, @intCast(__slice_end)), __len)); ",
                     receiver
                 ));
+                // Clamp end to start: when end < start, slice returns empty array (JS spec).
                 self.write(&format!(
-                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..__e]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..@max(__s, __e)]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
                     receiver
                 ));
             }
@@ -409,11 +411,16 @@ impl Emitter {
         ));
         // Bounds check: return undefined if out of range (P0-R13-1 fix).
         // Previously returned items[0] which is wrong and panics on empty arrays.
-        // `undefined` coerces to any element type at comptime — safe for all
-        // ArrayList(T) variants.
+        // For JsAny arrays, use JsAny.fromUndefined() to properly initialize the
+        // union; `undefined` leaves the union's type tag uninitialized (P1-EM-6).
+        let not_found = if matches!(data.elem_type, ZigType::JsAny) {
+            "JsAny.fromUndefined()"
+        } else {
+            "undefined"
+        };
         self.write(&format!(
-            "break :{} if (__at_idx >= {}.items.len) undefined else {}.items[__at_idx]; }})",
-            blk, receiver, receiver
+            "break :{} if (__at_idx >= {}.items.len) {} else {}.items[__at_idx]; }})",
+            blk, receiver, not_found, receiver
         ));
     }
 
@@ -487,8 +494,9 @@ impl Emitter {
             "); const __len = {}.items.len; const __cpw_target: usize = @intCast(if (__cpw_target_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_target_raw) else @min(@as(usize, @intCast(__cpw_target_raw)), __len)); const __cpw_start: usize = @intCast(if (__cpw_start_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_start_raw) else @min(@as(usize, @intCast(__cpw_start_raw)), __len)); const __cpw_end: usize = @intCast(if (__cpw_end_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_end_raw) else @min(@as(usize, @intCast(__cpw_end_raw)), __len)); ",
             receiver
         ));
-        // Use existing copyWithin logic with forward/backward copy based on overlap
-        self.write("const __cpw_cnt = __cpw_end - __cpw_start; ");
+        // Use existing copyWithin logic with forward/backward copy based on overlap.
+        // Saturating subtraction: when end < start, count = 0 (no-op per JS spec).
+        self.write("const __cpw_cnt = __cpw_end -| __cpw_start; ");
         self.write("if (__cpw_cnt > 0) { ");
         // Use reverse copy when target > start to avoid overwriting source
         self.write(&format!(
@@ -509,10 +517,18 @@ impl Emitter {
         let blk = self.begin_labeled_block(&binding);
         match data.args.len() {
             0 => {
-                // fill entire array — no value arg, use 0 as default
+                // fill entire array — no value arg, use type-appropriate default.
+                // JS fill(undefined) sets all elements to undefined.
+                let default_val = match data.elem_type {
+                    ZigType::F64 => "0.0",
+                    ZigType::Bool => "false",
+                    ZigType::Str => "\"\"",
+                    ZigType::JsAny => "JsAny.fromUndefined()",
+                    _ => "0",
+                };
                 self.write(&format!(
-                    "for ({}.items) |*elem| {{ elem.* = 0; }}",
-                    receiver
+                    "for ({}.items) |*elem| {{ elem.* = {}; }}",
+                    receiver, default_val
                 ));
             }
             1 => {
@@ -546,12 +562,13 @@ impl Emitter {
                     "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); const __fe: usize = @intCast(if (__fill_end < 0) @max(0, @as(isize, @intCast(__len)) + __fill_end) else @min(@as(usize, @intCast(__fill_end)), __len)); ",
                     receiver
                 ));
+                // Guard: when end < start, fill is a no-op per JS spec.
                 self.write(&format!(
-                    "for ({}.items[__fs..__fe]) |*elem| {{ elem.* = ",
+                    "if (__fe > __fs) {{ for ({}.items[__fs..__fe]) |*elem| {{ elem.* = ",
                     receiver
                 ));
                 self.emit_expr(&data.args[0]);
-                self.write("; }");
+                self.write("; } }");
             }
         }
         self.write(&format!(" break :{} {}; }})", blk, receiver));
@@ -593,6 +610,8 @@ impl Emitter {
         self.write("__with.items[__with_idx] = ");
         if data.args.len() >= 2 {
             self.emit_expr(&data.args[1]);
+        } else if matches!(data.elem_type, ZigType::JsAny) {
+            self.write("JsAny.fromUndefined()");
         } else {
             self.write("undefined");
         }

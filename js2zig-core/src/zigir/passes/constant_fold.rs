@@ -87,11 +87,9 @@ impl ConstantFoldPass {
                     changed = true;
                 }
                 // Check condition before mutating then/else_
-                let cond_bool = if let IrExpr::BoolLiteral(b) = cond.as_ref() {
-                    Some(*b)
-                } else {
-                    None
-                };
+                // P2-CF-1: Use literal_truthiness instead of just BoolLiteral,
+                // so that 0 ? a : b → b, "" ? a : b → b, null ? a : b → b, etc.
+                let cond_bool = literal_truthiness(cond.as_ref());
                 if Self::try_fold(then) {
                     changed = true;
                 }
@@ -423,6 +421,24 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 None
             }
         }
+        // P2-CF-2: Undefined comparisons
+        (IrExpr::Undefined, IrExpr::Undefined) => {
+            if op == BinOp::Eq || op == BinOp::StrictEq {
+                Some(IrExpr::BoolLiteral(true))
+            } else if op == BinOp::Ne || op == BinOp::StrictNe {
+                Some(IrExpr::BoolLiteral(false))
+            } else {
+                None
+            }
+        }
+        // undefined == null is true (loose equality), undefined === null is false
+        (IrExpr::Undefined, IrExpr::Null) | (IrExpr::Null, IrExpr::Undefined) => match op {
+            BinOp::Eq => Some(IrExpr::BoolLiteral(true)),
+            BinOp::Ne => Some(IrExpr::BoolLiteral(false)),
+            BinOp::StrictEq => Some(IrExpr::BoolLiteral(false)),
+            BinOp::StrictNe => Some(IrExpr::BoolLiteral(true)),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -473,8 +489,8 @@ fn literal_truthiness(expr: &IrExpr) -> Option<bool> {
         IrExpr::IntLiteral(n) => Some(*n != 0),
         IrExpr::FloatLiteral(n) => Some(*n != 0.0 && !n.is_nan()),
         IrExpr::StringLiteral(s) => Some(!s.is_empty()),
-        // BigIntLiteral: 0n is falsy, non-zero is truthy — but parsing
-        // the string value is left for future work. Leave as None for safety.
+        // P2-CF-3: BigIntLiteral: "0" is falsy, any non-zero value is truthy.
+        IrExpr::BigIntLiteral(s) => Some(!s.chars().all(|c| c == '0')),
         _ => None,
     }
 }

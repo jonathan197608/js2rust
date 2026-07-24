@@ -473,10 +473,16 @@ impl Emitter {
 
     pub(super) fn emit_switch_stmt(&mut self, expr: &IrExpr, cases: &[IrSwitchCase]) {
         // Detect a string-keyed switch: Zig's `switch` cannot operate on
-        // []const u8 (only integers/enums/bools/union tags). If any case's
-        // test lowers to `IrExpr::StringLiteral`, lower the whole switch as
-        // an `if`/`else if` chain using `std.mem.eql(u8, ...)` (R6-2).
-        let is_string_switch = cases.iter().any(|c| {
+        // []const u8 (only integers/enums/bools/union tags). If ALL non-default
+        // case tests lower to `IrExpr::StringLiteral`, lower the switch as an
+        // `if`/`else if` chain using `std.mem.eql(u8, ...)` (R6-2).
+        // P0-R17: Must check ALL non-default cases are StringLiterals, not just
+        // any — otherwise non-StringLiteral case bodies are silently dropped.
+        let is_string_switch = cases.iter().all(|c| {
+            c.test
+                .as_ref()
+                .is_none_or(|t| matches!(t, crate::zigir::types::IrExpr::StringLiteral(_)))
+        }) && cases.iter().any(|c| {
             c.test
                 .as_ref()
                 .is_some_and(|t| matches!(t, crate::zigir::types::IrExpr::StringLiteral(_)))

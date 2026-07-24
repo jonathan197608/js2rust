@@ -578,6 +578,23 @@ impl Lowerer {
                 }
                 None
             }
+            Expression::LogicalExpression(le) => {
+                // || and &&: result type is whichever operand is returned.
+                // Prefer the right side (common case: `x || 0` → I64).
+                self.infer_expr_type(&le.right)
+                    .or_else(|| self.infer_expr_type(&le.left))
+            }
+            Expression::AssignmentExpression(ae) => {
+                // Assignment returns the assigned value.
+                self.infer_expr_type(&ae.right)
+            }
+            Expression::UpdateExpression(_) => Some(ZigType::I64),
+            Expression::SequenceExpression(se) => {
+                // Type is that of the last expression.
+                se.expressions.last().and_then(|e| self.infer_expr_type(e))
+            }
+            Expression::NewExpression(_) => Some(ZigType::JsAny),
+            Expression::AwaitExpression(_) => Some(ZigType::JsAny),
             _ => None,
         }
     }

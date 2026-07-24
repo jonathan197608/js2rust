@@ -61,6 +61,15 @@ pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
             field_kind: FieldKind::MathConstant(_) | FieldKind::NumberConstant(_),
             ..
         } => true,
+        // Direct function calls: check if callee is annotated with return type
+        // (lowerer wraps direct calls in TypedIdent when return type is known).
+        IrExpr::Call(call) => matches!(
+            call.callee.as_ref(),
+            IrExpr::TypedIdent {
+                ty: ZigType::F64,
+                ..
+            }
+        ),
         _ => false,
     }
 }
