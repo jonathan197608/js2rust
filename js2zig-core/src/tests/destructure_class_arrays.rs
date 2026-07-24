@@ -923,8 +923,8 @@ return found;
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains(" undefined"),
-        "Expected break :blk_ undefined fallback in:\n{}",
+        zig.contains("break :blk_") && zig.contains("0; })"),
+        "Expected break :blk_ with numeric 0 fallback for i64 array in:\n{}",
         zig
     );
 }
@@ -950,8 +950,8 @@ return found;
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains(" undefined"),
-        "Expected break :blk_ undefined fallback in:\n{}",
+        zig.contains("break :blk_") && zig.contains("0; })"),
+        "Expected break :blk_ with numeric 0 fallback for i64 array in:\n{}",
         zig
     );
 }
@@ -1042,8 +1042,8 @@ return found;
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains(" undefined"),
-        "Expected break :blk_ undefined fallback in:\n{}",
+        zig.contains("break :blk_") && zig.contains("0; })"),
+        "Expected break :blk_ with numeric 0 fallback for i64 array in:\n{}",
         zig
     );
 }

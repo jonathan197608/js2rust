@@ -413,10 +413,12 @@ impl Emitter {
         // Previously returned items[0] which is wrong and panics on empty arrays.
         // For JsAny arrays, use JsAny.fromUndefined() to properly initialize the
         // union; `undefined` leaves the union's type tag uninitialized (P1-EM-6).
-        let not_found = if matches!(data.elem_type, ZigType::JsAny) {
-            "JsAny.fromUndefined()"
-        } else {
-            "undefined"
+        let not_found = match data.elem_type {
+            ZigType::JsAny => "JsAny.fromUndefined()",
+            ZigType::F64 => "0.0",
+            ZigType::Bool => "false",
+            ZigType::Str => "\"\"",
+            _ => "0",
         };
         self.write(&format!(
             "break :{} if (__at_idx >= {}.items.len) {} else {}.items[__at_idx]; }})",
@@ -610,10 +612,14 @@ impl Emitter {
         self.write("__with.items[__with_idx] = ");
         if data.args.len() >= 2 {
             self.emit_expr(&data.args[1]);
-        } else if matches!(data.elem_type, ZigType::JsAny) {
-            self.write("JsAny.fromUndefined()");
         } else {
-            self.write("undefined");
+            match data.elem_type {
+                ZigType::JsAny => self.write("JsAny.fromUndefined()"),
+                ZigType::F64 => self.write("0.0"),
+                ZigType::Bool => self.write("false"),
+                ZigType::Str => self.write("\"\""),
+                _ => self.write("0"),
+            }
         }
         self.write("; ");
         self.write(&format!("break :{} __with; }})", blk));

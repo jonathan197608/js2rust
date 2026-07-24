@@ -489,13 +489,13 @@ impl Emitter {
             self.emit_expr(str_expr);
             self.write("}) catch @panic(\"OOM: string concat\"); ");
         } else {
-            self.write("__buf.writer().print(\"{f}\", .{");
+            self.write("__buf.writer().print(\"{}\", .{");
             self.emit_expr(bigint_expr);
             self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
         }
         // Write the second part
         if str_on_left {
-            self.write("__buf.writer().print(\"{f}\", .{");
+            self.write("__buf.writer().print(\"{}\", .{");
             self.emit_expr(bigint_expr);
             self.write("}) catch @panic(\"OOM: bigint string concat\"); ");
         } else {

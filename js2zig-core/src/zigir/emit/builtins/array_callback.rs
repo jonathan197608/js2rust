@@ -292,10 +292,12 @@ impl Emitter {
 
         // For JsAny arrays, use JsAny.fromUndefined() instead of `undefined`
         // to properly initialize the union type tag (P1-EM-6).
-        let not_found = if matches!(data.elem_type, ZigType::JsAny) {
-            "JsAny.fromUndefined()"
-        } else {
-            "undefined"
+        let not_found = match data.elem_type {
+            ZigType::JsAny => "JsAny.fromUndefined()",
+            ZigType::F64 => "0.0",
+            ZigType::Bool => "false",
+            ZigType::Str => "\"\"",
+            _ => "0",
         };
         if reverse {
             self.write(&format!("}} break :{} {}; }})", blk, not_found));
@@ -648,7 +650,7 @@ impl Emitter {
         }
 
         let blk = self.next_label();
-        self.write(&format!("({}: ", blk));
+        self.write(&format!("({}: {{ ", blk));
 
         self.emit_sort_less_than(
             &format!("{}.items", receiver),
