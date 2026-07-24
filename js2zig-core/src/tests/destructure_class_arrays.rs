@@ -500,12 +500,7 @@ const arr = [1, 2, 3];
 return arr.flatMap((x) => x * 2);
 }
 "#;
-    let zig = transpile_and_assert(js, "test_native_proto_array_flat_map");
-    println!("=== Array.flatMap Zig code ===\n{}", zig);
-
-    // flatMap with callback should be inlined (ArrayCallbackKind::FlatMap)
-    assert!(zig.contains("testFlatMap"), "Expected testFlatMap function");
-    assert!(zig.contains("__fmap"), "Expected __fmap inline expansion");
+    assert_not_implemented(js, "Array.prototype.flatMap");
 }
 
 #[test]

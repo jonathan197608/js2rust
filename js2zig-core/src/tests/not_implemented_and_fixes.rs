@@ -1418,3 +1418,20 @@ export function boolEqNum(b, n) {
         zig
     );
 }
+
+// ── JSON.parse reviver → COMPILE_ERROR ───────────────────────
+
+#[test]
+fn test_json_parse_reviver_not_implemented() {
+    // JSON.parse with a reviver callback (2nd argument) is not supported.
+    // The reviver transforms each property during post-order walk, which
+    // requires runtime callback support not available in the transpiler.
+    assert_not_implemented(
+        r#"
+export function revive(str) {
+    return JSON.parse(str, (key, val) => key === "date" ? new Date(val) : val);
+}
+"#,
+        "JSON.parse reviver callback",
+    );
+}

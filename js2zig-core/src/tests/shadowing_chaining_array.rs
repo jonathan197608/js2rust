@@ -656,9 +656,10 @@ export function testSortDesc() {
     );
 }
 
-/// R8-P1-21: arr.sort() without compareFn now emits a custom lessThan closure
-/// with comptime type dispatch (JsAny → .lt(), primitives → a < b) instead of
-/// comptime std.sort.asc(T) which fails for JsAny (no < operator).
+/// ECMA-262: arr.sort() without compareFn converts elements to strings and
+/// compares by UTF-16 code unit sequence. Emits a custom lessThan closure
+/// with comptime type dispatch: JsAny → .lt(), i64/f64 → string comparison,
+/// other primitives → numeric <.
 #[test]
 fn test_sort_without_comparefn() {
     // arr.sort() → default sort with custom lessThan closure (no compareFn)
@@ -674,7 +675,8 @@ export function testSortAsc() {
 "#;
     let zig = transpile_and_assert(js, "test_sort_without_comparefn");
     println!("=== sort without compareFn ===\n{}", zig);
-    // Should emit a custom lessThan closure, not comptime std.sort.asc
+    // Should emit a custom lessThan closure with ECMA-262 string comparison,
+    // not comptime std.sort.asc
     assert!(
         zig.contains("lessThan"),
         "Default sort should use custom lessThan closure:\n{}",
@@ -683,6 +685,12 @@ export function testSortAsc() {
     assert!(
         !zig.contains("std.sort.asc"),
         "Default sort should not use std.sort.asc:\n{}",
+        zig
+    );
+    // Should include string comparison for i64/f64 types
+    assert!(
+        zig.contains("std.mem.order"),
+        "Default sort should use std.mem.order for string comparison:\n{}",
         zig
     );
 }
@@ -736,18 +744,29 @@ export function testToSortedAsc() {
 "#;
     let zig = transpile_and_assert(js, "test_toSorted_without_comparefn");
     println!("=== toSorted without compareFn ===\n{}", zig);
-    // Should use the default std.sort.asc comptime
+    // ECMA-262: Default toSorted converts elements to strings and compares.
+    // For i64 arrays, should use custom lessThan with string comparison.
     assert!(
-        zig.contains("std.sort.asc") || zig.contains("lessThan"),
-        "Default toSorted should use std.sort.asc or JsAny lessThan:\n{}",
+        zig.contains("lessThan"),
+        "Default toSorted should use custom lessThan closure:\n{}",
+        zig
+    );
+    assert!(
+        !zig.contains("std.sort.asc"),
+        "Default toSorted should not use std.sort.asc:\n{}",
+        zig
+    );
+    assert!(
+        zig.contains("std.mem.order"),
+        "Default toSorted should use std.mem.order for string comparison:\n{}",
         zig
     );
 }
 
-// ── flatMap inline callback tests ───────
+// ── flatMap compile error tests ───────
 
 #[test]
-fn test_flatmap_with_callback() {
+fn test_flatmap_compile_error() {
     let js = r#"
 /**
  * @param {i64[]} arr
@@ -757,23 +776,11 @@ export function doubleAll(arr) {
     return arr.flatMap((x) => x * 2);
 }
 "#;
-    let zig = transpile_and_assert(js, "test_flatmap_with_callback");
-    println!("=== flatMap with callback ===\n{}", zig);
-    // flatMap with callback should be inlined via ArrayCallbackKind::FlatMap
-    assert!(
-        zig.contains("__fmap"),
-        "Expected __fmap inline expansion:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("for"),
-        "Expected for-loop in flatMap:\n{}",
-        zig
-    );
+    assert_not_implemented(js, "Array.prototype.flatMap");
 }
 
 #[test]
-fn test_flatmap_with_chaining() {
+fn test_flatmap_chaining_compile_error() {
     let js = r#"
 /**
  * @param {i64[]} arr
@@ -783,13 +790,7 @@ export function filterThenFlatMap(arr) {
     return arr.filter((x) => x > 1).flatMap((x) => x * 10);
 }
 "#;
-    let zig = transpile_and_assert(js, "test_flatmap_with_chaining");
-    println!("=== flatMap with chaining ===\n{}", zig);
-    assert!(
-        zig.contains("__fmap"),
-        "Expected __fmap in chained flatMap:\n{}",
-        zig
-    );
+    assert_not_implemented(js, "Array.prototype.flatMap chaining");
 }
 
 #[test]

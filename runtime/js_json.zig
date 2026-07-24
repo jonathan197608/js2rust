@@ -54,17 +54,64 @@ pub const ParseError = JSONError || Allocator.Error || std.json.Scanner.AllocErr
 /// Returns the JSON text as an allocated string (caller owns).
 /// Returns an empty string for top-level `undefined` / `function` / `symbol`.
 pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny) ![]const u8 {
-    _ = replacer;
-    _ = space;
     // ECMA-262 §24.5.2: top-level undefined returns empty string
-    // (not the string "null"). The doc comment already specified this
-    // but the implementation was writing "null" via stringifyValue.
     if (value == .value and value.value == .undefined) {
         return alloc.dupe(u8, "");
     }
+
+    // Parse space parameter → indent string (null = compact output)
+    var indent_buf: [10]u8 = undefined;
+    var indent: ?[]const u8 = null;
+    if (space) |sp| {
+        if (sp == .value) {
+            switch (sp.value) {
+                .int => |n| {
+                    if (n >= 1) {
+                        const count: usize = @intCast(@min(n, @as(i64, 10)));
+                        @memset(indent_buf[0..count], ' ');
+                        indent = indent_buf[0..count];
+                    }
+                },
+                .float => |f| {
+                    if (f >= 1) {
+                        const clamped = @min(@floor(f), 10.0);
+                        const count: usize = @intFromFloat(clamped);
+                        @memset(indent_buf[0..count], ' ');
+                        indent = indent_buf[0..count];
+                    }
+                },
+                .string => |s| {
+                    const len = @min(s.len, 10);
+                    if (len > 0) {
+                        @memcpy(indent_buf[0..len], s[0..len]);
+                        indent = indent_buf[0..len];
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    // Parse replacer array → whitelist of keys (null = all keys)
+    var whitelist: ?[]const []const u8 = null;
+    if (replacer) |rep| {
+        if (rep == .array) {
+            var keys = std.ArrayList([]const u8).empty;
+            defer keys.deinit(alloc);
+            for (rep.array.items) |item| {
+                if (item == .value and item.value == .string) {
+                    try keys.append(alloc, item.value.string);
+                }
+            }
+            whitelist = try keys.toOwnedSlice(alloc);
+        }
+        // Note: function replacer not supported (no callback mechanism)
+    }
+    defer if (whitelist) |wl| alloc.free(wl);
+
     var out = std.ArrayList(u8).empty;
     defer out.deinit(alloc);
-    try stringifyValue(value, alloc, &out, 0);
+    try stringifyValue(value, alloc, &out, 0, indent, whitelist);
     return out.toOwnedSlice(alloc);
 }
 
@@ -72,7 +119,7 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
 /// Protects against stack overflow from self-referential structures.
 const MAX_STRINGIFY_DEPTH: u32 = 1000;
 
-fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth: u32) !void {
+fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth: u32, indent: ?[]const u8, whitelist: ?[]const []const u8) !void {
     switch (value) {
         .null => try out.appendSlice(alloc, "null"),
         .value => |v| try stringifyJsValue(v, alloc, out),
@@ -81,7 +128,11 @@ fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth
             try out.appendSlice(alloc, "[");
             for (arr.items, 0..) |item, i| {
                 if (i > 0) try out.appendSlice(alloc, ",");
-                try stringifyValue(item, alloc, out, depth + 1);
+                if (indent) |ind| try writeIndent(alloc, out, ind, depth + 1);
+                try stringifyValue(item, alloc, out, depth + 1, indent, whitelist);
+            }
+            if (indent) |ind| {
+                if (arr.items.len > 0) try writeIndent(alloc, out, ind, depth);
             }
             try out.appendSlice(alloc, "]");
         },
@@ -94,16 +145,41 @@ fn stringifyValue(value: JsAny, alloc: Allocator, out: *std.ArrayList(u8), depth
                 const val = entry.value_ptr.*;
                 // ECMA-262 §24.5.2: omit undefined values from objects
                 if (val == .value and val.value == .undefined) continue;
+                // ECMA-262: if replacer array is provided, only include whitelisted keys
+                if (whitelist) |wl| {
+                    var found = false;
+                    for (wl) |key| {
+                        if (std.mem.eql(u8, key, entry.key_ptr.*)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) continue;
+                }
                 if (!first) try out.appendSlice(alloc, ",");
+                if (indent) |ind| try writeIndent(alloc, out, ind, depth + 1);
                 first = false;
                 // Escape the key per ECMA-262 §25.5.1.1 (same as string values).
                 try out.append(alloc, '"');
                 try jsonEscapeString(alloc, out, entry.key_ptr.*);
                 try out.appendSlice(alloc, "\":");
-                try stringifyValue(val, alloc, out, depth + 1);
+                if (indent != null) try out.appendSlice(alloc, " ");
+                try stringifyValue(val, alloc, out, depth + 1, indent, whitelist);
+            }
+            if (indent) |ind| {
+                if (!first) try writeIndent(alloc, out, ind, depth);
             }
             try out.appendSlice(alloc, "}");
         },
+    }
+}
+
+/// Write a newline followed by `depth` repetitions of `indent`.
+fn writeIndent(alloc: Allocator, out: *std.ArrayList(u8), indent: []const u8, depth: u32) !void {
+    try out.appendSlice(alloc, "\n");
+    var i: u32 = 0;
+    while (i < depth) : (i += 1) {
+        try out.appendSlice(alloc, indent);
     }
 }
 
@@ -533,5 +609,130 @@ test "parse: trailing non-whitespace content → InvalidJSON (R12-P1-1)" {
         var v = try parse(alloc, "  [1,2]\n", null);
         defer v.deinitDeep(alloc);
         try std.testing.expect(v.isArray());
+    }
+}
+
+// ── space / replacer tests (ECMA-262 §24.5.2) ──
+
+test "stringify: space as number produces indentation" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("a", JsAny.fromI64(1), alloc);
+    try obj.objectPut("b", JsAny.fromI64(2), alloc);
+
+    const s = try stringify(alloc, obj, null, JsAny.fromI64(2));
+    defer alloc.free(s);
+    // Expected: {\n  "a": 1,\n  "b": 2\n}
+    try std.testing.expectEqualStrings("{\n  \"a\": 1,\n  \"b\": 2\n}", s);
+}
+
+test "stringify: space as string produces custom indent" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("x", JsAny.fromI64(42), alloc);
+
+    const tab_str = try alloc.dupe(u8, "\t");
+    defer alloc.free(tab_str);
+    const s = try stringify(alloc, obj, null, JsAny.fromString(tab_str));
+    defer alloc.free(s);
+    try std.testing.expectEqualStrings("{\n\t\"x\": 42\n}", s);
+}
+
+test "stringify: space clamped to 10" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("k", JsAny.fromI64(1), alloc);
+
+    const s = try stringify(alloc, obj, null, JsAny.fromI64(20));
+    defer alloc.free(s);
+    // 20 > 10 → clamped to 10 spaces
+    try std.testing.expect(std.mem.indexOf(u8, s, "          \"k\"") != null);
+}
+
+test "stringify: replacer array acts as key whitelist" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("included", JsAny.fromI64(1), alloc);
+    try obj.objectPut("excluded", JsAny.fromI64(2), alloc);
+
+    var rep_arr = try JsAny.newArray(alloc);
+    defer rep_arr.deinit(alloc);
+    const included_str = try alloc.dupe(u8, "included");
+    defer alloc.free(included_str);
+    try rep_arr.arrayPush(alloc, JsAny.fromString(included_str));
+
+    const s = try stringify(alloc, obj, rep_arr, null);
+    defer alloc.free(s);
+    // Only "included" should appear
+    try std.testing.expect(std.mem.indexOf(u8, s, "included") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "excluded") == null);
+}
+
+test "stringify: space and replacer together" {
+    const alloc = std.testing.allocator;
+
+    var obj = try JsAny.newObject(alloc);
+    defer obj.deinit(alloc);
+    try obj.objectPut("a", JsAny.fromI64(1), alloc);
+    try obj.objectPut("b", JsAny.fromI64(2), alloc);
+    try obj.objectPut("c", JsAny.fromI64(3), alloc);
+
+    var rep_arr = try JsAny.newArray(alloc);
+    defer rep_arr.deinit(alloc);
+    const a_str = try alloc.dupe(u8, "a");
+    defer alloc.free(a_str);
+    try rep_arr.arrayPush(alloc, JsAny.fromString(a_str));
+    const c_str = try alloc.dupe(u8, "c");
+    defer alloc.free(c_str);
+    try rep_arr.arrayPush(alloc, JsAny.fromString(c_str));
+
+    const s = try stringify(alloc, obj, rep_arr, JsAny.fromI64(2));
+    defer alloc.free(s);
+    // Expected: {\n  "a": 1,\n  "c": 3\n} — only a and c, 2-space indent
+    try std.testing.expectEqualStrings("{\n  \"a\": 1,\n  \"c\": 3\n}", s);
+}
+
+test "stringify: nested arrays with space" {
+    const alloc = std.testing.allocator;
+
+    var outer = try JsAny.newArray(alloc);
+    defer outer.deinit(alloc);
+    var inner = try JsAny.newArray(alloc);
+    try inner.arrayPush(alloc, JsAny.fromI64(1));
+    try inner.arrayPush(alloc, JsAny.fromI64(2));
+    try outer.arrayPush(alloc, inner);
+
+    const s = try stringify(alloc, outer, null, JsAny.fromI64(2));
+    defer alloc.free(s);
+    // Expected: [\n  [\n    1,\n    2\n  ]\n]
+    try std.testing.expectEqualStrings("[\n  [\n    1,\n    2\n  ]\n]", s);
+}
+
+test "stringify: empty array/object stay compact with space" {
+    const alloc = std.testing.allocator;
+
+    // Empty array → []
+    {
+        var arr = try JsAny.newArray(alloc);
+        defer arr.deinit(alloc);
+        const s = try stringify(alloc, arr, null, JsAny.fromI64(2));
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("[]", s);
+    }
+    // Empty object → {}
+    {
+        var obj = try JsAny.newObject(alloc);
+        defer obj.deinit(alloc);
+        const s = try stringify(alloc, obj, null, JsAny.fromI64(2));
+        defer alloc.free(s);
+        try std.testing.expectEqualStrings("{}", s);
     }
 }

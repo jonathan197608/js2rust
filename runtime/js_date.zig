@@ -53,7 +53,8 @@ pub const JsDate = struct {
     }
 
     /// new Date(year, month, day, hour, minute, second, millis) — from components
-    /// JS month is 0-indexed (0=Jan), day is 1-indexed
+    /// JS month is 0-indexed (0=Jan), day is 1-indexed.
+    /// Components are interpreted as LOCAL time; internally stored as UTC.
     pub fn fromComponents(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64, millis: i64) JsDate {
         // Convert JS 0-indexed month to 1-indexed civil month
         const civil_month: i64 = month + 1;
@@ -63,55 +64,64 @@ pub const JsDate = struct {
         // panics for absurd i64 inputs (R8 P0-2). JS MakeTime/MakeDate operate
         // on IEEE-754 doubles and return NaN when |ms| > 8.64e15; we cannot
         // represent NaN inside `JsDate.millis: i64`, so we clamp instead.
-        return .{ .millis = addDaysAndTimeMs(days, makeTimeMs(hour, minute, second, millis)) };
+        const local_ms = addDaysAndTimeMs(days, makeTimeMs(hour, minute, second, millis));
+        // Convert local time to UTC (subtract local offset).
+        return .{ .millis = localToUtc(local_ms) };
     }
 
     // ── Local-time getters ──
+
+    /// Returns the timestamp adjusted to local time: UTC millis + local offset.
+    /// Uses i128 arithmetic to avoid overflow when self.millis is near i64 limits.
+    fn localMillis(self: JsDate) i64 {
+        const offset = localOffsetMinutesFor(self.millis);
+        const result: i128 = @as(i128, self.millis) + @as(i128, offset) * 60 * 1000;
+        return clampToI64(result);
+    }
 
     pub fn getTime(self: JsDate) i64 {
         return self.millis;
     }
 
     pub fn getFullYear(self: JsDate) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const cd = civilFromDays(dayCount(self.localMillis()));
         return cd.y;
     }
 
     pub fn getMonth(self: JsDate) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const cd = civilFromDays(dayCount(self.localMillis()));
         return cd.m - 1; // 0-indexed
     }
 
     pub fn getDate(self: JsDate) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const cd = civilFromDays(dayCount(self.localMillis()));
         return cd.d;
     }
 
     pub fn getDay(self: JsDate) i64 {
-        const days = dayCount(self.millis);
+        const days = dayCount(self.localMillis());
         // 1970-01-01 = Thursday = 4 (0=Sun)
         return @mod(days + 4, 7);
     }
 
     pub fn getHours(self: JsDate) i64 {
-        return timePart(self.millis, 3600 * 1000, 24);
+        return timePart(self.localMillis(), 3600 * 1000, 24);
     }
 
     pub fn getMinutes(self: JsDate) i64 {
-        return timePart(self.millis, 60 * 1000, 60);
+        return timePart(self.localMillis(), 60 * 1000, 60);
     }
 
     pub fn getSeconds(self: JsDate) i64 {
-        return timePart(self.millis, 1000, 60);
+        return timePart(self.localMillis(), 1000, 60);
     }
 
     pub fn getMilliseconds(self: JsDate) i64 {
-        return @mod(self.millis, 1000);
+        return @mod(self.localMillis(), 1000);
     }
 
     pub fn getTimezoneOffset(self: JsDate) i64 {
-        _ = self;
-        return -localOffsetMinutes();
+        return -localOffsetMinutesFor(self.millis);
     }
 
     /// Returns ISO 8601 string: "YYYY-MM-DDTHH:mm:ss.sssZ"
@@ -146,17 +156,18 @@ pub const JsDate = struct {
         });
     }
 
-    /// Returns RFC 2822 format: "Wed Apr 12 2023 12:00:00 GMT"
+    /// Returns RFC 2822 format: "Wed Apr 12 2023 12:00:00 GMT" (local time)
     pub fn toString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
-        const cd = civilFromDays(dayCount(self.millis));
-        const h = timePart(self.millis, 3600 * 1000, 24);
-        const min = timePart(self.millis, 60 * 1000, 60);
-        const s = timePart(self.millis, 1000, 60);
+        const lm = self.localMillis();
+        const cd = civilFromDays(dayCount(lm));
+        const h = timePart(lm, 3600 * 1000, 24);
+        const min = timePart(lm, 60 * 1000, 60);
+        const s = timePart(lm, 1000, 60);
 
         const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
         const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-        const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
+        const dow = @mod(dayCount(lm) + 4, 7); // 0=Sun
 
         // Sign-aware year (R6-6): BC dates had `@intCast(cd.y)` panic on
         // negative year. Use i64 directly so the sign is preserved.
@@ -195,14 +206,15 @@ pub const JsDate = struct {
         });
     }
 
-    /// Returns date portion only: "Wed Apr 12 2023"
+    /// Returns date portion only: "Wed Apr 12 2023" (local time)
     pub fn toDateString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const lm = self.localMillis();
+        const cd = civilFromDays(dayCount(lm));
 
         const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
         const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-        const dow = @mod(dayCount(self.millis) + 4, 7); // 0=Sun
+        const dow = @mod(dayCount(lm) + 4, 7); // 0=Sun
 
         // Sign-aware year (R6-6).
         return std.fmt.allocPrint(alloc, "{s} {s} {d} {d}", .{
@@ -213,11 +225,12 @@ pub const JsDate = struct {
         });
     }
 
-    /// Returns time portion only: "12:00:00 GMT"
+    /// Returns time portion only: "12:00:00 GMT" (local time)
     pub fn toTimeString(self: JsDate, alloc: std.mem.Allocator) ![]const u8 {
-        const h = timePart(self.millis, 3600 * 1000, 24);
-        const min = timePart(self.millis, 60 * 1000, 60);
-        const s = timePart(self.millis, 1000, 60);
+        const lm = self.localMillis();
+        const h = timePart(lm, 3600 * 1000, 24);
+        const min = timePart(lm, 60 * 1000, 60);
+        const s = timePart(lm, 1000, 60);
 
         return std.fmt.allocPrint(alloc, "{d:0>2}:{d:0>2}:{d:0>2} GMT", .{
             @as(u64, @intCast(h)),
@@ -231,38 +244,42 @@ pub const JsDate = struct {
         return self.toString(alloc);
     }
 
-    // ── UTC getters (same as local-time for UTC-only implementation) ──
+    // ── UTC getters (use self.millis directly — UTC time) ──
 
     pub fn getUTCFullYear(self: JsDate) i64 {
-        return self.getFullYear();
+        const cd = civilFromDays(dayCount(self.millis));
+        return cd.y;
     }
 
     pub fn getUTCMonth(self: JsDate) i64 {
-        return self.getMonth();
+        const cd = civilFromDays(dayCount(self.millis));
+        return cd.m - 1; // 0-indexed
     }
 
     pub fn getUTCDate(self: JsDate) i64 {
-        return self.getDate();
+        const cd = civilFromDays(dayCount(self.millis));
+        return cd.d;
     }
 
     pub fn getUTCDay(self: JsDate) i64 {
-        return self.getDay();
+        const days = dayCount(self.millis);
+        return @mod(days + 4, 7); // 1970-01-01 = Thursday = 4
     }
 
     pub fn getUTCHours(self: JsDate) i64 {
-        return self.getHours();
+        return timePart(self.millis, 3600 * 1000, 24);
     }
 
     pub fn getUTCMinutes(self: JsDate) i64 {
-        return self.getMinutes();
+        return timePart(self.millis, 60 * 1000, 60);
     }
 
     pub fn getUTCSeconds(self: JsDate) i64 {
-        return self.getSeconds();
+        return timePart(self.millis, 1000, 60);
     }
 
     pub fn getUTCMilliseconds(self: JsDate) i64 {
-        return self.getMilliseconds();
+        return @mod(self.millis, 1000);
     }
 
     /// toJSON() — returns ISO 8601 string (same as toISOString).
@@ -279,68 +296,75 @@ pub const JsDate = struct {
 
     /// setFullYear(year, month?, date?) → new milliseconds.
     pub fn setFullYear(self: JsDate, year: i64, month: ?i64, date: ?i64) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const local = self.localMillis();
+        const cd = civilFromDays(dayCount(local));
         const m = if (month) |mm| mm + 1 else cd.m; // JS 0-indexed → 1-indexed
         const d = if (date) |dd| dd else cd.d;
         const new_days = daysFromCivil(year, m, d);
-        const time = @mod(self.millis, 86400000);
-        return addDaysAndTimeMs(new_days, time);
+        const time = @mod(local, 86400000);
+        return localToUtc(addDaysAndTimeMs(new_days, time));
     }
 
     /// setMonth(month, date?) → new milliseconds.
     pub fn setMonth(self: JsDate, month: i64, date: ?i64) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const local = self.localMillis();
+        const cd = civilFromDays(dayCount(local));
         const m = month + 1; // JS 0-indexed → 1-indexed
         const d = if (date) |dd| dd else cd.d;
         const new_days = daysFromCivil(cd.y, m, d);
-        const time = @mod(self.millis, 86400000);
-        return addDaysAndTimeMs(new_days, time);
+        const time = @mod(local, 86400000);
+        return localToUtc(addDaysAndTimeMs(new_days, time));
     }
 
     /// setDate(date) → new milliseconds.
     pub fn setDate(self: JsDate, date: i64) i64 {
-        const cd = civilFromDays(dayCount(self.millis));
+        const local = self.localMillis();
+        const cd = civilFromDays(dayCount(local));
         const new_days = daysFromCivil(cd.y, cd.m, date);
-        const time = @mod(self.millis, 86400000);
-        return addDaysAndTimeMs(new_days, time);
+        const time = @mod(local, 86400000);
+        return localToUtc(addDaysAndTimeMs(new_days, time));
     }
 
     /// setHours(hours, min?, sec?, ms?) → new milliseconds.
     pub fn setHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
+        const local = self.localMillis();
         const h = hours;
-        const m = if (min) |mm| mm else timePart(self.millis, 3600 * 1000, 60);
-        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
-        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
+        const m = if (min) |mm| mm else timePart(local, 3600 * 1000, 60);
+        const s = if (sec) |ss| ss else timePart(local, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(local, 1000);
+        return localToUtc(addDaysAndTimeMs(dayCount(local), makeTimeMs(h, m, s, mils)));
     }
 
     /// setMinutes(min, sec?, ms?) → new milliseconds.
     pub fn setMinutes(self: JsDate, min: i64, sec: ?i64, ms: ?i64) i64 {
-        const h = timePart(self.millis, 3600 * 1000, 24);
+        const local = self.localMillis();
+        const h = timePart(local, 3600 * 1000, 24);
         const m = min;
-        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
-        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
+        const s = if (sec) |ss| ss else timePart(local, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(local, 1000);
+        return localToUtc(addDaysAndTimeMs(dayCount(local), makeTimeMs(h, m, s, mils)));
     }
 
     /// setSeconds(sec, ms?) → new milliseconds.
     pub fn setSeconds(self: JsDate, sec: i64, ms: ?i64) i64 {
-        const h = timePart(self.millis, 3600 * 1000, 24);
-        const m = timePart(self.millis, 60000, 60);
+        const local = self.localMillis();
+        const h = timePart(local, 3600 * 1000, 24);
+        const m = timePart(local, 60000, 60);
         const s = sec;
-        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
-        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
+        const mils = if (ms) |mm| mm else @mod(local, 1000);
+        return localToUtc(addDaysAndTimeMs(dayCount(local), makeTimeMs(h, m, s, mils)));
     }
 
     /// setMilliseconds(ms) → new milliseconds.
     pub fn setMilliseconds(self: JsDate, ms: i64) i64 {
-        const days = dayCount(self.millis);
-        const time = self.millis - days * 86400000;
+        const local = self.localMillis();
+        const days = dayCount(local);
+        const time = local - days * 86400000;
         const old_ms = @mod(time, 1000);
         // Use i128 intermediate so absurd `ms` values (e.g., minInt(i64))
         // combined with extreme `self.millis` do not panic (R8 P0-2).
-        const v: i128 = @as(i128, self.millis) - @as(i128, old_ms) + @as(i128, ms);
-        return clampToI64(v);
+        const v: i128 = @as(i128, local) - @as(i128, old_ms) + @as(i128, ms);
+        return localToUtc(clampToI64(v));
     }
 
     /// setTime(ms) → returns the new timestamp (caller reassigns)
@@ -349,41 +373,70 @@ pub const JsDate = struct {
         return ms;
     }
 
-    // ── UTC Setters ─────────────────────
+    // ── UTC Setters (operate on self.millis directly — UTC time) ───
 
     /// setUTCFullYear(year, month?, date?) → new milliseconds.
     pub fn setUTCFullYear(self: JsDate, year: i64, month: ?i64, date: ?i64) i64 {
-        return self.setFullYear(year, month, date); // Same for UTC-only implementation
+        const cd = civilFromDays(dayCount(self.millis));
+        const m = if (month) |mm| mm + 1 else cd.m;
+        const d = if (date) |dd| dd else cd.d;
+        const new_days = daysFromCivil(year, m, d);
+        const time = @mod(self.millis, 86400000);
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setUTCMonth(month, date?) → new milliseconds.
     pub fn setUTCMonth(self: JsDate, month: i64, date: ?i64) i64 {
-        return self.setMonth(month, date);
+        const cd = civilFromDays(dayCount(self.millis));
+        const m = month + 1;
+        const d = if (date) |dd| dd else cd.d;
+        const new_days = daysFromCivil(cd.y, m, d);
+        const time = @mod(self.millis, 86400000);
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setUTCDate(date) → new milliseconds.
     pub fn setUTCDate(self: JsDate, date: i64) i64 {
-        return self.setDate(date);
+        const cd = civilFromDays(dayCount(self.millis));
+        const new_days = daysFromCivil(cd.y, cd.m, date);
+        const time = @mod(self.millis, 86400000);
+        return addDaysAndTimeMs(new_days, time);
     }
 
     /// setUTCHours(hours, min?, sec?, ms?) → new milliseconds.
     pub fn setUTCHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
-        return self.setHours(hours, min, sec, ms);
+        const h = hours;
+        const m = if (min) |mm| mm else timePart(self.millis, 3600 * 1000, 60);
+        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setUTCMinutes(min, sec?, ms?) → new milliseconds.
     pub fn setUTCMinutes(self: JsDate, min: i64, sec: ?i64, ms: ?i64) i64 {
-        return self.setMinutes(min, sec, ms);
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const m = min;
+        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setUTCSeconds(sec, ms?) → new milliseconds.
     pub fn setUTCSeconds(self: JsDate, sec: i64, ms: ?i64) i64 {
-        return self.setSeconds(sec, ms);
+        const h = timePart(self.millis, 3600 * 1000, 24);
+        const m = timePart(self.millis, 60000, 60);
+        const s = sec;
+        const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
+        return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
 
     /// setUTCMilliseconds(ms) → new milliseconds.
     pub fn setUTCMilliseconds(self: JsDate, ms: i64) i64 {
-        return self.setMilliseconds(ms);
+        const days = dayCount(self.millis);
+        const time = self.millis - days * 86400000;
+        const old_ms = @mod(time, 1000);
+        const v: i128 = @as(i128, self.millis) - @as(i128, old_ms) + @as(i128, ms);
+        return clampToI64(v);
     }
 };
 
@@ -396,8 +449,11 @@ pub fn now() i64 {
 
 /// Date.UTC(year, month, day?, hours?, minutes?, seconds?, ms?) → milliseconds since epoch.
 /// JS month is 0-indexed (0=Jan), day defaults to 1, time components default to 0.
+/// All components are interpreted as UTC (no local offset adjustment).
 pub fn utc(year: i64, month: i64, day: i64, hours: i64, minutes: i64, seconds: i64, ms: i64) i64 {
-    return JsDate.fromComponents(year, month, day, hours, minutes, seconds, ms).millis;
+    const civil_month: i64 = month + 1;
+    const days = daysFromCivil(year, civil_month, day);
+    return addDaysAndTimeMs(days, makeTimeMs(hours, minutes, seconds, ms));
 }
 
 // ── Cross-platform timestamp ──
@@ -513,6 +569,75 @@ fn localOffsetMinutesPosix() i64 {
 
     // tm_gmtoff is the offset from UTC in seconds, positive for east
     return @divTrunc(local_tm.tm_gmtoff, 60);
+}
+
+// ── Date-specific timezone offset ──
+
+/// Returns the local timezone offset in minutes for the given UTC timestamp.
+/// Uses FileTimeToLocalFileTime on Windows (correctly handles DST for any
+/// date) and localtime_r on POSIX. Positive = east of UTC.
+fn localOffsetMinutesFor(target_millis: i64) i64 {
+    return switch (builtin.os.tag) {
+        .windows => localOffsetMinutesForWindows(target_millis),
+        else => localOffsetMinutesForPosix(target_millis),
+    };
+}
+
+fn localOffsetMinutesForWindows(target_millis: i64) i64 {
+    const FILETIME = extern struct {
+        dwLowDateTime: u32,
+        dwHighDateTime: u32,
+    };
+    const kernel32 = struct {
+        extern "kernel32" fn FileTimeToLocalFileTime(
+            lpFileTime: *const FILETIME,
+            lpLocalFileTime: *FILETIME,
+        ) callconv(.winapi) i32;
+    };
+    // Convert Unix millis → Windows file time (100-ns intervals since 1601-01-01)
+    const win_epoch_offset: i128 = 11644473600000;
+    const ft_val: i128 = (@as(i128, target_millis) + win_epoch_offset) * 10000;
+    if (ft_val < 0 or ft_val > std.math.maxInt(u64)) {
+        // Out of range — fall back to current system offset
+        return localOffsetMinutesWindows();
+    }
+    const ft_u64: u64 = @intCast(ft_val);
+    var utc_ft: FILETIME = .{
+        .dwLowDateTime = @intCast(ft_u64 & 0xFFFFFFFF),
+        .dwHighDateTime = @intCast(ft_u64 >> 32),
+    };
+    var local_ft: FILETIME = undefined;
+    if (kernel32.FileTimeToLocalFileTime(&utc_ft, &local_ft) == 0) {
+        return localOffsetMinutesWindows();
+    }
+    const local_val: u64 = (@as(u64, local_ft.dwHighDateTime) << 32) | @as(u64, local_ft.dwLowDateTime);
+    // Convert Windows file time back to Unix millis using i128 intermediates
+    const local_unix_millis: i128 = @divTrunc(@as(i128, local_val), 10000) - win_epoch_offset;
+    const offset_millis: i128 = local_unix_millis - @as(i128, target_millis);
+    return @intCast(@divTrunc(offset_millis, 60000));
+}
+
+fn localOffsetMinutesForPosix(target_millis: i64) i64 {
+    const epoch_sec: c_long = @intCast(@divTrunc(target_millis, 1000));
+    var tm: Tm = undefined;
+    const local_tm = localtime_r(&epoch_sec, &tm) orelse return 0;
+    return @divTrunc(local_tm.tm_gmtoff, 60);
+}
+
+/// Convert local-time milliseconds to UTC milliseconds.
+/// Uses iterative offset lookup to handle DST boundaries correctly.
+/// If the local time is at the i64 boundary, it overflowed during computation
+/// and timezone conversion is meaningless — return as-is.
+fn localToUtc(local_millis: i64) i64 {
+    if (local_millis == std.math.maxInt(i64) or local_millis == std.math.minInt(i64)) {
+        return local_millis;
+    }
+    // First estimate: treat local_millis as UTC to get an approximate offset.
+    var offset = localOffsetMinutesFor(local_millis);
+    const utc_millis = local_millis - offset * 60000;
+    // Refine: the offset at the estimated UTC time should be correct.
+    offset = localOffsetMinutesFor(utc_millis);
+    return local_millis - offset * 60000;
 }
 
 // ── Date math: millis ↔ civil date ──
@@ -649,8 +774,8 @@ pub fn parse(s: []const u8) i64 {
         // Per JS spec: date-only strings are UTC, datetime strings are local
         // Simplified: if time is present, treat as local; if date-only, treat as UTC
         if (s.len > 10 and s[10] == 'T') {
-            // Has time component → local time
-            utc_millis -= localOffsetMinutes() * 60 * 1000;
+            // Has time component → local time, convert to UTC
+            utc_millis = localToUtc(utc_millis);
         }
         // Date-only string ("YYYY-MM-DD") → UTC, no adjustment
     }
@@ -733,10 +858,9 @@ test "civilFromDays round-trip" {
 }
 
 test "JsDate getFullYear getMonth getDate" {
-    // 2024-06-15T12:30:45.500
-    const days = daysFromCivil(2024, 6, 15);
-    const millis = (days * 86400 + 12 * 3600 + 30 * 60 + 45) * 1000 + 500;
-    const d = JsDate.fromMillis(millis);
+    // Use fromComponents (local→UTC round-trip) so getters return the
+    // original local-time values regardless of the system timezone.
+    const d = JsDate.fromComponents(2024, 5, 15, 12, 30, 45, 500);
     try std.testing.expectEqual(@as(i64, 2024), d.getFullYear());
     try std.testing.expectEqual(@as(i64, 5), d.getMonth()); // June = 5 (0-indexed)
     try std.testing.expectEqual(@as(i64, 15), d.getDate());
@@ -747,12 +871,9 @@ test "JsDate getFullYear getMonth getDate" {
 }
 
 test "JsDate getDay" {
-    // 1970-01-01 = Thursday = 4
-    try std.testing.expectEqual(@as(i64, 4), JsDate.fromMillis(0).getDay());
-    // 1970-01-02 = Friday = 5
-    try std.testing.expectEqual(@as(i64, 5), JsDate.fromMillis(86400 * 1000).getDay());
-    // 1970-01-04 = Sunday = 0
-    try std.testing.expectEqual(@as(i64, 0), JsDate.fromMillis(3 * 86400 * 1000).getDay());
+    // 2024-06-15 is a Saturday (6)
+    const d = JsDate.fromComponents(2024, 5, 15, 12, 0, 0, 0);
+    try std.testing.expectEqual(@as(i64, 6), d.getDay());
 }
 
 test "JsDate getTimezoneOffset" {
@@ -852,10 +973,16 @@ test "parse ISO 8601 with milliseconds Z" {
 
 test "parse local datetime uses timezone offset" {
     // "1970-01-01T00:00:00" without Z → treated as local time
-    // UTC millis = 0 - localOffsetMinutes() * 60 * 1000
-    const t = parse("1970-01-01T00:00:00");
-    const expected = -localOffsetMinutes() * 60 * 1000;
-    try std.testing.expectEqual(expected, t);
+    // "1970-01-01T00:00:00Z" → treated as UTC (0)
+    // The difference should equal the local timezone offset at this date.
+    const local_t = parse("1970-01-01T00:00:00");
+    const utc_t = parse("1970-01-01T00:00:00Z");
+    try std.testing.expectEqual(@as(i64, 0), utc_t);
+    const offset_ms = local_t - utc_t;
+    // Offset must be a whole number of minutes
+    try std.testing.expectEqual(@as(i64, 0), @mod(offset_ms, 60000));
+    // Reasonable range: UTC-12 to UTC+14
+    try std.testing.expect(offset_ms >= -12 * 3600000 and offset_ms <= 14 * 3600000);
 }
 
 test "parse invalid string" {

@@ -95,6 +95,18 @@ impl Lowerer {
             // this check so the callback is lowered only via
             // `parse_callback_inline`, which embeds its body in the inline IR
             // without registering a closure struct.
+
+            // ── Step 1a-0: flatMap → compile error ──
+            // Array.prototype.flatMap maps each element then flattens the
+            // result by one level. The transpiler's static callback inlining
+            // model cannot produce variable-length sub-arrays at compile time.
+            if matches!(builtin, crate::native_builtins::BuiltinCall::ArrayFlatMap) {
+                return self.compile_error_expr(
+                    ce.span,
+                    "Array.prototype.flatMap is not supported (cannot flatten callback results at compile time)",
+                );
+            }
+
             if let Some(inlined) = self.try_inline_array_callback(ce, &builtin) {
                 return inlined;
             }
@@ -148,6 +160,17 @@ impl Lowerer {
             }
 
             let (module, method, return_type) = builtin_call_to_ir(&builtin);
+
+            // JSON.parse with reviver (2nd argument) → compile error
+            // The reviver is a callback that transforms each property during
+            // post-order walk. The transpiler cannot support runtime callbacks
+            // in the JSON.parse CABI call.
+            if matches!(builtin, crate::native_builtins::BuiltinCall::JsonParse)
+                && ce.arguments.len() >= 2
+            {
+                return self
+                    .compile_error_expr(ce.span, "JSON.parse reviver callback is not supported");
+            }
 
             // JSON.parse can throw SyntaxError at runtime — mark function as can_throw
             // so the emitter's `catch return error.JsThrow` is valid.

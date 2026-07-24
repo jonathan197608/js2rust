@@ -672,9 +672,24 @@ impl Emitter {
             "__sorted.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
             receiver
         ));
-        // Sort — for JsAny elements use JsAny.lt(); for i64 use numeric sort
+        // Sort — for JsAny elements use JsAny.lt(); for i64/f64 use ECMA-262
+        // string comparison (format as strings, compare lexicographically);
+        // other primitive types fall back to numeric std.sort.asc.
         if matches!(data.elem_type, ZigType::JsAny) {
             self.write("std.mem.sort(JsAny, __sorted.items, {}, struct { fn lessThan(_: void, a: JsAny, b: JsAny) bool { return a.lt(b); } }.lessThan); ");
+        } else if matches!(data.elem_type, ZigType::I64 | ZigType::F64) {
+            self.write(&format!(
+                "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{",
+                elem_type_str, elem_type_str, elem_type_str
+            ));
+            self.write(" var __sa: [64]u8 = undefined; var __sb: [64]u8 = undefined;");
+            self.write(
+                " const __stra = std.fmt.bufPrint(&__sa, \"{d}\", .{a}) catch return a < b;",
+            );
+            self.write(
+                " const __strb = std.fmt.bufPrint(&__sb, \"{d}\", .{b}) catch return a < b;",
+            );
+            self.write(" return std.mem.order(u8, __stra, __strb) == .lt; } }.lessThan); ");
         } else {
             self.write(&format!(
                 "std.mem.sort({}, __sorted.items, {{}}, comptime std.sort.asc({})); ",
