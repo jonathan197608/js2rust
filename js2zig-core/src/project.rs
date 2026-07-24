@@ -228,8 +228,39 @@ pub fn generate_host_regex_stubs() -> String {
 //! test binary without the Rust-side implementations.  The real implementations
 //! live in js2rust-bridge (native_regex.rs) and are linked when Rust drives
 //! the final executable build.  These stubs are only used by `zig build test`.
+//!
+//! For simple literal patterns (no regex metacharacters), these stubs perform
+//! basic substring matching so that runtime tests using simple patterns can
+//! pass.  For patterns containing regex metacharacters, they return false/null
+//! to indicate the regex engine is not available.
 
+const std = @import("std");
 const JsStr = extern struct { ptr: [*]const u8, len: isize };
+
+// Thread-local buffer for returning match results from host_regex_match etc.
+// Sized to hold up to 1 match group (pattern is a literal, so only group 0).
+var match_buf: [4096]u8 = undefined;
+var match_buf_len: usize = 0;
+
+/// Check if a pattern is a simple literal (no regex metacharacters).
+/// Metacharacters: \ ^ $ . | ? * + ( ) [ { }
+fn isLiteralPattern(pattern: []const u8) bool {
+    if (pattern.len == 0) return true; // empty pattern is literal
+    var i: usize = 0;
+    while (i < pattern.len) : (i += 1) {
+        const c = pattern[i];
+        if (c == '\\' and i + 1 < pattern.len) {
+            // Escaped character — skip next byte, treat as literal
+            i += 1;
+            continue;
+        }
+        switch (c) {
+            '^', '$', '.', '|', '?', '*', '+', '(', ')', '[', '{', '}' => return false,
+            else => {},
+        }
+    }
+    return true;
+}
 
 export fn host_regex_test(
     pattern_ptr: [*]const u8,
@@ -237,11 +268,10 @@ export fn host_regex_test(
     text_ptr: [*]const u8,
     text_len: usize,
 ) callconv(.c) bool {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    return false;
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) return false;
+    return std.mem.indexOf(u8, text, pattern) != null;
 }
 
 export fn host_regex_search(
@@ -250,11 +280,10 @@ export fn host_regex_search(
     text_ptr: [*]const u8,
     text_len: usize,
 ) callconv(.c) i64 {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    return -1;
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) return -1;
+    return @intCast(std.mem.indexOf(u8, text, pattern) orelse return -1);
 }
 
 export fn host_regex_match(
@@ -264,12 +293,24 @@ export fn host_regex_match(
     text_len: usize,
     out_count: *usize,
 ) callconv(.c) JsStr {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    out_count.* = 0;
-    return .{ .ptr = undefined, .len = 0 };
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) {
+        out_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    }
+    const idx = std.mem.indexOf(u8, text, pattern) orelse {
+        out_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    };
+    // Copy matched substring into static buffer, NUL-terminated.
+    // Result format: "<match>\0" (single group, NUL-separated)
+    _ = idx; // position not needed; we copy the pattern itself
+    @memcpy(match_buf[0..pattern.len], pattern);
+    match_buf[pattern.len] = 0; // NUL separator
+    match_buf_len = pattern.len + 1;
+    out_count.* = 1; // 1 match group
+    return .{ .ptr = &match_buf, .len = @intCast(match_buf_len) };
 }
 
 export fn host_regex_match_global(
@@ -279,12 +320,22 @@ export fn host_regex_match_global(
     text_len: usize,
     out_count: *usize,
 ) callconv(.c) JsStr {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    out_count.* = 0;
-    return .{ .ptr = undefined, .len = 0 };
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) {
+        out_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    }
+    // Find first match only (stub does not iterate for global)
+    _ = std.mem.indexOf(u8, text, pattern) orelse {
+        out_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    };
+    @memcpy(match_buf[0..pattern.len], pattern);
+    match_buf[pattern.len] = 0;
+    match_buf_len = pattern.len + 1;
+    out_count.* = 1;
+    return .{ .ptr = &match_buf, .len = @intCast(match_buf_len) };
 }
 
 export fn host_regex_match_all(
@@ -295,13 +346,55 @@ export fn host_regex_match_all(
     out_match_count: *usize,
     out_group_count: *usize,
 ) callconv(.c) JsStr {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    out_match_count.* = 0;
-    out_group_count.* = 0;
-    return .{ .ptr = undefined, .len = 0 };
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) {
+        out_match_count.* = 0;
+        out_group_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    }
+    _ = std.mem.indexOf(u8, text, pattern) orelse {
+        out_match_count.* = 0;
+        out_group_count.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    };
+    @memcpy(match_buf[0..pattern.len], pattern);
+    match_buf[pattern.len] = 0;
+    match_buf_len = pattern.len + 1;
+    out_match_count.* = 1;
+    out_group_count.* = 1;
+    return .{ .ptr = &match_buf, .len = @intCast(match_buf_len) };
+}
+
+export fn host_regex_exec(
+    pattern_ptr: [*]const u8,
+    pattern_len: usize,
+    text_ptr: [*]const u8,
+    text_len: usize,
+    start: usize,
+    out_count: *usize,
+    out_end: *usize,
+) callconv(.c) JsStr {
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    if (!isLiteralPattern(pattern)) {
+        out_count.* = 0;
+        out_end.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    }
+    const search_text = if (start < text.len) text[start..] else "";
+    const idx = std.mem.indexOf(u8, search_text, pattern) orelse {
+        out_count.* = 0;
+        out_end.* = 0;
+        return .{ .ptr = undefined, .len = 0 };
+    };
+    const abs_idx = start + idx;
+    @memcpy(match_buf[0..pattern.len], pattern);
+    match_buf[pattern.len] = 0;
+    match_buf_len = pattern.len + 1;
+    out_count.* = 1;
+    out_end.* = abs_idx + pattern.len;
+    return .{ .ptr = &match_buf, .len = @intCast(match_buf_len) };
 }
 
 export fn host_regex_replace(
@@ -312,13 +405,24 @@ export fn host_regex_replace(
     replacement_ptr: [*]const u8,
     replacement_len: usize,
 ) callconv(.c) JsStr {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    _ = replacement_ptr;
-    _ = replacement_len;
-    return .{ .ptr = undefined, .len = 0 };
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    const replacement = replacement_ptr[0..replacement_len];
+    if (!isLiteralPattern(pattern)) return .{ .ptr = undefined, .len = 0 };
+    const idx = std.mem.indexOf(u8, text, pattern) orelse
+        return .{ .ptr = text_ptr, .len = @intCast(text_len) };
+    // Build result: text[0..idx] + replacement + text[idx+pattern.len..]
+    var pos: usize = 0;
+    if (idx > 0) {
+        @memcpy(match_buf[pos..idx], text[0..idx]);
+        pos = idx;
+    }
+    @memcpy(match_buf[pos .. pos + replacement.len], replacement);
+    pos += replacement.len;
+    const rest = text[idx + pattern.len ..];
+    @memcpy(match_buf[pos .. pos + rest.len], rest);
+    pos += rest.len;
+    return .{ .ptr = &match_buf, .len = @intCast(pos) };
 }
 
 export fn host_regex_replace_all(
@@ -329,13 +433,30 @@ export fn host_regex_replace_all(
     replacement_ptr: [*]const u8,
     replacement_len: usize,
 ) callconv(.c) JsStr {
-    _ = pattern_ptr;
-    _ = pattern_len;
-    _ = text_ptr;
-    _ = text_len;
-    _ = replacement_ptr;
-    _ = replacement_len;
-    return .{ .ptr = undefined, .len = 0 };
+    const pattern = pattern_ptr[0..pattern_len];
+    const text = text_ptr[0..text_len];
+    const replacement = replacement_ptr[0..replacement_len];
+    if (!isLiteralPattern(pattern)) return .{ .ptr = undefined, .len = 0 };
+    // Repeatedly replace all occurrences
+    var pos: usize = 0;
+    var src: usize = 0;
+    while (src <= text.len) {
+        const remaining = text[src..];
+        const idx = std.mem.indexOf(u8, remaining, pattern);
+        if (idx == null) {
+            const rest = remaining;
+            @memcpy(match_buf[pos .. pos + rest.len], rest);
+            pos += rest.len;
+            break;
+        }
+        const i = idx.?;
+        @memcpy(match_buf[pos .. pos + i], remaining[0..i]);
+        pos += i;
+        @memcpy(match_buf[pos .. pos + replacement.len], replacement);
+        pos += replacement.len;
+        src += i + pattern.len;
+    }
+    return .{ .ptr = &match_buf, .len = @intCast(pos) };
 }
 "#
     .to_string()
