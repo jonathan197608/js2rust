@@ -259,52 +259,13 @@ impl Lowerer {
                 Self::check_and_add_capture(name, captured, seen, local_names, type_info);
             },
             &mut |target| {
-                match target {
-                    AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                        Self::check_and_add_capture(
-                            id.name.as_str(),
-                            captured,
-                            seen,
-                            local_names,
-                            type_info,
-                        );
-                    }
-                    AssignmentTarget::StaticMemberExpression(mem) => {
-                        Self::collect_idents_from_expr(
-                            &mem.object,
-                            captured,
-                            seen,
-                            local_names,
-                            type_info,
-                        );
-                    }
-                    AssignmentTarget::ComputedMemberExpression(mem) => {
-                        Self::collect_idents_from_expr(
-                            &mem.object,
-                            captured,
-                            seen,
-                            local_names,
-                            type_info,
-                        );
-                        Self::collect_idents_from_expr(
-                            &mem.expression,
-                            captured,
-                            seen,
-                            local_names,
-                            type_info,
-                        );
-                    }
-                    AssignmentTarget::PrivateFieldExpression(pfe) => {
-                        Self::collect_idents_from_expr(
-                            &pfe.object,
-                            captured,
-                            seen,
-                            local_names,
-                            type_info,
-                        );
-                    }
-                    _ => {} // Destructuring targets — best effort skip
-                }
+                Self::collect_idents_from_assignment_target(
+                    target,
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
             },
             &mut |simple_target| match simple_target {
                 SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
@@ -389,6 +350,123 @@ impl Lowerer {
         }
     }
 
+    /// P2-14: Recursively collect identifiers from an assignment target,
+    /// including destructuring patterns (array and object).
+    fn collect_idents_from_assignment_target(
+        target: &AssignmentTarget,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
+        local_names: &HashSet<String>,
+        type_info: &crate::infer::TypeCheckResult,
+    ) {
+        match target {
+            AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                Self::check_and_add_capture(
+                    id.name.as_str(),
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
+            }
+            AssignmentTarget::StaticMemberExpression(mem) => {
+                Self::collect_idents_from_expr(&mem.object, captured, seen, local_names, type_info);
+            }
+            AssignmentTarget::ComputedMemberExpression(mem) => {
+                Self::collect_idents_from_expr(&mem.object, captured, seen, local_names, type_info);
+                Self::collect_idents_from_expr(
+                    &mem.expression,
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
+            }
+            AssignmentTarget::PrivateFieldExpression(pfe) => {
+                Self::collect_idents_from_expr(&pfe.object, captured, seen, local_names, type_info);
+            }
+            AssignmentTarget::ArrayAssignmentTarget(at) => {
+                for inner in at.elements.iter().flatten() {
+                    Self::collect_idents_from_maybe_default(
+                        inner,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                }
+            }
+            AssignmentTarget::ObjectAssignmentTarget(ot) => {
+                for prop in &ot.properties {
+                    match prop {
+                        AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ap) => {
+                            Self::check_and_add_capture(
+                                ap.binding.name.as_str(),
+                                captured,
+                                seen,
+                                local_names,
+                                type_info,
+                            );
+                            if let Some(init) = &ap.init {
+                                Self::collect_idents_from_expr(
+                                    init,
+                                    captured,
+                                    seen,
+                                    local_names,
+                                    type_info,
+                                );
+                            }
+                        }
+                        AssignmentTargetProperty::AssignmentTargetPropertyProperty(ap) => {
+                            Self::collect_idents_from_maybe_default(
+                                &ap.binding,
+                                captured,
+                                seen,
+                                local_names,
+                                type_info,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// P2-14: Collect identifiers from an `AssignmentTargetMaybeDefault`
+    /// (element of an array destructuring pattern).
+    fn collect_idents_from_maybe_default(
+        target: &AssignmentTargetMaybeDefault,
+        captured: &RefCell<Vec<(String, ZigType, bool)>>,
+        seen: &RefCell<HashSet<String>>,
+        local_names: &HashSet<String>,
+        type_info: &crate::infer::TypeCheckResult,
+    ) {
+        match target {
+            AssignmentTargetMaybeDefault::AssignmentTargetIdentifier(id) => {
+                Self::check_and_add_capture(
+                    id.name.as_str(),
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
+            }
+            AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(atwd) => {
+                Self::collect_idents_from_expr(&atwd.init, captured, seen, local_names, type_info);
+                // Recurse into the inner binding target (handles nested patterns)
+                Self::collect_idents_from_assignment_target(
+                    &atwd.binding,
+                    captured,
+                    seen,
+                    local_names,
+                    type_info,
+                );
+            }
+            _ => {}
+        }
+    }
+
     /// Lower arrow function parameters into IrParam list.
     pub(super) fn lower_arrow_params(&mut self, arrow: &ArrowFunctionExpression) -> Vec<IrParam> {
         let mut params = Vec::new();
@@ -437,6 +515,36 @@ impl Lowerer {
                 })
             }
             crate::zigir::types::IrStmt::Block(b) => Self::find_first_return_expr_in_block(b),
+            // P2-15: Also recurse into loops, switch, and try blocks
+            crate::zigir::types::IrStmt::While { body, .. }
+            | crate::zigir::types::IrStmt::DoWhile { body, .. }
+            | crate::zigir::types::IrStmt::For { body, .. }
+            | crate::zigir::types::IrStmt::ForOf { body, .. }
+            | crate::zigir::types::IrStmt::ForIn { body, .. } => {
+                Self::find_first_return_expr_in_block(body)
+            }
+            crate::zigir::types::IrStmt::Switch { cases, .. } => {
+                for case in cases {
+                    for s in &case.body {
+                        if let Some(expr) = Self::find_first_return_expr_in_stmt(s) {
+                            return Some(expr);
+                        }
+                    }
+                }
+                None
+            }
+            crate::zigir::types::IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => Self::find_first_return_expr_in_block(try_block)
+                .or_else(|| Self::find_first_return_expr_in_block(catch_block))
+                .or_else(|| {
+                    finally
+                        .as_ref()
+                        .and_then(Self::find_first_return_expr_in_block)
+                }),
             _ => None,
         }
     }

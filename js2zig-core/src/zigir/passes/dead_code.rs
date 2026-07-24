@@ -414,9 +414,10 @@ fn stmt_has_side_effects(stmt: &IrStmt) -> bool {
         }
         IrStmt::Switch { expr, cases } => {
             expr_has_side_effects(expr)
-                || cases
-                    .iter()
-                    .any(|c| c.body.iter().any(stmt_has_side_effects))
+                || cases.iter().any(|c| {
+                    c.test.as_ref().is_some_and(expr_has_side_effects)
+                        || c.body.iter().any(stmt_has_side_effects)
+                })
         }
         IrStmt::Try {
             try_block,
@@ -518,7 +519,13 @@ fn eliminate_unreachable_in_stmt(stmt: &mut IrStmt) -> bool {
         IrStmt::Switch { cases, .. } => {
             let mut changed = false;
             for case in cases {
-                // Cases use Vec<IrStmt>, not IrBlock
+                // Cases use Vec<IrStmt>, not IrBlock — apply all three phases
+                if convert_vardecl_compile_error(&mut case.body) {
+                    changed = true;
+                }
+                if truncate_after_compile_error(&mut case.body) {
+                    changed = true;
+                }
                 if truncate_after_terminator(&mut case.body) {
                     changed = true;
                 }

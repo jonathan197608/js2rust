@@ -110,6 +110,9 @@ pub fn for_each_stmt_child(
         IrStmt::Switch { expr, cases } => {
             on_expr(expr);
             for case in cases {
+                if let Some(test) = &case.test {
+                    on_expr(test);
+                }
                 for s in &case.body {
                     on_stmt(s);
                 }
@@ -437,6 +440,9 @@ pub fn for_each_stmt_child_mut(
         IrStmt::Switch { expr, cases } => {
             on_expr(expr);
             for case in cases {
+                if let Some(test) = &mut case.test {
+                    on_expr(test);
+                }
                 for s in &mut case.body {
                     on_stmt(s);
                 }

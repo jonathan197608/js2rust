@@ -128,7 +128,10 @@ impl Emitter {
                 self.write(")");
             }
             NewConstructor::Class(class_name) => {
-                self.write(&format!("{}.init(", class_name));
+                // P2-11: class_name is the JS name — convert to zig_name
+                // to match the struct definition (which uses IrIdent.zig_name).
+                let zig_name = crate::zigir::ident::zig_safe_name(class_name);
+                self.write(&format!("{}.init(", zig_name));
                 for (i, arg) in new_expr.args.iter().enumerate() {
                     if i > 0 {
                         self.write(", ");

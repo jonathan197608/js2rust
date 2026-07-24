@@ -71,7 +71,9 @@ pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
         // walk.rs only visits .args, so we must extract it here.
         IrExpr::New(n) => {
             if let NewConstructor::Class(name) = &n.constructor {
-                names.insert(name.clone());
+                // P2-11: name is the JS class name — convert to zig_name
+                // so it matches the zig_name used in IrExpr::Ident references.
+                names.insert(crate::zigir::ident::zig_safe_name(name));
             }
         }
         _ => {}

@@ -698,16 +698,7 @@ pub const JsAny = union(enum) {
     /// For codegen of `delete obj[expr]`.
     pub fn deleteByKey(self: *JsAny, key: JsAny, alloc: Allocator) bool {
         const key_str = key.asString(alloc);
-        defer {
-            switch (key) {
-                .value => |v| switch (v) {
-                    .int, .float => alloc.free(key_str),
-                    else => {},
-                },
-                .array, .object => alloc.free(key_str),
-                .null => {},
-            }
-        }
+        defer freeAsStringKey(key, key_str, alloc);
         return switch (self.*) {
             .object => |*o| o.remove(key_str),
             else => false,
@@ -717,22 +708,33 @@ pub const JsAny = union(enum) {
     // === Cleanup ===
 
     /// Free the result of asString() if it was heap-allocated.
-    /// asString allocates for .value.int, .value.float (non-NaN/Inf), .array, .object.
+    /// asString allocates for .value.int, .value.float (non-NaN/Inf), .array (non-OOM).
     /// It returns a borrowed slice or literal for everything else.
     /// R8-P1-10: .float NaN/Infinity/-Infinity return literals — must NOT be freed.
+    /// R18-P2: .object returns "[object Object]" literal — must NOT be freed.
+    /// R18-P2: .array OOM returns "" literal — must NOT be freed.
     fn freeAsStringKey(key: JsAny, key_str: []const u8, alloc: Allocator) void {
         switch (key) {
             .value => |v| switch (v) {
-                .int => alloc.free(key_str),
+                .int => {
+                    // allocPrint returns "" on OOM — don't free literals.
+                    if (key_str.len > 0) alloc.free(key_str);
+                },
                 .float => |f| {
                     // NaN and Infinity return string literals from asString — not heap-allocated.
-                    if (!std.math.isNan(f) and !std.math.isInf(f)) {
+                    if (!std.math.isNan(f) and !std.math.isInf(f) and key_str.len > 0) {
                         alloc.free(key_str);
                     }
                 },
                 else => {},
             },
-            .array, .object => alloc.free(key_str),
+            .array => {
+                // toOwnedSlice returns "" on OOM — don't free literal.
+                if (key_str.len > 0) alloc.free(key_str);
+            },
+            .object => {
+                // "[object Object]" is a literal — must NOT be freed.
+            },
             .null => {},
         }
     }

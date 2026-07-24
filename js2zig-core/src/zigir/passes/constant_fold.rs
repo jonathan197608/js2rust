@@ -148,6 +148,8 @@ impl ConstantFoldPass {
             IrExpr::ObjectLiteral(obj) => Self::try_fold_object_items(&mut obj.items),
             IrExpr::TemplateLiteral { exprs, .. } => Self::try_fold_iter(exprs),
             IrExpr::Spread(e) | IrExpr::Void(e) => Self::try_fold(e),
+            // Recurse into assignment RHS so `x = 1 + 2` can be folded
+            IrExpr::Assign { value, .. } => Self::try_fold(value),
             // PowExpr / RemExpr / DivExpr always carry sub-expressions on both
             // sides — fold each so that constant sub-trees (e.g. `(1+2) % x`,
             // `Math.pow(2**3, n)`) still get simplified, even when the node
@@ -307,7 +309,7 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                     if *b == 0 {
                         return None;
                     }
-                    return Some(IrExpr::FloatLiteral(*a as f64 % *b as f64));
+                    return Some(IrExpr::IntLiteral(a % b));
                 }
                 // JS bitwise ops operate on Int32 (32-bit signed), not i64.
                 // `*a as i32` truncates and sign-extends exactly like
@@ -365,7 +367,12 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Add => Some(IrExpr::FloatLiteral(a_f + b_val)),
                 BinOp::Sub => Some(IrExpr::FloatLiteral(a_f - b_val)),
                 BinOp::Mul => Some(IrExpr::FloatLiteral(a_f * b_val)),
-                BinOp::Div => Some(IrExpr::FloatLiteral(a_f / b_val)),
+                BinOp::Div => {
+                    if b_val == 0.0 {
+                        return None;
+                    }
+                    Some(IrExpr::FloatLiteral(a_f / b_val))
+                }
                 BinOp::Mod => Some(IrExpr::FloatLiteral(a_f % b_val)),
                 BinOp::Eq | BinOp::StrictEq => Some(IrExpr::BoolLiteral(a_f == b_val)),
                 BinOp::Ne | BinOp::StrictNe => Some(IrExpr::BoolLiteral(a_f != b_val)),
@@ -383,7 +390,12 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Add => Some(IrExpr::FloatLiteral(a_val + b_f)),
                 BinOp::Sub => Some(IrExpr::FloatLiteral(a_val - b_f)),
                 BinOp::Mul => Some(IrExpr::FloatLiteral(a_val * b_f)),
-                BinOp::Div => Some(IrExpr::FloatLiteral(a_val / b_f)),
+                BinOp::Div => {
+                    if b_f == 0.0 {
+                        return None;
+                    }
+                    Some(IrExpr::FloatLiteral(a_val / b_f))
+                }
                 BinOp::Mod => Some(IrExpr::FloatLiteral(a_val % b_f)),
                 BinOp::Eq | BinOp::StrictEq => Some(IrExpr::BoolLiteral(a_val == b_f)),
                 BinOp::Ne | BinOp::StrictNe => Some(IrExpr::BoolLiteral(a_val != b_f)),
@@ -453,6 +465,15 @@ fn fold_unary(op: UnaOp, operand: &IrExpr) -> Option<IrExpr> {
             n.checked_neg().map(IrExpr::IntLiteral)
         }
         (UnaOp::Neg, IrExpr::FloatLiteral(n)) => Some(IrExpr::FloatLiteral(-n)),
+        (UnaOp::Neg, IrExpr::BigIntLiteral(s)) => {
+            // Negate by toggling the leading '-' prefix.
+            // -0n === 0n in JS, so "-0" → "0" is correct.
+            if let Some(rest) = s.strip_prefix('-') {
+                Some(IrExpr::BigIntLiteral(rest.to_string()))
+            } else {
+                Some(IrExpr::BigIntLiteral(format!("-{}", s)))
+            }
+        }
         (UnaOp::Not, IrExpr::BoolLiteral(b)) => Some(IrExpr::BoolLiteral(!b)),
         // JS `~x` operates on Int32 (32-bit signed), not i64.
         // `as i32` truncates/sign-extends like ToInt32, we bitwise-NOT
@@ -489,8 +510,12 @@ fn literal_truthiness(expr: &IrExpr) -> Option<bool> {
         IrExpr::IntLiteral(n) => Some(*n != 0),
         IrExpr::FloatLiteral(n) => Some(*n != 0.0 && !n.is_nan()),
         IrExpr::StringLiteral(s) => Some(!s.is_empty()),
-        // P2-CF-3: BigIntLiteral: "0" is falsy, any non-zero value is truthy.
-        IrExpr::BigIntLiteral(s) => Some(!s.chars().all(|c| c == '0')),
+        // P2-CF-3: BigIntLiteral: "0" and "-0" are falsy, any non-zero value is truthy.
+        // Strip leading '-' so "-0" is correctly detected as falsy.
+        IrExpr::BigIntLiteral(s) => {
+            let stripped = s.strip_prefix('-').unwrap_or(s);
+            Some(!stripped.chars().all(|c| c == '0'))
+        }
         _ => None,
     }
 }
@@ -500,6 +525,12 @@ fn fold_logical(op: LogicalOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> 
     if op == LogicalOp::Nullish {
         return match left {
             IrExpr::Null | IrExpr::Undefined => Some(right.clone()),
+            // Known non-nullish literal → result is left (short-circuit)
+            IrExpr::IntLiteral(_)
+            | IrExpr::FloatLiteral(_)
+            | IrExpr::StringLiteral(_)
+            | IrExpr::BoolLiteral(_)
+            | IrExpr::BigIntLiteral(_) => Some(left.clone()),
             _ => None,
         };
     }
@@ -539,6 +570,7 @@ fn typeof_literal(expr: &IrExpr) -> Option<String> {
         IrExpr::Null => Some("object".to_string()), // JS typeof null === "object"
         IrExpr::Undefined => Some("undefined".to_string()),
         IrExpr::ArrowFn(_) | IrExpr::Closure(_) | IrExpr::FnExpr(_) => Some("function".to_string()),
+        IrExpr::BigIntLiteral(_) => Some("bigint".to_string()),
         _ => None,
     }
 }

@@ -125,13 +125,15 @@ impl PassPipeline {
 
     /// Create the default optimization pipeline.
     ///
-    /// Order: Validate → DeadCodeElim → ConstantFold → Validate
-    /// (validate again after transforms to check invariants hold).
+    /// Order: Validate → DeadCodeElim → ConstantFold → DeadCodeElim → Validate
+    /// (DeadCode after ConstantFold cleans up branches eliminated by folding;
+    /// validate again after transforms to check invariants hold).
     pub fn default_pipeline() -> Self {
         let mut pipeline = Self::new();
         pipeline.add_pass(ValidatePass::new());
         pipeline.add_pass(DeadCodeElimPass::new());
         pipeline.add_pass(ConstantFoldPass::new());
+        pipeline.add_pass(DeadCodeElimPass::new());
         pipeline.add_pass(ValidatePass::new());
         pipeline
     }
@@ -350,8 +352,8 @@ mod tests {
         let mut pipeline = PassPipeline::default_pipeline();
         let mut module = IrModule::new("test".to_string());
         let result = pipeline.run(&mut module);
-        // 4 passes: Validate → DeadCodeElim → ConstantFold → Validate
-        assert_eq!(result.passes_run, 4);
+        // 5 passes: Validate → DeadCodeElim → ConstantFold → DeadCodeElim → Validate
+        assert_eq!(result.passes_run, 5);
     }
 
     #[test]

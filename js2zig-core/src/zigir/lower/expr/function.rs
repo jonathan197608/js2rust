@@ -195,6 +195,9 @@ impl Lowerer {
             }
             IrStmt::Switch { cases, .. } => {
                 for case in cases {
+                    if let Some(test) = &case.test {
+                        Self::scan_expr_for_closure_overlap(test, own, overlap);
+                    }
                     for s in &case.body {
                         Self::scan_stmt_for_closure_overlap(s, own, overlap);
                     }
@@ -231,7 +234,13 @@ impl Lowerer {
                     }
                 }
             }
-            // Return None, Throw, Break, Continue, DestructureDecl, CompileError, Comment — no expr
+            IrStmt::Throw { value, .. } => {
+                Self::scan_expr_for_closure_overlap(value, own, overlap);
+            }
+            IrStmt::DestructureDecl(data) => {
+                Self::scan_expr_for_closure_overlap(&data.init, own, overlap);
+            }
+            // Return None, Break, Continue, CompileError, Comment — no expr
             _ => {}
         }
     }
@@ -264,8 +273,12 @@ impl Lowerer {
                     Self::scan_expr_for_closure_overlap(arg, own, overlap);
                 }
             }
-            IrExpr::FieldAccess { object, .. } | IrExpr::IndexAccess { object, .. } => {
+            IrExpr::FieldAccess { object, .. } => {
                 Self::scan_expr_for_closure_overlap(object, own, overlap);
+            }
+            IrExpr::IndexAccess { object, index, .. } => {
+                Self::scan_expr_for_closure_overlap(object, own, overlap);
+                Self::scan_expr_for_closure_overlap(index, own, overlap);
             }
             IrExpr::ArrowFn(af) => {
                 for stmt in &af.body.stmts {

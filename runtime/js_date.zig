@@ -358,11 +358,9 @@ pub const JsDate = struct {
     /// setMilliseconds(ms) → new milliseconds.
     pub fn setMilliseconds(self: JsDate, ms: i64) i64 {
         const local = self.localMillis();
-        const days = dayCount(local);
-        const time = local - days * 86400000;
-        const old_ms = @mod(time, 1000);
-        // Use i128 intermediate so absurd `ms` values (e.g., minInt(i64))
-        // combined with extreme `self.millis` do not panic (R8 P0-2).
+        // Use @mod directly on local to avoid i64 overflow from days*86400000.
+        // Zig's @mod is floored, so result is always [0,999].
+        const old_ms = @mod(local, 1000);
         const v: i128 = @as(i128, local) - @as(i128, old_ms) + @as(i128, ms);
         return localToUtc(clampToI64(v));
     }
@@ -432,9 +430,8 @@ pub const JsDate = struct {
 
     /// setUTCMilliseconds(ms) → new milliseconds.
     pub fn setUTCMilliseconds(self: JsDate, ms: i64) i64 {
-        const days = dayCount(self.millis);
-        const time = self.millis - days * 86400000;
-        const old_ms = @mod(time, 1000);
+        // Use @mod directly on self.millis to avoid i64 overflow from days*86400000.
+        const old_ms = @mod(self.millis, 1000);
         const v: i128 = @as(i128, self.millis) - @as(i128, old_ms) + @as(i128, ms);
         return clampToI64(v);
     }
