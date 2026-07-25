@@ -377,6 +377,32 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
+                    // TypedArray properties — matches lower_static_member's
+                    // FieldKind::TypedArrayProp routing. Runtime returns
+                    // i64 for byteLength/byteOffset, []const u8 for buffer
+                    // (js_typedarray.zig).
+                    InferResult::Definite(ZigType::NamedStruct(ref name))
+                        if matches!(
+                            name.as_str(),
+                            "Int8Array"
+                                | "Uint8Array"
+                                | "Uint8ClampedArray"
+                                | "Int16Array"
+                                | "Uint16Array"
+                                | "Int32Array"
+                                | "Uint32Array"
+                                | "Float32Array"
+                                | "Float64Array"
+                                | "BigInt64Array"
+                                | "BigUint64Array"
+                        ) =>
+                    {
+                        match mem.property.name.as_str() {
+                            "byteLength" | "byteOffset" => InferResult::Definite(ZigType::I64),
+                            "buffer" => InferResult::Definite(ZigType::Str),
+                            _ => InferResult::Indeterminate,
+                        }
+                    }
                     // JsSymbol property access
                     InferResult::Definite(ZigType::JsSymbol) => {
                         match mem.property.name.as_str() {
@@ -866,20 +892,22 @@ impl TypeInferrer {
     // ============================================================
 
     /// Infer the return type of array method calls like arr.slice(), arr.map(), etc.
-    pub(crate) fn infer_array_method_return(&self, method: &str, elem_ty: &ZigType) -> InferResult {
+    pub(crate) fn infer_array_method_return(
+        &self,
+        method: &str,
+        _elem_ty: &ZigType,
+    ) -> InferResult {
         match method {
-            // Methods that return a new array (same element type)
-            "slice" | "filter" | "concat" | "flat" | "toReversed" | "toSorted" | "toSpliced" => {
-                InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone())))
-            }
-            // map/flatMap: callback transforms elements — return type depends on
-            // callback, not source element type. Default to ArrayList(JsAny)
-            // to match builtin_return_type (ArrayMap/ArrayFlatMap).
-            "map" | "flatMap" => {
+            // Methods that return a new array — always ArrayList(JsAny) to match
+            // builtin_return_type and infer_named_method_return. The emitter never
+            // preserves the source element type (all builtin array methods produce
+            // ArrayList(JsAny)), so preserving elem_ty here would cause type
+            // annotation mismatches (e.g. var_types says ArrayList(I64) but the
+            // generated code produces ArrayList(JsAny)).
+            "slice" | "filter" | "concat" | "flat" | "toReversed" | "toSorted" | "toSpliced"
+            | "map" | "flatMap" | "with" => {
                 InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
             }
-            // Array.prototype.with(index, value) returns same element type array
-            "with" => InferResult::Definite(ZigType::ArrayList(Box::new(elem_ty.clone()))),
             // Methods that return a boolean
             "some" | "every" | "includes" => InferResult::Definite(ZigType::Bool),
             // Methods returning index or length

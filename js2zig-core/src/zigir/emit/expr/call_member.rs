@@ -227,29 +227,40 @@ impl Emitter {
         self.write(&format!(".{}", field));
     }
 
-    /// Emit `object.items[@as(usize, @intCast(index))]` — ArrayList element access.
+    /// Emit `object.items[...]` — ArrayList element access.
+    /// Uses a labeled block to guard against negative runtime indices:
+    /// `@intCast` on a negative i64 panics with an opaque message, whereas
+    /// the labeled block produces a clear "negative index" panic.
     pub(super) fn emit_arraylist_item(
         &mut self,
         object: &crate::zigir::types::IrExpr,
         index: &crate::zigir::types::IrExpr,
     ) {
+        let lbl = self.next_label();
         self.emit_expr(object);
-        self.write(".items[@as(usize, @intCast(");
+        self.write(&format!(".items[{}: {{ const __idx = ", lbl));
         self.emit_expr(index);
-        self.write("))]");
+        self.write(&format!(
+            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }}]",
+            lbl
+        ));
     }
 
-    /// Emit `object[@as(usize, @intCast(index))]` — Slice/array index access.
-    /// The @intCast is needed because JS indices are i64 but Zig indexing requires usize.
+    /// Emit `object[...]` — Slice/array index access.
+    /// Same negative-index guard as `emit_arraylist_item`.
     pub(super) fn emit_slice_index(
         &mut self,
         object: &crate::zigir::types::IrExpr,
         index: &crate::zigir::types::IrExpr,
     ) {
+        let lbl = self.next_label();
         self.emit_expr(object);
-        self.write("[@as(usize, @intCast(");
+        self.write(&format!("[{}: {{ const __idx = ", lbl));
         self.emit_expr(index);
-        self.write("))]");
+        self.write(&format!(
+            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }}]",
+            lbl
+        ));
     }
 
     /// Emit `__ClassName_field` — static field access on a class.

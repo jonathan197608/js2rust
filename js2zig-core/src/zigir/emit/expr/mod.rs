@@ -1099,9 +1099,9 @@ impl Emitter {
                 // Evaluate object and index once
                 self.write("const __asg_obj = ");
                 self.emit_expr(object);
-                self.write("; const __asg_idx: usize = @as(usize, @intCast(");
+                self.write("; const __asg_idx_raw = ");
                 self.emit_expr(index);
-                self.write(")); ");
+                self.write("; const __asg_idx: usize = if (__asg_idx_raw < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(__asg_idx_raw)); ");
                 let access = match index_kind {
                     IndexKind::ArrayListItem => "__asg_obj.items[__asg_idx]",
                     IndexKind::SliceIndex => "__asg_obj[__asg_idx]",

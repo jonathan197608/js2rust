@@ -447,6 +447,17 @@ impl Lowerer {
                 let obj_ty = self.infer_expr_type(&mem.object);
                 match obj_ty {
                     Some(ZigType::NamedStruct(name)) => {
+                        // TypedArray properties — must match lower_static_member's
+                        // FieldKind::TypedArrayProp routing. Runtime returns
+                        // i64 for byteLength/byteOffset, []const u8 for buffer
+                        // (js_typedarray.zig).
+                        if Self::is_typedarray_type(&name) {
+                            match mem.property.name.as_str() {
+                                "byteLength" | "byteOffset" => return Some(ZigType::I64),
+                                "buffer" => return Some(ZigType::Str),
+                                _ => {}
+                            }
+                        }
                         if let Some(fields) = self.type_info.class_field_types.get(&name)
                             && let Some(ty) = fields.get(mem.property.name.as_str())
                         {
@@ -658,26 +669,24 @@ impl Lowerer {
                         n if Self::is_typedarray_type(n) => {
                             Some(ZigType::NamedStruct(n.to_string()))
                         }
-                        // Wrapper constructors return primitives
-                        "String" => {
-                            if let Some(first_arg) = ne.arguments.first()
-                                && let Some(expr) = first_arg.as_expression()
-                            {
-                                self.infer_expr_type(expr)
-                            } else {
-                                Some(ZigType::Str)
-                            }
-                        }
-                        "Number" => {
-                            if let Some(first_arg) = ne.arguments.first()
-                                && let Some(expr) = first_arg.as_expression()
-                            {
-                                self.infer_expr_type(expr)
-                            } else {
-                                Some(ZigType::F64)
-                            }
-                        }
+                        // Wrapper constructors: new Number(x), new String(x),
+                        // new Boolean(x) always coerce to the wrapper's primitive
+                        // type. Matches the analysis pass (infer/expr.rs) and
+                        // builtin_return_type. The argument is coerced: e.g.
+                        // new Number("hello") → NaN → F64 (NOT Str).
+                        "String" => Some(ZigType::Str),
+                        "Number" => Some(ZigType::F64),
                         "Boolean" => Some(ZigType::Bool),
+                        // User-defined class names: return NamedStruct so that
+                        // decl.rs's is_const check (class_names.contains)
+                        // forces 'var' for method-call mutation + deinit.
+                        // Mirrors the analysis pass (infer/expr.rs:217).
+                        // Without this, the lowerer returns JsAny which
+                        // (being Some) blocks the var_types fallback in
+                        // decl.rs Bug A's init-expression-first path.
+                        n if self.class_names.contains(n) => {
+                            Some(ZigType::NamedStruct(n.to_string()))
+                        }
                         _ => Some(ZigType::JsAny),
                     },
                     _ => Some(ZigType::JsAny),

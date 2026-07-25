@@ -1,7 +1,7 @@
 // zigir/emit/builtins/string.rs
 // String builtin method emission.
 
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{self, EmitterHelpers};
 
 use crate::zigir::emit::Emitter;
 
@@ -361,6 +361,10 @@ impl Emitter {
                         "js_string_regex.{}(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\")",
                         method, receiver, var
                     ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing var_name for variable-RegExp string method",
+                    ));
                 }
             }
             Some(ri) => {
@@ -368,6 +372,10 @@ impl Emitter {
                     self.write(&format!(
                         "js_string_regex.{}(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                         method, receiver, pattern
+                    ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing pattern for literal-RegExp string method",
                     ));
                 }
             }
@@ -460,6 +468,10 @@ impl Emitter {
                         "js_string_regex.matchAllString(js_allocator.allocator(), {}, \"{}\") catch @panic(\"OOM: allocation\")",
                         receiver, pattern
                     ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing pattern for literal-RegExp matchAll",
+                    ));
                 }
             }
             // Variable RegExp — runtime guard on .global field
@@ -468,6 +480,10 @@ impl Emitter {
                     self.write(&format!(
                         "(if (!{}.global) @panic(\"TypeError: String.prototype.matchAll called with a non-global RegExp argument\") else js_string_regex.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\"))",
                         var, receiver, var
+                    ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing var_name for variable-RegExp matchAll",
                     ));
                 }
             }
@@ -493,6 +509,10 @@ impl Emitter {
                         "host_regex.regex_search({}.pattern, {})",
                         var, receiver
                     ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing var_name for variable-RegExp search",
+                    ));
                 }
             }
             Some(ri) => {
@@ -500,6 +520,10 @@ impl Emitter {
                     self.write(&format!(
                         "host_regex.regex_search(\"{}\", {})",
                         pattern, receiver
+                    ));
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing pattern for literal-RegExp search",
                     ));
                 }
             }
@@ -546,6 +570,10 @@ impl Emitter {
                         self.write("\"\"");
                     }
                     self.write(") catch @panic(\"OOM: string method\")");
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing var_name for variable-RegExp replace",
+                    ));
                 }
             }
             // Literal RegExp → compile-time known pattern
@@ -561,6 +589,10 @@ impl Emitter {
                         self.write("\"\"");
                     }
                     self.write(") catch @panic(\"OOM: string method\")");
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing pattern for literal-RegExp replace",
+                    ));
                 }
             }
             // No regex info → plain-string replace (first occurrence only)
@@ -614,6 +646,10 @@ impl Emitter {
                         self.write("\"\"");
                     }
                     self.write(") catch @panic(\"OOM: string method\"))");
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing var_name for variable-RegExp replaceAll",
+                    ));
                 }
             }
             // Literal RegExp with /g → compile-time known pattern
@@ -630,6 +666,10 @@ impl Emitter {
                         self.write("\"\"");
                     }
                     self.write(") catch @panic(\"OOM: string method\")");
+                } else {
+                    self.write(&helpers::compile_error(
+                        "regex_info missing pattern for literal-RegExp replaceAll",
+                    ));
                 }
             }
             // No regex info → plain-string replaceAll

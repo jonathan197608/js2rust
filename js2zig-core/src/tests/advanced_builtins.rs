@@ -2870,7 +2870,10 @@ export function getReversedLen() {
 
 #[test]
 fn test_arraylist_index_access() {
-    // toReversed() returns ArrayList → [i] should emit .items[@as(usize, @intCast(i))]
+    // toReversed() returns ArrayList → [i] should emit a labeled-block
+    // index access with negative-index guard (EMIT-13):
+    //   .items[blk_N: { const __idx = i; break :blk_N
+    //     if (__idx < 0) @panic("...") else @as(usize, @intCast(__idx)); }]
     let js = r#"
 export function getReversedFirst() {
     const arr = [1, 2, 3];
@@ -2880,8 +2883,10 @@ export function getReversedFirst() {
 "#;
     let zig = transpile_and_check(js, "test_arraylist_index_access");
     assert!(
-        zig.contains(".items[@as(usize, @intCast("),
-        "Expected '.items[@as(usize, @intCast(...))]' for ArrayList index access, got:\n{}",
+        zig.contains(".items[")
+            && zig.contains("if (__idx < 0) @panic(\"array index out of bounds: negative index\")")
+            && zig.contains("@as(usize, @intCast(__idx))"),
+        "Expected labeled-block index access with negative guard, got:\n{}",
         zig
     );
 }

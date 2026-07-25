@@ -143,7 +143,10 @@ fn parseNulSeparated(alloc: Allocator, bytes: []const u8, count: usize) !?[][]co
     }
     var start: usize = 0;
     for (0..count) |_| {
-        if (start >= bytes.len) break;
+        if (start >= bytes.len) {
+            try matches.append(alloc, try alloc.dupe(u8, ""));
+            continue;
+        }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
         try matches.append(alloc, try alloc.dupe(u8, bytes[start..end]));

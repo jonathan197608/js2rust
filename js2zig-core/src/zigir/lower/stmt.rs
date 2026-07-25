@@ -159,9 +159,18 @@ impl Lowerer {
             // ©¤©¤ Block ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             Statement::BlockStatement(bs) => {
                 self.name_mangler.push_shadow_scope();
+                let saved_fn_local_types = self
+                    .fn_ctx
+                    .as_ref()
+                    .map(|ctx| ctx.fn_local_types.clone());
                 let stmts: Vec<crate::zigir::types::IrStmt> =
                     bs.body.iter().map(|s| self.lower_stmt(s)).collect();
                 self.name_mangler.pop_shadow_scope();
+                if let Some(ctx) = self.fn_ctx.as_mut()
+                    && let Some(saved) = saved_fn_local_types
+                {
+                    ctx.fn_local_types = saved;
+                }
                 crate::zigir::types::IrStmt::Block(IrBlock::new(stmts))
             }
             Statement::LabeledStatement(ls) => self.lower_labeled(ls),
@@ -277,9 +286,16 @@ impl Lowerer {
         let stmts = match stmt {
             Statement::BlockStatement(bs) => {
                 self.name_mangler.push_shadow_scope();
+                let saved_fn_local_types =
+                    self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
                 let stmts: Vec<crate::zigir::types::IrStmt> =
                     bs.body.iter().map(|s| self.lower_stmt(s)).collect();
                 self.name_mangler.pop_shadow_scope();
+                if let Some(ctx) = self.fn_ctx.as_mut()
+                    && let Some(saved) = saved_fn_local_types
+                {
+                    ctx.fn_local_types = saved;
+                }
                 stmts
             }
             _ => vec![self.lower_stmt(stmt)],
@@ -799,6 +815,8 @@ impl Lowerer {
         }
 
         // Lower each case: merge fall-through bodies, strip break statements.
+        self.name_mangler.push_shadow_scope();
+        let saved_fn_local_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
         let mut cases: Vec<crate::zigir::types::IrSwitchCase> = Vec::with_capacity(n);
         for (i, case) in ss.cases.iter().enumerate() {
             let test = case.test.as_ref().map(|e| self.lower_expr(e));
@@ -815,6 +833,12 @@ impl Lowerer {
                 }
             }
             cases.push(crate::zigir::types::IrSwitchCase { test, body });
+        }
+        self.name_mangler.pop_shadow_scope();
+        if let Some(ctx) = self.fn_ctx.as_mut()
+            && let Some(saved) = saved_fn_local_types
+        {
+            ctx.fn_local_types = saved;
         }
 
         crate::zigir::types::IrStmt::Switch { expr, cases }

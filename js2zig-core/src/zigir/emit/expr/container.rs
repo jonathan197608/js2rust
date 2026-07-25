@@ -77,9 +77,30 @@ impl Emitter {
                 // same literal is safe.
                 if let crate::zigir::types::IrExpr::Spread(inner) = elem {
                     self.write("for (");
-                    self.emit_expr(inner);
+                    // Dispatch spread source type (mirrors emit_one_arg in
+                    // expr/mod.rs): rest params are already []const JsAny slices
+                    // (iterate directly); everything else is treated as an
+                    // ArrayList and iterated via .items.
+                    use crate::zigir::types::IrExpr;
+                    let is_rest = match inner.as_ref() {
+                        IrExpr::Ident(ident) if self.rest_param_names.contains(&ident.zig_name) => {
+                            true
+                        }
+                        IrExpr::TypedIdent { ident, .. }
+                            if self.rest_param_names.contains(&ident.zig_name) =>
+                        {
+                            true
+                        }
+                        _ => false,
+                    };
+                    if is_rest {
+                        self.emit_expr(inner);
+                    } else {
+                        self.emit_expr(inner);
+                        self.write(".items");
+                    }
                     self.write(
-                        ".items) |__spread_item| __arr.append(js_allocator.allocator(), \
+                        ") |__spread_item| __arr.append(js_allocator.allocator(), \
                          JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ",
                     );
                 }

@@ -70,7 +70,11 @@ pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny 
 
     var start: usize = 0;
     for (0..count) |_| {
-        if (start >= bytes.len) break;
+        if (start >= bytes.len) {
+            const empty: []const u8 = try alloc.dupe(u8, "");
+            try arr.array.append(alloc, JsAny.from(empty));
+            continue;
+        }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
         const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);
@@ -95,7 +99,11 @@ pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !
 
     var start: usize = 0;
     for (0..count) |_| {
-        if (start >= bytes.len) break;
+        if (start >= bytes.len) {
+            const empty: []const u8 = try alloc.dupe(u8, "");
+            try arr.array.append(alloc, JsAny.from(empty));
+            continue;
+        }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
         const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);

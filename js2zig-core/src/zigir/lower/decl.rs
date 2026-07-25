@@ -349,13 +349,38 @@ impl Lowerer {
             };
         }
 
+        // Determine this declaration's type, preferring the initializer
+        // expression (reliable, per-expression) over the flat var_types map.
+        // The infer phase populates var_types with NO per-function
+        // save/restore, so when two functions declare a variable of the same
+        // name with different types, var_types holds the LAST function's type
+        // and is stale for the others. Reading it directly here corrupts the
+        // const/var decision, needs_var_suppression, TypedArray registration,
+        // and needs_deinit.
+        //
+        // JSON.parse special case: the expression returns JsAny at the
+        // type-inference level, but the useful type comes from the JSDoc
+        // @type annotation (stored in var_types by the analysis pass).
+        // Using infer_expr_type here would return Some(JsAny), blocking the
+        // .or_else fallback and losing the struct type. So for JSON.parse
+        // vars, read var_types directly.
+        let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
+        let local_type: Option<ZigType> = if is_json_parse {
+            self.type_info.var_types.get(js_name).cloned()
+        } else if let Some(init_expr) = &decl.init {
+            self.infer_expr_type(init_expr)
+                .or_else(|| self.type_info.var_types.get(js_name).cloned())
+        } else {
+            self.type_info.var_types.get(js_name).cloned()
+        };
+
         // Force 'var' for Map/Set/ArrayList/BigInt types (mutated via methods or needs deinit).
         // R8-E5/C1: Also force 'var' for class instances (NamedStruct whose name
         // is a registered class). Methods that mutate self take `*@This()`,
         // which requires a mutable receiver. `_ = &x;` (via needs_var_suppression,
         // already covering NamedStruct) silences Zig's "var never mutated" for
         // instances that only call read-only methods.
-        let is_const = if let Some(inferred_ty) = self.type_info.var_types.get(js_name) {
+        let is_const = if let Some(inferred_ty) = &local_type {
             match inferred_ty {
                 ZigType::ArrayList(_) => false,
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" || n == "RegExp" => false,
@@ -367,26 +392,16 @@ impl Lowerer {
             is_const
         };
 
-        // Type from inference
-        let zig_type = self.type_info.var_types.get(js_name).cloned();
+        // Type used for needs_var_suppression / TypedArray registration / needs_deinit.
+        let zig_type = local_type.clone();
 
-        // Record local variable type in fn_ctx for per-function scoping.
-        // This gives priority to the current function's variable types over
-        // global var_types (which can have stale entries from other functions).
-        // Use the init expression to infer type when var_types is unreliable.
-        let local_type: Option<ZigType> = if let Some(init_expr) = &decl.init {
-            self.infer_expr_type(init_expr).or(zig_type.clone())
-        } else {
-            zig_type.clone()
-        };
+        // Record local variable type in fn_ctx for per-function scoping
+        // (per-function priority over the flat, possibly-stale var_types map).
         if let Some(ty) = local_type {
             self.fn_ctx
                 .as_mut()
                 .map(|ctx| ctx.fn_local_types.insert(js_name.to_string(), ty));
         }
-
-        // JSON.parse special case
-        let is_json_parse = self.type_info.has_json_parse_types.contains(js_name);
 
         // std.json.parse (is_json_parse var decl) can fail at runtime — mark can_throw
         if is_json_parse && let Some(ctx) = self.fn_ctx.as_mut() {

@@ -703,23 +703,26 @@ impl Emitter {
             ));
         }
 
-        // Constructor body — rewritten assignments target the vars above.
-        self.emit_block_stmts_unlabeled(&ctor.body);
-
-        // R8-C2: Skip the appended `return .{...}` if the body's last
-        // top-level statement is already a `Return`. Otherwise Zig would
-        // reject the appended return as unreachable code.
-        //
-        // Limitation: this only detects an explicit top-level trailing return.
-        // A return nested inside an if/switch branch still lets the appended
-        // return stand; that path will hit the appended struct return with
-        // whatever the branch left in the field vars, which matches JS
-        // "early return from ctor returns the partial instance".
+        // R8-C2: Determine up front whether the constructor body ends in an
+        // explicit top-level `Return`. If so, the appended `return .{...}` is
+        // skipped (Zig would reject it as unreachable code), and the
+        // pre-declared field vars may go unused — suppress Zig's "unused
+        // local variable" error with a no-op borrow of each field, emitted
+        // BEFORE the body so it precedes the body's trailing return.
         let body_ends_in_return = ctor
             .body
             .stmts
             .last()
             .is_some_and(|last| matches!(last, IrStmt::Return { .. }));
+
+        if body_ends_in_return {
+            for f in fields {
+                self.writeln(&format!("_ = &{};", f.name));
+            }
+        }
+
+        // Constructor body — rewritten assignments target the vars above.
+        self.emit_block_stmts_unlabeled(&ctor.body);
 
         if !body_ends_in_return {
             // Return struct literal (from fields assigned in body — values are the local vars)

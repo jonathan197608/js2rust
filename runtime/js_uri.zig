@@ -94,6 +94,10 @@ fn decodePercent(alloc: Allocator, input: []const u8) ![]u8 {
             i += 1;
         }
     }
+    if (!std.unicode.utf8ValidateSlice(result)) {
+        alloc.free(result);
+        return error.InvalidUriEncoding;
+    }
     return result;
 }
 
