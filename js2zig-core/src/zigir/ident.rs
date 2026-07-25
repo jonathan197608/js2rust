@@ -3,7 +3,7 @@
 
 /// Zig reserved keywords that JS identifiers might collide with.
 /// Pre-pends `_` to avoid collisions.
-const ZIG_RESERVED_KEYWORDS: &[&str] = &[
+pub(crate) const ZIG_RESERVED_KEYWORDS: &[&str] = &[
     "addrspace",
     "align",
     "allowzero",

@@ -186,6 +186,35 @@ pub(crate) fn compile_error(msg: &str) -> String {
     format!("@compileError(\"{}\")", escape_zig_string(msg))
 }
 
+/// Check whether `s` is a Zig reserved keyword.
+/// Uses the canonical keyword list shared with `ident::zig_safe_name`.
+pub(crate) fn is_zig_keyword(s: &str) -> bool {
+    crate::zigir::ident::ZIG_RESERVED_KEYWORDS.contains(&s)
+}
+
+/// Check whether `s` is a valid bare Zig identifier:
+/// starts with `[A-Za-z_]` and contains only `[A-Za-z0-9_]`.
+/// Empty strings are NOT valid identifiers.
+pub(crate) fn is_valid_zig_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Decide whether an object field / destructure key needs Zig's `@"..."`
+/// escaped-identifier syntax instead of a bare identifier.
+///
+/// Returns true when ANY of these conditions hold:
+/// - the key was computed at runtime (`is_computed=true`)
+/// - the key is not a valid bare Zig identifier (`-`, space, digit-prefix, …)
+/// - the key collides with a Zig reserved keyword (`if`, `else`, `struct`, …)
+pub(crate) fn needs_quoted_ident(key: &str, is_computed: bool) -> bool {
+    is_computed || !is_valid_zig_ident(key) || is_zig_keyword(key)
+}
+
 // ═══════════════════════════════════════════════════════
 //  Tests
 // ═══════════════════════════════════════════════════════

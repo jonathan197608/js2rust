@@ -654,14 +654,26 @@ impl Lowerer {
                 | AssignmentOperator::LogicalOr
                 | AssignmentOperator::LogicalNullish
         ) {
-            let target_type = self
-                .infer_assign_target_type(&ae.left)
-                .unwrap_or(ZigType::JsAny);
+            // Use the RAW Option (before unwrap_or) for the no-op check below:
+            // R24-INF-2 changed infer_ident_type to return `None` for anytype
+            // params (was `Some(Anytype)`). unwrap_or(JsAny) would mask that as
+            // JsAny, breaking the `!= JsAny` no-op test for anytype targets.
+            // We compare against `Some(JsAny)` so indeterminate (None / anytype)
+            // targets correctly take the no-op branch. The unwrapped value is
+            // still used as the fallback left_type in the Logical expansion.
+            let raw_target_type = self.infer_assign_target_type(&ae.left);
+            // Clone before unwrap_or consumes the Option: raw_target_type is
+            // compared against `Some(JsAny)` in the no-op check below.
+            let target_type = raw_target_type.clone().unwrap_or(ZigType::JsAny);
 
             // ??= on non-JsAny types is a no-op: the value can't be null/undefined
-            // in our type system (i64, bool, string, etc.). Short-circuit: just
-            // return the target value without evaluating RHS (consistent with ??).
-            if ae.operator == AssignmentOperator::LogicalNullish && target_type != ZigType::JsAny {
+            // in our type system (i64, bool, string, etc.). Anytype params are
+            // also treated as non-nullish (no runtime nullish flag), so they go
+            // through the no-op branch too. Short-circuit: just return the
+            // target value without evaluating RHS (consistent with ??).
+            if ae.operator == AssignmentOperator::LogicalNullish
+                && raw_target_type != Some(ZigType::JsAny)
+            {
                 let target = self.lower_assign_target(&ae.left);
                 if let Some(read) = target.to_read_expr() {
                     return read;

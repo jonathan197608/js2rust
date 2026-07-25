@@ -275,6 +275,10 @@ pub struct IrClassMethod {
     pub return_type: ZigType,
     pub body: IrBlock,
     pub is_static: bool,
+    /// Whether the method can throw (error union return type).
+    /// R24-EMIT-1: Mirrors IrFnDecl.can_throw so class methods/constructors
+    /// with try-catch or throw generate `!T` return type.
+    pub can_throw: bool,
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1327,6 +1331,7 @@ mod tests {
                 return_type: ZigType::I64,
                 body: IrBlock::new(vec![]),
                 is_static: false,
+                can_throw: false,
             }],
             static_inits: vec![],
             static_blocks: vec![],

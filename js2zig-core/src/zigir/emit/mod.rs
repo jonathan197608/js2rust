@@ -398,6 +398,7 @@ mod tests {
                 return_type: ZigType::Void,
                 body: IrBlock::new(vec![]),
                 is_static: false,
+                can_throw: false,
             }],
             static_inits: vec![],
             static_blocks: vec![],

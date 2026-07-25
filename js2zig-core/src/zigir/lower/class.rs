@@ -508,6 +508,19 @@ impl Lowerer {
             .unwrap_or_else(|| IrBlock::new(vec![]));
 
         self.in_static_block = saved_static_block;
+
+        // R24-EMIT-1: Read catchable-error flags BEFORE exit_fn restores
+        // the outer context. Mirrors the pattern in decl.rs for IrFnDecl.
+        let has_catchable_error = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.has_catchable_error);
+        let fn_ever_catchable = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| ctx.fn_ever_catchable);
+        let can_throw = has_catchable_error || fn_ever_catchable;
+
         self.exit_fn(saved_fn);
 
         crate::zigir::types::IrClassMethod {
@@ -516,6 +529,7 @@ impl Lowerer {
             return_type,
             body,
             is_static,
+            can_throw,
         }
     }
 

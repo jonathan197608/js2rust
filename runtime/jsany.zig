@@ -620,12 +620,19 @@ pub const JsAny = union(enum) {
         };
     }
 
-    /// Set object property by key. Allocates a copy of key.
+    /// Set object property by key. Allocates a copy of key (only if new).
     /// This is the preferred method for codegen.
     pub fn set(self: *JsAny, key: []const u8, val: JsAny, alloc: Allocator) !void {
         switch (self.*) {
             .object => |o| {
+                // R24-RT-1: If key exists, update value in place to avoid
+                // leaking the duped key (put() keeps the old key on overwrite).
+                if (o.getPtr(key)) |existing| {
+                    existing.* = val;
+                    return;
+                }
                 const key_dupe = try alloc.dupe(u8, key);
+                errdefer alloc.free(key_dupe);
                 try o.put(key_dupe, val);
             },
             else => {},
@@ -657,11 +664,17 @@ pub const JsAny = union(enum) {
         };
     }
 
-    /// Set object property by key. Duplicates key internally.
+    /// Set object property by key. Duplicates key internally (only if new).
     /// This is the lower-level method; prefer `set()` for codegen.
     pub fn objectPut(self: *JsAny, key: []const u8, val: JsAny, alloc: Allocator) !void {
         switch (self.*) {
             .object => |o| {
+                // R24-RT-1: If key exists, update value in place to avoid
+                // leaking the duped key (put() keeps the old key on overwrite).
+                if (o.getPtr(key)) |existing| {
+                    existing.* = val;
+                    return;
+                }
                 const key_dupe = try alloc.dupe(u8, key);
                 errdefer alloc.free(key_dupe);
                 try o.put(key_dupe, val);

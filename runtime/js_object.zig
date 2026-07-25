@@ -23,6 +23,7 @@ pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     errdefer list.deinit(alloc);
     while (kiter.next()) |entry| {
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        errdefer alloc.free(key_copy);
         try list.append(alloc, key_copy);
     }
     return list.toOwnedSlice(alloc);
@@ -84,6 +85,12 @@ pub fn fromEntries(alloc: Allocator, from_entries: []const Entry) !JsValueHashMa
     var map = JsValueHashMap.init(alloc);
     errdefer map.deinit();
     for (from_entries) |entry| {
+        // R24-RT-4: If key exists, update value in place to avoid leaking
+        // the duped key (put() keeps the old key on overwrite).
+        if (map.getPtr(entry.key)) |existing| {
+            existing.* = entry.value;
+            continue;
+        }
         const key_copy = try alloc.dupe(u8, entry.key);
         errdefer alloc.free(key_copy);
         try map.put(key_copy, entry.value);
@@ -99,7 +106,14 @@ pub fn fromEntries(alloc: Allocator, from_entries: []const Entry) !JsValueHashMa
 pub fn assign(alloc: Allocator, target: *JsValueHashMap, source: *const JsValueHashMap) !void {
     var siter = source.iterator();
     while (siter.next()) |entry| {
+        // R24-RT-4: If key exists, update value in place to avoid leaking
+        // the duped key (put() keeps the old key on overwrite).
+        if (target.getPtr(entry.key_ptr.*)) |existing| {
+            existing.* = entry.value_ptr.*;
+            continue;
+        }
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        errdefer alloc.free(key_copy);
         try target.put(key_copy, entry.value_ptr.*);
     }
 }
@@ -190,7 +204,14 @@ pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
         // Copy all properties from prototype with deep-copied keys
         var iter = p.iterator();
         while (iter.next()) |entry| {
+            // R24-RT-4: If key exists, update value in place to avoid leaking
+            // the duped key (put() keeps the old key on overwrite).
+            if (obj.getPtr(entry.key_ptr.*)) |existing| {
+                existing.* = entry.value_ptr.*;
+                continue;
+            }
             const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+            errdefer alloc.free(key_copy);
             try obj.put(key_copy, entry.value_ptr.*);
         }
     }
@@ -201,7 +222,14 @@ pub fn create(alloc: Allocator, proto: ?*const JsValueHashMap) !JsValueHashMap {
 /// Simplified: just set the value (ignore descriptor). Returns obj per JS spec.
 /// R8-P1-27: Deep-copy key to avoid aliasing with caller's string.
 pub fn defineProperty(alloc: Allocator, obj: *JsValueHashMap, key: []const u8, value: JsValue) !*JsValueHashMap {
+    // R24-RT-4: If key exists, update value in place to avoid leaking
+    // the duped key (put() keeps the old key on overwrite).
+    if (obj.getPtr(key)) |existing| {
+        existing.* = value;
+        return obj;
+    }
     const key_copy = try alloc.dupe(u8, key);
+    errdefer alloc.free(key_copy);
     try obj.put(key_copy, value);
     return obj;
 }
@@ -219,7 +247,14 @@ pub fn getPrototypeOf(obj: *const JsValueHashMap) ?*const JsValueHashMap {
 pub fn defineProperties(alloc: Allocator, obj: *JsValueHashMap, props: *const JsValueHashMap) !*JsValueHashMap {
     var iter = props.iterator();
     while (iter.next()) |entry| {
+        // R24-RT-4: If key exists, update value in place to avoid leaking
+        // the duped key (put() keeps the old key on overwrite).
+        if (obj.getPtr(entry.key_ptr.*)) |existing| {
+            existing.* = entry.value_ptr.*;
+            continue;
+        }
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        errdefer alloc.free(key_copy);
         try obj.put(key_copy, entry.value_ptr.*);
     }
     return obj;
@@ -228,6 +263,11 @@ pub fn defineProperties(alloc: Allocator, obj: *JsValueHashMap, props: *const Js
 /// Object.getOwnPropertyDescriptor(obj, key) — get property descriptor.
 /// Returns a simplified descriptor HashMap { value, writable: true, enumerable: true, configurable: true }
 /// or null if the key doesn't exist.
+///
+/// Keys are string literals (static, never freed). `desc.deinit()` frees the
+/// HashMap's internal storage but treats keys as borrowed — so literal keys
+/// neither leak nor double-free. R24-RT-2 mistakenly duped these literals,
+/// causing 4 leaks per call (the duped keys were never freed); reverted here.
 pub fn getOwnPropertyDescriptor(
     alloc: Allocator,
     obj: *const JsValueHashMap,

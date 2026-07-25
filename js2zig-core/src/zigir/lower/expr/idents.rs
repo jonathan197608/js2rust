@@ -232,6 +232,17 @@ impl Lowerer {
                     }
                 }
             }
+            // BlockExpr (block expression): `result` is the block's value and
+            // carries ownership (e.g. `return { blk: { const x = ...; break
+            // :blk x; } };`). Body statements are side effects — only `result`
+            // transfers ownership. Matches the BigInt postfix expansion used by
+            // operators.rs and the optional-chain wrapping (optional.rs).
+            // Without this arm, returned BlockExpr temps drop their deinit,
+            // risking double-free when a variable is moved into `result`.
+            // (R24-LOW-1)
+            IrExpr::BlockExpr { result, .. } => {
+                Self::collect_returned_idents_in_expr(result, names);
+            }
             // Binary, Call, FieldAccess, etc. — the variable's value is
             // consumed to compute a new value; ownership of the variable
             // itself is NOT transferred, so needs_deinit should remain true.

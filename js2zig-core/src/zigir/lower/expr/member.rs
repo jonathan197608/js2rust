@@ -305,6 +305,16 @@ impl Lowerer {
 
     /// Look up the ZigType of an identifier by name.
     /// Checks special globals, then var_types (exact, qualified, suffix-based).
+    ///
+    /// R24-INF-2: When the resolution lands on `ZigType::Anytype` (i.e., the
+    /// identifier is an untyped function parameter), the result is converted
+    /// to `None` to mirror the analysis pass (infer/expr.rs:60), which treats
+    /// Anytype as Indeterminate. This prevents Anytype from leaking into
+    /// array literals' element types, function return-type inference, and
+    /// downstream annotations — all of which would produce invalid Zig
+    /// (anytype is not a valid ArrayList element type or a property type).
+    /// Returning None also lets decl.rs's `.or_else(var_types.get(name))`
+    /// fallback surface a more specific JSDoc-annotated type when available.
     pub(crate) fn infer_ident_type(&self, name: &str) -> Option<ZigType> {
         // Special globals
         match name {
@@ -319,6 +329,8 @@ impl Lowerer {
         // This prevents cross-function name collisions where a local variable
         // in one function shadows a global variable of the same name but
         // different type.
+        // (Anytype params are already excluded from fn_local_types at insertion
+        // time — see class.rs:475 and decl.rs:190 — so no extra filter needed.)
         if let Some(ty) = self
             .fn_ctx
             .as_ref()
@@ -326,25 +338,43 @@ impl Lowerer {
         {
             return Some(ty.clone());
         }
+        // Collect candidate from var_types — exact, qualified, suffix-based.
+        // Each step is allowed to override an earlier Anytype result so a
+        // more specific qualified entry (e.g., "MyClass::x") can still win.
+        // Use `matches!` against `as_ref()` (not `is_some_and`) so the check
+        // borrows `candidate` rather than consuming it — the variable is read
+        // again later in the suffix-lookup step and the final match.
+        let mut candidate: Option<ZigType> = None;
         // Exact match
         if let Some(ty) = self.type_info.var_types.get(name) {
-            return Some(ty.clone());
+            candidate = Some(ty.clone());
         }
         // Qualified match (fn_name::var_name)
-        if let Some(ctx) = self.fn_ctx.as_ref() {
+        if matches!(candidate.as_ref(), None | Some(ZigType::Anytype))
+            && let Some(ctx) = self.fn_ctx.as_ref()
+        {
             let qualified = format!("{}::{}", ctx.name, name);
             if let Some(ty) = self.type_info.var_types.get(&qualified) {
-                return Some(ty.clone());
+                candidate = Some(ty.clone());
             }
         }
         // Suffix match (any_key::var_name)
-        let suffix = format!("::{}", name);
-        for (k, v) in &self.type_info.var_types {
-            if k.ends_with(&suffix) {
-                return Some(v.clone());
+        if matches!(candidate.as_ref(), None | Some(ZigType::Anytype)) {
+            let suffix = format!("::{}", name);
+            for (k, v) in &self.type_info.var_types {
+                if k.ends_with(&suffix) {
+                    candidate = Some(v.clone());
+                    break;
+                }
             }
         }
-        None
+        // Filter: Anytype is indeterminate — return None to surface the
+        // var_types.get(name) fallback in decl.rs's `.or_else` chain.
+        match candidate {
+            Some(ZigType::Anytype) => None,
+            Some(other) => Some(other),
+            None => None,
+        }
     }
 
     /// Infer the ZigType of an expression based on type_info and expression structure.
@@ -380,8 +410,13 @@ impl Lowerer {
                 }
                 UnaryOperator::UnaryPlus => match self.infer_expr_type(&ue.argument) {
                     // ToNumber conversion: bool → i64, str → f64, numbers pass through.
+                    // R24-INF-1: JsAny also converts to F64 to match the analysis
+                    // pass (infer/expr.rs). Without this case, `+jsanyVar` would
+                    // fall through to `other => other` and return Some(JsAny),
+                    // blocking the var_types fallback in decl.rs (Bug A pattern)
+                    // and losing JSDoc-annotated F64/I64 types.
                     Some(ZigType::Bool) => Some(ZigType::I64),
-                    Some(ZigType::Str) => Some(ZigType::F64),
+                    Some(ZigType::Str) | Some(ZigType::JsAny) => Some(ZigType::F64),
                     other => other,
                 },
                 UnaryOperator::BitwiseNot => {
@@ -481,10 +516,21 @@ impl Lowerer {
                         match name.as_str() {
                             "Map" => match mem.property.name.as_str() {
                                 "get" => return Some(ZigType::JsAny),
+                                // `map.set(k, v)` returns the Map (receiver) for
+                                // chaining, matching infer_named_method_return
+                                // (infer/expr.rs:982). Without this, lowerer
+                                // returned None, blocking the var_types fallback
+                                // and emitting no type annotation for chained
+                                // `map.set().set()` calls. (R24-INF-11)
+                                "set" => return Some(ZigType::NamedStruct("Map".into())),
                                 "has" | "delete" => return Some(ZigType::Bool),
                                 _ => {}
                             },
                             "Set" => match mem.property.name.as_str() {
+                                // `set.add(v)` returns the Set (receiver) for
+                                // chaining, matching infer_named_method_return
+                                // (infer/expr.rs:998). (R24-INF-11)
+                                "add" => return Some(ZigType::NamedStruct("Set".into())),
                                 "has" | "delete" => return Some(ZigType::Bool),
                                 _ => {}
                             },
@@ -530,7 +576,10 @@ impl Lowerer {
                 }
                 None
             }
-            // Object literal → infer as Struct with field types
+            // Object literal → infer as Struct with field types.
+            // PropertyKind handling mirrors the analysis pass
+            // (infer/expr.rs:758-787) and the lowerer's lower_object_expr
+            // (container.rs:62-124). (R24-INF-13)
             Expression::ObjectExpression(oe) => {
                 let mut fields = Vec::new();
                 for prop in &oe.properties {
@@ -540,8 +589,38 @@ impl Lowerer {
                             PropertyKey::StringLiteral(s) => s.value.to_string(),
                             _ => continue,
                         };
-                        let field_ty = self.infer_expr_type(&op.value).unwrap_or(ZigType::JsAny);
-                        fields.push((field_name, field_ty));
+                        match op.kind {
+                            PropertyKind::Init => {
+                                let field_ty =
+                                    self.infer_expr_type(&op.value).unwrap_or(ZigType::JsAny);
+                                fields.push((field_name, field_ty));
+                            }
+                            PropertyKind::Get => {
+                                // Getter: try to infer the return type from the
+                                // single-return function body (mirrors
+                                // container.rs:71-91 which inlines getters whose
+                                // body is a single `return ...;`). Complex
+                                // getters fall back to JsAny; the IR layer
+                                // emits @compileError for those so the runtime
+                                // type is irrelevant.
+                                let field_ty = if let Expression::FunctionExpression(func) =
+                                    &op.value
+                                    && let Some(body) = &func.body
+                                    && body.statements.len() == 1
+                                    && let Statement::ReturnStatement(ret) = &body.statements[0]
+                                    && let Some(return_expr) = &ret.argument
+                                {
+                                    self.infer_expr_type(return_expr).unwrap_or(ZigType::JsAny)
+                                } else {
+                                    ZigType::JsAny
+                                };
+                                fields.push((field_name, field_ty));
+                            }
+                            PropertyKind::Set => {
+                                // Setter: doesn't contribute a field (mirrors
+                                // the analysis pass — infer/expr.rs:784-786).
+                            }
+                        }
                     }
                 }
                 Some(ZigType::Struct(fields))
@@ -559,11 +638,20 @@ impl Lowerer {
             // `ArrayList(JsAny)`, an inconsistency that risked downstream
             // type-annotation mismatches.
             //
-            // Spread elements (`...arr`) are skipped: their source element
-            // type would require cross-expression inference. emit_array_literal
-            // already forces JsAny whenever a spread is present, so falling
-            // through to `unwrap_or(JsAny)` here matches emit's behavior.
+            // Spread elements (`...arr`) are skipped here for the element-walking
+            // loop, but detected up-front and forced to JsAny to match
+            // emit_array_literal (emit/expr/container.rs:16 checks
+            // `arr.spread_indices.is_empty()`). Without the up-front check
+            // `[1, 2, ...x]` would infer `ArrayList(I64)`, mismatching emit's
+            // `ArrayList(JsAny)`. (R24-INF-9)
             Expression::ArrayExpression(ae) => {
+                if ae
+                    .elements
+                    .iter()
+                    .any(|e| matches!(e, ArrayExpressionElement::SpreadElement(_)))
+                {
+                    return Some(ZigType::ArrayList(Box::new(ZigType::JsAny)));
+                }
                 let mut elem_ty: Option<ZigType> = None;
                 for el in &ae.elements {
                     let Some(e) = el.as_expression() else {
@@ -589,6 +677,10 @@ impl Lowerer {
                 )))
             }
             // Computed member access: obj[key]
+            // Mirrors the analysis pass (infer/expr.rs:442-489). Without the
+            // JsAny / Map / Str / Struct / NamedStruct cases, those forms
+            // returned None, blocking the var_types fallback in decl.rs (Bug A
+            // pattern). (R24-INF-5)
             Expression::ComputedMemberExpression(cme) => {
                 // arguments[i] → JsAny (since __arguments is []const JsAny)
                 if let Expression::Identifier(id) = &cme.object
@@ -596,11 +688,42 @@ impl Lowerer {
                 {
                     return Some(ZigType::JsAny);
                 }
-                // General: ArrayList(T)[i] → T
-                if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&cme.object) {
-                    return Some(*elem);
+                match self.infer_expr_type(&cme.object) {
+                    // ArrayList(T)[i] → T
+                    Some(ZigType::ArrayList(elem)) => Some(*elem),
+                    // JsAny[idx] → JsAny (dynamic, runtime-decided)
+                    Some(ZigType::JsAny) => Some(ZigType::JsAny),
+                    // Str[idx] → Str (single-character substring, like charAt)
+                    Some(ZigType::Str) => Some(ZigType::Str),
+                    // Struct["key"] → field type (anonymous struct literal)
+                    Some(ZigType::Struct(fields)) => {
+                        if let Expression::StringLiteral(s) = &cme.expression {
+                            for (name, ty) in fields {
+                                if name == s.value.as_str() {
+                                    return Some(ty.clone());
+                                }
+                            }
+                        }
+                        None
+                    }
+                    // NamedStruct("Map")[key] → JsAny (computed access on Map
+                    // behaves like map.get(key)). Other NamedStruct["key"]
+                    // tries the host struct fields table.
+                    Some(ZigType::NamedStruct(name)) => {
+                        if name.as_str() == "Map" {
+                            return Some(ZigType::JsAny);
+                        }
+                        if let Expression::StringLiteral(s) = &cme.expression
+                            && let Some(host_fields) =
+                                self.type_info.class_field_types.get(name.as_str())
+                            && let Some(field_ty) = host_fields.get(s.value.as_str())
+                        {
+                            return Some(field_ty.clone());
+                        }
+                        None
+                    }
+                    _ => None,
                 }
-                None
             }
             Expression::LogicalExpression(le) => {
                 // || and &&: result type depends on both operands.

@@ -2,7 +2,7 @@
 // Destructuring declaration and assignment statement emission.
 
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string};
 use crate::zigir::ops::AssignOp;
 use crate::zigir::types::{IrAssignTarget, IrDestructureDecl};
 
@@ -51,17 +51,21 @@ impl Emitter {
                                 }
                             } else {
                                 // HashMap / unknown: use .get("key")
+                                // Escape the key for the embedded Zig string
+                                // literal — keys containing `"`, `\`, or
+                                // newlines would otherwise break compilation.
+                                let escaped_key = escape_zig_string(key);
                                 if let Some(default) = &binding.default {
                                     // Type-aware conversion: .asBool(), .asI64(), .value.string
                                     let conv = self.infer_hashmap_conv(default);
                                     self.write(&format!(
                                         "if ({}.get(\"{}\")) |v| v{} else ",
-                                        source, key, conv
+                                        source, escaped_key, conv
                                     ));
                                     self.emit_expr(default);
                                 } else {
                                     // No default: raw .get() returns ?JsAny
-                                    self.write(&format!("{}.get(\"{}\")", source, key));
+                                    self.write(&format!("{}.get(\"{}\")", source, escaped_key));
                                 }
                             }
                         }
@@ -86,11 +90,19 @@ impl Emitter {
                                     self.write(&format!("{}.items[{}]", source, index));
                                 }
                             } else {
-                                // Slice/array: direct [i] access
-                                self.write(&format!("{}[{}]", source, index));
+                                // Slice/array (`[]const T`): indexing returns
+                                // `T` (not `?T`), so `orelse` is invalid Zig.
+                                // Use an explicit bounds check when a default
+                                // is supplied; otherwise emit a raw `[i]`
+                                // access that panics out-of-range at runtime.
                                 if let Some(default) = &binding.default {
-                                    self.write(" orelse ");
+                                    self.write(&format!(
+                                        "if ({}.len > {}) {}[{}] else ",
+                                        source, index, source, index
+                                    ));
                                     self.emit_expr(default);
+                                } else {
+                                    self.write(&format!("{}[{}]", source, index));
                                 }
                             }
                         }

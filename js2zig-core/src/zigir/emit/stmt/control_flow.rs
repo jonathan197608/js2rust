@@ -38,7 +38,7 @@ impl Emitter {
     }
 
     /// Check if a block always exits (return/throw/break/continue).
-    fn block_always_exits(block: &IrBlock) -> bool {
+    pub(super) fn block_always_exits(block: &IrBlock) -> bool {
         block.stmts.last().is_some_and(|s| {
             matches!(
                 s,

@@ -666,6 +666,11 @@ impl Emitter {
         self.writeln(&sig);
         self.indent_push();
 
+        // R24-EMIT-2: Set in_function so fallible builtins in constructor use
+        // `catch return error.JsThrow` instead of `catch @panic(...)`.
+        let saved_in_function = self.in_function;
+        self.in_function = true;
+
         // R8-C7 + R8-E4/C6: Pre-declare each class field at the top of the
         // constructor body, so the Lowerer's rewritten `field = value` Assigns
         // have a target to write to (no matter how deeply nested).
@@ -703,19 +708,17 @@ impl Emitter {
             ));
         }
 
-        // R8-C2: Determine up front whether the constructor body ends in an
-        // explicit top-level `Return`. If so, the appended `return .{...}` is
-        // skipped (Zig would reject it as unreachable code), and the
-        // pre-declared field vars may go unused — suppress Zig's "unused
-        // local variable" error with a no-op borrow of each field, emitted
-        // BEFORE the body so it precedes the body's trailing return.
-        let body_ends_in_return = ctor
-            .body
-            .stmts
-            .last()
-            .is_some_and(|last| matches!(last, IrStmt::Return { .. }));
+        // R8-C2 / R24-EMIT-6: Determine up front whether the constructor
+        // body always exits (return/throw/break/continue). When it does,
+        // the appended `return .{...}` is skipped (Zig would reject it as
+        // unreachable code), and the pre-declared field vars may go unused —
+        // suppress Zig's "unused local variable" error with a no-op borrow
+        // of each field, emitted BEFORE the body so it precedes the body's
+        // trailing exit. Using block_always_exits covers both `return` and
+        // `throw` exits in the last top-level statement.
+        let body_always_exits = Self::block_always_exits(&ctor.body);
 
-        if body_ends_in_return {
+        if body_always_exits {
             for f in fields {
                 self.writeln(&format!("_ = &{};", f.name));
             }
@@ -724,7 +727,7 @@ impl Emitter {
         // Constructor body — rewritten assignments target the vars above.
         self.emit_block_stmts_unlabeled(&ctor.body);
 
-        if !body_ends_in_return {
+        if !body_always_exits {
             // Return struct literal (from fields assigned in body — values are the local vars)
             let pairs: Vec<(&str, String)> = fields
                 .iter()
@@ -733,6 +736,7 @@ impl Emitter {
             self.emit_struct_literal_return(&pairs);
         }
 
+        self.in_function = saved_in_function;
         self.indent_pop();
         self.writeln("}");
     }
@@ -780,11 +784,20 @@ impl Emitter {
                 format_param_with_rest(&param.name, &param.zig_type, param.is_rest)
             ));
         }
-        sig.push_str(&format!(") {} {{", method.return_type.to_zig_type()));
+        // R24-EMIT-1: Use format_return_type() so can_throw produces `!T`.
+        sig.push_str(&format!(
+            ") {} {{",
+            format_return_type(&method.return_type, false, method.can_throw)
+        ));
         self.writeln(&sig);
 
         self.indent_push();
+        // R24-EMIT-2: Set in_function so fallible builtins use
+        // `catch return error.JsThrow` instead of `catch @panic(...)`.
+        let saved_in_function = self.in_function;
+        self.in_function = true;
         self.emit_block_stmts_unlabeled(&method.body);
+        self.in_function = saved_in_function;
         self.indent_pop();
 
         self.writeln("}");

@@ -128,7 +128,9 @@ return a + b;
 
 #[test]
 fn test_p2_destructure_array_with_defaults() {
-    // const [a = 1, b = 2] = arr → const a = arr[0] orelse 1; const b = arr[1] orelse 2;
+    // const [a = 1, b = 2] = arr → bounds-checked slice access with default.
+    // Slice indexing returns `T` (not `?T`), so `orelse` is invalid Zig;
+    // EMIT-7 changed this to an explicit `if (src.len > i) src[i] else default`.
     let js = r#"
 function arrayDefaults(arr) {
 const [a = 1, b = 2] = arr;
@@ -137,13 +139,20 @@ return a + b;
 "#;
     let zig = transpile_and_check(js, "test_p2_destructure_array_with_defaults");
     assert!(
-        zig.contains("[0] orelse 1"),
-        "Expected '[0] orelse 1' in:\n{}",
+        zig.contains(".len > 0)") && zig.contains("[0] else 1"),
+        "Expected bounds-checked default 'if (src.len > 0) src[0] else 1' in:\n{}",
         zig
     );
     assert!(
-        zig.contains("[1] orelse 2"),
-        "Expected '[1] orelse 2' in:\n{}",
+        zig.contains(".len > 1)") && zig.contains("[1] else 2"),
+        "Expected bounds-checked default 'if (src.len > 1) src[1] else 2' in:\n{}",
+        zig
+    );
+    // Sanity: the pre-EMIT-7 `orelse` form is no longer emitted for slices
+    // (it's invalid Zig since `[i]` returns `T`, not `?T`).
+    assert!(
+        !zig.contains("orelse 1"),
+        "Should NOT use 'orelse' for slice-array default (invalid Zig): {}",
         zig
     );
 }

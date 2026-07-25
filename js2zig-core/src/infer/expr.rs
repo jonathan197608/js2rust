@@ -141,6 +141,16 @@ impl TypeInferrer {
                             InferResult::Definite(ZigType::JsAny)
                         }
                     }
+                    // Both operands Indeterminate → Indeterminate so the
+                    // var_types fallback in decl.rs can pick up JSDoc @type
+                    // annotations (Bug A pattern). Matches lowerer's
+                    // (None, None) => None mapping (member.rs:649). Mixed
+                    // Definite/Indeterminate returns Definite(JsAny), matching
+                    // the lowerer's (Some(_), None) | (None, Some(_)) => JsAny.
+                    // (R24-INF-4)
+                    (InferResult::Indeterminate, InferResult::Indeterminate) => {
+                        InferResult::Indeterminate
+                    }
                     _ => InferResult::Definite(ZigType::JsAny),
                 }
             }
@@ -428,12 +438,16 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
-                    // JsAny property access: dynamic, returns JsAny
-                    InferResult::Definite(ZigType::JsAny) => {
-                        // Property access on JsAny returns JsAny
-                        // (the actual type is only known at runtime)
-                        InferResult::Definite(ZigType::JsAny)
-                    }
+                    // JsAny property access is dynamic: the actual type is
+                    // only known at runtime. Return Indeterminate (rather
+                    // than Definite(JsAny)) so the var_types fallback in
+                    // decl.rs (infer_expr_type().or_else(var_types)) can pick
+                    // up JSDoc @type annotations. Returning Definite(JsAny)
+                    // would block the JSDoc fallback (Bug A pattern). The
+                    // lowerer's StaticMemberExpression arm already returns
+                    // None for non-NamedStruct objects, so this brings the
+                    // analysis pass in line with the lowerer. (R24-INF-7)
+                    InferResult::Definite(ZigType::JsAny) => InferResult::Indeterminate,
                     _ => InferResult::Indeterminate,
                 }
             }
@@ -709,6 +723,19 @@ impl TypeInferrer {
             // Empty array: default to ArrayList(JsAny) — JS allows any type in [].
             return InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)));
         }
+        // Spread elements force ArrayList(JsAny) at the emit layer
+        // (emit/expr/container.rs:16 checks `arr.spread_indices.is_empty()`).
+        // Without this check, `[1, 2, ...x]` would infer `ArrayList(I64)`
+        // since spreads are silently skipped by `as_expression()` below,
+        // mismatching emit's `ArrayList(JsAny)` and risking downstream
+        // type-annotation mismatches. (R24-INF-9)
+        if ae
+            .elements
+            .iter()
+            .any(|e| matches!(e, ArrayExpressionElement::SpreadElement(_)))
+        {
+            return InferResult::Indeterminate;
+        }
         let first = match ae.elements.first() {
             Some(e) => e,
             None => return InferResult::Indeterminate,
@@ -942,8 +969,10 @@ impl TypeInferrer {
             // ArrayList(JsAny)), so preserving elem_ty here would cause type
             // annotation mismatches (e.g. var_types says ArrayList(I64) but the
             // generated code produces ArrayList(JsAny)).
-            "slice" | "filter" | "concat" | "flat" | "toReversed" | "toSorted" | "toSpliced"
-            | "map" | "with" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny))),
+            "slice" | "filter" | "concat" | "flat" | "flatMap" | "toReversed" | "toSorted"
+            | "toSpliced" | "map" | "with" => {
+                InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
+            }
             // Methods that return a boolean
             "some" | "every" | "includes" => InferResult::Definite(ZigType::Bool),
             // Methods returning index or length

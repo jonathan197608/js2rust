@@ -2,7 +2,7 @@
 // Array and object literal emission.
 
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, needs_quoted_ident};
 
 impl Emitter {
     pub(super) fn emit_array_literal(&mut self, arr: &crate::zigir::types::IrArrayLiteral) {
@@ -132,11 +132,13 @@ impl Emitter {
                 self.write(", ");
             }
             first = false;
-            // Computed keys and keys starting with a digit need Zig's escaped
-            // identifier syntax: .@"key" = value (dot prefix is required in
-            // struct initialization). Normal identifiers use .key = value.
-            if field.is_computed || field.key.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                self.write(&format!(".@\"{}\" = ", field.key));
+            // Use Zig's escaped-identifier syntax `@"..."` for keys that are
+            // computed at runtime, are not valid bare Zig identifiers (digits,
+            // dashes, spaces, …), or collide with Zig reserved keywords.
+            // Escape the contents so embedded `"`, `\`, newlines, etc. produce
+            // a valid Zig string literal inside `@"..."`.
+            if needs_quoted_ident(&field.key, field.is_computed) {
+                self.write(&format!(".@\"{}\" = ", escape_zig_string(&field.key)));
             } else {
                 self.write(&format!(".{} = ", field.key));
             }
