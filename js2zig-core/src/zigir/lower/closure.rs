@@ -110,6 +110,16 @@ impl Lowerer {
             *is_mut = mutated.contains(name);
         }
 
+        // LOW-12: Re-resolve captured types via get_var_type, which checks
+        // fn_local_types (per-function scope) before falling back to var_types.
+        // check_and_add_capture only has access to var_types, missing per-function
+        // type information.
+        for (name, ztype, _) in &mut captured {
+            if let Some(ty) = self.get_var_type(name) {
+                *ztype = ty;
+            }
+        }
+
         captured
     }
 

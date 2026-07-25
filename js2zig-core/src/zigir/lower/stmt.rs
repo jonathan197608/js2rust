@@ -440,6 +440,18 @@ impl Lowerer {
             .iter()
             .map(|k| (k.clone(), self.type_info.var_types.get(k).cloned()))
             .collect();
+        // LOW-10: Also save fn_local_types entries so we can restore them after the loop.
+        let saved_local_types: Vec<(String, Option<ZigType>)> = loop_var_keys
+            .iter()
+            .map(|k| {
+                (
+                    k.clone(),
+                    self.fn_ctx
+                        .as_ref()
+                        .and_then(|ctx| ctx.fn_local_types.get(k).cloned()),
+                )
+            })
+            .collect();
 
         // For Map/Set iteration, destructure variables and the primary variable
         // are JsAny (from __kv.key_ptr.* / __kv.value_ptr.*). Set var_types so
@@ -449,11 +461,19 @@ impl Lowerer {
                 self.type_info
                     .var_types
                     .insert(var.js_name.clone(), ZigType::JsAny);
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.fn_local_types
+                        .insert(var.js_name.clone(), ZigType::JsAny);
+                }
             } else {
                 for dv in &destructure_vars {
                     self.type_info
                         .var_types
                         .insert(dv.js_name.clone(), ZigType::JsAny);
+                    if let Some(ctx) = self.fn_ctx.as_mut() {
+                        ctx.fn_local_types
+                            .insert(dv.js_name.clone(), ZigType::JsAny);
+                    }
                 }
             }
         }
@@ -464,6 +484,9 @@ impl Lowerer {
             self.type_info
                 .var_types
                 .insert(var.js_name.clone(), ZigType::I64);
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.fn_local_types.insert(var.js_name.clone(), ZigType::I64);
+            }
         }
 
         let iterable = self.lower_expr(&fos.right);
@@ -475,6 +498,16 @@ impl Lowerer {
                 self.type_info.var_types.insert(key.clone(), t.clone());
             } else {
                 self.type_info.var_types.remove(key);
+            }
+        }
+        // LOW-10: Restore fn_local_types to pre-loop state
+        for (key, old_type) in &saved_local_types {
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                if let Some(t) = old_type {
+                    ctx.fn_local_types.insert(key.clone(), t.clone());
+                } else {
+                    ctx.fn_local_types.remove(key);
+                }
             }
         }
 
@@ -549,16 +582,28 @@ impl Lowerer {
         // type leaks to code after the loop, causing type inference corruption.
         let loop_var_key = var.js_name.clone();
         let saved_type = self.type_info.var_types.get(&loop_var_key).cloned();
+        // LOW-10: Also save fn_local_types entry for loop var
+        let saved_local_type = self
+            .fn_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.fn_local_types.get(&loop_var_key).cloned());
         match &kind {
             IrForInKind::MapIter => {
                 self.type_info
                     .var_types
                     .insert(var.js_name.clone(), ZigType::JsAny);
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.fn_local_types
+                        .insert(var.js_name.clone(), ZigType::JsAny);
+                }
             }
             IrForInKind::HashMapIter => {
                 self.type_info
                     .var_types
                     .insert(var.js_name.clone(), ZigType::Str);
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    ctx.fn_local_types.insert(var.js_name.clone(), ZigType::Str);
+                }
             }
             _ => {}
         }
@@ -578,9 +623,17 @@ impl Lowerer {
 
         // Restore var_types to pre-loop state (loop variable not visible outside)
         if let Some(t) = saved_type {
-            self.type_info.var_types.insert(loop_var_key, t);
+            self.type_info.var_types.insert(loop_var_key.clone(), t);
         } else {
             self.type_info.var_types.remove(&loop_var_key);
+        }
+        // LOW-10: Restore fn_local_types to pre-loop state
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            if let Some(t) = saved_local_type {
+                ctx.fn_local_types.insert(loop_var_key, t);
+            } else {
+                ctx.fn_local_types.remove(&loop_var_key);
+            }
         }
 
         crate::zigir::types::IrStmt::ForIn {

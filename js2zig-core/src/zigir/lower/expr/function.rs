@@ -466,6 +466,18 @@ impl Lowerer {
         let (saved_fn, saved_captured) =
             self.enter_closure_context(&arrow_fn_label, return_type.clone(), &captured);
 
+        // LOW-9: Register arrow params in fn_scope_vars and fn_local_types,
+        // matching the pattern in decl.rs enter_fn_body for top-level functions.
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            for param in &params {
+                ctx.add_scope_var(&param.name.js_name);
+                if !matches!(param.zig_type, ZigType::Anytype) {
+                    ctx.fn_local_types
+                        .insert(param.name.js_name.clone(), param.zig_type.clone());
+                }
+            }
+        }
+
         // Lower body
         let mut body = if is_concise {
             if let Statement::ExpressionStatement(es) = &af.body.statements[0] {
@@ -561,6 +573,18 @@ impl Lowerer {
         // Enter fn context with captured vars set up
         let (saved_fn, saved_captured) =
             self.enter_closure_context(&name, return_type.clone(), &captured);
+
+        // LOW-9: Register fn-expr params in fn_scope_vars and fn_local_types,
+        // matching the pattern in decl.rs enter_fn_body for top-level functions.
+        if let Some(ctx) = self.fn_ctx.as_mut() {
+            for param in &params {
+                ctx.add_scope_var(&param.name.js_name);
+                if !matches!(param.zig_type, ZigType::Anytype) {
+                    ctx.fn_local_types
+                        .insert(param.name.js_name.clone(), param.zig_type.clone());
+                }
+            }
+        }
 
         // Lower body
         let mut body = fe
