@@ -2666,17 +2666,17 @@ export function funcB() {
 }
 "#;
     let zig = transpile_and_check(js, "test_r20_inf1_fn_local_type_priority");
-    // funcA's data is Str → data.length should use .len (not .items.len)
+    // funcA's data is Str → data.length should use js_string.utf16Len (StringLen)
     // funcB's data is ArrayList(I64) → data[0] should use .items[ (not charAt)
     // Before the fix, whichever function was processed first by the lowerer
     // would get the wrong type from var_types (overwritten by the other).
     assert!(
-        zig.contains(".len") || zig.contains("length"),
-        "Expected string .len for funcA's data.length:\n{}",
+        zig.contains("utf16Len"),
+        "Expected utf16Len for funcA's data.length (Str type):\n{}",
         zig
     );
     assert!(
-        zig.contains(".items[") || zig.contains(".items ("),
+        zig.contains(".items["),
         "Expected ArrayList indexing for funcB's data[0]:\n{}",
         zig
     );
@@ -2825,6 +2825,136 @@ export function testLow7() {
     assert!(
         zig.contains("_oc"),
         "Expected optional chain capture variable (_oc) in generated code:\n{}",
+        zig
+    );
+}
+
+// ═══════════════════════════════════════════════════════
+// Round 21 regression tests
+// ═══════════════════════════════════════════════════════
+
+// R21-2: UpdateExpression (++x) on an f64 variable should infer as F64,
+// not I64.  Before the fix, ++x always returned I64 regardless of the
+// variable's actual type, causing type mismatches when the result was
+// used in a float context.
+#[test]
+fn test_r21_update_f64_type() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testUpdateF64() {
+    let x = 1.5;
+    return ++x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r21_update_f64_type");
+    // ++x on an f64 variable should produce f64 semantics (not i64).
+    assert!(
+        zig.contains("f64"),
+        "Expected f64 type for ++x on float variable:\n{}",
+        zig
+    );
+}
+
+// R21-3: Exponential assignment (x **= y) should infer as F64 because
+// exponentiation always produces a float result.  Before the fix, the
+// assignment type was inferred from the RHS (e.g. I64 for a numeric
+// literal), causing type mismatches when the result was used.
+#[test]
+fn test_r21_pow_assign_type() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function testPowAssign() {
+    let x = 2.0;
+    x **= 3;
+    return x;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r21_pow_assign_type");
+    // **= should use std.math.pow with f64 semantics.
+    assert!(
+        zig.contains("pow"),
+        "Expected pow for **= operator:\n{}",
+        zig
+    );
+}
+
+// R21-1 + R21-TA: Date and TypedArray constructor type inference via
+// infer_expr_type must return the correct NamedStruct names ("Date",
+// "Int32Array") so that get_var_type (which checks fn_local_types
+// first) finds the right type for property access dispatch.
+#[test]
+fn test_r21_date_typedarray_cross_fn() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function funcA() {
+    const d = new Date(0);
+    return d.getTime();
+}
+/**
+ * @returns {number}
+ */
+export function funcB() {
+    const arr = new Int32Array([1, 2, 3]);
+    return arr.byteLength;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r21_date_typedarray_cross_fn");
+    // funcA: Date.getTime() — should dispatch via NamedStruct("Date")
+    assert!(
+        zig.contains("getTime"),
+        "Expected Date.getTime() dispatch:\n{}",
+        zig
+    );
+    // funcB: Int32Array.byteLength — should dispatch via NamedStruct("Int32Array")
+    // producing the typed suffix "I32".
+    assert!(
+        zig.contains("byteLengthI32"),
+        "Expected byteLengthI32 for Int32Array.byteLength:\n{}",
+        zig
+    );
+}
+
+// LOW-1 + LOW-2: clear_deinit_for_returned_vars must recurse into nested
+// blocks (if/try/for/switch) to both collect returned variables AND clear
+// their deinit flags.  This integration test verifies the end-to-end
+// behavior: a Map returned from inside a try block should not have a
+// double-free via defer deinit.  (Unit tests for the recursion are in
+// idents.rs::tests::test_clear_deinit_nested_if.)
+#[test]
+fn test_r21_low1_low2_nested_return_deinit() {
+    let js = r#"
+function makeMap() {
+    const m = new Map();
+    m.set("k", 42);
+    return m;
+}
+/**
+ * @returns {any}
+ */
+export function testLow1Low2() {
+    const m = makeMap();
+    try {
+        const inner = m;
+        return inner;
+    } catch (e) {
+        return new Map();
+    }
+}
+"#;
+    let zig = transpile_and_check(js, "test_r21_low1_low2_nested_return_deinit");
+    // The variable 'inner' is returned inside the try block.
+    // Verify the code compiles (ast-check) — the specific deinit clearing
+    // is verified in unit tests.  Here we check that the try/catch
+    // structure is present and the function compiles.
+    assert!(
+        zig.contains("testLow1Low2"),
+        "Expected function testLow1Low2 in generated code:\n{}",
         zig
     );
 }

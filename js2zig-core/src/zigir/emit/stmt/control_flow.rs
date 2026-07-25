@@ -292,6 +292,8 @@ impl Emitter {
                 self.indent_push();
                 self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
                 self.emit_block_stmts_unlabeled(body);
+                // Suppress unused-variable error when key is not referenced in body
+                self.writeln(&format!("_ = &{};", var.zig_name));
                 self.indent_pop();
                 self.writeln("}");
             }
@@ -338,6 +340,8 @@ impl Emitter {
                     self.indent_push();
                     self.writeln(&format!("const {} = \"{}\";", var.zig_name, field_name));
                     self.emit_block_stmts_unlabeled(body);
+                    // Suppress unused-variable error when key is not referenced in body
+                    self.writeln(&format!("_ = &{};", var.zig_name));
                     self.indent_pop();
                     self.writeln("}");
                 }
@@ -389,6 +393,8 @@ impl Emitter {
                 self.write("| {\n");
                 self.indent_push();
                 self.emit_block_stmts_unlabeled(body);
+                // Suppress unused-variable error when loop variable is not referenced in body
+                self.writeln(&format!("_ = &{};", var.zig_name));
                 self.indent_pop();
                 self.writeln("}");
             }

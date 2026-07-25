@@ -645,9 +645,9 @@ impl Lowerer {
     pub(super) fn detect_for_of_kind(&self, right: &Expression) -> (IrForOfKind, bool) {
         match right {
             Expression::Identifier(id) => {
-                if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
+                if let Some(zig_type) = self.get_var_type(id.name.as_str()) {
                     // Map → iterator pattern
-                    if let ZigType::NamedStruct(name) = zig_type {
+                    if let ZigType::NamedStruct(ref name) = zig_type {
                         if name == "Map" {
                             return (IrForOfKind::MapSetIter { is_map: true }, false);
                         }
@@ -679,9 +679,9 @@ impl Lowerer {
     pub(super) fn detect_for_in_kind(&self, right: &Expression) -> IrForInKind {
         match right {
             Expression::Identifier(id) => {
-                if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
+                if let Some(zig_type) = self.get_var_type(id.name.as_str()) {
                     // Map (NamedStruct("Map")) → iterator via .inner.iterator()
-                    if let ZigType::NamedStruct(name) = zig_type
+                    if let ZigType::NamedStruct(ref name) = zig_type
                         && name == "Map"
                     {
                         return IrForInKind::MapIter;
@@ -691,7 +691,7 @@ impl Lowerer {
                         return IrForInKind::HashMapIter;
                     }
                     // Static struct with known fields → unroll
-                    if let ZigType::Struct(fields) = zig_type
+                    if let ZigType::Struct(ref fields) = zig_type
                         && !fields.is_empty()
                     {
                         return IrForInKind::StructUnroll {
@@ -699,7 +699,7 @@ impl Lowerer {
                         };
                     }
                     // Named struct (e.g., JSDoc @typedef) → resolve to StructUnroll
-                    if let ZigType::NamedStruct(name) = zig_type
+                    if let ZigType::NamedStruct(ref name) = zig_type
                         && let Some(typedef) = self.jsdoc_data.typedefs.get(name)
                         && !typedef.fields.is_empty()
                     {

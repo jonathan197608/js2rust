@@ -185,7 +185,7 @@ impl Lowerer {
             // detect_builtin_call only checks if the callee object is a StringLiteral,
             // not if it's a variable of type string. Fix up the module/method here.
             let (module, method, return_type) = if let Some(name) = &obj_name {
-                if let Some(var_type) = self.type_info.var_types.get(name.as_str()) {
+                if let Some(var_type) = self.get_var_type(name.as_str()) {
                     if matches!(var_type, ZigType::Str) && module == BuiltinModule::JsArray {
                         match method.as_str() {
                             "at" => (BuiltinModule::JsString, "at".into(), ZigType::Str),
@@ -228,7 +228,7 @@ impl Lowerer {
                         // `.toString()`, so this builtin-path rewrite is the
                         // actual fix path for BigInt variables.
                         (BuiltinModule::JsBigInt, method, ZigType::Str)
-                    } else if let ZigType::NamedStruct(n) = var_type {
+                    } else if let ZigType::NamedStruct(ref n) = var_type {
                         if Self::is_typedarray_type(n) {
                             let ta_mod = BuiltinModule::JsTypedArray;
                             match method.as_str() {
@@ -417,11 +417,7 @@ impl Lowerer {
             && let Expression::Identifier(id) = &sme.object
         {
             let var_name = id.name.as_str();
-            let var_type = self.type_info.var_types.get(var_name).cloned().or_else(|| {
-                self.fn_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.fn_local_types.get(var_name).cloned())
-            });
+            let var_type = self.get_var_type(var_name);
             if let Some(ZigType::BigInt) = var_type {
                 let method = sme.property.name.as_str();
                 match method {
@@ -643,7 +639,7 @@ impl Lowerer {
 
         match obj {
             Expression::Identifier(id) => {
-                if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
+                if let Some(zig_type) = self.get_var_type(id.name.as_str()) {
                     match zig_type {
                         ZigType::ArrayList(_) => MethodObjectKind::ArrayList,
                         ZigType::Str => MethodObjectKind::String,
@@ -872,7 +868,7 @@ impl Lowerer {
             NewConstructor::Map => ZigType::NamedStruct("Map".to_string()),
             NewConstructor::Set => ZigType::NamedStruct("Set".to_string()),
             NewConstructor::Date(_) => ZigType::NamedStruct("Date".to_string()),
-            NewConstructor::RegExp => ZigType::NamedStruct("JsRegExp".to_string()),
+            NewConstructor::RegExp => ZigType::NamedStruct("RegExp".to_string()),
             NewConstructor::TypedArray(_) => ZigType::NamedStruct("TypedArray".to_string()),
             NewConstructor::Class(name) => ZigType::NamedStruct(name.clone()),
             NewConstructor::Error(_) => ZigType::JsAny,

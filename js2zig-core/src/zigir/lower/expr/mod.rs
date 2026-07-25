@@ -46,7 +46,7 @@ impl Lowerer {
                 IrExpr::New(crate::zigir::types::IrNewExpr {
                     constructor: crate::zigir::kinds::NewConstructor::RegExp,
                     args: vec![IrExpr::StringLiteral(escaped), IrExpr::StringLiteral(flags)],
-                    result_type: crate::types::ZigType::NamedStruct("JsRegExp".to_string()),
+                    result_type: crate::types::ZigType::NamedStruct("RegExp".to_string()),
                 })
             }
             Expression::BigIntLiteral(bi) => {

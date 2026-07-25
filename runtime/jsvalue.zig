@@ -190,7 +190,7 @@ pub const JsValue = union(enum) {
     pub fn asBool(self: JsValue) bool {
         return switch (self) {
             .int => |v| v != 0,
-            .float => |v| v != 0.0,
+            .float => |v| v != 0.0 and !std.math.isNan(v),
             .bool => |v| v,
             .string => |v| v.len != 0,
             .null => false,

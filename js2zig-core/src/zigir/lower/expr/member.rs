@@ -80,8 +80,8 @@ impl Lowerer {
                     .make_field_access(mem, FieldKind::SymbolWellKnown(field_name.to_string()));
             }
             // ── TypedArray properties ──
-            if let Some(zig_type) = self.type_info.var_types.get(id.name.as_str()) {
-                if let ZigType::NamedStruct(name) = zig_type {
+            if let Some(zig_type) = self.get_var_type(id.name.as_str()) {
+                if let ZigType::NamedStruct(ref name) = zig_type {
                     // ── TypedArray properties (buffer, byteLength, byteOffset) ──
                     if Self::is_typedarray_type(name)
                         && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
@@ -117,7 +117,7 @@ impl Lowerer {
             }
             // Check type info for the object to determine the right FieldKind
             if let Expression::Identifier(id) = &mem.object
-                && let Some(zig_type) = self.type_info.var_types.get(id.name.as_str())
+                && let Some(zig_type) = self.get_var_type(id.name.as_str())
             {
                 if matches!(zig_type, ZigType::Str) {
                     return self.make_field_access(mem, FieldKind::StringLen);
@@ -605,10 +605,34 @@ impl Lowerer {
                 }
             }
             Expression::AssignmentExpression(ae) => {
-                // Assignment returns the assigned value.
-                self.infer_expr_type(&ae.right)
+                // Assignment result type depends on the operator.
+                match ae.operator {
+                    AssignmentOperator::Exponential => Some(ZigType::F64),
+                    AssignmentOperator::LogicalAnd
+                    | AssignmentOperator::LogicalOr
+                    | AssignmentOperator::LogicalNullish => {
+                        // For logical assignments (x &&= y, x ||= y, x ??= y),
+                        // result is either the original LHS (short-circuit)
+                        // or the RHS. Return LHS type as primary.
+                        self.infer_assign_target_type(&ae.left)
+                            .or_else(|| self.infer_expr_type(&ae.right))
+                    }
+                    _ => self.infer_expr_type(&ae.right),
+                }
             }
-            Expression::UpdateExpression(_) => Some(ZigType::I64),
+            Expression::UpdateExpression(ue) => {
+                // ++x / x-- returns the variable's type if it's I64,
+                // otherwise defaults to F64 (matching analysis pass).
+                match &ue.argument {
+                    SimpleAssignmentTarget::AssignmentTargetIdentifier(id) => {
+                        match self.get_var_type(id.name.as_str()) {
+                            Some(ZigType::I64) => Some(ZigType::I64),
+                            _ => Some(ZigType::F64),
+                        }
+                    }
+                    _ => Some(ZigType::F64),
+                }
+            }
             Expression::SequenceExpression(se) => {
                 // Type is that of the last expression.
                 se.expressions.last().and_then(|e| self.infer_expr_type(e))
@@ -619,12 +643,19 @@ impl Lowerer {
                     Expression::Identifier(id) => match id.name.as_str() {
                         "Map" => Some(ZigType::NamedStruct("Map".to_string())),
                         "Set" => Some(ZigType::NamedStruct("Set".to_string())),
-                        "Date" => Some(ZigType::NamedStruct("JsDate".to_string())),
-                        "RegExp" => Some(ZigType::NamedStruct("JsRegExp".to_string())),
+                        "Date" => Some(ZigType::NamedStruct("Date".to_string())),
+                        "RegExp" => Some(ZigType::NamedStruct("RegExp".to_string())),
                         "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError" => {
                             Some(ZigType::JsError)
                         }
                         "BigInt" => Some(ZigType::BigInt),
+                        // TypedArray constructors → NamedStruct with constructor
+                        // name.  Matches the analysis pass (infer/expr.rs) and
+                        // is_typedarray_type, so that decl.rs can register the
+                        // correct per-function type in fn_local_types.
+                        n if Self::is_typedarray_type(n) => {
+                            Some(ZigType::NamedStruct(n.to_string()))
+                        }
                         // Wrapper constructors return primitives
                         "String" => {
                             if let Some(first_arg) = ne.arguments.first()

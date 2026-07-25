@@ -21,17 +21,85 @@ impl Lowerer {
 
     /// Clear `needs_deinit` on VarDecls whose names appear in the returned-vars set.
     /// Called after `collect_returned_var_zig_names_in_block` to implement ownership transfer.
+    /// Recurses into nested blocks (if/for/while/try/switch) so that VarDecls
+    /// declared inside inner blocks are also cleared when returned.
     pub(crate) fn clear_deinit_for_returned_vars(body: &mut crate::zigir::types::IrBlock) {
         let returned_vars = Self::collect_returned_var_zig_names_in_block(body);
         if !returned_vars.is_empty() {
             for stmt in &mut body.stmts {
-                if let crate::zigir::types::IrStmt::VarDecl(vd) = stmt
-                    && vd.needs_deinit
-                    && returned_vars.contains(&vd.name.zig_name)
-                {
-                    vd.needs_deinit = false;
+                Self::clear_returned_deinit_in_stmt(stmt, &returned_vars);
+            }
+        }
+    }
+
+    /// Recursive helper: clear needs_deinit on returned VarDecls,
+    /// recursing into nested blocks to match the collection logic in
+    /// `collect_returned_var_zig_names_in_stmt`.
+    fn clear_returned_deinit_in_stmt(
+        stmt: &mut crate::zigir::types::IrStmt,
+        returned_vars: &HashSet<String>,
+    ) {
+        use crate::zigir::types::IrStmt;
+        match stmt {
+            IrStmt::VarDecl(vd) if vd.needs_deinit && returned_vars.contains(&vd.name.zig_name) => {
+                vd.needs_deinit = false;
+            }
+            IrStmt::If { then, else_, .. } => {
+                for s in &mut then.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+                if let Some(e) = else_ {
+                    for s in &mut e.stmts {
+                        Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                    }
                 }
             }
+            IrStmt::Block(b) => {
+                for s in &mut b.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+            }
+            IrStmt::Try {
+                try_block,
+                catch_block,
+                finally,
+                ..
+            } => {
+                for s in &mut try_block.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+                for s in &mut catch_block.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+                if let Some(f) = finally {
+                    for s in &mut f.stmts {
+                        Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                    }
+                }
+            }
+            IrStmt::While { body, .. } | IrStmt::DoWhile { body, .. } => {
+                for s in &mut body.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+            }
+            IrStmt::For { body, .. } => {
+                for s in &mut body.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+            }
+            IrStmt::ForIn { body, .. } | IrStmt::ForOf { body, .. } => {
+                for s in &mut body.stmts {
+                    Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                }
+            }
+            IrStmt::Switch { cases, .. } => {
+                for c in cases {
+                    for s in &mut c.body {
+                        Self::clear_returned_deinit_in_stmt(s, returned_vars);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -147,6 +215,12 @@ impl Lowerer {
                 for e in exprs {
                     Self::collect_returned_idents_in_expr(e, names);
                 }
+            }
+            IrExpr::Logical { left, right, .. } => {
+                // ||, &&, ?? — both operands may be the returned value
+                // (short-circuit returns LHS for falsy/false/nullish, else RHS).
+                Self::collect_returned_idents_in_expr(left, names);
+                Self::collect_returned_idents_in_expr(right, names);
             }
             // Closure: non-mut captures transfer ownership (the closure struct
             // stores a copy of the value). Mut captures use pointers, so
@@ -706,6 +780,75 @@ mod tests {
         assert!(
             !names.contains("m"),
             "binary expression should not transfer ownership"
+        );
+    }
+
+    // LOW-1: clear_deinit_for_returned_vars must recurse into nested blocks
+    // (if/try/for/switch) to clear needs_deinit on VarDecls whose names
+    // appear in the returned-vars set.  Before the fix, only top-level
+    // VarDecls were processed, so a VarDecl inside an if-block that was
+    // returned from that block would retain needs_deinit=true (double-free).
+    #[test]
+    fn test_clear_deinit_nested_if() {
+        // VarDecl inside if-block, return inside same if-block.
+        let mut block = IrBlock::new(vec![IrStmt::If {
+            cond: IrExpr::BoolLiteral(true),
+            then: IrBlock::new(vec![
+                IrStmt::VarDecl(IrVarDecl {
+                    name: IrIdent::new("inner_map"),
+                    is_const: true,
+                    zig_type: Some(ZigType::NamedStruct("Map".to_string())),
+                    init: None,
+                    is_json_parse: false,
+                    needs_var_suppression: false,
+                    needs_deinit: true,
+                }),
+                IrStmt::Return {
+                    value: Some(IrExpr::Ident(IrIdent::new("inner_map"))),
+                },
+            ]),
+            else_: None,
+        }]);
+        Lowerer::clear_deinit_for_returned_vars(&mut block);
+        // Verify that needs_deinit was cleared on the VarDecl inside the
+        // if-block.  Before LOW-1, this would still be true.
+        let cleared = match &block.stmts[0] {
+            IrStmt::If { then, .. } => match &then.stmts[0] {
+                IrStmt::VarDecl(vd) => !vd.needs_deinit,
+                _ => false,
+            },
+            _ => false,
+        };
+        assert!(
+            cleared,
+            "needs_deinit should be cleared for returned var inside if-block"
+        );
+    }
+
+    // LOW-2: collect_returned_idents_in_expr must handle LogicalExpression
+    // (||, &&, ??) so that variables in either operand are collected as
+    // returned (ownership may transfer).
+    #[test]
+    fn test_collect_returned_var_logical() {
+        // return a || b; → both a and b should be collected
+        use crate::zigir::ops::LogicalOp;
+        let block = IrBlock::new(vec![IrStmt::Return {
+            value: Some(IrExpr::Logical {
+                op: LogicalOp::Or,
+                left: Box::new(IrExpr::Ident(IrIdent::new("a"))),
+                right: Box::new(IrExpr::Ident(IrIdent::new("b"))),
+                left_type: None,
+                right_type: None,
+            }),
+        }]);
+        let names = Lowerer::collect_returned_var_zig_names_in_block(&block);
+        assert!(
+            names.contains("a"),
+            "logical || left operand should be collected as returned"
+        );
+        assert!(
+            names.contains("b"),
+            "logical || right operand should be collected as returned"
         );
     }
 }

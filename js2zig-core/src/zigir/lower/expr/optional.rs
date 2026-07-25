@@ -492,7 +492,7 @@ impl Lowerer {
     /// Get the type of a variable, checking fn_local_types (per-function) first,
     /// then falling back to global var_types. This fixes the scoping issue where
     /// var_names from different functions collide in the flat var_types map.
-    fn get_var_type(&self, name: &str) -> Option<ZigType> {
+    pub(crate) fn get_var_type(&self, name: &str) -> Option<ZigType> {
         // Per-function local types take priority
         if let Some(ty) = self
             .fn_ctx

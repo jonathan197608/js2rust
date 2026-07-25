@@ -240,8 +240,8 @@ pub const JsAny = union(enum) {
     pub fn asBool(self: JsAny) bool {
         return switch (self) {
             .value => |v| v.asBool(),
-            .array => |a| a.items.len > 0,
-            .object => |o| o.count() > 0,
+            .array => true,
+            .object => true,
             .null => false,
         };
     }

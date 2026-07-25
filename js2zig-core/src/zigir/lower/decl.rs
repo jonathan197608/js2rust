@@ -87,7 +87,7 @@ impl Lowerer {
     /// Infer the type of a destructuring init expression (only supports identifiers).
     fn init_expr_type(&self, init_expr: &Expression) -> Option<ZigType> {
         if let Expression::Identifier(id) = init_expr {
-            self.type_info.var_types.get(id.name.as_str()).cloned()
+            self.get_var_type(id.name.as_str())
         } else {
             None
         }
@@ -181,9 +181,16 @@ impl Lowerer {
         }
 
         // Register parameter names in fn_scope_vars (for shadow detection)
+        // Also register param types in fn_local_types so that get_var_type
+        // (which checks fn_local_types first) finds per-function parameter
+        // types before falling back to global var_types.
         if let Some(ctx) = self.fn_ctx.as_mut() {
             for param in &params {
                 ctx.add_scope_var(&param.name.js_name);
+                if !matches!(param.zig_type, ZigType::Anytype) {
+                    ctx.fn_local_types
+                        .insert(param.name.js_name.clone(), param.zig_type.clone());
+                }
             }
         }
 

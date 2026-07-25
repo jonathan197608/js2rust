@@ -195,6 +195,10 @@ pub const JsBigInt = struct {
     }
 
     fn shiftRightRaw(self: *const Self, shift: usize, alloc: std.mem.Allocator) !Self {
+        // Right-shifting reduces the value so there is no OOM risk.
+        // The big.int library handles arbitrarily large shifts gracefully
+        // (result is 0 when shift exceeds the bit count). Only shiftLeftRaw
+        // needs a cap to prevent huge memory allocations.
         var result = try std.math.big.int.Managed.init(alloc);
         errdefer result.deinit();
         try result.shiftRight(&self.value, shift);
