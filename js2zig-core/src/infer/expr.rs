@@ -290,10 +290,16 @@ impl TypeInferrer {
                                     elem_ty,
                                 );
                             }
-                            // Map/Set methods
+                            // Map/Set/Date/Str/BigInt/ArrayList methods
                             if let Some(var_ty) = self.var_types.get(&obj_name) {
-                                return self
+                                let result = self
                                     .infer_named_method_return(var_ty, mem.property.name.as_str());
+                                // Only return on Definite; Indeterminate falls
+                                // through to detect_builtin_call for a second
+                                // chance at type inference.
+                                if let InferResult::Definite(ty) = result {
+                                    return InferResult::Definite(ty);
+                                }
                             }
                         }
                         // Built-in method calls (String, Math, Date, etc.)
@@ -538,6 +544,22 @@ impl TypeInferrer {
             // LHS type for &&=/||= (conditional assignment returns LHS type).
             Expression::AssignmentExpression(ae) => match ae.operator {
                 AssignmentOperator::Exponential => InferResult::Definite(ZigType::F64),
+                AssignmentOperator::Addition => {
+                    // INF-5: str += x → Str (string concatenation).
+                    // When the LHS is a string variable or the RHS is a
+                    // string expression, the result is always Str per
+                    // ECMA-262 ToString coercion.
+                    let lhs_is_str = matches!(
+                        &ae.left,
+                        oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id)
+                            if self.var_types.get(id.name.as_str()) == Some(&ZigType::Str)
+                    );
+                    if lhs_is_str || self.expr_is_string(&ae.right) {
+                        InferResult::Definite(ZigType::Str)
+                    } else {
+                        self.infer_expr_type(&ae.right)
+                    }
+                }
                 AssignmentOperator::LogicalAnd
                 | AssignmentOperator::LogicalOr
                 | AssignmentOperator::LogicalNullish => {
@@ -642,6 +664,8 @@ impl TypeInferrer {
             Expression::LogicalExpression(le) => {
                 self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
             }
+            // INF-4: AwaitExpression — unwrap and check inner expression
+            Expression::AwaitExpression(ae) => self.expr_is_string(&ae.argument),
             // ParenthesizedExpression: unwrap and recurse
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             // CallExpression: check if the function/method returns a string
@@ -709,8 +733,16 @@ impl TypeInferrer {
                             matches!(mem.property.name.as_str(), "name" | "message" | "stack")
                         }
                         ZigType::JsSymbol => mem.property.name.as_str() == "description",
+                        // INF-9: RegExp.source and RegExp.flags return strings
+                        ZigType::NamedStruct(name) if name == "RegExp" => {
+                            matches!(mem.property.name.as_str(), "source" | "flags")
+                        }
                         _ => false,
                     };
+                }
+                // Also check RegExp literals: /pattern/.source, /pattern/g.flags
+                if let Expression::RegExpLiteral(_) = &mem.object {
+                    return matches!(mem.property.name.as_str(), "source" | "flags");
                 }
                 false
             }

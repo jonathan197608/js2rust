@@ -243,6 +243,12 @@ impl Lowerer {
             IrExpr::BlockExpr { result, .. } => {
                 Self::collect_returned_idents_in_expr(result, names);
             }
+            // Assignment: the RHS value's ownership transfers to the target,
+            // so identifiers embedded in the value must have needs_deinit
+            // cleared to prevent double-free. (LOW-20)
+            IrExpr::Assign { value, .. } => {
+                Self::collect_returned_idents_in_expr(value, names);
+            }
             // Binary, Call, FieldAccess, etc. — the variable's value is
             // consumed to compute a new value; ownership of the variable
             // itself is NOT transferred, so needs_deinit should remain true.

@@ -235,9 +235,9 @@ impl Emitter {
                 // @clz requires an integer; float args must be converted first.
                 if let Some(a) = args.first() {
                     if expr_is_float(a) {
-                        self.write("@clz(@as(u32, @intFromFloat(");
+                        self.write("@clz(js_runtime.toUint32(");
                         self.emit_expr(a);
-                        self.write(")))");
+                        self.write("))");
                     } else if matches!(a, crate::zigir::types::IrExpr::IntLiteral(_)) {
                         self.write("@clz(@as(u32, ");
                         self.emit_expr(a);

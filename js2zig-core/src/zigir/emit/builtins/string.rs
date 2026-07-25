@@ -32,27 +32,27 @@ impl Emitter {
                 ty: crate::types::ZigType::F64,
                 ..
             } => {
-                self.write("@as(i64, @intFromFloat(");
+                self.write("js_runtime.floatToInt(");
                 self.emit_expr(arg);
-                self.write("))");
+                self.write(")");
             }
             // FloatLiteral → @intFromFloat
             IrExpr::FloatLiteral(_) => {
-                self.write("@as(i64, @intFromFloat(");
+                self.write("js_runtime.floatToInt(");
                 self.emit_expr(arg);
-                self.write("))");
+                self.write(")");
             }
             // Division/Rem/Pow produce f64 in JS → @intFromFloat
             IrExpr::DivExpr { .. } | IrExpr::RemExpr { .. } | IrExpr::PowExpr { .. } => {
-                self.write("@as(i64, @intFromFloat(");
+                self.write("js_runtime.floatToInt(");
                 self.emit_expr(arg);
-                self.write("))");
+                self.write(")");
             }
             // Float-producing builtins → @intFromFloat
             IrExpr::BuiltinCall(bc) if bc.return_type == crate::types::ZigType::F64 => {
-                self.write("@as(i64, @intFromFloat(");
+                self.write("js_runtime.floatToInt(");
                 self.emit_expr(arg);
-                self.write("))");
+                self.write(")");
             }
             // Math/Number constants emit as @as(f64, ...) → need @intFromFloat
             IrExpr::FieldAccess {
@@ -61,9 +61,9 @@ impl Emitter {
                     | crate::zigir::kinds::FieldKind::NumberConstant(_),
                 ..
             } => {
-                self.write("@as(i64, @intFromFloat(");
+                self.write("js_runtime.floatToInt(");
                 self.emit_expr(arg);
-                self.write("))");
+                self.write(")");
             }
             // Direct function calls: check callee's annotated return type
             // (lowerer wraps direct calls in TypedIdent when return type is known).
@@ -307,7 +307,7 @@ impl Emitter {
                 self.write(", ");
                 self.emit_expr(&args[slot]);
             } else {
-                let opt_idx = slot - min_args;
+                let opt_idx = slot.saturating_sub(min_args);
                 if let Some(default) = opt_defaults.get(opt_idx)
                     && !default.is_empty()
                 {

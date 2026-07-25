@@ -493,6 +493,10 @@ impl Emitter {
                     "f64".to_string()
                 } else if matches!(data.elem_type, ZigType::JsAny) {
                     "JsAny".to_string()
+                } else if data.elem_type == ZigType::Bool
+                    || matches!(expr, crate::zigir::types::IrExpr::BoolLiteral(_))
+                {
+                    "bool".to_string()
                 } else {
                     "i64".to_string()
                 };
@@ -609,6 +613,10 @@ impl Emitter {
                     "f64".to_string()
                 } else if matches!(data.elem_type, ZigType::JsAny) {
                     "JsAny".to_string()
+                } else if data.elem_type == ZigType::Bool
+                    || matches!(expr, crate::zigir::types::IrExpr::BoolLiteral(_))
+                {
+                    "bool".to_string()
                 } else {
                     "i64".to_string()
                 };

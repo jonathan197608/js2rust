@@ -129,6 +129,36 @@ pub fn jsRem(a: i64, b: i64) f64 {
     return @rem(@as(f64, @floatFromInt(a)), @as(f64, @floatFromInt(b)));
 }
 
+// ── Safe float-to-int conversions ───────────────────────────────
+// Zig's @intFromFloat traps (panics) on NaN, +Infinity, -Infinity, and values
+// outside the target integer range. JavaScript's ToInteger / ToInt32 / ToUint32
+// map NaN→0 and ±Infinity→0. Generated code must use these helpers instead of
+// raw @intFromFloat to avoid runtime panics on valid JS values.
+
+/// JS ToInteger: NaN, ±Infinity → 0; values outside i64 range are clamped.
+/// Use this instead of `@as(i64, @intFromFloat(expr))`.
+pub fn floatToInt(v: f64) i64 {
+    if (std.math.isNan(v) or std.math.isInf(v)) return 0;
+    if (v >= @as(f64, @floatFromInt(std.math.maxInt(i64)))) return std.math.maxInt(i64);
+    if (v <= @as(f64, @floatFromInt(std.math.minInt(i64)))) return std.math.minInt(i64);
+    return @intFromFloat(v);
+}
+
+/// JS ToUint32: NaN, ±Infinity → 0; wraps mod 2^32 (bitwise semantics).
+/// Use this instead of `@as(u32, @intFromFloat(expr))`.
+pub fn toUint32(v: f64) u32 {
+    if (std.math.isNan(v) or std.math.isInf(v)) return 0;
+    const clamped = @max(@min(v, @as(f64, @floatFromInt(std.math.maxInt(i64)))), @as(f64, @floatFromInt(std.math.minInt(i64))));
+    const i: i64 = @intFromFloat(clamped);
+    return @as(u32, @truncate(@as(u64, @bitCast(i))));
+}
+
+/// JS ToInt32: NaN, ±Infinity → 0; wraps mod 2^32 then reinterprets as signed.
+/// Use this instead of `@as(i32, @intCast(@intFromFloat(expr)))`.
+pub fn toInt32(v: f64) i32 {
+    return @bitCast(toUint32(v));
+}
+
 // ── Object spread/merge helpers ─────────────────────────────────
 // These provide compile-time merging of anonymous structs,
 // used by the codegen for { ...a, ...b, c: 1 } syntax.

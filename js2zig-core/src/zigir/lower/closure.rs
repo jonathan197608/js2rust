@@ -657,6 +657,17 @@ impl Lowerer {
                 {
                     return Some(ty);
                 }
+                // finally block: a return inside finally overrides any
+                // try/catch return, so it must be scanned too. (LOW-19)
+                if let Some(ref finalizer) = ts.finalizer
+                    && let Some(ty) = self.scan_return_type_from_stmts_inner(
+                        &finalizer.body,
+                        captured,
+                        default_type,
+                    )
+                {
+                    return Some(ty);
+                }
                 None
             }
             Statement::LabeledStatement(ls) => {
@@ -708,20 +719,6 @@ impl Lowerer {
         captured: &[(String, ZigType, bool)],
     ) -> Option<ZigType> {
         match expr {
-            Expression::NumericLiteral(nl) => {
-                if let Some(raw) = &nl.raw {
-                    let s = raw.as_str();
-                    if s.contains('.') || s.contains('e') || s.contains('E') {
-                        Some(ZigType::F64)
-                    } else {
-                        Some(ZigType::I64)
-                    }
-                } else {
-                    Some(ZigType::I64)
-                }
-            }
-            Expression::StringLiteral(_) => Some(ZigType::Str),
-            Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             Expression::Identifier(id) => {
                 // Steps 1-3: delegate to infer_ident_type (exact, qualified, suffix)
                 if let Some(ty) = self.infer_ident_type(id.name.as_str()) {
@@ -735,70 +732,13 @@ impl Lowerer {
                 }
                 None
             }
-            Expression::BinaryExpression(be) => self
-                .infer_arrow_expr_type_with_captures(&be.left, captured)
-                .or_else(|| self.infer_arrow_expr_type_with_captures(&be.right, captured)),
-            Expression::UnaryExpression(ue) => {
-                self.infer_arrow_expr_type_with_captures(&ue.argument, captured)
-            }
-            Expression::CallExpression(ce) => {
-                match &ce.callee {
-                    Expression::Identifier(id) => self
-                        .type_info
-                        .fn_return_types
-                        .get(id.name.as_str())
-                        .cloned(),
-                    // IIFE: function(c){...}(1) — infer from the function body
-                    Expression::FunctionExpression(fe) => fe.body.as_ref().map(|body| {
-                        self.scan_return_type_from_stmts(&body.statements, captured, ZigType::Void)
-                    }),
-                    Expression::ArrowFunctionExpression(af) => {
-                        Some(self.infer_arrow_return_type(af, captured))
-                    }
-                    _ => None,
-                }
-            }
-            Expression::StaticMemberExpression(sme) => {
-                let field = sme.property.name.as_str();
-                match field {
-                    "length" | "len" => Some(ZigType::I64),
-                    _ => None,
-                }
-            }
-            Expression::ConditionalExpression(ce) => self
-                .infer_arrow_expr_type_with_captures(&ce.consequent, captured)
-                .or_else(|| self.infer_arrow_expr_type_with_captures(&ce.alternate, captured)),
-            Expression::TemplateLiteral(_) => Some(ZigType::Str),
-            Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
-            Expression::NullLiteral(_) => Some(ZigType::JsAny),
-            Expression::ParenthesizedExpression(pe) => {
-                self.infer_arrow_expr_type_with_captures(&pe.expression, captured)
-            }
-            Expression::ArrayExpression(_) => Some(ZigType::ArrayList(Box::new(ZigType::JsAny))),
-            Expression::ObjectExpression(_) => Some(ZigType::JsAny),
-            Expression::LogicalExpression(le) => self
-                .infer_arrow_expr_type_with_captures(&le.right, captured)
-                .or_else(|| self.infer_arrow_expr_type_with_captures(&le.left, captured)),
-            Expression::NewExpression(_) => Some(ZigType::JsAny),
-            Expression::AssignmentExpression(ae) => {
-                self.infer_arrow_expr_type_with_captures(&ae.right, captured)
-            }
-            Expression::UpdateExpression(_) => Some(ZigType::I64),
-            Expression::ComputedMemberExpression(cme) => {
-                // Delegate to infer_expr_type which handles ArrayList element
-                // extraction and arguments[i] → JsAny.
-                if let Expression::Identifier(id) = &cme.object
-                    && (id.name.as_str() == "arguments" || id.name.as_str() == "__arguments")
-                {
-                    return Some(ZigType::JsAny);
-                }
-                if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&cme.object) {
-                    return Some(*elem);
-                }
-                None
-            }
-            Expression::AwaitExpression(_) => Some(ZigType::JsAny),
-            _ => None,
+            // For all other expression types, delegate to the full
+            // infer_expr_type which has correct operator-aware logic
+            // (BinaryExpression, UnaryExpression, ConditionalExpression,
+            // CallExpression, NewExpression, UpdateExpression, etc.).
+            // This avoids duplicating type inference logic and the bugs that
+            // come with it (LOW-13 through LOW-18).
+            _ => self.infer_expr_type(expr),
         }
     }
 

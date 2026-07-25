@@ -2,7 +2,7 @@
 // Object, JSON, Number, Symbol, Console builtin method emission.
 
 use crate::types::ZigType;
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{self, EmitterHelpers};
 use crate::zigir::types::IrExpr;
 
 use crate::zigir::emit::Emitter;
@@ -307,7 +307,11 @@ impl Emitter {
                         _ => None,
                     };
                     if let (Some(ident_name), IrExpr::StringLiteral(key)) = (ident_name, &args[1]) {
-                        self.write(&format!("@hasField(@TypeOf({}), \"{}\")", ident_name, key));
+                        self.write(&format!(
+                            "@hasField(@TypeOf({}), \"{}\")",
+                            ident_name,
+                            helpers::escape_zig_string(key)
+                        ));
                     } else {
                         self.write("js_object.hasOwn(");
                         self.emit_inline_args(args);

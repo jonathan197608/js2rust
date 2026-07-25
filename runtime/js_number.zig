@@ -103,7 +103,13 @@ pub fn parseInt(value: anytype, radix: ?i64) i64 {
             },
             .null => return 0,
             .object => return 0,
-            .array => return parseIntStr(value.asString(js_allocator.allocator()), radix),
+            .array => {
+                // asString allocates a joined string on the heap.
+                // On OOM it returns literal "" (not heap-allocated, must not free).
+                const s = value.asString(js_allocator.allocator());
+                defer if (s.len > 0) js_allocator.allocator().free(s);
+                return parseIntStr(s, radix);
+            },
         }
     }
     // For numeric/bool types, format to a buffer

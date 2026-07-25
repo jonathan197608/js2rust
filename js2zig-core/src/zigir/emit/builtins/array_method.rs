@@ -61,7 +61,8 @@ impl Emitter {
         if args.len() >= 2 {
             self.emit_i64_coerced(&args[1]);
         } else {
-            self.write("0");
+            // ECMA-262: splice(start) with no deleteCount → len - start
+            self.write(&format!("{}.items.len -| {}", receiver, start_var));
         }
         self.write(&format!("), {}.items.len -| {})); ", receiver, start_var));
     }
@@ -697,12 +698,12 @@ impl Emitter {
         // other primitive types fall back to numeric std.sort.asc.
         if matches!(data.elem_type, ZigType::JsAny) {
             self.write("std.mem.sort(JsAny, __sorted.items, {}, struct { fn lessThan(_: void, a: JsAny, b: JsAny) bool { return a.lt(b); } }.lessThan); ");
-        } else if matches!(data.elem_type, ZigType::I64 | ZigType::F64) {
+        } else if matches!(data.elem_type, ZigType::I64) {
             self.write(&format!(
                 "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{",
                 elem_type_str, elem_type_str, elem_type_str
             ));
-            self.write(" var __sa: [128]u8 = undefined; var __sb: [128]u8 = undefined;");
+            self.write(" var __sa: [32]u8 = undefined; var __sb: [32]u8 = undefined;");
             self.write(
                 " const __stra = std.fmt.bufPrint(&__sa, \"{d}\", .{a}) catch return a < b;",
             );
@@ -710,6 +711,20 @@ impl Emitter {
                 " const __strb = std.fmt.bufPrint(&__sb, \"{d}\", .{b}) catch return a < b;",
             );
             self.write(" return std.mem.order(u8, __stra, __strb) == .lt; } }.lessThan); ");
+        } else if matches!(data.elem_type, ZigType::F64) {
+            // F64: use js_number.toString for correct JS string representation
+            // (e.g. 1e21 → "1e+21" not "1000000000000000000000.0")
+            self.write("std.mem.sort(f64, __sorted.items, {}, struct { fn lessThan(_: void, a: f64, b: f64) bool {");
+            self.write(" const __stra = js_number.toString(js_allocator.allocator(), a, 10) catch return a < b;");
+            self.write(" const __strb = js_number.toString(js_allocator.allocator(), b, 10) catch return a < b;");
+            self.write(" const __ord = std.mem.order(u8, __stra, __strb);");
+            self.write(
+                " js_allocator.allocator().free(__stra); js_allocator.allocator().free(__strb);",
+            );
+            self.write(" return __ord == .lt; } }.lessThan); ");
+        } else if matches!(data.elem_type, ZigType::Str) {
+            // Str: ECMA-262 default string comparison
+            self.write("std.mem.sort([]const u8, __sorted.items, {}, struct { fn lessThan(_: void, a: []const u8, b: []const u8) bool { return std.mem.order(u8, a, b) == .lt; } }.lessThan); ");
         } else {
             self.write(&format!(
                 "std.mem.sort({}, __sorted.items, {{}}, comptime std.sort.asc({})); ",

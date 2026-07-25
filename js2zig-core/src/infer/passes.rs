@@ -2,7 +2,7 @@
 // Analysis passes: Pass 0 (object analysis), Pass 1 (used names),
 // Pass 2 (toplevel type walker) — excluding walk_fn_for_types.
 
-use super::helpers::binding_name;
+use super::helpers::{binding_name, expr_depends_on_anytype};
 use super::{InferResult, TypeInferrer};
 use crate::types::ZigType;
 use oxc_ast::ast::*;
@@ -695,17 +695,81 @@ impl TypeInferrer {
                     continue;
                 }
 
+                // INF-7: Register method parameters in var_types so return
+                // type inference can resolve them. Without this, param identifiers
+                // are unknown to infer_expr_type and the method's return type
+                // always falls back to JsAny. Save old values for restoration
+                // to prevent param names from shadowing top-level variables.
+                let mut saved_params: Vec<(String, Option<ZigType>)> = Vec::new();
+                let mut anytype_params: HashSet<String> = HashSet::new();
+                for param in &md.value.params.items {
+                    if let Some(pname) = binding_name(&param.pattern) {
+                        let old = self.var_types.get(pname).cloned();
+                        self.var_types.insert(pname.to_string(), ZigType::Anytype);
+                        anytype_params.insert(pname.to_string());
+                        saved_params.push((pname.to_string(), old));
+                    }
+                }
+
                 // Infer return type for regular class method
                 let ret_ty = self.infer_class_method_return_type(md);
+                let ret_key = format!("{}.{}", class_name, method_name);
                 match ret_ty {
                     InferResult::Definite(ty) => {
-                        self.fn_return_types
-                            .insert(format!("{}.{}", class_name, method_name), ty);
+                        // INF-6: If return type depends on anytype params,
+                        // use AnytypeReturn for @TypeOf emission.
+                        if ty == ZigType::Anytype {
+                            let mut return_exprs = Vec::new();
+                            if let Some(body) = &md.value.body {
+                                for s in &body.statements {
+                                    Self::collect_returns(s, &mut return_exprs);
+                                }
+                            }
+                            if !return_exprs.is_empty()
+                                && return_exprs
+                                    .iter()
+                                    .all(|expr| expr_depends_on_anytype(expr, &anytype_params))
+                            {
+                                self.fn_return_types.insert(ret_key, ZigType::AnytypeReturn);
+                            } else {
+                                self.fn_return_types.insert(ret_key, ZigType::JsAny);
+                            }
+                        } else {
+                            self.fn_return_types.insert(ret_key, ty);
+                        }
                     }
                     InferResult::Indeterminate => {
-                        // Default to JsAny for methods that can't infer
-                        self.fn_return_types
-                            .insert(format!("{}.{}", class_name, method_name), ZigType::JsAny);
+                        // INF-6: Check if all return exprs depend on anytype
+                        // params — if so, use AnytypeReturn instead of JsAny.
+                        let mut return_exprs = Vec::new();
+                        if let Some(body) = &md.value.body {
+                            for s in &body.statements {
+                                Self::collect_returns(s, &mut return_exprs);
+                            }
+                        }
+                        if !return_exprs.is_empty()
+                            && return_exprs
+                                .iter()
+                                .all(|expr| expr_depends_on_anytype(expr, &anytype_params))
+                        {
+                            self.fn_return_types.insert(ret_key, ZigType::AnytypeReturn);
+                        } else {
+                            // Default to JsAny for methods that can't infer
+                            self.fn_return_types.insert(ret_key, ZigType::JsAny);
+                        }
+                    }
+                }
+
+                // Restore old var_types values to prevent param name
+                // shadowing of top-level variables.
+                for (pname, old) in saved_params {
+                    match old {
+                        Some(ty) => {
+                            self.var_types.insert(pname, ty);
+                        }
+                        None => {
+                            self.var_types.remove(&pname);
+                        }
                     }
                 }
             }

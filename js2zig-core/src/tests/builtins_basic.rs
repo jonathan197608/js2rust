@@ -596,12 +596,13 @@ export function p07Clz32Float() {
     let zig = transpile_and_assert(js, "test_p0_7_clz32_float_arg");
 
     assert!(zig.contains("@clz("), "Expected '@clz(' in:\n{}", zig);
+    // EMIT-8: float arg reduced via js_runtime.toUint32 (NaN/Inf-safe) before @clz.
     assert!(
-        zig.contains("@intFromFloat"),
-        "Expected @intFromFloat for clz32 float arg in:\n{}",
+        zig.contains("js_runtime.toUint32"),
+        "Expected js_runtime.toUint32 for clz32 float arg in:\n{}",
         zig
     );
-    // The float ARGUMENT must use @intFromFloat, not @floatFromInt.
+    // The float ARGUMENT must use the safe conversion, not @floatFromInt.
     // (The RESULT may use @floatFromInt for I64→F64 return coercion —
     // that's correct and expected with `@returns {number}` → f64.)
     assert!(

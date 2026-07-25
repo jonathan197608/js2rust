@@ -363,9 +363,9 @@ impl Emitter {
                 // temporary f64 variables in a labeled block.
                 let pow_id = self.peek_label_id();
                 let blk = self.next_label();
-                // If result_type is i64, wrap the entire block in @as(i64, @intFromFloat(...))
+                // If result_type is i64, wrap in js_runtime.floatToInt() for NaN/Inf safety
                 if let Some(crate::types::ZigType::I64) = result_type {
-                    self.write("@as(i64, @intFromFloat(");
+                    self.write("js_runtime.floatToInt(");
                 }
                 self.write(&format!("({blk}: {{ "));
                 self.write(&format!("const _base_f64_{pow_id}: f64 = "));
@@ -376,7 +376,7 @@ impl Emitter {
                     "; break :{blk} std.math.pow(f64, _base_f64_{pow_id}, _exp_f64_{pow_id}); }})",
                 ));
                 if let Some(crate::types::ZigType::I64) = result_type {
-                    self.write("))");
+                    self.write(")");
                 }
             }
 
@@ -406,7 +406,7 @@ impl Emitter {
                 let right_is_jsany = *right_type == ZigType::JsAny;
 
                 if let Some(ZigType::I64) = result_type {
-                    self.write("@as(i64, @intFromFloat(");
+                    self.write("js_runtime.floatToInt(");
                 }
                 if left_is_jsany || right_is_jsany {
                     // At least one operand is JsAny: use @rem(f64, f64) to
@@ -430,7 +430,7 @@ impl Emitter {
                     self.write(")");
                 }
                 if let Some(ZigType::I64) = result_type {
-                    self.write("))");
+                    self.write(")");
                 }
             }
 
@@ -451,7 +451,7 @@ impl Emitter {
                 let right_is_jsany = *right_type == ZigType::JsAny;
 
                 if let Some(ZigType::I64) = result_type {
-                    self.write("@as(i64, @intFromFloat(");
+                    self.write("js_runtime.floatToInt(");
                 }
                 if left_is_float || right_is_float || left_is_jsany || right_is_jsany {
                     // At least one operand is F64 (already float) or JsAny (.asF64()):
@@ -473,7 +473,7 @@ impl Emitter {
                     self.write(")))");
                 }
                 if let Some(ZigType::I64) = result_type {
-                    self.write("))");
+                    self.write(")");
                 }
             }
 
@@ -495,12 +495,12 @@ impl Emitter {
                     }
                     crate::zigir::ops::UnaOp::BitNot => {
                         // JS `~x` operates on 32-bit integer. Convert operand to i32 first.
-                        // For f64 operands: @intFromFloat → i64, then @intCast → i32.
+                        // For f64: use js_runtime.toInt32() for NaN/Inf safety.
                         // For integer/comptime operands: @intCast works directly.
                         if let Some(crate::types::ZigType::F64) = operand_type {
-                            self.write("~@as(i32, @intCast(@as(i64, @intFromFloat(");
+                            self.write("~js_runtime.toInt32(");
                             self.emit_expr(operand);
-                            self.write("))))");
+                            self.write(")");
                         } else {
                             self.write("~@as(i32, @intCast(");
                             self.emit_expr(operand);

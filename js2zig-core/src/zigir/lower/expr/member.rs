@@ -557,7 +557,13 @@ impl Lowerer {
                 if let Expression::Identifier(id) = &ce.callee
                     && let Some(ty) = self.type_info.fn_return_types.get(id.name.as_str())
                 {
-                    return Some(ty.clone());
+                    // Filter AnytypeReturn → None (mirrors analysis pass at
+                    // expr.rs:255). AnytypeReturn cannot be propagated through
+                    // call boundaries; returning None allows decl.rs var_types
+                    // fallback to JSDoc-annotated types.
+                    if *ty != ZigType::AnytypeReturn {
+                        return Some(ty.clone());
+                    }
                 }
                 // Try built-in constructor / function calls
                 if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
@@ -744,6 +750,19 @@ impl Lowerer {
                 // Assignment result type depends on the operator.
                 match ae.operator {
                     AssignmentOperator::Exponential => Some(ZigType::F64),
+                    AssignmentOperator::Addition => {
+                        // INF-5: str += x → Str (string concatenation).
+                        // When the LHS is a string or the RHS is a string,
+                        // the result is always Str per ECMA-262.
+                        let lhs_is_str =
+                            self.infer_assign_target_type(&ae.left) == Some(ZigType::Str);
+                        let rhs_ty = self.infer_expr_type(&ae.right);
+                        if lhs_is_str || rhs_ty == Some(ZigType::Str) {
+                            Some(ZigType::Str)
+                        } else {
+                            rhs_ty
+                        }
+                    }
                     AssignmentOperator::LogicalAnd
                     | AssignmentOperator::LogicalOr
                     | AssignmentOperator::LogicalNullish => {
@@ -870,16 +889,42 @@ impl Lowerer {
         // Partial knowledge: produce conservative defaults for operators with
         // predictable results regardless of the missing operand type.
         let both_bigint = left_ty == Some(ZigType::BigInt) && right_ty == Some(ZigType::BigInt);
+        let either_bigint = left_ty == Some(ZigType::BigInt) || right_ty == Some(ZigType::BigInt);
+        let either_str = left_ty == Some(ZigType::Str) || right_ty == Some(ZigType::Str);
         match op {
-            // Remainder/Division/Exponential: BigInt if both BigInt, else F64.
+            // Addition: Str if either operand is Str (string concatenation).
+            // If neither is Str but one operand's numeric type is known, use
+            // it as the result (matching the old OR-pattern heuristic for
+            // arrow functions: `x + 1` infers I64 when x is anytype).
+            BinaryOperator::Addition => {
+                if either_str {
+                    Some(ZigType::Str)
+                } else if either_bigint {
+                    // Mixed BigInt + non-BigInt is a TypeError in JS; can't infer.
+                    None
+                } else if left_ty == Some(ZigType::F64) || right_ty == Some(ZigType::F64) {
+                    Some(ZigType::F64)
+                } else if left_ty == Some(ZigType::I64) || right_ty == Some(ZigType::I64) {
+                    Some(ZigType::I64)
+                } else {
+                    None
+                }
+            }
+            // Remainder/Division/Exponential: BigInt if both BigInt, F64 if
+            // neither is BigInt. If exactly one is BigInt, the result depends
+            // on the unknown operand — return None (conservative).
             BinaryOperator::Remainder | BinaryOperator::Division | BinaryOperator::Exponential => {
                 if both_bigint {
                     Some(ZigType::BigInt)
+                } else if either_bigint {
+                    None
                 } else {
                     Some(ZigType::F64)
                 }
             }
-            // Bitwise/Shift: BigInt if both BigInt, else I64.
+            // Bitwise/Shift: BigInt if both BigInt, I64 if neither is BigInt.
+            // If exactly one is BigInt, the result depends on the unknown
+            // operand — return None (conservative).
             BinaryOperator::BitwiseAnd
             | BinaryOperator::BitwiseOR
             | BinaryOperator::BitwiseXOR
@@ -888,6 +933,8 @@ impl Lowerer {
             | BinaryOperator::ShiftRightZeroFill => {
                 if both_bigint {
                     Some(ZigType::BigInt)
+                } else if either_bigint {
+                    None
                 } else {
                     Some(ZigType::I64)
                 }
