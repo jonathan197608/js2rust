@@ -49,6 +49,11 @@ impl TypeInferrer {
                 if id.name.as_str() == "undefined" {
                     return InferResult::Definite(ZigType::JsAny);
                 }
+                // `arguments` is a synthetic ArrayList(JsAny) capturing all
+                // call arguments. Matches the lowerer (member.rs:310-316).
+                if id.name.as_str() == "arguments" {
+                    return InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)));
+                }
                 // Then var_types
                 if let Some(ty) = self.var_types.get(id.name.as_str()) {
                     // Anytype params are indeterminate for type inference
@@ -206,8 +211,13 @@ impl TypeInferrer {
                             | "RegExp"
                     ) {
                         InferResult::Definite(ZigType::NamedStruct(name.to_string()))
-                    } else if name == "Error" {
+                    } else if matches!(
+                        name,
+                        "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError"
+                    ) {
                         InferResult::Definite(ZigType::JsError)
+                    } else if name == "BigInt" {
+                        InferResult::Definite(ZigType::BigInt)
                     } else if name == "Number" {
                         InferResult::Definite(ZigType::F64)
                     } else if name == "Boolean" {
@@ -525,7 +535,9 @@ impl TypeInferrer {
                     {
                         return InferResult::Definite(t.clone());
                     }
-                    InferResult::Indeterminate
+                    // For member-access targets (obj.x &&= y), fall through
+                    // to RHS type since we can't easily look up the member type.
+                    self.infer_expr_type(&ae.right)
                 }
                 _ => self.infer_expr_type(&ae.right),
             },
@@ -790,6 +802,32 @@ impl TypeInferrer {
     }
 
     pub(crate) fn infer_binary_type(op: BinaryOperator, left: ZigType, right: ZigType) -> ZigType {
+        // JsAny operand propagation: when either operand is JsAny (indeterminate
+        // runtime type), arithmetic and bitwise operators return JsAny to avoid
+        // incorrect type narrowing (e.g. JsAny + I64 must NOT infer I64).
+        // Comparison operators always return Bool regardless of operand types.
+        // Exception: Addition with a Str operand → Str (string concatenation
+        // takes priority per ECMA-262 ToString coercion).
+        let is_comparison = matches!(
+            op,
+            BinaryOperator::Equality
+                | BinaryOperator::Inequality
+                | BinaryOperator::StrictEquality
+                | BinaryOperator::StrictInequality
+                | BinaryOperator::LessThan
+                | BinaryOperator::LessEqualThan
+                | BinaryOperator::GreaterThan
+                | BinaryOperator::GreaterEqualThan
+                | BinaryOperator::In
+                | BinaryOperator::Instanceof
+        );
+        if !is_comparison && (left == ZigType::JsAny || right == ZigType::JsAny) {
+            if op == BinaryOperator::Addition && (left == ZigType::Str || right == ZigType::Str) {
+                return ZigType::Str;
+            }
+            return ZigType::JsAny;
+        }
+
         #[allow(unreachable_patterns)] // defensive: oxc may add new variants
         match op {
             BinaryOperator::Addition => {
@@ -905,9 +943,7 @@ impl TypeInferrer {
             // annotation mismatches (e.g. var_types says ArrayList(I64) but the
             // generated code produces ArrayList(JsAny)).
             "slice" | "filter" | "concat" | "flat" | "toReversed" | "toSorted" | "toSpliced"
-            | "map" | "flatMap" | "with" => {
-                InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
-            }
+            | "map" | "with" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny))),
             // Methods that return a boolean
             "some" | "every" | "includes" => InferResult::Definite(ZigType::Bool),
             // Methods returning index or length

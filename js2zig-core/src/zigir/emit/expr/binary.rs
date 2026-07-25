@@ -124,9 +124,14 @@ impl Emitter {
                             "|err| switch (err) {{ error.DivisionByZero => break :{} @as(anyerror!void, error.JsThrow), else => @panic(\"BigInt {} OOM\") }})",
                             try_label, label
                         ));
-                    } else {
+                    } else if self.in_function {
                         self.write(&format!(
                             "|err| switch (err) {{ error.DivisionByZero => return error.JsThrow, else => @panic(\"BigInt {} OOM\") }})",
+                            label
+                        ));
+                    } else {
+                        self.write(&format!(
+                            "|err| switch (err) {{ error.DivisionByZero => @panic(\"BigInt division by zero\"), else => @panic(\"BigInt {} OOM\") }})",
                             label
                         ));
                     }
@@ -148,8 +153,10 @@ impl Emitter {
                         ".toU64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch |err| switch (err) {{ error.RangeError => break :{} @as(anyerror!void, error.JsThrow), else => @panic(\"BigInt pow OOM\") }})",
                         try_label, try_label
                     ));
-                } else {
+                } else if self.in_function {
                     self.write(".toU64() catch return error.JsThrow, js_allocator.allocator()) catch |err| switch (err) { error.RangeError => return error.JsThrow, else => @panic(\"BigInt pow OOM\") })");
+                } else {
+                    self.write(".toU64() catch @panic(\"BigInt pow exponent too large\"), js_allocator.allocator()) catch |err| switch (err) { error.RangeError => @panic(\"BigInt pow exponent too large\"), else => @panic(\"BigInt pow OOM\") })");
                 }
             }
             BinOp::Shl | BinOp::Shr => {
@@ -167,10 +174,15 @@ impl Emitter {
                         ".toI64() catch break :{} @as(anyerror!void, error.JsThrow), js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
                         try_label, label
                     ));
-                } else {
+                } else if self.in_function {
                     self.write(&format!(
                         ".toI64() catch return error.JsThrow, js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
                         label
+                    ));
+                } else {
+                    self.write(&format!(
+                        ".toI64() catch @panic(\"BigInt {} negative shift\"), js_allocator.allocator()) catch @panic(\"BigInt {} OOM\"))",
+                        label, label
                     ));
                 }
             }
@@ -203,8 +215,10 @@ impl Emitter {
                         "({{ break :{} @as(anyerror!void, error.JsThrow); }})",
                         label
                     ));
-                } else {
+                } else if self.in_function {
                     self.write("({ return error.JsThrow; })");
+                } else {
+                    self.write("(@panic(\"BigInt unsigned right shift is not supported\"))");
                 }
             }
             _ => {

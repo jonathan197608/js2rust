@@ -171,7 +171,7 @@ impl Emitter {
             // random: inline expression using std.crypto.random
             "random" => {
                 self.write(
-                    "(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967295.0))",
+                    "(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967296.0))",
                 );
             }
             // hypot: inline @sqrt(a*a + b*b + ...) expression

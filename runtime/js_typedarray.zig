@@ -45,10 +45,11 @@ fn convertArray(comptime OutType: type, alloc: Allocator, arr: anytype) ![]OutTy
 // ── Helper: convert JS-style index (negative = from end) ──
 
 fn adjustIndex(idx: i64, len: usize) usize {
+    const len_i64: i64 = std.math.cast(i64, len) orelse std.math.maxInt(i64);
     const idx_i64: i64 = if (idx < 0)
-        @max(0, @as(i64, @intCast(len)) + idx)
+        @max(0, len_i64 + idx)
     else
-        @min(@as(i64, @intCast(len)), idx);
+        @min(len_i64, idx);
     return @intCast(idx_i64);
 }
 

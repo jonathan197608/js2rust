@@ -105,7 +105,7 @@ pub const JsValue = union(enum) {
                 // Use the representable f64 bounds; values outside return 0.
                 const max_i64_f: f64 = 9.223372036854776e18;
                 const min_i64_f: f64 = -9.223372036854776e18;
-                if (v > max_i64_f or v < min_i64_f) break :blk 0;
+                if (v >= max_i64_f or v < min_i64_f) break :blk 0;
                 break :blk @as(i64, @intFromFloat(v));
             },
             .bool => |v| if (v) 1 else 0,
@@ -124,7 +124,7 @@ pub const JsValue = union(enum) {
                     if (std.math.isNan(f) or std.math.isInf(f)) break :blk 0;
                     const max_i64_f: f64 = 9.223372036854776e18;
                     const min_i64_f: f64 = -9.223372036854776e18;
-                    if (f > max_i64_f or f < min_i64_f) break :blk 0;
+                    if (f >= max_i64_f or f < min_i64_f) break :blk 0;
                     break :blk @as(i64, @intFromFloat(@trunc(f)));
                 }
             },
@@ -288,17 +288,26 @@ fn stringToNumber(trimmed: []const u8) error{ParseError}!f64 {
     if (trimmed.len == 0) return 0.0;
     // Handle 0x/0X hex prefix
     if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'x' or trimmed[1] == 'X')) {
-        const n = std.fmt.parseInt(i64, trimmed[2..], 16) catch return error.ParseError;
+        const n = std.fmt.parseInt(i64, trimmed[2..], 16) catch {
+            const big = std.fmt.parseInt(i128, trimmed[2..], 16) catch return error.ParseError;
+            return @as(f64, @floatFromInt(big));
+        };
         return @as(f64, @floatFromInt(n));
     }
     // R18-RT-2: Handle 0o/0O octal prefix (ECMA-262 §7.1.4.1)
     if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'o' or trimmed[1] == 'O')) {
-        const n = std.fmt.parseInt(i64, trimmed[2..], 8) catch return error.ParseError;
+        const n = std.fmt.parseInt(i64, trimmed[2..], 8) catch {
+            const big = std.fmt.parseInt(i128, trimmed[2..], 8) catch return error.ParseError;
+            return @as(f64, @floatFromInt(big));
+        };
         return @as(f64, @floatFromInt(n));
     }
     // R18-RT-2: Handle 0b/0B binary prefix (ECMA-262 §7.1.4.1)
     if (trimmed.len > 2 and trimmed[0] == '0' and (trimmed[1] == 'b' or trimmed[1] == 'B')) {
-        const n = std.fmt.parseInt(i64, trimmed[2..], 2) catch return error.ParseError;
+        const n = std.fmt.parseInt(i64, trimmed[2..], 2) catch {
+            const big = std.fmt.parseInt(i128, trimmed[2..], 2) catch return error.ParseError;
+            return @as(f64, @floatFromInt(big));
+        };
         return @as(f64, @floatFromInt(n));
     }
     return std.fmt.parseFloat(f64, trimmed) catch error.ParseError;

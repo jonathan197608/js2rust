@@ -1164,6 +1164,9 @@ impl Lowerer {
                 self.expr_is_string(&ce.consequent) && self.expr_is_string(&ce.alternate)
             }
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
+            Expression::LogicalExpression(le) => {
+                self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
+            }
             _ => self.infer_expr_type(expr) == Some(ZigType::Str),
         }
     }

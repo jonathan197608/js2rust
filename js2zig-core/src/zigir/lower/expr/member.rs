@@ -658,6 +658,9 @@ impl Lowerer {
                         "Set" => Some(ZigType::NamedStruct("Set".to_string())),
                         "Date" => Some(ZigType::NamedStruct("Date".to_string())),
                         "RegExp" => Some(ZigType::NamedStruct("RegExp".to_string())),
+                        "DataView" | "ArrayBuffer" => {
+                            Some(ZigType::NamedStruct(id.name.to_string()))
+                        }
                         "Error" | "TypeError" | "RangeError" | "SyntaxError" | "ReferenceError" => {
                             Some(ZigType::JsError)
                         }
@@ -687,7 +690,11 @@ impl Lowerer {
                         n if self.class_names.contains(n) => {
                             Some(ZigType::NamedStruct(n.to_string()))
                         }
-                        _ => Some(ZigType::JsAny),
+                        // Unknown constructor: return None so that decl.rs's
+                        // Bug A init-expression-first path falls through to
+                        // var_types (JSDoc @type annotations). Returning
+                        // Some(JsAny) would block that fallback.
+                        _ => None,
                     },
                     _ => Some(ZigType::JsAny),
                 }

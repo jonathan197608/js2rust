@@ -319,25 +319,47 @@ impl Lowerer {
             .and_then(|p| crate::infer::binding_name(&p.pattern));
         let has_idx_param = idx_param_raw.is_some();
 
-        // Set var_types for callback params BEFORE lowering the body.
-        // This ensures binary expressions in the body have correct type info.
-        // - elem param: uses the inferred element type (JsAny for Map/Set)
-        // - idx param: JsAny for Map (key), I64 for Array (numeric index)
-        if elem_param_raw != "_" {
+        // Set var_types AND fn_local_types for callback params BEFORE lowering
+        // the body. Both maps must be set because get_var_type() checks
+        // fn_local_types first — if only var_types is set, an outer variable
+        // with the same name would shadow the callback param.
+        //
+        // Save old state so we can restore after body lowering (callback
+        // params and body-declared variables are scoped to the callback).
+        let saved_fn_local_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
+        let saved_elem_var_type = if elem_param_raw != "_" {
             self.type_info
                 .var_types
-                .insert(elem_param_raw.clone(), elem_type.clone());
-        }
-        if let Some(idx_name) = idx_param_raw
+                .insert(elem_param_raw.clone(), elem_type.clone())
+        } else {
+            None
+        };
+        // Save idx param name + old var_types value for restore after body
+        let (saved_idx_name, saved_idx_var_type) = if let Some(idx_name) = idx_param_raw
             && idx_name != "_"
         {
             let idx_type = match collection_kind {
                 crate::zigir::types::CollectionKind::Map => ZigType::JsAny,
                 _ => ZigType::I64,
             };
-            self.type_info
+            let name = idx_name.to_string();
+            let old = self
+                .type_info
                 .var_types
-                .insert(idx_name.to_string(), idx_type);
+                .insert(name.clone(), idx_type.clone());
+            // Also set fn_local_types so get_var_type() finds the param
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.fn_local_types.insert(name.clone(), idx_type);
+            }
+            (Some(name), old)
+        } else {
+            (None, None)
+        };
+        if elem_param_raw != "_"
+            && let Some(ctx) = self.fn_ctx.as_mut()
+        {
+            ctx.fn_local_types
+                .insert(elem_param_raw.clone(), elem_type.clone());
         }
 
         // Check if parameters are actually used in the callback body.
@@ -346,7 +368,7 @@ impl Lowerer {
             .iter()
             .any(|s| Self::ast_stmt_uses_ident(&elem_param_raw, s));
         let elem_param = if elem_used {
-            elem_param_raw
+            elem_param_raw.clone()
         } else {
             "_".to_string()
         };
@@ -369,6 +391,38 @@ impl Lowerer {
         // Lower the callback body
         let ir_body: Vec<crate::zigir::types::IrStmt> =
             body.statements.iter().map(|s| self.lower_stmt(s)).collect();
+
+        // Restore fn_local_types and var_types to pre-callback state.
+        // fn_local_types: blanket restore removes both body-declared vars
+        // and callback params from the function's type map.
+        // var_types: targeted restore for elem and idx params.
+        if let Some(ctx) = self.fn_ctx.as_mut()
+            && let Some(saved) = saved_fn_local_types
+        {
+            ctx.fn_local_types = saved;
+        }
+        if elem_param_raw != "_" {
+            match saved_elem_var_type {
+                Some(old_ty) => {
+                    self.type_info
+                        .var_types
+                        .insert(elem_param_raw.clone(), old_ty);
+                }
+                None => {
+                    self.type_info.var_types.remove(&elem_param_raw);
+                }
+            }
+        }
+        if let Some(name) = saved_idx_name {
+            match saved_idx_var_type {
+                Some(old_ty) => {
+                    self.type_info.var_types.insert(name, old_ty);
+                }
+                None => {
+                    self.type_info.var_types.remove(&name);
+                }
+            }
+        }
 
         // Reduce init value
         let reduce_init = if matches!(

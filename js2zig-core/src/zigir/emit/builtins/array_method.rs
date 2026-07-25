@@ -132,7 +132,7 @@ impl Emitter {
             self.write("const __from: isize = @intCast(");
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
+                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) @max(0, @as(isize, @intCast(__len)) + __from) else @min(@as(usize, @intCast(__from)), __len)); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
                 receiver, receiver
             ));
             if let Some(arg) = data.args.first() {
@@ -198,7 +198,7 @@ impl Emitter {
             self.write("const __from: isize = @intCast(");
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) 0 else if (@as(usize, @intCast(__from)) > __len) __len else @as(usize, @intCast(__from))); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
+                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) @max(0, @as(isize, @intCast(__len)) + __from) else @min(@as(usize, @intCast(__from)), __len)); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
                 receiver, receiver
             ));
             if let Some(arg) = data.args.first() {
@@ -280,7 +280,7 @@ impl Emitter {
             _ => "{any}",
         };
         let blk = self.begin_labeled_block(&binding);
-        self.write("var __join_buf: std.ArrayList(u8) = .empty; ");
+        self.write("var __join_buf: std.ArrayList(u8) = .empty; defer __join_buf.deinit(js_allocator.allocator()); ");
         self.write(&format!("for ({}.items, 0..) |__item, __i| ", receiver));
         self.write("{\n");
         self.indent_push();

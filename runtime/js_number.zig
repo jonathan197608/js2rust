@@ -703,6 +703,7 @@ pub fn toString(alloc: std.mem.Allocator, val: f64, radix: i64) ![]const u8 {
                 // from floating-point precision edge cases (P1-3).
                 const r_clamped: f64 = @max(0.0, @min(r, base - 1.0));
                 const digit_idx: usize = @intFromFloat(r_clamped);
+                if (int_digits_len >= int_digits_buf.len) break;
                 int_digits_buf[int_digits_len] = digit_chars[digit_idx];
                 int_digits_len += 1;
                 dividend = q;

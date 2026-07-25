@@ -72,12 +72,14 @@ pub fn matchString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsAny 
     for (0..count) |_| {
         if (start >= bytes.len) {
             const empty: []const u8 = try alloc.dupe(u8, "");
+            errdefer alloc.free(empty);
             try arr.array.append(alloc, JsAny.from(empty));
             continue;
         }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
         const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);
+        errdefer alloc.free(owned);
         try arr.array.append(alloc, JsAny.from(owned));
         start = end + 1;
     }
@@ -101,12 +103,14 @@ pub fn matchStringGlobal(alloc: Allocator, s: []const u8, pattern: []const u8) !
     for (0..count) |_| {
         if (start >= bytes.len) {
             const empty: []const u8 = try alloc.dupe(u8, "");
+            errdefer alloc.free(empty);
             try arr.array.append(alloc, JsAny.from(empty));
             continue;
         }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
         const owned: []const u8 = try alloc.dupe(u8, bytes[start..end]);
+        errdefer alloc.free(owned);
         try arr.array.append(alloc, JsAny.from(owned));
         start = end + 1;
     }
@@ -135,15 +139,18 @@ pub fn matchAllString(alloc: Allocator, s: []const u8, pattern: []const u8) !JsA
     var pos: usize = 0;
     for (0..match_count) |_| {
         var inner_arr = try JsAny.newArray(alloc);
+        errdefer inner_arr.deinitDeep(alloc);
         for (0..group_count) |_| {
             if (pos >= bytes.len) {
                 const empty: []const u8 = try alloc.dupe(u8, "");
+                errdefer alloc.free(empty);
                 try inner_arr.array.append(alloc, JsAny.from(empty));
                 continue;
             }
             var end: usize = pos;
             while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
             const owned: []const u8 = try alloc.dupe(u8, bytes[pos..end]);
+            errdefer alloc.free(owned);
             try inner_arr.array.append(alloc, JsAny.from(owned));
             pos = end + 1;
         }

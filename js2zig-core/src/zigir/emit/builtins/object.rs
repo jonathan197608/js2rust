@@ -360,7 +360,7 @@ impl Emitter {
     }
 
     /// Emit the callback parameter binding and key expression for Object.groupBy.
-    /// Handles ArrowFn (first stmt), Closure (last stmt), and fallback call.
+    /// Handles ArrowFn, Closure (all stmts + last as value), and fallback call.
     fn emit_group_by_callback(&mut self, callback: &IrExpr) {
         match callback {
             IrExpr::ArrowFn(arrow) => {
@@ -369,11 +369,13 @@ impl Emitter {
                     .first()
                     .map(|p| p.name.zig_name.clone())
                     .unwrap_or_else(|| "_".to_string());
-                self.write(&format!(
-                    "const {} = _grp_item; const _grp_key = ",
-                    param_name
-                ));
-                if let Some(stmt) = arrow.body.stmts.first() {
+                self.write(&format!("const {} = _grp_item; ", param_name));
+                let stmts = &arrow.body.stmts;
+                for stmt in stmts.iter().take(stmts.len().saturating_sub(1)) {
+                    self.emit_stmt(stmt);
+                }
+                self.write("const _grp_key = ");
+                if let Some(stmt) = stmts.last() {
                     self.emit_stmt_value(stmt);
                 }
             }
@@ -383,11 +385,13 @@ impl Emitter {
                     .first()
                     .map(|p| p.name.zig_name.clone())
                     .unwrap_or_else(|| "_".to_string());
-                self.write(&format!(
-                    "const {} = _grp_item; const _grp_key = ",
-                    param_name
-                ));
-                if let Some(stmt) = closure.body.stmts.last() {
+                self.write(&format!("const {} = _grp_item; ", param_name));
+                let stmts = &closure.body.stmts;
+                for stmt in stmts.iter().take(stmts.len().saturating_sub(1)) {
+                    self.emit_stmt(stmt);
+                }
+                self.write("const _grp_key = ");
+                if let Some(stmt) = stmts.last() {
                     self.emit_stmt_value(stmt);
                 }
             }

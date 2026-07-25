@@ -90,17 +90,20 @@ impl Emitter {
                 match new_expr.args.first() {
                     // Array literal: emit elements directly as &[_]T{ ... }
                     Some(crate::zigir::types::IrExpr::ArrayLiteral(arr)) => {
-                        self.write(&format!("&[_]{}{{ ", elem_type));
-                        for (i, elem) in arr.elements.iter().enumerate() {
-                            if i > 0 {
-                                self.write(", ");
-                            }
-                            // Skip spread elements in this context
-                            if !arr.spread_indices.contains(&i) {
+                        if !arr.spread_indices.is_empty() {
+                            self.write(&helpers::compile_error(
+                                "Spread elements in TypedArray constructor are not supported",
+                            ));
+                        } else {
+                            self.write(&format!("&[_]{}{{ ", elem_type));
+                            for (i, elem) in arr.elements.iter().enumerate() {
+                                if i > 0 {
+                                    self.write(", ");
+                                }
                                 self.emit_expr(elem);
                             }
+                            self.write(" }");
                         }
-                        self.write(" }");
                     }
                     // Integer literal: a positive, comptime-known length in
                     // a reasonable range means we can emit `[_]T{ zero } ** n`

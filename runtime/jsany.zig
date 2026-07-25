@@ -663,6 +663,7 @@ pub const JsAny = union(enum) {
         switch (self.*) {
             .object => |o| {
                 const key_dupe = try alloc.dupe(u8, key);
+                errdefer alloc.free(key_dupe);
                 try o.put(key_dupe, val);
             },
             else => {},

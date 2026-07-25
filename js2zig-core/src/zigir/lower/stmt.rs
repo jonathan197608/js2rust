@@ -325,6 +325,12 @@ impl Lowerer {
     pub(super) fn lower_for(&mut self, fs: &ForStatement) -> crate::zigir::types::IrStmt {
         let label = self.current_loop_label();
 
+        // Save fn_local_types before lowering init — for-loop init variables
+        // (e.g. `for (let i = 0; ...)`) are scoped to the for-loop and must
+        // not leak into the outer function scope. Mirrors BlockStatement
+        // save/restore (R22 Bug B1) and lower_for_of (LOW-10).
+        let saved_fn_local_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
+
         let init = fs.init.as_ref().map(|init| match init {
             ForStatementInit::VariableDeclaration(vd) => {
                 // Lower ALL declarations (handle `for (let i = 0, j = 10; ...)`)
@@ -392,6 +398,14 @@ impl Lowerer {
             }
         });
         let body = self.lower_stmt_as_block(&fs.body, None);
+
+        // Restore fn_local_types to pre-for state (init variables are not
+        // visible outside the for-loop, matching JS block scoping).
+        if let Some(ctx) = self.fn_ctx.as_mut()
+            && let Some(saved) = saved_fn_local_types
+        {
+            ctx.fn_local_types = saved;
+        }
 
         crate::zigir::types::IrStmt::For {
             init,
@@ -861,7 +875,13 @@ impl Lowerer {
             .is_some_and(|ctx| ctx.has_catchable_error);
 
         let try_block = {
+            let saved_fn_local_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
             let stmts = ts.block.body.iter().map(|s| self.lower_stmt(s)).collect();
+            if let Some(ctx) = self.fn_ctx.as_mut()
+                && let Some(saved) = saved_fn_local_types
+            {
+                ctx.fn_local_types = saved;
+            }
             IrBlock::new(stmts)
         };
 
@@ -1002,12 +1022,22 @@ impl Lowerer {
             } else {
                 None
             };
+            // Save fn_local_types snapshot (with catch var set) so that
+            // body-declared variables don't leak into the outer scope.
+            let saved_catch_body_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
             let stmts = handler
                 .body
                 .body
                 .iter()
                 .map(|s| self.lower_stmt(s))
                 .collect();
+            // Restore fn_local_types to pre-catch-body state (catch var
+            // type preserved, body-declared vars removed).
+            if let Some(ctx) = self.fn_ctx.as_mut()
+                && let Some(saved) = saved_catch_body_types
+            {
+                ctx.fn_local_types = saved;
+            }
             // Restore the catch variable's pre-try type (if any) so the
             // JsError type doesn't leak into the outer scope.
             if let Some(ref v) = var {
@@ -1058,7 +1088,13 @@ impl Lowerer {
         }
 
         let finally = ts.finalizer.as_ref().map(|f| {
+            let saved_fn_local_types = self.fn_ctx.as_ref().map(|ctx| ctx.fn_local_types.clone());
             let stmts = f.body.iter().map(|s| self.lower_stmt(s)).collect();
+            if let Some(ctx) = self.fn_ctx.as_mut()
+                && let Some(saved) = saved_fn_local_types
+            {
+                ctx.fn_local_types = saved;
+            }
             IrBlock::new(stmts)
         });
 
