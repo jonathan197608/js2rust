@@ -74,6 +74,27 @@ pub(super) fn expr_is_float(expr: &crate::zigir::types::IrExpr) -> bool {
     }
 }
 
+/// Check if an IrExpr produces a JsAny value (needs .asF64()/.asI64() coercion).
+/// Handles TypedIdent, BuiltinCall, and Call with JsAny-returning callee.
+pub(super) fn expr_is_jsany(expr: &crate::zigir::types::IrExpr) -> bool {
+    use crate::types::ZigType;
+    use crate::zigir::types::IrExpr;
+    match expr {
+        IrExpr::TypedIdent {
+            ty: ZigType::JsAny, ..
+        } => true,
+        IrExpr::BuiltinCall(bc) => bc.return_type == ZigType::JsAny,
+        IrExpr::Call(call) => matches!(
+            call.callee.as_ref(),
+            IrExpr::TypedIdent {
+                ty: ZigType::JsAny,
+                ..
+            }
+        ),
+        _ => false,
+    }
+}
+
 impl Emitter {
     /// Emit an argument coerced to f64, handling both int and float inputs.
     /// - Float expressions/literals: `@as(f64, expr)` (identity/comptime cast)
@@ -82,11 +103,7 @@ impl Emitter {
     /// - Int variables/expressions: `@as(f64, @floatFromInt(expr))` (int→float)
     fn emit_f64_coerced(&mut self, arg: &crate::zigir::types::IrExpr) {
         // JsAny-typed expressions: use .asF64() to preserve float payload
-        if let crate::zigir::types::IrExpr::TypedIdent {
-            ty: crate::types::ZigType::JsAny,
-            ..
-        } = arg
-        {
+        if expr_is_jsany(arg) {
             self.emit_expr(arg);
             self.write(".asF64()");
             return;
@@ -205,6 +222,10 @@ impl Emitter {
                         self.write("@as(f32, @floatCast(");
                         self.emit_expr(a);
                         self.write("))");
+                    } else if expr_is_jsany(a) {
+                        self.write("@as(f32, @floatCast(");
+                        self.emit_expr(a);
+                        self.write(".asF64()))");
                     } else if matches!(a, crate::zigir::types::IrExpr::IntLiteral(_)) {
                         self.write("@as(f32, ");
                         self.emit_expr(a);
@@ -219,16 +240,22 @@ impl Emitter {
                 }
             }
             "imul" => {
-                // Math.imul(a, b) → @as(i32, @intCast(@as(u32, @bitCast(@as(i32, a))) *% @as(u32, @bitCast(@as(i32, b)))))
-                self.write("@as(i32, @intCast(@as(u32, @bitCast(@as(i32, ");
+                // Math.imul(a, b) → @as(i64, @intCast(ToInt32(a) *% ToInt32(b)))
+                // toInt32 handles f64/i64/JsAny inputs safely (NaN/Inf→0, wraps mod 2^32).
+                // *% is wrapping 32-bit multiply; @intCast widens i32→i64 for I64 return type.
+                self.write("@as(i64, @intCast(js_runtime.toInt32(");
                 if let Some(a) = args.first() {
-                    self.emit_expr(a);
+                    self.emit_f64_coerced(a);
+                } else {
+                    self.write("@as(f64, 0)");
                 }
-                self.write("))) *% @as(u32, @bitCast(@as(i32, ");
+                self.write(") *% js_runtime.toInt32(");
                 if let Some(b) = args.get(1) {
-                    self.emit_expr(b);
+                    self.emit_f64_coerced(b);
+                } else {
+                    self.write("@as(f64, 0)");
                 }
-                self.write("))))");
+                self.write(")))");
             }
             "clz32" => {
                 // Math.clz32(x): convert x to Uint32, count leading zero bits.
@@ -238,6 +265,10 @@ impl Emitter {
                         self.write("@clz(js_runtime.toUint32(");
                         self.emit_expr(a);
                         self.write("))");
+                    } else if expr_is_jsany(a) {
+                        self.write("@clz(js_runtime.toUint32(");
+                        self.emit_expr(a);
+                        self.write(".asF64()))");
                     } else if matches!(a, crate::zigir::types::IrExpr::IntLiteral(_)) {
                         self.write("@clz(@as(u32, ");
                         self.emit_expr(a);

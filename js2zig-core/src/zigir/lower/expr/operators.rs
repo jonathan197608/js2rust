@@ -223,8 +223,16 @@ impl Lowerer {
             op,
             left: Box::new(self.lower_expr(&be.left)),
             right: Box::new(self.lower_expr(&be.right)),
-            left_type,
-            right_type,
+            left_type: if matches!(&be.left, Expression::NullLiteral(_)) {
+                Some(ZigType::JsAny)
+            } else {
+                left_type
+            },
+            right_type: if matches!(&be.right, Expression::NullLiteral(_)) {
+                Some(ZigType::JsAny)
+            } else {
+                right_type
+            },
         }
     }
 
@@ -1177,7 +1185,7 @@ impl Lowerer {
             }
             Expression::ParenthesizedExpression(pe) => self.expr_is_string(&pe.expression),
             Expression::LogicalExpression(le) => {
-                self.expr_is_string(&le.left) || self.expr_is_string(&le.right)
+                self.expr_is_string(&le.left) && self.expr_is_string(&le.right)
             }
             _ => self.infer_expr_type(expr) == Some(ZigType::Str),
         }
@@ -1337,13 +1345,41 @@ impl Lowerer {
         ];
         if error_types.contains(&type_name.as_str()) {
             let left_expr = self.lower_expr(&be.left);
+            let name_access = IrExpr::FieldAccess {
+                object: Box::new(left_expr),
+                field: "name".to_string(),
+                field_kind: FieldKind::StructField,
+            };
+            // LOW-8: For instanceof Error, check against ALL error subclass
+            // names because TypeError extends Error, RangeError extends Error,
+            // etc. For specific subclasses (instanceof TypeError), only check
+            // that specific name.
+            if type_name == "Error" {
+                let mut result: Option<IrExpr> = None;
+                for &n in &error_types {
+                    let cmp = IrExpr::Binary {
+                        op: BinOp::Eq,
+                        left: Box::new(name_access.clone()),
+                        right: Box::new(IrExpr::StringLiteral(n.to_string())),
+                        left_type: Some(ZigType::Str),
+                        right_type: Some(ZigType::Str),
+                    };
+                    result = match result {
+                        None => Some(cmp),
+                        Some(prev) => Some(IrExpr::Logical {
+                            op: LogicalOp::Or,
+                            left: Box::new(prev),
+                            right: Box::new(cmp),
+                            left_type: Some(ZigType::Bool),
+                            right_type: Some(ZigType::Bool),
+                        }),
+                    };
+                }
+                return result.unwrap();
+            }
             return IrExpr::Binary {
                 op: BinOp::Eq,
-                left: Box::new(IrExpr::FieldAccess {
-                    object: Box::new(left_expr),
-                    field: "name".to_string(),
-                    field_kind: FieldKind::StructField,
-                }),
+                left: Box::new(name_access),
                 right: Box::new(IrExpr::StringLiteral(type_name)),
                 left_type: Some(ZigType::Str),
                 right_type: Some(ZigType::Str),

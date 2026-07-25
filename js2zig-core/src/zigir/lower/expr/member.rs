@@ -100,8 +100,14 @@ impl Lowerer {
                         return self.make_field_access(mem, FieldKind::MapSetSize);
                     }
                 }
-                // ── ArrayList .length → .items.len ──
-                if matches!(zig_type, ZigType::ArrayList(_)) && field_name == "length" {
+                // -- ArrayList .length -> .items.len --
+                // (arguments/__arguments are []const JsAny slices, NOT ArrayList -
+                //  handled by special case below)
+                if matches!(zig_type, ZigType::ArrayList(_))
+                    && field_name == "length"
+                    && id.name.as_str() != "__arguments"
+                    && id.name.as_str() != "arguments"
+                {
                     return self.make_field_access(mem, FieldKind::ArrayListLen);
                 }
             }
@@ -391,7 +397,7 @@ impl Lowerer {
             Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
-            Expression::NullLiteral(_) => Some(ZigType::JsAny),
+            Expression::NullLiteral(_) => None,
             Expression::UnaryExpression(ue) => match ue.operator {
                 UnaryOperator::LogicalNot => Some(ZigType::Bool),
                 UnaryOperator::Void => Some(ZigType::JsAny),
@@ -481,6 +487,40 @@ impl Lowerer {
                 // Try struct field inference
                 let obj_ty = self.infer_expr_type(&mem.object);
                 match obj_ty {
+                    Some(ZigType::Str) => {
+                        if mem.property.name.as_str() == "length" {
+                            return Some(ZigType::I64);
+                        }
+                        None
+                    }
+                    Some(ZigType::JsError) => match mem.property.name.as_str() {
+                        "name" | "message" | "stack" => Some(ZigType::Str),
+                        _ => None,
+                    },
+                    Some(ZigType::JsSymbol) => {
+                        if mem.property.name.as_str() == "description" {
+                            Some(ZigType::Str)
+                        } else {
+                            None
+                        }
+                    }
+                    Some(ZigType::ArrayList(_)) => {
+                        if mem.property.name.as_str() == "length" {
+                            return Some(ZigType::I64);
+                        }
+                        None
+                    }
+                    Some(ZigType::Struct(fields)) => {
+                        // Anonymous struct literal field access:
+                        // {name: "x", age: 42}.name → Str
+                        let field_name = mem.property.name.as_str();
+                        for (name, ty) in &fields {
+                            if name == field_name {
+                                return Some(ty.clone());
+                            }
+                        }
+                        None
+                    }
                     Some(ZigType::NamedStruct(name)) => {
                         // TypedArray properties — must match lower_static_member's
                         // FieldKind::TypedArrayProp routing. Runtime returns
@@ -493,6 +533,24 @@ impl Lowerer {
                                 _ => {}
                             }
                         }
+                        // Map/Set .size
+                        if (name == "Map" || name == "Set") && mem.property.name.as_str() == "size"
+                        {
+                            return Some(ZigType::I64);
+                        }
+                        // RegExp .source/.flags
+                        if name == "RegExp"
+                            && matches!(mem.property.name.as_str(), "source" | "flags")
+                        {
+                            return Some(ZigType::Str);
+                        }
+                        // Host struct fields
+                        if let Some(host_fields) = self.type_info.host_struct_fields.get(&name)
+                            && let Some(ty) = host_fields.get(mem.property.name.as_str())
+                        {
+                            return Some(ty.clone());
+                        }
+                        // Class field types
                         if let Some(fields) = self.type_info.class_field_types.get(&name)
                             && let Some(ty) = fields.get(mem.property.name.as_str())
                         {
@@ -564,6 +622,12 @@ impl Lowerer {
                     if *ty != ZigType::AnytypeReturn {
                         return Some(ty.clone());
                     }
+                }
+                // Try host function return type (mirrors analysis pass at expr.rs:260)
+                if let Expression::Identifier(id) = &ce.callee
+                    && let Some(ty) = self.type_info.host_return_types.get(id.name.as_str())
+                {
+                    return Some(ty.clone());
                 }
                 // Try built-in constructor / function calls
                 if let Some(builtin) = crate::native_builtins::detect_builtin_call(ce) {
@@ -838,10 +902,19 @@ impl Lowerer {
                         // Some(JsAny) would block that fallback.
                         _ => None,
                     },
-                    _ => Some(ZigType::JsAny),
+                    _ => None,
                 }
             }
-            Expression::AwaitExpression(_) => Some(ZigType::JsAny),
+            Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
+            // RegExp literal (/pattern/) → NamedStruct("RegExp")
+            // Matches analysis pass (infer/expr.rs:29). Enables
+            // /pattern/.source and /pattern/.flags to infer Str via the
+            // StaticMemberExpression NamedStruct("RegExp") arm.
+            Expression::RegExpLiteral(_) => Some(ZigType::NamedStruct("RegExp".to_string())),
+            Expression::ThisExpression(_) => self
+                .current_class
+                .as_ref()
+                .map(|name| ZigType::NamedStruct(name.clone())),
             _ => None,
         }
     }
@@ -995,7 +1068,19 @@ impl Lowerer {
                 }
             }
         }
-        self.infer_expr_type(&mem.object)
+        // LOW-4: Check class_field_types before falling back to object type.
+        // Without this, instance.jsanyField ??= value infers the instance
+        // type (NamedStruct) instead of the field type (JsAny), causing ??=
+        // no-op detection to incorrectly skip the isNullish check.
+        let field_name = mem.property.name.as_str();
+        let obj_type = self.infer_expr_type(&mem.object);
+        if let Some(ZigType::NamedStruct(class_name)) = &obj_type
+            && let Some(fields) = self.type_info.class_field_types.get(class_name)
+            && let Some(ty) = fields.get(field_name)
+        {
+            return Some(ty.clone());
+        }
+        obj_type
     }
 
     /// Infer the type of a computed member expression used as an assignment
@@ -1017,6 +1102,14 @@ impl Lowerer {
     /// Infer the type of a private field expression used as an assignment
     /// target (`this.#field = ...` or `this.#field += ...`).
     fn infer_private_field_type(&self, pfe: &PrivateFieldExpression) -> Option<ZigType> {
+        // Look up private field type in class_field_types (mirrors analysis pass expr.rs:585-598)
+        if matches!(&pfe.object, Expression::ThisExpression(_))
+            && let Some(ref class_name) = self.current_class
+            && let Some(fields) = self.type_info.class_field_types.get(class_name)
+            && let Some(ty) = fields.get(pfe.field.name.as_str())
+        {
+            return Some(ty.clone());
+        }
         self.infer_expr_type(&pfe.object)
     }
 

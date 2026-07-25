@@ -72,9 +72,9 @@ impl Emitter {
                     ty: crate::types::ZigType::F64,
                     ..
                 } => {
-                    self.write("@as(i64, @intFromFloat(");
+                    self.write("js_runtime.floatToInt(");
                     self.emit_expr(arg);
-                    self.write("))");
+                    self.write(")");
                 }
                 IrExpr::TypedIdent {
                     ty: crate::types::ZigType::JsAny,

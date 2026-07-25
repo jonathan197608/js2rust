@@ -342,11 +342,17 @@ impl Emitter {
                         name
                     ));
                     self.write(" if (T == JsAny) return a.lt(b);");
-                    self.write(" if (T == i64 or T == f64) {");
-                    self.write(" var __sa: [64]u8 = undefined; var __sb: [64]u8 = undefined;");
+                    self.write(" if (T == i64) {");
+                    self.write(" var __sa: [32]u8 = undefined; var __sb: [32]u8 = undefined;");
                     self.write(" const __stra = std.fmt.bufPrint(&__sa, \"{d}\", .{a}) catch return a < b;");
                     self.write(" const __strb = std.fmt.bufPrint(&__sb, \"{d}\", .{b}) catch return a < b;");
                     self.write(" return std.mem.order(u8, __stra, __strb) == .lt;");
+                    self.write(" } else if (T == f64) {");
+                    self.write(" const __stra = js_number.toString(js_allocator.allocator(), a, 10) catch return a < b;");
+                    self.write(" const __strb = js_number.toString(js_allocator.allocator(), b, 10) catch return a < b;");
+                    self.write(" const __ord = std.mem.order(u8, __stra, __strb);");
+                    self.write(" js_allocator.allocator().free(__stra); js_allocator.allocator().free(__strb);");
+                    self.write(" return __ord == .lt;");
                     self.write(" } return a < b; } }.lessThan); ");
                     self.write(&format!("break :{} {}; }})", blk, name));
                 } else {

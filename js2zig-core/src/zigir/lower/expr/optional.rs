@@ -62,12 +62,12 @@ impl Lowerer {
         } else {
             inner.clone()
         };
+        let field_kind = self.resolve_optional_field_kind(&sme.object, field_name);
         let body = IrExpr::FieldAccess {
             object: Box::new(access_target),
             field: field_name.to_string(),
-            field_kind: FieldKind::StructField,
+            field_kind,
         };
-
         if !needs_null_check {
             return body;
         }
@@ -137,12 +137,12 @@ impl Lowerer {
         } else {
             inner.clone()
         };
+        let index_kind = self.resolve_optional_index_kind(&cme.object);
         let body = IrExpr::IndexAccess {
             object: Box::new(access_target),
             index: Box::new(index),
-            index_kind: IndexKind::SliceIndex,
+            index_kind,
         };
-
         if !needs_null_check {
             return body;
         }
@@ -451,8 +451,12 @@ impl Lowerer {
             // ChainExpression result is always nullable (the else branch is null)
             Expression::ChainExpression(_) => true,
 
-            // Call expressions might return null
-            Expression::CallExpression(_) => true,
+            // LOW-9: Only calls returning JsAny or unknown types might be null.
+            // Calls with definite return types (Str, I64, NamedStruct, etc.)
+            // cannot be null in Zig type system.
+            Expression::CallExpression(_) => {
+                matches!(self.infer_expr_type(expr), None | Some(ZigType::JsAny))
+            }
 
             // Member access: check recursively
             Expression::StaticMemberExpression(sme) => self.expr_might_be_null(&sme.object),
@@ -472,10 +476,6 @@ impl Lowerer {
             Expression::Identifier(id) => {
                 matches!(self.get_var_type(id.name.as_str()), Some(ZigType::JsAny))
             }
-            Expression::CallExpression(_) => {
-                // Many runtime calls return JsAny; be conservative
-                true
-            }
             Expression::ParenthesizedExpression(pe) => {
                 // Unwrap parentheses and check the inner expression
                 self.expr_type_is_jsany(&pe.expression)
@@ -492,16 +492,49 @@ impl Lowerer {
     /// Get the type of a variable, checking fn_local_types (per-function) first,
     /// then falling back to global var_types. This fixes the scoping issue where
     /// var_names from different functions collide in the flat var_types map.
-    pub(crate) fn get_var_type(&self, name: &str) -> Option<ZigType> {
-        // Per-function local types take priority
-        if let Some(ty) = self
-            .fn_ctx
-            .as_ref()
-            .and_then(|ctx| ctx.fn_local_types.get(name))
-        {
-            return Some(ty.clone());
+    /// Resolve FieldKind for optional static member access (LOW-1).
+    /// Mirrors lower_static_member type-aware routing for .length, .size,
+    /// TypedArray properties, etc.
+    fn resolve_optional_field_kind(&self, object: &Expression, field_name: &str) -> FieldKind {
+        let obj_type = self.infer_expr_type(object);
+        match &obj_type {
+            Some(ZigType::Str) if field_name == "length" => FieldKind::StringLen,
+            Some(ZigType::ArrayList(_)) if field_name == "length" => FieldKind::ArrayListLen,
+            Some(ZigType::NamedStruct(name)) => {
+                if (name == "Map" || name == "Set") && field_name == "size" {
+                    FieldKind::MapSetSize
+                } else if Self::is_typedarray_type(name)
+                    && matches!(field_name, "buffer" | "byteLength" | "byteOffset")
+                {
+                    let type_suffix = Self::typedarray_type_suffix(name).map(|s| s.to_string());
+                    FieldKind::TypedArrayProp {
+                        prop: field_name.to_string(),
+                        type_suffix,
+                    }
+                } else {
+                    FieldKind::StructField
+                }
+            }
+            _ => FieldKind::StructField,
         }
-        // Fall back to global var_types
-        self.type_info.var_types.get(name).cloned()
+    }
+
+    /// Resolve IndexKind for optional computed member access (LOW-2).
+    fn resolve_optional_index_kind(&self, object: &Expression) -> IndexKind {
+        let obj_type = self.infer_expr_type(object);
+        match &obj_type {
+            Some(ZigType::ArrayList(_)) => IndexKind::ArrayListItem,
+            _ => IndexKind::SliceIndex,
+        }
+    }
+
+    pub(crate) fn get_var_type(&self, name: &str) -> Option<ZigType> {
+        // LOW-7: Delegate to infer_ident_type which handles special globals
+        // (Infinity/NaN/undefined/arguments), qualified name lookup, suffix
+        // matching, and Anytype filtering — in addition to fn_local_types
+        // and var_types. Previously get_var_type only checked fn_local_types
+        // and exact var_types, missing special globals and cross-function
+        // qualified/suffix entries.
+        self.infer_ident_type(name)
     }
 }

@@ -433,7 +433,11 @@ return a + b + c + d + e + f + g + h + i + j + k;
     );
     assert!(zig.contains("@clz("), "Expected '@clz(' in:\n{}", zig);
     assert!(zig.contains("@as(f32,"), "Expected '@as(f32,' in:\n{}", zig);
-    assert!(zig.contains("@as(i32,"), "Expected '@as(i32,' in:\n{}", zig);
+    assert!(
+        zig.contains("@as(i64, @intCast(js_runtime.toInt32("),
+        "Expected imul toInt32 pattern in:\n{}",
+        zig
+    );
     assert!(
         zig.contains("std.math.log1p("),
         "Expected 'std.math.log1p(' in:\n{}",

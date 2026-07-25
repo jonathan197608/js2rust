@@ -369,6 +369,7 @@ mod tests {
             is_async: HashMap::new(),
             class_field_types: HashMap::new(),
             host_return_types: HashMap::new(),
+            host_struct_fields: HashMap::new(),
             functions_needing_synthetic_rest: HashSet::new(),
         }
     }

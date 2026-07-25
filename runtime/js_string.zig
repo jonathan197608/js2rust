@@ -13,8 +13,12 @@ const JsAny = @import("jsany.zig").JsAny;
 
 /// Decode a single UTF-8 code point starting at position i.
 /// Returns the decoded code point and the byte sequence length, or null if invalid.
-/// Validates continuation bytes, rejects overlong encodings, and rejects
-/// surrogate code points (U+D800–U+DFFF) per RFC 3629 (P1-5 fix).
+/// Validates continuation bytes and rejects overlong encodings.
+/// Surrogate code points (U+D800–U+DFFF) are ACCEPTED here because JS strings
+/// can contain lone surrogates (via fromCharCode/fromCodePoint), which are
+/// encoded as CESU-8 3-byte sequences. All callers are JS string functions
+/// that must handle surrogates correctly. Strict UTF-8 validation (e.g. for
+/// JSON/URI) uses separate validation logic.
 fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: u8 } {
     if (i >= s.len) return null;
     const c = s[i];
@@ -39,7 +43,7 @@ fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: 
         if (s[i + 2] & 0xC0 != 0x80) return null;
         code_point = (@as(u32, c & 0x0F) << 12) | (@as(u32, s[i + 1] & 0x3F) << 6) | @as(u32, s[i + 2] & 0x3F);
         if (code_point < 0x800) return null; // reject overlong encoding
-        if (code_point >= 0xD800 and code_point <= 0xDFFF) return null; // reject surrogates
+        // NOTE: surrogate code points (0xD800–0xDFFF) are accepted for JS compatibility.
         seq_len = 3;
     } else if (c & 0xF8 == 0xF0) {
         // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
@@ -249,7 +253,7 @@ pub fn toLower(alloc: Allocator, s: []const u8) ![]const u8 {
 /// the low surrogate as a CESU-8 string.
 pub fn charAt(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
     if (idx < 0) return &[0]u8{};
-    const target: usize = @intCast(idx);
+    const target: usize = std.math.cast(usize, idx) orelse return &[0]u8{};
     var utf16_idx: usize = 0;
     var i: usize = 0;
     while (i < s.len) {
@@ -294,7 +298,7 @@ pub fn at(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
 /// Returns the i-th UTF-16 code unit (0-65535).
 /// If idx is out of bounds, returns 0 (JS returns NaN, but we return 0 for type simplicity).
 pub fn charCodeAt(s: []const u8, idx: i64) u16 {
-    const target: usize = @intCast(@max(0, idx));
+    const target: usize = std.math.cast(usize, @max(0, idx)) orelse return 0;
     var utf16_idx: usize = 0;
     var i: usize = 0;
 
@@ -336,7 +340,7 @@ pub fn charCodeAt(s: []const u8, idx: i64) u16 {
 /// - If the index points to a high surrogate (0xD800-0xDBFF) and the next code unit
 ///   is a low surrogate (0xDC00-0xDFFF), decodes the pair and returns the full code point.
 pub fn codePointAt(s: []const u8, idx: i64) i64 {
-    const target: usize = @intCast(@max(0, idx));
+    const target: usize = std.math.cast(usize, @max(0, idx)) orelse return 0;
     var utf16_idx: usize = 0;
     var i: usize = 0;
 
@@ -357,6 +361,10 @@ pub fn codePointAt(s: []const u8, idx: i64) i64 {
             if (utf16_idx == target) {
                 // Return the full code point (not just the high surrogate)
                 return @intCast(decoded.code_point);
+            }
+            if (utf16_idx + 1 == target) {
+                // Trailing surrogate: return the low surrogate value
+                return @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
             }
             // Skip the low surrogate (it's part of the same code point)
             utf16_idx += 2;
@@ -655,12 +663,12 @@ pub fn trimEnd(s: []const u8) []const u8 {
 /// R8-P1-19: support optional `from_index` (ECMA-262 22.1.3.19).
 /// Per spec, the search scans backward starting at position `start` where:
 ///   - if `from_index >= 0`: `start = min(from_index, len)`
-///   - if `from_index <  0`: `start = len + from_index` (may be negative → -1)
+///   - if `from_index <  0`: `start = 0` (clamped, not len+from_index)
 /// Empty needle matches at `start` (which may equal `len` when
 /// `from_index >= len`).
 pub fn lastIndexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
     const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
-    const start: i64 = if (from_index < 0) hay_len + from_index else @min(from_index, hay_len);
+    const start: i64 = if (from_index < 0) 0 else @min(from_index, hay_len);
     if (start < 0) return -1;
     if (needle.len == 0) return start;
     if (needle.len > haystack.len) return -1;
@@ -1068,11 +1076,11 @@ test "lastIndexOf from_index (R8-P1-19)" {
     try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", 10));
     // from_index=5 should find the first "hello" at 0 (second one starts at 6)
     try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", 5));
-    // Negative from_index: len + from_index
-    // len=11, from_index=-1 → start=10, finds index 6
-    try std.testing.expectEqual(@as(i64, 6), lastIndexOf("hello hello", "hello", -1));
-    // from_index very negative → start < 0 → -1
-    try std.testing.expectEqual(@as(i64, -1), lastIndexOf("hello hello", "hello", -100));
+    // Negative from_index: clamped to 0 per ECMA-262
+    // len=11, from_index=-1 → start=0, finds "hello" at index 0
+    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", -1));
+    // from_index very negative → start=0, finds "hello" at index 0
+    try std.testing.expectEqual(@as(i64, 0), lastIndexOf("hello hello", "hello", -100));
     // Empty needle returns start (clamped)
     try std.testing.expectEqual(@as(i64, 0), lastIndexOf("abc", "", 0));
     try std.testing.expectEqual(@as(i64, 3), lastIndexOf("abc", "", 100));
@@ -1136,18 +1144,30 @@ test "padEnd overflow guard (P0-4)" {
 /// which performed zero pattern processing — identical to a literal paste.
 pub fn replaceAll(alloc: Allocator, s: []const u8, old: []const u8, new: []const u8) ![]const u8 {
     if (old.len == 0) {
-        // Empty search string: insert replacement at every position
+        // Empty search string: insert replacement at every code point boundary
         // (before each char and at the end), per JS spec.
         // "abc".replaceAll("", "X") → "XaXbXcX"
+        // Must iterate by UTF-8 code point, not byte, to avoid corrupting
+        // multi-byte characters (e.g. "é" → "XéX", not "X\xC3X\xA9X").
         var result = std.ArrayList(u8).empty;
         defer result.deinit(alloc);
         var pos: usize = 0;
-        while (pos <= s.len) : (pos += 1) {
+        while (pos <= s.len) {
             const expanded = try expandReplacementPlain(alloc, new, "", s[0..pos], s[pos..]);
             defer alloc.free(expanded);
             try result.appendSlice(alloc, expanded);
             if (pos < s.len) {
-                try result.appendSlice(alloc, s[pos .. pos + 1]);
+                // Advance to next code point boundary
+                const decoded = decodeUtf8CodePoint(s, pos) orelse {
+                    // Invalid UTF-8: emit single byte and advance
+                    try result.appendSlice(alloc, s[pos .. pos + 1]);
+                    pos += 1;
+                    continue;
+                };
+                try result.appendSlice(alloc, s[pos .. pos + decoded.len]);
+                pos += decoded.len;
+            } else {
+                break;
             }
         }
         return result.toOwnedSlice(alloc);

@@ -71,6 +71,9 @@ pub struct TypeCheckResult {
     pub class_field_types: HashMap<String, HashMap<String, ZigType>>,
     /// Host function return types: fn_name → ZigType (full name, e.g. "host_add")
     pub host_return_types: HashMap<String, ZigType>,
+    /// Host struct field types: struct_name → (field_name → ZigType)
+    /// Populated from async host function return structs.
+    pub host_struct_fields: HashMap<String, HashMap<String, ZigType>>,
     /// Non-export function names that use `arguments` and need a synthetic
     /// `...__arguments` rest param injected by the Lowerer.
     pub functions_needing_synthetic_rest: HashSet<String>,
@@ -207,6 +210,7 @@ impl TypeInferrer {
             is_async: std::mem::take(&mut self.is_async),
             class_field_types: std::mem::take(&mut self.class_field_types),
             host_return_types: std::mem::take(&mut self.host_return_types),
+            host_struct_fields: std::mem::take(&mut self.host_struct_fields),
             functions_needing_synthetic_rest: std::mem::take(
                 &mut self.functions_needing_synthetic_rest,
             ),
