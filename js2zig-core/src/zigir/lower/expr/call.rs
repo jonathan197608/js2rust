@@ -289,9 +289,9 @@ impl Lowerer {
             // ── Derive TypedArray type suffix for JsTypedArray calls ──
             let ta_type_suffix = if module == BuiltinModule::JsTypedArray {
                 obj_name.as_ref().and_then(|name| {
-                    self.type_info.var_types.get(name.as_str()).and_then(|zt| {
+                    self.get_var_type(name.as_str()).and_then(|zt| {
                         if let ZigType::NamedStruct(n) = zt {
-                            Self::typedarray_type_suffix(n).map(|s| s.to_string())
+                            Self::typedarray_type_suffix(&n).map(|s| s.to_string())
                         } else {
                             None
                         }
@@ -309,12 +309,12 @@ impl Lowerer {
                 && (method == "keys" || method == "getOwnPropertyNames")
             {
                 let ident_name = match args.first() {
-                    Some(IrExpr::Ident(ident)) => Some(ident.zig_name.as_str()),
-                    Some(IrExpr::TypedIdent { ident, .. }) => Some(ident.zig_name.as_str()),
+                    Some(IrExpr::Ident(ident)) => Some(ident.js_name.as_str()),
+                    Some(IrExpr::TypedIdent { ident, .. }) => Some(ident.js_name.as_str()),
                     _ => None,
                 };
                 if let Some(name) = ident_name {
-                    if let Some(var_type) = self.type_info.var_types.get(name) {
+                    if let Some(var_type) = self.get_var_type(name) {
                         if matches!(var_type, ZigType::Struct(_)) {
                             if method == "keys" {
                                 "keysStruct".into()

@@ -53,6 +53,9 @@ fn printValue(msg: anytype) void {
                     } else {
                         std.debug.print("Infinity", .{});
                     }
+                } else if (v == 0.0 and std.math.signbit(v)) {
+                    // Negative zero: JS prints "-0" (RT-4)
+                    std.debug.print("-0", .{});
                 } else if (v == @trunc(v) and @abs(v) < 1e15) {
                     // Integer-valued float: print without decimal point (e.g., 123.0 → "123")
                     std.debug.print("{d:.0}", .{v});

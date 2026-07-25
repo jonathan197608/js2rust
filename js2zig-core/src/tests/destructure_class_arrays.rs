@@ -1164,8 +1164,8 @@ return arr.at(idx);
         zig
     );
     assert!(
-        zig.contains("@intCast(@as(isize, @intCast("),
-        "Expected negative index casting in:\n{}",
+        zig.contains("__wrap") && zig.contains("__wrap < 0"),
+        "Expected negative index wrapping with guard:\n{}",
         zig
     );
     assert!(

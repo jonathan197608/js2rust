@@ -631,10 +631,10 @@ fn localToUtc(local_millis: i64) i64 {
     }
     // First estimate: treat local_millis as UTC to get an approximate offset.
     var offset = localOffsetMinutesFor(local_millis);
-    const utc_millis = local_millis - offset * 60000;
+    const utc_millis = @as(i128, local_millis) - @as(i128, offset) * 60000;
     // Refine: the offset at the estimated UTC time should be correct.
-    offset = localOffsetMinutesFor(utc_millis);
-    return local_millis - offset * 60000;
+    offset = localOffsetMinutesFor(clampToI64(utc_millis));
+    return clampToI64(@as(i128, local_millis) - @as(i128, offset) * 60000);
 }
 
 // ── Date math: millis ↔ civil date ──

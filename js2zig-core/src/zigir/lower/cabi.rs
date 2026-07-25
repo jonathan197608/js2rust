@@ -200,7 +200,7 @@ impl Lowerer {
         // BuiltinCall (JsString) instead. Check variable type from TypeInfo.
         let obj_name_raw = Self::extract_callee_object_name_static(&ce.callee);
         if let Some(name) = &obj_name_raw
-            && let Some(var_type) = self.type_info.var_types.get(name.as_str())
+            && let Some(var_type) = &self.get_var_type(name)
         {
             if matches!(var_type, ZigType::Str) {
                 return None;
@@ -420,9 +420,8 @@ impl Lowerer {
 
         // Determine collection kind based on variable type
         let collection_kind = self
-            .type_info
-            .var_types
-            .get(obj_name.as_str())
+            .get_var_type(obj_name.as_str())
+            .as_ref()
             .map(|t| {
                 if matches!(t, ZigType::NamedStruct(s) if s == "Map") {
                     crate::zigir::types::CollectionKind::Map

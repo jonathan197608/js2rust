@@ -911,7 +911,17 @@ impl Lowerer {
             let saved_catch_type = if let Some(ref v) = var {
                 self.type_info
                     .var_types
-                    .insert(v.zig_name.clone(), ZigType::JsError)
+                    .insert(v.js_name.clone(), ZigType::JsError)
+            } else {
+                None
+            };
+            // Also register in fn_local_types so get_var_type() finds the
+            // JsError type during catch body lowering.
+            let saved_fn_local_type = if let Some(ref v) = var {
+                self.fn_ctx.as_mut().and_then(|ctx| {
+                    ctx.fn_local_types
+                        .insert(v.js_name.clone(), ZigType::JsError)
+                })
             } else {
                 None
             };
@@ -926,10 +936,20 @@ impl Lowerer {
             if let Some(ref v) = var {
                 match saved_catch_type {
                     Some(old_ty) => {
-                        self.type_info.var_types.insert(v.zig_name.clone(), old_ty);
+                        self.type_info.var_types.insert(v.js_name.clone(), old_ty);
                     }
                     None => {
-                        self.type_info.var_types.remove(&v.zig_name);
+                        self.type_info.var_types.remove(&v.js_name);
+                    }
+                }
+                if let Some(ctx) = self.fn_ctx.as_mut() {
+                    match saved_fn_local_type {
+                        Some(old_ty) => {
+                            ctx.fn_local_types.insert(v.js_name.clone(), old_ty);
+                        }
+                        None => {
+                            ctx.fn_local_types.remove(&v.js_name);
+                        }
                     }
                 }
             }
@@ -1672,8 +1692,7 @@ impl Lowerer {
 
             // Ident — check variable type in type_info
             IrExpr::Ident(ident) => {
-                let needs_wrap =
-                    self.type_info.var_types.get(&ident.js_name) == Some(&ZigType::I64);
+                let needs_wrap = self.get_var_type(&ident.js_name) == Some(ZigType::I64);
                 if needs_wrap {
                     Self::wrap_i64_to_f64(IrExpr::Ident(ident))
                 } else {
@@ -1877,8 +1896,7 @@ impl Lowerer {
 
             // Ident — check variable type in type_info
             IrExpr::Ident(ident) => {
-                let is_jsany =
-                    self.type_info.var_types.get(&ident.js_name) == Some(&ZigType::JsAny);
+                let is_jsany = self.get_var_type(&ident.js_name) == Some(ZigType::JsAny);
                 if is_jsany {
                     IrExpr::Ident(ident)
                 } else {

@@ -100,7 +100,18 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
             defer keys.deinit(alloc);
             for (rep.array.items) |item| {
                 if (item == .value and item.value == .string) {
-                    try keys.append(alloc, item.value.string);
+                    // Deduplicate: skip if already in list (RT-6)
+                    const key = item.value.string;
+                    var found = false;
+                    for (keys.items) |existing| {
+                        if (std.mem.eql(u8, existing, key)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        try keys.append(alloc, key);
+                    }
                 }
             }
             whitelist = try keys.toOwnedSlice(alloc);
@@ -333,13 +344,15 @@ fn parseObject(alloc: Allocator, scanner: *std.json.Scanner, depth: u32) ParseEr
             .string, .allocated_string => {
                 switch (token) {
                     .string => |s| {
-                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
+                        var val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
+                        errdefer val.deinit(alloc);
                         try obj.objectPut(s, val, alloc);
                     },
                     .allocated_string => |s| {
                         // Free scanner-allocated key buffer after use (P1-2)
                         defer alloc.free(s);
-                        const val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
+                        var val = try parseToken(alloc, scanner, try scanner.nextAllocMax(alloc, .alloc_if_needed, 4096), depth + 1);
+                        errdefer val.deinit(alloc);
                         try obj.objectPut(s, val, alloc);
                     },
                     else => return JSONError.UnexpectedToken,
@@ -360,7 +373,8 @@ fn parseArray(alloc: Allocator, scanner: *std.json.Scanner, depth: u32) ParseErr
         switch (token) {
             .array_end => return arr,
             else => {
-                const val = try parseToken(alloc, scanner, token, depth + 1);
+                var val = try parseToken(alloc, scanner, token, depth + 1);
+                errdefer val.deinit(alloc);
                 try arr.arrayPush(alloc, val);
             },
         }

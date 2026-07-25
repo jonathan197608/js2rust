@@ -435,7 +435,7 @@ impl Emitter {
                 }
             }
             "stringify" => {
-                self.write("try js_json.stringify(js_allocator.allocator(), ");
+                self.write("js_json.stringify(js_allocator.allocator(), ");
                 if let Some(first_arg) = args.first() {
                     self.emit_expr(first_arg);
                 } else {
@@ -453,7 +453,16 @@ impl Emitter {
                 } else {
                     self.write(", null");
                 }
-                self.write(") catch @panic(\"OOM: JSON.stringify\")");
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else if self.in_function {
+                    self.write(") catch return error.JsThrow");
+                } else {
+                    self.write(") catch @panic(\"OOM: JSON.stringify\")");
+                }
             }
             _ => {
                 self.emit_module_call("js_json", method, args);

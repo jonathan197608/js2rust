@@ -250,7 +250,10 @@ impl Emitter {
                 if msg.starts_with("toplevel") || msg.starts_with("skipped unused") {
                     self.writeln(&format!("// error: {}", msg));
                 } else {
-                    self.writeln(&format!("@compileError(\"{}\");", msg));
+                    self.writeln(&format!(
+                        "@compileError(\"{}\");",
+                        helpers::escape_zig_string(msg)
+                    ));
                 }
             }
         }

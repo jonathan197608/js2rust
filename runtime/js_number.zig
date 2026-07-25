@@ -84,8 +84,27 @@ pub fn parseInt(value: anytype, radix: ?i64) i64 {
         return parseIntStr(value, radix);
     }
     if (T == JsAny) {
-        const s = value.asString(js_allocator.allocator());
-        return parseIntStr(s, radix);
+        // Avoid asString heap allocation leak (RT-1): handle common
+        // types with stack buffers. Only array joins need allocation.
+        switch (value) {
+            .value => |v| switch (v) {
+                .string => |s| return parseIntStr(s, radix),
+                .int => |n| {
+                    var ibuf: [32]u8 = undefined;
+                    return parseIntStr(std.fmt.bufPrint(&ibuf, "{d}", .{n}) catch return 0, radix);
+                },
+                .float => |f| {
+                    if (std.math.isNan(f) or std.math.isInf(f)) return 0;
+                    var fbuf: [64]u8 = undefined;
+                    return parseIntStr(std.fmt.bufPrint(&fbuf, "{d}", .{f}) catch return 0, radix);
+                },
+                .bool => |b| return parseIntStr(if (b) "true" else "false", radix),
+                .null, .undefined => return 0,
+            },
+            .null => return 0,
+            .object => return 0,
+            .array => return parseIntStr(value.asString(js_allocator.allocator()), radix),
+        }
     }
     // For numeric/bool types, format to a buffer
     var buf: [64]u8 = undefined;

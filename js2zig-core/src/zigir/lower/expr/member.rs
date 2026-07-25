@@ -486,8 +486,10 @@ impl Lowerer {
                             "charAt" | "substring" | "slice" | "toLowerCase" | "toUpperCase"
                             | "trim" | "repeat" | "replace" | "replaceAll" | "padStart"
                             | "padEnd" => return Some(ZigType::Str),
-                            // charCodeAt/codePointAt can return NaN → F64 (P1-9 fix)
-                            "charCodeAt" | "codePointAt" => return Some(ZigType::F64),
+                            // charCodeAt can return NaN → F64; codePointAt can
+                            // return undefined → JsAny (P1-9 fix, R22-INF-1).
+                            "charCodeAt" => return Some(ZigType::F64),
+                            "codePointAt" => return Some(ZigType::JsAny),
                             "indexOf" | "lastIndexOf" => return Some(ZigType::I64),
                             "includes" | "startsWith" | "endsWith" => return Some(ZigType::Bool),
                             _ => {}
@@ -600,7 +602,7 @@ impl Lowerer {
                 match (left_ty, right_ty) {
                     (Some(l), Some(r)) if l == r => Some(l),
                     (Some(_), Some(_)) => Some(ZigType::JsAny),
-                    (Some(t), None) | (None, Some(t)) => Some(t),
+                    (Some(_), None) | (None, Some(_)) => Some(ZigType::JsAny),
                     (None, None) => None,
                 }
             }

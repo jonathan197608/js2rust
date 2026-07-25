@@ -81,16 +81,18 @@ impl Emitter {
                 self.emit_args_with_defaults_i64(args, 2, &defaults);
                 self.write(")");
             }
-            // Instance methods that need allocator
             "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
             | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" | "toUTCString" => {
                 if let Some(name) = obj {
                     self.write(&format!(
-                        "try {}.{}(js_allocator.allocator())",
+                        "{}.{}(js_allocator.allocator()) catch @panic(\"OOM: Date method\")",
                         name, method
                     ));
                 } else {
-                    self.write(&format!("try js_date.{}(js_allocator.allocator())", method));
+                    self.write(&format!(
+                        "js_date.{}(js_allocator.allocator()) catch @panic(\"OOM: Date method\")",
+                        method
+                    ));
                 }
             }
             // UTC with default argument filling:
@@ -329,7 +331,7 @@ impl Emitter {
                     self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the map.
-                    self.write(&format!("break :{blk} JsAny.undefined_value; }})"));
+                    self.write(&format!("break :{blk} JsAny.fromUndefined(); }})"));
                 }
             }
             "get" | "has" => {
@@ -398,7 +400,7 @@ impl Emitter {
                     self.write(&format!("break :{blk} {}; }})", name));
                 } else {
                     // Degenerate path: no receiver name, cannot return the set.
-                    self.write(&format!("break :{blk} JsAny.undefined_value; }})"));
+                    self.write(&format!("break :{blk} JsAny.fromUndefined(); }})"));
                 }
             }
             // ── forEach — handled by IrArrayCallbackInline, not here ──

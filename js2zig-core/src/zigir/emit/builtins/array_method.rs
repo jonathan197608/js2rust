@@ -418,8 +418,8 @@ impl Emitter {
         }
         self.write("); ");
         self.write(&format!(
-            "const __at_idx = if (__idx < 0) @as(usize, @intCast(@as(isize, @intCast({}.items.len)) + @as(isize, @intCast(__idx)))) else @as(usize, @intCast(__idx)); ",
-            receiver
+            "const __at_idx = if (__idx < 0) blk2: {{ const __wrap = @as(isize, @intCast({}.items.len)) + __idx; break :blk2 if (__wrap < 0) {}.items.len else @as(usize, @intCast(__wrap)); }} else @as(usize, @intCast(__idx)); ",
+            receiver, receiver
         ));
         // Bounds check: return undefined if out of range (P0-R13-1 fix).
         // Previously returned items[0] which is wrong and panics on empty arrays.
@@ -702,7 +702,7 @@ impl Emitter {
                 "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{",
                 elem_type_str, elem_type_str, elem_type_str
             ));
-            self.write(" var __sa: [64]u8 = undefined; var __sb: [64]u8 = undefined;");
+            self.write(" var __sa: [128]u8 = undefined; var __sb: [128]u8 = undefined;");
             self.write(
                 " const __stra = std.fmt.bufPrint(&__sa, \"{d}\", .{a}) catch return a < b;",
             );

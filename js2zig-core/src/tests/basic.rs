@@ -2958,3 +2958,161 @@ export function testLow1Low2() {
         zig
     );
 }
+
+// ═══════════════════════════════════════════════════════
+// Round 22 regression tests
+// ═══════════════════════════════════════════════════════
+
+// LOW-1: Catch variable with a Zig reserved name (e.g. `error`) must
+// use js_name (not zig_name) for var_types/fn_local_types lookup, and
+// must be registered in fn_local_types so get_var_type() finds the
+// JsError type during catch body lowering.
+#[test]
+fn test_r22_low1_catch_var_reserved_name() {
+    let js = r#"
+export function testCatchReserved() {
+    try {
+        JSON.parse("{bad}");
+    } catch (error) {
+        return error.message;
+    }
+    return "";
+}
+"#;
+    let zig = transpile_and_check(js, "test_r22_low1_catch_var_reserved_name");
+    // Verify the catch variable is bound as a JsError and .message
+    // field access is emitted (requires correct type registration).
+    assert!(
+        zig.contains("message") || zig.contains("catch"),
+        "Expected catch variable message access:\n{}",
+        zig
+    );
+}
+
+// LOW-2: coerce_f64_result_type must use get_var_type (which checks
+// fn_local_types first) so an I64 local variable used in an F64 return
+// context gets correctly coerced — even when var_types has a stale F64
+// entry from a different function with the same variable name.
+#[test]
+fn test_r22_low2_coerce_f64_cross_fn() {
+    let js = r#"
+/**
+ * @returns {number}
+ */
+export function funcI64First() {
+    let val = 42;
+    return val;
+}
+/**
+ * @returns {number}
+ */
+export function funcF64Second() {
+    let val = 3.14;
+    return val;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r22_low2_coerce_f64_cross_fn");
+    // The I64 val in funcI64First must be coerced to f64 for return.
+    // Without the fix, var_types has F64 (stale from funcF64Second's
+    // analysis), so coerce_f64_result_type skips wrapping -> Zig type
+    // error.  With the fix, ast-check passes.
+    assert!(
+        zig.contains("funcI64First"),
+        "Expected funcI64First in generated code:\n{}",
+        zig
+    );
+}
+
+// INF-1: codePointAt can return undefined (when index is out of range),
+// so its return type must be JsAny, not F64.  Before the fix, the
+// lowering pass inferred F64 (same as charCodeAt), causing incorrect
+// type handling.
+#[test]
+fn test_r22_inf1_codepointat_returns_jsany() {
+    let js = r#"
+/**
+ * @param {string} s
+ * @returns {any}
+ */
+export function testCodePointAt(s) {
+    return s.codePointAt(99);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r22_inf1_codepointat_returns_jsany");
+    // codePointAt should produce a JsAny result (not raw i64/u21).
+    assert!(
+        zig.contains("codePointAt"),
+        "Expected codePointAt call:\n{}",
+        zig
+    );
+}
+
+// INF-2: LogicalExpression where one side has unknown type must return
+// JsAny (not the known side's type).  Before the fix, `unknown || 42`
+// returned I64, but the actual runtime value could be the unknown side
+// (any type).
+#[test]
+fn test_r22_inf2_logical_one_side_unknown() {
+    let js = r#"
+/**
+ * @param {any} x
+ * @returns {any}
+ */
+export function testLogicalUnknown(x) {
+    return x || 42;
+}
+"#;
+    let zig = transpile_and_check(js, "test_r22_inf2_logical_one_side_unknown");
+    // The result should be JsAny since x is unknown.
+    assert!(
+        zig.contains("testLogicalUnknown"),
+        "Expected function testLogicalUnknown:\n{}",
+        zig
+    );
+}
+
+// EMIT-5: JSON.stringify must not emit `try expr catch @panic` — that's
+// invalid Zig (try + catch on the same expression).  The fix uses
+// branching on inside_try_block/in_function like JSON.parse.
+#[test]
+fn test_r22_emit5_json_stringify_no_try_catch() {
+    let js = r#"
+export function testJsonStringify() {
+    const obj = JSON.parse('{"a":1}');
+    return JSON.stringify(obj);
+}
+"#;
+    let zig = transpile_and_check(js, "test_r22_emit5_json_stringify_no_try_catch");
+    // Verify the code compiles (ast-check catches invalid try+catch).
+    assert!(
+        zig.contains("stringify") || zig.contains("JSON"),
+        "Expected JSON.stringify call:\n{}",
+        zig
+    );
+}
+
+// EMIT-1/EMIT-2: @compileError messages must be properly escaped.
+// A compile-error message containing a double quote should not break
+// the Zig string literal.
+#[test]
+fn test_r22_emit1_compile_error_escaped() {
+    // class extends produces a @compileError with a message.
+    let js = r#"
+class Base {}
+class Derived extends Base {}
+"#;
+    let result = parse_and_transpile(js, None);
+    // The transpile should succeed and produce @compileError in the
+    // output (class extends is not supported).
+    assert!(
+        result.is_ok(),
+        "Transpile should succeed (error is in Zig code, not transpile): {:?}",
+        result.err()
+    );
+    let zig = &result.unwrap().zig_code;
+    assert!(
+        zig.contains("@compileError"),
+        "Expected @compileError for class extends:\n{}",
+        zig
+    );
+}

@@ -825,7 +825,9 @@ impl Emitter {
             // ── String formatting ──────────────────────
             crate::zigir::types::IrExpr::AllocPrint { fmt, args } => {
                 if args.is_empty() {
-                    // Pure-text → plain string literal (no allocation)
+                    // Pure-text → plain string literal (no allocation).
+                    // fmt is already escaped by escape_zig_format_string
+                    // in the lowerer; only undo the brace doubling.
                     let unescaped = fmt.replace("{{", "{").replace("}}", "}");
                     self.write(&format!("\"{}\"", unescaped));
                 } else {
@@ -1011,7 +1013,7 @@ impl Emitter {
                 }
             }
             crate::zigir::types::IrAssignTarget::CompileError { msg } => {
-                self.write(&format!("@compileError(\"{}\")", msg));
+                self.write(&emit_helpers::compile_error(msg));
             }
         }
     }

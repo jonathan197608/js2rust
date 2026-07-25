@@ -565,9 +565,10 @@ return JSON.stringify(user);
     );
 
     // Verify JSON.stringify() is converted to js_json.stringify()
+    // (uses catch return error.JsThrow, not try — EMIT-5 fix)
     assert!(
-        zig.contains("try js_json.stringify(js_allocator.allocator(), user"),
-        "Expected try js_json.stringify(), got:\n{}",
+        zig.contains("js_json.stringify(js_allocator.allocator(), user"),
+        "Expected js_json.stringify(), got:\n{}",
         zig
     );
 }

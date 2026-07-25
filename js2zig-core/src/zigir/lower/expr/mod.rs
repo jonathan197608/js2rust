@@ -390,7 +390,7 @@ impl Lowerer {
         }
 
         let ident = self.make_ident(var_name);
-        if let Some(ty) = self.type_info.var_types.get(var_name) {
+        if let Some(ty) = self.get_var_type(var_name) {
             IrExpr::TypedIdent {
                 ident,
                 ty: ty.clone(),
