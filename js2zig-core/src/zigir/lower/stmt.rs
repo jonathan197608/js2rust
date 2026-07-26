@@ -1,4 +1,4 @@
-// zigir/lower/stmt.rs
+﻿// zigir/lower/stmt.rs
 // Statement lowering: control flow (if/for/while/switch/try/labeled), blocks.
 
 use std::collections::HashSet;
@@ -1651,6 +1651,8 @@ impl Lowerer {
                     expr
                 }
             }
+            // R28-LOW-6: Paren — recurse into the inner expression
+            IrExpr::Paren(inner) => self.coerce_i64_result_type(*inner),
             // Already-coerced or other expressions: pass through unchanged
             // TypedIdent with F64 → wrap to i64
             IrExpr::TypedIdent {
@@ -1934,6 +1936,9 @@ impl Lowerer {
                 body,
                 result: Box::new(self.coerce_f64_result_type(*result)),
             },
+
+            // R28-LOW-6: Paren — recurse into the inner expression
+            IrExpr::Paren(inner) => self.coerce_f64_result_type(*inner),
 
             // Other expressions — pass through unchanged
             other => other,

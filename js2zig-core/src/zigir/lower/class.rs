@@ -464,6 +464,12 @@ impl Lowerer {
             }
         };
 
+        // R28-LOW-1: Pre-scan for throw statements (mirrors lower_fn_decl).
+        let has_throw = func
+            .body
+            .as_ref()
+            .is_some_and(|b| Self::has_throw_in_body(b));
+
         // Enter function context
         let saved_fn = self.enter_fn(method_name, false, Some(return_type.clone()));
 
@@ -509,8 +515,9 @@ impl Lowerer {
 
         self.in_static_block = saved_static_block;
 
-        // R24-EMIT-1: Read catchable-error flags BEFORE exit_fn restores
-        // the outer context. Mirrors the pattern in decl.rs for IrFnDecl.
+        // R28-LOW-1: Read all can_throw contributors BEFORE exit_fn restores
+        // the outer context. Mirrors the full pattern in decl.rs lower_fn_decl.
+        let has_bigint_div = self.fn_ctx.as_ref().is_some_and(|ctx| ctx.has_bigint_div);
         let has_catchable_error = self
             .fn_ctx
             .as_ref()
@@ -519,7 +526,15 @@ impl Lowerer {
             .fn_ctx
             .as_ref()
             .is_some_and(|ctx| ctx.fn_ever_catchable);
-        let can_throw = has_catchable_error || fn_ever_catchable;
+        let has_js_const_reassign = self
+            .fn_ctx
+            .as_ref()
+            .is_some_and(|ctx| !ctx.js_const_reassigned.is_empty());
+        let can_throw = has_throw
+            || has_bigint_div
+            || has_catchable_error
+            || fn_ever_catchable
+            || has_js_const_reassign;
 
         self.exit_fn(saved_fn);
 
@@ -567,13 +582,63 @@ impl Lowerer {
                 if !field_names.contains(&fname) {
                     return None;
                 }
-                // **= and >>>= are expanded by lower_assignment into
-                // BlockExpr — let them fall through to normal lowering.
-                if matches!(
-                    ae.operator,
-                    AssignmentOperator::Exponential | AssignmentOperator::ShiftRightZeroFill
-                ) {
-                    return None;
+                // R28-LOW-2: **= and >>>= must be expanded here, not fall
+                // through to normal lowering (which produces IrExpr::This,
+                // invalid in the init constructor that has no self param).
+                if ae.operator == AssignmentOperator::Exponential {
+                    let value_ir = self.lower_expr(&ae.right);
+                    let read_expr = IrExpr::Ident(self.make_ident(&fname));
+                    let target_type = self.infer_assign_target_type(&ae.left);
+                    if target_type == Some(ZigType::BigInt) {
+                        return Some(IrStmt::Assign {
+                            target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                            op: AssignOp::Assign,
+                            value: IrExpr::Binary {
+                                op: BinOp::Pow,
+                                left: Box::new(read_expr),
+                                right: Box::new(value_ir),
+                                left_type: Some(ZigType::BigInt),
+                                right_type: Some(ZigType::BigInt),
+                            },
+                        });
+                    } else {
+                        let base_type = target_type.unwrap_or(ZigType::F64);
+                        let exp_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::F64);
+                        let result_type = if base_type == ZigType::I64 {
+                            Some(ZigType::I64)
+                        } else {
+                            None
+                        };
+                        return Some(IrStmt::Assign {
+                            target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                            op: AssignOp::Assign,
+                            value: IrExpr::PowExpr {
+                                base: Box::new(read_expr),
+                                exp: Box::new(value_ir),
+                                base_type,
+                                exp_type,
+                                result_type,
+                            },
+                        });
+                    }
+                }
+                if ae.operator == AssignmentOperator::ShiftRightZeroFill {
+                    let value_ir = self.lower_expr(&ae.right);
+                    let read_expr = IrExpr::Ident(self.make_ident(&fname));
+                    let target_type = self.infer_assign_target_type(&ae.left);
+                    let base_type = target_type.unwrap_or(ZigType::I64);
+                    let right_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::I64);
+                    return Some(IrStmt::Assign {
+                        target: IrAssignTarget::Ident(self.make_ident(&fname)),
+                        op: AssignOp::Assign,
+                        value: IrExpr::Binary {
+                            op: BinOp::UrShr,
+                            left: Box::new(read_expr),
+                            right: Box::new(value_ir),
+                            left_type: Some(base_type),
+                            right_type: Some(right_type),
+                        },
+                    });
                 }
                 // BigInt compound assignments need expansion to
                 // field = field <op> value (no Zig += for BigInt).

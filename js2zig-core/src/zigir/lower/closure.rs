@@ -178,10 +178,11 @@ impl Lowerer {
             &mut |e| Self::detect_mutated_in_expr(e, mutated),
             &mut |_| {}, // on_ident: identifiers are not mutations
             &mut |target| {
-                // AssignmentExpression left-hand side
-                if let AssignmentTarget::AssignmentTargetIdentifier(id) = target {
-                    mutated.borrow_mut().insert(id.name.to_string());
-                }
+                // R28-LOW-4: Also handle destructuring assignment targets
+                // (ArrayAssignmentTarget, ObjectAssignmentTarget) so that
+                // captured variables reassigned via destructuring are
+                // correctly detected as mutated (by-reference capture).
+                Self::collect_mutation_idents_from_target(target, mutated);
             },
             &mut |simple_target| {
                 // UpdateExpression target (i++, ++i, etc.)
@@ -197,6 +198,72 @@ impl Lowerer {
         );
     }
 
+    /// R28-LOW-4: Recursively collect identifier names from a destructuring
+    /// assignment target, including array and object patterns. Used by
+    /// detect_mutated_in_expr to correctly mark captured variables that are
+    /// reassigned via destructuring (e.g., [x] = arr, {a} = obj) as mutated.
+    fn collect_mutation_idents_from_target(
+        target: &AssignmentTarget,
+        mutated: &RefCell<HashSet<String>>,
+    ) {
+        match target {
+            AssignmentTarget::AssignmentTargetIdentifier(id) => {
+                mutated.borrow_mut().insert(id.name.to_string());
+            }
+            AssignmentTarget::ArrayAssignmentTarget(at) => {
+                for inner in at.elements.iter().flatten() {
+                    Self::collect_mutation_idents_from_maybe_default(inner, mutated);
+                }
+            }
+            AssignmentTarget::ObjectAssignmentTarget(ot) => {
+                for prop in &ot.properties {
+                    match prop {
+                        AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ap) => {
+                            mutated.borrow_mut().insert(ap.binding.name.to_string());
+                        }
+                        AssignmentTargetProperty::AssignmentTargetPropertyProperty(ap) => {
+                            Self::collect_mutation_idents_from_maybe_default(&ap.binding, mutated);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// R28-LOW-4: Collect mutation identifiers from an AssignmentTargetMaybeDefault
+    /// (element of an array destructuring pattern).
+    fn collect_mutation_idents_from_maybe_default(
+        target: &AssignmentTargetMaybeDefault,
+        mutated: &RefCell<HashSet<String>>,
+    ) {
+        match target {
+            AssignmentTargetMaybeDefault::AssignmentTargetIdentifier(id) => {
+                mutated.borrow_mut().insert(id.name.to_string());
+            }
+            AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(atwd) => {
+                Self::collect_mutation_idents_from_target(&atwd.binding, mutated);
+            }
+            AssignmentTargetMaybeDefault::ArrayAssignmentTarget(at) => {
+                for inner in at.elements.iter().flatten() {
+                    Self::collect_mutation_idents_from_maybe_default(inner, mutated);
+                }
+            }
+            AssignmentTargetMaybeDefault::ObjectAssignmentTarget(ot) => {
+                for prop in &ot.properties {
+                    match prop {
+                        AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(ap) => {
+                            mutated.borrow_mut().insert(ap.binding.name.to_string());
+                        }
+                        AssignmentTargetProperty::AssignmentTargetPropertyProperty(ap) => {
+                            Self::collect_mutation_idents_from_maybe_default(&ap.binding, mutated);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     /// Helper: collect identifiers from a function body (params + statements).
     /// Shared by FunctionExpression and ArrowFunctionExpression to avoid duplication.
     /// Also collects local declarations from the nested function body to avoid

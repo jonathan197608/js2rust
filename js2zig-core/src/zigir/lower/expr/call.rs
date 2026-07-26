@@ -1,4 +1,4 @@
-// zigir/lower/expr/call.rs
+﻿// zigir/lower/expr/call.rs
 // Call, new, await expression lowering + helpers.
 
 use oxc_ast::ast::*;
@@ -687,8 +687,12 @@ impl Lowerer {
 
     /// Lower an await expression.
     pub(super) fn lower_await(&mut self, ae: &AwaitExpression) -> crate::zigir::types::IrExpr {
-        let task_var = IrIdent::new(&self.name_mangler.next_name("_t"));
-        let block_label = format!("blk_{}", self.name_mangler.peek_count("_t"));
+        // R28-LOW-3: Use peek-then-advance pattern so task_var and block_label
+        // share the same counter value (matching function.rs pattern).
+        let count = self.name_mangler.peek_count("_t");
+        let task_var = IrIdent::new(&format!("_t_{}", count));
+        let block_label = format!("blk_{}", count);
+        self.name_mangler.next_name("_t");
 
         // Check if this is an async host function call
         if let Expression::CallExpression(call) = &ae.argument {
