@@ -1,4 +1,4 @@
-﻿// zigir/lower/expr/call.rs
+// zigir/lower/expr/call.rs
 // Call, new, await expression lowering + helpers.
 
 use oxc_ast::ast::*;
@@ -197,6 +197,7 @@ impl Lowerer {
                                 (BuiltinModule::JsString, "lastIndexOf".into(), ZigType::I64)
                             }
                             "slice" => (BuiltinModule::JsString, "slice".into(), ZigType::Str),
+                            "concat" => (BuiltinModule::JsString, "concat".into(), ZigType::Str),
                             _ => (module, method, return_type),
                         }
                     } else if matches!(var_type, ZigType::F64 | ZigType::I64)
@@ -335,19 +336,16 @@ impl Lowerer {
             };
 
             // ── Handle complex receiver expressions (method chaining) ──
-            // When the receiver is a CallExpression (e.g., encodeURIComponent(str).replace(...)),
-            // extract_callee_object_name_static returns None. We lower the receiver expression
-            // and store it in obj_expr so the Emitter can inline it.
+            // When the receiver is not a simple identifier or recognized literal
+            // (e.g., CallExpression, NewExpression, BinaryExpression, ComputedMemberExpression,
+            // ConditionalExpression), extract_callee_object_name_static returns None.
+            // We lower ANY such complex receiver so the Emitter can inline it.
+            // Previously only CallExpression/NewExpression were handled, leaving
+            // receivers like `(0.1 + 0.2).toFixed(2)` with both obj_name and
+            // obj_expr as None, producing `js_number.toFixed(alloc, , 2)` (double comma).
             let mut inner_expr = if obj_name.is_none() {
                 if let Expression::StaticMemberExpression(sme) = &ce.callee {
-                    match &sme.object {
-                        // Complex receivers: lower the entire expression so the Emitter
-                        // can inline it (e.g., new Date(0).getFullYear()).
-                        Expression::CallExpression(_) | Expression::NewExpression(_) => {
-                            Some(self.lower_expr(&sme.object))
-                        }
-                        _ => None,
-                    }
+                    Some(self.lower_expr(&sme.object))
                 } else {
                     None
                 }

@@ -624,7 +624,7 @@ impl Lowerer {
                         match mem.property.name.as_str() {
                             "charAt" | "substring" | "slice" | "toLowerCase" | "toUpperCase"
                             | "trim" | "repeat" | "replace" | "replaceAll" | "padStart"
-                            | "padEnd" => return Some(ZigType::Str),
+                            | "padEnd" | "concat" | "at" => return Some(ZigType::Str),
                             // charCodeAt can return NaN → F64; codePointAt can
                             // return undefined → JsAny (P1-9 fix, R22-INF-1).
                             "charCodeAt" => return Some(ZigType::F64),

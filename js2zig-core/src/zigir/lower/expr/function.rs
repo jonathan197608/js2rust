@@ -429,8 +429,6 @@ impl Lowerer {
         &mut self,
         af: &ArrowFunctionExpression,
     ) -> crate::zigir::types::IrExpr {
-        use crate::zigir::types::{IrArrowFn, IrExpr};
-
         let mut captured = self.collect_arrow_captures(af);
 
         // C5: Detect `this` usage inside arrow body within a class method.
@@ -501,28 +499,26 @@ impl Lowerer {
         self.exit_closure_context(&mut body, saved_fn, saved_captured);
         self.in_closure_with_this = saved_closure_with_this;
 
-        if !captured.is_empty() {
-            let idx = self.name_mangler.peek_count("closure");
-            let struct_name = IrIdent::new(&format!("Closure_{}", idx));
-            let instance_name = IrIdent::new(&format!("_cl_{}", idx));
-            self.name_mangler.next_name("closure");
+        // Always produce IrExpr::Closure, even when captures is empty.
+        // Previously, no-capture arrows returned IrExpr::ArrowFn which only
+        // two emit sites handled (var-init in decl.rs and Object.groupBy).
+        // Any other context (function args, optional-chaining args, array
+        // elements, etc.) reached emit and panicked. By always returning
+        // Closure, the struct is registered in pending_arrow_structs and
+        // the instance is emitted as Closure_N { }, valid everywhere.
+        let idx = self.name_mangler.peek_count("closure");
+        let struct_name = IrIdent::new(&format!("Closure_{}", idx));
+        let instance_name = IrIdent::new(&format!("_cl_{}", idx));
+        self.name_mangler.next_name("closure");
 
-            self.build_closure_expr(
-                captured,
-                params,
-                return_type,
-                body,
-                struct_name,
-                instance_name,
-            )
-        } else {
-            IrExpr::ArrowFn(IrArrowFn {
-                params,
-                return_type,
-                body,
-                is_concise,
-            })
-        }
+        self.build_closure_expr(
+            captured,
+            params,
+            return_type,
+            body,
+            struct_name,
+            instance_name,
+        )
     }
 
     /// Lower a function expression.

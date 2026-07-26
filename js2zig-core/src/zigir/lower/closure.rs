@@ -540,6 +540,22 @@ impl Lowerer {
                     type_info,
                 );
             }
+            // Nested array/object destructuring patterns appearing directly as
+            // MaybeDefault elements (e.g. [[x], y] = arr). Delegate to
+            // collect_idents_from_assignment_target which handles all variants.
+            // as_assignment_target() always returns Some for these two variants.
+            AssignmentTargetMaybeDefault::ArrayAssignmentTarget(_)
+            | AssignmentTargetMaybeDefault::ObjectAssignmentTarget(_) => {
+                if let Some(at) = target.as_assignment_target() {
+                    Self::collect_idents_from_assignment_target(
+                        at,
+                        captured,
+                        seen,
+                        local_names,
+                        type_info,
+                    );
+                }
+            }
             _ => {}
         }
     }

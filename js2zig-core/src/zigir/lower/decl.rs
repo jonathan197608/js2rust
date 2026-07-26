@@ -462,7 +462,25 @@ impl Lowerer {
                     crate::zigir::types::IrExpr::Closure(ref closure) => {
                         // Struct already registered by lower_fn_expr / lower_arrow_fn.
                         // Closure instance: StructName { .captured = val, ... }
+                        // Register the variable name as a closure instance so
+                        // calls to this variable use CallKind::Closure (.call()
+                        // syntax) instead of CallKind::Direct (bare name() call).
+                        self.closure_mgr
+                            .closure_instances
+                            .insert(js_name.to_string());
                         Some(crate::zigir::types::IrExpr::Closure(closure.clone()))
+                    }
+                    crate::zigir::types::IrExpr::FnExpr(_) => {
+                        // No-capture function expression: lower_fn_expr already
+                        // registered a struct in pending_arrow_structs (with a
+                        // .call() method). Register the variable name as a
+                        // closure instance so calls use CallKind::Closure
+                        // (.call() syntax) instead of CallKind::Direct (bare
+                        // name() call, which is invalid for a struct type).
+                        self.closure_mgr
+                            .closure_instances
+                            .insert(js_name.to_string());
+                        Some(ir)
                     }
                     _ => Some(ir),
                 }

@@ -269,6 +269,8 @@ const ALL_FRAGMENTS: &[&str] = &[
     "test_builtins_frag_226",
     "test_builtins_frag_227",
     "test_builtins_frag_228",
+    "test_edge_frag_25",
+    "test_edge_frag_30",
 ];
 
 fn main() {
@@ -1267,6 +1269,14 @@ fn run_fragment(frag: &str) -> bool {
             let _ = testBuiltins_frag_228();
             true
         }
+        "test_edge_frag_25" => {
+            let _ = testEdge_frag_25();
+            true
+        }
+        "test_edge_frag_30" => {
+            let _ = testEdge_frag_30();
+            true
+        }
         _ => false,
     }
 }
@@ -1295,7 +1305,7 @@ fn run_all(binary: &str) {
     // Check if node is available once up front.
     let node_available = Command::new("node").arg("--version").output().is_ok();
     if !node_available {
-        eprintln!("Warning: node not found on PATH — skipping comparison, exit-code only mode.\n");
+        eprintln!("Warning: node not found on PATH 鈥?skipping comparison, exit-code only mode.\n");
     }
 
     for (i, frag) in ALL_FRAGMENTS.iter().enumerate() {
@@ -1347,7 +1357,7 @@ fn run_all(binary: &str) {
         let node_output = match node_result {
             Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
             Err(_) => {
-                // Node.js file might not exist — treat as pass (Zig ran fine).
+                // Node.js file might not exist 鈥?treat as pass (Zig ran fine).
                 passed += 1;
                 eprintln!("OK (no node.js reference)");
                 continue;
@@ -1413,6 +1423,6 @@ fn run_all(binary: &str) {
         }
     }
 
-    // Exit code 0 regardless of mismatch/error count — mdn-test-project is a
+    // Exit code 0 regardless of mismatch/error count 鈥?mdn-test-project is a
     // diagnostic tool, not a gate. Mismatch details are already printed above.
 }

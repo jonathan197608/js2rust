@@ -475,11 +475,16 @@ impl Emitter {
                 // digit counts, plus OOM). Use inside_try_block to propagate
                 // errors to catch handler; otherwise @panic with RangeError msg.
                 self.write(&format!("js_number.{}(js_allocator.allocator(), ", method));
+                let mut first = true;
                 if let Some(name) = obj {
                     self.write(name);
+                    first = false;
                 }
                 for arg in args.iter() {
-                    self.write(", ");
+                    if !first {
+                        self.write(", ");
+                    }
+                    first = false;
                     self.emit_expr(arg);
                 }
                 if let Some(label) = &self.inside_try_block {
@@ -498,15 +503,24 @@ impl Emitter {
             // matching the slice/substring/parseInt convention.
             "toString" => {
                 self.write("js_number.toString(js_allocator.allocator(), ");
+                let mut first = true;
                 if let Some(name) = obj {
                     self.write(name);
+                    first = false;
                 }
                 for arg in args.iter() {
-                    self.write(", ");
+                    if !first {
+                        self.write(", ");
+                    }
+                    first = false;
                     self.emit_expr(arg);
                 }
                 if args.is_empty() {
-                    self.write(", 10");
+                    if !first {
+                        self.write(", 10");
+                    } else {
+                        self.write("10");
+                    }
                 }
                 // Same fallible-call convention as toFixed/toExponential/
                 // toPrecision above: toString returns ![]const u8 (RangeError

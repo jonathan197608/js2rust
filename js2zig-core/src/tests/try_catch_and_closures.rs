@@ -517,15 +517,15 @@ return add(3, 4);
     );
     // Should generate a Zig function for the arrow function
     assert!(
-        zig.contains("const _arrow_fn_"),
-        "Expected arrow function to generate a struct:
+        zig.contains("const Closure_"),
+        "Expected closure struct for arrow function:
 {}",
         zig
     );
     // Should assign the function to the variable
     assert!(
-        zig.contains("const add = _arrow_fn_"),
-        "Expected arrow function to be assigned to variable:
+        zig.contains("const add = Closure_"),
+        "Expected arrow function closure to be assigned to variable:
 {}",
         zig
     );
@@ -603,11 +603,11 @@ return double(5);
         zig
     );
     assert!(
-        zig.contains("const _arrow_fn_"),
-        "Expected arrow function struct"
+        zig.contains("const Closure_"),
+        "Expected closure struct for arrow function"
     );
     assert!(
-        zig.contains("const double = _arrow_fn_"),
+        zig.contains("const double = Closure_"),
         "Expected assignment"
     );
 }
@@ -628,8 +628,8 @@ return f(5);
         zig
     );
     assert!(
-        zig.contains("const _arrow_fn_"),
-        "Expected arrow function struct"
+        zig.contains("const Closure_"),
+        "Expected closure struct for arrow function"
     );
     assert!(
         zig.contains("return (x + 1);"),
