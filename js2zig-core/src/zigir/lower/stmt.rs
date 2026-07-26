@@ -1,4 +1,4 @@
-﻿// zigir/lower/stmt.rs
+// zigir/lower/stmt.rs
 // Statement lowering: control flow (if/for/while/switch/try/labeled), blocks.
 
 use std::collections::HashSet;
@@ -11,6 +11,7 @@ use crate::zigir::source_span::SourceSpan;
 use crate::zigir::types::{IrBlock, IrDecl, IrForInKind, IrForOfKind};
 
 use super::Lowerer;
+use crate::zigir::ops::BinOp;
 
 // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
 //  Declaration lowering (remaining stubs)
@@ -1615,10 +1616,27 @@ impl Lowerer {
             }
             // Binary with f64 result → wrap in @intFromFloat
             IrExpr::Binary {
+                op,
                 ref left_type,
                 ref right_type,
                 ..
             } => {
+                // Comparison operators return Bool — skip coercion
+                if matches!(
+                    op,
+                    BinOp::Lt
+                        | BinOp::Gt
+                        | BinOp::Le
+                        | BinOp::Ge
+                        | BinOp::Eq
+                        | BinOp::Ne
+                        | BinOp::StrictEq
+                        | BinOp::StrictNe
+                        | BinOp::In
+                        | BinOp::InstanceOf
+                ) {
+                    return expr;
+                }
                 let is_f64 = left_type.as_ref() == Some(&ZigType::F64)
                     || right_type.as_ref() == Some(&ZigType::F64);
                 if is_f64 {
@@ -1855,10 +1873,27 @@ impl Lowerer {
             // Binary: wrap only if definitely I64 (known numeric type, not F64, not Anytype).
             // Unknown/Anytype types → pass through (Zig handles coercion).
             IrExpr::Binary {
+                op,
                 ref left_type,
                 ref right_type,
                 ..
             } => {
+                // Comparison operators return Bool — skip coercion
+                if matches!(
+                    op,
+                    BinOp::Lt
+                        | BinOp::Gt
+                        | BinOp::Le
+                        | BinOp::Ge
+                        | BinOp::Eq
+                        | BinOp::Ne
+                        | BinOp::StrictEq
+                        | BinOp::StrictNe
+                        | BinOp::In
+                        | BinOp::InstanceOf
+                ) {
+                    return expr;
+                }
                 let is_f64 = left_type.as_ref() == Some(&ZigType::F64)
                     || right_type.as_ref() == Some(&ZigType::F64);
                 let is_known_i64 = left_type.as_ref() == Some(&ZigType::I64)

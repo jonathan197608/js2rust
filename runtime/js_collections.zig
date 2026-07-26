@@ -219,6 +219,7 @@ pub fn JsCollection(comptime Value: type) type {
         pub fn keys(self: *const @This(), alloc: Allocator) !std.ArrayList(JsAny) {
             var result: std.ArrayList(JsAny) = .empty;
             try result.ensureTotalCapacity(alloc, self.inner.count());
+            errdefer result.deinit(alloc); // RT-4: clean up on OOM during append
             var iter = self.inner.keyIterator();
             while (iter.next()) |key_ptr| {
                 try result.append(alloc, key_ptr.*);
@@ -235,6 +236,7 @@ pub fn JsCollection(comptime Value: type) type {
             } else {
                 var result: std.ArrayList(JsAny) = .empty;
                 try result.ensureTotalCapacity(alloc, self.inner.count());
+                errdefer result.deinit(alloc); // RT-4: clean up on OOM during append
                 var iter = self.inner.valueIterator();
                 while (iter.next()) |val_ptr| {
                     try result.append(alloc, val_ptr.*);
@@ -250,6 +252,10 @@ pub fn JsCollection(comptime Value: type) type {
         pub fn entries(self: *const @This(), alloc: Allocator) !std.ArrayList(std.ArrayList(JsAny)) {
             var result: std.ArrayList(std.ArrayList(JsAny)) = .empty;
             try result.ensureTotalCapacity(alloc, self.inner.count());
+            errdefer { // RT-4: deinit inner ArrayLists on error
+                for (result.items) |*pair| pair.deinit(alloc);
+                result.deinit(alloc);
+            }
             if (is_set) {
                 // Set: [value, value]
                 var iter = self.inner.keyIterator();

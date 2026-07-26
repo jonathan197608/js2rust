@@ -316,26 +316,34 @@ impl Emitter {
             }
         }
         if is_fallible {
-            // repeat() can return error.RangeError (negative count or overflow).
+            // Methods that can return error.RangeError: repeat (invalid count),
+            // padStart/padEnd (overflow on very large target length).
             // In a try-catch block, route RangeError as a JS throw (break with
             // error.JsThrow) so catch can intercept it. Outside try-catch, the
             // enclosing export function cannot return an error union, so we
             // use @panic with a RangeError message (matching JS behavior of
             // an uncaught RangeError).
-            if method == "repeat" {
+            let range_error_msg = match method {
+                "repeat" => "RangeError: Invalid count value for String.repeat()",
+                "padStart" => "RangeError: String.padStart() result exceeds maximum length",
+                "padEnd" => "RangeError: String.padEnd() result exceeds maximum length",
+                _ => "",
+            };
+            if !range_error_msg.is_empty() {
                 if let Some(label) = &self.inside_try_block {
                     self.write(&format!(
                         ") catch |err| switch (err) {{ \
                          error.RangeError => break :{} @as(anyerror!void, error.JsThrow), \
-                         else => @panic(\"OOM: string repeat\") }}",
+                         else => @panic(\"OOM: string method\") }}",
                         label
                     ));
                 } else {
-                    self.write(
-                        ") catch |err| switch (err) { \
-                         error.RangeError => @panic(\"RangeError: Invalid count value for String.repeat()\"), \
-                         else => @panic(\"OOM: string repeat\") }",
-                    );
+                    self.write(&format!(
+                        ") catch |err| switch (err) {{ \
+                         error.RangeError => @panic(\"{}\"), \
+                         else => @panic(\"OOM: string method\") }}",
+                        range_error_msg
+                    ));
                 }
             } else {
                 self.write(") catch @panic(\"OOM: string method\")");
@@ -477,9 +485,14 @@ impl Emitter {
             // Variable RegExp — runtime guard on .global field
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
+                    let type_err = if let Some(label) = &self.inside_try_block {
+                        format!("break :{} @as(anyerror!void, error.JsThrow)", label)
+                    } else {
+                        "@panic(\"TypeError: String.prototype.matchAll called with a non-global RegExp argument\")".to_string()
+                    };
                     self.write(&format!(
-                        "(if (!{}.global) @panic(\"TypeError: String.prototype.matchAll called with a non-global RegExp argument\") else js_string_regex.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\"))",
-                        var, receiver, var
+                        "(if (!{}.global) {} else js_string_regex.matchAllString(js_allocator.allocator(), {}, {}.pattern) catch @panic(\"OOM: allocation\"))",
+                        var, type_err, receiver, var
                     ));
                 } else {
                     self.write(&helpers::compile_error(
@@ -636,9 +649,14 @@ impl Emitter {
             // Variable RegExp → runtime guard on .global + regex replaceAll
             Some(ri) if ri.is_var_ref => {
                 if let Some(var) = &ri.var_name {
+                    let type_err = if let Some(label) = &self.inside_try_block {
+                        format!("break :{} @as(anyerror!void, error.JsThrow)", label)
+                    } else {
+                        "@panic(\"TypeError: String.prototype.replaceAll called with a non-global RegExp argument\")".to_string()
+                    };
                     self.write(&format!(
-                        "(if (!{}.global) @panic(\"TypeError: String.prototype.replaceAll called with a non-global RegExp argument\") else js_string_regex.replaceAllRegex(js_allocator.allocator(), {}, {}.pattern, ",
-                        var, receiver, var
+                        "(if (!{}.global) {} else js_string_regex.replaceAllRegex(js_allocator.allocator(), {}, {}.pattern, ",
+                        var, type_err, receiver, var
                     ));
                     if let Some(arg) = args.get(1) {
                         self.emit_expr(arg);

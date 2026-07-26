@@ -1,4 +1,4 @@
-﻿// Shadowing, method chaining, dynamic access, bit operators, array method tests
+// Shadowing, method chaining, dynamic access, bit operators, array method tests
 // Extracted from not_implemented_and_fixes.rs for file size management.
 
 use super::common::*;
@@ -159,8 +159,8 @@ return arr.map(function(x) { return x * 2; }).join(",");
     println!("=== Array method chaining: map().join() ===\n{}", zig);
     // Verify inline map emission with chain binding
     assert!(
-        zig.contains("__map"),
-        "Expected inline __map ArrayList in:\n{}",
+        zig.contains("_map_blk_"),
+        "Expected inline _map_blk_ ArrayList in:\n{}",
         zig
     );
     assert!(
@@ -169,8 +169,8 @@ return arr.map(function(x) { return x * 2; }).join(",");
         zig
     );
     assert!(
-        zig.contains("__join_buf"),
-        "Expected inline __join_buf for join emission in:\n{}",
+        zig.contains("_jb_"),
+        "Expected inline _jb_ for join emission in:\n{}",
         zig
     );
 }
@@ -190,8 +190,8 @@ return doubled[0] + doubled[1] + doubled[2];
 "#;
     let zig = transpile_and_check(js, "test_array_map_callback_transform");
     assert!(
-        zig.contains("__map"),
-        "Expected __map ArrayList in:\n{}",
+        zig.contains("_map_blk_"),
+        "Expected _map_blk_ ArrayList in:\n{}",
         zig
     );
     assert!(

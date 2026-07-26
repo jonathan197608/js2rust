@@ -726,11 +726,7 @@ return arr2[1];
 }
 "#;
     let zig = transpile_and_check(js, "test_array_with");
-    assert!(
-        zig.contains("__with"),
-        "Expected __with variable in:\n{}",
-        zig
-    );
+    assert!(zig.contains("_w_"), "Expected _w_ variable in:\n{}", zig);
     assert!(
         zig.contains("appendSlice"),
         "Expected clone via appendSlice in:\n{}",
@@ -752,11 +748,7 @@ return arr2[0];
 }
 "#;
     let zig = transpile_and_check(js, "test_array_to_reversed");
-    assert!(
-        zig.contains("__rev"),
-        "Expected __rev variable in:\n{}",
-        zig
-    );
+    assert!(zig.contains("_rv_"), "Expected _rv_ variable in:\n{}", zig);
     assert!(
         zig.contains("append"),
         "Expected append in reversed loop in:\n{}",
@@ -1102,11 +1094,7 @@ return arr2[0];
 }
 "#;
     let zig = transpile_and_check(js, "test_array_to_sorted");
-    assert!(
-        zig.contains("__sorted"),
-        "Expected __sorted variable in:\n{}",
-        zig
-    );
+    assert!(zig.contains("_so_"), "Expected _so_ variable in:\n{}", zig);
     assert!(zig.contains("sort"), "Expected sort call in:\n{}", zig);
 }
 
@@ -1124,7 +1112,11 @@ return arr2[1];
 }
 "#;
     let zig = transpile_and_check(js, "test_array_to_spliced");
-    assert!(zig.contains("__sp"), "Expected __sp variable in:\n{}", zig);
+    assert!(
+        zig.contains("_tsp_"),
+        "Expected _tsp_ variable in:\n{}",
+        zig
+    );
     assert!(
         zig.contains("orderedRemove"),
         "Expected orderedRemove in:\n{}",

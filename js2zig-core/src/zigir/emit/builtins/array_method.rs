@@ -50,9 +50,10 @@ impl Emitter {
         } else {
             self.write("0");
         }
+        let len_var = format!("{}_len", start_var);
         self.write(&format!(
-            "); const __spl_len = {}.items.len; const {}: usize = @intCast(if ({}_raw < 0) @max(0, @as(isize, @intCast(__spl_len)) + {}_raw) else @min(@as(usize, @intCast({}_raw)), __spl_len)); ",
-            receiver, start_var, start_var, start_var, start_var
+            "); const {} = {}.items.len; const {}: usize = @intCast(if ({}_raw < 0) @max(0, @as(isize, @intCast({})) + {}_raw) else @min(@as(usize, @intCast({}_raw)), {})); ",
+            len_var, receiver, start_var, start_var, len_var, start_var, start_var, len_var
         ));
         self.write(&format!(
             "const {}: usize = @intCast(@min(@max(0, ",
@@ -61,7 +62,7 @@ impl Emitter {
         if args.len() >= 2 {
             self.emit_i64_coerced(&args[1]);
         } else {
-            // ECMA-262: splice(start) with no deleteCount → len - start
+            // ECMA-262: splice(start) with no deleteCount -> len - start
             self.write(&format!("{}.items.len -| {}", receiver, start_var));
         }
         self.write(&format!("), {}.items.len -| {})); ", receiver, start_var));
@@ -95,10 +96,6 @@ impl Emitter {
     }
 
     // ── includes ───────────────────────────────────────
-    // For string: delegate to js_string.includes (UTF-16 aware) or inline byte search.
-    // For i64 arrays: (blk: { for (obj.items) |item| { if (item == target) break :blk true; } break :blk false; })
-    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
-    // R16-P2-EM #2: Str path uses begin_labeled_block to emit chain binding.
     pub(super) fn emit_includes_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
         let has_from = data.args.len() >= 2;
@@ -130,11 +127,17 @@ impl Emitter {
         } else if has_from {
             // Array path with fromIndex: clamp to [0, len] and iterate from start
             let blk = self.begin_labeled_block(&binding);
-            self.write("const __from: isize = @intCast(");
+            let (_from, _len, _start, _i) = (
+                format!("_fr_{}", blk),
+                format!("_ln_{}", blk),
+                format!("_st_{}", blk),
+                format!("_i_{}", blk),
+            );
+            self.write(&format!("const {}: isize = @intCast(", _from));
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) @max(0, @as(isize, @intCast(__len)) + __from) else @min(@as(usize, @intCast(__from)), __len)); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
-                receiver, receiver
+                "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}.items[{}] == ",
+                _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
             ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
@@ -162,10 +165,6 @@ impl Emitter {
     }
 
     // ── indexOf ────────────────────────────────────────
-    // For string: js_string.indexOf (UTF-16 aware) or inline byte search.
-    // For i64: (blk: { for (obj.items, 0..) |item, i| { if (item == target) break :blk @as(i64, @intCast(i)); } break :blk @as(i64, -1); })
-    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
-    // R16-P2-EM #2: Str path uses begin_labeled_block to emit chain binding.
     pub(super) fn emit_index_of_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
         let has_from = data.args.len() >= 2;
@@ -173,7 +172,6 @@ impl Emitter {
         if matches!(data.elem_type, ZigType::Str) {
             let blk = self.begin_labeled_block(&binding);
             if has_from {
-                // With fromIndex: delegate to runtime for UTF-16 semantics
                 self.write(&format!("break :{} js_string.indexOf(", blk));
                 self.write(&receiver);
                 self.write(", ");
@@ -184,7 +182,6 @@ impl Emitter {
                 self.emit_expr(&data.args[1]);
                 self.write("); })");
             } else {
-                // No fromIndex: fast inline byte search
                 self.write(&format!("break :{} (if (std.mem.indexOf(u8, ", blk));
                 self.write(&receiver);
                 self.write(", ");
@@ -194,20 +191,25 @@ impl Emitter {
                 self.write(")) |idx| @as(i64, @intCast(idx)) else @as(i64, -1)); })");
             }
         } else if has_from {
-            // Array path with fromIndex: clamp to [0, len] and iterate from start
             let blk = self.begin_labeled_block(&binding);
-            self.write("const __from: isize = @intCast(");
+            let (_from, _len, _start, _i) = (
+                format!("_fr_{}", blk),
+                format!("_ln_{}", blk),
+                format!("_st_{}", blk),
+                format!("_i_{}", blk),
+            );
+            self.write(&format!("const {}: isize = @intCast(", _from));
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const __len = {}.items.len; const __start: usize = @intCast(if (__from < 0) @max(0, @as(isize, @intCast(__len)) + __from) else @min(@as(usize, @intCast(__from)), __len)); var __i: usize = __start; while (__i < __len) : (__i += 1) {{ if ({}.items[__i] == ",
-                receiver, receiver
+                "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); var {}: usize = {}; while ({} < {}) : ({} += 1) {{ if ({}.items[{}] == ",
+                _len, receiver, _start, _from, _len, _from, _from, _len, _i, _start, _i, _len, _i, receiver, _i
             ));
             if let Some(arg) = data.args.first() {
                 self.emit_expr(arg);
             }
             self.write(&format!(
-                ") break :{} @as(i64, @intCast(__i)); }} break :{} @as(i64, -1); }})",
-                blk, blk
+                ") break :{} @as(i64, @intCast({})); }} break :{} @as(i64, -1); }})",
+                blk, _i, blk
             ));
         } else {
             // Array path without fromIndex: original for-loop behavior
@@ -226,12 +228,7 @@ impl Emitter {
             self.write(&format!(" break :{} @as(i64, -1); }})", blk));
         }
     }
-
     // ── lastIndexOf ────────────────────────────────────
-    // (blk: { var __i: isize = ...; while (__i >= 0) : (__i -= 1) { if (obj.items[__i] == target) break :blk @as(i64, __i); } break :blk @as(i64, -1); })
-    // R16-P2-EM #1: support fromIndex parameter (2nd arg).
-    //   - fromIndex >= len → search from len-1 (entire array)
-    //   - fromIndex < 0    → search from len+fromIndex (clamps to -1 → not found)
     pub(super) fn emit_last_index_of_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -241,38 +238,41 @@ impl Emitter {
         let blk = self.begin_labeled_block(&binding);
         if data.args.len() >= 2 {
             // With fromIndex: compute start position per JS spec
-            self.write("const __from: isize = @intCast(");
+            let (_from, _len, _i) = (
+                format!("_fr_{}", blk),
+                format!("_ln_{}", blk),
+                format!("_i_{}", blk),
+            );
+            self.write(&format!("const {}: isize = @intCast(", _from));
             self.emit_i64_coerced(&data.args[1]);
             self.write(&format!(
-                "); const __len = {}.items.len; var __i: isize = if (__from < 0) @as(isize, @intCast(__len)) + __from else @min(__from, @as(isize, @intCast(__len)) - 1); while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
-                receiver, receiver
+                "); const {} = {}.items.len; var {}: isize = if ({} < 0) @as(isize, @intCast({})) + {} else @min({}, @as(isize, @intCast({})) - 1); while ({} >= 0) : ({} -= 1) {{ if ({}.items[@as(usize, @intCast({}))] == ",
+                _len, receiver, _i, _from, _len, _from, _from, _len, _i, _i, receiver, _i
             ));
         } else {
             // Default: search entire array from end
+            let _i = format!("_i_{}", blk);
             self.write(&format!(
-                "var __i: isize = @as(isize, @intCast({}.items.len)) - 1; while (__i >= 0) : (__i -= 1) {{ if ({}.items[@as(usize, @intCast(__i))] == ",
-                receiver, receiver
+                "var {}: isize = @as(isize, @intCast({}.items.len)) - 1; while ({} >= 0) : ({} -= 1) {{ if ({}.items[@as(usize, @intCast({}))] == ",
+                _i, receiver, _i, _i, receiver, _i
             ));
         }
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
         }
+        let _li = format!("_i_{}", blk);
         self.write(&format!(
-            ") break :{} @as(i64, __i); }} break :{} @as(i64, -1); }})",
-            blk, blk
+            ") break :{} @as(i64, {}); }} break :{} @as(i64, -1); }})",
+            blk, _li, blk
         ));
     }
 
     // ── join ───────────────────────────────────────────
-    // (blk: { var __join_buf = std.io.Writer.Allocating.init(js_allocator.allocator());
-    //   for (obj.items, 0..) |__item, __i| { if (__i > 0) __join_buf.writer().writeAll(sep) catch break :blk "";
-    //     __join_buf.writer().print("{d}", .{__item}) catch break :blk ""; }
-    //   break :blk __join_buf.toOwnedSlice() catch ""; })
     pub(super) fn emit_join_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         // Format specifier based on element type:
-        // I64→{d}, F64→{} (shortest round-trip; R8-E2), Bool→{}, Str→{s}, other→{any}
+        // I64->{d}, F64->{} (shortest round-trip; R8-E2), Bool->{}, Str->{s}, other->{any}
         let fmt_spec = match data.elem_type {
             ZigType::I64 => "{d}",
             ZigType::F64 => "{}",
@@ -281,15 +281,26 @@ impl Emitter {
             _ => "{any}",
         };
         let blk = self.begin_labeled_block(&binding);
-        self.write("var __join_buf: std.ArrayList(u8) = .empty; defer __join_buf.deinit(js_allocator.allocator()); ");
-        self.write(&format!("for ({}.items, 0..) |__item, __i| ", receiver));
+        let (_jb, _je, _ji, _js) = (
+            format!("_jb_{}", blk),
+            format!("_je_{}", blk),
+            format!("_ji_{}", blk),
+            format!("_js_{}", blk),
+        );
+        self.write(&format!(
+            "var {}: std.ArrayList(u8) = .empty; defer {}.deinit(js_allocator.allocator()); ",
+            _jb, _jb
+        ));
+        self.write(&format!(
+            "for ({}.items, 0..) |{}, {}| ",
+            receiver, _je, _ji
+        ));
         self.write("{\n");
         self.indent_push();
-        // Emit separator as a Zig expression directly — not embedded inside a
-        // string literal. This avoids double-quoting for StringLiteral args
-        // (e.g. join("-") should appendSlice("-") not appendSlice("\"-\"")) and
-        // correctly handles variable separators (join(sep) → appendSlice(sep)).
-        self.write("if (__i > 0) __join_buf.appendSlice(js_allocator.allocator(), ");
+        self.write(&format!(
+            "if ({} > 0) {}.appendSlice(js_allocator.allocator(), ",
+            _ji, _jb
+        ));
         if let Some(arg) = data.args.first() {
             self.emit_expr(arg);
         } else {
@@ -298,120 +309,131 @@ impl Emitter {
         self.writeln(&format!(") catch break :{} \"\";", blk));
         if matches!(data.elem_type, ZigType::F64) {
             self.writeln(&format!(
-                "__join_buf.appendSlice(js_allocator.allocator(), js_number.toString(js_allocator.allocator(), __item, 10) catch break :{} \"\") catch break :{} \"\";",
-                blk, blk
+                "{}.appendSlice(js_allocator.allocator(), js_number.toString(js_allocator.allocator(), {}, 10) catch break :{} \"\") catch break :{} \"\";",
+                _jb, _je, blk, blk
             ));
         } else if matches!(data.elem_type, ZigType::Str) {
             self.writeln(&format!(
-                "__join_buf.appendSlice(js_allocator.allocator(), __item) catch break :{} \"\";",
-                blk
+                "{}.appendSlice(js_allocator.allocator(), {}) catch break :{} \"\";",
+                _jb, _je, blk
             ));
         } else {
             self.writeln(&format!(
-                "{{ const __s = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{{__item}}) catch break :{} \"\"; __join_buf.appendSlice(js_allocator.allocator(), __s) catch break :{} \"\"; js_allocator.allocator().free(__s); }}",
-                fmt_spec, blk, blk
+                "{{ const {} = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{{{}}}) catch break :{} \"\"; {}.appendSlice(js_allocator.allocator(), {}) catch break :{} \"\"; js_allocator.allocator().free({}); }}",
+                _js, fmt_spec, _je, blk, _jb, _js, blk, _js
             ));
         }
         self.indent_pop();
         self.writeln("");
         self.write("}");
         self.write(&format!(
-            " break :{} __join_buf.toOwnedSlice(js_allocator.allocator()) catch \"\"; }})",
-            blk
+            " break :{} {}.toOwnedSlice(js_allocator.allocator()) catch \"\"; }})",
+            blk, _jb
         ));
     }
 
     // ── slice ──────────────────────────────────────────
-    // (blk: { var __slice: std.ArrayList(elem_type) = .empty;
-    //   const __len = obj.items.len; const __s = if (start < 0) max(0, len+start) else min(start, len);
-    //   const __e = if (end < 0) max(0, len+end) else min(end, len);
-    //   __slice.appendSlice(allocator, obj.items[__s..__e]) catch @panic("OOM");
-    //   break :blk __slice; })
     pub(super) fn emit_slice_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_sl, _ss, _se, _ln, _s, _e) = (
+            format!("_sl_{}", blk),
+            format!("_ss_{}", blk),
+            format!("_se_{}", blk),
+            format!("_ln_{}", blk),
+            format!("_s_{}", blk),
+            format!("_e_{}", blk),
+        );
         self.write(&format!(
-            "var __slice: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _sl, elem_type_str
         ));
 
         // R16: Handle negative indices via JS from-end conversion.
         match data.args.len() {
             0 => {
                 self.write(&format!(
-                    "__slice.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.slice appendSlice\"); ",
-                    receiver
+                    "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    _sl, receiver
                 ));
             }
             1 => {
                 // slice(start): store start in a const, compute from-end
-                self.write("const __slice_start: isize = @intCast(");
+                self.write(&format!("const {}: isize = @intCast(", _ss));
                 self.emit_i64_coerced(&data.args[0]);
                 self.write(&format!(
-                    "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); ",
-                    receiver
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, receiver, _s, _ss, _ln, _ss, _ss, _ln
                 ));
                 self.write(&format!(
-                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
-                    receiver
+                    "{}.appendSlice(js_allocator.allocator(), {}.items[{}..]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    _sl, receiver, _s
                 ));
             }
             _ => {
                 // slice(start, end): store both, compute from-end
-                self.write("const __slice_start: isize = @intCast(");
+                self.write(&format!("const {}: isize = @intCast(", _ss));
                 self.emit_i64_coerced(&data.args[0]);
-                self.write("); const __slice_end: isize = @intCast(");
+                self.write(&format!("); const {}: isize = @intCast(", _se));
                 self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
-                    "); const __len = {}.items.len; const __s: usize = @intCast(if (__slice_start < 0) @max(0, @as(isize, @intCast(__len)) + __slice_start) else @min(@as(usize, @intCast(__slice_start)), __len)); const __e: usize = @intCast(if (__slice_end < 0) @max(0, @as(isize, @intCast(__len)) + __slice_end) else @min(@as(usize, @intCast(__slice_end)), __len)); ",
-                    receiver
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, receiver, _s, _ss, _ln, _ss, _ss, _ln, _e, _se, _ln, _se, _se, _ln
                 ));
                 // Clamp end to start: when end < start, slice returns empty array (JS spec).
                 self.write(&format!(
-                    "__slice.appendSlice(js_allocator.allocator(), {}.items[__s..@max(__s, __e)]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
-                    receiver
+                    "{}.appendSlice(js_allocator.allocator(), {}.items[{}..@max({}, {})]) catch @panic(\"OOM: Array.slice appendSlice\"); ",
+                    _sl, receiver, _s, _s, _e
                 ));
             }
         }
-        self.write(&format!("break :{} __slice; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, _sl));
     }
 
     // ── splice ─────────────────────────────────────────
-    // (blk: { var __spliced: std.ArrayList(elem_type) = .empty;
-    //   const __start = @as(usize, @intCast(@max(0, start)));
-    //   const __cnt = @as(usize, @intCast(@min(@max(0, count), obj.items.len -| __start)));
-    //   var __i: usize = 0; while (__i < __cnt) : (__i += 1) { __spliced.append(allocator, obj.orderedRemove(__start)) catch @panic("OOM"); }
-    //   [insert items if args > 2]
-    //   break :blk __spliced; })
     pub(super) fn emit_splice_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_sp, _st, _cnt, _i) = (
+            format!("_sp_{}", blk),
+            format!("_st_{}", blk),
+            format!("_cnt_{}", blk),
+            format!("_si_{}", blk),
+        );
         self.write(&format!(
-            "var __spliced: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _sp, elem_type_str
         ));
-        self.emit_splice_start_count("__start", "__cnt", &receiver, &data.args);
-        self.write("var __i: usize = 0; while (__i < __cnt) : (__i += 1) { ");
+        self.emit_splice_start_count(&_st, &_cnt, &receiver, &data.args);
         self.write(&format!(
-            "__spliced.append(js_allocator.allocator(), {}.orderedRemove(__start)) catch @panic(\"OOM: Array.splice\"); }} ",
-            receiver
+            "var {}: usize = 0; while ({} < {}) : ({} += 1) {{ ",
+            _i, _i, _cnt, _i
+        ));
+        self.write(&format!(
+            "{}.append(js_allocator.allocator(), {}.orderedRemove({})) catch @panic(\"OOM: Array.splice\"); }} ",
+            _sp, receiver, _st
         ));
         // Insert items if provided (args beyond start and count)
-        self.emit_splice_insert(&receiver, "__start", &elem_type_str, &data.args, "splice");
-        self.write(&format!("break :{} __spliced; }})", blk));
+        self.emit_splice_insert(&receiver, &_st, &elem_type_str, &data.args, "splice");
+        self.write(&format!("break :{} {}; }})", blk, _sp));
     }
-
     // ── at ─────────────────────────────────────────────
     // Returns undefined for out-of-range indices (per JS spec).
     pub(super) fn emit_at_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        self.write("const __idx: isize = @intCast(");
+        let inner_blk = self.next_label();
+        let (_idx, _ai, _w) = (
+            format!("_idx_{}", blk),
+            format!("_ai_{}", blk),
+            format!("_aw_{}", blk),
+        );
+        self.write(&format!("const {}: isize = @intCast(", _idx));
         if let Some(arg) = data.args.first() {
             self.emit_i64_coerced(arg);
         } else {
@@ -419,13 +441,10 @@ impl Emitter {
         }
         self.write("); ");
         self.write(&format!(
-            "const __at_idx = if (__idx < 0) blk2: {{ const __wrap = @as(isize, @intCast({}.items.len)) + __idx; break :blk2 if (__wrap < 0) {}.items.len else @as(usize, @intCast(__wrap)); }} else @as(usize, @intCast(__idx)); ",
-            receiver, receiver
+            "const {} = if ({} < 0) {}: {{ const {} = @as(isize, @intCast({}.items.len)) + {}; break :{} if ({} < 0) {}.items.len else @as(usize, @intCast({})); }} else @as(usize, @intCast({})); ",
+            _ai, _idx, inner_blk, _w, receiver, _idx, inner_blk, _w, receiver, _w, _idx
         ));
         // Bounds check: return undefined if out of range (P0-R13-1 fix).
-        // Previously returned items[0] which is wrong and panics on empty arrays.
-        // For JsAny arrays, use JsAny.fromUndefined() to properly initialize the
-        // union; `undefined` leaves the union's type tag uninitialized (P1-EM-6).
         let not_found = match data.elem_type {
             ZigType::JsAny => "JsAny.fromUndefined()",
             ZigType::F64 => "0.0",
@@ -434,52 +453,49 @@ impl Emitter {
             _ => "0",
         };
         self.write(&format!(
-            "break :{} if (__at_idx >= {}.items.len) {} else {}.items[__at_idx]; }})",
-            blk, receiver, not_found, receiver
+            "break :{} if ({} >= {}.items.len) {} else {}.items[{}]; }})",
+            blk, _ai, receiver, not_found, receiver, _ai
         ));
     }
 
     // ── concat ─────────────────────────────────────────
-    // For each arg, checks if it has .items (is an array); if so, appendSlice,
-    // otherwise append as a single element (P0-5 fix: handle non-array args).
     pub(super) fn emit_concat_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_cc, _ca) = (format!("_cc_{}", blk), format!("_ca_{}", blk));
         self.write(&format!(
-            "var __concat: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _cc, elem_type_str
         ));
         self.write(&format!(
-            "__concat.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
-            receiver
+            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.concat appendSlice\"); ",
+            _cc, receiver
         ));
         for arg in &data.args {
-            // Use comptime type equality to distinguish array args from scalars.
-            // @hasField fails (compile error) on primitive types like i64/f64/bool.
-            self.write("{ const __ca = ");
+            self.write(&format!("{{ const {} = ", _ca));
             self.emit_expr(arg);
             self.write(&format!(
-                "; if (@TypeOf(__ca) == std.ArrayList({})) {{ ",
-                elem_type_str
+                "; if (@TypeOf({}) == std.ArrayList({})) {{ ",
+                _ca, elem_type_str
             ));
-            self.write("__concat.appendSlice(js_allocator.allocator(), __ca.items) catch @panic(\"OOM: Array.concat\"); ");
+            self.write(&format!("{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.concat\"); ", _cc, _ca));
             self.write("} else { ");
             if matches!(data.elem_type, ZigType::JsAny) {
-                self.write("__concat.append(js_allocator.allocator(), JsAny.from(__ca)) catch @panic(\"OOM: Array.concat\"); ");
+                self.write(&format!("{}.append(js_allocator.allocator(), JsAny.from({})) catch @panic(\"OOM: Array.concat\"); ", _cc, _ca));
             } else {
-                self.write("__concat.append(js_allocator.allocator(), __ca) catch @panic(\"OOM: Array.concat\"); ");
+                self.write(&format!(
+                    "{}.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.concat\"); ",
+                    _cc, _ca
+                ));
             }
             self.write("} } ");
         }
-        self.write(&format!("break :{} __concat; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, _cc));
     }
 
     // ── copyWithin ─────────────────────────────────────
-    // Copies a sequence of elements within the array. Uses reverse copy
-    // when target > start to handle overlapping regions correctly (P0-4 fix).
-    // R16: Negative target/start/end use JS from-end conversion.
     pub(super) fn emit_copy_within_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -487,20 +503,31 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
+        let (_tr, _sr, _er, _ln, _tg, _cs, _ce, _cc, _j) = (
+            format!("_tr_{}", blk),
+            format!("_sr_{}", blk),
+            format!("_er_{}", blk),
+            format!("_ln_{}", blk),
+            format!("_tg_{}", blk),
+            format!("_cs_{}", blk),
+            format!("_ce_{}", blk),
+            format!("_cc_{}", blk),
+            format!("_j_{}", blk),
+        );
         // Emit target, start, end as isize consts for from-end conversion
-        self.write("const __cpw_target_raw: isize = @intCast(");
+        self.write(&format!("const {}: isize = @intCast(", _tr));
         if let Some(arg) = data.args.first() {
             self.emit_i64_coerced(arg);
         } else {
             self.write("0");
         }
-        self.write("); const __cpw_start_raw: isize = @intCast(");
+        self.write(&format!("); const {}: isize = @intCast(", _sr));
         if data.args.len() >= 2 {
             self.emit_i64_coerced(&data.args[1]);
         } else {
             self.write("0");
         }
-        self.write("); const __cpw_end_raw: isize = @intCast(");
+        self.write(&format!("); const {}: isize = @intCast(", _er));
         if data.args.len() >= 3 {
             self.emit_i64_coerced(&data.args[2]);
         } else {
@@ -508,26 +535,22 @@ impl Emitter {
         }
         // Convert negative indices via from-end
         self.write(&format!(
-            "); const __len = {}.items.len; const __cpw_target: usize = @intCast(if (__cpw_target_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_target_raw) else @min(@as(usize, @intCast(__cpw_target_raw)), __len)); const __cpw_start: usize = @intCast(if (__cpw_start_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_start_raw) else @min(@as(usize, @intCast(__cpw_start_raw)), __len)); const __cpw_end: usize = @intCast(if (__cpw_end_raw < 0) @max(0, @as(isize, @intCast(__len)) + __cpw_end_raw) else @min(@as(usize, @intCast(__cpw_end_raw)), __len)); ",
-            receiver
+            "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+            _ln, receiver, _tg, _tr, _ln, _tr, _tr, _ln,
+            _cs, _sr, _ln, _sr, _sr, _ln,
+            _ce, _er, _ln, _er, _er, _ln
         ));
         // Use existing copyWithin logic with forward/backward copy based on overlap.
-        // Saturating subtraction: when end < start, count = 0 (no-op per JS spec).
-        self.write("const __cpw_cnt = __cpw_end -| __cpw_start; ");
-        self.write("if (__cpw_cnt > 0) { ");
+        self.write(&format!("const {} = {} -| {}; ", _cc, _ce, _cs));
+        self.write(&format!("if ({} > 0) {{ ", _cc));
         // Use reverse copy when target > start to avoid overwriting source
         self.write(&format!(
-            "if (__cpw_target > __cpw_start) {{ var __j: usize = @as(usize, @intCast(__cpw_cnt)); while (__j > 0) {{ __j -= 1; {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} else {{ for (0..@as(usize, @intCast(__cpw_cnt))) |__j| {{ {}.items[__cpw_target + __j] = {}.items[__cpw_start + __j]; }} }} }} ",
-            receiver, receiver, receiver, receiver
+            "if ({} > {}) {{ var {}: usize = @as(usize, @intCast({})); while ({} > 0) {{ {} -= 1; {}.items[{} + {}] = {}.items[{} + {}]; }} }} else {{ for (0..@as(usize, @intCast({}))) |{}| {{ {}.items[{} + {}] = {}.items[{} + {}]; }} }} }} ",
+            _tg, _cs, _j, _cc, _j, _j, receiver, _tg, _j, receiver, _cs, _j, _cc, _j, receiver, _tg, _j, receiver, _cs, _j
         ));
         self.write(&format!("break :{} {}; }})", blk, receiver));
     }
-
     // ── fill ───────────────────────────────────────────
-    // for (obj.items[@intCast(start)..@intCast(end)]) |*elem| { elem.* = val; }
-    // Returns receiver for JS chaining semantics (arr.fill(v) === arr).
-    // R16: Negative start/end use JS from-end conversion.
-    // Wraps in labeled block so the const binding is scoped and receiver is returned.
     pub(super) fn emit_fill_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
@@ -535,7 +558,6 @@ impl Emitter {
         match data.args.len() {
             0 => {
                 // fill entire array — no value arg, use type-appropriate default.
-                // JS fill(undefined) sets all elements to undefined.
                 let default_val = match data.elem_type {
                     ZigType::F64 => "0.0",
                     ZigType::Bool => "false",
@@ -556,33 +578,46 @@ impl Emitter {
             }
             2 => {
                 // fill(value, start) — with negative index support
-                self.write("const __fill_start: isize = @intCast(");
+                let (_fsr, _ln, _fs) = (
+                    format!("_fsr_{}", blk),
+                    format!("_ln_{}", blk),
+                    format!("_fs_{}", blk),
+                );
+                self.write(&format!("const {}: isize = @intCast(", _fsr));
                 self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
-                    "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); ",
-                    receiver
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, receiver, _fs, _fsr, _ln, _fsr, _fsr, _ln
                 ));
                 self.write(&format!(
-                    "for ({}.items[__fs..]) |*elem| {{ elem.* = ",
-                    receiver
+                    "for ({}.items[{}..]) |*elem| {{ elem.* = ",
+                    receiver, _fs
                 ));
                 self.emit_expr(&data.args[0]);
                 self.write("; }");
             }
             _ => {
                 // fill(value, start, end) — with negative index support
-                self.write("const __fill_start: isize = @intCast(");
+                let (_fsr, _fer, _ln, _fs, _fe) = (
+                    format!("_fsr_{}", blk),
+                    format!("_fer_{}", blk),
+                    format!("_ln_{}", blk),
+                    format!("_fs_{}", blk),
+                    format!("_fe_{}", blk),
+                );
+                self.write(&format!("const {}: isize = @intCast(", _fsr));
                 self.emit_i64_coerced(&data.args[1]);
-                self.write("); const __fill_end: isize = @intCast(");
+                self.write(&format!("); const {}: isize = @intCast(", _fer));
                 self.emit_i64_coerced(&data.args[2]);
                 self.write(&format!(
-                    "); const __len = {}.items.len; const __fs: usize = @intCast(if (__fill_start < 0) @max(0, @as(isize, @intCast(__len)) + __fill_start) else @min(@as(usize, @intCast(__fill_start)), __len)); const __fe: usize = @intCast(if (__fill_end < 0) @max(0, @as(isize, @intCast(__len)) + __fill_end) else @min(@as(usize, @intCast(__fill_end)), __len)); ",
-                    receiver
+                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, receiver, _fs, _fsr, _ln, _fsr, _fsr, _ln,
+                    _fe, _fer, _ln, _fer, _fer, _ln
                 ));
                 // Guard: when end < start, fill is a no-op per JS spec.
                 self.write(&format!(
-                    "if (__fe > __fs) {{ for ({}.items[__fs..__fe]) |*elem| {{ elem.* = ",
-                    receiver
+                    "if ({} > {}) {{ for ({}.items[{}..{}]) |*elem| {{ elem.* = ",
+                    _fe, _fs, receiver, _fs, _fe
                 ));
                 self.emit_expr(&data.args[0]);
                 self.write("; } }");
@@ -592,39 +627,39 @@ impl Emitter {
     }
 
     // ── with ───────────────────────────────────────────
-    // arr.with(index, value) → clone the array, replace element at index
-    // R16: Negative index uses JS from-end conversion.
-    // (blk: { var __with: std.ArrayList(elem_type) = .empty;
-    //   __with.appendSlice(allocator, obj.items) catch @panic("OOM");
-    //   const __with_idx = if (idx < 0) max(0, len+idx) else min(idx, len);
-    //   __with.items[__with_idx] = value;
-    //   break :blk __with; })
     pub(super) fn emit_with_inline(&mut self, data: &crate::zigir::types::IrArrayMethodInline) {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_w, _wr, _wl, _wi) = (
+            format!("_w_{}", blk),
+            format!("_wr_{}", blk),
+            format!("_wl_{}", blk),
+            format!("_wi_{}", blk),
+        );
         self.write(&format!(
-            "var __with: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _w, elem_type_str
         ));
         self.write(&format!(
-            "__with.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.with appendSlice\"); ",
-            receiver
+            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.with appendSlice\"); ",
+            _w, receiver
         ));
         // Compute index with from-end conversion for negative indices
-        self.write("const __with_raw: isize = @intCast(");
+        self.write(&format!("const {}: isize = @intCast(", _wr));
         if let Some(idx_arg) = data.args.first() {
             self.emit_i64_coerced(idx_arg);
         } else {
             self.write("0");
         }
-        self.write(
-            "); const __with_len = __with.items.len; const __with_idx: usize = @intCast(if (__with_raw < 0) @max(0, @as(isize, @intCast(__with_len)) + __with_raw) else @min(@as(usize, @intCast(__with_raw)), __with_len)); "
-        );
+        self.write(&format!(
+            "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+            _wl, _w, _wi, _wr, _wl, _wr, _wr, _wl
+        ));
         // JS spec: with() throws RangeError for out-of-range index.
-        self.write("if (__with_idx >= __with.items.len) @panic(\"RangeError: Invalid array index for Array.with()\"); ");
-        self.write("__with.items[__with_idx] = ");
+        self.write(&format!("if ({} >= {}.items.len) @panic(\"RangeError: Invalid array index for Array.with()\"); ", _wi, _w));
+        self.write(&format!("{}.items[{}] = ", _w, _wi));
         if data.args.len() >= 2 {
             self.emit_expr(&data.args[1]);
         } else {
@@ -637,15 +672,10 @@ impl Emitter {
             }
         }
         self.write("; ");
-        self.write(&format!("break :{} __with; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, _w));
     }
 
     // ── toReversed ─────────────────────────────────────
-    // arr.toReversed() → clone the array in reverse order
-    // (blk: { var __rev: std.ArrayList(elem_type) = .empty;
-    //   __rev.ensureTotalCapacity(allocator, obj.items.len) catch @panic("OOM");
-    //   var __ri = obj.items.len; while (__ri > 0) { __ri -= 1; __rev.append(allocator, obj.items[__ri]) catch @panic("OOM"); }
-    //   break :blk __rev; })
     pub(super) fn emit_to_reversed_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -654,29 +684,23 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_rv, _ri) = (format!("_rv_{}", blk), format!("_ri_{}", blk));
         self.write(&format!(
-            "var __rev: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _rv, elem_type_str
         ));
         self.write(&format!(
-            "__rev.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.toReversed capacity\"); ",
-            receiver
+            "{}.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.toReversed capacity\"); ",
+            _rv, receiver
         ));
         self.write(&format!(
-            "var __ri: usize = {}.items.len; while (__ri > 0) {{ __ri -= 1; __rev.append(js_allocator.allocator(), {}.items[__ri]) catch @panic(\"OOM: Array.toReversed append\"); }} ",
-            receiver, receiver
+            "var {}: usize = {}.items.len; while ({} > 0) {{ {} -= 1; {}.append(js_allocator.allocator(), {}.items[{}]) catch @panic(\"OOM: Array.toReversed append\"); }} ",
+            _ri, receiver, _ri, _ri, _rv, receiver, _ri
         ));
-        self.write(&format!("break :{} __rev; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, _rv));
     }
 
     // ── toSorted ───────────────────────────────────────
-    // arr.toSorted(compareFn?) → clone the array, sort the clone
-    // No compareFn path: default ascending sort. With compareFn, dispatched via
-    // ArrayCallbackKind::ToSorted in array_callback.rs instead.
-    // (blk: { var __sorted: std.ArrayList(elem_type) = .empty;
-    //   __sorted.appendSlice(allocator, obj.items) catch @panic("OOM");
-    //   std.mem.sort(elem_type, __sorted.items, {}, comptime std.sort.asc(elem_type));
-    //   break :blk __sorted; })
     pub(super) fn emit_to_sorted_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -685,64 +709,50 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let _so = format!("_so_{}", blk);
         self.write(&format!(
-            "var __sorted: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _so, elem_type_str
         ));
         self.write(&format!(
-            "__sorted.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
-            receiver
+            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
+            _so, receiver
         ));
         // Sort — for JsAny elements use JsAny.lt(); for i64/f64 use ECMA-262
         // string comparison (format as strings, compare lexicographically);
         // other primitive types fall back to numeric std.sort.asc.
         if matches!(data.elem_type, ZigType::JsAny) {
-            self.write("std.mem.sort(JsAny, __sorted.items, {}, struct { fn lessThan(_: void, a: JsAny, b: JsAny) bool { return a.lt(b); } }.lessThan); ");
+            self.write(&format!("std.mem.sort(JsAny, {}.items, {{}}, struct {{ fn lessThan(_: void, a: JsAny, b: JsAny) bool {{ return a.lt(b); }} }}.lessThan); ", _so));
         } else if matches!(data.elem_type, ZigType::I64) {
+            let (_sa, _sb, _xa, _xb) = (
+                format!("_sa_{}", blk),
+                format!("_sb_{}", blk),
+                format!("_ra_{}", blk),
+                format!("_rb_{}", blk),
+            );
             self.write(&format!(
-                "std.mem.sort({}, __sorted.items, {{}}, struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{",
-                elem_type_str, elem_type_str, elem_type_str
+                "std.mem.sort({}, {}.items, {{}}, struct {{ fn lessThan(_: void, a: {}, b: {}) bool {{ var {}: [32]u8 = undefined; var {}: [32]u8 = undefined; const {} = std.fmt.bufPrint(&{}, \"{{d}}\", .{{a}}) catch return a < b; const {} = std.fmt.bufPrint(&{}, \"{{d}}\", .{{b}}) catch return a < b; return std.mem.order(u8, {}, {}) == .lt; }} }}.lessThan); ",
+                elem_type_str, _so, elem_type_str, elem_type_str, _sa, _sb, _xa, _sa, _xb, _sb, _xa, _xb
             ));
-            self.write(" var __sa: [32]u8 = undefined; var __sb: [32]u8 = undefined;");
-            self.write(
-                " const __stra = std.fmt.bufPrint(&__sa, \"{d}\", .{a}) catch return a < b;",
-            );
-            self.write(
-                " const __strb = std.fmt.bufPrint(&__sb, \"{d}\", .{b}) catch return a < b;",
-            );
-            self.write(" return std.mem.order(u8, __stra, __strb) == .lt; } }.lessThan); ");
         } else if matches!(data.elem_type, ZigType::F64) {
-            // F64: use js_number.toString for correct JS string representation
-            // (e.g. 1e21 → "1e+21" not "1000000000000000000000.0")
-            self.write("std.mem.sort(f64, __sorted.items, {}, struct { fn lessThan(_: void, a: f64, b: f64) bool {");
-            self.write(" const __stra = js_number.toString(js_allocator.allocator(), a, 10) catch return a < b;");
-            self.write(" const __strb = js_number.toString(js_allocator.allocator(), b, 10) catch return a < b;");
-            self.write(" const __ord = std.mem.order(u8, __stra, __strb);");
-            self.write(
-                " js_allocator.allocator().free(__stra); js_allocator.allocator().free(__strb);",
+            let (_xa, _xb, _ord) = (
+                format!("_ra_{}", blk),
+                format!("_rb_{}", blk),
+                format!("_ord_{}", blk),
             );
-            self.write(" return __ord == .lt; } }.lessThan); ");
+            self.write(&format!("std.mem.sort(f64, {}.items, {{}}, struct {{ fn lessThan(_: void, a: f64, b: f64) bool {{ const {} = js_number.toString(js_allocator.allocator(), a, 10) catch return a < b; const {} = js_number.toString(js_allocator.allocator(), b, 10) catch {{ js_allocator.allocator().free({}); return a < b; }}; const {} = std.mem.order(u8, {}, {}); js_allocator.allocator().free({}); js_allocator.allocator().free({}); return {} == .lt; }} }}.lessThan); ", _so, _xa, _xb, _xa, _ord, _xa, _xb, _xa, _xb, _ord));
         } else if matches!(data.elem_type, ZigType::Str) {
-            // Str: ECMA-262 default string comparison
-            self.write("std.mem.sort([]const u8, __sorted.items, {}, struct { fn lessThan(_: void, a: []const u8, b: []const u8) bool { return std.mem.order(u8, a, b) == .lt; } }.lessThan); ");
+            self.write(&format!("std.mem.sort([]const u8, {}.items, {{}}, struct {{ fn lessThan(_: void, a: []const u8, b: []const u8) bool {{ return std.mem.order(u8, a, b) == .lt; }} }}.lessThan); ", _so));
         } else {
             self.write(&format!(
-                "std.mem.sort({}, __sorted.items, {{}}, comptime std.sort.asc({})); ",
-                elem_type_str, elem_type_str
+                "std.mem.sort({}, {}.items, {{}}, comptime std.sort.asc({})); ",
+                elem_type_str, _so, elem_type_str
             ));
         }
-        self.write(&format!("break :{} __sorted; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, _so));
     }
 
     // ── toSpliced ──────────────────────────────────────
-    // arr.toSpliced(start, deleteCount?, ...items) → clone, then splice the clone
-    // (blk: { var __sp: std.ArrayList(elem_type) = .empty;
-    //   __sp.appendSlice(allocator, obj.items) catch @panic("OOM");
-    //   const __sp_start = @as(usize, @intCast(@max(0, start)));
-    //   const __sp_cnt = @as(usize, @intCast(@min(@max(0, count), __sp.items.len -| __sp_start)));
-    //   var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); }
-    //   [insert items if args > 2]
-    //   break :blk __sp; })
     pub(super) fn emit_to_spliced_inline(
         &mut self,
         data: &crate::zigir::types::IrArrayMethodInline,
@@ -751,27 +761,30 @@ impl Emitter {
 
         let blk = self.begin_labeled_block(&binding);
         let elem_type_str = data.elem_type.to_zig_type();
+        let (_tsp, _tss, _tsc, _j) = (
+            format!("_tsp_{}", blk),
+            format!("_tss_{}", blk),
+            format!("_tsc_{}", blk),
+            format!("_j_{}", blk),
+        );
         self.write(&format!(
-            "var __sp: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            _tsp, elem_type_str
         ));
         // Clone original array
         self.write(&format!(
-            "__sp.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSpliced appendSlice\"); ",
-            receiver
+            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSpliced appendSlice\"); ",
+            _tsp, receiver
         ));
         // Compute start index and delete count
-        self.emit_splice_start_count("__sp_start", "__sp_cnt", &receiver, &data.args);
+        self.emit_splice_start_count(&_tss, &_tsc, &receiver, &data.args);
         // Remove elements from clone
-        self.write("var __j: usize = 0; while (__j < __sp_cnt) : (__j += 1) { _ = __sp.orderedRemove(__sp_start); } ");
+        self.write(&format!(
+            "var {}: usize = 0; while ({} < {}) : ({} += 1) {{ _ = {}.orderedRemove({}); }} ",
+            _j, _j, _tsc, _j, _tsp, _tss
+        ));
         // Insert items if provided (args beyond start and deleteCount)
-        self.emit_splice_insert(
-            "__sp",
-            "__sp_start",
-            &elem_type_str,
-            &data.args,
-            "toSpliced",
-        );
-        self.write(&format!("break :{} __sp; }})", blk));
+        self.emit_splice_insert(&_tsp, &_tss, &elem_type_str, &data.args, "toSpliced");
+        self.write(&format!("break :{} {}; }})", blk, _tsp));
     }
 }

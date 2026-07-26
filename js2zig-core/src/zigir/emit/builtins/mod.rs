@@ -349,7 +349,7 @@ impl Emitter {
                     self.write(" return std.mem.order(u8, __stra, __strb) == .lt;");
                     self.write(" } else if (T == f64) {");
                     self.write(" const __stra = js_number.toString(js_allocator.allocator(), a, 10) catch return a < b;");
-                    self.write(" const __strb = js_number.toString(js_allocator.allocator(), b, 10) catch return a < b;");
+                    self.write(" const __strb = js_number.toString(js_allocator.allocator(), b, 10) catch { js_allocator.allocator().free(__stra); return a < b; };");
                     self.write(" const __ord = std.mem.order(u8, __stra, __strb);");
                     self.write(" js_allocator.allocator().free(__stra); js_allocator.allocator().free(__strb);");
                     self.write(" return __ord == .lt;");

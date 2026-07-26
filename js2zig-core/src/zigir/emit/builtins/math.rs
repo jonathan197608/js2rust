@@ -7,14 +7,16 @@ use crate::zigir::emit::Emitter;
 
 // ── Data-driven tables ──────────────────────────────────
 // Direct Zig builtins: emit `@fn(args)`.
-const ZIG_BUILTINS: &[&str] = &["abs", "floor", "ceil", "round", "sqrt", "trunc"];
+const ZIG_BUILTINS: &[&str] = &["abs"];
 
 // Float builtin Zig builtins: emit `@fn(emit_f64_coerced(arg))`.
 // Coercion handles both int and float inputs via type inspection.
 // NOTE: `@atan` is NOT a Zig builtin — single-arg atan uses `std.math.atan`
-// (see STD_MATH_FLOAT). Only `@sin`/`@cos`/`@tan`/`@log`/`@log10`/`@log2`/`@exp`
+// (see STD_MATH_FLOAT). `@sin`/`@cos`/`@tan`/`@log`/`@log10`/`@log2`/`@exp`/`@floor`/`@ceil`/`@sqrt`/`@trunc`
 // are real `@`-builtins in Zig 0.16.
-const ZIG_FLOAT_BUILTINS: &[&str] = &["sin", "cos", "tan", "log", "log10", "log2", "exp"];
+const ZIG_FLOAT_BUILTINS: &[&str] = &[
+    "sin", "cos", "tan", "log", "log10", "log2", "exp", "floor", "ceil", "sqrt", "trunc",
+];
 
 // std.math direct calls: emit `std.math.fn(args)`.
 const STD_MATH_DIRECT: &[&str] = &[
@@ -191,29 +193,33 @@ impl Emitter {
                     "(@as(f64, @floatFromInt(std.crypto.random.int(u32))) / @as(f64, 4294967296.0))",
                 );
             }
-            // hypot: inline @sqrt(a*a + b*b + ...) expression
-            "hypot" => match args.len() {
-                0 => {
-                    self.write("0");
+            // round: JS Math.round rounds half toward +Infinity
+            // (round-half-up). Zig @round uses round-half-away-from-zero
+            // which gives -2 for -1.5 instead of the JS-correct -1.
+            // (R29-EMIT-1)
+            "round" => {
+                self.write("js_runtime.jsRound(");
+                if let Some(a) = args.first() {
+                    self.emit_f64_coerced(a);
+                } else {
+                    self.write("@as(f64, 0)");
                 }
-                1 => {
-                    self.write("@abs(");
-                    self.emit_f64_coerced(&args[0]);
-                    self.write(")");
-                }
-                _ => {
-                    self.write("@sqrt(");
-                    for (_i, arg) in args.iter().enumerate() {
-                        if _i > 0 {
-                            self.write(" + ");
-                        }
-                        self.emit_f64_coerced(arg);
-                        self.write("*");
-                        self.emit_f64_coerced(arg);
+                self.write(")");
+            }
+            // hypot: js_runtime.jsHypot with scaling for overflow/underflow
+            // protection. Direct @sqrt(sum_of_squares) overflows to Inf when
+            // any |arg| > ~1e154; underflows to 0 when all |arg| < ~1e162.
+            // (R29-EMIT-11)
+            "hypot" => {
+                self.write("js_runtime.jsHypot(&[_]f64{ ");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
                     }
-                    self.write(")");
+                    self.emit_f64_coerced(arg);
                 }
-            },
+                self.write(" })");
+            }
             "fround" => {
                 // Math.fround(x) → nearest f32 representation.
                 // @floatFromInt only works for int; @floatCast for float→f32.
@@ -283,18 +289,19 @@ impl Emitter {
                 }
             }
             "sign" => {
-                // Math.sign(x) → block with cached value to avoid re-evaluation.
-                // JS semantics: +1 if x>0, -1 if x<0, 0 if x==0, NaN otherwise.
+                // Math.sign(x): +1 if x>0, -1 if x<0, 0 (or -0) if x==0, NaN otherwise.
+                // Per ECMA-262: Math.sign(-0) returns -0. Zig @as(f64, 0.0) for the
+                // == 0 case would lose the signbit. Use std.math.signbit to
+                // distinguish +0/-0. (R29-EMIT-5, R29-EMIT-10)
                 let blk = self.next_label();
-                self.write(&format!("({}: {{ const __sign_v = ", blk));
+                let v = format!("_s_{}", blk);
+                self.write(&format!("({}: {{ const {} = ", blk, v));
                 if let Some(a) = args.first() {
                     self.emit_f64_coerced(a);
                 } else {
                     self.write("@as(f64, 0)");
                 }
-                self.write("; break :");
-                self.write(&blk);
-                self.write(" if (__sign_v > 0) @as(f64, 1.0) else if (__sign_v < 0) @as(f64, -1.0) else if (__sign_v == 0) @as(f64, 0.0) else std.math.nan(f64); })");
+                self.write(&format!("; break :{} if ({} > 0) @as(f64, 1.0) else if ({} < 0) @as(f64, -1.0) else if ({} == 0) (if (std.math.signbit({})) @as(f64, -0.0) else @as(f64, 0.0)) else std.math.nan(f64); }})", blk, v, v, v, v));
             }
             // Global NaN constant → std.math.nan(f64)
             "nan_f64" => {
@@ -333,7 +340,11 @@ impl Emitter {
     fn emit_min_max(&mut self, method: &str, args: &[crate::zigir::types::IrExpr]) {
         let is_min = method == "min";
         let blk = self.next_label();
-        let var = if is_min { "__min" } else { "__max" };
+        let var = if is_min {
+            format!("_min_{}", blk)
+        } else {
+            format!("_max_{}", blk)
+        };
         let cmp_op = if is_min { "<" } else { ">" };
 
         // Any float-shaped arg ⇒ use f64 emit for all args (Zig cannot

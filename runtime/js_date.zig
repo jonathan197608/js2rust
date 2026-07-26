@@ -751,15 +751,19 @@ pub fn parse(s: []const u8) i64 {
         if (tz_char == 'Z') {
             // UTC — no adjustment needed
         } else if (tz_char == '+' or tz_char == '-') {
-            // Parse "+HH:MM" or "-HH:MM" (or "+HHMM" without colon)
-            if (end_pos + 5 > s.len) return 0;
+            // Parse "+HH:MM" or "-HH:MM" (or "+HHMM" or bare "+HH")
+            // RT-2: ECMA-262 extended format allows "+HH" without minutes.
+            if (end_pos + 3 > s.len) return 0; // need at least +HH
             const tz_hours = parseDigits2(s[end_pos + 1 .. end_pos + 3]) orelse return 0;
             var tz_minutes: i64 = 0;
             if (end_pos + 6 <= s.len and s[end_pos + 3] == ':') {
+                // "+HH:MM"
                 tz_minutes = parseDigits2(s[end_pos + 4 .. end_pos + 6]) orelse return 0;
             } else if (end_pos + 5 <= s.len) {
+                // "+HHMM"
                 tz_minutes = parseDigits2(s[end_pos + 3 .. end_pos + 5]) orelse return 0;
             }
+            // else: bare "+HH" - minutes remain 0
             const tz_offset_ms = clampToI64(@as(i128, tz_hours) * 3600000 + @as(i128, tz_minutes) * 60000);
             if (tz_char == '+') {
                 utc_millis -= tz_offset_ms; // e.g., +08:00 means local is ahead, subtract to get UTC

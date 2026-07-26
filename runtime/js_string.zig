@@ -390,7 +390,19 @@ pub fn concat(alloc: Allocator, a: []const u8, b: []const u8) ![]const u8 {
 pub fn includes(haystack: []const u8, needle: []const u8, from_index: i64) bool {
     const hay_len: i64 = std.math.cast(i64, utf16Len(haystack)) orelse std.math.maxInt(i64);
     const start: i64 = if (from_index < 0) 0 else if (from_index > hay_len) hay_len else from_index;
-    const byte_start = utf16IndexToByteOffset(haystack, @intCast(start)) orelse haystack.len;
+    var byte_start = utf16IndexToByteOffset(haystack, @intCast(start)) orelse haystack.len;
+    // RT-3: If start falls on the low surrogate of a surrogate pair,
+    // utf16IndexToByteOffset maps it to the start of the supplementary
+    // character. JS semantically searches from the low surrogate position,
+    // which skips the high surrogate half. Advance past the code point.
+    if (start > 0 and start < hay_len) {
+        const prev_byte = utf16IndexToByteOffset(haystack, @intCast(start - 1)) orelse 0;
+        if (prev_byte == byte_start and byte_start < haystack.len) {
+            if (decodeUtf8CodePoint(haystack, byte_start)) |d| {
+                byte_start += d.len;
+            }
+        }
+    }
     return std.mem.indexOf(u8, haystack[byte_start..], needle) != null;
 }
 
@@ -410,7 +422,17 @@ pub fn indexOf(haystack: []const u8, needle: []const u8, from_index: i64) i64 {
     if (needle.len == 0) return start;
     if (start >= hay_len) return -1;
     // start is now in [0, hay_len), so the offset is non-null.
-    const start_byte: usize = utf16IndexToByteOffset(haystack, @intCast(start)).?;
+    var start_byte: usize = utf16IndexToByteOffset(haystack, @intCast(start)).?;
+    // RT-3: If start falls on the low surrogate of a surrogate pair,
+    // advance past the code point to avoid re-searching the high surrogate.
+    if (start > 0) {
+        const prev_byte = utf16IndexToByteOffset(haystack, @intCast(start - 1)) orelse 0;
+        if (prev_byte == start_byte and start_byte < haystack.len) {
+            if (decodeUtf8CodePoint(haystack, start_byte)) |d| {
+                start_byte += d.len;
+            }
+        }
+    }
     if (std.mem.indexOf(u8, haystack[start_byte..], needle)) |pos| {
         return @intCast(byteOffsetToUtf16Index(haystack, start_byte + pos));
     }
@@ -518,17 +540,31 @@ pub fn split(alloc: Allocator, s: []const u8, sep: []const u8) ![][]const u8 {
                 const high: u16 = @intCast(0xD800 + ((decoded.code_point - 0x10000) >> 10));
                 const low: u16 = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
                 const hi_str = try encodeCodeUnit(alloc, high);
-                try allocated.append(alloc, hi_str);
+                // RT-1: Free hi_str if allocated.append fails (OOM window)
+                allocated.append(alloc, hi_str) catch |err| {
+                    alloc.free(hi_str);
+                    return err;
+                };
                 try parts.append(alloc, hi_str);
                 const lo_str = try encodeCodeUnit(alloc, low);
-                try allocated.append(alloc, lo_str);
+                // RT-1: Free lo_str if allocated.append fails (OOM window)
+                allocated.append(alloc, lo_str) catch |err| {
+                    alloc.free(lo_str);
+                    return err;
+                };
                 try parts.append(alloc, lo_str);
             }
             i += decoded.len;
         }
-        // Success: free the tracking list (strings are now owned by result)
+        // RT-1: Don't deinit allocated before toOwnedSlice — if toOwnedSlice
+        // fails (OOM), allocated's errdefer must free the strings (parts.deinit
+        // only frees the backing array, not the individual string slices).
+        const owned = parts.toOwnedSlice(alloc) catch |err| {
+            return err; // allocated errdefer frees strings + deinits list
+        };
+        // Success: deinit tracking list (strings now owned by caller via owned)
         allocated.deinit(alloc);
-        return parts.toOwnedSlice(alloc);
+        return owned;
     }
 
     var remaining = s;

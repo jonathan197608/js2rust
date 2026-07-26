@@ -81,6 +81,7 @@ impl TypeInferrer {
                         | BinaryOperator::Multiplication
                         | BinaryOperator::Division
                         | BinaryOperator::Remainder
+                        | BinaryOperator::Exponential
                 );
                 let has_f64 = matches!(left, InferResult::Definite(ZigType::F64))
                     || matches!(right, InferResult::Definite(ZigType::F64));

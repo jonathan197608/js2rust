@@ -433,7 +433,7 @@ impl Lowerer {
                         _ => Some(ZigType::I64),
                     }
                 }
-                _ => None,
+                UnaryOperator::Delete => Some(ZigType::Bool),
             },
             Expression::BinaryExpression(be) => {
                 let left_ty = self.infer_expr_type(&be.left);
@@ -478,6 +478,23 @@ impl Lowerer {
                                     Some(ZigType::F64)
                                 }
                                 "EPSILON" => Some(ZigType::F64),
+                                _ => None,
+                            };
+                        }
+                        "Symbol" => {
+                            // INF-7: Well-known symbols (Symbol.iterator, etc.)
+                            // Mirrors analysis pass (infer/expr.rs:332-344).
+                            // Without this, Symbol.xxx fell through to _ => {},
+                            // returning None and potentially blocking the
+                            // var_types fallback for symbol-keyed computed
+                            // property access like obj[Symbol.iterator].
+                            return match mem.property.name.as_str() {
+                                "iterator" | "asyncIterator" | "hasInstance"
+                                | "isConcatSpreadable" | "species" | "toPrimitive"
+                                | "toStringTag" | "unscopables" | "match" | "matchAll"
+                                | "replace" | "search" | "split" | "dispose" => {
+                                    Some(ZigType::JsSymbol)
+                                }
                                 _ => None,
                             };
                         }
@@ -623,6 +640,21 @@ impl Lowerer {
                         return Some(ty.clone());
                     }
                 }
+                // INF-4: Try qualified return type for class methods.
+                // fn_return_types is keyed by "ClassName.methodName" for
+                // class methods (passes.rs:715). Mirrors the analysis pass
+                // qualified lookup. Without this, `myClass.method()` calls
+                // returned None, blocking the var_types fallback.
+                if let Expression::StaticMemberExpression(mem) = &ce.callee
+                    && let Expression::Identifier(id) = &mem.object
+                {
+                    let qualified_key = format!("{}.{}", id.name, mem.property.name);
+                    if let Some(ty) = self.type_info.fn_return_types.get(qualified_key.as_str())
+                        && *ty != ZigType::AnytypeReturn
+                    {
+                        return Some(ty.clone());
+                    }
+                }
                 // Try host function return type (mirrors analysis pass at expr.rs:260)
                 if let Expression::Identifier(id) = &ce.callee
                     && let Some(ty) = self.type_info.host_return_types.get(id.name.as_str())
@@ -651,44 +683,66 @@ impl Lowerer {
             // (infer/expr.rs:758-787) and the lowerer's lower_object_expr
             // (container.rs:62-124). (R24-INF-13)
             Expression::ObjectExpression(oe) => {
-                let mut fields = Vec::new();
+                // R29-INF-2: Handle SpreadProperty by merging struct fields
+                // from spread sources. Non-Struct spread sources yield None
+                // (unknown fields) so decl.rs can fall back to var_types.
+                // Mirrors the analysis pass (infer/expr.rs:794-851).
+                // Without this, spreads were silently skipped, producing
+                // partial struct types that omitted spread-contributed fields.
+                let mut fields: Vec<(String, ZigType)> = Vec::new();
                 for prop in &oe.properties {
-                    if let ObjectPropertyKind::ObjectProperty(op) = prop {
-                        let field_name = match &op.key {
-                            PropertyKey::StaticIdentifier(id) => id.name.as_str().to_string(),
-                            PropertyKey::StringLiteral(s) => s.value.to_string(),
-                            _ => continue,
-                        };
-                        match op.kind {
-                            PropertyKind::Init => {
-                                let field_ty =
-                                    self.infer_expr_type(&op.value).unwrap_or(ZigType::JsAny);
-                                fields.push((field_name, field_ty));
+                    match prop {
+                        ObjectPropertyKind::SpreadProperty(sp) => {
+                            match self.infer_expr_type(&sp.argument) {
+                                Some(ZigType::Struct(spread_fields)) => {
+                                    for (name, ty) in spread_fields {
+                                        fields.retain(|(n, _)| n != &name);
+                                        fields.push((name, ty));
+                                    }
+                                }
+                                _ => return None,
                             }
-                            PropertyKind::Get => {
-                                // Getter: try to infer the return type from the
-                                // single-return function body (mirrors
-                                // container.rs:71-91 which inlines getters whose
-                                // body is a single `return ...;`). Complex
-                                // getters fall back to JsAny; the IR layer
-                                // emits @compileError for those so the runtime
-                                // type is irrelevant.
-                                let field_ty = if let Expression::FunctionExpression(func) =
-                                    &op.value
-                                    && let Some(body) = &func.body
-                                    && body.statements.len() == 1
-                                    && let Statement::ReturnStatement(ret) = &body.statements[0]
-                                    && let Some(return_expr) = &ret.argument
-                                {
-                                    self.infer_expr_type(return_expr).unwrap_or(ZigType::JsAny)
-                                } else {
-                                    ZigType::JsAny
-                                };
-                                fields.push((field_name, field_ty));
-                            }
-                            PropertyKind::Set => {
-                                // Setter: doesn't contribute a field (mirrors
-                                // the analysis pass — infer/expr.rs:784-786).
+                        }
+                        ObjectPropertyKind::ObjectProperty(op) => {
+                            let field_name = match &op.key {
+                                PropertyKey::StaticIdentifier(id) => id.name.as_str().to_string(),
+                                PropertyKey::StringLiteral(s) => s.value.to_string(),
+                                _ => continue,
+                            };
+                            match op.kind {
+                                PropertyKind::Init => {
+                                    let field_ty =
+                                        self.infer_expr_type(&op.value).unwrap_or(ZigType::JsAny);
+                                    // Inline property overrides any spread field with same name
+                                    fields.retain(|(n, _)| n != &field_name);
+                                    fields.push((field_name, field_ty));
+                                }
+                                PropertyKind::Get => {
+                                    // Getter: try to infer the return type from the
+                                    // single-return function body (mirrors
+                                    // container.rs:71-91 which inlines getters whose
+                                    // body is a single eturn ...;). Complex
+                                    // getters fall back to JsAny; the IR layer
+                                    // emits @compileError for those so the runtime
+                                    // type is irrelevant.
+                                    let field_ty = if let Expression::FunctionExpression(func) =
+                                        &op.value
+                                        && let Some(body) = &func.body
+                                        && body.statements.len() == 1
+                                        && let Statement::ReturnStatement(ret) = &body.statements[0]
+                                        && let Some(return_expr) = &ret.argument
+                                    {
+                                        self.infer_expr_type(return_expr).unwrap_or(ZigType::JsAny)
+                                    } else {
+                                        ZigType::JsAny
+                                    };
+                                    fields.retain(|(n, _)| n != &field_name);
+                                    fields.push((field_name, field_ty));
+                                }
+                                PropertyKind::Set => {
+                                    // Setter: doesn't contribute a field (mirrors
+                                    // the analysis pass → infer/expr.rs:843-845).
+                                }
                             }
                         }
                     }
@@ -904,6 +958,11 @@ impl Lowerer {
                 }
             }
             Expression::AwaitExpression(ae) => self.infer_expr_type(&ae.argument),
+            // INF-6: Private field access (this.#field) - look up field
+            // type from class_field_types. Mirrors the analysis pass
+            // (infer/expr.rs:585-598). Without this, private field reads
+            // fell through to _ => None, blocking the var_types fallback.
+            Expression::PrivateFieldExpression(pfe) => self.infer_private_field_type(pfe),
             // RegExp literal (/pattern/) → NamedStruct("RegExp")
             // Matches analysis pass (infer/expr.rs:29). Enables
             // /pattern/.source and /pattern/.flags to infer Str via the

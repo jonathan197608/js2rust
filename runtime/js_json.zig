@@ -320,10 +320,16 @@ fn parseToken(alloc: Allocator, scanner: *std.json.Scanner, token: std.json.Toke
             return switch (token) {
                 .string => |str| JsAny.fromString(try alloc.dupe(u8, str)),
                 .allocated_string => |str| blk: {
-                    // Dupe the string, then free scanner-allocated buffer (P1-2)
-                    const r = JsAny.fromString(try alloc.dupe(u8, str));
-                    alloc.free(str);
-                    break :blk r;
+                    // RT-5: Free scanner-allocated buffer before propagating
+                    // OOM from alloc.dupe. Previously, if dupe failed, the
+                    // scanner buffer (str) was leaked because alloc.free(str)
+                    // was only reached on success.
+                    const duped = alloc.dupe(u8, str) catch |err| {
+                        alloc.free(str);
+                        return err;
+                    };
+                    defer alloc.free(str);
+                    break :blk JsAny.fromString(duped);
                 },
                 else => return JSONError.UnexpectedToken,
             };

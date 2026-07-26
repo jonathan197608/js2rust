@@ -81,8 +81,26 @@ impl Emitter {
                 self.emit_args_with_defaults_i64(args, 2, &defaults);
                 self.write(")");
             }
-            "toISOString" | "toString" | "toDateString" | "toTimeString" | "toJSON"
-            | "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString" | "toUTCString" => {
+            "toISOString" => {
+                // toISOString throws RangeError on invalid date (NaN time).
+                // Use inside_try_block to propagate errors to catch handler;
+                // otherwise @panic with a descriptive RangeError message.
+                if let Some(name) = obj {
+                    self.write(&format!("{}.toISOString(js_allocator.allocator()", name));
+                } else {
+                    self.write("js_date.toISOString(js_allocator.allocator()");
+                }
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else {
+                    self.write(") catch @panic(\"RangeError: Invalid time value\")");
+                }
+            }
+            "toString" | "toDateString" | "toTimeString" | "toJSON" | "toLocaleString"
+            | "toLocaleDateString" | "toLocaleTimeString" | "toUTCString" => {
                 if let Some(name) = obj {
                     self.write(&format!(
                         "{}.{}(js_allocator.allocator()) catch @panic(\"OOM: Date method\")",
@@ -171,7 +189,7 @@ impl Emitter {
     ) {
         // URI methods: all need js_allocator.allocator() and specific catch patterns.
         // encodeURI/encodeURIComponent: catch @panic("OOM: ...")
-        // decodeURI/decodeURIComponent: catch "" (outside try block)
+        // decodeURI/decodeURIComponent: route via inside_try_block or catch "" fallback
         match method {
             "encodeURI" | "encodeURIComponent" => {
                 self.write(&format!("js_uri.{}(js_allocator.allocator(), ", method));
@@ -190,7 +208,10 @@ impl Emitter {
                         label
                     ));
                 } else {
-                    // Not inside a try block: swallow error
+                    // Not inside a try block: return empty string (graceful
+                    // degradation). JS spec says decodeURI should throw URIError,
+                    // but without a try/catch we cannot propagate a catchable JS
+                    // error. Returning "" avoids crashing the whole program.
                     self.write(" catch \"\"");
                 }
             }
@@ -274,20 +295,34 @@ impl Emitter {
             "asIntN" | "asUintN" => {
                 // BigInt.asIntN(width, bigint) / BigInt.asUintN(width, bigint)
                 // → js_bigint.asIntN(width, &bigint, allocator) / js_bigint.asUintN(...)
+                // Use a temp variable for the bigint arg so &temp is always valid
+                // (Zig does not allow & on arbitrary expressions, only lvalues).
                 let zig_method = if method == "asIntN" {
                     "asIntN"
                 } else {
                     "asUintN"
                 };
-                self.write(&format!("(js_bigint.{}(", zig_method));
+                let blk = self.next_label();
+                let _tmp = format!("_bn_{}", blk);
+                self.write(&format!("({}: {{ const {} = ", blk, _tmp));
                 if args.len() >= 2 {
-                    self.emit_expr(&args[0]);
-                    self.write(", &");
                     self.emit_expr(&args[1]);
+                    self.write(&format!("; break :{} js_bigint.{}(", blk, zig_method));
+                    self.emit_expr(&args[0]);
+                    self.write(&format!(
+                        ", &{}, js_allocator.allocator()) catch @panic(\"OOM: BigInt ",
+                        _tmp
+                    ));
+                    self.write(zig_method);
+                    self.write("\"); })");
+                } else {
+                    self.write(&format!(
+                        "0; break :{} js_bigint.{}(0, &{}, js_allocator.allocator()) catch @panic(\"OOM: BigInt ",
+                        blk, zig_method, _tmp
+                    ));
+                    self.write(zig_method);
+                    self.write("\"); })");
                 }
-                self.write(", js_allocator.allocator()) catch @panic(\"OOM: BigInt ");
-                self.write(zig_method);
-                self.write("\"))");
             }
             _ => {
                 self.emit_module_call("js_bigint", method, args);

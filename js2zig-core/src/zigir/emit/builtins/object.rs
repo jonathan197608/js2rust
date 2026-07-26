@@ -319,25 +319,31 @@ impl Emitter {
                 // Uses StringArrayHashMap (managed wrapper, insertion-order-preserving)
                 // so that Object.keys on the result iterates in insertion order.
                 let blk = self.next_label();
-                self.write(&format!("{blk}: {{ var _grp_map = js_runtime.StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer {{ var _grp_di = _grp_map.iterator(); while (_grp_di.next()) |_grp_e| {{ _grp_e.value_ptr.deinit(js_allocator.allocator()); }} _grp_map.deinit(); }} "));
+                let _map = format!("_grp_map_{}", blk);
+                let _di = format!("_grp_di_{}", blk);
+                let _e = format!("_grp_e_{}", blk);
+                let _item = format!("_grp_item_{}", blk);
+                let _key = format!("_grp_key_{}", blk);
+                let _new = format!("_grp_new_{}", blk);
+                self.write(&format!("{blk}: {{ var {0} = js_runtime.StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer {{ var {1} = {0}.iterator(); while ({1}.next()) |{2}| {{ {2}.value_ptr.deinit(js_allocator.allocator()); }} {0}.deinit(); }} ", _map, _di, _e));
                 if let Some(items_arg) = args.first() {
                     self.write("for (");
                     self.emit_expr(items_arg);
-                    self.write(".items) |_grp_item| { ");
+                    self.write(&format!(".items) |{0}| {{ ", _item));
                     if args.len() >= 2 {
-                        self.emit_group_by_callback(&args[1]);
+                        self.emit_group_by_callback(&args[1], &_item, &_key);
                     } else {
-                        self.write("const _grp_key = _grp_item");
+                        self.write(&format!("const {0} = {1}", _key, _item));
                     }
-                    self.write("; if (_grp_map.getPtr(_grp_key)) |_grp_list| { _grp_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); } else { var _grp_new_list: std.ArrayList(JsAny) = .empty; _grp_new_list.append(js_allocator.allocator(), JsAny.from(_grp_item)) catch @panic(\"OOM\"); _grp_map.put(_grp_key, _grp_new_list) catch @panic(\"OOM\"); } } ");
+                    self.write(&format!("; if ({0}.getPtr({1})) |_grp_list| {{ _grp_list.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); }} else {{ var {3}: std.ArrayList(JsAny) = .empty; {3}.append(js_allocator.allocator(), JsAny.from({2})) catch @panic(\"OOM\"); {0}.put({1}, {3}) catch @panic(\"OOM\"); }} }} ", _map, _key, _item, _new));
                 }
-                self.write(&format!("break :{blk} _grp_map; }}"));
+                self.write(&format!("break :{blk} {}; }}", _map));
             }
             // ── Object.getOwnPropertyDescriptor — needs allocator prefix ──
             "getOwnPropertyDescriptor" => {
                 self.write("js_object.getOwnPropertyDescriptor(js_allocator.allocator(), ");
                 self.emit_inline_args(args);
-                self.write(")");
+                self.write(") catch @panic(\"OOM: Object.getOwnPropertyDescriptor\")");
             }
             // ── Default: js_object.method(args) ──
             _ => {
@@ -348,7 +354,7 @@ impl Emitter {
 
     /// Emit the callback parameter binding and key expression for Object.groupBy.
     /// Handles ArrowFn, Closure (all stmts + last as value), and fallback call.
-    fn emit_group_by_callback(&mut self, callback: &IrExpr) {
+    fn emit_group_by_callback(&mut self, callback: &IrExpr, item: &str, key: &str) {
         match callback {
             IrExpr::ArrowFn(arrow) => {
                 let param_name = arrow
@@ -356,14 +362,14 @@ impl Emitter {
                     .first()
                     .map(|p| p.name.zig_name.clone())
                     .unwrap_or_else(|| "_".to_string());
-                self.write(&format!("const {} = _grp_item; ", param_name));
+                self.write(&format!("const {} = {}; ", param_name, item));
                 let stmts = &arrow.body.stmts;
                 for stmt in stmts.iter().take(stmts.len().saturating_sub(1)) {
                     self.emit_stmt(stmt);
                 }
-                self.write("const _grp_key = ");
+                self.write(&format!("const {} = ", key));
                 if let Some(stmt) = stmts.last() {
-                    self.emit_stmt_value(stmt);
+                    self.emit_stmt_value(stmt, item);
                 }
             }
             IrExpr::Closure(closure) => {
@@ -372,30 +378,30 @@ impl Emitter {
                     .first()
                     .map(|p| p.name.zig_name.clone())
                     .unwrap_or_else(|| "_".to_string());
-                self.write(&format!("const {} = _grp_item; ", param_name));
+                self.write(&format!("const {} = {}; ", param_name, item));
                 let stmts = &closure.body.stmts;
                 for stmt in stmts.iter().take(stmts.len().saturating_sub(1)) {
                     self.emit_stmt(stmt);
                 }
-                self.write("const _grp_key = ");
+                self.write(&format!("const {} = ", key));
                 if let Some(stmt) = stmts.last() {
-                    self.emit_stmt_value(stmt);
+                    self.emit_stmt_value(stmt, item);
                 }
             }
             _ => {
-                self.write("const _grp_key = ");
+                self.write(&format!("const {} = ", key));
                 self.emit_expr(callback);
-                self.write("(_grp_item)");
+                self.write(&format!("({})", item));
             }
         }
     }
 
     /// Extract the value expression from a Return or Expr statement, or emit a fallback.
-    fn emit_stmt_value(&mut self, stmt: &crate::zigir::types::IrStmt) {
+    fn emit_stmt_value(&mut self, stmt: &crate::zigir::types::IrStmt, fallback: &str) {
         match stmt {
             crate::zigir::types::IrStmt::Return { value: Some(v) } => self.emit_expr(v),
             crate::zigir::types::IrStmt::Expr(e) => self.emit_expr(e),
-            _ => self.write("_grp_item"),
+            _ => self.write(fallback),
         }
     }
 
@@ -466,11 +472,8 @@ impl Emitter {
             "toFixed" | "toExponential" | "toPrecision" => {
                 // js_number.toFixed(js_allocator.allocator(), obj, digits)
                 // These runtime methods return ![]const u8 (RangeError on bad
-                // digit counts, plus OOM). We append `catch @panic` to coerce
-                // the error union back to []const u8, consistent with the
-                // fallible string-method convention (string.rs): `try` would
-                // require the enclosing fn to return an error union, which the
-                // transpiler does not currently propagate from builtin calls.
+                // digit counts, plus OOM). Use inside_try_block to propagate
+                // errors to catch handler; otherwise @panic with RangeError msg.
                 self.write(&format!("js_number.{}(js_allocator.allocator(), ", method));
                 if let Some(name) = obj {
                     self.write(name);
@@ -479,7 +482,14 @@ impl Emitter {
                     self.write(", ");
                     self.emit_expr(arg);
                 }
-                self.write(") catch @panic(\"Number method failed\")");
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else {
+                    self.write(") catch @panic(\"RangeError: Number method failed\")");
+                }
             }
             // R8-NumberToString: js_number.toString(allocator, val, radix).
             // Zig runtime requires all three args (no Zig default-param
@@ -578,10 +588,12 @@ impl Emitter {
             // via Symbol.for(). Wrap in JsAny to return undefined for unregistered symbols.
             "keyFor" => {
                 let lbl = self.next_label();
-                self.write(&format!("({lbl}: {{ const _k = "));
+                let _k = format!("_k_{}", lbl);
+                self.write(&format!("({lbl}: {{ const {} = ", _k));
                 self.emit_module_call("js_symbol", "symbolKeyFor", args);
                 self.write(&format!(
-                    "; break :{lbl} if (_k) |v| JsAny.fromString(v) else JsAny.fromUndefined(); }})"
+                    "; break :{lbl} if ({}) |v| JsAny.fromString(v) else JsAny.fromUndefined(); }})",
+                    _k
                 ));
             }
             _ => {

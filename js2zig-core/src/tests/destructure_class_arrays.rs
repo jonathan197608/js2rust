@@ -734,8 +734,8 @@ return filtered.length;
     // Verify inline for-loop with ArrayList result
     assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
     assert!(
-        zig.contains("__filter: std.ArrayList("),
-        "Expected __filter ArrayList var in:\n{}",
+        zig.contains("_f_blk_") && zig.contains("std.ArrayList("),
+        "Expected _f_blk_ ArrayList var in:\n{}",
         zig
     );
     assert!(zig.contains("for ("), "Expected for loop in:\n{}", zig);
@@ -745,8 +745,8 @@ return filtered.length;
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains("__filter"),
-        "Expected break :blk_ __filter in:\n{}",
+        zig.contains("break :blk_") && zig.contains("_f_blk_"),
+        "Expected break :blk_ _f_blk_ in:\n{}",
         zig
     );
     // Should contain the predicate condition: x > 3
@@ -888,19 +888,15 @@ return c.length;
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_concat");
     assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
-    assert!(
-        zig.contains("__concat:"),
-        "Expected __concat var in:\n{}",
-        zig
-    );
+    assert!(zig.contains("_cc_"), "Expected _cc_ var in:\n{}", zig);
     assert!(
         zig.contains("appendSlice"),
         "Expected appendSlice in:\n{}",
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains("__concat"),
-        "Expected break :blk_ __concat in:\n{}",
+        zig.contains("break :blk_") && zig.contains("_cc_"),
+        "Expected break :blk_ _cc_ in:\n{}",
         zig
     );
 }
@@ -1041,7 +1037,7 @@ return found;
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_find_last");
     assert!(
-        zig.contains("var __i: usize = "),
+        zig.contains("var _i_blk_"),
         "Expected reverse loop in:\n{}",
         zig
     );
@@ -1073,7 +1069,7 @@ return idx;
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_find_last_index");
     assert!(
-        zig.contains("var __i: usize = "),
+        zig.contains("var _i_blk_"),
         "Expected reverse loop in:\n{}",
         zig
     );
@@ -1167,19 +1163,15 @@ return arr.at(idx);
 
     // Verify labeled block with clamped index
     assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
+    assert!(zig.contains("_ai_"), "Expected _ai_ variable in:\n{}", zig);
     assert!(
-        zig.contains("__at_idx"),
-        "Expected __at_idx variable in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("__wrap") && zig.contains("__wrap < 0"),
+        zig.contains("_aw_") && zig.contains("< 0"),
         "Expected negative index wrapping with guard:\n{}",
         zig
     );
     assert!(
-        zig.contains(".items[__at_idx]"),
-        "Expected .items[__at_idx] access in:\n{}",
+        zig.contains(".items[_ai_"),
+        "Expected .items[_ai_ access in:\n{}",
         zig
     );
 }
@@ -1204,11 +1196,11 @@ return arr.lastIndexOf(target);
     // Verify backward while loop
     assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
     assert!(
-        zig.contains("while (__i >= 0)"),
+        zig.contains(">= 0)"),
         "Expected backward while loop in:\n{}",
         zig
     );
-    assert!(zig.contains("__i -= 1"), "Expected decrement in:\n{}", zig);
+    assert!(zig.contains("-= 1"), "Expected decrement in:\n{}", zig);
     assert!(
         zig.contains("@as(i64, -1)"),
         "Expected @as(i64, -1) fallback in:\n{}",
@@ -1235,17 +1227,9 @@ return arr[0] + arr[1] + arr[2];
 
     // Verify inline copy block
     assert!(zig.contains("blk_"), "Expected labeled block in:\n{}", zig);
-    assert!(
-        zig.contains("__cpw_target"),
-        "Expected __cpw_target in:\n{}",
-        zig
-    );
-    assert!(
-        zig.contains("__cpw_start"),
-        "Expected __cpw_start in:\n{}",
-        zig
-    );
-    assert!(zig.contains("__cpw_cnt"), "Expected __cpw_cnt in:\n{}", zig);
+    assert!(zig.contains("_tg_"), "Expected _tg_ in:\n{}", zig);
+    assert!(zig.contains("_cs_"), "Expected _cs_ in:\n{}", zig);
+    assert!(zig.contains("_cc_"), "Expected _cc_ in:\n{}", zig);
     assert!(
         zig.contains("break :blk_") && zig.contains("&arr"),
         "Expected break :blk_ & in:\n{}",

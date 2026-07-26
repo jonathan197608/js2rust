@@ -237,28 +237,31 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
+        let var = format!("_f_{}", blk);
+        let loop_elem_fallback = format!("_fe_{}", blk);
         let elem_type_str = data.elem_type.to_zig_type();
-        let loop_elem = Self::resolve_loop_elem(&data.elem_param, "__felem");
+        let loop_elem = Self::resolve_loop_elem(&data.elem_param, &loop_elem_fallback);
         self.write(&format!(
-            "var __filter: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            var, elem_type_str
         ));
         self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
         self.write("{\n");
         self.indent_push();
         let loop_elem_clone = loop_elem.clone();
-        self.emit_callback_body(&data.body, |emitter, expr| {
+        let var_clone = var.clone();
+        self.emit_callback_body(&data.body, move |emitter, expr| {
             emitter.write("if (js_runtime.isTruthy(");
             emitter.emit_expr(expr);
             emitter.write(&format!(
-                ")) {{ __filter.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
-                loop_elem_clone
+                ")) {{ {}.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.filter append\"); }}",
+                var_clone, loop_elem_clone
             ));
         });
         self.indent_pop();
         self.writeln("");
         self.write("}");
-        self.write(&format!(" break :{} __filter; }})", blk));
+        self.write(&format!(" break :{} {}; }})", blk, var));
     }
 
     // ── find / findLast (shared) ────────────────────────
@@ -278,7 +281,8 @@ impl Emitter {
         let blk_clone = blk.clone();
 
         if reverse {
-            self.emit_reverse_loop_header(&receiver, &data.elem_param, "");
+            let loop_var_name = format!("_i_{}", blk);
+            self.emit_reverse_loop_header(&receiver, &data.elem_param, "", &loop_var_name);
         } else {
             self.write(&format!("for ({}.items) |{}| ", receiver, data.elem_param));
             self.write("{\n");
@@ -326,15 +330,16 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
-        let idx_name = format!("__{}_idx", data.elem_param);
+        let idx_name = format!("_idx_{}", blk);
         let idx_name_clone = idx_name.clone();
         let blk_clone = blk.clone();
 
         if reverse {
-            let extra = format!("const {}: i64 = @intCast(__i); ", idx_name);
-            self.emit_reverse_loop_header(&receiver, &data.elem_param, &extra);
+            let loop_var_name = format!("_i_{}", blk);
+            let extra = format!("const {}: i64 = @intCast({}); ", idx_name, loop_var_name);
+            self.emit_reverse_loop_header(&receiver, &data.elem_param, &extra, &loop_var_name);
         } else {
-            let index_name = format!("__{}_i", data.elem_param);
+            let index_name = format!("_li_{}", blk);
             self.write(&format!(
                 "for ({}.items, 0..) |{}, {}| ",
                 receiver, data.elem_param, index_name
@@ -411,20 +416,22 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         let blk = self.begin_labeled_block(&binding);
+        let var = format!("_{}_{}", var_prefix.trim_start_matches('_'), blk);
+        let loop_elem_fallback = format!("_me_{}", blk);
         let elem_type_str = data.elem_type.to_zig_type();
-        let loop_elem = Self::resolve_loop_elem(&data.elem_param, "__melem");
+        let loop_elem = Self::resolve_loop_elem(&data.elem_param, &loop_elem_fallback);
         self.write(&format!(
             "var {}: std.ArrayList({}) = .empty; ",
-            var_prefix, elem_type_str
+            var, elem_type_str
         ));
         self.write(&format!(
             "{}.ensureTotalCapacity(js_allocator.allocator(), {}.items.len) catch @panic(\"OOM: Array.{} capacity\"); ",
-            var_prefix, receiver, method_name
+            var, receiver, method_name
         ));
         self.write(&format!("for ({}.items) |{}| ", receiver, loop_elem));
         self.write("{\n");
         self.indent_push();
-        let var_clone = var_prefix.to_string();
+        let var_clone = var.clone();
         let method_clone = method_name.to_string();
         self.emit_callback_body(&data.body, move |emitter, expr| {
             emitter.write(&format!("{}.append(js_allocator.allocator(), ", var_clone));
@@ -437,7 +444,7 @@ impl Emitter {
         self.indent_pop();
         self.writeln("");
         self.write("}");
-        self.write(&format!(" break :{} {}; }})", blk, var_prefix));
+        self.write(&format!(" break :{} {}; }})", blk, var));
     }
 
     // ── map ────────────────────────────────────────────
@@ -650,12 +657,13 @@ impl Emitter {
         };
         // Reverse loop header: var __i: usize = receiver.items.len; while (__i > 0) { __i -= 1; const loop_var = receiver.items[__i];
         // When no initial value: start from len-2 (last element is the initial accumulator)
+        let loop_var_name = format!("_i_{}", blk);
         if has_init {
-            self.emit_reverse_loop_header(&receiver, &loop_var, "");
+            self.emit_reverse_loop_header(&receiver, &loop_var, "", &loop_var_name);
         } else {
             self.write(&format!(
-                "var __i: usize = {}.items.len - 1; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; ",
-                receiver, loop_var, receiver
+                "var {}: usize = {}.items.len - 1; while ({} > 0) {{ {} -= 1; const {} = {}.items[{}]; ",
+                loop_var_name, receiver, loop_var_name, loop_var_name, loop_var, receiver, loop_var_name
             ));
         }
         self.indent_push();
@@ -728,33 +736,37 @@ impl Emitter {
         let (elem_type_str, param_a, param_b) = self.resolve_sort_params(data);
 
         let blk = self.begin_labeled_block(&binding);
+        let var = format!("_sorted_{}", blk);
+        let items_ref = format!("{}.items", var);
         self.write(&format!(
-            "var __sorted: std.ArrayList({}) = .empty; ",
-            elem_type_str
+            "var {}: std.ArrayList({}) = .empty; ",
+            var, elem_type_str
         ));
         self.write(&format!(
-            "__sorted.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
-            receiver
+            "{}.appendSlice(js_allocator.allocator(), {}.items) catch @panic(\"OOM: Array.toSorted appendSlice\"); ",
+            var, receiver
         ));
 
-        self.emit_sort_less_than(
-            "__sorted.items",
-            &elem_type_str,
-            &param_a,
-            &param_b,
-            &data.body,
-        );
+        self.emit_sort_less_than(&items_ref, &elem_type_str, &param_a, &param_b, &data.body);
 
-        self.write(&format!(" break :{} __sorted; }})", blk));
+        self.write(&format!(" break :{} {}; }})", blk, var));
     }
 
     /// Emit the header for a reverse iteration loop:
-    ///   `var __i: usize = <receiver>.items.len; while (__i > 0) { __i -= 1; const <elem> = <receiver>.items[__i]; <extra>`
-    /// Used by findLast and findLastIndex.
-    fn emit_reverse_loop_header(&mut self, receiver: &str, elem_param: &str, extra: &str) {
+    ///   `var <lv>: usize = <receiver>.items.len; while (<lv> > 0) { <lv> -= 1; const <elem> = <receiver>.items[<lv>]; <extra>`
+    /// Used by findLast and findLastIndex. The `loop_var` parameter must be a
+    /// unique name (e.g., derived from `blk` via `format!("_i_{}", blk)`) to
+    /// avoid shadowing errors when nested (R29-EMIT-2).
+    fn emit_reverse_loop_header(
+        &mut self,
+        receiver: &str,
+        elem_param: &str,
+        extra: &str,
+        loop_var: &str,
+    ) {
         self.write(&format!(
-            "var __i: usize = {}.items.len; while (__i > 0) {{ __i -= 1; const {} = {}.items[__i]; {}",
-            receiver, elem_param, receiver, extra
+            "var {}: usize = {}.items.len; while ({} > 0) {{ {} -= 1; const {} = {}.items[{}]; {}",
+            loop_var, receiver, loop_var, loop_var, elem_param, receiver, loop_var, extra
         ));
     }
 

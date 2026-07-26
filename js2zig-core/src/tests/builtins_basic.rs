@@ -92,17 +92,20 @@ return absX + floorX + ceilX + roundX + sqrtX + hypotX;
     assert!(zig.contains("@abs("), "Expected '@abs(' in:\n{}", zig);
     assert!(zig.contains("@floor("), "Expected '@floor(' in:\n{}", zig);
     assert!(zig.contains("@ceil("), "Expected '@ceil(' in:\n{}", zig);
-    assert!(zig.contains("@round("), "Expected '@round(' in:\n{}", zig);
-    assert!(zig.contains("@sqrt("), "Expected '@sqrt(' in:\n{}", zig);
-    // Math.hypot(x, 3, 4) → @sqrt(@as(f64,x)*@as(f64,x) + @as(f64,3)*@as(f64,3) + @as(f64,4)*@as(f64,4))
     assert!(
-        zig.contains("@sqrt("),
-        "Expected '@sqrt(' for Math.hypot in:\n{}",
+        zig.contains("js_runtime.jsRound("),
+        "Expected 'js_runtime.jsRound(' in:\n{}",
         zig
     );
     assert!(
-        zig.contains("*@as(f64,"),
-        "Expected squared terms for Math.hypot in:\n{}",
+        zig.contains("@sqrt("),
+        "Expected '@sqrt(' for Math.sqrt in:\n{}",
+        zig
+    );
+    // Math.hypot(x, 3, 4) → js_runtime.jsHypot(&[_]f64{ @as(f64, x), @as(f64, 3), @as(f64, 4) })
+    assert!(
+        zig.contains("js_runtime.jsHypot("),
+        "Expected 'js_runtime.jsHypot(' for Math.hypot in:\n{}",
         zig
     );
 }
@@ -225,11 +228,7 @@ return arr.join(", ");
         "Expected std.ArrayList(u8) = .empty in:\n{}",
         zig
     );
-    assert!(
-        zig.contains("__join_buf"),
-        "Expected __join_buf variable in:\n{}",
-        zig
-    );
+    assert!(zig.contains("_jb_"), "Expected _jb_ variable in:\n{}", zig);
     assert!(
         zig.contains("appendSlice"),
         "Expected appendSlice for separator in:\n{}",
@@ -260,15 +259,15 @@ return sub[0] + sub[1] + sub[2];
 "#;
     let zig = transpile_and_check(js, "test_native_proto_array_slice");
 
-    // Verify slice expression is generated with __s..@max(__s, __e) range (R17: clamp end >= start)
+    // Verify slice expression is generated with _s_..@max(_s_, _e_) range (R17: clamp end >= start, R29: unique vars)
     assert!(
-        zig.contains("__s..@max(__s, __e)]"),
-        "Expected '__s..@max(__s, __e)]' slice in:\n{}",
+        zig.contains("..@max(") && (zig.contains("_s_blk") || zig.contains("_s_")),
+        "Expected slice range with @max clamp in:\n{}",
         zig
     );
     assert!(
-        zig.contains("__slice_start") && zig.contains("__slice_end"),
-        "Expected __slice_start and __slice_end const in:\n{}",
+        zig.contains("_ss_") && zig.contains("_se_"),
+        "Expected _ss_ and _se_ const in:\n{}",
         zig
     );
 }
@@ -298,8 +297,8 @@ return arr.splice(start, count);
         zig
     );
     assert!(
-        zig.contains("break :blk_") && zig.contains("__spliced"),
-        "Expected break :blk_ __spliced in:\n{}",
+        zig.contains("break :blk_") && zig.contains("_sp_"),
+        "Expected break :blk_ _sp_ in:\n{}",
         zig
     );
 }
@@ -563,18 +562,18 @@ export function p07HypotFloat() {
     let zig = transpile_and_check(js, "test_p0_7_hypot_float_args");
 
     assert!(
-        zig.contains("@sqrt("),
-        "Expected '@sqrt(' for hypot in:\n{}",
+        zig.contains("js_runtime.jsHypot("),
+        "Expected 'js_runtime.jsHypot(' for hypot in:\n{}",
         zig
     );
     assert!(
         zig.contains("@as(f64, 1.5)"),
-        "Expected '@as(f64, 1.5)' squared term in:\n{}",
+        "Expected '@as(f64, 1.5)' as jsHypot array element in:\n{}",
         zig
     );
     assert!(
         zig.contains("@as(f64, 2.5)"),
-        "Expected '@as(f64, 2.5)' squared term in:\n{}",
+        "Expected '@as(f64, 2.5)' as jsHypot array element in:\n{}",
         zig
     );
     assert!(

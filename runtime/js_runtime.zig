@@ -158,6 +158,43 @@ pub fn toUint32(v: f64) u32 {
 pub fn toInt32(v: f64) i32 {
     return @bitCast(toUint32(v));
 }
+// ── JS Math.round/hypot helpers ─────────────────────────────────
+// JS Math.round rounds half toward +Infinity (round-half-up), not the
+// round-half-away-from-zero used by Zig @round. Without this helper,
+// Math.round(-1.5) would yield -2 instead of the JS-correct -1. (R29-EMIT-1)
+/// JS Math.round semantics: half rounds up (+Infinity). NaN/Inf pass through.
+pub fn jsRound(v: f64) f64 {
+    if (std.math.isNan(v) or std.math.isInf(v) or v == 0) return v;
+    const f = @floor(v);
+    const d = v - f;
+    if (d >= 0.5) return f + 1.0;
+    return f;
+}
+
+// JS Math.hypot with overflow/underflow protection via scaling.
+// Direct @sqrt(sum_of_squares) overflows to Inf when any |arg| > ~1e154,
+// and underflows to 0 when all |arg| < ~1e-162. The scaling algorithm
+// (compute max, scale, sum squares, unscale) is the canonical fix.
+/// (R29-EMIT-11)
+pub fn jsHypot(args: []const f64) f64 {
+    if (args.len == 0) return 0.0;
+    var max_abs: f64 = 0.0;
+    var has_special: bool = false;
+    for (args) |v| {
+        if (std.math.isNan(v)) return v;
+        if (std.math.isInf(v)) has_special = true;
+        const a = @abs(v);
+        if (a > max_abs) max_abs = a;
+    }
+    if (has_special) return std.math.inf(f64);
+    if (max_abs == 0.0) return 0.0;
+    var sum: f64 = 0.0;
+    for (args) |v| {
+        const s = v / max_abs;
+        sum += s * s;
+    }
+    return max_abs * @sqrt(sum);
+}
 
 // ── Object spread/merge helpers ─────────────────────────────────
 // These provide compile-time merging of anonymous structs,
