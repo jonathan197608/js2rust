@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 use oxc_ast::ast::*;
 
 use crate::infer::TypeCheckResult;
-use crate::types::{ClosureManager, JSDocData};
+use crate::types::{ClosureManager, JSDocData, ZigType};
 use crate::zigir::ident::NameMangler;
 use crate::zigir::source_span::{DiagnosticLevel, IrDiagnostic};
 use crate::zigir::types::{IrDecl, IrModule, IrTypedef, IrTypedefField};
@@ -190,6 +190,39 @@ impl Lowerer {
         for stmt in &program.body {
             let mut stmt_decls = self.lower_toplevel(stmt);
             declarations.append(&mut stmt_decls);
+        }
+
+        // 2b. LOW-2: Propagate needs_deinit across classes (fixpoint).
+        //     If a class has a field whose type is another class that already
+        //     needs_deinit, then this class needs_deinit too. Iterate until fixpoint.
+        {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let needs_deinit_classes: HashSet<String> = declarations
+                    .iter()
+                    .filter_map(|d| match d {
+                        IrDecl::Class(cls) if cls.needs_deinit => Some(cls.name.js_name.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for decl in &mut declarations {
+                    if let IrDecl::Class(cls) = decl {
+                        if cls.needs_deinit {
+                            continue;
+                        }
+                        if cls.fields.iter().any(|f| {
+                            matches!(
+                                &f.zig_type,
+                                ZigType::NamedStruct(n) if needs_deinit_classes.contains(n)
+                            )
+                        }) {
+                            cls.needs_deinit = true;
+                            changed = true;
+                        }
+                    }
+                }
+            }
         }
 
         // 3. Collect deferred closure structs

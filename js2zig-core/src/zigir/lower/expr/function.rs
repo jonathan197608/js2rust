@@ -445,10 +445,16 @@ impl Lowerer {
             && self.this_rewrite_fields.is_none()
             && Self::detect_this_in_body(&af.body.statements);
         if captures_this && let Some(class_name) = self.current_class.clone() {
-            captured.insert(
-                0,
-                ("__self".to_string(), ZigType::NamedStruct(class_name), true),
-            );
+            // LOW-4: Avoid duplicate `__self` capture if a user variable named
+            // `__self` is already captured. `__self` is a reserved internal name
+            // for `this` capture; if the user references `__self`, it will be
+            // treated as `this` (the class instance) inside the closure.
+            if !captured.iter().any(|(n, _, _)| n == "__self") {
+                captured.insert(
+                    0,
+                    ("__self".to_string(), ZigType::NamedStruct(class_name), true),
+                );
+            }
         }
 
         let is_concise = af.expression;
@@ -549,10 +555,13 @@ impl Lowerer {
             false
         };
         if captures_this && let Some(class_name) = self.current_class.clone() {
-            captured.insert(
-                0,
-                ("__self".to_string(), ZigType::NamedStruct(class_name), true),
-            );
+            // LOW-4: Avoid duplicate `__self` capture (see lower_arrow_fn for details).
+            if !captured.iter().any(|(n, _, _)| n == "__self") {
+                captured.insert(
+                    0,
+                    ("__self".to_string(), ZigType::NamedStruct(class_name), true),
+                );
+            }
         }
 
         let return_type = self

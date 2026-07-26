@@ -215,6 +215,20 @@ pub(crate) fn needs_quoted_ident(key: &str, is_computed: bool) -> bool {
     is_computed || !is_valid_zig_ident(key) || is_zig_keyword(key)
 }
 
+/// Return a Zig identifier string: bare `name` when safe, or escaped `@"name"`
+/// when the name is a Zig keyword (e.g. `type`, `if`), not a valid bare
+/// identifier, or needs quoting for any other reason.
+///
+/// Use this for class field declarations, method definitions, field access,
+/// and struct literal fields.
+pub(crate) fn zig_ident(name: &str) -> String {
+    if needs_quoted_ident(name, false) {
+        format!("@\"{}\"", escape_zig_string(name))
+    } else {
+        name.to_string()
+    }
+}
+
 // ═══════════════════════════════════════════════════════
 //  Tests
 // ═══════════════════════════════════════════════════════

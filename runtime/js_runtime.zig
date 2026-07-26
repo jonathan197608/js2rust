@@ -148,8 +148,7 @@ pub fn floatToInt(v: f64) i64 {
 /// Use this instead of `@as(u32, @intFromFloat(expr))`.
 pub fn toUint32(v: f64) u32 {
     if (std.math.isNan(v) or std.math.isInf(v)) return 0;
-    const clamped = @max(@min(v, @as(f64, @floatFromInt(std.math.maxInt(i64)))), @as(f64, @floatFromInt(std.math.minInt(i64))));
-    const i: i64 = @intFromFloat(clamped);
+    const i: i64 = floatToInt(v);
     return @as(u32, @truncate(@as(u64, @bitCast(i))));
 }
 

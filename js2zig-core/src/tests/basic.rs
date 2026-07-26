@@ -392,7 +392,7 @@ return obj;
     let zig = transpile_and_assert(js, "test_native_proto_delete_operator");
     // delete obj.prop uses deleteKey("prop")
     assert!(
-        zig.contains(".deleteKey(\"name\")"),
+        zig.contains(".deleteKey(\"name\","),
         "delete obj.prop should use deleteKey: {}",
         zig
     );
@@ -410,9 +410,9 @@ return obj;
     );
     // delete obj.a.b — receiver is a non-Identifier expression (StaticMemberExpression),
     // must NOT be dropped. The InnerInline renderer wraps it in parens so we expect
-    // to find ".a).deleteKey(\"b\")" (the `)` closes the inline-rendered `obj.a`).
+    // to find ".a).deleteKey(\"b\"," (the `)` closes the inline-rendered `obj.a`).
     assert!(
-        zig.contains("deleteKey(\"b\")"),
+        zig.contains("deleteKey(\"b\","),
         "delete obj.a.b should still emit deleteKey for the outer property: {}",
         zig
     );

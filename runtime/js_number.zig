@@ -439,6 +439,7 @@ pub fn toExponential(alloc: std.mem.Allocator, val: f64, fraction_digits: ?i64) 
     // beyond 15 decimal places.
     const s = std.fmt.bufPrint(&buf, "{e:.20}", .{safe_val}) catch "0.00000000000000000000e0";
     const fixed = try fixupExp(alloc, s);
+    errdefer alloc.free(fixed);
     const e_pos = std.mem.indexOfScalar(u8, fixed, 'e') orelse return fixed;
     const dot_pos = std.mem.indexOfScalar(u8, fixed[0..e_pos], '.') orelse return fixed;
     const existing_frac = e_pos - dot_pos - 1;

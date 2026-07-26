@@ -2,7 +2,7 @@
 // Call expression, field access, index access, and computed field emission.
 
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{EmitterHelpers, zig_ident};
 use crate::zigir::kinds::{CallKind, ComputedKeyKind, FieldKind, IndexKind};
 
 impl Emitter {
@@ -224,7 +224,7 @@ impl Emitter {
     /// Emit `object.field` — dot-access on an expression.
     pub(super) fn emit_dot_access(&mut self, object: &crate::zigir::types::IrExpr, field: &str) {
         self.emit_expr(object);
-        self.write(&format!(".{}", field));
+        self.write(&format!(".{}", zig_ident(field)));
     }
 
     /// Emit `object.items[...]` — ArrayList element access.

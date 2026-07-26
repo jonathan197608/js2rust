@@ -9,7 +9,7 @@ pub mod template_new;
 use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
 use crate::zigir::emit::helpers as emit_helpers;
-use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, update_op_to_zig};
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, update_op_to_zig, zig_ident};
 
 // ═══════════════════════════════════════════════════════
 //  Expression dispatch
@@ -876,9 +876,9 @@ impl Emitter {
                 // void expr: evaluate expr for side effects, return undefined.
                 // Output: blk_N: { _ = expr; break :blk_N JsAny.fromUndefined(); }
                 let label = self.next_label();
-                self.write(&format!("{}: {{ _ = ", label));
+                self.write(&format!("({}: {{ _ = ", label));
                 self.emit_expr(inner);
-                self.write(&format!("; break :{} JsAny.fromUndefined(); }}", label));
+                self.write(&format!("; break :{} JsAny.fromUndefined(); }})", label));
             }
 
             crate::zigir::types::IrExpr::Paren(inner) => {
@@ -978,9 +978,9 @@ impl Emitter {
                     _ => {
                         self.emit_expr(object);
                         if *is_pointer {
-                            self.write(&format!(".{}.*", field));
+                            self.write(&format!(".{}.*", zig_ident(field)));
                         } else {
-                            self.write(&format!(".{}", field));
+                            self.write(&format!(".{}", zig_ident(field)));
                         }
                     }
                 }
@@ -1052,13 +1052,13 @@ impl Emitter {
                 if !matches!(field_kind, FieldKind::StaticField { .. }) {
                     let blk = self.next_label();
                     self.write(&format!("({}: {{ ", blk));
-                    self.write("const __asg_obj = ");
+                    self.write(&format!("const _asg_obj_{} = ", blk));
                     self.emit_expr(object);
                     self.write("; ");
                     let access = if *is_pointer {
-                        format!("__asg_obj.{}.{}", field, "*")
+                        format!("_asg_obj_{}.{}.{}", blk, zig_ident(field), "*")
                     } else {
-                        format!("__asg_obj.{}", field)
+                        format!("_asg_obj_{}.{}", blk, zig_ident(field))
                     };
                     let (fn_name, negate) = match op {
                         AssignOp::LogicAnd => ("isTruthy", false),
@@ -1097,14 +1097,14 @@ impl Emitter {
                 let blk = self.next_label();
                 self.write(&format!("({}: {{ ", blk));
                 // Evaluate object and index once
-                self.write("const __asg_obj = ");
+                self.write(&format!("const _asg_obj_{} = ", blk));
                 self.emit_expr(object);
-                self.write("; const __asg_idx_raw = ");
+                self.write(&format!("; const _asg_idx_raw_{} = ", blk));
                 self.emit_expr(index);
-                self.write("; const __asg_idx: usize = if (__asg_idx_raw < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(__asg_idx_raw)); ");
+                self.write(&format!("; const _asg_idx_{}: usize = if (_asg_idx_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_asg_idx_raw_{})); ", blk, blk, blk));
                 let access = match index_kind {
-                    IndexKind::ArrayListItem => "__asg_obj.items[__asg_idx]",
-                    IndexKind::SliceIndex => "__asg_obj[__asg_idx]",
+                    IndexKind::ArrayListItem => format!("_asg_obj_{}.items[_asg_idx_{}]", blk, blk),
+                    IndexKind::SliceIndex => format!("_asg_obj_{}[_asg_idx_{}]", blk, blk),
                 };
                 let (fn_name, negate) = match op {
                     AssignOp::LogicAnd => ("isTruthy", false),

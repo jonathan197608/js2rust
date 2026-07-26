@@ -13,10 +13,15 @@ pub const JsError = struct {
     stack: []const u8,
 
     pub fn init(alloc: Allocator, name: []const u8, msg: []const u8) !JsError {
+        const name_copy = try alloc.dupe(u8, name);
+        errdefer alloc.free(name_copy);
+        const msg_copy = try alloc.dupe(u8, msg);
+        errdefer alloc.free(msg_copy);
+        const stack = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ name, msg });
         return JsError{
-            .name = try alloc.dupe(u8, name),
-            .message = try alloc.dupe(u8, msg),
-            .stack = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ name, msg }),
+            .name = name_copy,
+            .message = msg_copy,
+            .stack = stack,
         };
     }
 
@@ -41,10 +46,15 @@ pub const JsError = struct {
     /// Maps known Zig errors to JS error names and messages; falls back to "Error".
     pub fn fromError(err: anyerror, alloc: Allocator) !JsError {
         const info = errorInfo(err);
+        const name_copy = try alloc.dupe(u8, info.name);
+        errdefer alloc.free(name_copy);
+        const msg_copy = try alloc.dupe(u8, info.message);
+        errdefer alloc.free(msg_copy);
+        const stack = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ info.name, info.message });
         return JsError{
-            .name = try alloc.dupe(u8, info.name),
-            .message = try alloc.dupe(u8, info.message),
-            .stack = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ info.name, info.message }),
+            .name = name_copy,
+            .message = msg_copy,
+            .stack = stack,
         };
     }
 

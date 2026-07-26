@@ -245,47 +245,7 @@ impl Lowerer {
             match stmt {
                 Statement::ExpressionStatement(es) => {
                     if let Expression::AssignmentExpression(ae) = &es.expression {
-                        let maybe_fname = match &ae.left {
-                            AssignmentTarget::StaticMemberExpression(sme)
-                                if matches!(&sme.object, Expression::ThisExpression(_)) =>
-                            {
-                                Some(sme.property.name.to_string())
-                            }
-                            AssignmentTarget::PrivateFieldExpression(pfe)
-                                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
-                            {
-                                Some(pfe.field.name.to_string())
-                            }
-                            _ => None,
-                        };
-                        if let Some(fname) = maybe_fname
-                            && !field_names.contains(&fname)
-                        {
-                            let ftype = self
-                                .type_info
-                                .class_field_types
-                                .get(class_name)
-                                .and_then(|m| m.get(&fname))
-                                .cloned()
-                                .or_else(|| {
-                                    // Fallback: for anonymous class expressions,
-                                    // field types are stored under the variable name
-                                    self.class_expr_var_name.as_ref().and_then(|vn| {
-                                        self.type_info
-                                            .class_field_types
-                                            .get(vn)
-                                            .and_then(|m| m.get(&fname))
-                                            .cloned()
-                                    })
-                                })
-                                .unwrap_or(ZigType::JsAny);
-                            field_names.push(fname.clone());
-                            fields.push(crate::zigir::types::IrClassField {
-                                name: fname,
-                                zig_type: ftype,
-                                default: None,
-                            });
-                        }
+                        self.register_implicit_field(ae, class_name, field_names, fields);
                     }
                 }
                 Statement::IfStatement(is) => {
@@ -329,12 +289,25 @@ impl Lowerer {
                     );
                 }
                 Statement::ForStatement(fs) => {
+                    // LOW-1: Also scan init for `this.field = ...` assignments.
+                    if let Some(init) = &fs.init
+                        && let Some(expr) = init.as_expression()
+                        && let Expression::AssignmentExpression(ae) = expr
+                    {
+                        self.register_implicit_field(ae, class_name, field_names, fields);
+                    }
                     self.collect_implicit_class_fields(
                         std::slice::from_ref(&fs.body),
                         class_name,
                         field_names,
                         fields,
                     );
+                    // LOW-1: Also scan update for `this.field = ...` assignments.
+                    if let Some(update) = &fs.update
+                        && let Expression::AssignmentExpression(ae) = update
+                    {
+                        self.register_implicit_field(ae, class_name, field_names, fields);
+                    }
                 }
                 Statement::ForOfStatement(fos) => {
                     self.collect_implicit_class_fields(
@@ -396,6 +369,61 @@ impl Lowerer {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Check if an `AssignmentExpression` targets `this.field` and, if so,
+    /// register the field (name + type) if not already present.
+    ///
+    /// Extracted from `collect_implicit_class_fields` so that both
+    /// `ExpressionStatement` and `ForStatement.update` can share the logic.
+    fn register_implicit_field(
+        &self,
+        ae: &AssignmentExpression,
+        class_name: &str,
+        field_names: &mut Vec<String>,
+        fields: &mut Vec<crate::zigir::types::IrClassField>,
+    ) {
+        let maybe_fname = match &ae.left {
+            AssignmentTarget::StaticMemberExpression(sme)
+                if matches!(&sme.object, Expression::ThisExpression(_)) =>
+            {
+                Some(sme.property.name.to_string())
+            }
+            AssignmentTarget::PrivateFieldExpression(pfe)
+                if matches!(&pfe.object, Expression::ThisExpression(_)) =>
+            {
+                Some(pfe.field.name.to_string())
+            }
+            _ => None,
+        };
+        if let Some(fname) = maybe_fname
+            && !field_names.contains(&fname)
+        {
+            let ftype = self
+                .type_info
+                .class_field_types
+                .get(class_name)
+                .and_then(|m| m.get(&fname))
+                .cloned()
+                .or_else(|| {
+                    // Fallback: for anonymous class expressions,
+                    // field types are stored under the variable name
+                    self.class_expr_var_name.as_ref().and_then(|vn| {
+                        self.type_info
+                            .class_field_types
+                            .get(vn)
+                            .and_then(|m| m.get(&fname))
+                            .cloned()
+                    })
+                })
+                .unwrap_or(ZigType::JsAny);
+            field_names.push(fname.clone());
+            fields.push(crate::zigir::types::IrClassField {
+                name: fname,
+                zig_type: ftype,
+                default: None,
+            });
         }
     }
 

@@ -705,9 +705,17 @@ pub const JsAny = union(enum) {
 
     /// Delete a property by string key. Returns true if the key existed.
     /// For codegen of `delete obj.prop`.
-    pub fn deleteKey(self: *JsAny, key: []const u8) bool {
+    pub fn deleteKey(self: *JsAny, key: []const u8, alloc: Allocator) bool {
         return switch (self.*) {
-            .object => |*o| o.remove(key),
+            .object => |*o| {
+                if (o.fetchRemove(key)) |removed| {
+                    alloc.free(removed.key);
+                    var v = removed.value;
+                    v.deinit(alloc);
+                    return true;
+                }
+                return false;
+            },
             else => false,
         };
     }
@@ -718,7 +726,15 @@ pub const JsAny = union(enum) {
         const key_str = key.asString(alloc);
         defer freeAsStringKey(key, key_str, alloc);
         return switch (self.*) {
-            .object => |*o| o.remove(key_str),
+            .object => |*o| {
+                if (o.fetchRemove(key_str)) |removed| {
+                    alloc.free(removed.key);
+                    var v = removed.value;
+                    v.deinit(alloc);
+                    return true;
+                }
+                return false;
+            },
             else => false,
         };
     }

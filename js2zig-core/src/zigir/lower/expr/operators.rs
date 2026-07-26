@@ -44,7 +44,7 @@ impl Lowerer {
                     op: BinOp::In,
                     left: Box::new(left_expr),
                     right: Box::new(right_expr),
-                    left_type: Some(ZigType::Str),
+                    left_type: self.infer_expr_type(&be.left),
                     right_type,
                 };
             }
@@ -1416,7 +1416,7 @@ impl Lowerer {
                         op: BinOp::Eq,
                         left: Box::new(name_access.clone()),
                         right: Box::new(IrExpr::StringLiteral(n.to_string())),
-                        left_type: Some(ZigType::Str),
+                        left_type: self.infer_expr_type(&be.left),
                         right_type: Some(ZigType::Str),
                     };
                     result = match result {
@@ -1436,7 +1436,7 @@ impl Lowerer {
                 op: BinOp::Eq,
                 left: Box::new(name_access),
                 right: Box::new(IrExpr::StringLiteral(type_name)),
-                left_type: Some(ZigType::Str),
+                left_type: self.infer_expr_type(&be.left),
                 right_type: Some(ZigType::Str),
             };
         }

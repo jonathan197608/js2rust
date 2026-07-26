@@ -175,6 +175,9 @@ impl Lowerer {
                             | ZigType::Str
                             | ZigType::ArrayList(_)
                             | ZigType::NamedStruct(_)
+                            | ZigType::JsSymbol
+                            | ZigType::JsError
+                            | ZigType::BigInt
                     )
                 })
             })
@@ -439,7 +442,10 @@ impl Lowerer {
                         | ZigType::Bool
                         | ZigType::Str
                         | ZigType::ArrayList(_)
-                        | ZigType::NamedStruct(_),
+                        | ZigType::NamedStruct(_)
+                        | ZigType::JsSymbol
+                        | ZigType::JsError
+                        | ZigType::BigInt,
                     ) => false,
                     // Unknown type: conservatively assume it might be null
                     // so that optional chaining null checks are not skipped.

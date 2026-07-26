@@ -329,8 +329,8 @@ pub const JsDate = struct {
     pub fn setHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
         const local = self.localMillis();
         const h = hours;
-        const m = if (min) |mm| mm else timePart(local, 3600 * 1000, 60);
-        const s = if (sec) |ss| ss else timePart(local, 60000, 60);
+        const m = if (min) |mm| mm else timePart(local, 60000, 60);
+        const s = if (sec) |ss| ss else timePart(local, 1000, 60);
         const mils = if (ms) |mm| mm else @mod(local, 1000);
         return localToUtc(addDaysAndTimeMs(dayCount(local), makeTimeMs(h, m, s, mils)));
     }
@@ -340,7 +340,7 @@ pub const JsDate = struct {
         const local = self.localMillis();
         const h = timePart(local, 3600 * 1000, 24);
         const m = min;
-        const s = if (sec) |ss| ss else timePart(local, 60000, 60);
+        const s = if (sec) |ss| ss else timePart(local, 1000, 60);
         const mils = if (ms) |mm| mm else @mod(local, 1000);
         return localToUtc(addDaysAndTimeMs(dayCount(local), makeTimeMs(h, m, s, mils)));
     }
@@ -404,8 +404,8 @@ pub const JsDate = struct {
     /// setUTCHours(hours, min?, sec?, ms?) → new milliseconds.
     pub fn setUTCHours(self: JsDate, hours: i64, min: ?i64, sec: ?i64, ms: ?i64) i64 {
         const h = hours;
-        const m = if (min) |mm| mm else timePart(self.millis, 3600 * 1000, 60);
-        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const m = if (min) |mm| mm else timePart(self.millis, 60000, 60);
+        const s = if (sec) |ss| ss else timePart(self.millis, 1000, 60);
         const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
         return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
@@ -414,7 +414,7 @@ pub const JsDate = struct {
     pub fn setUTCMinutes(self: JsDate, min: i64, sec: ?i64, ms: ?i64) i64 {
         const h = timePart(self.millis, 3600 * 1000, 24);
         const m = min;
-        const s = if (sec) |ss| ss else timePart(self.millis, 60000, 60);
+        const s = if (sec) |ss| ss else timePart(self.millis, 1000, 60);
         const mils = if (ms) |mm| mm else @mod(self.millis, 1000);
         return addDaysAndTimeMs(dayCount(self.millis), makeTimeMs(h, m, s, mils));
     }
@@ -700,15 +700,18 @@ pub fn parse(s: []const u8) i64 {
     var millis: i64 = 0;
     var end_pos: usize = 10; // tracks where the time portion ends
 
-    if (s.len >= 19 and s[10] == 'T') {
+    // RT-7: Accept "YYYY-MM-DDTHH:mm" (16 chars) as well as longer formats.
+    // Previously required s.len >= 19, rejecting valid short time strings.
+    if (s.len >= 16 and s[10] == 'T') {
         hours = parseDigits2(s[11..13]) orelse return 0;
         if (s[13] != ':') return 0;
         minutes = parseDigits2(s[14..16]) orelse return 0;
+        end_pos = 16;
         if (s.len >= 19 and s[16] == ':') {
             seconds = parseDigits2(s[17..19]) orelse return 0;
+            end_pos = 19;
         }
-        end_pos = 19;
-        if (s.len >= 21 and s[19] == '.') {
+        if (end_pos == 19 and s.len >= 21 and s[19] == '.') {
             var frac: i64 = 0;
             var mult: i64 = 100;
             var i: usize = 20;
@@ -749,6 +752,8 @@ pub fn parse(s: []const u8) i64 {
     if (end_pos < s.len) {
         const tz_char = s[end_pos];
         if (tz_char == 'Z') {
+            // RT-9: reject trailing content after Z
+            if (end_pos + 1 != s.len) return 0;
             // UTC — no adjustment needed
         } else if (tz_char == '+' or tz_char == '-') {
             // Parse "+HH:MM" or "-HH:MM" (or "+HHMM" or bare "+HH")
@@ -756,14 +761,18 @@ pub fn parse(s: []const u8) i64 {
             if (end_pos + 3 > s.len) return 0; // need at least +HH
             const tz_hours = parseDigits2(s[end_pos + 1 .. end_pos + 3]) orelse return 0;
             var tz_minutes: i64 = 0;
+            var tz_end: usize = end_pos + 3; // bare "+HH" by default
             if (end_pos + 6 <= s.len and s[end_pos + 3] == ':') {
                 // "+HH:MM"
                 tz_minutes = parseDigits2(s[end_pos + 4 .. end_pos + 6]) orelse return 0;
+                tz_end = end_pos + 6;
             } else if (end_pos + 5 <= s.len) {
                 // "+HHMM"
                 tz_minutes = parseDigits2(s[end_pos + 3 .. end_pos + 5]) orelse return 0;
+                tz_end = end_pos + 5;
             }
-            // else: bare "+HH" - minutes remain 0
+            // RT-9: reject trailing content after timezone
+            if (tz_end != s.len) return 0;
             const tz_offset_ms = clampToI64(@as(i128, tz_hours) * 3600000 + @as(i128, tz_minutes) * 60000);
             if (tz_char == '+') {
                 utc_millis -= tz_offset_ms; // e.g., +08:00 means local is ahead, subtract to get UTC

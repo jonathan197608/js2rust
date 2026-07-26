@@ -3,7 +3,9 @@
 
 use crate::types::ZigType;
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::{EmitterHelpers, format_param_with_rest, format_return_type};
+use crate::zigir::emit::helpers::{
+    EmitterHelpers, format_param_with_rest, format_return_type, zig_ident,
+};
 use crate::zigir::types::{
     IrAssignTarget, IrBlock, IrClassDecl, IrClassField, IrClassMethod, IrClosureStruct, IrExpr,
     IrFnDecl, IrStmt, IrTypedef, IrVarDecl,
@@ -575,7 +577,7 @@ impl Emitter {
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
                     || matches!(&field.zig_type, ZigType::BigInt);
                 if needs_field_deinit {
-                    self.writeln(&format!("self.{}.deinit(alloc);", field.name));
+                    self.writeln(&format!("self.{}.deinit(alloc);", zig_ident(&field.name)));
                 }
             }
             self.indent_pop();
@@ -640,7 +642,7 @@ impl Emitter {
             if i > 0 {
                 self.write(", ");
             }
-            self.write(&format!(".{} = {}", name, val));
+            self.write(&format!(".{} = {}", zig_ident(name), val));
         }
         self.write(" };\n");
     }
@@ -702,7 +704,7 @@ impl Emitter {
             self.writeln(&format!(
                 "{} {}: {} = {};",
                 kw,
-                f.name,
+                zig_ident(&f.name),
                 f.zig_type.to_zig_type(),
                 default_str
             ));
@@ -771,11 +773,11 @@ impl Emitter {
         // keep `self: @This()` (by-value) which is cheaper and works on both
         // const and var instances.
         let mut sig = if method.is_static {
-            format!("pub fn {}(", method.name)
+            format!("pub fn {}(", zig_ident(&method.name))
         } else if method_mutates_self(&method.body) {
-            format!("pub fn {}(self: *@This()", method.name)
+            format!("pub fn {}(self: *@This()", zig_ident(&method.name))
         } else {
-            format!("pub fn {}(self: @This()", method.name)
+            format!("pub fn {}(self: @This()", zig_ident(&method.name))
         };
 
         for param in &method.params {

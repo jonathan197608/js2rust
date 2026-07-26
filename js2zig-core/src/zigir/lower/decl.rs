@@ -811,7 +811,7 @@ impl Lowerer {
                 let args_exprs: Vec<crate::zigir::types::IrExpr> = scope
                     .params
                     .iter()
-                    .filter(|p| p.name.zig_name != "io" && !p.is_rest)
+                    .filter(|p| p.zig_type != ZigType::AsyncIo && !p.is_rest)
                     .map(|p| {
                         crate::zigir::types::IrExpr::Call(crate::zigir::types::IrCallExpr {
                             callee: Box::new(crate::zigir::types::IrExpr::FieldAccess {

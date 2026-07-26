@@ -470,7 +470,9 @@ impl Emitter {
                     }
                     self.emit_expr(arg);
                 }
-                self.write(&format!("); break :{blk} true; }}"));
+                self.write(&format!(
+                    ", js_allocator.allocator()); break :{blk} true; }}"
+                ));
             }
             "deleteByKey" => {
                 // obj.deleteByKey(expr, alloc) → true

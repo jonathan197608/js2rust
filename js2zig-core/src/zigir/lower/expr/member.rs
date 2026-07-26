@@ -412,7 +412,14 @@ impl Lowerer {
                     {
                         return Some(ZigType::F64);
                     }
-                    self.infer_expr_type(&ue.argument)
+                    // INF-5: Mirror UnaryPlus for ToNumber conversion
+                    // (bool→I64, str→F64). Previously returned arg type
+                    // unchanged, causing type mismatches with the analysis pass.
+                    match self.infer_expr_type(&ue.argument) {
+                        Some(ZigType::Bool) => Some(ZigType::I64),
+                        Some(ZigType::Str) | Some(ZigType::JsAny) => Some(ZigType::F64),
+                        other => other,
+                    }
                 }
                 UnaryOperator::UnaryPlus => match self.infer_expr_type(&ue.argument) {
                     // ToNumber conversion: bool → i64, str → f64, numbers pass through.
@@ -835,12 +842,20 @@ impl Lowerer {
                         if name.as_str() == "Map" {
                             return Some(ZigType::JsAny);
                         }
-                        if let Expression::StringLiteral(s) = &cme.expression
-                            && let Some(host_fields) =
+                        if let Expression::StringLiteral(s) = &cme.expression {
+                            // INF-1: Check both class_field_types and host_struct_fields
+                            if let Some(class_fields) =
                                 self.type_info.class_field_types.get(name.as_str())
-                            && let Some(field_ty) = host_fields.get(s.value.as_str())
-                        {
-                            return Some(field_ty.clone());
+                                && let Some(field_ty) = class_fields.get(s.value.as_str())
+                            {
+                                return Some(field_ty.clone());
+                            }
+                            if let Some(host_fields) =
+                                self.type_info.host_struct_fields.get(name.as_str())
+                                && let Some(field_ty) = host_fields.get(s.value.as_str())
+                            {
+                                return Some(field_ty.clone());
+                            }
                         }
                         None
                     }
@@ -1031,6 +1046,22 @@ impl Lowerer {
                     Some(ZigType::Str)
                 } else if either_bigint {
                     // Mixed BigInt + non-BigInt is a TypeError in JS; can't infer.
+                    None
+                } else if left_ty == Some(ZigType::F64) || right_ty == Some(ZigType::F64) {
+                    Some(ZigType::F64)
+                } else if left_ty == Some(ZigType::I64) || right_ty == Some(ZigType::I64) {
+                    Some(ZigType::I64)
+                } else {
+                    None
+                }
+            }
+            // Subtraction/Multiplication: BigInt-aware, partial knowledge.
+            // INF-7: Previously fell through to `_ => None`, losing type info
+            // for `var x = a - 1` where a is anytype (should infer I64).
+            BinaryOperator::Subtraction | BinaryOperator::Multiplication => {
+                if both_bigint {
+                    Some(ZigType::BigInt)
+                } else if either_bigint {
                     None
                 } else if left_ty == Some(ZigType::F64) || right_ty == Some(ZigType::F64) {
                     Some(ZigType::F64)

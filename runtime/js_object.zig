@@ -20,7 +20,10 @@ pub fn constructor(value: anytype) @TypeOf(value) {
 pub fn keys(alloc: Allocator, obj: *const JsValueHashMap) ![][]const u8 {
     var kiter = obj.iterator();
     var list = std.ArrayList([]const u8).empty;
-    errdefer list.deinit(alloc);
+    errdefer {
+        for (list.items) |key| alloc.free(key);
+        list.deinit(alloc);
+    }
     while (kiter.next()) |entry| {
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
         errdefer alloc.free(key_copy);
@@ -71,7 +74,10 @@ pub const Entry = struct { key: []const u8, value: JsValue };
 pub fn entries(alloc: Allocator, obj: *const JsValueHashMap) ![]Entry {
     var kiter = obj.iterator();
     var list = std.ArrayList(Entry).empty;
-    errdefer list.deinit(alloc);
+    errdefer {
+        for (list.items) |entry| alloc.free(entry.key);
+        list.deinit(alloc);
+    }
     while (kiter.next()) |entry| {
         const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
         errdefer alloc.free(key_copy);

@@ -2,7 +2,7 @@
 // Destructuring declaration and assignment statement emission.
 
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string};
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string, zig_ident};
 use crate::zigir::ops::AssignOp;
 use crate::zigir::types::{IrAssignTarget, IrDestructureDecl};
 
@@ -36,7 +36,7 @@ impl Emitter {
                         IrDestructureKind::Object { is_struct, .. } => {
                             if *is_struct && *is_struct_field {
                                 // Struct with known field: direct field access
-                                self.write(&format!("{}.{}", source, key));
+                                self.write(&format!("{}.{}", source, zig_ident(key)));
                             } else if *is_struct && !is_struct_field {
                                 // Struct but field not found
                                 if let Some(default) = &binding.default {
@@ -71,7 +71,7 @@ impl Emitter {
                         }
                         IrDestructureKind::Array { .. } => {
                             // Shouldn't happen — object access in array destructure
-                            self.write(&format!("{}.{}", source, key));
+                            self.write(&format!("{}.{}", source, zig_ident(key)));
                         }
                     }
                 }

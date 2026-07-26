@@ -183,9 +183,14 @@ impl TypeInferrer {
                     UnaryOperator::Void => InferResult::Definite(ZigType::JsAny),
                     UnaryOperator::Delete => InferResult::Definite(ZigType::Bool),
                     UnaryOperator::Typeof => InferResult::Definite(ZigType::Str),
-                    // Bitwise NOT always returns Int32 (I64 in our type system).
-                    // BigInt operands are intercepted by the lowerer before reaching here.
-                    UnaryOperator::BitwiseNot => InferResult::Definite(ZigType::I64),
+                    // Bitwise NOT returns Int32 (I64) for number operands,
+                    // but BigInt stays BigInt (~n).
+                    UnaryOperator::BitwiseNot => match self.infer_expr_type(&ue.argument) {
+                        InferResult::Definite(ZigType::BigInt) => {
+                            InferResult::Definite(ZigType::BigInt)
+                        }
+                        _ => InferResult::Definite(ZigType::I64),
+                    },
                     _ => InferResult::Indeterminate,
                 }
             }
@@ -383,15 +388,22 @@ impl TypeInferrer {
                         }
                         InferResult::Indeterminate
                     }
-                    // Host struct field access (e.g. fetch_user().name)
+                    // Host struct / class field access
+                    // INF-4: Also check class_field_types (lowerer checks both).
                     InferResult::Definite(ZigType::NamedStruct(ref struct_name))
-                        if self.host_struct_fields.contains_key(struct_name.as_str()) =>
+                        if self.host_struct_fields.contains_key(struct_name.as_str())
+                            || self.class_field_types.contains_key(struct_name.as_str()) =>
                     {
-                        if let Some(fields) = self.host_struct_fields.get(struct_name.as_str()) {
-                            let field_name = mem.property.name.as_str();
-                            if let Some(field_ty) = fields.get(field_name) {
-                                return InferResult::Definite(field_ty.clone());
-                            }
+                        let field_name = mem.property.name.as_str();
+                        if let Some(fields) = self.host_struct_fields.get(struct_name.as_str())
+                            && let Some(field_ty) = fields.get(field_name)
+                        {
+                            return InferResult::Definite(field_ty.clone());
+                        }
+                        if let Some(fields) = self.class_field_types.get(struct_name.as_str())
+                            && let Some(field_ty) = fields.get(field_name)
+                        {
+                            return InferResult::Definite(field_ty.clone());
                         }
                         InferResult::Indeterminate
                     }
@@ -430,6 +442,18 @@ impl TypeInferrer {
                             _ => InferResult::Indeterminate,
                         }
                     }
+                    // INF-3: RegExp .source/.flags → Str
+                    InferResult::Definite(ZigType::NamedStruct(ref name)) if name == "RegExp" => {
+                        match mem.property.name.as_str() {
+                            "source" | "flags" => InferResult::Definite(ZigType::Str),
+                            _ => InferResult::Indeterminate,
+                        }
+                    }
+                    // INF-2: JsError .name/.message/.stack → Str
+                    InferResult::Definite(ZigType::JsError) => match mem.property.name.as_str() {
+                        "name" | "message" | "stack" => InferResult::Definite(ZigType::Str),
+                        _ => InferResult::Indeterminate,
+                    },
                     // JsSymbol property access
                     InferResult::Definite(ZigType::JsSymbol) => {
                         match mem.property.name.as_str() {
@@ -494,11 +518,16 @@ impl TypeInferrer {
                     }
                     InferResult::Definite(ZigType::NamedStruct(ref name)) => {
                         // obj["key"] on named struct → treat like struct for field lookup
-                        // Try host struct fields first
+                        // INF-1: Check both host_struct_fields and class_field_types
                         if let Expression::StringLiteral(s) = &mem.expression {
                             let key = s.value.as_str();
                             if let Some(host_fields) = self.host_struct_fields.get(name.as_str())
                                 && let Some(field_ty) = host_fields.get(key)
+                            {
+                                return InferResult::Definite(field_ty.clone());
+                            }
+                            if let Some(class_fields) = self.class_field_types.get(name.as_str())
+                                && let Some(field_ty) = class_fields.get(key)
                             {
                                 return InferResult::Definite(field_ty.clone());
                             }

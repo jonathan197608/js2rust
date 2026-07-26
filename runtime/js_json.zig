@@ -93,24 +93,52 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
     }
 
     // Parse replacer array → whitelist of keys (null = all keys)
+    // RT-3: ECMA-262 §24.5.2: both String and Number items are converted
+    // to property keys. Previously only .string items were admitted.
     var whitelist: ?[]const []const u8 = null;
     if (replacer) |rep| {
         if (rep == .array) {
             var keys = std.ArrayList([]const u8).empty;
-            defer keys.deinit(alloc);
+            defer {
+                for (keys.items) |key| alloc.free(key);
+                keys.deinit(alloc);
+            }
             for (rep.array.items) |item| {
-                if (item == .value and item.value == .string) {
-                    // Deduplicate: skip if already in list (RT-6)
-                    const key = item.value.string;
+                const key: ?[]const u8 = blk: {
+                    if (item == .value) {
+                        switch (item.value) {
+                            .string => |s| {
+                                const k = try alloc.dupe(u8, s);
+                                break :blk k;
+                            },
+                            .int => |n| {
+                                const k = try std.fmt.allocPrint(alloc, "{d}", .{n});
+                                break :blk k;
+                            },
+                            .float => |f| {
+                                if (std.math.isNan(f) or std.math.isInf(f)) break :blk null;
+                                const k = try std.fmt.allocPrint(alloc, "{d}", .{f});
+                                break :blk k;
+                            },
+                            else => break :blk null,
+                        }
+                    }
+                    break :blk null;
+                };
+                if (key) |k| {
+                    errdefer alloc.free(k);
+                    // Deduplicate: skip if already in list
                     var found = false;
                     for (keys.items) |existing| {
-                        if (std.mem.eql(u8, existing, key)) {
+                        if (std.mem.eql(u8, existing, k)) {
                             found = true;
                             break;
                         }
                     }
                     if (!found) {
-                        try keys.append(alloc, key);
+                        try keys.append(alloc, k);
+                    } else {
+                        alloc.free(k);
                     }
                 }
             }
@@ -118,7 +146,10 @@ pub fn stringify(alloc: Allocator, value: JsAny, replacer: ?JsAny, space: ?JsAny
         }
         // Note: function replacer not supported (no callback mechanism)
     }
-    defer if (whitelist) |wl| alloc.free(wl);
+    defer if (whitelist) |wl| {
+        for (wl) |key| alloc.free(key);
+        alloc.free(wl);
+    };
 
     var out = std.ArrayList(u8).empty;
     defer out.deinit(alloc);
