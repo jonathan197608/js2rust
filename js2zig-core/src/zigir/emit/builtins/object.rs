@@ -225,38 +225,21 @@ impl Emitter {
                     ObjectIsKind::Float => {
                         // Both args are f64 (or mixed i64/f64).  std.math.isNan
                         // works on f64.  For +0/-0 we add a signbit guard.
-                        // For i64 args mixed with f64, we coerce to f64 first.
-                        self.write("((std.math.isNan(");
+                        // Bind args to temporaries to avoid repeated evaluation.
+                        let n = self.label_counter;
+                        self.label_counter += 1;
+                        let blk = format!("__is_blk_{}", n);
+                        let a_name = format!("__is_a_{}", n);
+                        let b_name = format!("__is_b_{}", n);
+                        self.write(&format!("({}: {{ const {} = ", blk, a_name));
                         if let Some(a) = args.first() {
                             self.emit_object_is_f64_arg(a, kinds.a);
                         }
-                        self.write(") and std.math.isNan(");
+                        self.write(&format!("; const {} = ", b_name));
                         if args.len() >= 2 {
                             self.emit_object_is_f64_arg(&args[1], kinds.b);
                         }
-                        self.write(")) or (");
-                        if let Some(a) = args.first() {
-                            self.emit_object_is_f64_arg(a, kinds.a);
-                        }
-                        self.write(" == ");
-                        if args.len() >= 2 {
-                            self.emit_object_is_f64_arg(&args[1], kinds.b);
-                        }
-                        // +0 vs -0: when both are zero, also check signbit
-                        self.write(" and (");
-                        if let Some(a) = args.first() {
-                            self.emit_object_is_f64_arg(a, kinds.a);
-                        }
-                        self.write(" != 0 or std.math.signbit(");
-                        if let Some(a) = args.first() {
-                            self.emit_object_is_f64_arg(a, kinds.a);
-                        }
-                        self.write(") == std.math.signbit(");
-                        if args.len() >= 2 {
-                            self.emit_object_is_f64_arg(&args[1], kinds.b);
-                        }
-                        self.write(")))");
-                        self.write(")");
+                        self.write(&format!("; break :{} ((std.math.isNan({}) and std.math.isNan({})) or ({} == {} and ({} != 0 or std.math.signbit({}) == std.math.signbit({})))); }})", blk, a_name, b_name, a_name, b_name, a_name, a_name, b_name));
                     }
                     ObjectIsKind::String => {
                         // Both args are []const u8 — use content comparison.
@@ -336,7 +319,7 @@ impl Emitter {
                 // Uses StringArrayHashMap (managed wrapper, insertion-order-preserving)
                 // so that Object.keys on the result iterates in insertion order.
                 let blk = self.next_label();
-                self.write(&format!("{blk}: {{ var _grp_map = StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer _grp_map.deinit(); "));
+                self.write(&format!("{blk}: {{ var _grp_map = js_runtime.StringArrayHashMap(std.ArrayList(JsAny)).init(js_allocator.allocator()); errdefer {{ var _grp_di = _grp_map.iterator(); while (_grp_di.next()) |_grp_e| {{ _grp_e.value_ptr.deinit(js_allocator.allocator()); }} _grp_map.deinit(); }} "));
                 if let Some(items_arg) = args.first() {
                     self.write("for (");
                     self.emit_expr(items_arg);
@@ -591,11 +574,15 @@ impl Emitter {
                 self.emit_inline_args(args);
                 self.write(") catch @panic(\"Symbol.for OOM\"))");
             }
-            // Symbol.keyFor returns ?[]const u8 — unwrap with .? (caller ensures symbol
-            // was created via Symbol.for, so key is always present).
+            // Symbol.keyFor returns ?[]const u8 — null when symbol not registered
+            // via Symbol.for(). Wrap in JsAny to return undefined for unregistered symbols.
             "keyFor" => {
+                let lbl = self.next_label();
+                self.write(&format!("({lbl}: {{ const _k = "));
                 self.emit_module_call("js_symbol", "symbolKeyFor", args);
-                self.write(".?");
+                self.write(&format!(
+                    "; break :{lbl} if (_k) |v| JsAny.fromString(v) else JsAny.fromUndefined(); }})"
+                ));
             }
             _ => {
                 self.emit_module_call("js_symbol", zig_method, args);

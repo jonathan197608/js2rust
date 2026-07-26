@@ -99,6 +99,9 @@ impl Lowerer {
                     }
                 }
             }
+            // DestructureDecl: no VarDecl children; binding needs_deinit
+            // is not tracked in the IR (emitter handles defer generation).
+            IrStmt::DestructureDecl(_) => {}
             _ => {}
         }
     }
@@ -248,6 +251,14 @@ impl Lowerer {
             // cleared to prevent double-free. (LOW-20)
             IrExpr::Assign { value, .. } => {
                 Self::collect_returned_idents_in_expr(value, names);
+            }
+            // New: constructor args may embed identifiers whose ownership
+            // transfers to the newly constructed object (e.g., host struct
+            // constructors that take ownership of a Map argument).
+            IrExpr::New(ne) => {
+                for arg in &ne.args {
+                    Self::collect_returned_idents_in_expr(arg, names);
+                }
             }
             // Binary, Call, FieldAccess, etc. — the variable's value is
             // consumed to compute a new value; ownership of the variable

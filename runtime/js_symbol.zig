@@ -48,6 +48,10 @@ pub const JsSymbol = struct {
     /// Optional description string (may be null for anonymous symbols).
     description: ?[]const u8,
 
+    /// Whether this symbol owns its description (and should free it in deinit).
+    /// false when the description points to the registry's stored key.
+    owns_description: bool = true,
+
     /// Create a new unique Symbol with optional description.
     /// Equivalent to JS: Symbol([description])
     /// Requires initRegistry() to have been called first.
@@ -82,9 +86,11 @@ pub const JsSymbol = struct {
     /// Under the arena allocator, free() is a no-op — isNoOpFree() skips the work.
     pub fn deinit(self: *JsSymbol, alloc: Allocator) void {
         if (js_allocator.isNoOpFree(alloc)) return;
-        if (self.description) |d| {
-            alloc.free(d);
-            self.description = null;
+        if (self.owns_description) {
+            if (self.description) |d| {
+                alloc.free(d);
+                self.description = null;
+            }
         }
     }
 
@@ -149,15 +155,10 @@ pub fn symbolFor(key: []const u8) !JsSymbol {
     if (registry) |*r| {
         const alloc = registry_alloc orelse @panic("js_symbol: registry allocator not set.");
 
-        if (r.get(key)) |existing_id| {
-            // NOTE: We dupe the key for each call to give JsSymbol its own
-            // owned description (freed by deinit).  Under the arena allocator
-            // (the common case) free() is a no-op, so this is harmless.
-            // With a non-arena allocator this re-allocates per call — a
-            // known P2 limitation that could be addressed by adding an
-            // owns_description flag to JsSymbol.
-            const desc = alloc.dupe(u8, key) catch return error.OutOfMemory;
-            return JsSymbol{ .id = existing_id, .description = desc };
+        if (r.getEntry(key)) |entry| {
+            // Borrow the registry's stored key as the description.
+            // owns_description = false prevents deinit from freeing it.
+            return JsSymbol{ .id = entry.value_ptr.*, .description = entry.key_ptr.*, .owns_description = false };
         }
 
         // Create new symbol for this key

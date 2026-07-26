@@ -2,7 +2,7 @@
 // If, while, do-while, for, for-in, for-of, switch, and try statement emission.
 
 use crate::zigir::emit::Emitter;
-use crate::zigir::emit::helpers::EmitterHelpers;
+use crate::zigir::emit::helpers::{EmitterHelpers, escape_zig_string};
 use crate::zigir::ident::IrIdent;
 use crate::zigir::types::{IrBlock, IrExpr, IrForInKind, IrForOfKind, IrStmt, IrSwitchCase};
 
@@ -276,9 +276,11 @@ impl Emitter {
                 // Label goes directly on while (not a wrapping block) so that
                 // `continue :label` targets the loop, not a block.
                 self.write_indent();
-                let it_name = "__it";
+                let it_name = format!("__it_{}", self.label_counter);
+                let kv_name = format!("__kv_{}", self.label_counter);
+                self.label_counter += 1;
                 self.write("var ");
-                self.write(it_name);
+                self.write(&it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
                 self.write(".iterator();\n");
@@ -287,10 +289,10 @@ impl Emitter {
                     self.write(&format!("{}: ", lbl));
                 }
                 self.write("while (");
-                self.write(it_name);
-                self.write(".next()) |__kv| {\n");
+                self.write(&it_name);
+                self.write(&format!(".next()) |{}| {{\n", kv_name));
                 self.indent_push();
-                self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
+                self.writeln(&format!("const {} = {}.key_ptr.*;", var.zig_name, kv_name));
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable error when key is not referenced in body
                 self.writeln(&format!("_ = &{};", var.zig_name));
@@ -300,9 +302,11 @@ impl Emitter {
             IrForInKind::MapIter => {
                 // `var __it = obj.inner.iterator(); label: while (__it.next()) |__kv| { ... }`
                 self.write_indent();
-                let it_name = "__it";
+                let it_name = format!("__it_{}", self.label_counter);
+                let kv_name = format!("__kv_{}", self.label_counter);
+                self.label_counter += 1;
                 self.write("var ");
-                self.write(it_name);
+                self.write(&it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
                 self.write(".inner.iterator();\n");
@@ -311,10 +315,10 @@ impl Emitter {
                     self.write(&format!("{}: ", lbl));
                 }
                 self.write("while (");
-                self.write(it_name);
-                self.write(".next()) |__kv| {\n");
+                self.write(&it_name);
+                self.write(&format!(".next()) |{}| {{\n", kv_name));
                 self.indent_push();
-                self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
+                self.writeln(&format!("const {} = {}.key_ptr.*;", var.zig_name, kv_name));
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable error when key is not referenced in body
                 self.writeln(&format!("_ = &{};", var.zig_name));
@@ -338,7 +342,11 @@ impl Emitter {
                     self.write_indent();
                     self.write("{\n");
                     self.indent_push();
-                    self.writeln(&format!("const {} = \"{}\";", var.zig_name, field_name));
+                    self.writeln(&format!(
+                        "const {} = \"{}\";",
+                        var.zig_name,
+                        escape_zig_string(field_name)
+                    ));
                     self.emit_block_stmts_unlabeled(body);
                     // Suppress unused-variable error when key is not referenced in body
                     self.writeln(&format!("_ = &{};", var.zig_name));
@@ -403,9 +411,11 @@ impl Emitter {
                 // Label goes directly on while (not a wrapping block) so that
                 // `continue :label` targets the loop, not a block.
                 self.write_indent();
-                let it_name = "__it";
+                let it_name = format!("__it_{}", self.label_counter);
+                let kv_name = format!("__kv_{}", self.label_counter);
+                self.label_counter += 1;
                 self.write("var ");
-                self.write(it_name);
+                self.write(&it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
                 self.write(".inner.iterator();\n");
@@ -414,23 +424,23 @@ impl Emitter {
                     self.write(&format!("{}: ", lbl));
                 }
                 self.write("while (");
-                self.write(it_name);
-                self.write(".next()) |__kv| {\n");
+                self.write(&it_name);
+                self.write(&format!(".next()) |{}| {{\n", kv_name));
                 self.indent_push();
                 if *is_map && !destructure_vars.is_empty() {
                     // Map destructure: const [key, val] = ...
                     self.writeln(&format!(
-                        "const {} = __kv.key_ptr.*;",
-                        destructure_vars[0].zig_name
+                        "const {} = {}.key_ptr.*;",
+                        destructure_vars[0].zig_name, kv_name
                     ));
                     if destructure_vars.len() > 1 {
                         self.writeln(&format!(
-                            "const {} = __kv.value_ptr.*;",
-                            destructure_vars[1].zig_name
+                            "const {} = {}.value_ptr.*;",
+                            destructure_vars[1].zig_name, kv_name
                         ));
                     }
                 } else {
-                    self.writeln(&format!("const {} = __kv.key_ptr.*;", var.zig_name));
+                    self.writeln(&format!("const {} = {}.key_ptr.*;", var.zig_name, kv_name));
                 }
                 self.emit_block_stmts_unlabeled(body);
                 // Suppress unused-variable errors for destructured vars that
@@ -451,17 +461,23 @@ impl Emitter {
                 // scalar values), not raw bytes. Zig's `for (str)` iterates u8
                 // bytes, so we emit a std.unicode.Utf8View while-loop instead.
                 self.write_indent();
-                self.write("var __iter = std.unicode.Utf8View.initUnchecked(");
+                let iter_name = format!("__iter_{}", self.label_counter);
+                let cp_name = format!("__cp_{}", self.label_counter);
+                self.label_counter += 1;
+                self.write(&format!(
+                    "var {} = std.unicode.Utf8View.initUnchecked(",
+                    iter_name
+                ));
                 self.emit_expr(iterable);
                 self.writeln(").iterator();");
                 self.write_indent();
                 self.emit_label_prefix(label);
-                self.write("while (__iter.nextCodepoint()) ");
+                self.write(&format!("while ({}.nextCodepoint()) ", iter_name));
                 if *var_used {
-                    // Bind to a temp var, then cast u21 → i64 for the user-facing name.
-                    self.write("|__cp| {\n");
+                    // Bind to a temp var, then cast u21 to i64 for the user-facing name.
+                    self.write(&format!("|{}| {{\n", cp_name));
                     self.indent_push();
-                    self.writeln(&format!("const {} = @as(i64, __cp);", var.zig_name));
+                    self.writeln(&format!("const {} = @as(i64, {});", var.zig_name, cp_name));
                 } else {
                     // Unused capture: use |_| to avoid Zig 0.16 unused-capture error.
                     self.write("|_| {\n");
@@ -536,12 +552,14 @@ impl Emitter {
         // Bind the discriminant to a const so it is evaluated only once,
         // avoiding repeated side-effects if the expression is non-trivial.
         // `_ = &__sw;` suppresses "unused variable" when all cases are default.
+        let sw_name = format!("__sw_{}", self.label_counter);
+        self.label_counter += 1;
         self.write_indent();
-        self.write("const __sw = ");
+        self.write(&format!("const {} = ", sw_name));
         self.emit_expr(expr);
         self.write(";\n");
         self.write_indent();
-        self.write("_ = &__sw;\n");
+        self.write(&format!("_ = &{};\n", sw_name));
 
         let mut written_first = false;
         let mut has_default = false;
@@ -555,7 +573,7 @@ impl Emitter {
                     } else {
                         self.write("} else if (");
                     }
-                    self.write("std.mem.eql(u8, __sw, ");
+                    self.write(&format!("std.mem.eql(u8, {}, ", sw_name));
                     self.emit_expr(test);
                     self.write(")) {\n");
                     // Body must be emitted INSIDE the string-literal arm —

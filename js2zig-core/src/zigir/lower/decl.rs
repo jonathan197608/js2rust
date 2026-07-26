@@ -531,6 +531,12 @@ impl Lowerer {
         match &decl.id {
             BindingPattern::ObjectPattern(op) => {
                 // ©¤©¤ Object destructuring ©¤©¤
+                if op.rest.is_some() {
+                    return crate::zigir::types::IrStmt::CompileError {
+                        span: SourceSpan::default(),
+                        msg: "rest element in object destructuring is not supported; use explicit field bindings".to_string(),
+                    };
+                }
                 let init_type = self.init_expr_type(init_expr);
 
                 let struct_field_names: Option<Vec<String>> = match &init_type {
@@ -649,6 +655,12 @@ impl Lowerer {
 
             BindingPattern::ArrayPattern(ap) => {
                 // ── Array destructuring ──
+                if ap.rest.is_some() {
+                    return crate::zigir::types::IrStmt::CompileError {
+                        span: SourceSpan::default(),
+                        msg: "rest element in array destructuring is not supported; use explicit index bindings".to_string(),
+                    };
+                }
                 let init_type = self.init_expr_type(init_expr);
                 let is_arraylist = matches!(init_type, Some(ZigType::ArrayList(_)));
 

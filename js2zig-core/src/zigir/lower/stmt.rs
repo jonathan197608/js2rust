@@ -1712,6 +1712,16 @@ impl Lowerer {
                 target,
                 value: Box::new(self.coerce_i64_result_type(*value)),
             },
+            // BlockExpr — recurse into the result expression
+            IrExpr::BlockExpr {
+                label,
+                body,
+                result,
+            } => IrExpr::BlockExpr {
+                label,
+                body,
+                result: Box::new(self.coerce_i64_result_type(*result)),
+            },
             other => other,
         }
     }
@@ -1913,6 +1923,16 @@ impl Lowerer {
                 op,
                 target,
                 value: Box::new(self.coerce_f64_result_type(*value)),
+            },
+            // BlockExpr — recurse into the result expression
+            IrExpr::BlockExpr {
+                label,
+                body,
+                result,
+            } => IrExpr::BlockExpr {
+                label,
+                body,
+                result: Box::new(self.coerce_f64_result_type(*result)),
             },
 
             // Other expressions — pass through unchanged

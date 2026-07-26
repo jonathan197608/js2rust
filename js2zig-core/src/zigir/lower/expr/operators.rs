@@ -896,6 +896,49 @@ impl Lowerer {
     ) {
         use crate::zigir::types::{IrAssignTarget, IrExpr, IrStmt, IrVarDecl};
 
+        // Handle Index targets: bind the object to a temp variable if it has
+        // side effects, preventing double evaluation in compound assignments.
+        if let IrAssignTarget::Index {
+            object,
+            index,
+            index_kind,
+        } = &target
+        {
+            if self.ir_object_is_simple_lvalue(object) && self.ir_object_is_simple_lvalue(index) {
+                let read = target
+                    .to_read_expr()
+                    .unwrap_or_else(|| IrExpr::Ident(IrIdent::new("__target")));
+                return (None, target, read);
+            }
+
+            let temp_name = self.name_mangler.next_name("__co");
+            let blk_label = format!("_co_blk{}", self.name_mangler.peek_count("__co"));
+            let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+
+            let var_decl = IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new(&temp_name),
+                is_const: true,
+                zig_type: None,
+                init: Some((**object).clone()),
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_deinit: false,
+            });
+
+            let new_target = IrAssignTarget::Index {
+                object: Box::new(temp_ident.clone()),
+                index: index.clone(),
+                index_kind: *index_kind,
+            };
+            let read = IrExpr::IndexAccess {
+                object: Box::new(temp_ident),
+                index: index.clone(),
+                index_kind: *index_kind,
+            };
+
+            return (Some((var_decl, blk_label)), new_target, read);
+        }
+
         let IrAssignTarget::Member {
             object,
             field,
@@ -1120,6 +1163,12 @@ impl Lowerer {
                 self.lower_static_member_assign_target(&pfe.object, pfe.field.name.as_str())
             }
             AssignmentTarget::ObjectAssignmentTarget(ot) => {
+                if ot.rest.is_some() {
+                    return crate::zigir::types::IrAssignTarget::CompileError {
+                        msg: "rest element in object assignment destructuring is not supported"
+                            .to_string(),
+                    };
+                }
                 let bindings: Vec<crate::zigir::types::IrDestructureBinding> = ot
                     .properties
                     .iter()
@@ -1141,6 +1190,12 @@ impl Lowerer {
                 crate::zigir::types::IrAssignTarget::Destructure(bindings)
             }
             AssignmentTarget::ArrayAssignmentTarget(at) => {
+                if at.rest.is_some() {
+                    return crate::zigir::types::IrAssignTarget::CompileError {
+                        msg: "rest element in array assignment destructuring is not supported"
+                            .to_string(),
+                    };
+                }
                 let bindings: Vec<crate::zigir::types::IrDestructureBinding> = at
                     .elements
                     .iter()

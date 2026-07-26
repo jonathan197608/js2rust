@@ -727,9 +727,7 @@ impl Lowerer {
                     let Some(e) = el.as_expression() else {
                         continue;
                     };
-                    let Some(t) = self.infer_expr_type(e) else {
-                        continue;
-                    };
+                    let t = self.infer_expr_type(e).unwrap_or(ZigType::JsAny);
                     elem_ty = Some(match elem_ty {
                         None => t,
                         Some(a) if a == t => a,

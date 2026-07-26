@@ -148,6 +148,17 @@ impl Emitter {
             {
                 ".asF64()"
             }
+            IrExpr::Binary {
+                op,
+                left_type,
+                right_type,
+                ..
+            } if *op == BinOp::Add
+                && (left_type.as_ref() == Some(&ZigType::Str)
+                    || right_type.as_ref() == Some(&ZigType::Str)) =>
+            {
+                ".value.string"
+            }
             IrExpr::Binary { .. } => ".asI64()",
             _ => ".asI64()",
         }

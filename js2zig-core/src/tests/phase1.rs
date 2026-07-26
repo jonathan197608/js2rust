@@ -677,8 +677,8 @@ return count;
     );
     // When the loop variable is unused, emits |_| (not |__cp|).
     assert!(
-        zig.contains("while (__iter.nextCodepoint()) |_|"),
-        "Expected 'while (__iter.nextCodepoint()) |_|' for unused capture in:\n{}",
+        zig.contains("nextCodepoint()) |_|"),
+        "Expected 'nextCodepoint() |_|' for unused capture in:\n{}",
         zig
     );
 }

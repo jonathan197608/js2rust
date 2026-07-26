@@ -628,7 +628,9 @@ pub const JsAny = union(enum) {
                 // R24-RT-1: If key exists, update value in place to avoid
                 // leaking the duped key (put() keeps the old key on overwrite).
                 if (o.getPtr(key)) |existing| {
+                    var old = existing.*;
                     existing.* = val;
+                    old.deinit(alloc);
                     return;
                 }
                 const key_dupe = try alloc.dupe(u8, key);
@@ -672,7 +674,9 @@ pub const JsAny = union(enum) {
                 // R24-RT-1: If key exists, update value in place to avoid
                 // leaking the duped key (put() keeps the old key on overwrite).
                 if (o.getPtr(key)) |existing| {
+                    var old = existing.*;
                     existing.* = val;
+                    old.deinit(alloc);
                     return;
                 }
                 const key_dupe = try alloc.dupe(u8, key);
