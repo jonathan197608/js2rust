@@ -308,25 +308,54 @@ impl Emitter {
                     }
                 }
                 // ── Unsigned right shift (non-BigInt) ──
+                // JS >>> : ToUint32(left) >> (ToUint32(right) & 0x1F), result is Uint32 → i64.
+                // Uses emit_bitwise_operand_to_int32 for proper F64/Bool/JsAny conversion (EMIT-6/9 fix).
                 else if *op == BinOp::UrShr {
-                    self.write("@as(i64, @intCast(@as(u32, @bitCast(@as(i32, @truncate(");
-                    // Coerce JsAny operands to i64 before @truncate
-                    if left_is_jsany {
-                        self.write("(");
-                        self.emit_expr(left);
-                        self.write(").asI64()");
-                    } else {
-                        self.emit_expr(left);
-                    }
-                    self.write(")))) >> @intCast(");
-                    if right_is_jsany {
-                        self.write("(");
-                        self.emit_expr(right);
-                        self.write(").asI64()");
-                    } else {
-                        self.emit_expr(right);
-                    }
-                    self.write(" & 31)))");
+                    self.write("@as(i64, @intCast(@as(u32, @bitCast(");
+                    self.emit_bitwise_operand_to_int32(left, lt);
+                    self.write(")) >> @intCast((");
+                    self.emit_bitwise_operand_to_int32(right, rt);
+                    self.write(") & 31)))");
+                }
+                // ── Bitwise AND/OR/XOR with Int32 semantics (EMIT-9 fix) ──
+                // JS &/|/^ : ToInt32 both operands, operate as i32, sign-extend to i64.
+                // Without this, Zig i64 operators use 64-bit semantics, giving wrong
+                // results for values >= 2³¹. Also handles F64/Bool operands (ToInt32 conversion).
+                else if matches!(*op, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor)
+                    && !left_is_bigint
+                    && !right_is_bigint
+                {
+                    let zig_op = match op {
+                        BinOp::BitAnd => "&",
+                        BinOp::BitOr => "|",
+                        BinOp::BitXor => "^",
+                        _ => unreachable!(),
+                    };
+                    self.write("@as(i64, @intCast(");
+                    self.emit_bitwise_operand_to_int32(left, lt);
+                    self.write(&format!(" {} ", zig_op));
+                    self.emit_bitwise_operand_to_int32(right, rt);
+                    self.write("))");
+                }
+                // ── Shifts with Int32 semantics + shift amount masking (EMIT-6 fix) ──
+                // JS <</>> : ToInt32(left), mask shift amount to 0-31, operate as i32,
+                // sign-extend to i64. Without this, Zig i64 shifts use 64-bit semantics
+                // and require u6 shift amount (compile error for runtime i64).
+                // @truncate to u5 from the u32 bit-cast of RIGHT_i32 gives exactly & 0x1F.
+                else if matches!(*op, BinOp::Shl | BinOp::Shr)
+                    && !left_is_bigint
+                    && !right_is_bigint
+                {
+                    let zig_op = match op {
+                        BinOp::Shl => "<<",
+                        BinOp::Shr => ">>",
+                        _ => unreachable!(),
+                    };
+                    self.write("@as(i64, @intCast(");
+                    self.emit_bitwise_operand_to_int32(left, lt);
+                    self.write(&format!(" {} @as(u5, @truncate(@as(u32, @bitCast(", zig_op));
+                    self.emit_bitwise_operand_to_int32(right, rt);
+                    self.write("))))))");
                 }
                 // ── `in` operator: key in obj → obj.has(JsAny.from(key)) for Map/Set, obj.contains(key) otherwise ──
                 else if *op == BinOp::In {
@@ -497,15 +526,8 @@ impl Emitter {
                         // JS `~x` operates on 32-bit integer. Convert operand to i32 first.
                         // For f64: use js_runtime.toInt32() for NaN/Inf safety.
                         // For integer/comptime operands: @intCast works directly.
-                        if let Some(crate::types::ZigType::F64) = operand_type {
-                            self.write("~js_runtime.toInt32(");
-                            self.emit_expr(operand);
-                            self.write(")");
-                        } else {
-                            self.write("~@as(i32, @intCast(");
-                            self.emit_expr(operand);
-                            self.write("))");
-                        }
+                        self.write("~");
+                        self.emit_bitwise_operand_to_int32(operand, operand_type.as_ref());
                     }
                     crate::zigir::ops::UnaOp::Void => {
                         // void expr → evaluate and discard

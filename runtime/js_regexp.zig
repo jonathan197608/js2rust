@@ -144,12 +144,20 @@ fn parseNulSeparated(alloc: Allocator, bytes: []const u8, count: usize) !?[][]co
     var start: usize = 0;
     for (0..count) |_| {
         if (start >= bytes.len) {
-            try matches.append(alloc, try alloc.dupe(u8, ""));
+            const seg_empty = try alloc.dupe(u8, "");
+            matches.append(alloc, seg_empty) catch {
+                alloc.free(seg_empty);
+                return error.OutOfMemory;
+            };
             continue;
         }
         var end: usize = start;
         while (end < bytes.len and bytes[end] != 0) : (end += 1) {}
-        try matches.append(alloc, try alloc.dupe(u8, bytes[start..end]));
+        const seg = try alloc.dupe(u8, bytes[start..end]);
+        matches.append(alloc, seg) catch {
+            alloc.free(seg);
+            return error.OutOfMemory;
+        };
         start = end + 1;
     }
     return try matches.toOwnedSlice(alloc);

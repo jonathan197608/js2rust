@@ -42,6 +42,11 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
             cp_count += 1;
         }
         try result.ensureTotalCapacity(alloc, cp_count);
+        errdefer {
+            for (result.items) |it| {
+                if (it.isString()) alloc.free(it.value.string);
+            }
+        }
         // Second pass: emit each code point as a string.
         si = 0;
         while (si < str.len) {

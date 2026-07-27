@@ -76,6 +76,16 @@ pub fn collect_expr_idents(expr: &IrExpr, names: &mut HashSet<String>) {
                 names.insert(crate::zigir::ident::zig_safe_name(name));
             }
         }
+        // R31-PASS-2: IrArrayCallbackInline / IrArrayMethodInline store the
+        // array variable name as obj_name (a String, not a child IrExpr).
+        // walk::for_each_expr_child visits obj_expr but NOT obj_name, so the
+        // catch-all _ => {} would miss it, causing false unused-decl removal.
+        IrExpr::ArrayCallbackInline(inline_data) => {
+            names.insert(inline_data.obj_name.clone());
+        }
+        IrExpr::ArrayMethodInline(inline_data) => {
+            names.insert(inline_data.obj_name.clone());
+        }
         _ => {}
     }
     let names = RefCell::new(names);

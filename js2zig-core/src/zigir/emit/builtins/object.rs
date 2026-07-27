@@ -524,9 +524,16 @@ impl Emitter {
                 }
                 // Same fallible-call convention as toFixed/toExponential/
                 // toPrecision above: toString returns ![]const u8 (RangeError
-                // on radix outside 2..36, plus OOM). `catch @panic` coerces it
-                // to []const u8 without requiring error-union propagation.
-                self.write(") catch @panic(\"Number method failed\")");
+                // on radix outside 2..36, plus OOM). Route via inside_try_block
+                // to propagate errors to catch handler.
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| break :{} @as(anyerror!void, err)",
+                        label
+                    ));
+                } else {
+                    self.write(") catch @panic(\"RangeError: Number method failed\")");
+                }
             }
             "parseInt" => {
                 self.write("js_number.parseInt(");

@@ -609,6 +609,13 @@ impl Lowerer {
                 }
             }
             IrExpr::ArrayCallbackInline(inline_data) => {
+                // R31-PASS-1: Must collect obj_name and recurse into obj_expr,
+                // otherwise the array variable appears unused and may be
+                // erroneously removed by dead-code elimination.
+                idents.insert(inline_data.obj_name.clone());
+                if let Some(ref obj_expr) = inline_data.obj_expr {
+                    Self::collect_ir_idents_in_expr(obj_expr, idents);
+                }
                 for s in &inline_data.body {
                     Self::collect_ir_idents_in_stmt(s, idents);
                 }
@@ -617,6 +624,11 @@ impl Lowerer {
                 }
             }
             IrExpr::ArrayMethodInline(inline_data) => {
+                // R31-PASS-1: Same fix as ArrayCallbackInline above.
+                idents.insert(inline_data.obj_name.clone());
+                if let Some(ref obj_expr) = inline_data.obj_expr {
+                    Self::collect_ir_idents_in_expr(obj_expr, idents);
+                }
                 for arg in &inline_data.args {
                     Self::collect_ir_idents_in_expr(arg, idents);
                 }

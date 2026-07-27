@@ -244,6 +244,7 @@ js_files = [
     "test_builtins_frag_226.js",
     "test_builtins_frag_227.js",
     "test_builtins_frag_228.js",
+    "test_edge_frag_1.js",
     "test_edge_frag_25.js",
     "test_edge_frag_30.js",
 ]

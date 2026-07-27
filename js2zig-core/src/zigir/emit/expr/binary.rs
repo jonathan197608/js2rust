@@ -65,6 +65,50 @@ impl Emitter {
         self.write(")");
     }
 
+    /// Emit a ToInt32 conversion for a bitwise/shift operand.
+    /// Matches JS spec: ToNumber → ToInt32 (wrapping to 32-bit signed).
+    /// - F64: js_runtime.toInt32() — handles NaN/±Inf → 0
+    /// - Bool: @as(i32, @intFromBool()) — true→1, false→0
+    /// - JsAny: js_runtime.toInt32(.asF64()) — proper ToNumber then ToInt32
+    /// - I64/comptime_int: @as(i32, @truncate()) — wraps mod 2³²
+    pub(super) fn emit_bitwise_operand_to_int32(
+        &mut self,
+        expr: &crate::zigir::types::IrExpr,
+        ty: Option<&crate::types::ZigType>,
+    ) {
+        use crate::types::ZigType;
+        match ty {
+            Some(ZigType::F64) => {
+                self.write("js_runtime.toInt32(");
+                self.emit_expr(expr);
+                self.write(")");
+            }
+            Some(ZigType::Bool) => {
+                self.write("@as(i32, @intFromBool(");
+                self.emit_expr(expr);
+                self.write("))");
+            }
+            Some(ZigType::JsAny) => {
+                self.write("js_runtime.toInt32((");
+                self.emit_expr(expr);
+                self.write(").asF64())");
+            }
+            Some(ZigType::Str) => {
+                // String → parseFloat → toInt32 (JS ToNumber→ToInt32 semantics).
+                // parseFloat handles NaN for invalid strings; toInt32(NaN) = 0.
+                self.write("js_runtime.toInt32(js_number.parseFloat(");
+                self.emit_expr(expr);
+                self.write("))");
+            }
+            _ => {
+                // I64, comptime_int, or unknown — @truncate wraps to i32
+                self.write("@as(i32, @truncate(");
+                self.emit_expr(expr);
+                self.write("))");
+            }
+        }
+    }
+
     /// Emit an ordering comparison: `(order_expr == .lt)` / `!= .gt` etc.
     /// `order_expr_fn` emits the expression that yields `std.math.Order`.
     pub(super) fn emit_order_cmp<F>(&mut self, op: crate::zigir::ops::BinOp, order_expr_fn: F)

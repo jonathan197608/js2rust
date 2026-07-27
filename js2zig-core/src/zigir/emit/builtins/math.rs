@@ -1,4 +1,4 @@
-// zigir/emit/builtins/math.rs
+﻿// zigir/emit/builtins/math.rs
 // Math builtin method emission.
 
 use crate::zigir::emit::helpers::EmitterHelpers;
@@ -280,7 +280,7 @@ impl Emitter {
                         self.emit_expr(a);
                         self.write("))");
                     } else {
-                        self.write("@clz(@as(u32, @intCast(");
+                        self.write("@clz(@as(u32, @truncate(");
                         self.emit_expr(a);
                         self.write(")))");
                     }

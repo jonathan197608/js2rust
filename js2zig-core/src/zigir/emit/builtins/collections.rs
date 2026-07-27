@@ -273,7 +273,14 @@ impl Emitter {
                 } else {
                     self.write("10");
                 }
-                self.write(") catch @panic(\"OOM: BigInt toString\"))");
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ") catch |err| break :{} @as(anyerror!void, err)))",
+                        label
+                    ));
+                } else {
+                    self.write(") catch @panic(\"BigInt toString failed\"))");
+                }
             }
             "toLocaleString" => {
                 // toLocaleString() ignores any radix and is equivalent to
@@ -282,7 +289,14 @@ impl Emitter {
                 if let Some(o) = obj {
                     self.write(o);
                 }
-                self.write(".toString(js_allocator.allocator(), 10) catch @panic(\"OOM: BigInt toString\"))");
+                if let Some(label) = &self.inside_try_block {
+                    self.write(&format!(
+                        ".toString(js_allocator.allocator(), 10) catch |err| break :{} @as(anyerror!void, err)))",
+                        label
+                    ));
+                } else {
+                    self.write(".toString(js_allocator.allocator(), 10) catch @panic(\"BigInt toString failed\"))");
+                }
             }
             "valueOf" => {
                 // bigint.valueOf() → returns self (identity)
