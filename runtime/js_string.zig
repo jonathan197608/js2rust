@@ -290,7 +290,7 @@ pub fn charAt(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
 pub fn at(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
     const len: i64 = std.math.cast(i64, utf16Len(s)) orelse std.math.maxInt(i64);
     const adjusted_idx: i64 = if (idx < 0) len + idx else idx;
-    if (adjusted_idx < 0 or adjusted_idx >= len) return &[0]u8{};
+    if (adjusted_idx < 0 or adjusted_idx >= len) return "undefined";
     return charAt(alloc, s, adjusted_idx);
 }
 

@@ -386,6 +386,8 @@ impl Lowerer {
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" || n == "RegExp" => false,
                 ZigType::NamedStruct(n) if self.class_names.contains(n) => false,
                 ZigType::BigInt => false,
+                // Empty object literal {} -> JsObjectMap: needs `var` for method calls (put, delete, etc.)
+                ZigType::Struct(f) if f.is_empty() => false,
                 _ => is_const,
             }
         } else {
@@ -413,10 +415,10 @@ impl Lowerer {
         // the var is never mutated at the Zig level, so Zig 0.16 reports
         // "local variable is never mutated". `_ = &x;` silences this.
         let needs_var_suppression = (!is_const
-            && matches!(
+            && (matches!(
                 zig_type,
                 Some(ZigType::ArrayList(_)) | Some(ZigType::NamedStruct(_))
-            ))
+            ) || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty())))
             || is_js_const_reassigned;
 
         // Lower initializer expression
@@ -511,7 +513,8 @@ impl Lowerer {
             zig_type,
             Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set"
         ) || matches!(zig_type, Some(ZigType::BigInt))
-            || matches!(zig_type, Some(ZigType::ArrayList(_)));
+            || matches!(zig_type, Some(ZigType::ArrayList(_)))
+            || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty());
 
         IrDecl::Var(IrVarDecl {
             name: ident,

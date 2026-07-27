@@ -426,10 +426,12 @@ impl Emitter {
                     self.emit_expr(init);
                 }
             } else {
-                let skip_type = vd
-                    .zig_type
-                    .as_ref()
-                    .is_some_and(|t| matches!(t, ZigType::NamedStruct(_) | ZigType::ArrayList(_)));
+                let skip_type = vd.zig_type.as_ref().is_some_and(|t| match t {
+                    ZigType::NamedStruct(_) | ZigType::ArrayList(_) => true,
+                    // Empty object literal {} -> JsObjectMap: let Zig infer the type
+                    ZigType::Struct(f) if f.is_empty() => true,
+                    _ => false,
+                });
                 if vd.is_const || skip_type {
                     self.write(&format!("{} {} = ", kw, vd.name.zig_name));
                 } else if let Some(ty) = &vd.zig_type {
