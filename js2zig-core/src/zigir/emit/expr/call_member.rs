@@ -41,8 +41,20 @@ impl Emitter {
                 self.emit_dot_access(object, field);
             }
             FieldKind::ArrayListLen => {
-                self.emit_expr(object);
-                self.write(".items.len");
+                // Wrap in parens for complex expressions that may contain `catch`.
+                // Simple identifiers don't need parens: arr.items.len is correct.
+                if matches!(
+                    *object,
+                    crate::zigir::types::IrExpr::Ident(_)
+                        | crate::zigir::types::IrExpr::TypedIdent { .. }
+                ) {
+                    self.emit_expr(object);
+                    self.write(".items.len");
+                } else {
+                    self.write("(");
+                    self.emit_expr(object);
+                    self.write(").items.len");
+                }
             }
             FieldKind::StringLen => {
                 // JS string.length returns UTF-16 code unit count, not byte count
@@ -52,8 +64,29 @@ impl Emitter {
             }
             FieldKind::SliceLen => {
                 // Slice/TypedArray length: element count.
+                // Wrap in parens for complex expressions that may contain `catch`
+                // (e.g. split() catch @panic(...)) — without parens, .len would
+                // bind to the catch fallback instead of the result.
+                // Simple identifiers don't need parens: arr.len is correct.
+                if matches!(
+                    *object,
+                    crate::zigir::types::IrExpr::Ident(_)
+                        | crate::zigir::types::IrExpr::TypedIdent { .. }
+                ) {
+                    self.emit_expr(object);
+                    self.write(".len");
+                } else {
+                    self.write("(");
+                    self.emit_expr(object);
+                    self.write(").len");
+                }
+            }
+            FieldKind::JsAnyLen => {
+                // JsAny is a union(enum); .length needs runtime dispatch.
+                // Arrays: a.items.len, strings: utf16Len, objects: count(), else: 0.
+                self.write("(switch (");
                 self.emit_expr(object);
-                self.write(".len");
+                self.write(") { .array => |a| @as(i64, @intCast(a.items.len)), .value => |v| switch (v) { .string => |s| @as(i64, @intCast(js_string.utf16Len(s))), else => @as(i64, 0) }, .object => |o| @as(i64, @intCast(o.count())), .null => @as(i64, 0) })");
             }
             FieldKind::ArgumentsLen => {
                 // arguments.length: JS .length is i64, but []const JsAny .len is usize.

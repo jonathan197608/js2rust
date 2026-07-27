@@ -291,10 +291,14 @@ impl Emitter {
             "var {}: std.ArrayList(u8) = .empty; defer {}.deinit(js_allocator.allocator()); ",
             _jb, _jb
         ));
-        self.write(&format!(
-            "for ({}.items, 0..) |{}, {}| ",
-            receiver, _je, _ji
-        ));
+        // R32-4: Use receiver directly for slice receivers (from split()),
+        // or receiver.items for ArrayList receivers.
+        let items_access = if data.receiver_is_slice {
+            receiver.clone()
+        } else {
+            format!("{}.items", receiver)
+        };
+        self.write(&format!("for ({}, 0..) |{}, {}| ", items_access, _je, _ji));
         self.write("{\n");
         self.indent_push();
         self.write(&format!(
@@ -444,17 +448,35 @@ impl Emitter {
             "const {} = if ({} < 0) {}: {{ const {} = @as(isize, @intCast({}.items.len)) + {}; break :{} if ({} < 0) {}.items.len else @as(usize, @intCast({})); }} else @as(usize, @intCast({})); ",
             _ai, _idx, inner_blk, _w, receiver, _idx, inner_blk, _w, receiver, _w, _idx
         ));
-        // Bounds check: return undefined if out of range (P0-R13-1 fix).
-        let not_found = match data.elem_type {
-            ZigType::JsAny => "JsAny.fromUndefined()",
-            ZigType::F64 => "0.0",
-            ZigType::Bool => "false",
-            ZigType::Str => "\"\"",
-            _ => "0",
+        // Bounds check: return undefined if out of range (per JS spec).
+        // at() can always return undefined for OOB, so we wrap the result
+        // in JsAny for all element types. This ensures console.log prints
+        // "undefined" instead of a type-specific default (0, 0.0, false, "").
+        let (not_found, elem_access): (&str, String) = match data.elem_type {
+            ZigType::JsAny => (
+                "JsAny.fromUndefined()",
+                format!("{}.items[{}]", receiver, _ai),
+            ),
+            ZigType::F64 => (
+                "JsAny.fromUndefined()",
+                format!("JsAny.fromF64({}.items[{}])", receiver, _ai),
+            ),
+            ZigType::Bool => (
+                "JsAny.fromUndefined()",
+                format!("JsAny.fromBool({}.items[{}])", receiver, _ai),
+            ),
+            ZigType::Str => (
+                "JsAny.fromUndefined()",
+                format!("JsAny.fromString({}.items[{}])", receiver, _ai),
+            ),
+            _ => (
+                "JsAny.fromUndefined()",
+                format!("JsAny.fromI64({}.items[{}])", receiver, _ai),
+            ),
         };
         self.write(&format!(
-            "break :{} if ({} >= {}.items.len) {} else {}.items[{}]; }})",
-            blk, _ai, receiver, not_found, receiver, _ai
+            "break :{} if ({} >= {}.items.len) {} else {}; }})",
+            blk, _ai, receiver, not_found, elem_access
         ));
     }
 

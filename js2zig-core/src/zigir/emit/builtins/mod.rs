@@ -102,7 +102,13 @@ pub(super) fn resolve_chain_receiver(
         let (rendered, new_counter) =
             Emitter::emit_expr_inline_with_label_offset(expr, label_offset);
         match expr.as_ref() {
-            IrExpr::ArrayCallbackInline(_) | IrExpr::ArrayMethodInline(_) => {
+            IrExpr::ArrayCallbackInline(_)
+            | IrExpr::ArrayMethodInline(_)
+            | IrExpr::ArrayLiteral(_)
+            | IrExpr::BuiltinCall(_) => {
+                // Bind complex expressions to a temp var to avoid double
+                // evaluation (e.g., array literal allocates an ArrayList,
+                // builtin call invokes a runtime function).
                 let chain_var = format!("__chain_{}", label_offset);
                 let binding = format!("const {} = {}; ", chain_var, rendered);
                 (chain_var, Some(binding), new_counter)

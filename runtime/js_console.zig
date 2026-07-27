@@ -28,6 +28,15 @@ fn hasFormatMethod(comptime T: type) bool {
     return false;
 }
 
+/// Check if a type is an ArrayList-like struct (has "items" slice and "capacity" fields).
+fn isArrayListLike(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .@"struct") return false;
+    if (!@hasField(T, "items")) return false;
+    if (!@hasField(T, "capacity")) return false;
+    return true;
+}
+
 /// Print a single value (no prefix, no newline) using the appropriate format specifier.
 fn printValue(msg: anytype) void {
     const T = @TypeOf(msg);
@@ -40,6 +49,18 @@ fn printValue(msg: anytype) void {
         // Types with a custom format method (e.g. JsBigInt)
         // Use the {f} specifier which dispatches to value.format(writer)
         std.debug.print("{f}", .{msg});
+    } else if (comptime isArrayListLike(T)) {
+        // Print ArrayList as JS-style array: [ item1, item2, ... ]
+        if (msg.items.len == 0) {
+            std.debug.print("[]", .{});
+        } else {
+            std.debug.print("[ ", .{});
+            for (msg.items, 0..) |item, i| {
+                if (i > 0) std.debug.print(", ", .{});
+                printValue(item);
+            }
+            std.debug.print(" ]", .{});
+        }
     } else {
         switch (@typeInfo(T)) {
             .int, .comptime_int => std.debug.print("{d}", .{msg}),

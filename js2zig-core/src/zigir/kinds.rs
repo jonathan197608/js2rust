@@ -14,6 +14,9 @@ pub enum FieldKind {
     StringLen,
     /// Slice/TypedArray length: `obj.len` (element count)
     SliceLen,
+    /// JsAny length: runtime switch on union variant (arrays: items.len,
+    /// strings: utf16Len, objects: count(), else: 0)
+    JsAnyLen,
     /// arguments.length: `@as(i64, @intCast(obj.len))` — JS .length is i64, Zig .len is usize
     ArgumentsLen,
     /// Map/Set size: `map.size()` or `set.size()`  (method call, not field)

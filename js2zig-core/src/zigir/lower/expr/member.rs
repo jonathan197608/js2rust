@@ -131,6 +131,16 @@ impl Lowerer {
                 if matches!(zig_type, ZigType::ArrayList(_)) {
                     return self.make_field_access(mem, FieldKind::ArrayListLen);
                 }
+                // Rest params are []const JsAny slices, NOT JsAny unions.
+                // Skip JsAnyLen for them — use SliceLen (.len on a slice).
+                let is_rest_param = self
+                    .fn_ctx
+                    .as_ref()
+                    .and_then(|ctx| ctx.rest_param_name.as_deref())
+                    .is_some_and(|name| name == id.name.as_str());
+                if !is_rest_param && matches!(zig_type, ZigType::JsAny) {
+                    return self.make_field_access(mem, FieldKind::JsAnyLen);
+                }
                 // NamedStruct (TypedArray, Map, Set, etc.) or other types → slice .len
                 return self.make_field_access(mem, FieldKind::SliceLen);
             }
@@ -139,6 +149,9 @@ impl Lowerer {
                 if let Some(inferred) = self.infer_expr_type(&mem.object) {
                     if matches!(inferred, ZigType::Str) {
                         return self.make_field_access(mem, FieldKind::StringLen);
+                    }
+                    if matches!(inferred, ZigType::JsAny) {
+                        return self.make_field_access(mem, FieldKind::JsAnyLen);
                     }
                     return self.make_field_access(mem, FieldKind::SliceLen);
                 }
@@ -631,8 +644,19 @@ impl Lowerer {
                             "codePointAt" => return Some(ZigType::JsAny),
                             "indexOf" | "lastIndexOf" => return Some(ZigType::I64),
                             "includes" | "startsWith" | "endsWith" => return Some(ZigType::Bool),
+                            // match/matchAll return JsAny (match array or null/iterator).
+                            // Without this, .length on the result falls through to
+                            // SliceLen, which emits .len on JsAny (compile error).
+                            "match" | "matchAll" => return Some(ZigType::JsAny),
                             _ => {}
                         }
+                    }
+                    // Fallback: match/matchAll return JsAny even when the object
+                    // type is unknown (e.g., untyped function parameter used as
+                    // a string). Without this, .length on the result falls through
+                    // to SliceLen, emitting .len on JsAny (compile error).
+                    if matches!(mem.property.name.as_str(), "match" | "matchAll") {
+                        return Some(ZigType::JsAny);
                     }
                 }
                 // Try function return type lookup

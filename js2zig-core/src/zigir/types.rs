@@ -1086,6 +1086,10 @@ pub struct IrArrayMethodInline {
     pub elem_type: ZigType,
     /// Method arguments (already lowered to IR).
     pub args: Vec<IrExpr>,
+    /// R32-4: True when the receiver is a raw slice ([][]const u8 from
+    /// String.split()) instead of std.ArrayList(T). Emitters use this to
+    /// decide whether to access `.items` (ArrayList) or nothing (slice).
+    pub receiver_is_slice: bool,
 }
 
 // ═══════════════════════════════════════════════════════

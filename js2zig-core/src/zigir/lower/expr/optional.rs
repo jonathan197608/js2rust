@@ -506,6 +506,7 @@ impl Lowerer {
         match &obj_type {
             Some(ZigType::Str) if field_name == "length" => FieldKind::StringLen,
             Some(ZigType::ArrayList(_)) if field_name == "length" => FieldKind::ArrayListLen,
+            Some(ZigType::JsAny) if field_name == "length" => FieldKind::JsAnyLen,
             Some(ZigType::NamedStruct(name)) => {
                 if (name == "Map" || name == "Set") && field_name == "size" {
                     FieldKind::MapSetSize

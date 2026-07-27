@@ -384,6 +384,17 @@ impl Lowerer {
                     // Both failed — fall through to BuiltinCall with obj_expr
                     inner_expr = Some(inner);
                 } else {
+                    // R32-3/4: Handle complex non-chaining receivers (array
+                    // literals, string split results, etc.) that need
+                    // ArrayMethodInline inlining instead of falling through to
+                    // BuiltinCall. Without this, [1,2,3].at(-1) generates
+                    // js_array.at(-1) (wrong: no receiver, non-existent fn).
+                    let elem_type = Self::infer_elem_type_from_ir_expr(&inner);
+                    if let Some(inlined) = self
+                        .try_inline_array_method_with_chain(ce, &builtin, &args, &elem_type, &inner)
+                    {
+                        return inlined;
+                    }
                     inner_expr = Some(inner);
                 }
             }
@@ -968,5 +979,45 @@ impl Lowerer {
             },
         ))));
         regular_args
+    }
+
+    /// R32-3/4: Infer the ArrayList element type from a lowered IR expression.
+    /// Used for complex non-chaining receivers (array literals, split() results)
+    /// that need ArrayMethodInline inlining.
+    fn infer_elem_type_from_ir_expr(expr: &crate::zigir::types::IrExpr) -> ZigType {
+        match expr {
+            crate::zigir::types::IrExpr::ArrayLiteral(arr) => {
+                if !arr.spread_indices.is_empty() {
+                    return ZigType::JsAny;
+                }
+                let first = arr
+                    .elements
+                    .first()
+                    .map(Self::ir_literal_elem_type)
+                    .unwrap_or(ZigType::JsAny);
+                let all_same = arr
+                    .elements
+                    .iter()
+                    .all(|e| Self::ir_literal_elem_type(e) == first);
+                if all_same { first } else { ZigType::JsAny }
+            }
+            crate::zigir::types::IrExpr::BuiltinCall(bc) => match &bc.return_type {
+                ZigType::ArrayList(elem) => elem.as_ref().clone(),
+                _ => ZigType::JsAny,
+            },
+            _ => ZigType::JsAny,
+        }
+    }
+
+    /// Map a single IR literal expression to its ZigType for array element
+    /// type inference. Mirrors the emit_array_literal element type logic.
+    fn ir_literal_elem_type(e: &crate::zigir::types::IrExpr) -> ZigType {
+        match e {
+            crate::zigir::types::IrExpr::IntLiteral(_) => ZigType::I64,
+            crate::zigir::types::IrExpr::FloatLiteral(_) => ZigType::F64,
+            crate::zigir::types::IrExpr::StringLiteral(_) => ZigType::Str,
+            crate::zigir::types::IrExpr::BoolLiteral(_) => ZigType::Bool,
+            _ => ZigType::JsAny,
+        }
     }
 }

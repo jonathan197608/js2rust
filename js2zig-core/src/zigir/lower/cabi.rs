@@ -228,6 +228,7 @@ impl Lowerer {
             obj_expr: None,
             elem_type,
             args: args.to_vec(),
+            receiver_is_slice: false,
         })))
     }
 
@@ -570,6 +571,12 @@ impl Lowerer {
             obj_expr: Some(Box::new(inner_expr.clone())),
             elem_type: elem_type.clone(),
             args: args.to_vec(),
+            receiver_is_slice: matches!(
+                inner_expr,
+                IrExpr::BuiltinCall(bc)
+                    if bc.method == "split"
+                        && bc.module == crate::zigir::builtins::BuiltinModule::JsString
+            ),
         })))
     }
 

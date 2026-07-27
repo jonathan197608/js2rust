@@ -271,6 +271,8 @@ const ALL_FRAGMENTS: &[&str] = &[
     "test_builtins_frag_228",
     "test_edge_frag_0",
     "test_edge_frag_1",
+    "test_edge_frag_13",
+    "test_edge_frag_14",
     "test_edge_frag_2",
     "test_edge_frag_3",
     "test_edge_frag_25",
@@ -1280,6 +1282,14 @@ fn run_fragment(frag: &str) -> bool {
         }
         "test_edge_frag_1" => {
             let _ = testEdge_frag_1();
+            true
+        }
+        "test_edge_frag_13" => {
+            let _ = testEdge_frag_13();
+            true
+        }
+        "test_edge_frag_14" => {
+            let _ = testEdge_frag_14();
             true
         }
         "test_edge_frag_2" => {

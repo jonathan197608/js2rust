@@ -316,33 +316,55 @@ impl Emitter {
             }
         }
         if is_fallible {
-            // Methods that can return error.RangeError: repeat (invalid count),
-            // padStart/padEnd (overflow on very large target length).
-            // In a try-catch block, route RangeError as a JS throw (break with
+            // Methods that can return range/overflow errors (actual Zig error
+            // sets MUST match the runtime function signatures):
+            //   repeat   -> error.RangeError (negative count), error.Overflow (too large)
+            //   padStart -> error.OutOfRange (overflow)
+            //   padEnd   -> error.OutOfRange (overflow)
+            // Each method only references errors in its own inferred error set.
+            // In a try-catch block, route these as a JS throw (break with
             // error.JsThrow) so catch can intercept it. Outside try-catch, the
             // enclosing export function cannot return an error union, so we
             // use @panic with a RangeError message (matching JS behavior of
             // an uncaught RangeError).
-            let range_error_msg = match method {
-                "repeat" => "RangeError: Invalid count value for String.repeat()",
-                "padStart" => "RangeError: String.padStart() result exceeds maximum length",
-                "padEnd" => "RangeError: String.padEnd() result exceeds maximum length",
-                _ => "",
+            let (range_errors, range_error_msg): (&[&str], &str) = match method {
+                "repeat" => (
+                    &["RangeError", "Overflow"],
+                    "RangeError: Invalid count value for String.repeat()",
+                ),
+                "padStart" => (
+                    &["OutOfRange"],
+                    "RangeError: String.padStart() result exceeds maximum length",
+                ),
+                "padEnd" => (
+                    &["OutOfRange"],
+                    "RangeError: String.padEnd() result exceeds maximum length",
+                ),
+                _ => (&[], ""),
             };
-            if !range_error_msg.is_empty() {
+            if !range_errors.is_empty() {
                 if let Some(label) = &self.inside_try_block {
+                    let arms: Vec<String> = range_errors
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "error.{} => break :{} @as(anyerror!void, error.JsThrow)",
+                                e, label
+                            )
+                        })
+                        .collect();
                     self.write(&format!(
-                        ") catch |err| switch (err) {{ \
-                         error.RangeError => break :{} @as(anyerror!void, error.JsThrow), \
-                         else => @panic(\"OOM: string method\") }}",
-                        label
+                        ") catch |err| switch (err) {{ {}, else => @panic(\"OOM: string method\") }}",
+                        arms.join(", ")
                     ));
                 } else {
+                    let arms: Vec<String> = range_errors
+                        .iter()
+                        .map(|e| format!("error.{} => @panic(\"{}\")", e, range_error_msg))
+                        .collect();
                     self.write(&format!(
-                        ") catch |err| switch (err) {{ \
-                         error.RangeError => @panic(\"{}\"), \
-                         else => @panic(\"OOM: string method\") }}",
-                        range_error_msg
+                        ") catch |err| switch (err) {{ {}, else => @panic(\"OOM: string method\") }}",
+                        arms.join(", ")
                     ));
                 }
             } else {
