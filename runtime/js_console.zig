@@ -22,7 +22,7 @@ fn isStringType(comptime T: type) bool {
 /// Check if a type has a custom format method.
 fn hasFormatMethod(comptime T: type) bool {
     const info = @typeInfo(T);
-    if (info == .@"struct") {
+    if (info == .@"struct" or info == .@"union") {
         return @hasDecl(T, "format");
     }
     return false;

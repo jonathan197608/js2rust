@@ -1386,10 +1386,12 @@ function addI64ToMapVal() {
 "#;
     let zig = transpile_and_check(js, "test_r4_2_jsany_arith_i64_operand");
     println!("=== R4-2 JsAny + i64 ===\n{}", zig);
-    // Integer side → use .asI64() (matches the i64 result type).
+    // R32-2: Add/Sub/Mul with JsAny now uses .asF64() (not .asI64())
+    // to correctly handle NaN from undefined operands (undefined + 5 = NaN).
+    // Integer-valued f64 results still print correctly via printValue.
     assert!(
-        zig.contains(".asI64()"),
-        "JsAny + i64 should use .asI64(): {}",
+        zig.contains(".asF64()"),
+        "JsAny + i64 should use .asF64() (R32-2 NaN fix): {}",
         zig
     );
 }

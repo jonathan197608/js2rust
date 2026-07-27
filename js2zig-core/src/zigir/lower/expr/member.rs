@@ -397,7 +397,7 @@ impl Lowerer {
             Expression::TemplateLiteral(_) => Some(ZigType::Str),
             Expression::BooleanLiteral(_) => Some(ZigType::Bool),
             Expression::BigIntLiteral(_) => Some(ZigType::BigInt),
-            Expression::NullLiteral(_) => None,
+            Expression::NullLiteral(_) => Some(ZigType::JsAny),
             Expression::UnaryExpression(ue) => match ue.operator {
                 UnaryOperator::LogicalNot => Some(ZigType::Bool),
                 UnaryOperator::Void => Some(ZigType::JsAny),

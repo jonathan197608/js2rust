@@ -264,6 +264,92 @@ impl Emitter {
                         rt,
                     );
                 }
+                // ── Bool in arithmetic: ToNumber(true)=1, ToNumber(false)=0 ──
+                // JS spec: + - * with bool operands coerce via ToNumber.
+                // String concat is handled at lower time; this only fires for
+                // pure arithmetic where one side is Bool and the other is I64/F64.
+                else if matches!(*op, BinOp::Add | BinOp::Sub | BinOp::Mul)
+                    && !left_is_bigint
+                    && !right_is_bigint
+                    && !left_is_jsany
+                    && !right_is_jsany
+                    && !left_is_str
+                    && !right_is_str
+                    && (lt == Some(&ZigType::Bool) || rt == Some(&ZigType::Bool))
+                {
+                    let left_is_bool = lt == Some(&ZigType::Bool);
+                    let right_is_bool = rt == Some(&ZigType::Bool);
+                    let use_f64 = left_is_float || right_is_float;
+                    use crate::zigir::emit::helpers::bin_op_to_zig;
+                    self.write("(");
+                    if left_is_bool {
+                        if use_f64 {
+                            self.write("@as(f64, @floatFromInt(@intFromBool(");
+                            self.emit_expr(left);
+                            self.write(")))");
+                        } else {
+                            self.write("@as(i64, @intFromBool(");
+                            self.emit_expr(left);
+                            self.write("))");
+                        }
+                    } else {
+                        self.emit_expr(left);
+                    }
+                    self.write(&format!(" {} ", bin_op_to_zig(*op)));
+                    if right_is_bool {
+                        if use_f64 {
+                            self.write("@as(f64, @floatFromInt(@intFromBool(");
+                            self.emit_expr(right);
+                            self.write(")))");
+                        } else {
+                            self.write("@as(i64, @intFromBool(");
+                            self.emit_expr(right);
+                            self.write("))");
+                        }
+                    } else {
+                        self.emit_expr(right);
+                    }
+                    self.write(")");
+                }
+                // ── String in non-Addition arithmetic: ToNumber via parseFloat ──
+                // JS spec: "3" - 1 -> 2, "3" * 2 -> 6. String is always
+                // coerced to f64 via parseFloat; the other side converts to f64 too.
+                else if matches!(*op, BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod)
+                    && !left_is_bigint
+                    && !right_is_bigint
+                    && !left_is_jsany
+                    && !right_is_jsany
+                    && (left_is_str || right_is_str)
+                {
+                    use crate::zigir::emit::helpers::bin_op_to_zig;
+                    let left_str = left_is_str;
+                    let right_str = right_is_str;
+                    self.write("(");
+                    if left_str {
+                        self.write("js_number.parseFloat(");
+                        self.emit_expr(left);
+                        self.write(")");
+                    } else if lt == Some(&ZigType::I64) {
+                        self.write("@as(f64, @floatFromInt(");
+                        self.emit_expr(left);
+                        self.write("))");
+                    } else {
+                        self.emit_expr(left);
+                    }
+                    self.write(&format!(" {} ", bin_op_to_zig(*op)));
+                    if right_str {
+                        self.write("js_number.parseFloat(");
+                        self.emit_expr(right);
+                        self.write(")");
+                    } else if rt == Some(&ZigType::I64) {
+                        self.write("@as(f64, @floatFromInt(");
+                        self.emit_expr(right);
+                        self.write("))");
+                    } else {
+                        self.emit_expr(right);
+                    }
+                    self.write(")");
+                }
                 // ── Division / Remainder ──
                 // Note: Integer `%` is handled by RemExpr node, not Binary(Mod).
                 // Binary(Mod) is only reached for Float and BigInt operands.

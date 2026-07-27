@@ -356,8 +356,20 @@ impl Emitter {
         // Coercion decision: if the OTHER side is F64, use .asF64(); otherwise .asI64().
         // The "other" side governs because Zig binary ops require both operands to
         // share a type. If one side is f64, the other must be f64 too.
-        let left_coerce_f64 = left_is_jsany && right_type == Some(&ZigType::F64);
-        let right_coerce_f64 = right_is_jsany && left_type == Some(&ZigType::F64);
+        // EXCEPTION: Add/Sub/Mul with JsAny always coerce to F64 because
+        // JsAny can be undefined (ToNumber -> NaN, which asI64 maps to 0,
+        // giving wrong results for `undefined + 1`). Using asF64 preserves
+        // NaN and integer-valued results print correctly via printValue.
+        let use_f64_arith = matches!(
+            op,
+            crate::zigir::ops::BinOp::Add
+                | crate::zigir::ops::BinOp::Sub
+                | crate::zigir::ops::BinOp::Mul
+        ) && !matches!(left_type, Some(&ZigType::BigInt))
+            && !matches!(right_type, Some(&ZigType::BigInt));
+        let left_coerce_f64 = left_is_jsany && (right_type == Some(&ZigType::F64) || use_f64_arith);
+        let right_coerce_f64 =
+            right_is_jsany && (left_type == Some(&ZigType::F64) || use_f64_arith);
 
         // Outer parens protect against JS/Zig operator precedence mismatches
         // (e.g. nested `JsAny + JsAny << JsAny` would be re-grouped by Zig
@@ -373,6 +385,11 @@ impl Emitter {
             } else {
                 self.write(".asI64()");
             }
+        } else if use_f64_arith && left_type == Some(&ZigType::I64) {
+            // Non-JsAny I64 side needs F64 conversion for arithmetic with JsAny
+            self.write("@as(f64, @floatFromInt(");
+            self.emit_expr(left);
+            self.write("))");
         } else {
             self.emit_expr(left);
         }
@@ -385,6 +402,11 @@ impl Emitter {
             } else {
                 self.write(".asI64()");
             }
+        } else if use_f64_arith && right_type == Some(&ZigType::I64) {
+            // Non-JsAny I64 side needs F64 conversion for arithmetic with JsAny
+            self.write("@as(f64, @floatFromInt(");
+            self.emit_expr(right);
+            self.write("))");
         } else {
             self.emit_expr(right);
         }
