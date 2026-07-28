@@ -363,6 +363,11 @@ impl Lowerer {
                 // renders it inline (`Self::emit_expr_inline`).
                 match &ue.argument {
                     Expression::StaticMemberExpression(mem) => {
+                        let obj_type = self.infer_expr_type(&mem.object);
+                        let is_empty_struct = obj_type
+                            .as_ref()
+                            .map(|t| matches!(t, ZigType::Struct(f) if f.is_empty()))
+                            .unwrap_or(false);
                         let (obj_name, obj_expr) = match &mem.object {
                             Expression::Identifier(id) => {
                                 (Some(id.name.as_str().to_string()), None)
@@ -373,30 +378,49 @@ impl Lowerer {
                                 (None, Some(Box::new(self.lower_expr(other))))
                             }
                         };
+                        let (method, key_arg) = if is_empty_struct {
+                            (
+                                "mapRemove",
+                                IrExpr::StringLiteral(mem.property.name.as_str().to_string()),
+                            )
+                        } else {
+                            (
+                                "deleteKey",
+                                IrExpr::StringLiteral(mem.property.name.as_str().to_string()),
+                            )
+                        };
                         IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
                             BuiltinModule::JsRuntime,
-                            "deleteKey",
+                            method,
                             obj_name,
                             obj_expr,
-                            vec![IrExpr::StringLiteral(
-                                mem.property.name.as_str().to_string(),
-                            )],
+                            vec![key_arg],
                             ZigType::Bool,
                         ))
                     }
                     Expression::ComputedMemberExpression(mem) => {
+                        let obj_type = self.infer_expr_type(&mem.object);
+                        let is_empty_struct = obj_type
+                            .as_ref()
+                            .map(|t| matches!(t, ZigType::Struct(f) if f.is_empty()))
+                            .unwrap_or(false);
                         let (obj_name, obj_expr) = match &mem.object {
                             Expression::Identifier(id) => {
                                 (Some(id.name.as_str().to_string()), None)
                             }
                             other => (None, Some(Box::new(self.lower_expr(other)))),
                         };
+                        let (method, key_arg) = if is_empty_struct {
+                            ("mapRemove", self.lower_map_key(&mem.expression))
+                        } else {
+                            ("deleteByKey", self.lower_expr(&mem.expression))
+                        };
                         IrExpr::BuiltinCall(crate::zigir::types::IrBuiltinCall::simple(
                             BuiltinModule::JsRuntime,
-                            "deleteByKey",
+                            method,
                             obj_name,
                             obj_expr,
-                            vec![self.lower_expr(&mem.expression)],
+                            vec![key_arg],
                             ZigType::Bool,
                         ))
                     }
@@ -691,11 +715,22 @@ impl Lowerer {
                 let target = self.lower_assign_target(&ae.left);
                 // Only expand for Member/Ident targets (to_read_expr returns Some).
                 // Index/Destructure fall through to the default path below.
-                if matches!(
+                // For Index { ArrayListItem } targets, skip the Logical expansion
+                // and let the default path create Assign { op: CompoundOp, ... }
+                // so emit_compound_assign can handle array growing.
+                let is_alist_index = matches!(
                     target,
-                    crate::zigir::types::IrAssignTarget::Member { .. }
-                        | crate::zigir::types::IrAssignTarget::Ident(_)
-                ) {
+                    crate::zigir::types::IrAssignTarget::Index { ref index_kind, .. }
+                        if matches!(*index_kind, crate::zigir::kinds::IndexKind::ArrayListItem)
+                );
+                if !is_alist_index
+                    && matches!(
+                        target,
+                        crate::zigir::types::IrAssignTarget::Member { .. }
+                            | crate::zigir::types::IrAssignTarget::Ident(_)
+                            | crate::zigir::types::IrAssignTarget::Index { .. }
+                    )
+                {
                     let value = self.lower_expr(&ae.right);
                     let value_type = self.infer_expr_type(&ae.right).unwrap_or(ZigType::JsAny);
                     let logical_op = match ae.operator {
@@ -915,9 +950,11 @@ impl Lowerer {
             let blk_label = format!("_co_blk{}", self.name_mangler.peek_count("__co"));
             let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
 
+            // MapPut requires mutable access (.put()), so use var instead of const.
+            let is_map_put = matches!(index_kind, crate::zigir::kinds::IndexKind::MapPut);
             let var_decl = IrStmt::VarDecl(IrVarDecl {
                 name: IrIdent::new(&temp_name),
-                is_const: true,
+                is_const: !is_map_put,
                 zig_type: None,
                 init: Some((**object).clone()),
                 is_json_parse: false,
@@ -930,10 +967,18 @@ impl Lowerer {
                 index: index.clone(),
                 index_kind: *index_kind,
             };
-            let read = IrExpr::IndexAccess {
-                object: Box::new(temp_ident),
-                index: index.clone(),
-                index_kind: *index_kind,
+            let read = if *index_kind == crate::zigir::kinds::IndexKind::MapPut {
+                IrExpr::ComputedField {
+                    object: Box::new(temp_ident),
+                    key: index.clone(),
+                    key_kind: crate::zigir::kinds::ComputedKeyKind::ObjectMapGet,
+                }
+            } else {
+                IrExpr::IndexAccess {
+                    object: Box::new(temp_ident),
+                    index: index.clone(),
+                    index_kind: *index_kind,
+                }
             };
 
             return (Some((var_decl, blk_label)), new_target, read);
@@ -998,6 +1043,16 @@ impl Lowerer {
         use crate::zigir::types::IrExpr;
         match expr {
             IrExpr::Ident(_) | IrExpr::TypedIdent { .. } | IrExpr::This => true,
+            // Literal values are side-effect-free — safe to evaluate multiple times.
+            // This prevents creating a temp copy for arr[0] ??= val, allowing the
+            // emitter to grow the original array (JS sparse array semantics).
+            IrExpr::IntLiteral(_)
+            | IrExpr::FloatLiteral(_)
+            | IrExpr::StringLiteral(_)
+            | IrExpr::BoolLiteral(_)
+            | IrExpr::BigIntLiteral(_)
+            | IrExpr::Null
+            | IrExpr::Undefined => true,
             IrExpr::FieldAccess { object, .. } => self.ir_object_is_simple_lvalue(object),
             IrExpr::IndexAccess { object, index, .. } => {
                 self.ir_object_is_simple_lvalue(object) && self.ir_object_is_simple_lvalue(index)
@@ -1061,6 +1116,21 @@ impl Lowerer {
         object: &Expression,
         property_name: &str,
     ) -> crate::zigir::types::IrAssignTarget {
+        // Empty struct (JsObjectMap): use MapPut with string literal key
+        let obj_type = self.infer_expr_type(object);
+        let is_empty_struct = obj_type
+            .as_ref()
+            .map(|t| matches!(t, ZigType::Struct(f) if f.is_empty()))
+            .unwrap_or(false);
+        if is_empty_struct {
+            return crate::zigir::types::IrAssignTarget::Index {
+                object: Box::new(self.lower_expr(object)),
+                index: Box::new(crate::zigir::types::IrExpr::StringLiteral(
+                    property_name.to_string(),
+                )),
+                index_kind: IndexKind::MapPut,
+            };
+        }
         crate::zigir::types::IrAssignTarget::Member {
             object: Box::new(self.lower_expr(object)),
             field: property_name.to_string(),
@@ -1080,14 +1150,39 @@ impl Lowerer {
             .as_ref()
             .map(|t| matches!(t, ZigType::ArrayList(_)))
             .unwrap_or(false);
+        let is_empty_struct = obj_type
+            .as_ref()
+            .map(|t| matches!(t, ZigType::Struct(f) if f.is_empty()))
+            .unwrap_or(false);
+        // For JsObjectMap, keys must be []const u8. JS auto-converts non-string
+        // keys to strings (123 -> "123", true -> "true", null -> "null").
+        let index = if is_empty_struct {
+            self.lower_map_key(expression)
+        } else {
+            self.lower_expr(expression)
+        };
         crate::zigir::types::IrAssignTarget::Index {
             object: Box::new(self.lower_expr(object)),
-            index: Box::new(self.lower_expr(expression)),
-            index_kind: if is_arraylist {
+            index: Box::new(index),
+            index_kind: if is_empty_struct {
+                IndexKind::MapPut
+            } else if is_arraylist {
                 IndexKind::ArrayListItem
             } else {
                 IndexKind::SliceIndex
             },
+        }
+    }
+
+    /// Convert a JS expression to a string key for JsObjectMap.
+    /// In JS, all object keys are strings: 123 -> "123", true -> "true", null -> "null".
+    fn lower_map_key(&mut self, expr: &Expression) -> crate::zigir::types::IrExpr {
+        use crate::zigir::types::IrExpr;
+        match expr {
+            Expression::NumericLiteral(nl) => IrExpr::StringLiteral(nl.value.to_string()),
+            Expression::BooleanLiteral(bl) => IrExpr::StringLiteral(bl.value.to_string()),
+            Expression::NullLiteral(_) => IrExpr::StringLiteral("null".to_string()),
+            _ => self.lower_expr(expr),
         }
     }
 

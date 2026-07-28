@@ -453,11 +453,22 @@ impl IrAssignTarget {
                 object,
                 index,
                 index_kind,
-            } => Some(IrExpr::IndexAccess {
-                object: object.clone(),
-                index: index.clone(),
-                index_kind: *index_kind,
-            }),
+            } => {
+                use crate::zigir::kinds::{ComputedKeyKind, IndexKind};
+                if *index_kind == IndexKind::MapPut {
+                    Some(IrExpr::ComputedField {
+                        object: object.clone(),
+                        key: index.clone(),
+                        key_kind: ComputedKeyKind::ObjectMapGet,
+                    })
+                } else {
+                    Some(IrExpr::IndexAccess {
+                        object: object.clone(),
+                        index: index.clone(),
+                        index_kind: *index_kind,
+                    })
+                }
+            }
             _ => None,
         }
     }

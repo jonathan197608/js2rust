@@ -51,6 +51,9 @@ pub enum IndexKind {
     ArrayListItem,
     /// Slice index: `arr[n]`
     SliceIndex,
+    /// JsObjectMap put: `obj.put(key, value) catch @panic("OOM")`
+    /// Used only for assignment targets, never for reads.
+    MapPut,
 }
 
 /// How a computed member access (`obj[key]`) should be emitted.
@@ -62,6 +65,9 @@ pub enum ComputedKeyKind {
     MapGet,
     /// JsAny dynamic: `obj.getByKey(key, alloc)`
     JsAnyGetByKey,
+    /// JsObjectMap get with default: `obj.get(key) orelse JsAny.fromUndefined()`
+    /// Returns JsAny (never optional). Used for empty-struct (JsObjectMap) access.
+    ObjectMapGet,
     /// ArrayList item: `arr.items[@as(usize, @intCast(key))]`
     ArrayListItem,
     /// String character (single-character substring): `js_string.charAt(alloc, str, idx) catch ...`

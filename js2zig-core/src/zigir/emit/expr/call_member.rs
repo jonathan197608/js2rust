@@ -200,6 +200,10 @@ impl Emitter {
             IndexKind::SliceIndex => {
                 self.emit_slice_index(object, index);
             }
+            IndexKind::MapPut => {
+                // MapPut is only for assignment, not reads
+                unreachable!("MapPut in read context");
+            }
         }
     }
 
@@ -247,6 +251,15 @@ impl Emitter {
             }
             ComputedKeyKind::CompileError(msg) => {
                 self.write(&helpers::compile_error(msg));
+            }
+            ComputedKeyKind::ObjectMapGet => {
+                // Parenthesize so method calls on the result bind correctly,
+                // e.g. (obj.get(k) orelse JsAny.fromUndefined()).asF64()
+                self.write("(");
+                self.emit_expr(object);
+                self.write(".get(");
+                self.emit_expr(key);
+                self.write(") orelse JsAny.fromUndefined())");
             }
         }
     }

@@ -173,14 +173,51 @@ impl Emitter {
                     // Assignment and Update (is_expr_stmt=true) don't need `_ = ` prefix
                     // — they are statements in Zig. Other expressions need `_ = ` to
                     // discard non-void return values.
-                    let needs_discard = !matches!(
-                        expr,
-                        crate::zigir::types::IrExpr::Assign { .. }
-                            | crate::zigir::types::IrExpr::Update {
-                                is_expr_stmt: true,
+                    let needs_discard = match expr {
+                        // Assign on ArrayListItem/SliceIndex Index targets may
+                        // emit bare blocks in emit_compound_assign (array-grow
+                        // block or Index logical compound path). Zig 0.16 rejects
+                        // { ...; }; as a statement, so _ = prefix is needed.
+                        crate::zigir::types::IrExpr::Assign { op, target, .. } => {
+                            if let crate::zigir::types::IrAssignTarget::Index {
+                                index_kind,
+                                object,
                                 ..
+                            } = target.as_ref()
+                            {
+                                let is_alist = matches!(
+                                    *index_kind,
+                                    crate::zigir::kinds::IndexKind::ArrayListItem
+                                );
+                                let is_slice = matches!(
+                                    *index_kind,
+                                    crate::zigir::kinds::IndexKind::SliceIndex
+                                );
+                                let is_logical = matches!(
+                                    *op,
+                                    crate::zigir::ops::AssignOp::Nullish
+                                        | crate::zigir::ops::AssignOp::LogicOr
+                                        | crate::zigir::ops::AssignOp::LogicAnd
+                                );
+                                let is_simple_obj = matches!(object.as_ref(),
+                                    crate::zigir::types::IrExpr::Ident(i)
+                                    | crate::zigir::types::IrExpr::TypedIdent { ident: i, .. }
+                                    if !i.zig_name.starts_with("__co_"));
+                                // Bare-block paths:
+                                // 1. Logical ops on ArrayListItem or SliceIndex
+                                // 2. Any op on ArrayListItem with simple object
+                                //    (incl. %= decomposition: op==Assign + RemExpr)
+                                (is_logical && (is_alist || is_slice))
+                                    || (is_alist && is_simple_obj)
+                            } else {
+                                false
                             }
-                    );
+                        }
+                        crate::zigir::types::IrExpr::Update {
+                            is_expr_stmt: true, ..
+                        } => false,
+                        _ => true,
+                    };
                     if needs_discard {
                         self.write("_ = ");
                     }

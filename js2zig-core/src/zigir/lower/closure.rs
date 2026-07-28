@@ -60,7 +60,13 @@ impl Lowerer {
         &self,
         arrow: &ArrowFunctionExpression,
     ) -> Vec<(String, ZigType, bool)> {
-        let param_names = Self::collect_param_names(&arrow.params.items);
+        let mut param_names = Self::collect_param_names(&arrow.params.items);
+        // Include rest parameter name: it is a parameter, not a capture.
+        if let Some(rest) = &arrow.params.rest
+            && let Some(name) = crate::infer::binding_name(&rest.rest.argument)
+        {
+            param_names.insert(name.to_string());
+        }
         self.collect_captures_from_body(&param_names, &arrow.body.statements, true)
     }
 
@@ -69,7 +75,13 @@ impl Lowerer {
     /// Returns list of (variable_name, ZigType, is_mutable) for variables from
     /// the enclosing scope that are referenced in the function body.
     pub(super) fn detect_fn_body_captures(&self, fd: &Function) -> Vec<(String, ZigType, bool)> {
-        let param_names = Self::collect_param_names(&fd.params.items);
+        let mut param_names = Self::collect_param_names(&fd.params.items);
+        // Include rest parameter name: it is a parameter, not a capture.
+        if let Some(rest) = &fd.params.rest
+            && let Some(name) = crate::infer::binding_name(&rest.rest.argument)
+        {
+            param_names.insert(name.to_string());
+        }
         fd.body
             .as_ref()
             .map(|body| self.collect_captures_from_body(&param_names, &body.statements, true))

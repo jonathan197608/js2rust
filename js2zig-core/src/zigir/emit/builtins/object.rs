@@ -314,6 +314,15 @@ impl Emitter {
             "keysStruct" | "getOwnPropertyNamesStruct" => {
                 self.emit_object_struct_method(method, args);
             }
+            // ── Object.keysMap/getOwnPropertyNamesMap — runtime key collection for JsObjectMap ──
+            "keysMap" | "getOwnPropertyNamesMap" => {
+                self.write(&format!("js_object.{}(js_allocator.allocator(), ", method));
+                if let Some(arg) = args.first() {
+                    self.write("&");
+                    self.emit_expr(arg);
+                }
+                self.write(&format!(") catch @panic(\"OOM: Object.{}\")", method));
+            }
             "groupBy" => {
                 // Object.groupBy(items, callbackFn) — fully inline emission
                 // Uses StringArrayHashMap (managed wrapper, insertion-order-preserving)

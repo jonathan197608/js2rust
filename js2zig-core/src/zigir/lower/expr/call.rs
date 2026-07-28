@@ -316,7 +316,13 @@ impl Lowerer {
                 };
                 if let Some(name) = ident_name {
                     if let Some(var_type) = self.get_var_type(name) {
-                        if matches!(var_type, ZigType::Struct(_)) {
+                        if matches!(var_type, ZigType::Struct(ref f) if f.is_empty()) {
+                            if method == "keys" {
+                                "keysMap".into()
+                            } else {
+                                "getOwnPropertyNamesMap".into()
+                            }
+                        } else if matches!(var_type, ZigType::Struct(_)) {
                             if method == "keys" {
                                 "keysStruct".into()
                             } else {

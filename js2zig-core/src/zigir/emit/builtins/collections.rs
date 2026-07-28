@@ -504,6 +504,22 @@ impl Emitter {
                     ".delete(js_allocator.allocator(), JsAny.from(_dk)); break :{blk} true; }}"
                 ));
             }
+            "mapRemove" => {
+                // JsObjectMap.remove(key) → bool (true if found and removed)
+                let blk = self.next_label();
+                self.write(&format!("{blk}: {{ _ = "));
+                if let Some(name) = obj {
+                    self.write(name);
+                }
+                self.write(".remove(");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.emit_expr(arg);
+                }
+                self.write(&format!("); break :{blk} true; }}"));
+            }
             "instanceOf" => {
                 // instanceOf(value, "TypeName") → js_runtime.instanceOf(value, "TypeName")
                 // The value comes from obj_expr (not obj_name), already resolved by

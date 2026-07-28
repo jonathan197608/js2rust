@@ -471,9 +471,16 @@ impl Emitter {
             || matches!(&vd.zig_type, Some(ZigType::BigInt))
         {
             self.write_indent();
+            // JsObjectMap (StringArrayHashMap) has deinit(self) with 0 args,
+            // unlike ArrayList/Map which take an allocator argument.
+            let deinit_args = if matches!(&vd.zig_type, Some(ZigType::Struct(f)) if f.is_empty()) {
+                ""
+            } else {
+                "js_allocator.allocator()"
+            };
             self.write(&format!(
-                "defer {}.deinit(js_allocator.allocator()); // auto-cleanup\n",
-                vd.name.zig_name
+                "defer {}.deinit({}); // auto-cleanup\n",
+                vd.name.zig_name, deinit_args
             ));
         }
     }

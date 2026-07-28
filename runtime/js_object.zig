@@ -5,6 +5,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsValue = @import("jsvalue.zig").JsValue;
+const JsAny = @import("jsany.zig").JsAny;
 const StringArrayHashMap = @import("string_array_hash_map.zig").StringArrayHashMap;
 
 const JsValueHashMap = StringArrayHashMap(JsValue);
@@ -41,6 +42,27 @@ pub fn keysStruct(comptime T: type) [std.meta.fields(T).len][]const u8 {
         result[i] = field.name;
     }
     return result;
+}
+
+/// Object.keys for JsObjectMap (StringArrayHashMap(JsAny)) — runtime key collection.
+pub fn keysMap(alloc: Allocator, obj: *const StringArrayHashMap(JsAny)) ![][]const u8 {
+    var kiter = obj.iterator();
+    var list = std.ArrayList([]const u8).empty;
+    errdefer {
+        for (list.items) |key| alloc.free(key);
+        list.deinit(alloc);
+    }
+    while (kiter.next()) |entry| {
+        const key_copy = try alloc.dupe(u8, entry.key_ptr.*);
+        errdefer alloc.free(key_copy);
+        try list.append(alloc, key_copy);
+    }
+    return list.toOwnedSlice(alloc);
+}
+
+/// Object.getOwnPropertyNames for JsObjectMap — same as keysMap.
+pub fn getOwnPropertyNamesMap(alloc: Allocator, obj: *const StringArrayHashMap(JsAny)) ![][]const u8 {
+    return keysMap(alloc, obj);
 }
 
 /// Object.getOwnPropertyNames — for HashMap objects, returns all own property names.

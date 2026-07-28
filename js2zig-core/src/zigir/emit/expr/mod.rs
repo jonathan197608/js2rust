@@ -1106,6 +1106,10 @@ impl Emitter {
                     IndexKind::SliceIndex => {
                         self.emit_slice_index(object, index);
                     }
+                    IndexKind::MapPut => {
+                        // Handled in emit_compound_assign, not here
+                        unreachable!("MapPut in emit_assign_target_inner");
+                    }
                 }
             }
             crate::zigir::types::IrAssignTarget::Destructure(bindings) => {
@@ -1139,6 +1143,108 @@ impl Emitter {
     ) {
         use crate::zigir::ops::AssignOp;
         use crate::zigir::types::IrAssignTarget;
+
+        // JsObjectMap (MapPut) assignment: use .put() instead of [] =
+        if let IrAssignTarget::Index {
+            object,
+            index,
+            index_kind,
+        } = target
+            && matches!(index_kind, crate::zigir::kinds::IndexKind::MapPut)
+        {
+            match op {
+                AssignOp::Assign => {
+                    self.emit_expr(object);
+                    self.write(".put(");
+                    self.emit_expr(index);
+                    self.write(", JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(")) catch @panic(\"OOM: map put\")");
+                    return;
+                }
+                AssignOp::Nullish => {
+                    self.emit_expr(object);
+                    self.write(".put(");
+                    self.emit_expr(index);
+                    self.write(", if (js_runtime.isNullish(");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(") else (");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
+                    return;
+                }
+                AssignOp::LogicOr => {
+                    self.emit_expr(object);
+                    self.write(".put(");
+                    self.emit_expr(index);
+                    self.write(", if (!js_runtime.isTruthy(");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(") else (");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
+                    return;
+                }
+                AssignOp::LogicAnd => {
+                    self.emit_expr(object);
+                    self.write(".put(");
+                    self.emit_expr(index);
+                    self.write(", if (js_runtime.isTruthy(");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(") else (");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
+                    return;
+                }
+                _ => {
+                    let (method, needs_alloc) = match op {
+                        AssignOp::Add => (".add(", true),
+                        AssignOp::Sub => (".sub(", false),
+                        AssignOp::Mul => (".mul(", false),
+                        AssignOp::Div => (".div(", false),
+                        AssignOp::Mod => (".rem(", false),
+                        _ => {
+                            self.write("@compileError(\"unsupported compound op on map\")");
+                            return;
+                        }
+                    };
+                    self.emit_expr(object);
+                    self.write(".put(");
+                    self.emit_expr(index);
+                    self.write(", (");
+                    self.emit_expr(object);
+                    self.write(".get(");
+                    self.emit_expr(index);
+                    self.write(") orelse JsAny.fromUndefined())");
+                    self.write(method);
+                    self.write("JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(")");
+                    if needs_alloc {
+                        self.write(", js_allocator.allocator()");
+                    }
+                    self.write(")) catch @panic(\"OOM: map put\")");
+                    return;
+                }
+            }
+        }
 
         // P2-EM #3 / P1-EM-1: Index AND Member targets with logical ops must not
         // triple-evaluate the object/field expressions. Evaluate once into temps.
@@ -1203,16 +1309,55 @@ impl Emitter {
             {
                 use crate::zigir::kinds::IndexKind;
                 let blk = self.next_label();
-                self.write(&format!("({}: {{ ", blk));
-                // Evaluate object and index once
-                self.write(&format!("const _asg_obj_{} = ", blk));
-                self.emit_expr(object);
-                self.write(&format!("; const _asg_idx_raw_{} = ", blk));
+                self.write("{ ");
+                // For simple Ident objects, use the original variable directly
+                // (no temp copy -- ArrayList copies break length tracking).
+                let obj_var = match &**object {
+                    crate::zigir::types::IrExpr::Ident(ident)
+                        if !ident.zig_name.starts_with("__co_") =>
+                    {
+                        ident.zig_name.clone()
+                    }
+                    crate::zigir::types::IrExpr::TypedIdent { ident, .. }
+                        if !ident.zig_name.starts_with("__co_") =>
+                    {
+                        ident.zig_name.clone()
+                    }
+                    _ => {
+                        let name = format!("_asg_obj_{}", blk);
+                        self.write(&format!("const {} = ", name));
+                        self.emit_expr(object);
+                        self.write("; ");
+                        name
+                    }
+                };
+                // Evaluate index once
+                self.write(&format!("const _asg_idx_raw_{} = ", blk));
                 self.emit_expr(index);
                 self.write(&format!("; const _asg_idx_{}: usize = if (_asg_idx_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_asg_idx_raw_{})); ", blk, blk, blk));
+                // Grow array for ArrayListItem to prevent OOB on read-access
+                if matches!(index_kind, IndexKind::ArrayListItem) {
+                    let dv = match &**object {
+                        crate::zigir::types::IrExpr::TypedIdent {
+                            ty: crate::types::ZigType::ArrayList(inner),
+                            ..
+                        } => match &**inner {
+                            crate::types::ZigType::I64 => "0",
+                            crate::types::ZigType::F64 => "0.0",
+                            crate::types::ZigType::Bool => "false",
+                            _ => "JsAny.fromUndefined()",
+                        },
+                        _ => "JsAny.fromUndefined()",
+                    };
+                    self.write(&format!(
+                        "while ({v}.items.len <= _asg_idx_{b}) {v}.append(js_allocator.allocator(), {dv}) catch @panic(\"OOM: array grow\"); ",
+                        v = obj_var, b = blk, dv = dv
+                    ));
+                }
                 let access = match index_kind {
-                    IndexKind::ArrayListItem => format!("_asg_obj_{}.items[_asg_idx_{}]", blk, blk),
-                    IndexKind::SliceIndex => format!("_asg_obj_{}[_asg_idx_{}]", blk, blk),
+                    IndexKind::ArrayListItem => format!("{}.items[_asg_idx_{}]", obj_var, blk),
+                    IndexKind::SliceIndex => format!("{}[_asg_idx_{}]", obj_var, blk),
+                    IndexKind::MapPut => unreachable!("MapPut in logical compound"),
                 };
                 let (fn_name, negate) = match op {
                     AssignOp::LogicAnd => ("isTruthy", false),
@@ -1233,12 +1378,16 @@ impl Emitter {
                         f = fn_name
                     ));
                 }
-                self.emit_expr(value);
-                self.write(&format!(
-                    " else {a}; break :{blk} {a}; }})",
-                    a = access,
-                    blk = blk
-                ));
+                // For ArrayListItem (JsAny elements), wrap value in JsAny.from()
+                // to avoid type mismatch between if/else branches.
+                if matches!(index_kind, IndexKind::ArrayListItem) {
+                    self.write("JsAny.from(");
+                    self.emit_expr(value);
+                    self.write(")");
+                } else {
+                    self.emit_expr(value);
+                }
+                self.write(&format!(" else {a}; }}", a = access));
                 return;
             }
         }
@@ -1275,6 +1424,71 @@ impl Emitter {
             self.write(" else ");
             self.emit_assign_target_inner(target);
         } else {
+            // ArrayListItem grow: JS sparse array semantics.
+            // For simple Ident objects (original var, not temp __co_N),
+            // grow the array before assignment to avoid OOB panic.
+            if let crate::zigir::types::IrAssignTarget::Index {
+                object,
+                index,
+                index_kind,
+            } = target
+                && matches!(index_kind, crate::zigir::kinds::IndexKind::ArrayListItem)
+                && let obj_ident = &**object
+                && match obj_ident {
+                    crate::zigir::types::IrExpr::Ident(i)
+                    | crate::zigir::types::IrExpr::TypedIdent { ident: i, .. } => {
+                        !i.zig_name.starts_with("__co_")
+                    }
+                    _ => false,
+                }
+            {
+                use crate::zigir::ops::AssignOp;
+                let blk = self.next_label();
+                let arr_name = match &**object {
+                    crate::zigir::types::IrExpr::Ident(i)
+                    | crate::zigir::types::IrExpr::TypedIdent { ident: i, .. } => {
+                        i.zig_name.clone()
+                    }
+                    _ => unreachable!(),
+                };
+                let dv = match &**object {
+                    crate::zigir::types::IrExpr::TypedIdent {
+                        ty: crate::types::ZigType::ArrayList(inner),
+                        ..
+                    } => match &**inner {
+                        crate::types::ZigType::I64 => "0",
+                        crate::types::ZigType::F64 => "0.0",
+                        crate::types::ZigType::Bool => "false",
+                        _ => "JsAny.fromUndefined()",
+                    },
+                    _ => "JsAny.fromUndefined()",
+                };
+                self.write(&format!("{{ const _ga_raw_{} = ", blk));
+                self.emit_expr(index);
+                self.write(&format!(
+                    "; const _ga_idx_{}: usize = if (_ga_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_ga_raw_{})); ",
+                    blk, blk, blk
+                ));
+                self.write(&format!(
+                    "while ({}.items.len <= _ga_idx_{}) {}.append(js_allocator.allocator(), {}) catch @panic(\"OOM: array grow\"); ",
+                    arr_name, blk, arr_name, dv
+                ));
+                if op == AssignOp::Assign {
+                    self.write(&format!("{}.items[_ga_idx_{}] = ", arr_name, blk));
+                    self.emit_expr(value);
+                } else {
+                    self.write(&format!(
+                        "{}.items[_ga_idx_{}] {} ",
+                        arr_name,
+                        blk,
+                        op.to_zig_str()
+                    ));
+                    self.emit_expr(value);
+                }
+                self.write("; }");
+                return;
+            }
+            // Fallback: direct assignment
             self.emit_assign_target_inner(target);
             self.write(&format!(" {} ", op.to_zig_str()));
             self.emit_expr(value);

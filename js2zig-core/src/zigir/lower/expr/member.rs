@@ -214,6 +214,17 @@ impl Lowerer {
             };
         }
 
+        // Empty struct (JsObjectMap): route to map get
+        if let Some(ZigType::Struct(ref f)) = self.infer_expr_type(&mem.object)
+            && f.is_empty()
+        {
+            return IrExpr::ComputedField {
+                object: Box::new(self.lower_expr(&mem.object)),
+                key: Box::new(IrExpr::StringLiteral(field_name.to_string())),
+                key_kind: ComputedKeyKind::ObjectMapGet,
+            };
+        }
+
         // ── Default: struct field access ──
         self.make_field_access(mem, FieldKind::StructField)
     }
@@ -278,6 +289,7 @@ impl Lowerer {
         // ── Case 2: StringLiteral key → ComputedField ──
         if let Expression::StringLiteral(sl) = &mem.expression {
             let key_kind = match &obj_type {
+                Some(ZigType::Struct(f)) if f.is_empty() => ComputedKeyKind::ObjectMapGet,
                 Some(ZigType::Struct(_)) => ComputedKeyKind::StructField,
                 Some(ZigType::NamedStruct(name)) if name == "Map" => ComputedKeyKind::MapGet,
                 Some(ZigType::NamedStruct(_)) => ComputedKeyKind::StructField,
@@ -306,6 +318,7 @@ impl Lowerer {
             Some(ZigType::NamedStruct(name)) if name == "Map" => ComputedKeyKind::MapGet,
             Some(ZigType::ArrayList(_)) => ComputedKeyKind::ArrayListItem,
             Some(ZigType::Str) => ComputedKeyKind::StringCharAt,
+            Some(ZigType::Struct(f)) if f.is_empty() => ComputedKeyKind::ObjectMapGet,
             Some(ZigType::Struct(_)) | Some(ZigType::NamedStruct(_)) => {
                 ComputedKeyKind::StructField
             }
@@ -1192,6 +1205,12 @@ impl Lowerer {
         {
             return Some(ty.clone());
         }
+        // Empty struct (JsObjectMap) properties are JsAny
+        if let Some(ZigType::Struct(f)) = &obj_type
+            && f.is_empty()
+        {
+            return Some(ZigType::JsAny);
+        }
         obj_type
     }
 
@@ -1207,6 +1226,12 @@ impl Lowerer {
         // ArrayList(T)[i] → T
         if let Some(ZigType::ArrayList(elem)) = self.infer_expr_type(&mem.object) {
             return Some(*elem);
+        }
+        // Empty struct (JsObjectMap) values are JsAny
+        if let Some(ZigType::Struct(ref f)) = self.infer_expr_type(&mem.object)
+            && f.is_empty()
+        {
+            return Some(ZigType::JsAny);
         }
         None
     }
