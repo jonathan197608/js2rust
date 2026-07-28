@@ -272,12 +272,14 @@ impl Emitter {
         let (receiver, binding) = self.resolve_receiver(&data.obj_expr, &data.obj_name);
 
         // Format specifier based on element type:
-        // I64->{d}, F64->{} (shortest round-trip; R8-E2), Bool->{}, Str->{s}, other->{any}
+        // I64->{d}, F64->{} (shortest round-trip; R8-E2), Bool->{}, Str->{s},
+        // JsAny->{f} (only {f} dispatches to format() in Zig 0.16), other->{any}
         let fmt_spec = match data.elem_type {
             ZigType::I64 => "{d}",
             ZigType::F64 => "{}",
             ZigType::Bool => "{}",
             ZigType::Str => "{s}",
+            ZigType::JsAny => "{f}",
             _ => "{any}",
         };
         let blk = self.begin_labeled_block(&binding);

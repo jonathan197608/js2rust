@@ -257,6 +257,8 @@ js_files = [
     "test_edge_frag_6.js",
     "test_edge_frag_22.js",
     "test_edge_frag_23.js",
+    "test_edge_frag_7.js",
+    "test_edge_frag_8.js",
 ]
 
 [build]

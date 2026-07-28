@@ -64,6 +64,8 @@ impl Emitter {
                     &receiver,
                     ".items",
                     &data.elem_param,
+                    data.has_idx_param,
+                    &data.idx_param,
                     &data.body,
                 );
             }
@@ -77,22 +79,32 @@ impl Emitter {
     }
 
     /// Emit a simple for-loop forEach (Array/Set): binding + for (recv.items_path) |elem| { body }
+    #[allow(clippy::too_many_arguments)]
     fn emit_for_each_simple_loop(
         &mut self,
         binding: &Option<String>,
         receiver: &str,
         items_path: &str,
         elem_param: &str,
+        has_idx_param: bool,
+        idx_param: &str,
         body: &[crate::zigir::types::IrStmt],
     ) {
         if let Some(b) = binding {
             self.write("{ ");
             self.write(b);
         }
-        self.write(&format!(
-            "for ({}{}) |{}| ",
-            receiver, items_path, elem_param
-        ));
+        if has_idx_param && !idx_param.is_empty() && idx_param != "_" {
+            self.write(&format!(
+                "for ({}{}, 0..) |{}, {}| ",
+                receiver, items_path, elem_param, idx_param
+            ));
+        } else {
+            self.write(&format!(
+                "for ({}{}) |{}| ",
+                receiver, items_path, elem_param
+            ));
+        }
         self.write("{\n");
         self.indent_push();
         for stmt in body {
@@ -701,25 +713,31 @@ impl Emitter {
         let (elem_type_str, param_a, param_b) = self.resolve_sort_params(data);
 
         if let Some(b) = &binding {
-            self.write("{ ");
+            // R33: When binding (chained receiver), emit sort in a labeled block
+            // without nesting another labeled block. The pattern:
+            //   blk: { const __chain_N = <expr>; std.mem.sort(...); break :blk __chain_N; }
+            let blk = self.next_label();
+            self.write(&format!("{}: {{ ", blk));
             self.write(b);
-        }
-
-        let blk = self.next_label();
-        self.write(&format!("({}: {{ ", blk));
-
-        self.emit_sort_less_than(
-            &format!("{}.items", receiver),
-            &elem_type_str,
-            &param_a,
-            &param_b,
-            &data.body,
-        );
-
-        self.write(&format!(" break :{} {}; }})", blk, receiver));
-
-        if binding.is_some() {
-            self.write(" }");
+            self.emit_sort_less_than(
+                &format!("{}.items", receiver),
+                &elem_type_str,
+                &param_a,
+                &param_b,
+                &data.body,
+            );
+            self.write(&format!(" break :{} {}; }}", blk, receiver));
+        } else {
+            let blk = self.next_label();
+            self.write(&format!("({}: {{ ", blk));
+            self.emit_sort_less_than(
+                &format!("{}.items", receiver),
+                &elem_type_str,
+                &param_a,
+                &param_b,
+                &data.body,
+            );
+            self.write(&format!(" break :{} {}; }})", blk, receiver));
         }
     }
 
@@ -816,7 +834,7 @@ impl Emitter {
             emitter.write(") < 0;");
         });
 
-        self.write(" } }}.lessThan);");
+        self.write(" } }.lessThan);");
     }
 
     // ── flatMap ───────────────────────────────────────

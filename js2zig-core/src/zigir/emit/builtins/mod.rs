@@ -307,6 +307,20 @@ impl Emitter {
     ) {
         // Some array methods are direct ArrayList operations when we have the object name.
         match method {
+            "push" => {
+                if let Some(name) = obj {
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        self.write(&format!("{}.append(js_allocator.allocator(), ", name));
+                        self.emit_expr(arg);
+                        self.write(") catch @panic(\"OOM: Array.push append\")");
+                    }
+                } else {
+                    self.emit_module_call("js_array", method, args);
+                }
+            }
             "pop" => {
                 if let Some(name) = obj {
                     self.write(&format!("{}.pop()", name));

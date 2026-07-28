@@ -119,6 +119,68 @@ impl Lowerer {
                 return inlined;
             }
 
+            // ── Step 1b-2: Array.push type coercion ──
+            // When pushing to a known ArrayList(JsAny) variable, wrap args in
+            // JsAny.from() since the value may be i64/f64/bool etc.
+            let obj_name = Self::extract_callee_object_name_static(&ce.callee);
+            let args = if matches!(builtin, crate::native_builtins::BuiltinCall::ArrayPush) {
+                if let Some(name) = &obj_name {
+                    if let Some(ZigType::ArrayList(inner)) = self.get_var_type(name.as_str()) {
+                        if matches!(*inner, ZigType::JsAny) {
+                            args.into_iter()
+                                .map(|a| {
+                                    use crate::zigir::types::{IrCallExpr, IrExpr};
+                                    // Null/Undefined have their own fromXxx methods (no args)
+                                    match a {
+                                        IrExpr::Null => IrExpr::Call(IrCallExpr {
+                                            callee: Box::new(IrExpr::FieldAccess {
+                                                object: Box::new(IrExpr::Ident(IrIdent::new(
+                                                    "JsAny",
+                                                ))),
+                                                field: "fromNull".to_string(),
+                                                field_kind: FieldKind::StructField,
+                                            }),
+                                            args: vec![],
+                                            call_kind: CallKind::Direct,
+                                        }),
+                                        IrExpr::Undefined => IrExpr::Call(IrCallExpr {
+                                            callee: Box::new(IrExpr::FieldAccess {
+                                                object: Box::new(IrExpr::Ident(IrIdent::new(
+                                                    "JsAny",
+                                                ))),
+                                                field: "fromUndefined".to_string(),
+                                                field_kind: FieldKind::StructField,
+                                            }),
+                                            args: vec![],
+                                            call_kind: CallKind::Direct,
+                                        }),
+                                        other => IrExpr::Call(IrCallExpr {
+                                            callee: Box::new(IrExpr::FieldAccess {
+                                                object: Box::new(IrExpr::Ident(IrIdent::new(
+                                                    "JsAny",
+                                                ))),
+                                                field: "from".to_string(),
+                                                field_kind: FieldKind::StructField,
+                                            }),
+                                            args: vec![other],
+                                            call_kind: CallKind::Direct,
+                                        }),
+                                    }
+                                })
+                                .collect()
+                        } else {
+                            args
+                        }
+                    } else {
+                        args
+                    }
+                } else {
+                    args
+                }
+            } else {
+                args
+            };
+
             // ── Step 1c: eval() → compile error ──
             if matches!(builtin, crate::native_builtins::BuiltinCall::Eval) {
                 return self.compile_error_expr(ce.span, "eval() is not supported (security risk, cannot dynamically execute at compile time)");
@@ -179,8 +241,6 @@ impl Lowerer {
             {
                 ctx.has_catchable_error = true;
             }
-            let obj_name = Self::extract_callee_object_name_static(&ce.callee);
-
             // ── Fix string-variable methods misidentified as array ──
             // detect_builtin_call only checks if the callee object is a StringLiteral,
             // not if it's a variable of type string. Fix up the module/method here.
@@ -396,6 +456,16 @@ impl Lowerer {
                     // BuiltinCall. Without this, [1,2,3].at(-1) generates
                     // js_array.at(-1) (wrong: no receiver, non-existent fn).
                     let elem_type = Self::infer_elem_type_from_ir_expr(&inner);
+
+                    // R33-1: Also try callback methods (filter, map, reduce, etc.)
+                    // on array literal receivers. Without this, [1,2,3].filter(x => x > 1)
+                    // falls through to BuiltinCall and loses the receiver entirely.
+                    if let Some(inlined) =
+                        self.try_inline_array_callback_with_chain(ce, &builtin, &elem_type, &inner)
+                    {
+                        return inlined;
+                    }
+
                     if let Some(inlined) = self
                         .try_inline_array_method_with_chain(ce, &builtin, &args, &elem_type, &inner)
                     {
