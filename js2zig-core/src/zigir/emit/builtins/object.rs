@@ -434,14 +434,39 @@ impl Emitter {
                         ") catch |err| break :{} @as(anyerror!void, err)",
                         label
                     ));
-                } else if self.in_function {
+                } else if self.in_function && self.fn_can_throw {
                     self.write(") catch return error.JsThrow");
                 } else {
                     self.write(") catch @panic(\"JSON.parse failed\")");
                 }
             }
             "stringify" => {
-                self.write("js_json.stringify(js_allocator.allocator(), ");
+                // Check if the first argument is a struct literal (ObjectLiteral) or
+                // a variable of struct type — these need stringifyStruct which
+                // accepts anytype and converts struct fields to JsAny.
+                // For JsAny values, use the regular stringify function.
+                let is_struct_arg = match args.first() {
+                    Some(crate::zigir::types::IrExpr::ObjectLiteral(_)) => true,
+                    Some(crate::zigir::types::IrExpr::Ident(ident)) => {
+                        self.struct_var_names.contains(&ident.zig_name)
+                    }
+                    Some(crate::zigir::types::IrExpr::TypedIdent { ident, ty }) => {
+                        // TypedIdent carries type info — if it's a Struct type, use stringifyStruct.
+                        // Also check struct_var_names as a fallback for variables detected by emit_var_decl.
+                        matches!(ty, ZigType::Struct(_))
+                            || self.struct_var_names.contains(&ident.zig_name)
+                    }
+                    Some(crate::zigir::types::IrExpr::BuiltinCall(bc)) => {
+                        bc.method == "spreadMerge"
+                    }
+                    _ => false,
+                };
+                let func_name = if is_struct_arg {
+                    "stringifyStruct"
+                } else {
+                    "stringify"
+                };
+                self.write(&format!("js_json.{}(js_allocator.allocator(), ", func_name));
                 if let Some(first_arg) = args.first() {
                     self.emit_expr(first_arg);
                 } else {
@@ -464,7 +489,7 @@ impl Emitter {
                         ") catch |err| break :{} @as(anyerror!void, err)",
                         label
                     ));
-                } else if self.in_function {
+                } else if self.in_function && self.fn_can_throw {
                     self.write(") catch return error.JsThrow");
                 } else {
                     self.write(") catch @panic(\"OOM: JSON.stringify\")");

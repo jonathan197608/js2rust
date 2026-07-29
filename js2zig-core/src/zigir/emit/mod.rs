@@ -51,6 +51,11 @@ pub struct Emitter {
     /// so error-propagation patterns like `catch return error.JsThrow` must
     /// be replaced with `catch @panic(...)` at the top level.
     in_function: bool,
+    /// Whether the current function returns an error union (`!T`).
+    /// When true, `catch return error.JsThrow` is legal inside this function.
+    /// When false (e.g. `void` or plain `i64`), fallible calls must use
+    /// `catch @panic(...)` instead.
+    fn_can_throw: bool,
     /// Buffer for static block init code. When non-empty, `emit_module_inner`
     /// generates a `pub fn init_js2rust() !void { ... }` at the end of the
     /// module so the orchestrator's `init_js2rust()` will call it, ensuring
@@ -69,6 +74,9 @@ pub struct Emitter {
     /// Used by `emit_args` to distinguish rest param spreads (already `[]const JsAny`)
     /// from ArrayList spreads (need `.items`).
     rest_param_names: HashSet<String>,
+    /// Names of variables whose Zig type is an anonymous struct (e.g. spreadMerge results).
+    /// Used by `emit_json_builtin` to call `stringifyStruct` instead of `stringify`.
+    struct_var_names: HashSet<String>,
 }
 
 // ── EmitterHelpers trait implementation ───────────────
@@ -104,10 +112,12 @@ impl Emitter {
             label_counter: 0,
             do_while_counter: 0,
             in_function: false,
+            fn_can_throw: false,
             static_init_buffer: String::new(),
             static_deinit_buffer: String::new(),
             class_needs_deinit: HashSet::new(),
             rest_param_names: HashSet::new(),
+            struct_var_names: HashSet::new(),
         }
     }
 
@@ -152,6 +162,26 @@ impl Emitter {
                     if param.is_rest {
                         self.rest_param_names.insert(param.name.zig_name.clone());
                     }
+                }
+            }
+        }
+
+        // 0.1. Pre-scan: collect variable names whose type is an anonymous struct
+        // (e.g. spreadMerge results). These need stringifyStruct instead of stringify
+        // in JSON.stringify calls.
+        for decl in &module.declarations {
+            if let IrDecl::Var(var_decl) = decl {
+                if let Some(ZigType::NamedStruct(_)) = &var_decl.zig_type {
+                    // NamedStruct from spreadMerge etc.
+                    // But we also need to catch variables that aren't NamedStruct
+                    // but whose init expression is an ObjectLiteral with spread.
+                }
+                // Also check init expression for spreadMerge
+                if let Some(init) = &var_decl.init
+                    && matches!(init, crate::zigir::types::IrExpr::BuiltinCall(bc)
+                        if bc.method == "spreadMerge")
+                {
+                    self.struct_var_names.insert(var_decl.name.zig_name.clone());
                 }
             }
         }

@@ -71,6 +71,8 @@ pub struct FnContext {
     pub current_class: Option<String>,
     /// Nested function declaration names (rewrite to .call()).
     pub nested_fn_names: HashSet<String>,
+    /// Nested functions that have a rest parameter (call args need []const JsAny packing).
+    pub nested_fn_has_rest: HashSet<String>,
     /// Currently generating a nested fn's body (override signature).
     pub current_nested_fn_name: Option<String>,
     /// Variable names in current function scope (shadow detection).
@@ -123,6 +125,7 @@ impl FnContext {
             inside_try_block: None,
             current_class: None,
             nested_fn_names: HashSet::new(),
+            nested_fn_has_rest: HashSet::new(),
             current_nested_fn_name: None,
             fn_scope_vars: HashSet::new(),
             fn_local_types: HashMap::new(),
@@ -143,6 +146,16 @@ impl FnContext {
     /// Register a nested function name.
     pub fn add_nested_fn(&mut self, name: &str) {
         self.nested_fn_names.insert(name.to_string());
+    }
+
+    /// Register that a nested function has a rest parameter.
+    pub fn add_nested_fn_rest(&mut self, name: &str) {
+        self.nested_fn_has_rest.insert(name.to_string());
+    }
+
+    /// Check if a nested function has a rest parameter.
+    pub fn nested_fn_has_rest(&self, name: &str) -> bool {
+        self.nested_fn_has_rest.contains(name)
     }
 
     /// Check if a name is a nested function.

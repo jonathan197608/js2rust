@@ -51,6 +51,9 @@ pub enum IndexKind {
     ArrayListItem,
     /// Slice index: `arr[n]`
     SliceIndex,
+    /// JsAny array element: `arr.at(@as(usize, @intCast(n)))`
+    /// Used when the object is a JsAny (dynamic value that may hold an array).
+    JsAnyIndex,
     /// JsObjectMap put: `obj.put(key, value) catch @panic("OOM")`
     /// Used only for assignment targets, never for reads.
     MapPut,

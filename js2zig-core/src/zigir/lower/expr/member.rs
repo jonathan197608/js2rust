@@ -263,6 +263,10 @@ impl Lowerer {
                 .as_ref()
                 .map(|t| matches!(t, ZigType::ArrayList(_)))
                 .unwrap_or(false);
+            let is_jsany = obj_type
+                .as_ref()
+                .map(|t| matches!(t, ZigType::JsAny))
+                .unwrap_or(false);
             let is_string = obj_type
                 .as_ref()
                 .map(|t| matches!(t, ZigType::Str))
@@ -280,6 +284,8 @@ impl Lowerer {
                 index: Box::new(IrExpr::IntLiteral(nl.value as i64)),
                 index_kind: if is_arraylist {
                     IndexKind::ArrayListItem
+                } else if is_jsany {
+                    IndexKind::JsAnyIndex
                 } else {
                     IndexKind::SliceIndex
                 },

@@ -296,6 +296,14 @@ impl Emitter {
     }
 
     pub(crate) fn emit_closure_struct(&mut self, cs: &IrClosureStruct) {
+        // Register rest param names so callback methods know not to append
+        // .items when using these as receivers (they're []const JsAny slices).
+        for param in &cs.fn_params {
+            if param.is_rest {
+                self.rest_param_names.insert(param.name.zig_name.clone());
+            }
+        }
+
         self.writeln(&format!("const {} = struct {{", cs.name.zig_name));
         self.indent_push();
 
@@ -352,14 +360,30 @@ impl Emitter {
             }
             need_comma = true;
         }
-        // Return type: use @TypeOf(expr) for AnytypeReturn, else normal type
-        let ret_type_str =
-            self.resolve_anytype_return(&cs.return_type, &cs.typeof_return_body, false, false);
+        // Return type: use @TypeOf(expr) for AnytypeReturn, else normal type.
+        // Detect try/throw in closure body so the call() method gets an
+        // error-union return type (`!T`) and `fn_can_throw` is set —
+        // otherwise the propagation code (`return error.JsThrow`) fails to
+        // compile in a non-error-union function.
+        let closure_can_throw =
+            crate::zigir::emit::Emitter::block_needs_error_union(&cs.body.stmts);
+        let ret_type_str = self.resolve_anytype_return(
+            &cs.return_type,
+            &cs.typeof_return_body,
+            false,
+            closure_can_throw,
+        );
         sig.push_str(&format!(") {} {{", ret_type_str));
         self.writeln(&sig);
 
         self.indent_push();
+        let saved_in_function = self.in_function;
+        let saved_fn_can_throw = self.fn_can_throw;
+        self.in_function = true;
+        self.fn_can_throw = closure_can_throw;
         self.emit_block_stmts_unlabeled(&cs.body);
+        self.in_function = saved_in_function;
+        self.fn_can_throw = saved_fn_can_throw;
         self.indent_pop();
 
         self.writeln("}");
@@ -368,6 +392,25 @@ impl Emitter {
     }
 
     pub(crate) fn emit_var_decl(&mut self, vd: &IrVarDecl) {
+        // Track variables that are assigned spreadMerge results — these are
+        // struct types and need stringifyStruct in JSON.stringify calls.
+        // ObjectLiteral with spread items → will emit spreadMerge at emit time.
+        if let Some(crate::zigir::types::IrExpr::ObjectLiteral(obj)) = &vd.init {
+            let has_spread = obj
+                .items
+                .iter()
+                .any(|item| matches!(item, crate::zigir::types::IrObjectItem::Spread(_)));
+            if has_spread {
+                self.struct_var_names.insert(vd.name.zig_name.clone());
+            }
+        }
+        // Also handle direct BuiltinCall(spreadMerge) assignments
+        if let Some(crate::zigir::types::IrExpr::BuiltinCall(bc)) = &vd.init
+            && bc.method == "spreadMerge"
+        {
+            self.struct_var_names.insert(vd.name.zig_name.clone());
+        }
+
         self.write_indent();
 
         let kw = if vd.is_const { "const" } else { "var" };
@@ -394,13 +437,7 @@ impl Emitter {
                     ") catch |err| break :{} @as(anyerror!void, err)",
                     label
                 ));
-            } else if self.in_function {
-                // NOTE: `return error.JsThrow` requires the enclosing function
-                // to return an error union (`!T`). The lowerer only generates
-                // JSON.parse inside functions that return error unions, so this
-                // is safe in practice. If a future change allows JSON.parse in
-                // non-error-union functions, this path would produce a Zig
-                // compile error and would need revisiting.
+            } else if self.in_function && self.fn_can_throw {
                 self.write(") catch return error.JsThrow");
             } else {
                 self.write(") catch @panic(\"JSON.parse failed\")");
@@ -520,6 +557,7 @@ impl Emitter {
         // Emit `_ = _param;` for unused params at the start of the body
         self.indent_push();
         self.in_function = true;
+        self.fn_can_throw = fd.can_throw;
         for param in &fd.params {
             if param.is_unused {
                 self.writeln(&format!("_ = _{};", param.name.zig_name));
@@ -529,6 +567,7 @@ impl Emitter {
         // Function body
         self.emit_block_stmts_unlabeled(&fd.body);
         self.in_function = false;
+        self.fn_can_throw = false;
         self.indent_pop();
 
         self.writeln("}");
@@ -680,7 +719,9 @@ impl Emitter {
         // R24-EMIT-2: Set in_function so fallible builtins in constructor use
         // `catch return error.JsThrow` instead of `catch @panic(...)`.
         let saved_in_function = self.in_function;
+        let saved_fn_can_throw = self.fn_can_throw;
         self.in_function = true;
+        self.fn_can_throw = ctor.can_throw;
 
         // R8-C7 + R8-E4/C6: Pre-declare each class field at the top of the
         // constructor body, so the Lowerer's rewritten `field = value` Assigns
@@ -748,6 +789,7 @@ impl Emitter {
         }
 
         self.in_function = saved_in_function;
+        self.fn_can_throw = saved_fn_can_throw;
         self.indent_pop();
         self.writeln("}");
     }
@@ -806,9 +848,12 @@ impl Emitter {
         // R24-EMIT-2: Set in_function so fallible builtins use
         // `catch return error.JsThrow` instead of `catch @panic(...)`.
         let saved_in_function = self.in_function;
+        let saved_fn_can_throw = self.fn_can_throw;
         self.in_function = true;
+        self.fn_can_throw = method.can_throw;
         self.emit_block_stmts_unlabeled(&method.body);
         self.in_function = saved_in_function;
+        self.fn_can_throw = saved_fn_can_throw;
         self.indent_pop();
 
         self.writeln("}");

@@ -5,6 +5,23 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const js_allocator = @import("js_allocator.zig");
 
+/// Thread-local storage for `throw new ErrorSubclass(msg)` pattern.
+/// When JS code does `throw new TypeError("custom error")`, the throw
+/// statement stores the error name and message here before breaking
+/// to the try-catch labeled block with `error.JsThrow`.
+/// The catch handler's `fromError()` reads these to construct a JsError
+/// with the correct name and message.
+threadlocal var last_throw_name: ?[]const u8 = null;
+threadlocal var last_throw_msg: ?[]const u8 = null;
+
+/// Store the name and message of a `throw new Error(msg)` expression.
+/// Called before the actual `break :label error.JsThrow` in generated code.
+pub fn setLastThrow(name: []const u8, msg: []const u8) void {
+    last_throw_name = name;
+    last_throw_msg = msg;
+}
+
+
 /// Error "class" — wraps name, message and stack strings.
 /// In JS, caught errors have `.name`, `.message` and `.stack` properties.
 pub const JsError = struct {
@@ -45,6 +62,25 @@ pub const JsError = struct {
     /// Construct a JsError from a Zig error union value.
     /// Maps known Zig errors to JS error names and messages; falls back to "Error".
     pub fn fromError(err: anyerror, alloc: Allocator) !JsError {
+        // For `throw new Error(msg)`, the name and message were stored
+        // in thread-local vars before the throw. Use them if available.
+        if (err == error.JsThrow) {
+            if (last_throw_name != null and last_throw_msg != null) {
+                const name_copy = try alloc.dupe(u8, last_throw_name.?);
+                errdefer alloc.free(name_copy);
+                const msg_copy = try alloc.dupe(u8, last_throw_msg.?);
+                errdefer alloc.free(msg_copy);
+                const stack = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ last_throw_name.?, last_throw_msg.? });
+                // Reset thread-local vars to avoid stale data
+                last_throw_name = null;
+                last_throw_msg = null;
+                return JsError{
+                    .name = name_copy,
+                    .message = msg_copy,
+                    .stack = stack,
+                };
+            }
+        }
         const info = errorInfo(err);
         const name_copy = try alloc.dupe(u8, info.name);
         errdefer alloc.free(name_copy);

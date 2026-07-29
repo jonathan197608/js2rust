@@ -531,6 +531,7 @@ impl Lowerer {
         let obj_type = self.infer_expr_type(object);
         match &obj_type {
             Some(ZigType::ArrayList(_)) => IndexKind::ArrayListItem,
+            Some(ZigType::JsAny) => IndexKind::JsAnyIndex,
             _ => IndexKind::SliceIndex,
         }
     }

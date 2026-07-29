@@ -23,10 +23,90 @@ impl Emitter {
                     self.emit_expr(&call.callee);
                 }
                 self.write(".call(");
-                self.emit_inline_args(&call.args);
+                // Check if any arg is a Spread — if so, generate a temporary
+                // ArrayList(JsAny) builder block to flatten the mixed args
+                // into a single []const JsAny slice.
+                let has_spread = call
+                    .args
+                    .iter()
+                    .any(|a| matches!(a, crate::zigir::types::IrExpr::Spread(_)));
+                if has_spread {
+                    self.emit_closure_spread_args(&call.args);
+                } else {
+                    self.emit_inline_args(&call.args);
+                }
                 self.write(")");
             }
         }
+    }
+
+    /// Emit spread args for a Closure call by building a temporary
+    /// ArrayList(JsAny) in a labeled block, then returning `.items`.
+    ///
+    /// Pattern: (blk: { var __arr: std.ArrayList(JsAny) = .empty;
+    ///   append non-spread args; for-loop spread sources;
+    ///   break :blk __arr.items; })
+    fn emit_closure_spread_args(&mut self, args: &[crate::zigir::types::IrExpr]) {
+        use crate::zigir::types::IrExpr;
+        let blk = self.next_label();
+        self.write(&format!(
+            "({}: {{ var __arr: std.ArrayList(JsAny) = .empty; ",
+            blk
+        ));
+        for arg in args.iter() {
+            match arg {
+                IrExpr::Spread(inner) => {
+                    // Spread: iterate the source and append each element
+                    // wrapped via JsAny.from(...)
+                    let is_rest = match inner.as_ref() {
+                        IrExpr::Ident(ident) if self.rest_param_names.contains(&ident.zig_name) => {
+                            true
+                        }
+                        IrExpr::TypedIdent { ident, .. }
+                            if self.rest_param_names.contains(&ident.zig_name) =>
+                        {
+                            true
+                        }
+                        _ => false,
+                    };
+                    // Check if spread source is Map.entries() — each element
+                    // is ArrayList(JsAny), needs fromArrayList not from.
+                    let is_entries = matches!(
+                        inner.as_ref(),
+                        IrExpr::BuiltinCall(bc)
+                            if bc.method == "entries"
+                                && matches!(bc.module, crate::zigir::builtins::BuiltinModule::JsCollections)
+                    );
+                    self.write("for (");
+                    if is_rest {
+                        self.emit_expr(inner);
+                    } else {
+                        let needs_parens =
+                            !matches!(inner.as_ref(), IrExpr::Ident(_) | IrExpr::TypedIdent { .. });
+                        if needs_parens {
+                            self.write("(");
+                        }
+                        self.emit_expr(inner);
+                        if needs_parens {
+                            self.write(")");
+                        }
+                        self.write(".items");
+                    }
+                    if is_entries {
+                        self.write(") |__spread_item| __arr.append(js_allocator.allocator(), JsAny.fromArrayList(js_allocator.allocator(), __spread_item) catch @panic(\"OOM: fromArrayList\")) catch @panic(\"OOM: Array.spread\"); ");
+                    } else {
+                        self.write(") |__spread_item| __arr.append(js_allocator.allocator(), JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ");
+                    }
+                }
+                _ => {
+                    // Non-spread arg: append with JsAny.from() wrap
+                    self.write("__arr.append(js_allocator.allocator(), JsAny.from(");
+                    self.emit_expr(arg);
+                    self.write(")) catch @panic(\"OOM: Array.push append\"); ");
+                }
+            }
+        }
+        self.write(&format!("break :{} __arr.items; }})", blk));
     }
 
     pub(super) fn emit_field_access(
@@ -200,6 +280,9 @@ impl Emitter {
             IndexKind::SliceIndex => {
                 self.emit_slice_index(object, index);
             }
+            IndexKind::JsAnyIndex => {
+                self.emit_jsany_index(object, index);
+            }
             IndexKind::MapPut => {
                 // MapPut is only for assignment, not reads
                 unreachable!("MapPut in read context");
@@ -305,6 +388,23 @@ impl Emitter {
         self.emit_expr(index);
         self.write(&format!(
             "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }}]",
+            lbl
+        ));
+    }
+
+    /// Emit `obj.at(@as(usize, @intCast(idx)))` — JsAny array element access.
+    /// Uses the same negative-index guard pattern as other index methods.
+    pub(super) fn emit_jsany_index(
+        &mut self,
+        object: &crate::zigir::types::IrExpr,
+        index: &crate::zigir::types::IrExpr,
+    ) {
+        let lbl = self.next_label();
+        self.emit_expr(object);
+        self.write(&format!(".at({}: {{ const __idx = ", lbl));
+        self.emit_expr(index);
+        self.write(&format!(
+            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }})",
             lbl
         ));
     }

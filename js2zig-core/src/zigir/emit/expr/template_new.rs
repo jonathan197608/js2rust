@@ -144,10 +144,25 @@ impl Emitter {
                 self.write(")");
             }
             NewConstructor::Error(msg) => {
+                // Emit a labeled block that stores the error name and message
+                // in thread-local vars, then returns a placeholder JsAny.
+                // The throw statement discards this value and breaks to the
+                // try-catch label with `error.JsThrow`. The catch handler's
+                // `fromError()` reads the stored name and message.
+                let lbl = self.next_label();
+                self.write(&format!("{}: {{", lbl));
                 self.write(&format!(
-                    "JsAny.fromError(\"{}\")",
+                    "js_error.setLastThrow(\"{}\", ",
                     helpers::escape_zig_string(msg)
                 ));
+                // Emit the message argument (first arg to new Error(msg))
+                if let Some(msg_arg) = new_expr.args.first() {
+                    self.emit_expr(msg_arg);
+                } else {
+                    self.write("\"\"");
+                }
+                self.write("); ");
+                self.write(&format!("break :{} JsAny.fromUndefined(); }}", lbl));
             }
             NewConstructor::Unsupported(name) => {
                 self.write(&helpers::compile_error(&format!(

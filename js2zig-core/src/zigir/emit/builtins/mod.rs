@@ -380,7 +380,33 @@ impl Emitter {
                 }
             }
             _ => {
-                self.emit_module_call("js_array", method, args);
+                // toJsAnySlice: js_array.toJsAnySlice(allocator, items) catch @panic("OOM")
+                // The allocator arg is a FieldAccess(js_allocator, .allocator) which
+                // needs () to call the function.
+                if method == "toJsAnySlice" || method == "toJsAnySliceFromJsAny" {
+                    self.write(&format!("js_array.{}(", method));
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        // If the arg is js_allocator.allocator, add () to call it
+                        if matches!(
+                            arg,
+                            crate::zigir::types::IrExpr::FieldAccess {
+                                object,
+                                field,
+                                ..
+                            } if field == "allocator" && matches!(object.as_ref(), crate::zigir::types::IrExpr::Ident(ident) if ident.zig_name == "js_allocator")
+                        ) {
+                            self.write("js_allocator.allocator()");
+                        } else {
+                            self.emit_expr(arg);
+                        }
+                    }
+                    self.write(") catch @panic(\"OOM: toJsAnySlice\")");
+                } else {
+                    self.emit_module_call("js_array", method, args);
+                }
             }
         }
     }

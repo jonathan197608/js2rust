@@ -11,6 +11,16 @@ use crate::zigir::emit::Emitter;
 // ═══════════════════════════════════════════════════════
 
 impl Emitter {
+    /// Return the items access suffix for a receiver: ".items" for ArrayList,
+    /// empty string for rest-param slices ([]const JsAny).
+    fn items_path(&self, receiver: &str) -> &str {
+        if self.rest_param_names.contains(receiver) {
+            ""
+        } else {
+            ".items"
+        }
+    }
+
     /// Emit an inlined array callback method (forEach, some, every, filter,
     /// find, findIndex, findLast, findLastIndex, map, reduce) as a Zig loop.
     ///
@@ -308,12 +318,31 @@ impl Emitter {
 
         // For JsAny arrays, use JsAny.fromUndefined() instead of `undefined`
         // to properly initialize the union type tag (P1-EM-6).
-        let not_found = match data.elem_type {
-            ZigType::JsAny => "JsAny.fromUndefined()",
-            ZigType::F64 => "0.0",
-            ZigType::Bool => "false",
-            ZigType::Str => "\"\"",
-            _ => "0",
+        // For Struct types, generate a zero-valued struct literal so the
+        // labeled block return type matches the element type.
+        let not_found: String = match &data.elem_type {
+            ZigType::JsAny => "JsAny.fromUndefined()".to_string(),
+            ZigType::F64 => "0.0".to_string(),
+            ZigType::Bool => "false".to_string(),
+            ZigType::Str => "\"\"".to_string(),
+            ZigType::Struct(fields) => {
+                let mut s = String::from(".{ ");
+                for (i, (name, ty)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        s.push_str(", ");
+                    }
+                    let default = match ty {
+                        ZigType::Str => "\"\"",
+                        ZigType::F64 => "0.0",
+                        ZigType::Bool => "false",
+                        _ => "0",
+                    };
+                    s.push_str(&format!(".{} = {}", name, default));
+                }
+                s.push_str(" }");
+                s
+            }
+            _ => "0".to_string(),
         };
         if reverse {
             self.write(&format!("}} break :{} {}; }})", blk, not_found));
@@ -445,9 +474,16 @@ impl Emitter {
         self.indent_push();
         let var_clone = var.clone();
         let method_clone = method_name.to_string();
+        let needs_jsany_wrap = matches!(data.elem_type, crate::types::ZigType::JsAny);
         self.emit_callback_body(&data.body, move |emitter, expr| {
             emitter.write(&format!("{}.append(js_allocator.allocator(), ", var_clone));
+            if needs_jsany_wrap {
+                emitter.write("JsAny.from(");
+            }
             emitter.emit_expr(expr);
+            if needs_jsany_wrap {
+                emitter.write(")");
+            }
             emitter.write(&format!(
                 ") catch @panic(\"OOM: Array.{} append\");",
                 method_clone
@@ -525,17 +561,19 @@ impl Emitter {
                 // JS spec: no initial value → use arr[0] as accumulator, iterate from index 1
                 // P0-R17: Guard against empty array (TypeError: Reduce of empty array with no initial value)
                 self.write(&format!(
-                    "if ({}.items.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
-                    receiver
+                    "if ({}{}.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
+                    receiver, self.items_path(&receiver)
                 ));
                 let ty = data.elem_type.to_zig_type().into_owned();
-                (format!("{}.items[0]", receiver), ty)
+                (format!("{}{}[0]", receiver, self.items_path(&receiver)), ty)
             }
         };
-        self.write(&format!(
-            "var {}: {} = {}; ",
-            acc_name, acc_type, init_expr_str
-        ));
+        let init_val = if acc_type == "JsAny" && has_init {
+            format!("JsAny.from({})", init_expr_str)
+        } else {
+            init_expr_str
+        };
+        self.write(&format!("var {}: {} = {}; ", acc_name, acc_type, init_val));
 
         // For reduce, the for-loop captures the current element.
         // The first callback param (elem_param, e.g., "acc") aliases the accumulator.
@@ -549,10 +587,20 @@ impl Emitter {
         };
 
         if has_init {
-            self.write(&format!("for ({}.items) |{}| ", receiver, loop_var));
+            self.write(&format!(
+                "for ({}{}) |{}| ",
+                receiver,
+                self.items_path(&receiver),
+                loop_var
+            ));
         } else {
             // Skip index 0 (used as initial accumulator value)
-            self.write(&format!("for ({}.items[1..]) |{}| ", receiver, loop_var));
+            self.write(&format!(
+                "for ({}{}[1..]) |{}| ",
+                receiver,
+                self.items_path(&receiver),
+                loop_var
+            ));
         }
         self.write("{\n");
         self.indent_push();
@@ -564,10 +612,18 @@ impl Emitter {
         }
 
         let acc_name_clone = acc_name.clone();
+        let acc_is_jsany = acc_type == "JsAny";
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write(&format!("{} = ", acc_name_clone));
-            emitter.emit_expr(expr);
-            emitter.write(";");
+            if acc_is_jsany {
+                emitter.write(&format!("{} = ", acc_name_clone));
+                emitter.write("JsAny.from(");
+                emitter.emit_expr(expr);
+                emitter.write(");");
+            } else {
+                emitter.write(&format!("{} = ", acc_name_clone));
+                emitter.emit_expr(expr);
+                emitter.write(";");
+            }
         });
         self.indent_pop();
         self.writeln("");
@@ -645,20 +701,28 @@ impl Emitter {
                 // JS spec: no initial value → use arr[len-1] as accumulator, iterate from len-2
                 // P0-R17: Guard against empty array (TypeError: Reduce of empty array with no initial value)
                 self.write(&format!(
-                    "if ({}.items.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
-                    receiver
+                    "if ({}{}.len == 0) @panic(\"TypeError: Reduce of empty array with no initial value\"); ",
+                    receiver, self.items_path(&receiver)
                 ));
                 let ty = data.elem_type.to_zig_type().into_owned();
                 (
-                    format!("{}.items[{}.items.len - 1]", receiver, receiver),
+                    format!(
+                        "{}{}[{}{}.len - 1]",
+                        receiver,
+                        self.items_path(&receiver),
+                        receiver,
+                        self.items_path(&receiver)
+                    ),
                     ty,
                 )
             }
         };
-        self.write(&format!(
-            "var {}: {} = {}; ",
-            acc_name, acc_type, init_expr_str
-        ));
+        let init_val = if acc_type == "JsAny" && has_init {
+            format!("JsAny.from({})", init_expr_str)
+        } else {
+            init_expr_str
+        };
+        self.write(&format!("var {}: {} = {}; ", acc_name, acc_type, init_val));
 
         // Use reverse iteration (same pattern as findLast/findLastIndex).
         // The loop variable is the current element.
@@ -674,8 +738,16 @@ impl Emitter {
             self.emit_reverse_loop_header(&receiver, &loop_var, "", &loop_var_name);
         } else {
             self.write(&format!(
-                "var {}: usize = {}.items.len - 1; while ({} > 0) {{ {} -= 1; const {} = {}.items[{}]; ",
-                loop_var_name, receiver, loop_var_name, loop_var_name, loop_var, receiver, loop_var_name
+                "var {}: usize = {}{}.len - 1; while ({} > 0) {{ {} -= 1; const {} = {}{}[{}]; ",
+                loop_var_name,
+                receiver,
+                self.items_path(&receiver),
+                loop_var_name,
+                loop_var_name,
+                loop_var,
+                receiver,
+                self.items_path(&receiver),
+                loop_var_name
             ));
         }
         self.indent_push();
@@ -686,10 +758,18 @@ impl Emitter {
         }
 
         let acc_name_clone = acc_name.clone();
+        let acc_is_jsany = acc_type == "JsAny";
         self.emit_callback_body(&data.body, |emitter, expr| {
-            emitter.write(&format!("{} = ", acc_name_clone));
-            emitter.emit_expr(expr);
-            emitter.write(";");
+            if acc_is_jsany {
+                emitter.write(&format!("{} = ", acc_name_clone));
+                emitter.write("JsAny.from(");
+                emitter.emit_expr(expr);
+                emitter.write(");");
+            } else {
+                emitter.write(&format!("{} = ", acc_name_clone));
+                emitter.emit_expr(expr);
+                emitter.write(";");
+            }
         });
         self.indent_pop();
         self.writeln("");

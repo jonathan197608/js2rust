@@ -4,8 +4,11 @@
 use oxc_ast::ast::*;
 
 use super::Lowerer;
+use crate::types::ZigType;
+use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::lower::helpers;
 use crate::zigir::source_span::SourceSpan;
+use crate::zigir::types::{IrBuiltinCall, IrExpr};
 
 impl Lowerer {
     /// Lower an array expression.
@@ -17,9 +20,42 @@ impl Lowerer {
             match elem {
                 ArrayExpressionElement::SpreadElement(se) => {
                     spread_indices.push(i);
-                    elements.push(crate::zigir::types::IrExpr::Spread(Box::new(
-                        self.lower_expr(&se.argument),
-                    )));
+                    // Detect if the spread source is a Set or Map identifier.
+                    // Set/Map don't have `.items` (they use a HashMap internally),
+                    // so we convert the spread to a keys()/entries() BuiltinCall
+                    // which returns ArrayList(JsAny) — compatible with the emit
+                    // layer's `.items` iteration.
+                    let spread_inner = if let Expression::Identifier(id) = &se.argument {
+                        let var_name = id.name.as_str();
+                        match self.infer_ident_type(var_name) {
+                            Some(ZigType::NamedStruct(n)) if n == "Set" => {
+                                let zig_name = self.make_ident(var_name).zig_name;
+                                IrExpr::BuiltinCall(IrBuiltinCall::simple(
+                                    BuiltinModule::JsCollections,
+                                    "keys",
+                                    Some(zig_name),
+                                    None,
+                                    vec![],
+                                    ZigType::ArrayList(Box::new(ZigType::JsAny)),
+                                ))
+                            }
+                            Some(ZigType::NamedStruct(n)) if n == "Map" => {
+                                let zig_name = self.make_ident(var_name).zig_name;
+                                IrExpr::BuiltinCall(IrBuiltinCall::simple(
+                                    BuiltinModule::JsCollections,
+                                    "entries",
+                                    Some(zig_name),
+                                    None,
+                                    vec![],
+                                    ZigType::ArrayList(Box::new(ZigType::JsAny)),
+                                ))
+                            }
+                            _ => self.lower_expr(&se.argument),
+                        }
+                    } else {
+                        self.lower_expr(&se.argument)
+                    };
+                    elements.push(IrExpr::Spread(Box::new(spread_inner)));
                 }
                 ArrayExpressionElement::Elision(_) => {
                     // JS spec: array holes are `undefined`, NOT `null`.

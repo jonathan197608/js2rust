@@ -76,6 +76,18 @@ impl Emitter {
                 // for-loop body, so reusing it across multiple spreads in the
                 // same literal is safe.
                 if let crate::zigir::types::IrExpr::Spread(inner) = elem {
+                    // Check if spread source is Map.entries() — returns
+                    // ArrayList(ArrayList(JsAny)), so each element is an
+                    // ArrayList(JsAny) that must be wrapped via
+                    // JsAny.fromArrayList (not JsAny.from, which doesn't
+                    // support ArrayList).
+                    let is_entries = matches!(
+                        inner.as_ref(),
+                        crate::zigir::types::IrExpr::BuiltinCall(bc)
+                            if bc.method == "entries"
+                                && matches!(bc.module, crate::zigir::builtins::BuiltinModule::JsCollections)
+                    );
+
                     self.write("for (");
                     // Dispatch spread source type (mirrors emit_one_arg in
                     // expr/mod.rs): rest params are already []const JsAny slices
@@ -96,13 +108,32 @@ impl Emitter {
                     if is_rest {
                         self.emit_expr(inner);
                     } else {
+                        // Wrap non-trivial spread sources in parentheses so that
+                        // `.items` binds to the entire expression (e.g. a
+                        // `BuiltinCall` that contains `catch @panic(...)`)
+                        // rather than to the `@panic(...)` fallback.
+                        let needs_parens =
+                            !matches!(inner.as_ref(), IrExpr::Ident(_) | IrExpr::TypedIdent { .. });
+                        if needs_parens {
+                            self.write("(");
+                        }
                         self.emit_expr(inner);
+                        if needs_parens {
+                            self.write(")");
+                        }
                         self.write(".items");
                     }
-                    self.write(
-                        ") |__spread_item| __arr.append(js_allocator.allocator(), \
-                         JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ",
-                    );
+                    if is_entries {
+                        self.write(
+                            ") |__spread_item| __arr.append(js_allocator.allocator(), \
+                             JsAny.fromArrayList(js_allocator.allocator(), __spread_item) catch @panic(\"OOM: fromArrayList\")) catch @panic(\"OOM: Array.spread\"); ",
+                        );
+                    } else {
+                        self.write(
+                            ") |__spread_item| __arr.append(js_allocator.allocator(), \
+                             JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ",
+                        );
+                    }
                 }
             } else {
                 self.write("__arr.append(js_allocator.allocator(), ");

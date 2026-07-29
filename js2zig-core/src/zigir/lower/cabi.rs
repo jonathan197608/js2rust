@@ -314,10 +314,84 @@ impl Lowerer {
             .and_then(|p| crate::infer::binding_name(&p.pattern))
             .unwrap_or("_")
             .to_string();
-        let idx_param_raw = params
-            .items
-            .get(1)
-            .and_then(|p| crate::infer::binding_name(&p.pattern));
+        // Check if the second parameter is an array destructuring pattern
+        // (e.g., `[k, v]` in reduce callback). If so, generate a synthetic
+        // variable name and create destructuring statements to be prepended
+        // to the callback body.
+        let second_param = params.items.get(1);
+        let mut destructure_prefix: Vec<crate::zigir::types::IrStmt> = Vec::new();
+        let is_array_destructure = second_param
+            .map(|p| matches!(p.pattern, BindingPattern::ArrayPattern(_)))
+            .unwrap_or(false);
+        let idx_param_raw: Option<String> = if is_array_destructure {
+            // Generate synthetic variable name for the destructured element
+            let synth_name = self.name_mangler.next_name("__cb_destr");
+            // Set var_types for the synthetic variable
+            self.type_info
+                .var_types
+                .insert(synth_name.clone(), elem_type.clone());
+            if let Some(ctx) = self.fn_ctx.as_mut() {
+                ctx.fn_local_types
+                    .insert(synth_name.clone(), elem_type.clone());
+            }
+            // Extract binding names from the array pattern and create
+            // destructuring statements: const k = __cb_destr_N[0]; const v = __cb_destr_N[1];
+            if let Some(fp) = second_param
+                && let BindingPattern::ArrayPattern(ap) = &fp.pattern
+            {
+                for (idx, elem) in ap.elements.iter().enumerate() {
+                    if let Some(elem) = elem
+                        && let Some(bind_name) = crate::infer::binding_name(elem)
+                    {
+                        // Check if this binding is used in the callback body
+                        let is_used = body
+                            .statements
+                            .iter()
+                            .any(|s| Self::ast_stmt_uses_ident(bind_name, s));
+                        if is_used {
+                            // Set var_types for the destructured variable
+                            self.type_info
+                                .var_types
+                                .insert(bind_name.to_string(), ZigType::JsAny);
+                            if let Some(ctx) = self.fn_ctx.as_mut() {
+                                ctx.fn_local_types
+                                    .insert(bind_name.to_string(), ZigType::JsAny);
+                            }
+                            // Create: const bind_name = synth_name[idx]
+                            // Use JsAnyIndex when the element type is JsAny
+                            // (the synthetic var holds a JsAny, not an
+                            // ArrayList), otherwise ArrayListItem.
+                            let index_expr = crate::zigir::types::IrExpr::IntLiteral(idx as i64);
+                            let destr_index_kind = if matches!(elem_type, ZigType::JsAny) {
+                                crate::zigir::kinds::IndexKind::JsAnyIndex
+                            } else {
+                                crate::zigir::kinds::IndexKind::ArrayListItem
+                            };
+                            destructure_prefix.push(crate::zigir::types::IrStmt::VarDecl(
+                                crate::zigir::types::IrVarDecl::new_const(
+                                    bind_name,
+                                    Some(ZigType::JsAny),
+                                    Some(crate::zigir::types::IrExpr::IndexAccess {
+                                        object: Box::new(crate::zigir::types::IrExpr::Ident(
+                                            self.make_ident(&synth_name),
+                                        )),
+                                        index: Box::new(index_expr),
+                                        index_kind: destr_index_kind,
+                                    }),
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            Some(synth_name)
+        } else {
+            params
+                .items
+                .get(1)
+                .and_then(|p| crate::infer::binding_name(&p.pattern))
+                .map(|s| s.to_string())
+        };
         let has_idx_param = idx_param_raw.is_some();
 
         // Set var_types AND fn_local_types for callback params BEFORE lowering
@@ -336,14 +410,28 @@ impl Lowerer {
             None
         };
         // Save idx param name + old var_types value for restore after body
-        let (saved_idx_name, saved_idx_var_type) = if let Some(idx_name) = idx_param_raw
+        let (saved_idx_name, saved_idx_var_type) = if let Some(idx_name) = &idx_param_raw
             && idx_name != "_"
         {
             let idx_type = match collection_kind {
                 crate::zigir::types::CollectionKind::Map => ZigType::JsAny,
-                _ => ZigType::I64,
+                _ => {
+                    // For reduce/reduceRight, the second param is the current
+                    // element (not the index), so it should have elem_type.
+                    // For other callbacks (forEach, map, filter, ...), the
+                    // second param is the index (I64).
+                    if matches!(
+                        kind,
+                        crate::zigir::types::ArrayCallbackKind::Reduce
+                            | crate::zigir::types::ArrayCallbackKind::ReduceRight
+                    ) {
+                        elem_type.clone()
+                    } else {
+                        ZigType::I64
+                    }
+                }
             };
-            let name = idx_name.to_string();
+            let name = idx_name.clone();
             let old = self
                 .type_info
                 .var_types
@@ -374,14 +462,15 @@ impl Lowerer {
             "_".to_string()
         };
 
-        let idx_param = if let Some(idx_name) = idx_param_raw {
+        let idx_param = if let Some(idx_name) = &idx_param_raw {
             if idx_name != "_"
-                && body
-                    .statements
-                    .iter()
-                    .any(|s| Self::ast_stmt_uses_ident(idx_name, s))
+                && (is_array_destructure
+                    || body
+                        .statements
+                        .iter()
+                        .any(|s| Self::ast_stmt_uses_ident(idx_name, s)))
             {
-                idx_name.to_string()
+                idx_name.clone()
             } else {
                 "_".to_string()
             }
@@ -389,9 +478,9 @@ impl Lowerer {
             String::new()
         };
 
-        // Lower the callback body
-        let ir_body: Vec<crate::zigir::types::IrStmt> =
-            body.statements.iter().map(|s| self.lower_stmt(s)).collect();
+        // Lower the callback body, prepending any destructuring statements
+        let mut ir_body: Vec<crate::zigir::types::IrStmt> = destructure_prefix;
+        ir_body.extend(body.statements.iter().map(|s| self.lower_stmt(s)));
 
         // Restore fn_local_types and var_types to pre-callback state.
         // fn_local_types: blanket restore removes both body-declared vars

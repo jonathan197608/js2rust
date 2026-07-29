@@ -15,6 +15,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsAny = @import("jsany.zig").JsAny;
+const JsObjectMap = @import("jsany.zig").JsObjectMap;
 const JsValue = @import("jsvalue.zig").JsValue;
 
 /// JSON operation errors.
@@ -42,6 +43,39 @@ pub const JSONError = error{
 pub const ParseError = JSONError || Allocator.Error || std.json.Scanner.AllocError || std.json.Scanner.Error;
 
 // ── JSON.stringify ──────────────────────────────────────────────
+
+/// Stringify an anonymous struct (e.g. from spreadMerge) into JSON.
+/// Each field value is converted to JsAny via JsAny.from() and then
+/// serialized using the existing stringifyValue logic.
+pub fn stringifyStruct(alloc: Allocator, value: anytype, replacer: ?JsAny, space: ?JsAny) ![]const u8 {
+    // Build a JsObjectMap on the heap (JsAny.object is *JsObjectMap)
+    const obj_ptr = try alloc.create(JsObjectMap);
+    obj_ptr.* = JsObjectMap.init(alloc);
+    errdefer {
+        obj_ptr.deinit();
+        alloc.destroy(obj_ptr);
+    }
+
+    const T = @TypeOf(value);
+    const info = @typeInfo(T);
+    if (info != .@"struct") {
+        @compileError("stringifyStruct: expected a struct, got " ++ @typeName(T));
+    }
+
+    inline for (info.@"struct".fields) |f| {
+        const field_val = @field(value, f.name);
+        const jsany_val = JsAny.from(field_val);
+        // ECMA-262: omit undefined values
+        if (!(jsany_val == .value and jsany_val.value == .undefined)) {
+            const key = try alloc.dupe(u8, f.name);
+            try obj_ptr.put(key, jsany_val);
+        }
+    }
+
+    const jsany_obj: JsAny = .{ .object = obj_ptr };
+
+    return stringify(alloc, jsany_obj, replacer, space);
+}
 
 /// ECMA-262 §24.5.2 JSON.stringify
 ///

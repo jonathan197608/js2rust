@@ -150,6 +150,17 @@ impl Lowerer {
     }
 
     fn collect_local_decls_from_stmt(stmt: &Statement, names: &RefCell<HashSet<String>>) {
+        // Special case: TryStatement catch parameter is a local variable
+        // (scoped to the catch block), not a capture from outer scope.
+        // for_each_stmt_child does not pass catch params to any callback,
+        // so we must extract them here before recursing.
+        if let Statement::TryStatement(ts) = stmt
+            && let Some(handler) = &ts.handler
+            && let Some(param) = &handler.param
+            && let Some(name) = crate::infer::binding_name(&param.pattern)
+        {
+            names.borrow_mut().insert(name.to_string());
+        }
         crate::infer::ast_walk::for_each_stmt_child(
             stmt,
             &mut |s| Self::collect_local_decls_from_stmt(s, names),

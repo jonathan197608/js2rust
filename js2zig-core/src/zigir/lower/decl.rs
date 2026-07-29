@@ -953,6 +953,11 @@ impl Lowerer {
         // Register as a nested function name (for call-site rewriting)
         if let Some(ctx) = self.fn_ctx.as_mut() {
             ctx.add_nested_fn(fn_name);
+            // If this nested function has a rest parameter, register it so
+            // call sites can pack args into []const JsAny.
+            if params.iter().any(|p| p.is_rest) {
+                ctx.add_nested_fn_rest(fn_name);
+            }
         }
 
         let fn_ident = self.make_ident(fn_name);

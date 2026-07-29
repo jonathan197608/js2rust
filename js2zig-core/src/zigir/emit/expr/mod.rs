@@ -1106,6 +1106,9 @@ impl Emitter {
                     IndexKind::SliceIndex => {
                         self.emit_slice_index(object, index);
                     }
+                    IndexKind::JsAnyIndex => {
+                        self.emit_jsany_index(object, index);
+                    }
                     IndexKind::MapPut => {
                         // Handled in emit_compound_assign, not here
                         unreachable!("MapPut in emit_assign_target_inner");
@@ -1308,87 +1311,94 @@ impl Emitter {
             } = target
             {
                 use crate::zigir::kinds::IndexKind;
-                let blk = self.next_label();
-                self.write("{ ");
-                // For simple Ident objects, use the original variable directly
-                // (no temp copy -- ArrayList copies break length tracking).
-                let obj_var = match &**object {
-                    crate::zigir::types::IrExpr::Ident(ident)
-                        if !ident.zig_name.starts_with("__co_") =>
-                    {
-                        ident.zig_name.clone()
-                    }
-                    crate::zigir::types::IrExpr::TypedIdent { ident, .. }
-                        if !ident.zig_name.starts_with("__co_") =>
-                    {
-                        ident.zig_name.clone()
-                    }
-                    _ => {
-                        let name = format!("_asg_obj_{}", blk);
-                        self.write(&format!("const {} = ", name));
-                        self.emit_expr(object);
-                        self.write("; ");
-                        name
-                    }
-                };
-                // Evaluate index once
-                self.write(&format!("const _asg_idx_raw_{} = ", blk));
-                self.emit_expr(index);
-                self.write(&format!("; const _asg_idx_{}: usize = if (_asg_idx_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_asg_idx_raw_{})); ", blk, blk, blk));
-                // Grow array for ArrayListItem to prevent OOB on read-access
-                if matches!(index_kind, IndexKind::ArrayListItem) {
-                    let dv = match &**object {
-                        crate::zigir::types::IrExpr::TypedIdent {
-                            ty: crate::types::ZigType::ArrayList(inner),
-                            ..
-                        } => match &**inner {
-                            crate::types::ZigType::I64 => "0",
-                            crate::types::ZigType::F64 => "0.0",
-                            crate::types::ZigType::Bool => "false",
-                            _ => "JsAny.fromUndefined()",
-                        },
-                        _ => "JsAny.fromUndefined()",
+                // JsAnyIndex is read-only (.at()); logical compound assignment
+                // on JsAny arrays falls through to the generic path below.
+                if matches!(index_kind, IndexKind::JsAnyIndex) {
+                    // fall through to generic logical compound assignment
+                } else {
+                    let blk = self.next_label();
+                    self.write("{ ");
+                    // For simple Ident objects, use the original variable directly
+                    // (no temp copy -- ArrayList copies break length tracking).
+                    let obj_var = match &**object {
+                        crate::zigir::types::IrExpr::Ident(ident)
+                            if !ident.zig_name.starts_with("__co_") =>
+                        {
+                            ident.zig_name.clone()
+                        }
+                        crate::zigir::types::IrExpr::TypedIdent { ident, .. }
+                            if !ident.zig_name.starts_with("__co_") =>
+                        {
+                            ident.zig_name.clone()
+                        }
+                        _ => {
+                            let name = format!("_asg_obj_{}", blk);
+                            self.write(&format!("const {} = ", name));
+                            self.emit_expr(object);
+                            self.write("; ");
+                            name
+                        }
                     };
-                    self.write(&format!(
+                    // Evaluate index once
+                    self.write(&format!("const _asg_idx_raw_{} = ", blk));
+                    self.emit_expr(index);
+                    self.write(&format!("; const _asg_idx_{}: usize = if (_asg_idx_raw_{} < 0) @panic(\"index out of bounds: negative array index\") else @as(usize, @intCast(_asg_idx_raw_{})); ", blk, blk, blk));
+                    // Grow array for ArrayListItem to prevent OOB on read-access
+                    if matches!(index_kind, IndexKind::ArrayListItem) {
+                        let dv = match &**object {
+                            crate::zigir::types::IrExpr::TypedIdent {
+                                ty: crate::types::ZigType::ArrayList(inner),
+                                ..
+                            } => match &**inner {
+                                crate::types::ZigType::I64 => "0",
+                                crate::types::ZigType::F64 => "0.0",
+                                crate::types::ZigType::Bool => "false",
+                                _ => "JsAny.fromUndefined()",
+                            },
+                            _ => "JsAny.fromUndefined()",
+                        };
+                        self.write(&format!(
                         "while ({v}.items.len <= _asg_idx_{b}) {v}.append(js_allocator.allocator(), {dv}) catch @panic(\"OOM: array grow\"); ",
                         v = obj_var, b = blk, dv = dv
                     ));
-                }
-                let access = match index_kind {
-                    IndexKind::ArrayListItem => format!("{}.items[_asg_idx_{}]", obj_var, blk),
-                    IndexKind::SliceIndex => format!("{}[_asg_idx_{}]", obj_var, blk),
-                    IndexKind::MapPut => unreachable!("MapPut in logical compound"),
-                };
-                let (fn_name, negate) = match op {
-                    AssignOp::LogicAnd => ("isTruthy", false),
-                    AssignOp::LogicOr => ("isTruthy", true),
-                    AssignOp::Nullish => ("isNullish", false),
-                    _ => unreachable!(),
-                };
-                if negate {
-                    self.write(&format!(
-                        "{a} = if (!js_runtime.{f}({a})) ",
-                        a = access,
-                        f = fn_name
-                    ));
-                } else {
-                    self.write(&format!(
-                        "{a} = if (js_runtime.{f}({a})) ",
-                        a = access,
-                        f = fn_name
-                    ));
-                }
-                // For ArrayListItem (JsAny elements), wrap value in JsAny.from()
-                // to avoid type mismatch between if/else branches.
-                if matches!(index_kind, IndexKind::ArrayListItem) {
-                    self.write("JsAny.from(");
-                    self.emit_expr(value);
-                    self.write(")");
-                } else {
-                    self.emit_expr(value);
-                }
-                self.write(&format!(" else {a}; }}", a = access));
-                return;
+                    }
+                    let access = match index_kind {
+                        IndexKind::ArrayListItem => format!("{}.items[_asg_idx_{}]", obj_var, blk),
+                        IndexKind::SliceIndex => format!("{}[_asg_idx_{}]", obj_var, blk),
+                        IndexKind::JsAnyIndex => unreachable!("JsAnyIndex handled by fallthrough"),
+                        IndexKind::MapPut => unreachable!("MapPut in logical compound"),
+                    };
+                    let (fn_name, negate) = match op {
+                        AssignOp::LogicAnd => ("isTruthy", false),
+                        AssignOp::LogicOr => ("isTruthy", true),
+                        AssignOp::Nullish => ("isNullish", false),
+                        _ => unreachable!(),
+                    };
+                    if negate {
+                        self.write(&format!(
+                            "{a} = if (!js_runtime.{f}({a})) ",
+                            a = access,
+                            f = fn_name
+                        ));
+                    } else {
+                        self.write(&format!(
+                            "{a} = if (js_runtime.{f}({a})) ",
+                            a = access,
+                            f = fn_name
+                        ));
+                    }
+                    // For ArrayListItem (JsAny elements), wrap value in JsAny.from()
+                    // to avoid type mismatch between if/else branches.
+                    if matches!(index_kind, IndexKind::ArrayListItem) {
+                        self.write("JsAny.from(");
+                        self.emit_expr(value);
+                        self.write(")");
+                    } else {
+                        self.emit_expr(value);
+                    }
+                    self.write(&format!(" else {a}; }}", a = access));
+                    return;
+                } // end else (non-JsAnyIndex)
             }
         }
 

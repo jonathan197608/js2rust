@@ -65,7 +65,7 @@ impl Lowerer {
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::{IrClosure, IrExpr};
 
-        let ir_captures = self.make_ir_captures(captured.clone().into_iter().collect());
+        let mut ir_captures = self.make_ir_captures(captured.clone().into_iter().collect());
 
         self.closure_mgr
             .closure_instances
@@ -112,6 +112,25 @@ impl Lowerer {
                     msg,
                 },
             );
+            // Replace Anytype capture types with JsAny so the struct definition
+            // compiles (anytype is not valid as a struct field type). The
+            // @compileError in the body ensures this code never runs.
+            for cap in &mut ir_captures {
+                if matches!(cap.zig_type, ZigType::Anytype) {
+                    cap.zig_type = ZigType::JsAny;
+                }
+            }
+        }
+
+        // Unconditionally replace Anytype capture types with JsAny.
+        // `anytype` is not valid as a Zig struct field type, so any closure
+        // that captures an `anytype` parameter must use JsAny instead. The
+        // @compileError in the body (if any) ensures the call() is never
+        // actually executed.
+        for cap in &mut ir_captures {
+            if matches!(cap.zig_type, ZigType::Anytype) {
+                cap.zig_type = ZigType::JsAny;
+            }
         }
 
         self.pending_arrow_structs

@@ -6,6 +6,25 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsAny = @import("jsany.zig").JsAny;
 
+/// Convert a []const i64 slice to a []const JsAny slice (allocates).
+/// Used for calling functions with rest parameters (`...arr`) where the
+/// source array is `ArrayList(i64)` but the callee expects `[]const JsAny`.
+pub fn toJsAnySlice(alloc: Allocator, items: []const i64) ![]const JsAny {
+    const result = try alloc.alloc(JsAny, items.len);
+    for (items, 0..) |v, i| {
+        result[i] = JsAny.fromI64(v);
+    }
+    return result;
+}
+
+/// Convert a []const JsAny slice to []const JsAny (identity, but allows
+/// uniform call-site codegen regardless of source type).
+pub fn toJsAnySliceFromJsAny(alloc: Allocator, items: []const JsAny) ![]const JsAny {
+    const result = try alloc.alloc(JsAny, items.len);
+    @memcpy(result, items);
+    return result;
+}
+
 /// Array.isArray — check if value is a JsAny array.
 pub fn isArray(value: JsAny) bool {
     return value.isArray();

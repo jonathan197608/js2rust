@@ -94,6 +94,8 @@ pub const JsAny = union(enum) {
             const slice: []const u8 = value[0..];
             return fromString(slice);
         }
+        // Mutable string slice: []u8 → []const u8
+        if (T == []u8) return fromString(value);
         // Other integer types (u32, etc.) → i64
         if (switch (@typeInfo(T)) {
             .int => true,
@@ -118,6 +120,14 @@ pub const JsAny = union(enum) {
     pub fn newArray(alloc: Allocator) !JsAny {
         const arr = try alloc.create(JsArrayList);
         arr.* = .empty;
+        return .{ .array = arr };
+    }
+
+    /// Wrap an existing ArrayList(JsAny) into a JsAny array variant.
+    /// Moves ownership of the ArrayList into a heap-allocated pointer.
+    pub fn fromArrayList(alloc: Allocator, list: JsArrayList) !JsAny {
+        const arr = try alloc.create(JsArrayList);
+        arr.* = list;
         return .{ .array = arr };
     }
 

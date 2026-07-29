@@ -8,6 +8,7 @@ use crate::types::ZigType;
 use crate::zigir::builtins::BuiltinModule;
 use crate::zigir::ident::IrIdent;
 use crate::zigir::kinds::{CallKind, FieldKind};
+use crate::zigir::types::IrExpr;
 
 use super::super::cabi::builtin_call_to_ir;
 use super::Lowerer;
@@ -637,6 +638,14 @@ impl Lowerer {
                     && ctx.is_nested_fn(name)
                 {
                     let callee_ident = self.make_ident(name);
+                    // If the nested function has a rest parameter, pack all
+                    // args into a single []const JsAny slice (Spread(ArrayLiteral)).
+                    let has_rest = ctx.nested_fn_has_rest(name);
+                    let args = if has_rest {
+                        self.pack_nested_fn_rest_args(args)
+                    } else {
+                        args
+                    };
                     return IrExpr::Call(crate::zigir::types::IrCallExpr {
                         callee: Box::new(IrExpr::Ident(callee_ident)),
                         args,
@@ -1057,9 +1066,130 @@ impl Lowerer {
         regular_args
     }
 
-    /// R32-3/4: Infer the ArrayList element type from a lowered IR expression.
-    /// Used for complex non-chaining receivers (array literals, split() results)
-    /// that need ArrayMethodInline inlining.
+    /// Pack all args into a single []const JsAny for nested fn with rest param.
+    ///
+    /// Cases:
+    /// 1. `sum(...restParam)` -> pass restParam directly (already []const JsAny)
+    /// 2. `sum(...arr)` where arr is ArrayList(JsAny) -> pass arr.items
+    /// 3. `sum(...arr)` where arr is ArrayList(i64) -> toJsAnySlice(alloc, arr.items)
+    /// 4. `sum(1, 2, 3)` (no spread, multiple args) -> &[_]JsAny{ JsAny.from(1), ... }
+    /// 5. `sum(1, ...arr, 4)` (mixed) -> keep Spread markers, emit layer builds ArrayList
+    fn pack_nested_fn_rest_args(&self, args: Vec<IrExpr>) -> Vec<IrExpr> {
+        use crate::zigir::types::{IrArrayLiteral, IrBuiltinCall};
+
+        // Single arg case
+        if args.len() == 1
+            && let IrExpr::Spread(inner) = &args[0]
+        {
+            match inner.as_ref() {
+                // Rest param spread: already []const JsAny, unwrap Spread
+                IrExpr::Ident(ident)
+                    if self
+                        .fn_ctx
+                        .as_ref()
+                        .and_then(|ctx| ctx.rest_param_name.as_deref())
+                        .is_some_and(|name| name == ident.js_name.as_str()) =>
+                {
+                    // Pass the slice directly (unwrap the Spread)
+                    return vec![(**inner).clone()];
+                }
+                // ArrayList(JsAny) spread: pass .items directly
+                IrExpr::Ident(ident)
+                    if self.get_var_type(ident.js_name.as_str()).is_some_and(
+                        |t| matches!(t, ZigType::ArrayList(inner) if *inner == ZigType::JsAny),
+                    ) =>
+                {
+                    let inner_clone = inner.as_ref().clone();
+                    return vec![IrExpr::FieldAccess {
+                        object: Box::new(inner_clone),
+                        field: "items".to_string(),
+                        field_kind: FieldKind::StructField,
+                    }];
+                }
+                // Default: ArrayList(i64) spread -> toJsAnySlice
+                _ => {
+                    let inner_clone = inner.as_ref().clone();
+                    return vec![IrExpr::BuiltinCall(IrBuiltinCall::simple(
+                        crate::zigir::builtins::BuiltinModule::JsArray,
+                        "toJsAnySlice",
+                        Some("js_array".to_string()),
+                        None,
+                        vec![
+                            IrExpr::FieldAccess {
+                                object: Box::new(IrExpr::Ident(IrIdent::new("js_allocator"))),
+                                field: "allocator".to_string(),
+                                field_kind: FieldKind::StructField,
+                            },
+                            IrExpr::FieldAccess {
+                                object: Box::new(inner_clone),
+                                field: "items".to_string(),
+                                field_kind: FieldKind::StructField,
+                            },
+                        ],
+                        ZigType::JsAny,
+                    ))];
+                }
+            }
+        }
+
+        // Multiple args: check if any are spread
+        let has_spread = args.iter().any(|a| matches!(a, IrExpr::Spread(_)));
+
+        if has_spread {
+            // Mixed spread: keep args as-is (with Spread markers).
+            // The emit layer (CallKind::Closure) will detect Spread args
+            // and generate a temporary ArrayList(JsAny) builder block.
+            return args;
+        }
+
+        // Multiple non-spread args: pack into a const JsAny array literal
+        // &[_]JsAny{ JsAny.from(1), JsAny.from(2), JsAny.from(3) }
+        let elements: Vec<IrExpr> = args
+            .iter()
+            .map(|expr| {
+                // Wrap each arg in JsAny.from() if not already wrapped
+                let already_wrapped = match expr {
+                    IrExpr::Call(_call) => {
+                        // Check if callee is Ident("JsAny") with method "from" — unlikely but safe
+                        // Actually JsAny.from is emitted as a special form, not as IrExpr::Call.
+                        // For simplicity, check if expr is already JsAny-typed TypedIdent.
+                        false
+                    }
+                    IrExpr::TypedIdent { ty, .. } => *ty == ZigType::JsAny || *ty == ZigType::Str,
+                    _ => false,
+                };
+                if already_wrapped {
+                    expr.clone()
+                } else {
+                    // Wrap in a Cast expr to JsAny.from()
+                    // Use IrExpr::FieldAccess pattern: JsAny.from(arg)
+                    // But JsAny.from is not a field access — it's a builtin pattern.
+                    // The simplest way: use IrExpr::Call with a special callee.
+                    //
+                    // Actually, emit_expr already handles IrExpr::Cast for JsAny.from.
+                    // But there's no Cast variant. Let me use wrap_in_jsany_from.
+                    // Wrap in JsAny.from(arg) via IrExpr::Call
+                    use crate::zigir::kinds::CallKind;
+                    use crate::zigir::types::IrCallExpr;
+                    IrExpr::Call(IrCallExpr {
+                        callee: Box::new(IrExpr::FieldAccess {
+                            object: Box::new(IrExpr::Ident(IrIdent::new("JsAny"))),
+                            field: "from".to_string(),
+                            field_kind: FieldKind::StructField,
+                        }),
+                        args: vec![expr.clone()],
+                        call_kind: CallKind::Direct,
+                    })
+                }
+            })
+            .collect();
+
+        vec![IrExpr::ArrayLiteral(IrArrayLiteral {
+            elements,
+            spread_indices: vec![],
+        })]
+    }
+
     fn infer_elem_type_from_ir_expr(expr: &crate::zigir::types::IrExpr) -> ZigType {
         match expr {
             crate::zigir::types::IrExpr::ArrayLiteral(arr) => {

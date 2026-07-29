@@ -50,6 +50,35 @@ impl Emitter {
         })
     }
 
+    /// Check if a block contains `try` or `throw` statements — used to
+    /// determine if a closure's `call` method needs an error-union return type
+    /// (`can_throw`).  Also detects catchable errors (JSON.parse, BigInt ops)
+    /// which produce `return error.JsThrow` inside try blocks.
+    pub(crate) fn block_needs_error_union(stmts: &[IrStmt]) -> bool {
+        fn check(s: &IrStmt) -> bool {
+            match s {
+                IrStmt::Try { .. } | IrStmt::Throw { .. } => true,
+                IrStmt::If { then, else_, .. } => {
+                    Emitter::block_needs_error_union(&then.stmts)
+                        || else_
+                            .as_ref()
+                            .is_some_and(|e| Emitter::block_needs_error_union(&e.stmts))
+                }
+                IrStmt::While { body, .. }
+                | IrStmt::DoWhile { body, .. }
+                | IrStmt::For { body, .. }
+                | IrStmt::ForOf { body, .. }
+                | IrStmt::ForIn { body, .. } => Emitter::block_needs_error_union(&body.stmts),
+                IrStmt::Block(b) => Emitter::block_needs_error_union(&b.stmts),
+                IrStmt::Switch { cases, .. } => cases
+                    .iter()
+                    .any(|c| Emitter::block_needs_error_union(&c.body)),
+                _ => false,
+            }
+        }
+        stmts.iter().any(check)
+    }
+
     /// Recursively check if a block contains `return` or `throw` statements.
     /// Used to detect finally blocks that can't be emitted as `defer { }`
     /// (Zig doesn't allow return/throw inside defer).
@@ -771,18 +800,32 @@ impl Emitter {
         // with NO catch handler silently dropped any throw from the body
         // (body_result_var was error.JsThrow but never inspected).
         // Post-fix: propagate whenever `needs_catch || has_throw`.
+        //
+        // When BOTH try body and catch body always exit (e.g. both `return`),
+        // execution can never reach the propagation code. Use `unreachable;`
+        // in the success branch to satisfy Zig's "must return" requirement
+        // for non-void functions — it's safe because the code truly is
+        // unreachable, and since there's no code after the if/else, Zig
+        // 0.16 ast-check won't flag it as "unreachable code".
+        let catch_always_exits = needs_catch && Self::block_always_exits(catch_block);
+        let both_branches_exit = body_always_exits && catch_always_exits;
         if needs_catch || has_throw {
+            let success_branch = if both_branches_exit {
+                "unreachable;"
+            } else {
+                ""
+            };
             if let Some(ref parent_label) = saved_inside {
-                // Inside another try block → break to parent
+                // Inside another try block: break to parent
                 self.writeln(&format!(
-                    "if ({0}) |_| {{}} else |_| break :{1} @as(anyerror!void, error.JsThrow);",
-                    result_var, parent_label,
+                    "if ({0}) |_| {{{1}}} else |_| break :{2} @as(anyerror!void, error.JsThrow);",
+                    result_var, success_branch, parent_label,
                 ));
             } else {
-                // Top-level → return error
+                // Top-level: return error
                 self.writeln(&format!(
-                    "if ({}) |_| {{}} else |_| return error.JsThrow;",
-                    result_var,
+                    "if ({}) |_| {{{}}} else |_| return error.JsThrow;",
+                    result_var, success_branch,
                 ));
             }
         }
