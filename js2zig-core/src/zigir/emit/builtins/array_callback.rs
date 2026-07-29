@@ -141,7 +141,7 @@ impl Emitter {
             self.write("{ ");
             self.write(b);
         }
-        self.writeln(&format!("var iter = {}.inner.iterator();", receiver));
+        self.writeln(&format!("var iter = {}.iterator();", receiver));
         self.writeln("while (iter.next()) |entry| {");
         self.indent_push();
         if data.elem_param != "_" {
@@ -179,7 +179,7 @@ impl Emitter {
             self.write("{ ");
             self.write(b);
         }
-        self.writeln(&format!("var iter = {}.inner.iterator();", receiver));
+        self.writeln(&format!("var iter = {}.iterator();", receiver));
         self.writeln("while (iter.next()) |entry| {");
         self.indent_push();
         if data.elem_param != "_" {

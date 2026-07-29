@@ -43,15 +43,16 @@ impl Emitter {
     /// Emit spread args for a Closure call by building a temporary
     /// ArrayList(JsAny) in a labeled block, then returning `.items`.
     ///
-    /// Pattern: (blk: { var __arr: std.ArrayList(JsAny) = .empty;
+    /// Pattern: (blk: { var __arr_N: std.ArrayList(JsAny) = .empty;
     ///   append non-spread args; for-loop spread sources;
-    ///   break :blk __arr.items; })
+    ///   break :blk __arr_N.items; })
     fn emit_closure_spread_args(&mut self, args: &[crate::zigir::types::IrExpr]) {
         use crate::zigir::types::IrExpr;
         let blk = self.next_label();
+        let arr = self.next_array_var();
         self.write(&format!(
-            "({}: {{ var __arr: std.ArrayList(JsAny) = .empty; ",
-            blk
+            "({}: {{ var {}: std.ArrayList(JsAny) = .empty; ",
+            blk, arr
         ));
         for arg in args.iter() {
             match arg {
@@ -93,20 +94,23 @@ impl Emitter {
                         self.write(".items");
                     }
                     if is_entries {
-                        self.write(") |__spread_item| __arr.append(js_allocator.allocator(), JsAny.fromArrayList(js_allocator.allocator(), __spread_item) catch @panic(\"OOM: fromArrayList\")) catch @panic(\"OOM: Array.spread\"); ");
+                        self.write(&format!(") |__spread_item| {}.append(js_allocator.allocator(), JsAny.fromArrayList(js_allocator.allocator(), __spread_item) catch @panic(\"OOM: fromArrayList\")) catch @panic(\"OOM: Array.spread\"); ", arr));
                     } else {
-                        self.write(") |__spread_item| __arr.append(js_allocator.allocator(), JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ");
+                        self.write(&format!(") |__spread_item| {}.append(js_allocator.allocator(), JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ", arr));
                     }
                 }
                 _ => {
                     // Non-spread arg: append with JsAny.from() wrap
-                    self.write("__arr.append(js_allocator.allocator(), JsAny.from(");
+                    self.write(&format!(
+                        "{}.append(js_allocator.allocator(), JsAny.from(",
+                        arr
+                    ));
                     self.emit_expr(arg);
                     self.write(")) catch @panic(\"OOM: Array.push append\"); ");
                 }
             }
         }
-        self.write(&format!("break :{} __arr.items; }})", blk));
+        self.write(&format!("break :{} {}.items; }})", blk, arr));
     }
 
     pub(super) fn emit_field_access(

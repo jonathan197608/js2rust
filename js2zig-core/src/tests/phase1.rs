@@ -574,7 +574,7 @@ return total;
         zig
     );
     assert!(
-        zig.contains(".inner.iterator()"),
+        zig.contains(".iterator()"),
         "Expected iterator in:\n{}",
         zig
     );
@@ -605,7 +605,7 @@ return result;
         zig
     );
     assert!(
-        zig.contains(".inner.iterator()"),
+        zig.contains(".iterator()"),
         "Expected iterator in:\n{}",
         zig
     );
@@ -639,7 +639,7 @@ return count;
     let zig = transpile_and_assert(js, "test_p2_for_of_set");
     println!("=== Generated Zig (test_p2_for_of_set) ===\n{}", zig);
     assert!(
-        zig.contains(".inner.iterator()"),
+        zig.contains(".iterator()"),
         "Expected iterator in:\n{}",
         zig
     );

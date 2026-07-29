@@ -1380,8 +1380,8 @@ return sum;
 
     // Verify Map.forEach generates while-iterator loop (not Array for-loop)
     assert!(
-        zig.contains("var iter = m.inner.iterator();"),
-        "Expected 'var iter = m.inner.iterator();' in:\n{}",
+        zig.contains("var iter = m.iterator();"),
+        "Expected 'var iter = m.iterator();' in:\n{}",
         zig
     );
     assert!(
@@ -1973,8 +1973,8 @@ return sum;
     // Set.forEach now uses while-iterator (same as for-of Set),
     // since JsCollection(void) doesn't have an .items field.
     assert!(
-        zig.contains("var iter = s.inner.iterator();"),
-        "Expected 'var iter = s.inner.iterator();' in:\n{}",
+        zig.contains("var iter = s.iterator();"),
+        "Expected 'var iter = s.iterator();' in:\n{}",
         zig
     );
     assert!(

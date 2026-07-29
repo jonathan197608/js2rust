@@ -201,59 +201,65 @@ pub fn jsHypot(args: []const f64) f64 {
 
 /// Compute the merged struct type for two anonymous structs.
 /// Fields from B are concatenated after fields from A.
-/// Build the merged type for spreadMerge: fields from A (not in B) + all fields from B.
-/// Fields from B override conflicting fields from A.
+/// Build the merged type for spreadMerge.
+/// JS spread semantics: A's fields keep their order (with B overriding values),
+/// then B's new fields (not in A) are appended.
 pub fn SpreadMerge(comptime A: type, comptime B: type) type {
     const a_fields = @typeInfo(A).@"struct".fields;
     const b_fields = @typeInfo(B).@"struct".fields;
 
-    // Count fields from A that are NOT overridden by B
-    const keep_count = comptime blk: {
+    // Count B fields that are NOT in A (these will be appended)
+    const new_count = comptime blk: {
         var count: usize = 0;
-        for (a_fields) |af| {
-            const duplicate = for (b_fields) |bf| {
+        for (b_fields) |bf| {
+            const exists_in_a = for (a_fields) |af| {
                 if (std.mem.eql(u8, af.name, bf.name)) break true;
             } else false;
-            if (!duplicate) count += 1;
+            if (!exists_in_a) count += 1;
         }
         break :blk count;
     };
-    const total = keep_count + b_fields.len;
+    const total = a_fields.len + new_count;
 
-    // Build separate arrays for @Struct (Zig 0.16.0): field_names, field_types, field_attrs.
+    // Field order: all A fields (preserving A order), then B's new fields.
     const names: [total][]const u8 = blk: {
         var arr: [total][]const u8 = undefined;
         var idx: usize = 0;
         for (a_fields) |af| {
-            const duplicate = for (b_fields) |bf| {
+            arr[idx] = af.name;
+            idx += 1;
+        }
+        for (b_fields) |bf| {
+            const exists_in_a = for (a_fields) |af| {
                 if (std.mem.eql(u8, af.name, bf.name)) break true;
             } else false;
-            if (!duplicate) {
-                arr[idx] = af.name;
+            if (!exists_in_a) {
+                arr[idx] = bf.name;
                 idx += 1;
             }
         }
-        for (b_fields) |bf| {
-            arr[idx] = bf.name;
-            idx += 1;
-        }
         break :blk arr;
     };
+    // Types: for fields in both A and B, use B's type (B overrides).
     const types: [total]type = blk: {
         var arr: [total]type = undefined;
         var idx: usize = 0;
         for (a_fields) |af| {
-            const duplicate = for (b_fields) |bf| {
-                if (std.mem.eql(u8, af.name, bf.name)) break true;
-            } else false;
-            if (!duplicate) {
-                arr[idx] = af.type;
-                idx += 1;
-            }
+            // If this field exists in B, use B's type
+            const b_type = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break bf.type;
+            } else af.type;
+            arr[idx] = b_type;
+            idx += 1;
         }
         for (b_fields) |bf| {
-            arr[idx] = bf.type;
-            idx += 1;
+            const exists_in_a = for (a_fields) |af| {
+                if (std.mem.eql(u8, af.name, bf.name)) break true;
+            } else false;
+            if (!exists_in_a) {
+                arr[idx] = bf.type;
+                idx += 1;
+            }
         }
         break :blk arr;
     };
@@ -261,25 +267,28 @@ pub fn SpreadMerge(comptime A: type, comptime B: type) type {
         var arr: [total]std.builtin.Type.StructField.Attributes = undefined;
         var idx: usize = 0;
         for (a_fields) |af| {
-            const duplicate = for (b_fields) |bf| {
+            const b_field = for (b_fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name)) break bf;
+            } else af;
+            arr[idx] = .{
+                .@"align" = if (b_field.alignment) |a| @intCast(a) else null,
+                .default_value_ptr = b_field.default_value_ptr,
+                .@"comptime" = b_field.is_comptime,
+            };
+            idx += 1;
+        }
+        for (b_fields) |bf| {
+            const exists_in_a = for (a_fields) |af| {
                 if (std.mem.eql(u8, af.name, bf.name)) break true;
             } else false;
-            if (!duplicate) {
+            if (!exists_in_a) {
                 arr[idx] = .{
-                    .@"align" = if (af.alignment) |a| @intCast(a) else null,
-                    .default_value_ptr = af.default_value_ptr,
-                    .@"comptime" = af.is_comptime,
+                    .@"align" = if (bf.alignment) |a| @intCast(a) else null,
+                    .default_value_ptr = bf.default_value_ptr,
+                    .@"comptime" = bf.is_comptime,
                 };
                 idx += 1;
             }
-        }
-        for (b_fields) |bf| {
-            arr[idx] = .{
-                .@"align" = if (bf.alignment) |a| @intCast(a) else null,
-                .default_value_ptr = bf.default_value_ptr,
-                .@"comptime" = bf.is_comptime,
-            };
-            idx += 1;
         }
         break :blk arr;
     };

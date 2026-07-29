@@ -40,6 +40,18 @@ fn isArrayListLike(comptime T: type) bool {
 /// Print a single value (no prefix, no newline) using the appropriate format specifier.
 fn printValue(msg: anytype) void {
     const T = @TypeOf(msg);
+    // Handle error unions: unwrap with catch and recurse.
+    // This occurs when a function returning !T is passed directly to
+    // console.log without an explicit catch at the call site.
+    if (@typeInfo(T) == .error_union) {
+        const unwrapped = msg catch |e| {
+            // Print the error name as JS would for a thrown error
+            std.debug.print("{s}", .{@errorName(e)});
+            return;
+        };
+        printValue(unwrapped);
+        return;
+    }
     if (comptime isStringType(T)) {
         std.debug.print("{s}", .{msg});
     } else if (comptime T == js_error.JsError) {

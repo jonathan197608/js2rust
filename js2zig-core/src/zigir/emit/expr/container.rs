@@ -51,11 +51,14 @@ impl Emitter {
         let needs_jsany_wrap = elem_type == "JsAny";
 
         // Emit as labeled block with ArrayList builder:
-        // (blk: { var __arr: std.ArrayList(Type) = .empty; append...; break :blk __arr; })
+        // (blk: { var __arr_N: std.ArrayList(Type) = .empty; append...; break :blk __arr_N; })
+        // Use a unique variable name to avoid shadowing when array literals are
+        // nested (e.g. [["a",1],["b",2]] inside new Map(...)).
         let blk = self.next_label();
+        let arr_var = self.next_array_var();
         self.write(&format!(
-            "({}: {{ var __arr: std.ArrayList({}) = .empty; ",
-            blk, elem_type
+            "({}: {{ var {}: std.ArrayList({}) = .empty; ",
+            blk, arr_var, elem_type
         ));
         for (i, elem) in arr.elements.iter().enumerate() {
             if arr.spread_indices.contains(&i) {
@@ -124,19 +127,21 @@ impl Emitter {
                         self.write(".items");
                     }
                     if is_entries {
-                        self.write(
-                            ") |__spread_item| __arr.append(js_allocator.allocator(), \
+                        self.write(&format!(
+                            ") |__spread_item| {}.append(js_allocator.allocator(), \
                              JsAny.fromArrayList(js_allocator.allocator(), __spread_item) catch @panic(\"OOM: fromArrayList\")) catch @panic(\"OOM: Array.spread\"); ",
-                        );
+                            arr_var
+                        ));
                     } else {
-                        self.write(
-                            ") |__spread_item| __arr.append(js_allocator.allocator(), \
+                        self.write(&format!(
+                            ") |__spread_item| {}.append(js_allocator.allocator(), \
                              JsAny.from(__spread_item)) catch @panic(\"OOM: Array.spread\"); ",
-                        );
+                            arr_var
+                        ));
                     }
                 }
             } else {
-                self.write("__arr.append(js_allocator.allocator(), ");
+                self.write(&format!("{}.append(js_allocator.allocator(), ", arr_var));
                 if needs_jsany_wrap {
                     self.write("JsAny.from(");
                 }
@@ -147,7 +152,7 @@ impl Emitter {
                 self.write(") catch @panic(\"OOM: Array.push append\"); ");
             }
         }
-        self.write(&format!("break :{} __arr; }})", blk));
+        self.write(&format!("break :{} {}; }})", blk, arr_var));
     }
 
     /// Emit object field pairs (`.key = value` or `@"key" = value`), preceded by

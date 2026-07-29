@@ -8,7 +8,7 @@ export function testEdge_frag_27() {
             const result = JSON.parse(str);
             return "ok: " + result;
         } catch (e) {
-            return "error: " + e.message;
+            return "error: " + e.name;
         }
     }
     console.log(tryParse('{"valid": true}'));

@@ -431,13 +431,18 @@ impl Emitter {
             }
             // ── Set instance methods ──
             "add" => {
-                // set.add(val) → (blk_N: { set.add(JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N set })
+                // set.add(val) → (blk_N: { set.add(alloc, JsAny.from(val)) catch @panic("OOM: allocation"); break :blk_N set })
                 // Returns the set object for chaining (JS semantics).
                 let blk = self.next_label();
                 if let Some(name) = obj {
-                    self.write(&format!("({blk}: {{ {}.add(", name));
+                    self.write(&format!(
+                        "({blk}: {{ {}.add(js_allocator.allocator(), ",
+                        name
+                    ));
                 } else {
-                    self.write(&format!("({blk}: {{ js_collections.add("));
+                    self.write(&format!(
+                        "({blk}: {{ js_collections.add(js_allocator.allocator(), "
+                    ));
                 }
                 if let Some(val) = args.first() {
                     self.write("JsAny.from(");

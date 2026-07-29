@@ -103,6 +103,15 @@ pub const JsError = struct {
             error.InvalidUriEncoding => .{ .name = "URIError", .message = "URI malformed" },
             error.DivisionByZero => .{ .name = "RangeError", .message = "BigInt division by zero" },
             error.ConstReassignment => .{ .name = "TypeError", .message = "Assignment to constant variable." },
+            // JSON.parse errors → SyntaxError (matching JS spec)
+            error.SyntaxError,
+            error.UnexpectedEndOfInput,
+            error.InvalidJSON,
+            error.EmptyInput,
+            error.UnexpectedToken,
+            error.InvalidNumber,
+            error.MaxDepthExceeded,
+            => .{ .name = "SyntaxError", .message = "Unexpected token" },
             else => .{ .name = "Error", .message = @errorName(err) },
         };
     }

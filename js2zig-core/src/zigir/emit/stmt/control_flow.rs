@@ -329,7 +329,7 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForInKind::MapIter => {
-                // `var __it = obj.inner.iterator(); label: while (__it.next()) |__kv| { ... }`
+                // `var __it = obj.iterator(); label: while (__it.next()) |__kv| { ... }`
                 self.write_indent();
                 let it_name = format!("__it_{}", self.label_counter);
                 let kv_name = format!("__kv_{}", self.label_counter);
@@ -338,7 +338,7 @@ impl Emitter {
                 self.write(&it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
-                self.write(".inner.iterator();\n");
+                self.write(".iterator();\n");
                 self.write_indent();
                 if let Some(lbl) = label {
                     self.write(&format!("{}: ", lbl));
@@ -436,9 +436,9 @@ impl Emitter {
                 self.writeln("}");
             }
             IrForOfKind::MapSetIter { is_map } => {
-                // `var __it = obj.inner.iterator(); label: while (__it.next()) |__kv| { ... }`
+                // `var __it = obj.iterator(); label: while (__it.next()) |__kv| { ... }`
                 // Label goes directly on while (not a wrapping block) so that
-                // `continue :label` targets the loop, not a block.
+                // `continue : label` targets the loop, not a block.
                 self.write_indent();
                 let it_name = format!("__it_{}", self.label_counter);
                 let kv_name = format!("__kv_{}", self.label_counter);
@@ -447,7 +447,7 @@ impl Emitter {
                 self.write(&it_name);
                 self.write(" = ");
                 self.emit_expr(iterable);
-                self.write(".inner.iterator();\n");
+                self.write(".iterator();\n");
                 self.write_indent();
                 if let Some(lbl) = label {
                     self.write(&format!("{}: ", lbl));

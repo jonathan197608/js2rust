@@ -35,10 +35,79 @@ impl Emitter {
         use crate::zigir::emit::helpers;
         match &new_expr.constructor {
             NewConstructor::Map => {
-                self.write("js_collections.JsMap.init(js_allocator.allocator())");
+                if new_expr.args.is_empty() {
+                    self.write("js_collections.JsMap.init(js_allocator.allocator())");
+                } else {
+                    // new Map([["a",1],["b",2],...]) → block with init + set calls
+                    let blk = self.next_label();
+                    self.write(&format!(
+                        "({blk}: {{ var __map = js_collections.JsMap.init(js_allocator.allocator()); "
+                    ));
+                    // If the arg is an ArrayLiteral without spread, emit each
+                    // pair directly to avoid type issues with intermediate
+                    // ArrayLists (JsAny.from(ArrayList) is not supported, and
+                    // JsAny does not support .at() for indexing).
+                    match &new_expr.args[0] {
+                        crate::zigir::types::IrExpr::ArrayLiteral(arr)
+                            if arr.spread_indices.is_empty() =>
+                        {
+                            for elem in &arr.elements {
+                                if let crate::zigir::types::IrExpr::ArrayLiteral(pair) = elem
+                                    && pair.elements.len() == 2
+                                {
+                                    self.write("__map.set(js_allocator.allocator(), JsAny.from(");
+                                    self.emit_expr(&pair.elements[0]);
+                                    self.write("), JsAny.from(");
+                                    self.emit_expr(&pair.elements[1]);
+                                    self.write(")) catch @panic(\"OOM: Map init\"); ");
+                                }
+                            }
+                        }
+                        _ => {
+                            // Fallback: build the array and iterate. Each entry
+                            // is ArrayList(JsAny), use .at() for key/value.
+                            self.write("for (");
+                            self.emit_expr(&new_expr.args[0]);
+                            self.write(
+                                ".items) |__entry| { __map.set(js_allocator.allocator(), __entry.at(@as(usize, 0)), __entry.at(@as(usize, 1))) catch @panic(\"OOM: Map init\"); } ");
+                        }
+                    }
+                    self.write(&format!("break :{blk} __map; }})"));
+                }
             }
             NewConstructor::Set => {
-                self.write("js_collections.JsSet.init(js_allocator.allocator())");
+                if new_expr.args.is_empty() {
+                    self.write("js_collections.JsSet.init(js_allocator.allocator())");
+                } else {
+                    // new Set([1,2,3,...]) → block with init + add calls
+                    let blk = self.next_label();
+                    self.write(&format!(
+                        "({blk}: {{ var __set = js_collections.JsSet.init(js_allocator.allocator()); "
+                    ));
+                    // If the arg is an ArrayLiteral without spread, emit each
+                    // element directly with JsAny.from() wrap to handle any
+                    // element type (i64, f64, []const u8, etc.).
+                    match &new_expr.args[0] {
+                        crate::zigir::types::IrExpr::ArrayLiteral(arr)
+                            if arr.spread_indices.is_empty() =>
+                        {
+                            for elem in &arr.elements {
+                                self.write("__set.add(js_allocator.allocator(), JsAny.from(");
+                                self.emit_expr(elem);
+                                self.write(")) catch @panic(\"OOM: Set init\"); ");
+                            }
+                        }
+                        _ => {
+                            // Fallback: build the array and iterate. The array
+                            // will be ArrayList(JsAny) when spread is present.
+                            self.write("for (");
+                            self.emit_expr(&new_expr.args[0]);
+                            self.write(
+                                ".items) |__val| { __set.add(js_allocator.allocator(), __val) catch @panic(\"OOM: Set init\"); } ");
+                        }
+                    }
+                    self.write(&format!("break :{blk} __set; }})"));
+                }
             }
             NewConstructor::Date(kind) => match kind {
                 DateConstructorKind::Now => {

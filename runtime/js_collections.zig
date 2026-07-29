@@ -130,13 +130,18 @@ pub fn JsCollection(comptime Value: type) type {
     const is_map = (Value != void);
 
     return struct {
+        const Self = @This();
         inner: std.HashMap(JsAny, Value, JsAnyHashMapContext, std.hash_map.default_max_load_percentage),
+        /// Tracks key insertion order for JS-compatible iteration.
+        /// JS Map/Set guarantee insertion-order iteration; std.HashMap does not.
+        insertion_order: std.ArrayList(JsAny),
 
         // ── Lifetime ─────────────────────────────────────────────
 
         pub fn init(alloc: Allocator) @This() {
             return @This(){
                 .inner = std.HashMap(JsAny, Value, JsAnyHashMapContext, std.hash_map.default_max_load_percentage).init(alloc),
+                .insertion_order = .empty,
             };
         }
 
@@ -162,13 +167,18 @@ pub fn JsCollection(comptime Value: type) type {
                 }
             }
             self.inner.deinit();
+            self.insertion_order.deinit(alloc);
         }
 
         // ── Shared mutations ────────────────────────────────────
 
         /// Generic insert. Set callers should use add(), Map callers set().
-        fn put(self: *@This(), key: JsAny, value: Value) !void {
+        fn put(self: *@This(), alloc: Allocator, key: JsAny, value: Value) !void {
+            const was_new = !self.inner.contains(key);
             try self.inner.put(key, value);
+            if (was_new) {
+                try self.insertion_order.append(alloc, key);
+            }
         }
 
         pub fn has(self: *const @This(), key: JsAny) bool {
@@ -181,6 +191,13 @@ pub fn JsCollection(comptime Value: type) type {
             // the entry and returns the KV pair, so the map no longer references
             // the freed memory during subsequent lookups or iteration.
             if (self.inner.fetchRemove(key)) |removed| {
+                // Remove from insertion_order (orderedRemove preserves order)
+                for (self.insertion_order.items, 0..) |*k, i| {
+                    if (JsAnyHashMapContext.eql(.{}, k.*, key)) {
+                        _ = self.insertion_order.orderedRemove(i);
+                        break;
+                    }
+                }
                 var k = removed.key;
                 k.deinit(alloc);
                 if (is_map) {
@@ -195,6 +212,7 @@ pub fn JsCollection(comptime Value: type) type {
         pub fn clear(self: *@This(), alloc: Allocator) void {
             if (js_allocator.isNoOpFree(alloc)) {
                 self.inner.clearAndFree();
+                self.insertion_order.clearRetainingCapacity();
                 return;
             }
             var iter = self.inner.iterator();
@@ -207,6 +225,7 @@ pub fn JsCollection(comptime Value: type) type {
                 }
             }
             self.inner.clearAndFree();
+            self.insertion_order.clearRetainingCapacity();
         }
 
         pub fn size(self: *const @This()) usize {
@@ -215,19 +234,18 @@ pub fn JsCollection(comptime Value: type) type {
 
         // ── Iterators (keys / values / entries) ────────────────
 
-        /// Return ArrayList of keys. Caller must call deinit(alloc).
+        /// Return ArrayList of keys in insertion order. Caller must call deinit(alloc).
         pub fn keys(self: *const @This(), alloc: Allocator) !std.ArrayList(JsAny) {
             var result: std.ArrayList(JsAny) = .empty;
             try result.ensureTotalCapacity(alloc, self.inner.count());
             errdefer result.deinit(alloc); // RT-4: clean up on OOM during append
-            var iter = self.inner.keyIterator();
-            while (iter.next()) |key_ptr| {
-                try result.append(alloc, key_ptr.*);
+            for (self.insertion_order.items) |key| {
+                try result.append(alloc, key);
             }
             return result;
         }
 
-        /// Return ArrayList of values. Caller must call deinit(alloc).
+        /// Return ArrayList of values in insertion order. Caller must call deinit(alloc).
         /// For Set (Value == void): identical to keys().
         /// For Map (Value == JsAny): returns the values.
         pub fn values(self: *const @This(), alloc: Allocator) !std.ArrayList(JsAny) {
@@ -237,9 +255,10 @@ pub fn JsCollection(comptime Value: type) type {
                 var result: std.ArrayList(JsAny) = .empty;
                 try result.ensureTotalCapacity(alloc, self.inner.count());
                 errdefer result.deinit(alloc); // RT-4: clean up on OOM during append
-                var iter = self.inner.valueIterator();
-                while (iter.next()) |val_ptr| {
-                    try result.append(alloc, val_ptr.*);
+                for (self.insertion_order.items) |key| {
+                    if (self.inner.get(key)) |val| {
+                        try result.append(alloc, val);
+                    }
                 }
                 return result;
             }
@@ -249,6 +268,7 @@ pub fn JsCollection(comptime Value: type) type {
         /// Caller must deinit inner ArrayLists and the outer ArrayList.
         /// Set:  each pair is [value, value]  (MDN spec)
         /// Map:  each pair is [key, value]  (MDN spec)
+        /// Iterates in insertion order.
         pub fn entries(self: *const @This(), alloc: Allocator) !std.ArrayList(std.ArrayList(JsAny)) {
             var result: std.ArrayList(std.ArrayList(JsAny)) = .empty;
             try result.ensureTotalCapacity(alloc, self.inner.count());
@@ -258,36 +278,64 @@ pub fn JsCollection(comptime Value: type) type {
             }
             if (is_set) {
                 // Set: [value, value]
-                var iter = self.inner.keyIterator();
-                while (iter.next()) |key_ptr| {
+                for (self.insertion_order.items) |key| {
                     var pair: std.ArrayList(JsAny) = .empty;
-                    try pair.append(alloc, key_ptr.*);
-                    try pair.append(alloc, key_ptr.*); // [value, value]
+                    try pair.append(alloc, key);
+                    try pair.append(alloc, key); // [value, value]
                     try result.append(alloc, pair);
                 }
             } else {
                 // Map: [key, value]
-                var iter = self.inner.iterator();
-                while (iter.next()) |entry| {
-                    var pair: std.ArrayList(JsAny) = .empty;
-                    try pair.append(alloc, entry.key_ptr.*);
-                    try pair.append(alloc, entry.value_ptr.*);
-                    try result.append(alloc, pair);
+                for (self.insertion_order.items) |key| {
+                    if (self.inner.get(key)) |val| {
+                        var pair: std.ArrayList(JsAny) = .empty;
+                        try pair.append(alloc, key);
+                        try pair.append(alloc, val);
+                        try result.append(alloc, pair);
+                    }
                 }
             }
             return result;
         }
+
+        /// Iterate in insertion order. Used by generated `for (const [k,v] of map)` code.
+        /// Returns ?struct { key_ptr: *const JsAny, value_ptr: *const Value }
+        /// to match the field names of std.HashMap iterator for compatibility.
+        pub fn iterator(self: *const @This()) InsertionOrderIterator {
+            return .{ .collection = self, .index = 0 };
+        }
+
+        /// Iterator type for insertion-order traversal.
+        pub const InsertionOrderIterator = struct {
+            collection: *const Self,
+            index: usize,
+
+            pub fn next(self: *InsertionOrderIterator) ?struct { key_ptr: *const JsAny, value_ptr: *const Value } {
+                if (self.index >= self.collection.insertion_order.items.len) return null;
+                const key = &self.collection.insertion_order.items[self.index];
+                self.index += 1;
+                if (self.collection.inner.getPtr(key.*)) |val_ptr| {
+                    return .{ .key_ptr = key, .value_ptr = val_ptr };
+                }
+                // Key was deleted from inner but not from insertion_order? Shouldn't happen.
+                return self.next();
+            }
+        };
 
         // ── Set-only methods ───────────────────────────────────
 
         /// Set.add(value) — insert a value.
         /// Only valid when Value == void (i.e., JsSet).
         /// Calling on JsMap is a compile error.
-        pub fn add(self: *@This(), value: JsAny) !void {
+        pub fn add(self: *@This(), alloc: Allocator, value: JsAny) !void {
             if (!is_set) {
                 @compileError("add() is only valid for Set (JsSet)");
             }
+            const was_new = !self.inner.contains(value);
             try self.inner.put(value, {});
+            if (was_new) {
+                try self.insertion_order.append(alloc, value);
+            }
         }
 
         // ── Map-only methods ────────────────────────────────────
@@ -306,9 +354,13 @@ pub fn JsCollection(comptime Value: type) type {
             if (!is_map) {
                 @compileError("set() is only valid for Map (JsMap)");
             }
+            const was_new = !self.inner.contains(key);
             if (try self.inner.fetchPut(key, value)) |old_kv| {
                 var v = old_kv.value;
                 v.deinit(alloc);
+            }
+            if (was_new) {
+                try self.insertion_order.append(alloc, key);
             }
         }
 
@@ -339,8 +391,8 @@ test "JsSet add/has (i64)" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(1));
-    try s.add(JsAny.fromI64(2));
+    try s.add(std.testing.allocator, JsAny.fromI64(1));
+    try s.add(std.testing.allocator, JsAny.fromI64(2));
     try std.testing.expect(s.has(JsAny.fromI64(1)));
     try std.testing.expect(s.has(JsAny.fromI64(2)));
     try std.testing.expect(!s.has(JsAny.fromI64(3)));
@@ -350,8 +402,8 @@ test "JsSet add/has (string)" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromString("hello"));
-    try s.add(JsAny.fromString("world"));
+    try s.add(std.testing.allocator, JsAny.fromString("hello"));
+    try s.add(std.testing.allocator, JsAny.fromString("world"));
     try std.testing.expect(s.has(JsAny.fromString("hello")));
     try std.testing.expect(s.has(JsAny.fromString("world")));
     try std.testing.expect(!s.has(JsAny.fromString("missing")));
@@ -361,10 +413,10 @@ test "JsSet add/has (mixed types)" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(42));
-    try s.add(JsAny.fromString("answer"));
-    try s.add(JsAny.fromBool(true));
-    try s.add(JsAny.fromNull());
+    try s.add(std.testing.allocator, JsAny.fromI64(42));
+    try s.add(std.testing.allocator, JsAny.fromString("answer"));
+    try s.add(std.testing.allocator, JsAny.fromBool(true));
+    try s.add(std.testing.allocator, JsAny.fromNull());
 
     try std.testing.expect(s.has(JsAny.fromI64(42)));
     try std.testing.expect(s.has(JsAny.fromString("answer")));
@@ -376,8 +428,8 @@ test "JsSet duplicate values ignored" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(1));
-    try s.add(JsAny.fromI64(1)); // duplicate
+    try s.add(std.testing.allocator, JsAny.fromI64(1));
+    try s.add(std.testing.allocator, JsAny.fromI64(1)); // duplicate
     try std.testing.expectEqual(@as(usize, 1), s.size());
 }
 
@@ -385,7 +437,7 @@ test "JsSet delete" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(10));
+    try s.add(std.testing.allocator, JsAny.fromI64(10));
     try std.testing.expect(s.delete(std.testing.allocator, JsAny.fromI64(10)));
     try std.testing.expect(!s.has(JsAny.fromI64(10)));
     try std.testing.expect(!s.delete(std.testing.allocator, JsAny.fromI64(10)));
@@ -395,8 +447,8 @@ test "JsSet clear" {
     var s = JsSet.init(std.testing.allocator);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(1));
-    try s.add(JsAny.fromI64(2));
+    try s.add(std.testing.allocator, JsAny.fromI64(1));
+    try s.add(std.testing.allocator, JsAny.fromI64(2));
     s.clear(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 0), s.size());
 }
@@ -406,7 +458,7 @@ test "JsSet size" {
     defer s.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), s.size());
-    try s.add(JsAny.fromI64(42));
+    try s.add(std.testing.allocator, JsAny.fromI64(42));
     try std.testing.expectEqual(@as(usize, 1), s.size());
 }
 
@@ -415,9 +467,9 @@ test "JsSet values()" {
     var s = JsSet.init(alloc);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(10));
-    try s.add(JsAny.fromI64(20));
-    try s.add(JsAny.fromString("hello"));
+    try s.add(std.testing.allocator, JsAny.fromI64(10));
+    try s.add(std.testing.allocator, JsAny.fromI64(20));
+    try s.add(std.testing.allocator, JsAny.fromString("hello"));
 
     var vals = try s.values(alloc);
     defer vals.deinit(alloc);
@@ -430,8 +482,8 @@ test "JsSet keys() same as values()" {
     var s = JsSet.init(alloc);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(1));
-    try s.add(JsAny.fromI64(2));
+    try s.add(std.testing.allocator, JsAny.fromI64(1));
+    try s.add(std.testing.allocator, JsAny.fromI64(2));
 
     var keys = try s.keys(alloc);
     defer keys.deinit(alloc);
@@ -446,8 +498,8 @@ test "JsSet entries()" {
     var s = JsSet.init(alloc);
     defer s.deinit(std.testing.allocator);
 
-    try s.add(JsAny.fromI64(5));
-    try s.add(JsAny.fromI64(10));
+    try s.add(std.testing.allocator, JsAny.fromI64(5));
+    try s.add(std.testing.allocator, JsAny.fromI64(10));
 
     var ents = try s.entries(alloc);
     defer {
@@ -592,8 +644,8 @@ test "NaN SameValueZero: NaN === NaN in Map/Set (R7-6)" {
     // Set with NaN key
     var s = JsSet.init(alloc);
     defer s.deinit(alloc);
-    try s.add(JsAny.fromF64(std.math.nan(f64)));
-    try s.add(JsAny.fromF64(std.math.nan(f64))); // should be a no-op (duplicate)
+    try s.add(std.testing.allocator, JsAny.fromF64(std.math.nan(f64)));
+    try s.add(std.testing.allocator, JsAny.fromF64(std.math.nan(f64))); // should be a no-op (duplicate)
     try std.testing.expectEqual(@as(usize, 1), s.size());
     try std.testing.expect(s.has(JsAny.fromF64(std.math.nan(f64))));
 
@@ -626,11 +678,11 @@ test "null key normalization: JsAny.null and JsAny.value(.null) are same key (R1
     // Set: add both representations → size 1
     var s = JsSet.init(alloc);
     defer s.deinit(alloc);
-    try s.add(JsAny.fromNull());
-    try s.add(JsAny.fromValue(.null));
+    try s.add(std.testing.allocator, JsAny.fromNull());
+    try s.add(std.testing.allocator, JsAny.fromValue(.null));
     try std.testing.expectEqual(@as(usize, 1), s.size());
 
     // null ≠ undefined as keys
-    try s.add(JsAny.fromUndefined());
+    try s.add(std.testing.allocator, JsAny.fromUndefined());
     try std.testing.expectEqual(@as(usize, 2), s.size());
 }

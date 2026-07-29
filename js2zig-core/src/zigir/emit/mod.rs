@@ -46,6 +46,11 @@ pub struct Emitter {
     /// `ast-check` with `local variable '__dw_first' shadows local variable
     /// from outer scope`).
     do_while_counter: u32,
+    /// Counter for generating unique array builder variable names
+    /// (`__arr_0`, `__arr_1`, ...). Zig 0.16 forbids local-variable shadowing
+    /// across nesting scopes, so each nested array literal must use a distinct
+    /// variable name to avoid `local variable '__arr' shadows outer scope`.
+    array_var_counter: u32,
     /// Whether we are currently emitting inside a function body.
     /// Top-level declarations (const, var) cannot use `return` or `try`,
     /// so error-propagation patterns like `catch return error.JsThrow` must
@@ -111,6 +116,7 @@ impl Emitter {
             try_label_counter: 0,
             label_counter: 0,
             do_while_counter: 0,
+            array_var_counter: 0,
             in_function: false,
             fn_can_throw: false,
             static_init_buffer: String::new(),
@@ -301,6 +307,15 @@ impl Emitter {
         let n = self.label_counter;
         self.label_counter += 1;
         format!("blk_{}", n)
+    }
+
+    /// Return the next unique array builder variable name (`__arr_0`, `__arr_1`, ...).
+    /// Each nested array literal block must use a distinct variable name to
+    /// avoid Zig's "local variable shadows outer scope" error.
+    fn next_array_var(&mut self) -> String {
+        let n = self.array_var_counter;
+        self.array_var_counter += 1;
+        format!("__arr_{}", n)
     }
 
     /// Return the next do-while "first iteration" flag name
