@@ -345,6 +345,10 @@ fn expr_has_side_effects(expr: &IrExpr) -> bool {
                     .obj_expr
                     .as_ref()
                     .is_some_and(|e| expr_has_side_effects(e))
+                || inline_data
+                    .reduce_init
+                    .as_ref()
+                    .is_some_and(expr_has_side_effects)
         }
         IrExpr::ArrayMethodInline(inline_data) => {
             // Only mutating methods (splice, copyWithin, fill) have real side

@@ -175,10 +175,11 @@ pub fn JsCollection(comptime Value: type) type {
         /// Generic insert. Set callers should use add(), Map callers set().
         fn put(self: *@This(), alloc: Allocator, key: JsAny, value: Value) !void {
             const was_new = !self.inner.contains(key);
-            try self.inner.put(key, value);
             if (was_new) {
                 try self.insertion_order.append(alloc, key);
+                errdefer _ = self.insertion_order.pop();
             }
+            try self.inner.put(key, value);
         }
 
         pub fn has(self: *const @This(), key: JsAny) bool {
@@ -332,10 +333,11 @@ pub fn JsCollection(comptime Value: type) type {
                 @compileError("add() is only valid for Set (JsSet)");
             }
             const was_new = !self.inner.contains(value);
-            try self.inner.put(value, {});
             if (was_new) {
                 try self.insertion_order.append(alloc, value);
+                errdefer _ = self.insertion_order.pop();
             }
+            try self.inner.put(value, {});
         }
 
         // ── Map-only methods ────────────────────────────────────
@@ -355,12 +357,13 @@ pub fn JsCollection(comptime Value: type) type {
                 @compileError("set() is only valid for Map (JsMap)");
             }
             const was_new = !self.inner.contains(key);
+            if (was_new) {
+                try self.insertion_order.append(alloc, key);
+                errdefer _ = self.insertion_order.pop();
+            }
             if (try self.inner.fetchPut(key, value)) |old_kv| {
                 var v = old_kv.value;
                 v.deinit(alloc);
-            }
-            if (was_new) {
-                try self.insertion_order.append(alloc, key);
             }
         }
 

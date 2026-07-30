@@ -2,10 +2,9 @@
 // ValidatePass — structural validation of an IrModule.
 //
 // Checks:
-//   1. Type consistency: expressions have plausible types
-//   2. Name uniqueness: no duplicate top-level identifiers
-//   3. Closure integrity: captured lists match actual references
-//   4. C ABI compatibility: exported function signatures use C-safe types
+//   1. Name uniqueness: no duplicate top-level identifiers
+//   2. Closure integrity: captured lists match actual references
+//   3. C ABI compatibility: exported function signatures use C-safe types
 
 use crate::types::ZigType;
 use crate::zigir::passes::{IrPass, PassResult};
@@ -194,18 +193,12 @@ impl ValidatePass {
     }
 
     fn check_closure_refs_in_stmt(&mut self, stmt: &IrStmt) {
-        // Special case: NestedFnDecl — check struct body + capture names (not closure body)
-        if let IrStmt::NestedFnDecl {
-            struct_def,
-            instance,
-        } = stmt
-        {
+        // Special case: NestedFnDecl — check struct body.
+        // The closure struct's captures are already validated at module level
+        // via check_closure_integrity; wrapping each capture name in IrExpr::Ident
+        // here would be a no-op (Ident is a leaf with no children to recurse into).
+        if let IrStmt::NestedFnDecl { struct_def, .. } = stmt {
             self.check_closure_refs_in_block(&struct_def.body);
-            if let Some(closure) = instance {
-                for cap in &closure.captured {
-                    self.check_closure_refs_in_expr(&IrExpr::Ident(cap.name.clone()));
-                }
-            }
             return;
         }
 

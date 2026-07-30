@@ -348,7 +348,12 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                     }
                     a / b
                 }
-                BinOp::Mod => a % b,
+                BinOp::Mod => {
+                    if *b == 0.0 {
+                        return None;
+                    }
+                    a % b
+                }
                 BinOp::Eq | BinOp::StrictEq => return Some(IrExpr::BoolLiteral(a == b)),
                 BinOp::Ne | BinOp::StrictNe => return Some(IrExpr::BoolLiteral(a != b)),
                 BinOp::Lt => return Some(IrExpr::BoolLiteral(a < b)),
@@ -357,54 +362,76 @@ fn fold_binary(op: BinOp, left: &IrExpr, right: &IrExpr) -> Option<IrExpr> {
                 BinOp::Ge => return Some(IrExpr::BoolLiteral(a >= b)),
                 _ => return None,
             };
+            // Don't fold NaN or Infinity — they can produce invalid Zig literals
+            if result.is_nan() || result.is_infinite() {
+                return None;
+            }
             Some(IrExpr::FloatLiteral(result))
         }
         // Mixed int + float → promote to float
         (IrExpr::IntLiteral(a), IrExpr::FloatLiteral(b)) => {
             let a_f = *a as f64;
             let b_val = *b;
-            match op {
-                BinOp::Add => Some(IrExpr::FloatLiteral(a_f + b_val)),
-                BinOp::Sub => Some(IrExpr::FloatLiteral(a_f - b_val)),
-                BinOp::Mul => Some(IrExpr::FloatLiteral(a_f * b_val)),
+            let result = match op {
+                BinOp::Add => a_f + b_val,
+                BinOp::Sub => a_f - b_val,
+                BinOp::Mul => a_f * b_val,
                 BinOp::Div => {
                     if b_val == 0.0 {
                         return None;
                     }
-                    Some(IrExpr::FloatLiteral(a_f / b_val))
+                    a_f / b_val
                 }
-                BinOp::Mod => Some(IrExpr::FloatLiteral(a_f % b_val)),
-                BinOp::Eq | BinOp::StrictEq => Some(IrExpr::BoolLiteral(a_f == b_val)),
-                BinOp::Ne | BinOp::StrictNe => Some(IrExpr::BoolLiteral(a_f != b_val)),
-                BinOp::Lt => Some(IrExpr::BoolLiteral(a_f < b_val)),
-                BinOp::Le => Some(IrExpr::BoolLiteral(a_f <= b_val)),
-                BinOp::Gt => Some(IrExpr::BoolLiteral(a_f > b_val)),
-                BinOp::Ge => Some(IrExpr::BoolLiteral(a_f >= b_val)),
-                _ => None,
+                BinOp::Mod => {
+                    if b_val == 0.0 {
+                        return None;
+                    }
+                    a_f % b_val
+                }
+                BinOp::Eq | BinOp::StrictEq => return Some(IrExpr::BoolLiteral(a_f == b_val)),
+                BinOp::Ne | BinOp::StrictNe => return Some(IrExpr::BoolLiteral(a_f != b_val)),
+                BinOp::Lt => return Some(IrExpr::BoolLiteral(a_f < b_val)),
+                BinOp::Le => return Some(IrExpr::BoolLiteral(a_f <= b_val)),
+                BinOp::Gt => return Some(IrExpr::BoolLiteral(a_f > b_val)),
+                BinOp::Ge => return Some(IrExpr::BoolLiteral(a_f >= b_val)),
+                _ => return None,
+            };
+            if result.is_nan() || result.is_infinite() {
+                return None;
             }
+            Some(IrExpr::FloatLiteral(result))
         }
         (IrExpr::FloatLiteral(a), IrExpr::IntLiteral(b)) => {
             let a_val = *a;
             let b_f = *b as f64;
-            match op {
-                BinOp::Add => Some(IrExpr::FloatLiteral(a_val + b_f)),
-                BinOp::Sub => Some(IrExpr::FloatLiteral(a_val - b_f)),
-                BinOp::Mul => Some(IrExpr::FloatLiteral(a_val * b_f)),
+            let result = match op {
+                BinOp::Add => a_val + b_f,
+                BinOp::Sub => a_val - b_f,
+                BinOp::Mul => a_val * b_f,
                 BinOp::Div => {
                     if b_f == 0.0 {
                         return None;
                     }
-                    Some(IrExpr::FloatLiteral(a_val / b_f))
+                    a_val / b_f
                 }
-                BinOp::Mod => Some(IrExpr::FloatLiteral(a_val % b_f)),
-                BinOp::Eq | BinOp::StrictEq => Some(IrExpr::BoolLiteral(a_val == b_f)),
-                BinOp::Ne | BinOp::StrictNe => Some(IrExpr::BoolLiteral(a_val != b_f)),
-                BinOp::Lt => Some(IrExpr::BoolLiteral(a_val < b_f)),
-                BinOp::Le => Some(IrExpr::BoolLiteral(a_val <= b_f)),
-                BinOp::Gt => Some(IrExpr::BoolLiteral(a_val > b_f)),
-                BinOp::Ge => Some(IrExpr::BoolLiteral(a_val >= b_f)),
-                _ => None,
+                BinOp::Mod => {
+                    if b_f == 0.0 {
+                        return None;
+                    }
+                    a_val % b_f
+                }
+                BinOp::Eq | BinOp::StrictEq => return Some(IrExpr::BoolLiteral(a_val == b_f)),
+                BinOp::Ne | BinOp::StrictNe => return Some(IrExpr::BoolLiteral(a_val != b_f)),
+                BinOp::Lt => return Some(IrExpr::BoolLiteral(a_val < b_f)),
+                BinOp::Le => return Some(IrExpr::BoolLiteral(a_val <= b_f)),
+                BinOp::Gt => return Some(IrExpr::BoolLiteral(a_val > b_f)),
+                BinOp::Ge => return Some(IrExpr::BoolLiteral(a_val >= b_f)),
+                _ => return None,
+            };
+            if result.is_nan() || result.is_infinite() {
+                return None;
             }
+            Some(IrExpr::FloatLiteral(result))
         }
         // String concatenation
         (IrExpr::StringLiteral(a), IrExpr::StringLiteral(b)) => {
