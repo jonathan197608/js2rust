@@ -1357,7 +1357,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::ArrayKeys => (
             BuiltinModule::JsArray,
             "keys".into(),
-            ZigType::ArrayList(Box::new(ZigType::I64)),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
         ),
         BuiltinCall::ArrayValues => (
             BuiltinModule::JsArray,
@@ -1398,7 +1398,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::MapKeys => (
             BuiltinModule::JsCollections,
             "keys".into(),
-            ZigType::ArrayList(Box::new(ZigType::Str)),
+            ZigType::ArrayList(Box::new(ZigType::JsAny)),
         ),
         BuiltinCall::MapValues => (
             BuiltinModule::JsCollections,
@@ -1408,7 +1408,7 @@ pub fn builtin_call_to_ir(
         BuiltinCall::MapEntries => (
             BuiltinModule::JsCollections,
             "entries".into(),
-            ZigType::ArrayList(Box::new(ZigType::JsAny)),
+            ZigType::ArrayList(Box::new(ZigType::ArrayList(Box::new(ZigType::JsAny)))),
         ),
         BuiltinCall::MapClear => (BuiltinModule::JsCollections, "clear".into(), ZigType::Void),
         BuiltinCall::SetAdd => (
@@ -1586,7 +1586,7 @@ pub fn builtin_call_to_ir(
 
         // Symbol
         BuiltinCall::SymbolFor => (BuiltinModule::JsSymbol, "for".into(), ZigType::JsSymbol), // Emitter renames "for" ï¿½ï¿½ "symbolFor" to avoid Zig keyword
-        BuiltinCall::SymbolKeyFor => (BuiltinModule::JsSymbol, "keyFor".into(), ZigType::Str),
+        BuiltinCall::SymbolKeyFor => (BuiltinModule::JsSymbol, "keyFor".into(), ZigType::JsAny),
 
         // RegExp
         BuiltinCall::RegExpTest => (BuiltinModule::JsRegExp, "test".into(), ZigType::Bool),

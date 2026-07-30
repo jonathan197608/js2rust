@@ -13,15 +13,23 @@ pub const JsBigInt = struct {
     pub fn init(alloc: std.mem.Allocator, s: []const u8) !Self {
         var managed = try std.math.big.int.Managed.init(alloc);
         errdefer managed.deinit();
+        // Handle optional sign prefix
+        var negative = false;
+        var rest = s;
+        if (rest.len > 0 and (rest[0] == '+' or rest[0] == '-')) {
+            negative = rest[0] == '-';
+            rest = rest[1..];
+        }
         // Detect base from prefix: 0x → 16, 0o → 8, 0b → 2, else 10
-        const base: u8 = if (s.len > 2 and s[0] == '0') switch (s[1]) {
+        const base: u8 = if (rest.len > 2 and rest[0] == '0') switch (rest[1]) {
             'x', 'X' => 16,
             'o', 'O' => 8,
             'b', 'B' => 2,
             else => 10,
         } else 10;
-        const digits: []const u8 = if (base != 10) s[2..] else s;
+        const digits: []const u8 = if (base != 10) rest[2..] else rest;
         try managed.setString(base, digits);
+        if (negative) managed.negate();
         return Self{ .value = managed };
     }
 

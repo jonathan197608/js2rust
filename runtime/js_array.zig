@@ -5,6 +5,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsAny = @import("jsany.zig").JsAny;
+const js_string = @import("js_string.zig");
 
 /// Convert a []const i64 slice to a []const JsAny slice (allocates).
 /// Used for calling functions with rest parameters (`...arr`) where the
@@ -50,31 +51,56 @@ pub fn from(alloc: Allocator, arrayLike: JsAny) !std.ArrayList(JsAny) {
     // R16: Pre-fix iterated UTF-8 bytes, so "café" produced 5 elements
     // (é = 2 UTF-8 bytes). JS Array.from splits by UTF-16 code units;
     // for BMP characters this is the same as Unicode code points.
+    // R36: Supplementary characters (> 0xFFFF) are split into 2 surrogate
+    // halves, matching JS semantics where each UTF-16 code unit becomes
+    // a separate array element (encoded as CESU-8 3-byte strings).
     if (arrayLike.isString()) {
         const str = arrayLike.value.string;
-        // First pass: count UTF-8 code points (≈ UTF-16 code units for BMP).
-        var cp_count: usize = 0;
+        // First pass: count UTF-16 code units (1 for BMP, 2 for supplementary)
+        var cu_count: usize = 0;
         var si: usize = 0;
         while (si < str.len) {
-            const cp_len = std.unicode.utf8ByteSequenceLength(str[si]) catch 1;
-            si += @min(@as(usize, cp_len), str.len - si);
-            cp_count += 1;
+            const decoded = js_string.decodeUtf8CodePoint(str, si) orelse {
+                si += 1;
+                cu_count += 1;
+                continue;
+            };
+            cu_count += if (decoded.code_point <= 0xFFFF) 1 else 2;
+            si += decoded.len;
         }
-        try result.ensureTotalCapacity(alloc, cp_count);
+        try result.ensureTotalCapacity(alloc, cu_count);
         errdefer {
             for (result.items) |it| {
                 if (it.isString()) alloc.free(it.value.string);
             }
         }
-        // Second pass: emit each code point as a string.
+        // Second pass: emit each UTF-16 code unit as a string.
+        // For supplementary characters, emit high surrogate then low surrogate.
         si = 0;
         while (si < str.len) {
-            const cp_len = std.unicode.utf8ByteSequenceLength(str[si]) catch 1;
-            const end = @min(si + @as(usize, cp_len), str.len);
-            const char_slice = str[si..end];
-            const chr = try alloc.dupe(u8, char_slice);
-            result.appendAssumeCapacity(JsAny.fromString(chr));
-            si = end;
+            const decoded = js_string.decodeUtf8CodePoint(str, si) orelse {
+                // Invalid byte — emit as-is
+                const chr = try alloc.dupe(u8, str[si..si + 1]);
+                result.appendAssumeCapacity(JsAny.fromString(chr));
+                si += 1;
+                continue;
+            };
+            if (decoded.code_point <= 0xFFFF) {
+                // BMP: one UTF-16 code unit → one string element
+                const char_slice = str[si..si + decoded.len];
+                const chr = try alloc.dupe(u8, char_slice);
+                result.appendAssumeCapacity(JsAny.fromString(chr));
+            } else {
+                // Supplementary: split into surrogate pair
+                const cp = decoded.code_point;
+                const high: u16 = @intCast(0xD800 + ((cp - 0x10000) >> 10));
+                const low: u16 = @intCast(0xDC00 + ((cp - 0x10000) & 0x3FF));
+                const high_str = try js_string.encodeCodeUnit(alloc, high);
+                result.appendAssumeCapacity(JsAny.fromString(high_str));
+                const low_str = try js_string.encodeCodeUnit(alloc, low);
+                result.appendAssumeCapacity(JsAny.fromString(low_str));
+            }
+            si += decoded.len;
         }
         return result;
     }

@@ -509,9 +509,21 @@ impl Emitter {
             if matches!(data.elem_type, ZigType::JsAny) {
                 self.write(&format!("{}.append(js_allocator.allocator(), JsAny.from({})) catch @panic(\"OOM: Array.concat\"); ", _cc, _ca));
             } else {
+                // elem_type is a scalar (i64/f64/bool/str). The arg may be
+                // a JsAny (e.g. from a variable or function return) or a
+                // compatible scalar. If arg is JsAny, extract the scalar
+                // via the appropriate asXxx() method; otherwise use @as to
+                // coerce compatible types.
+                let extract = match &data.elem_type {
+                    ZigType::I64 => "asI64()",
+                    ZigType::F64 => "asF64()",
+                    ZigType::Bool => "asBool()",
+                    ZigType::Str => "asString(js_allocator.allocator())",
+                    _ => "asI64()",
+                };
                 self.write(&format!(
-                    "{}.append(js_allocator.allocator(), {}) catch @panic(\"OOM: Array.concat\"); ",
-                    _cc, _ca
+                    "{cc}.append(js_allocator.allocator(), if (@TypeOf({ca}) == JsAny) {ca}.{ex} else @as({et}, {ca})) catch @panic(\"OOM: Array.concat\"); ",
+                    cc = _cc, ca = _ca, ex = extract, et = elem_type_str
                 ));
             }
             self.write("} } ");

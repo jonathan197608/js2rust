@@ -638,6 +638,9 @@ pub const JsAny = union(enum) {
                 // R24-RT-1: If key exists, update value in place to avoid
                 // leaking the duped key (put() keeps the old key on overwrite).
                 if (o.getPtr(key)) |existing| {
+                    // Self-assignment guard: if val and existing.* reference
+                    // the same heap allocation, deinit would free val too.
+                    if (std.meta.eql(existing.*, val)) return;
                     var old = existing.*;
                     existing.* = val;
                     old.deinit(alloc);
@@ -684,6 +687,9 @@ pub const JsAny = union(enum) {
                 // R24-RT-1: If key exists, update value in place to avoid
                 // leaking the duped key (put() keeps the old key on overwrite).
                 if (o.getPtr(key)) |existing| {
+                    // Self-assignment guard: if val and existing.* reference
+                    // the same heap allocation, deinit would free val too.
+                    if (std.meta.eql(existing.*, val)) return;
                     var old = existing.*;
                     existing.* = val;
                     old.deinit(alloc);

@@ -620,7 +620,7 @@ impl Emitter {
                 let needs_field_deinit = matches!(
                     &field.zig_type,
                     ZigType::NamedStruct(n)
-                        if n == "Map" || n == "Set"
+                        if n == "Map" || n == "Set" || n == "RegExp"
                             || self.class_needs_deinit.contains(n.as_str())
                 ) || matches!(&field.zig_type, ZigType::ArrayList(_))
                     || matches!(&field.zig_type, ZigType::BigInt);
@@ -650,7 +650,7 @@ impl Emitter {
             let needs_static_deinit = matches!(
                 field_ty,
                 ZigType::NamedStruct(n)
-                    if n == "Map" || n == "Set"
+                    if n == "Map" || n == "Set" || n == "RegExp"
                         || self.class_needs_deinit.contains(n.as_str())
             ) || matches!(field_ty, ZigType::ArrayList(_))
                 || matches!(field_ty, ZigType::BigInt);

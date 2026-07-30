@@ -19,7 +19,7 @@ const JsAny = @import("jsany.zig").JsAny;
 /// encoded as CESU-8 3-byte sequences. All callers are JS string functions
 /// that must handle surrogates correctly. Strict UTF-8 validation (e.g. for
 /// JSON/URI) uses separate validation logic.
-fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: u8 } {
+pub fn decodeUtf8CodePoint(s: []const u8, i: usize) ?struct { code_point: u32, len: u8 } {
     if (i >= s.len) return null;
     const c = s[i];
     var code_point: u32 = 0;
@@ -183,6 +183,11 @@ pub fn utf16Order(a: []const u8, b: []const u8) std.math.Order {
 
 /// Return the byte slice containing exactly the first `n` UTF-16 code units of `s`.
 /// Used by padStart/padEnd for partial padding truncation.
+/// NOTE: When `n` falls in the middle of a supplementary character (surrogate pair),
+/// the partial slice is empty because encoding a lone high surrogate requires
+/// allocation (CESU-8). This is a known limitation for padStart/padEnd with
+//  supplementary characters as padding strings. In practice, padding strings
+//  are virtually always single-code-unit characters (spaces, dashes, etc.).
 pub fn firstUtf16CodeUnits(s: []const u8, n: usize) []const u8 {
     var utf16_idx: usize = 0;
     var i: usize = 0;
@@ -192,7 +197,7 @@ pub fn firstUtf16CodeUnits(s: []const u8, n: usize) []const u8 {
             continue;
         };
         const cu_count = utf16CodeUnitCount(decoded.code_point);
-        if (utf16_idx + cu_count > n) break; // would overshoot
+        if (utf16_idx + cu_count > n) break; // would overshoot — partial surrogate
         utf16_idx += cu_count;
         i += decoded.len;
     }
@@ -203,7 +208,7 @@ pub fn firstUtf16CodeUnits(s: []const u8, n: usize) []const u8 {
 /// For BMP characters this produces standard UTF-8.
 /// For surrogate code points (0xD800-0xDFFF) this produces CESU-8 (3-byte encoding),
 /// which matches JS semantics where charAt can return a lone surrogate.
-fn encodeCodeUnit(alloc: Allocator, cu: u16) ![]const u8 {
+pub fn encodeCodeUnit(alloc: Allocator, cu: u16) ![]const u8 {
     const cp: u32 = cu;
     if (cp <= 0x7F) {
         const result = try alloc.alloc(u8, 1);

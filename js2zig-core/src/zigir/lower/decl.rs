@@ -506,12 +506,12 @@ impl Lowerer {
             ctx.add_regexp_var(&ident.zig_name);
         }
 
-        // needs_deinit: true for Map/Set/BigInt/ArrayList types and will be checked for class
+        // needs_deinit: true for Map/Set/BigInt/ArrayList/RegExp types and will be checked for class
         // instances by the Emitter using class_needs_deinit. Set to false for
         // types that don't own resources.
         let needs_deinit = matches!(
             zig_type,
-            Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set"
+            Some(ZigType::NamedStruct(ref n)) if n == "Map" || n == "Set" || n == "RegExp"
         ) || matches!(zig_type, Some(ZigType::BigInt))
             || matches!(zig_type, Some(ZigType::ArrayList(_)))
             || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty());
