@@ -66,7 +66,11 @@ return Number.MIN_SAFE_INTEGER;
 
     // Verify all 8 constants are generated as Zig equivalents
     assert!(zig.contains("floatMax"), "Expected 'floatMax' in:\n{}", zig);
-    assert!(zig.contains("floatMin"), "Expected 'floatMin' in:\n{}", zig);
+    assert!(
+        zig.contains("floatTrueMin"),
+        "Expected 'floatTrueMin' in:\n{}",
+        zig
+    );
     assert!(zig.contains("nan"), "Expected 'nan' in:\n{}", zig);
 }
 
@@ -2872,8 +2876,8 @@ export function getReversedLen() {
 fn test_arraylist_index_access() {
     // toReversed() returns ArrayList → [i] should emit a labeled-block
     // index access with negative-index guard (EMIT-13):
-    //   .items[blk_N: { const __idx = i; break :blk_N
-    //     if (__idx < 0) @panic("...") else @as(usize, @intCast(__idx)); }]
+    //   .items[blk_N: { const __idx_N = i; break :blk_N
+    //     if (__idx_N < 0) @panic("...") else @as(usize, @intCast(__idx_N)); }]
     let js = r#"
 export function getReversedFirst() {
     const arr = [1, 2, 3];
@@ -2884,8 +2888,9 @@ export function getReversedFirst() {
     let zig = transpile_and_check(js, "test_arraylist_index_access");
     assert!(
         zig.contains(".items[")
-            && zig.contains("if (__idx < 0) @panic(\"array index out of bounds: negative index\")")
-            && zig.contains("@as(usize, @intCast(__idx))"),
+            && zig.contains("if (__idx_")
+            && zig.contains("< 0) @panic(\"array index out of bounds: negative index\")")
+            && zig.contains("@as(usize, @intCast(__idx_"),
         "Expected labeled-block index access with negative guard, got:\n{}",
         zig
     );

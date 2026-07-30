@@ -554,14 +554,57 @@ impl Emitter {
         };
         let str_on_left = left_is_str;
 
-        // Use a unique label rather than the hardcoded `blk:` so nested
-        // BigInt-string concatenations (e.g. `("a" + 1n) + 2n` if both `+`
-        // ops resolve to string concat) do not produce `redefinition of
-        // label 'blk'` in Zig.
+        // Use a unique label and unique variable names so nested
+        // BigInt-string concatenations (e.g. `("a" + 1n) + 2n`) do not
+        // produce shadowing errors in Zig 0.16.
         let label = self.next_label();
+        let buf_var = format!("__buf_{}", label);
+        let part_var = format!("__part_{}", label);
         self.write(&format!(
-            "({}: {{ var __buf: std.ArrayList(u8) = .empty; errdefer __buf.deinit(js_allocator.allocator()); ",
-            label
+            "({}: {{ var {}: std.ArrayList(u8) = .empty; errdefer {}.deinit(js_allocator.allocator()); ",
+            label, buf_var, buf_var
+        ));
+        // Write the first part
+        if str_on_left {
+            self.write(&format!(
+                "{}.appendSlice(js_allocator.allocator(), ",
+                buf_var
+            ));
+            self.emit_expr(str_expr);
+            self.write(") catch @panic(\"OOM: string concat\"); ");
+        } else {
+            self.write(&format!(
+                "{{ const {} = std.fmt.allocPrint(js_allocator.allocator(), \"{{}}\", .{{",
+                part_var
+            ));
+            self.emit_expr(bigint_expr);
+            self.write(&format!(
+                "}}) catch @panic(\"OOM: bigint string concat\"); {}.appendSlice(js_allocator.allocator(), {}) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free({}); }} ",
+                buf_var, part_var, part_var
+            ));
+        }
+        // Write the second part
+        if str_on_left {
+            self.write(&format!(
+                "{{ const {} = std.fmt.allocPrint(js_allocator.allocator(), \"{{}}\", .{{",
+                part_var
+            ));
+            self.emit_expr(bigint_expr);
+            self.write(&format!(
+                "}}) catch @panic(\"OOM: bigint string concat\"); {}.appendSlice(js_allocator.allocator(), {}) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free({}); }} ",
+                buf_var, part_var, part_var
+            ));
+        } else {
+            self.write(&format!(
+                "{}.appendSlice(js_allocator.allocator(), ",
+                buf_var
+            ));
+            self.emit_expr(str_expr);
+            self.write(") catch @panic(\"OOM: string concat\"); ");
+        }
+        self.write(&format!(
+            "break :{} {}.toOwnedSlice(js_allocator.allocator()) catch @panic(\"OOM: string concat\"); }})",
+            label, buf_var
         ));
         // Write the first part
         if str_on_left {

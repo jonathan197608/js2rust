@@ -813,10 +813,8 @@ impl Lowerer {
             while end <= n {
                 // Only unlabeled `break;` terminates switch fall-through.
                 // Labeled `break outerLabel;` must be preserved for outer loops.
-                let has_break = ss.cases[end - 1]
-                    .consequent
-                    .iter()
-                    .any(|s| matches!(s, Statement::BreakStatement(bs) if bs.label.is_none()));
+                let has_break =
+                    super::helpers::case_has_switch_break(&ss.cases[end - 1].consequent);
                 if has_break {
                     break;
                 }
@@ -1589,14 +1587,17 @@ impl Lowerer {
             // Call to a JsAny-returning function: wrap in .asI64() to
             // extract the i64 value from the JsAny union.
             IrExpr::Call(call) => {
-                let returns_jsany = match &*call.callee {
+                let (returns_jsany, returns_f64) = match &*call.callee {
                     IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
-                        self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
+                        let ret = self.type_info.fn_return_types.get(&ident.js_name);
+                        (ret == Some(&ZigType::JsAny), ret == Some(&ZigType::F64))
                     }
-                    _ => false,
+                    _ => (false, false),
                 };
                 if returns_jsany {
                     Self::wrap_jsany_to_i64(IrExpr::Call(call))
+                } else if returns_f64 {
+                    Self::wrap_f64_to_i64(IrExpr::Call(call))
                 } else {
                     IrExpr::Call(call)
                 }
@@ -1655,7 +1656,7 @@ impl Lowerer {
                     expr
                 }
             }
-            // Logical with f64 same-type → wrap
+            // Logical with f64 same-type → wrap; JsAny same-type → wrap
             IrExpr::Logical {
                 ref left_type,
                 ref right_type,
@@ -1665,6 +1666,8 @@ impl Lowerer {
                     left_type.is_some() && right_type.is_some() && left_type == right_type;
                 if same_type && left_type.as_ref() == Some(&ZigType::F64) {
                     Self::wrap_f64_to_i64(expr)
+                } else if same_type && left_type.as_ref() == Some(&ZigType::JsAny) {
+                    Self::wrap_jsany_to_i64(expr)
                 } else {
                     expr
                 }
@@ -1742,6 +1745,16 @@ impl Lowerer {
                 body,
                 result: Box::new(self.coerce_i64_result_type(*result)),
             },
+            // Ident — check variable type; wrap F64/JsAny to I64
+            IrExpr::Ident(ident) => {
+                let var_ty = self.get_var_type(&ident.js_name);
+                match var_ty {
+                    Some(ZigType::F64) => Self::wrap_f64_to_i64(IrExpr::Ident(ident)),
+                    Some(ZigType::JsAny) => Self::wrap_jsany_to_i64(IrExpr::Ident(ident)),
+                    _ => IrExpr::Ident(ident),
+                }
+            }
+            // Already-coerced or other expressions: pass through unchanged
             other => other,
         }
     }
@@ -1811,7 +1824,8 @@ impl Lowerer {
                 Self::wrap_i64_to_f64(IrExpr::HostCall(hc))
             }
 
-            // Date method call returning I64 — wrap
+            // Date method call returning I64 — wrap, or generic I64-returning
+            // function call — wrap via fn_return_types lookup
             IrExpr::Call(call) => {
                 let is_date_method = matches!(
                     call.call_kind,
@@ -1823,8 +1837,20 @@ impl Lowerer {
                     IrExpr::FieldAccess { field, .. } => Some(field.as_str()),
                     _ => None,
                 };
-                let needs_wrap = is_date_method
-                    && method_name.is_some_and(|name| I64_DATE_METHODS.contains(&name));
+                let needs_wrap = if is_date_method
+                    && method_name.is_some_and(|name| I64_DATE_METHODS.contains(&name))
+                {
+                    true
+                } else {
+                    // Check fn_return_types for generic I64-returning functions
+                    match &*call.callee {
+                        IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
+                            self.type_info.fn_return_types.get(&ident.js_name)
+                                == Some(&ZigType::I64)
+                        }
+                        _ => false,
+                    }
+                };
 
                 if needs_wrap {
                     Self::wrap_i64_to_f64(IrExpr::Call(call))

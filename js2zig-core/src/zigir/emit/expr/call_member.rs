@@ -204,7 +204,7 @@ impl Emitter {
                 // Map JS Number constants to Zig std.math equivalents
                 match val.as_str() {
                     "MAX_VALUE" => self.write("std.math.floatMax(f64)"),
-                    "MIN_VALUE" => self.write("std.math.floatMin(f64)"),
+                    "MIN_VALUE" => self.write("std.math.floatTrueMin(f64)"),
                     "NaN" => self.write("std.math.nan(f64)"),
                     "NEGATIVE_INFINITY" => self.write("-std.math.inf(f64)"),
                     "POSITIVE_INFINITY" => self.write("std.math.inf(f64)"),
@@ -370,12 +370,13 @@ impl Emitter {
         index: &crate::zigir::types::IrExpr,
     ) {
         let lbl = self.next_label();
+        let idx_var = format!("__idx_{}", lbl);
         self.emit_expr(object);
-        self.write(&format!(".items[{}: {{ const __idx = ", lbl));
+        self.write(&format!(".items[{}: {{ const {} = ", lbl, idx_var));
         self.emit_expr(index);
         self.write(&format!(
-            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }}]",
-            lbl
+            "; break :{} if ({} < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast({})); }}]",
+            lbl, idx_var, idx_var
         ));
     }
 
@@ -387,12 +388,13 @@ impl Emitter {
         index: &crate::zigir::types::IrExpr,
     ) {
         let lbl = self.next_label();
+        let idx_var = format!("__idx_{}", lbl);
         self.emit_expr(object);
-        self.write(&format!("[{}: {{ const __idx = ", lbl));
+        self.write(&format!("[{}: {{ const {} = ", lbl, idx_var));
         self.emit_expr(index);
         self.write(&format!(
-            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }}]",
-            lbl
+            "; break :{} if ({} < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast({})); }}]",
+            lbl, idx_var, idx_var
         ));
     }
 
@@ -404,12 +406,13 @@ impl Emitter {
         index: &crate::zigir::types::IrExpr,
     ) {
         let lbl = self.next_label();
+        let idx_var = format!("__idx_{}", lbl);
         self.emit_expr(object);
-        self.write(&format!(".at({}: {{ const __idx = ", lbl));
+        self.write(&format!(".at({}: {{ const {} = ", lbl, idx_var));
         self.emit_expr(index);
         self.write(&format!(
-            "; break :{} if (__idx < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast(__idx)); }})",
-            lbl
+            "; break :{} if ({} < 0) @panic(\"array index out of bounds: negative index\") else @as(usize, @intCast({})); }})",
+            lbl, idx_var, idx_var
         ));
     }
 

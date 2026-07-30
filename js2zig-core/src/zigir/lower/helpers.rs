@@ -287,6 +287,41 @@ pub(crate) fn stmt_has_throw(stmt: &oxc_ast::ast::Statement) -> bool {
     }
 }
 
+/// Check whether a statement list contains an unlabeled `break;` that
+/// targets a switch (not a loop). Recurses into `if`, `block`, and
+/// `labeled` statements (if the label targets the switch), but **not**
+/// into loop bodies — a `break;` inside a for/while/do-while/for-of/for-in
+/// terminates the loop, not the switch.
+pub(crate) fn case_has_switch_break(stmts: &[oxc_ast::ast::Statement]) -> bool {
+    stmts.iter().any(stmt_has_switch_break)
+}
+
+fn stmt_has_switch_break(stmt: &oxc_ast::ast::Statement) -> bool {
+    use oxc_ast::ast::Statement;
+    match stmt {
+        Statement::BreakStatement(bs) => bs.label.is_none(),
+        // Recurse into if consequent + alternate
+        Statement::IfStatement(is) => {
+            stmt_has_switch_break(&is.consequent)
+                || is.alternate.as_ref().is_some_and(stmt_has_switch_break)
+        }
+        // Recurse into block body
+        Statement::BlockStatement(bs) => bs.body.iter().any(stmt_has_switch_break),
+        // Recurse into labeled statement only if it's not a loop label
+        // (we can't easily tell, so be conservative: don't recurse —
+        // labeled break is handled by the labeled-break check in lower_switch)
+        // SwitchStatement: a break in a nested switch targets that switch
+        Statement::SwitchStatement(_) => false,
+        // Loop bodies: break targets the loop, not the outer switch
+        Statement::WhileStatement(_)
+        | Statement::DoWhileStatement(_)
+        | Statement::ForStatement(_)
+        | Statement::ForOfStatement(_)
+        | Statement::ForInStatement(_) => false,
+        _ => false,
+    }
+}
+
 /// Determine the Zig format specifier for a given type.
 /// Used by string concatenation and template literal lowering.
 /// Note: `{any}` is used as the catch-all because Zig 0.16 does not

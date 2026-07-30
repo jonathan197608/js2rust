@@ -376,12 +376,9 @@ impl Lowerer {
         {
             return Some(ty.clone());
         }
-        // Collect candidate from var_types — exact, qualified, suffix-based.
+        // Collect candidate from var_types — exact, qualified.
         // Each step is allowed to override an earlier Anytype result so a
         // more specific qualified entry (e.g., "MyClass::x") can still win.
-        // Use `matches!` against `as_ref()` (not `is_some_and`) so the check
-        // borrows `candidate` rather than consuming it — the variable is read
-        // again later in the suffix-lookup step and the final match.
         let mut candidate: Option<ZigType> = None;
         // Exact match
         if let Some(ty) = self.type_info.var_types.get(name) {
@@ -394,16 +391,6 @@ impl Lowerer {
             let qualified = format!("{}::{}", ctx.name, name);
             if let Some(ty) = self.type_info.var_types.get(&qualified) {
                 candidate = Some(ty.clone());
-            }
-        }
-        // Suffix match (any_key::var_name)
-        if matches!(candidate.as_ref(), None | Some(ZigType::Anytype)) {
-            let suffix = format!("::{}", name);
-            for (k, v) in &self.type_info.var_types {
-                if k.ends_with(&suffix) {
-                    candidate = Some(v.clone());
-                    break;
-                }
             }
         }
         // Filter: Anytype is indeterminate — return None to surface the

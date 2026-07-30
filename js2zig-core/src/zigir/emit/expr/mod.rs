@@ -25,6 +25,14 @@ impl Emitter {
             crate::zigir::types::IrExpr::FloatLiteral(n) => {
                 if *n == -0.0 && n.is_sign_negative() {
                     self.write("-0.0");
+                } else if n.is_nan() {
+                    self.write("std.math.nan(f64)");
+                } else if n.is_infinite() {
+                    if *n > 0.0 {
+                        self.write("std.math.inf(f64)");
+                    } else {
+                        self.write("-std.math.inf(f64)");
+                    }
                 } else {
                     self.write(&n.to_string());
                 }

@@ -184,6 +184,10 @@ impl ZigType {
 /// lowering (`lower/expr/mod.rs`), and the lowerer's type inference
 /// (`lower/expr/member.rs`).
 pub fn numeric_literal_type(value: f64) -> ZigType {
+    // -0.0 must stay F64 (i64 cannot represent IEEE 754 negative zero)
+    if value == 0.0 && value.is_sign_negative() {
+        return ZigType::F64;
+    }
     if value.fract() == 0.0 && value.abs() < (i64::MAX as f64) {
         ZigType::I64
     } else {
