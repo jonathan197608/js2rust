@@ -2065,6 +2065,38 @@ impl Lowerer {
         })
     }
 
+    /// Wrap an expression in `JsAny.fromArrayList(js_allocator.allocator(), expr)
+    /// catch @panic("OOM")` so the result is `JsAny`.
+    ///
+    /// Unlike `wrap_in_jsany_from`, this uses `fromArrayList` which accepts an
+    /// `ArrayList(JsAny)` and wraps it into the `JsAny.array` variant. The
+    /// emitter special-cases calls to `JsAny.fromArrayList` to emit the
+    /// allocator argument with `()` and the `catch @panic` suffix.
+    fn wrap_in_jsany_from_arraylist(
+        expr: crate::zigir::types::IrExpr,
+    ) -> crate::zigir::types::IrExpr {
+        use crate::zigir::kinds::{CallKind, FieldKind};
+        use crate::zigir::types::{IrCallExpr, IrExpr};
+        IrExpr::Call(IrCallExpr {
+            callee: Box::new(IrExpr::FieldAccess {
+                object: Box::new(IrExpr::Ident(crate::zigir::ident::IrIdent::new("JsAny"))),
+                field: "fromArrayList".to_string(),
+                field_kind: FieldKind::StructField,
+            }),
+            args: vec![
+                IrExpr::FieldAccess {
+                    object: Box::new(IrExpr::Ident(crate::zigir::ident::IrIdent::new(
+                        "js_allocator",
+                    ))),
+                    field: "allocator".to_string(),
+                    field_kind: FieldKind::StructField,
+                },
+                expr,
+            ],
+            call_kind: CallKind::Direct,
+        })
+    }
+
     /// Coerce a return expression to `JsAny` when the function's return type
     /// is `JsAny` (e.g., P1-B7 default for non-export functions without JSDoc).
     /// Wraps non-JsAny expressions in `JsAny.from(...)`.
@@ -2077,17 +2109,26 @@ impl Lowerer {
         match expr {
             // Already JsAny — pass through
             IrExpr::Call(call) => {
-                let returns_jsany = match &*call.callee {
+                let fn_ret = match &*call.callee {
                     IrExpr::Ident(ident) | IrExpr::TypedIdent { ident, .. } => {
-                        self.type_info.fn_return_types.get(&ident.js_name) == Some(&ZigType::JsAny)
+                        self.type_info.fn_return_types.get(&ident.js_name).cloned()
                     }
-                    _ => false,
+                    _ => None,
                 };
-                if returns_jsany {
-                    IrExpr::Call(call)
-                } else {
-                    // Non-JsAny-returning call — wrap
-                    Self::wrap_in_jsany_from(IrExpr::Call(call))
+                match fn_ret {
+                    Some(ZigType::JsAny) => IrExpr::Call(call),
+                    // Primitives — JsAny.from() supports these
+                    Some(ZigType::I64) | Some(ZigType::F64) | Some(ZigType::Bool)
+                    | Some(ZigType::Str) => Self::wrap_in_jsany_from(IrExpr::Call(call)),
+                    // ArrayList(JsAny) — use fromArrayList
+                    Some(ZigType::ArrayList(ref inner)) if **inner == ZigType::JsAny => {
+                        Self::wrap_in_jsany_from_arraylist(IrExpr::Call(call))
+                    }
+                    // Non-primitive types (NamedStruct, ArrayList(non-JsAny), BigInt,
+                    // JsSymbol, etc.) — JsAny.from() would @compileError. Pass through.
+                    Some(_) => IrExpr::Call(call),
+                    // Unknown return type — wrap (may @compileError at Zig level)
+                    None => Self::wrap_in_jsany_from(IrExpr::Call(call)),
                 }
             }
             IrExpr::BuiltinCall(bc) if bc.return_type == ZigType::JsAny => IrExpr::BuiltinCall(bc),
@@ -2095,20 +2136,38 @@ impl Lowerer {
 
             // Ident — check variable type in type_info
             IrExpr::Ident(ident) => {
-                let is_jsany = self.get_var_type(&ident.js_name) == Some(ZigType::JsAny);
-                if is_jsany {
-                    IrExpr::Ident(ident)
-                } else {
-                    Self::wrap_in_jsany_from(IrExpr::Ident(ident))
+                let var_ty = self.get_var_type(&ident.js_name);
+                match var_ty {
+                    Some(ZigType::JsAny) => IrExpr::Ident(ident),
+                    // Primitives — JsAny.from() supports these
+                    Some(ZigType::I64) | Some(ZigType::F64) | Some(ZigType::Bool)
+                    | Some(ZigType::Str) => Self::wrap_in_jsany_from(IrExpr::Ident(ident)),
+                    // ArrayList(JsAny) — use fromArrayList
+                    Some(ZigType::ArrayList(ref inner)) if **inner == ZigType::JsAny => {
+                        Self::wrap_in_jsany_from_arraylist(IrExpr::Ident(ident))
+                    }
+                    // Non-primitive types (NamedStruct, ArrayList(non-JsAny), BigInt,
+                    // JsSymbol, etc.) — JsAny.from() would @compileError. Pass through.
+                    Some(_) => IrExpr::Ident(ident),
+                    // Unknown type — wrap (may @compileError at Zig level)
+                    None => Self::wrap_in_jsany_from(IrExpr::Ident(ident)),
                 }
             }
 
             // TypedIdent — use embedded ty field directly
             IrExpr::TypedIdent { ident, ty } => {
-                if ty == ZigType::JsAny {
-                    IrExpr::TypedIdent { ident, ty }
-                } else {
-                    Self::wrap_in_jsany_from(IrExpr::TypedIdent { ident, ty })
+                match ty {
+                    ZigType::JsAny => IrExpr::TypedIdent { ident, ty },
+                    // Primitives — JsAny.from() supports these
+                    ZigType::I64 | ZigType::F64 | ZigType::Bool | ZigType::Str => {
+                        Self::wrap_in_jsany_from(IrExpr::TypedIdent { ident, ty })
+                    }
+                    // ArrayList(JsAny) — use fromArrayList
+                    ZigType::ArrayList(ref inner) if **inner == ZigType::JsAny => {
+                        Self::wrap_in_jsany_from_arraylist(IrExpr::TypedIdent { ident, ty })
+                    }
+                    // Non-primitive types — pass through to avoid @compileError
+                    _ => IrExpr::TypedIdent { ident, ty },
                 }
             }
 
@@ -2133,9 +2192,19 @@ impl Lowerer {
             {
                 Self::wrap_in_jsany_from(IrExpr::HostCall(hc))
             }
-            // BuiltinCall/HostCall with other return types (ArrayList, NamedStruct, etc.)
-            // — wrap in JsAny.from() for safety
-            IrExpr::BuiltinCall(_) | IrExpr::HostCall(_) => Self::wrap_in_jsany_from(expr),
+            // BuiltinCall/HostCall with ArrayList(JsAny) return type —
+            // use JsAny.fromArrayList() to wrap into JsAny.array variant.
+            IrExpr::BuiltinCall(bc) if matches!(bc.return_type, ZigType::ArrayList(ref inner) if **inner == ZigType::JsAny) => {
+                Self::wrap_in_jsany_from_arraylist(IrExpr::BuiltinCall(bc))
+            }
+            IrExpr::HostCall(hc) if matches!(hc.return_type, ZigType::ArrayList(ref inner) if **inner == ZigType::JsAny) => {
+                Self::wrap_in_jsany_from_arraylist(IrExpr::HostCall(hc))
+            }
+            // BuiltinCall/HostCall with other non-primitive return types
+            // (ArrayList(non-JsAny), NamedStruct, BigInt, JsSymbol, etc.)
+            // — JsAny.from() would trigger @compileError for these types.
+            // Pass through and let the Zig compiler handle it.
+            IrExpr::BuiltinCall(_) | IrExpr::HostCall(_) => expr,
             IrExpr::Binary { .. } | IrExpr::Unary { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::FieldAccess { .. } => Self::wrap_in_jsany_from(expr),
             IrExpr::IndexAccess { .. } => Self::wrap_in_jsany_from(expr),
@@ -2152,13 +2221,13 @@ impl Lowerer {
             IrExpr::TemplateLiteral { .. } | IrExpr::AllocPrint { .. } => {
                 Self::wrap_in_jsany_from(expr)
             }
-            IrExpr::BigIntLiteral(_) => Self::wrap_in_jsany_from(expr),
+            // BigIntLiteral — JsAny.from() does not support JsBigInt
+            // (the JsAny union has no BigInt variant). Pass through.
+            IrExpr::BigIntLiteral(_) => expr,
             // New(Error) already emits JsAny (fromError) — pass through.
-            // Other New types (Map, Set, Date, …) would need JsAny.from()
-            // but trigger @compileError for unsupported struct types.
-            // Pass through and let the emitter produce the correct value.
-            IrExpr::New(ref ne) if ne.result_type == ZigType::JsAny => expr,
-            IrExpr::New(_) => Self::wrap_in_jsany_from(expr),
+            // Other New types (Map, Set, Date, RegExp, …) produce NamedStruct
+            // values which JsAny.from() cannot wrap (@compileError). Pass through.
+            IrExpr::New(_) => expr,
             IrExpr::BlockExpr { .. } => Self::wrap_in_jsany_from(expr),
             // Null/Undefined already emit as JsAny — pass through
             IrExpr::Null | IrExpr::Undefined => expr,
@@ -2172,10 +2241,51 @@ impl Lowerer {
             // the result is JsAny when the function returns JsAny.
             IrExpr::Await(_) => Self::wrap_in_jsany_from(expr),
 
-            // Array callback/method inline — produces ArrayList or specific element
-            // type. Wrap to convert to JsAny when function returns JsAny.
-            IrExpr::ArrayCallbackInline(_) | IrExpr::ArrayMethodInline(_) => {
-                Self::wrap_in_jsany_from(expr)
+            // Array callback/method inline — produces ArrayList or scalar.
+            // For ArrayList(JsAny) results, use fromArrayList to wrap into
+            // JsAny.array variant. For ArrayList(non-JsAny), pass through
+            // (JsAny.from() would @compileError). For scalar results, use
+            // JsAny.from() (works for primitives and JsAny).
+            IrExpr::ArrayCallbackInline(ref aci) => {
+                use crate::zigir::types::ArrayCallbackKind;
+                let returns_arraylist = matches!(
+                    aci.kind,
+                    ArrayCallbackKind::Filter
+                        | ArrayCallbackKind::Map
+                        | ArrayCallbackKind::FlatMap
+                        | ArrayCallbackKind::ToSorted
+                );
+                if returns_arraylist && aci.elem_type == ZigType::JsAny {
+                    Self::wrap_in_jsany_from_arraylist(expr)
+                } else if returns_arraylist {
+                    // ArrayList(non-JsAny) — cannot wrap in JsAny
+                    expr
+                } else {
+                    // Scalar result — wrap in JsAny.from()
+                    Self::wrap_in_jsany_from(expr)
+                }
+            }
+            IrExpr::ArrayMethodInline(ref ami) => {
+                use crate::zigir::types::ArrayMethodKind;
+                let returns_arraylist = matches!(
+                    ami.kind,
+                    ArrayMethodKind::Slice
+                        | ArrayMethodKind::Concat
+                        | ArrayMethodKind::Splice
+                        | ArrayMethodKind::With
+                        | ArrayMethodKind::ToReversed
+                        | ArrayMethodKind::ToSorted
+                        | ArrayMethodKind::ToSpliced
+                );
+                if returns_arraylist && ami.elem_type == ZigType::JsAny {
+                    Self::wrap_in_jsany_from_arraylist(expr)
+                } else if returns_arraylist {
+                    // ArrayList(non-JsAny) — cannot wrap in JsAny
+                    expr
+                } else {
+                    // Scalar result — wrap in JsAny.from()
+                    Self::wrap_in_jsany_from(expr)
+                }
             }
 
             // ComputedField — produces a value that may not be JsAny. Wrap.

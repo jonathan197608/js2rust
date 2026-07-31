@@ -291,10 +291,15 @@ impl TypeInferrer {
                         {
                             // Array methods
                             if let Some(elem_ty) = self.array_element_types.get(&obj_name) {
-                                return self.infer_array_method_return(
-                                    mem.property.name.as_str(),
-                                    elem_ty,
-                                );
+                                let result = self
+                                    .infer_array_method_return(mem.property.name.as_str(), elem_ty);
+                                // Only return on Definite; Indeterminate falls
+                                // through to detect_builtin_call for a second
+                                // chance at type inference (same pattern as
+                                // var_types below).
+                                if let InferResult::Definite(ty) = result {
+                                    return InferResult::Definite(ty);
+                                }
                             }
                             // Map/Set/Date/Str/BigInt/ArrayList methods
                             if let Some(var_ty) = self.var_types.get(&obj_name) {
@@ -1060,6 +1065,8 @@ impl TypeInferrer {
             "splice" => InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny))),
             // forEach: returns undefined
             "forEach" => InferResult::Definite(ZigType::Void),
+            // toString/toLocaleString: return comma-separated string
+            "toString" | "toLocaleString" => InferResult::Definite(ZigType::Str),
             _ => InferResult::Indeterminate,
         }
     }
@@ -1190,6 +1197,7 @@ impl TypeInferrer {
                     InferResult::Definite(ZigType::ArrayList(Box::new(ZigType::JsAny)))
                 }
                 "reduce" | "reduceRight" => InferResult::Definite(ZigType::JsAny),
+                "toString" | "toLocaleString" => InferResult::Definite(ZigType::Str),
                 _ => InferResult::Indeterminate,
             },
             // JsError methods: name, message, stack are strings; toString returns string

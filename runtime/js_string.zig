@@ -300,9 +300,10 @@ pub fn at(alloc: Allocator, s: []const u8, idx: i64) ![]const u8 {
 }
 
 /// Get UTF-16 code unit at index (JS charCodeAt behavior).
-/// Returns the i-th UTF-16 code unit (0-65535).
+/// Returns the i-th UTF-16 code unit (0-65535) as f64.
 /// If idx is out of bounds, returns 0 (JS returns NaN, but we return 0 for type simplicity).
-pub fn charCodeAt(s: []const u8, idx: i64) u16 {
+/// Returns f64 to match the cabi-declared return type and JS Number semantics.
+pub fn charCodeAt(s: []const u8, idx: i64) f64 {
     const target: usize = std.math.cast(usize, @max(0, idx)) orelse return 0;
     var utf16_idx: usize = 0;
     var i: usize = 0;
@@ -316,7 +317,7 @@ pub fn charCodeAt(s: []const u8, idx: i64) u16 {
         if (decoded.code_point <= 0xFFFF) {
             // BMP character: 1 UTF-16 code unit
             if (utf16_idx == target) {
-                return @intCast(decoded.code_point);
+                return @floatFromInt(decoded.code_point);
             }
             utf16_idx += 1;
         } else {
@@ -324,10 +325,10 @@ pub fn charCodeAt(s: []const u8, idx: i64) u16 {
             const high: u16 = @intCast(0xD800 + ((decoded.code_point - 0x10000) >> 10));
             const low: u16 = @intCast(0xDC00 + ((decoded.code_point - 0x10000) & 0x3FF));
             if (utf16_idx == target) {
-                return high;
+                return @floatFromInt(high);
             }
             if (utf16_idx + 1 == target) {
-                return low;
+                return @floatFromInt(low);
             }
             utf16_idx += 2;
         }
@@ -964,20 +965,20 @@ test "repeat" {
 
 test "charCodeAt ASCII" {
     // ASCII characters
-    try std.testing.expectEqual(@as(u16, 72), charCodeAt("Hello", 0)); // 'H'
-    try std.testing.expectEqual(@as(u16, 101), charCodeAt("Hello", 1)); // 'e'
-    try std.testing.expectEqual(@as(u16, 108), charCodeAt("Hello", 2)); // 'l'
-    try std.testing.expectEqual(@as(u16, 108), charCodeAt("Hello", 3)); // Second 'l'
-    try std.testing.expectEqual(@as(u16, 111), charCodeAt("Hello", 4)); // 'o'
-    try std.testing.expectEqual(@as(u16, 0), charCodeAt("Hello", 10)); // Out of bounds
+    try std.testing.expectEqual(@as(f64, 72), charCodeAt("Hello", 0)); // 'H'
+    try std.testing.expectEqual(@as(f64, 101), charCodeAt("Hello", 1)); // 'e'
+    try std.testing.expectEqual(@as(f64, 108), charCodeAt("Hello", 2)); // 'l'
+    try std.testing.expectEqual(@as(f64, 108), charCodeAt("Hello", 3)); // Second 'l'
+    try std.testing.expectEqual(@as(f64, 111), charCodeAt("Hello", 4)); // 'o'
+    try std.testing.expectEqual(@as(f64, 0), charCodeAt("Hello", 10)); // Out of bounds
 }
 
 test "charCodeAt UTF-8" {
     // Multi-byte UTF-8 characters
     // 'café' - 'c'=99, 'a'=97, 'f'=102, 'é'=U+00E9=233
-    try std.testing.expectEqual(@as(u16, 99), charCodeAt("café", 0));
-    try std.testing.expectEqual(@as(u16, 97), charCodeAt("café", 1));
-    try std.testing.expectEqual(@as(u16, 233), charCodeAt("café", 3)); // 'é' (U+00E9)
+    try std.testing.expectEqual(@as(f64, 99), charCodeAt("café", 0));
+    try std.testing.expectEqual(@as(f64, 97), charCodeAt("café", 1));
+    try std.testing.expectEqual(@as(f64, 233), charCodeAt("café", 3)); // 'é' (U+00E9)
 }
 
 test "charCodeAt surrogate pair" {
@@ -986,8 +987,8 @@ test "charCodeAt surrogate pair" {
     const emoji = "😀";
     const high = charCodeAt(emoji, 0);
     const low = charCodeAt(emoji, 1);
-    try std.testing.expectEqual(@as(u16, 0xD83D), high); // High surrogate
-    try std.testing.expectEqual(@as(u16, 0xDE00), low); // Low surrogate
+    try std.testing.expectEqual(@as(f64, 0xD83D), high); // High surrogate
+    try std.testing.expectEqual(@as(f64, 0xDE00), low); // Low surrogate
 }
 
 // ── UTF-16 helper tests ──

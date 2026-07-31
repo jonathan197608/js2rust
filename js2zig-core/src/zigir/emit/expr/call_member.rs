@@ -9,6 +9,33 @@ impl Emitter {
     pub(super) fn emit_call_expr(&mut self, call: &crate::zigir::types::IrCallExpr) {
         match &call.call_kind {
             CallKind::Direct | CallKind::Method { .. } => {
+                // Special case: JsAny.fromArrayList(js_allocator.allocator, expr)
+                // → JsAny.fromArrayList(js_allocator.allocator(), expr) catch @panic("OOM")
+                if call.args.len() == 2
+                    && matches!(
+                        &*call.callee,
+                        crate::zigir::types::IrExpr::FieldAccess {
+                            object,
+                            field,
+                            ..
+                        } if field == "fromArrayList"
+                            && matches!(object.as_ref(), crate::zigir::types::IrExpr::Ident(ident) if ident.zig_name == "JsAny")
+                    )
+                    && matches!(
+                        &call.args[0],
+                        crate::zigir::types::IrExpr::FieldAccess {
+                            object,
+                            field,
+                            ..
+                        } if field == "allocator"
+                            && matches!(object.as_ref(), crate::zigir::types::IrExpr::Ident(ident) if ident.zig_name == "js_allocator")
+                    )
+                {
+                    self.write("JsAny.fromArrayList(js_allocator.allocator(), ");
+                    self.emit_expr(&call.args[1]);
+                    self.write(") catch @panic(\"OOM: fromArrayList\")");
+                    return;
+                }
                 self.emit_expr(&call.callee);
                 self.emit_args(&call.args);
             }

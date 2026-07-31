@@ -274,8 +274,8 @@ impl Emitter {
             // ── With allocator, 1 arg, fallible (returns ![][]const u8) ──
             "split" => ("split", true, true, 1, 1, &[], "js_string"),
             // ── With allocator, 2 args, fallible ──
-            "padStart" => ("padStart", true, true, 2, 2, &[], "js_string"),
-            "padEnd" => ("padEnd", true, true, 2, 2, &[], "js_string"),
+            "padStart" => ("padStart", true, true, 1, 2, &["\" \""], "js_string"),
+            "padEnd" => ("padEnd", true, true, 1, 2, &["\" \""], "js_string"),
             // ── ICU-dependent: With allocator, 0-1 arg, fallible ──
             "normalize" => ("normalize", true, true, 0, 1, &["\"NFC\""], "js_string_icu"),
             // ── Fallback ──
@@ -284,6 +284,22 @@ impl Emitter {
                 self.emit_module_call("js_string", method, args);
                 return;
             }
+        };
+
+        // Determine which argument slots need i64 coercion.
+        // Runtime functions for these methods expect i64 parameters, but the
+        // JS source may pass f64, JsAny, or division expressions that produce
+        // f64. Without coercion, Zig would emit a type mismatch error.
+        let i64_args: &[usize] = match method {
+            // Methods where arg[0] (first user arg) is i64
+            "charCodeAt" | "codePointAt" | "charAt" | "at" | "repeat" => &[0],
+            // Methods where arg[0] and arg[1] are both i64
+            "slice" | "substring" => &[0, 1],
+            // Methods where arg[0] is i64 (target_len), arg[1] is string (pad_str)
+            "padStart" | "padEnd" => &[0],
+            // Methods where arg[0] is string, arg[1] is i64 (from_index/position)
+            "includes" | "indexOf" | "lastIndexOf" | "startsWith" | "endsWith" => &[1],
+            _ => &[],
         };
 
         // Emit: module.zig_method([js_allocator.allocator(), ]obj[, arg1[, arg2...]])[ catch @panic("OOM: string method")]
@@ -305,7 +321,11 @@ impl Emitter {
         for slot in 0..total_slots {
             if slot < n_args {
                 self.write(", ");
-                self.emit_expr(&args[slot]);
+                if i64_args.contains(&slot) {
+                    self.emit_i64_coerced(&args[slot]);
+                } else {
+                    self.emit_expr(&args[slot]);
+                }
             } else {
                 let opt_idx = slot.saturating_sub(min_args);
                 if let Some(default) = opt_defaults.get(opt_idx)
