@@ -81,6 +81,11 @@ pub fn for_each_stmt_child(
             on_stmt(&fos.body);
         }
         Statement::ForInStatement(fis) => {
+            // R38-LOW-7: Handle left side (variable declaration or pattern)
+            // consistent with ForOfStatement above.
+            if let ForStatementLeft::VariableDeclaration(vd) = &fis.left {
+                on_var_decl(vd);
+            }
             on_expr(&fis.right);
             on_stmt(&fis.body);
         }

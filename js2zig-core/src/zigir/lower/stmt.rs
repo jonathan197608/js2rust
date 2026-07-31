@@ -395,7 +395,15 @@ impl Lowerer {
             {
                 Box::new(rewritten)
             } else {
-                Box::new(crate::zigir::types::IrStmt::Expr(self.lower_expr(expr)))
+                // For-loop update is a statement context — set in_expr_stmt
+                // so that `i++` emits as `i += 1` (IrExpr::Update) rather
+                // than expanding to a BlockExpr which causes "value of type
+                // 'i64' ignored" in Zig's while continuation.
+                let prev = self.in_expr_stmt;
+                self.in_expr_stmt = true;
+                let lowered = self.lower_expr(expr);
+                self.in_expr_stmt = prev;
+                Box::new(crate::zigir::types::IrStmt::Expr(lowered))
             }
         });
         let body = self.lower_stmt_as_block(&fs.body, None);
@@ -1295,6 +1303,27 @@ impl Lowerer {
                         .expressions
                         .iter()
                         .any(|e| Self::expr_references_name(e, name))
+            }
+            // R38-LOW-5: Recurse into nested function/arrow bodies so that
+            // a name referenced only inside a nested function is still
+            // detected. This prevents catch-variable bindings from being
+            // dropped (`|_|`) when the catch var is used in a closure.
+            Expression::ArrowFunctionExpression(af) => af
+                .body
+                .statements
+                .iter()
+                .any(|s| Self::stmt_references_name(s, name)),
+            Expression::FunctionExpression(fe) => {
+                if let Some(body) = &fe.body {
+                    body.statements
+                        .iter()
+                        .any(|s| Self::stmt_references_name(s, name))
+                } else {
+                    false
+                }
+            }
+            Expression::PrivateFieldExpression(pfe) => {
+                Self::expr_references_name(&pfe.object, name)
             }
             _ => false,
         }

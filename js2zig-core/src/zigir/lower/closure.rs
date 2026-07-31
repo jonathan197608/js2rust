@@ -161,6 +161,14 @@ impl Lowerer {
         {
             names.borrow_mut().insert(name.to_string());
         }
+        // R38-LOW-4: FunctionDeclaration name is a local binding in the
+        // enclosing scope. for_each_stmt_child falls through to `_ => {}`
+        // for FunctionDeclaration, so we must extract the name here.
+        if let Statement::FunctionDeclaration(fd) = stmt
+            && let Some(id) = &fd.id
+        {
+            names.borrow_mut().insert(id.name.to_string());
+        }
         crate::infer::ast_walk::for_each_stmt_child(
             stmt,
             &mut |s| Self::collect_local_decls_from_stmt(s, names),
@@ -213,10 +221,19 @@ impl Lowerer {
                     mutated.borrow_mut().insert(id.name.to_string());
                 }
             },
-            &mut |_params, _stmts| {
-                // Function/arrow scope boundary — stop recursing.
-                // Mutations inside nested functions don't affect the
-                // enclosing scope's variable set.
+            &mut |_params, stmts| {
+                // R38-LOW-1: Recurse into nested function bodies to detect
+                // mutations to captured variables. collect_idents_from_fn_body
+                // correctly recurses into nested functions for capture
+                // detection, but this on_fn_scope callback was previously
+                // empty, causing is_mut to stay false for variables mutated
+                // only inside nested functions — leading to by-value capture
+                // instead of by-reference. Mutations to the nested function's
+                // own locals are also tracked but harmlessly ignored since
+                // captured variables are by definition not local.
+                for stmt in stmts {
+                    Self::detect_mutated_in_stmt(stmt, mutated);
+                }
             },
         );
     }

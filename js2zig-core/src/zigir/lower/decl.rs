@@ -442,25 +442,10 @@ impl Lowerer {
                 let ir = self.lower_expr(expr);
                 self.class_expr_var_name = None;
                 match ir {
-                    crate::zigir::types::IrExpr::ArrowFn(ref arrow) => {
-                        // Generate a unique struct name like _arrow_fn_0, _arrow_fn_1, ...
-                        // Use name_mangler counter to get sequential numbering.
-                        let idx = self.name_mangler.peek_count("arrow_fn");
-                        self.name_mangler.next_name("arrow_fn"); // advance counter
-                        let struct_name = format!("_arrow_fn_{}", idx);
-                        let struct_ident = IrIdent::new(&struct_name);
-                        // Register as closure struct (with empty captures)
-                        self.pending_arrow_structs
-                            .push(crate::zigir::types::IrClosureStruct {
-                                name: struct_ident.clone(),
-                                captured: vec![],
-                                fn_params: arrow.params.clone(),
-                                return_type: arrow.return_type.clone(),
-                                typeof_return_body: None,
-                                body: arrow.body.clone(),
-                            });
-                        Some(crate::zigir::types::IrExpr::Ident(struct_ident))
-                    }
+                    // R38-LOW-3: IrExpr::ArrowFn branch removed — dead code.
+                    // lower_arrow_fn (function.rs) always returns
+                    // IrExpr::Closure since the "always produce Closure"
+                    // refactor. ArrowFn is never produced by lower_expr.
                     crate::zigir::types::IrExpr::Closure(ref closure) => {
                         // Struct already registered by lower_fn_expr / lower_arrow_fn.
                         // Closure instance: StructName { .captured = val, ... }

@@ -519,15 +519,116 @@ impl Lowerer {
         }
 
         // Non-BigInt: emit standard ++/--
+        // For MapPut/Destructure targets, expand to Assign + Binary
+        // (like BigInt path) because the emitter's Update branch calls
+        // emit_assign_target_inner which panics on MapPut targets.
+        let target = self.lower_simple_assign_target(&ue.argument);
+        // R38: In statement context (e.g. for-loop update `i++`), don't
+        // expand to BlockExpr — use standard Update IR which emits `i += 1`.
+        // BlockExpr in statement context causes "value of type 'i64' ignored"
+        // or "unused block label" Zig errors. But skip this optimization for
+        // MapPut targets since emit_assign_target_inner panics on them.
+        let is_map_put = matches!(
+            &target,
+            crate::zigir::types::IrAssignTarget::Index { index_kind, .. }
+                if *index_kind == crate::zigir::kinds::IndexKind::MapPut
+        );
+        if self.in_expr_stmt && !is_map_put {
+            let op = if ue.operator == UpdateOperator::Increment {
+                UpdateOp::Increment
+            } else {
+                UpdateOp::Decrement
+            };
+            return IrExpr::Update {
+                op,
+                target: Box::new(target),
+                is_expr_stmt: true,
+                prefix: ue.prefix,
+            };
+        }
+        if let Some(read_expr) = target.to_read_expr() {
+            let bin_op = if ue.operator == UpdateOperator::Increment {
+                BinOp::Add
+            } else {
+                BinOp::Sub
+            };
+
+            // For prefix `++x`: assign new value, then return it.
+            // Use BlockExpr so it works in all expression contexts (return,
+            // assignment, etc.) — Zig doesn't allow `return (x = val)`.
+            if ue.prefix {
+                use crate::zigir::types::{IrStmt, IrVarDecl};
+                let temp_name = self.name_mangler.next_name("__pre");
+                let blk_label = self.name_mangler.next_name("_pre_blk");
+                let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+                let var_decl = IrStmt::VarDecl(IrVarDecl {
+                    name: IrIdent::new(&temp_name),
+                    is_const: true,
+                    zig_type: None,
+                    init: Some(IrExpr::Binary {
+                        op: bin_op,
+                        left: Box::new(read_expr),
+                        right: Box::new(IrExpr::IntLiteral(1)),
+                        left_type: Some(ZigType::I64),
+                        right_type: Some(ZigType::I64),
+                    }),
+                    is_json_parse: false,
+                    needs_var_suppression: false,
+                    needs_deinit: false,
+                });
+                let assign_stmt = IrStmt::Assign {
+                    target,
+                    op: AssignOp::Assign,
+                    value: temp_ident.clone(),
+                };
+                return IrExpr::BlockExpr {
+                    label: blk_label,
+                    body: vec![var_decl, assign_stmt],
+                    result: Box::new(temp_ident),
+                };
+            }
+
+            // For postfix `x++`: capture old value in temp, assign, return temp.
+            use crate::zigir::types::{IrStmt, IrVarDecl};
+            let temp_name = self.name_mangler.next_name("__post");
+            let blk_label = self.name_mangler.next_name("_post_blk");
+            let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
+            let var_decl = IrStmt::VarDecl(IrVarDecl {
+                name: IrIdent::new(&temp_name),
+                is_const: true,
+                zig_type: None,
+                init: Some(read_expr),
+                is_json_parse: false,
+                needs_var_suppression: false,
+                needs_deinit: false,
+            });
+            let assign_stmt = IrStmt::Expr(IrExpr::Assign {
+                op: AssignOp::Assign,
+                target: Box::new(target),
+                value: Box::new(IrExpr::Binary {
+                    op: bin_op,
+                    left: Box::new(temp_ident.clone()),
+                    right: Box::new(IrExpr::IntLiteral(1)),
+                    left_type: Some(ZigType::I64),
+                    right_type: Some(ZigType::I64),
+                }),
+            });
+            return IrExpr::BlockExpr {
+                label: blk_label,
+                body: vec![var_decl, assign_stmt],
+                result: Box::new(temp_ident),
+            };
+        }
+
+        // Simple Ident/Member target — emit standard Update IR.
         let op = if ue.operator == UpdateOperator::Increment {
             UpdateOp::Increment
         } else {
             UpdateOp::Decrement
         };
-        let target = Box::new(self.lower_simple_assign_target(&ue.argument));
         IrExpr::Update {
             op,
-            target,
+            target: Box::new(target),
             is_expr_stmt: self.in_expr_stmt,
             prefix: ue.prefix,
         }
@@ -915,7 +1016,7 @@ impl Lowerer {
     /// expression might have side effects (e.g. `getObj().prop += 1`).
     ///
     /// If so, bind it to a temp variable `__co_N` so the object is only
-    /// evaluated once. Returns `(optional (var_decl, block_label),
+    /// evaluated once. Returns `(optional (var_decls, block_label),
     /// possibly-rewritten target, read_expr)`. Callers should pass the
     /// returned bind info and final Assign to `wrap_compound_assign`.
     ///
@@ -925,7 +1026,7 @@ impl Lowerer {
         &mut self,
         target: crate::zigir::types::IrAssignTarget,
     ) -> (
-        Option<(crate::zigir::types::IrStmt, String)>,
+        Option<(Vec<crate::zigir::types::IrStmt>, String)>,
         crate::zigir::types::IrAssignTarget,
         crate::zigir::types::IrExpr,
     ) {
@@ -950,6 +1051,25 @@ impl Lowerer {
             let blk_label = format!("_co_blk{}", self.name_mangler.peek_count("__co"));
             let temp_ident = IrExpr::Ident(IrIdent::new(&temp_name));
 
+            // R38-EXPR-7: If index is not a simple lvalue, also bind it to a
+            // temp to avoid double evaluation of side-effecting index exprs.
+            let (index_ident, index_bind) = if self.ir_object_is_simple_lvalue(index) {
+                ((**index).clone(), None)
+            } else {
+                let idx_name = self.name_mangler.next_name("__ci");
+                let idx_ident = IrExpr::Ident(IrIdent::new(&idx_name));
+                let idx_decl = IrStmt::VarDecl(IrVarDecl {
+                    name: IrIdent::new(&idx_name),
+                    is_const: true,
+                    zig_type: None,
+                    init: Some((**index).clone()),
+                    is_json_parse: false,
+                    needs_var_suppression: false,
+                    needs_deinit: false,
+                });
+                (idx_ident, Some(idx_decl))
+            };
+
             // MapPut requires mutable access (.put()), so use var instead of const.
             let is_map_put = matches!(index_kind, crate::zigir::kinds::IndexKind::MapPut);
             let var_decl = IrStmt::VarDecl(IrVarDecl {
@@ -964,24 +1084,30 @@ impl Lowerer {
 
             let new_target = IrAssignTarget::Index {
                 object: Box::new(temp_ident.clone()),
-                index: index.clone(),
+                index: Box::new(index_ident.clone()),
                 index_kind: *index_kind,
             };
             let read = if *index_kind == crate::zigir::kinds::IndexKind::MapPut {
                 IrExpr::ComputedField {
                     object: Box::new(temp_ident),
-                    key: index.clone(),
+                    key: Box::new(index_ident),
                     key_kind: crate::zigir::kinds::ComputedKeyKind::ObjectMapGet,
                 }
             } else {
                 IrExpr::IndexAccess {
                     object: Box::new(temp_ident),
-                    index: index.clone(),
+                    index: Box::new(index_ident),
                     index_kind: *index_kind,
                 }
             };
 
-            return (Some((var_decl, blk_label)), new_target, read);
+            let mut decls = vec![var_decl];
+            if let Some(idx) = index_bind {
+                // Place index binding before object binding so both temps
+                // are available in the result block.
+                decls.insert(0, idx);
+            }
+            return (Some((decls, blk_label)), new_target, read);
         }
 
         let IrAssignTarget::Member {
@@ -1033,7 +1159,7 @@ impl Lowerer {
             field_kind: field_kind.clone(),
         };
 
-        (Some((var_decl, blk_label)), new_target, read)
+        (Some((vec![var_decl], blk_label)), new_target, read)
     }
 
     /// Check if an IrExpr is a "simple lvalue path": an Ident, This, or a chain of
@@ -1069,15 +1195,17 @@ impl Lowerer {
     /// and ensures single evaluation of side-effecting object expressions.
     fn wrap_compound_assign(
         &self,
-        bind: Option<(crate::zigir::types::IrStmt, String)>,
+        bind: Option<(Vec<crate::zigir::types::IrStmt>, String)>,
         assign: crate::zigir::types::IrExpr,
         read_expr: crate::zigir::types::IrExpr,
     ) -> crate::zigir::types::IrExpr {
         use crate::zigir::types::{IrExpr, IrStmt};
-        if let Some((var_decl, label)) = bind {
+        if let Some((var_decls, label)) = bind {
+            let mut body = var_decls;
+            body.push(IrStmt::Expr(assign));
             IrExpr::BlockExpr {
                 label,
-                body: vec![var_decl, IrStmt::Expr(assign)],
+                body,
                 result: Box::new(read_expr),
             }
         } else {

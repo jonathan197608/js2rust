@@ -999,12 +999,82 @@ impl Lowerer {
                     || Self::ast_expr_uses_ident(ident, &c.consequent)
                     || Self::ast_expr_uses_ident(ident, &c.alternate)
             }
+            // R38-LOW-6: Handle additional expression types that were
+            // previously falling through to `_ => true` (conservative but
+            // over-reporting). These are all side-effect-free or have
+            // sub-expressions that can be checked directly.
+            Expression::ArrayExpression(ae) => ae.elements.iter().any(|e| match e {
+                oxc_ast::ast::ArrayExpressionElement::SpreadElement(se) => {
+                    Self::ast_expr_uses_ident(ident, &se.argument)
+                }
+                _ => e
+                    .as_expression()
+                    .is_some_and(|e| Self::ast_expr_uses_ident(ident, e)),
+            }),
+            Expression::ObjectExpression(oe) => oe.properties.iter().any(|p| match p {
+                oxc_ast::ast::ObjectPropertyKind::ObjectProperty(op) => {
+                    Self::ast_expr_uses_ident(ident, &op.value)
+                }
+                oxc_ast::ast::ObjectPropertyKind::SpreadProperty(sp) => {
+                    Self::ast_expr_uses_ident(ident, &sp.argument)
+                }
+            }),
+            Expression::SequenceExpression(se) => se
+                .expressions
+                .iter()
+                .any(|e| Self::ast_expr_uses_ident(ident, e)),
+            Expression::TemplateLiteral(tl) => tl
+                .expressions
+                .iter()
+                .any(|e| Self::ast_expr_uses_ident(ident, e)),
+            Expression::ChainExpression(ce) => match &ce.expression {
+                oxc_ast::ast::ChainElement::CallExpression(call) => {
+                    Self::ast_expr_uses_ident(ident, &call.callee)
+                        || call.arguments.iter().any(|a| match a.as_expression() {
+                            Some(e) => Self::ast_expr_uses_ident(ident, e),
+                            None => false,
+                        })
+                }
+                oxc_ast::ast::ChainElement::StaticMemberExpression(m) => {
+                    Self::ast_expr_uses_ident(ident, &m.object)
+                }
+                oxc_ast::ast::ChainElement::ComputedMemberExpression(m) => {
+                    Self::ast_expr_uses_ident(ident, &m.object)
+                        || Self::ast_expr_uses_ident(ident, &m.expression)
+                }
+                _ => true,
+            },
+            Expression::AwaitExpression(ae) => Self::ast_expr_uses_ident(ident, &ae.argument),
+            Expression::NewExpression(ne) => {
+                Self::ast_expr_uses_ident(ident, &ne.callee)
+                    || ne.arguments.iter().any(|a| match a.as_expression() {
+                        Some(e) => Self::ast_expr_uses_ident(ident, e),
+                        None => false,
+                    })
+            }
+            Expression::TaggedTemplateExpression(tte) => {
+                Self::ast_expr_uses_ident(ident, &tte.tag)
+                    || tte
+                        .quasi
+                        .expressions
+                        .iter()
+                        .any(|e| Self::ast_expr_uses_ident(ident, e))
+            }
+            Expression::PrivateFieldExpression(pfe) => {
+                Self::ast_expr_uses_ident(ident, &pfe.object)
+            }
             Expression::NumericLiteral(_)
             | Expression::StringLiteral(_)
             | Expression::BooleanLiteral(_)
             | Expression::NullLiteral(_)
             | Expression::BigIntLiteral(_)
-            | Expression::RegExpLiteral(_) => false,
+            | Expression::RegExpLiteral(_)
+            | Expression::ThisExpression(_) => false,
+            // Function/Arrow expressions: conservatively return true
+            // because they may reference the ident from an enclosing
+            // scope (closure capture). R38-LOW-6: returning false here
+            // caused CABI to mark callback params as unused when they
+            // were only referenced inside a nested arrow function.
             // Conservative: assume identifier MAY appear in unhandled variants
             _ => true,
         }

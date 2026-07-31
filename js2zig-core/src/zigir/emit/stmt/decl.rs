@@ -277,7 +277,7 @@ impl Emitter {
         for field in &typedef.fields {
             // Note: zig_type already includes the '?' prefix for optional fields
             // (set in lower/mod.rs), so we must NOT add another '?' here.
-            self.writeln(&format!("{}: {},", field.name, field.zig_type));
+            self.writeln(&format!("{}: {},", zig_ident(&field.name), field.zig_type));
         }
         // Generate toJson() method for non-opaque typedefs
         if typedef.has_to_json {
@@ -590,7 +590,7 @@ impl Emitter {
         for field in &class.fields {
             self.writeln(&format!(
                 "{}: {},",
-                field.name,
+                zig_ident(&field.name),
                 field.zig_type.to_zig_type()
             ));
         }
@@ -772,7 +772,7 @@ impl Emitter {
 
         if body_always_exits {
             for f in fields {
-                self.writeln(&format!("_ = &{};", f.name));
+                self.writeln(&format!("_ = &{};", zig_ident(&f.name)));
             }
         }
 
@@ -783,7 +783,7 @@ impl Emitter {
             // Return struct literal (from fields assigned in body — values are the local vars)
             let pairs: Vec<(&str, String)> = fields
                 .iter()
-                .map(|f| (f.name.as_str(), f.name.clone()))
+                .map(|f| (f.name.as_str(), zig_ident(&f.name)))
                 .collect();
             self.emit_struct_literal_return(&pairs);
         }

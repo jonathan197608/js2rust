@@ -123,27 +123,26 @@ fn convert_vardecl_compile_error(stmts: &mut [IrStmt]) -> bool {
                 msg: String::new(),
             },
         );
-        let msg = match old_stmt {
+        let (msg, preserved_span) = match old_stmt {
             IrStmt::VarDecl(vd) => {
-                if let Some(IrExpr::CompileError { msg, .. }) = vd.init {
-                    msg
+                if let Some(IrExpr::CompileError { msg, span }) = vd.init {
+                    (msg, span)
                 } else {
-                    String::new()
+                    (String::new(), SourceSpan::default())
                 }
             }
             IrStmt::Return { value } => {
-                if let Some(IrExpr::CompileError { msg, .. }) = value {
-                    msg
+                if let Some(IrExpr::CompileError { msg, span }) = value {
+                    (msg, span)
                 } else {
-                    String::new()
+                    (String::new(), SourceSpan::default())
                 }
             }
-            _ => String::new(),
+            _ => (String::new(), SourceSpan::default()),
         };
         if let IrStmt::CompileError { span, msg: old_msg } = &mut stmts[i] {
             *old_msg = msg;
-            // Keep the default span since we extracted from deconstructed stmt
-            let _ = span;
+            *span = preserved_span;
         }
     }
     true

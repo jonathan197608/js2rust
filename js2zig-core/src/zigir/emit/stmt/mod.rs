@@ -193,6 +193,14 @@ impl Emitter {
                                     *index_kind,
                                     crate::zigir::kinds::IndexKind::SliceIndex
                                 );
+                                let is_map_put =
+                                    matches!(*index_kind, crate::zigir::kinds::IndexKind::MapPut);
+                                // R38-EXPR-5: MapPut compound assign (non-Assign
+                                // ops) emits a labeled block, so it needs _ =
+                                // prefix in statement context. Simple Assign
+                                // on MapPut just calls .put() directly.
+                                let is_map_put_compound = is_map_put
+                                    && !matches!(*op, crate::zigir::ops::AssignOp::Assign);
                                 let is_logical = matches!(
                                     *op,
                                     crate::zigir::ops::AssignOp::Nullish
@@ -209,6 +217,7 @@ impl Emitter {
                                 //    (incl. %= decomposition: op==Assign + RemExpr)
                                 (is_logical && (is_alist || is_slice))
                                     || (is_alist && is_simple_obj)
+                                    || is_map_put_compound
                             } else {
                                 false
                             }

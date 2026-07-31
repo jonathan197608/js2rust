@@ -606,29 +606,5 @@ impl Emitter {
             "break :{} {}.toOwnedSlice(js_allocator.allocator()) catch @panic(\"OOM: string concat\"); }})",
             label, buf_var
         ));
-        // Write the first part
-        if str_on_left {
-            self.write("__buf.appendSlice(js_allocator.allocator(), ");
-            self.emit_expr(str_expr);
-            self.write(") catch @panic(\"OOM: string concat\"); ");
-        } else {
-            self.write("{ const __part = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{");
-            self.emit_expr(bigint_expr);
-            self.write("}) catch @panic(\"OOM: bigint string concat\"); __buf.appendSlice(js_allocator.allocator(), __part) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free(__part); } ");
-        }
-        // Write the second part
-        if str_on_left {
-            self.write("{ const __part = std.fmt.allocPrint(js_allocator.allocator(), \"{}\", .{");
-            self.emit_expr(bigint_expr);
-            self.write("}) catch @panic(\"OOM: bigint string concat\"); __buf.appendSlice(js_allocator.allocator(), __part) catch @panic(\"OOM: bigint string concat\"); js_allocator.allocator().free(__part); } ");
-        } else {
-            self.write("__buf.appendSlice(js_allocator.allocator(), ");
-            self.emit_expr(str_expr);
-            self.write(") catch @panic(\"OOM: string concat\"); ");
-        }
-        self.write(&format!(
-            "break :{} __buf.toOwnedSlice(js_allocator.allocator()) catch @panic(\"OOM: string concat\"); }})",
-            label
-        ));
     }
 }

@@ -249,18 +249,11 @@ impl Emitter {
                 // (or to f64 via .asF64() when the other side is F64) ──
                 // This handles cases like `sum + mapValue` where mapValue is JsAny
                 // (e.g., from Map/Set for-of iteration or forEach callbacks).
+                // NOTE: BitAnd/BitOr/BitXor/Shl/Shr are NOT here — they must fall
+                // through to the Int32 path below which uses ToInt32 semantics
+                // (JS spec) and correct shift amount masking (u5 for Zig).
                 else if (left_is_jsany || right_is_jsany)
-                    && matches!(
-                        op,
-                        BinOp::Add
-                            | BinOp::Sub
-                            | BinOp::Mul
-                            | BinOp::BitAnd
-                            | BinOp::BitOr
-                            | BinOp::BitXor
-                            | BinOp::Shl
-                            | BinOp::Shr
-                    )
+                    && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul)
                 {
                     self.emit_jsany_arithmetic(
                         *op,
@@ -607,8 +600,17 @@ impl Emitter {
             } => {
                 match op {
                     crate::zigir::ops::UnaOp::Neg => {
-                        self.write("-");
-                        self.emit_expr(operand);
+                        // JS unary minus: ToNumber then negate.
+                        // For JsAny operands, coerce to f64 via .asF64() first
+                        // (Zig does not support unary - on union types).
+                        if operand_type.as_ref() == Some(&ZigType::JsAny) {
+                            self.write("-(");
+                            self.emit_expr(operand);
+                            self.write(".asF64())");
+                        } else {
+                            self.write("-");
+                            self.emit_expr(operand);
+                        }
                     }
                     crate::zigir::ops::UnaOp::Not => {
                         self.write("!");
@@ -743,6 +745,14 @@ impl Emitter {
                 self.write("; })");
             }
 
+            // R38-EXPR-6: Expresssion-context Update (prefix/postfix) is now
+            // almost entirely handled by the lowerer (EXPR-4 fix in
+            // operators.rs::lower_update), which expands ++/-- on any target
+            // where to_read_expr() returns Some into Assign+Binary. This
+            // emit branch only fires for statement-context updates
+            // (is_expr_stmt=true) and for targets where to_read_expr()
+            // returns None (Destructure/CompileError — which shouldn't have
+            // ++/-- in valid JS).
             crate::zigir::types::IrExpr::Update {
                 op,
                 target,
@@ -1156,6 +1166,8 @@ impl Emitter {
         use crate::zigir::types::IrAssignTarget;
 
         // JsObjectMap (MapPut) assignment: use .put() instead of [] =
+        // R38-EXPR-5: For compound/logical ops, bind object and index to
+        // temporaries to avoid re-evaluating side-effecting expressions.
         if let IrAssignTarget::Index {
             object,
             index,
@@ -1163,66 +1175,81 @@ impl Emitter {
         } = target
             && matches!(index_kind, crate::zigir::kinds::IndexKind::MapPut)
         {
-            match op {
-                AssignOp::Assign => {
-                    self.emit_expr(object);
-                    self.write(".put(");
-                    self.emit_expr(index);
-                    self.write(", JsAny.from(");
-                    self.emit_expr(value);
-                    self.write(")) catch @panic(\"OOM: map put\")");
-                    return;
+            // Assign is single-evaluation, no binding needed.
+            if op == AssignOp::Assign {
+                self.emit_expr(object);
+                self.write(".put(");
+                self.emit_expr(index);
+                self.write(", JsAny.from(");
+                self.emit_expr(value);
+                self.write(")) catch @panic(\"OOM: map put\")");
+                return;
+            }
+
+            // For all other ops, bind object and index to temps.
+            let blk = self.next_label();
+            self.write(&format!("({}: {{ ", blk));
+            // For simple Ident objects, use the original variable directly
+            // (const copy of JsObjectMap would make .put() fail with
+            // *const T vs *T). Only bind complex expressions to a var temp.
+            let obj = match &**object {
+                crate::zigir::types::IrExpr::Ident(ident)
+                    if !ident.zig_name.starts_with("__co_") =>
+                {
+                    ident.zig_name.clone()
                 }
+                crate::zigir::types::IrExpr::TypedIdent { ident, .. }
+                    if !ident.zig_name.starts_with("__co_") =>
+                {
+                    ident.zig_name.clone()
+                }
+                _ => {
+                    let name = format!("_map_obj_{}", blk);
+                    self.write(&format!("var {} = ", name));
+                    self.emit_expr(object);
+                    self.write("; ");
+                    name
+                }
+            };
+            // Index can always be const — it's only used for get/put key.
+            let idx = format!("_map_idx_{}", blk);
+            self.write(&format!("const {} = ", idx));
+            self.emit_expr(index);
+            self.write("; ");
+
+            match op {
                 AssignOp::Nullish => {
-                    self.emit_expr(object);
-                    self.write(".put(");
-                    self.emit_expr(index);
-                    self.write(", if (js_runtime.isNullish(");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.write(&format!(
+                        "const _v_{} = if (js_runtime.isNullish({}.get({}) orelse JsAny.fromUndefined())) JsAny.from(",
+                        blk, obj, idx
+                    ));
                     self.emit_expr(value);
-                    self.write(") else (");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
-                    return;
+                    self.write(&format!(
+                        ") else ({}.get({}) orelse JsAny.fromUndefined()); ",
+                        obj, idx
+                    ));
                 }
                 AssignOp::LogicOr => {
-                    self.emit_expr(object);
-                    self.write(".put(");
-                    self.emit_expr(index);
-                    self.write(", if (!js_runtime.isTruthy(");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.write(&format!(
+                        "const _v_{} = if (!js_runtime.isTruthy({}.get({}) orelse JsAny.fromUndefined())) JsAny.from(",
+                        blk, obj, idx
+                    ));
                     self.emit_expr(value);
-                    self.write(") else (");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
-                    return;
+                    self.write(&format!(
+                        ") else ({}.get({}) orelse JsAny.fromUndefined()); ",
+                        obj, idx
+                    ));
                 }
                 AssignOp::LogicAnd => {
-                    self.emit_expr(object);
-                    self.write(".put(");
-                    self.emit_expr(index);
-                    self.write(", if (js_runtime.isTruthy(");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) JsAny.from(");
+                    self.write(&format!(
+                        "const _v_{} = if (js_runtime.isTruthy({}.get({}) orelse JsAny.fromUndefined())) JsAny.from(",
+                        blk, obj, idx
+                    ));
                     self.emit_expr(value);
-                    self.write(") else (");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())) catch @panic(\"OOM: map put\")");
-                    return;
+                    self.write(&format!(
+                        ") else ({}.get({}) orelse JsAny.fromUndefined()); ",
+                        obj, idx
+                    ));
                 }
                 _ => {
                     let (method, needs_alloc) = match op {
@@ -1233,28 +1260,27 @@ impl Emitter {
                         AssignOp::Mod => (".rem(", false),
                         _ => {
                             self.write("@compileError(\"unsupported compound op on map\")");
+                            self.write("; })");
                             return;
                         }
                     };
-                    self.emit_expr(object);
-                    self.write(".put(");
-                    self.emit_expr(index);
-                    self.write(", (");
-                    self.emit_expr(object);
-                    self.write(".get(");
-                    self.emit_expr(index);
-                    self.write(") orelse JsAny.fromUndefined())");
-                    self.write(method);
-                    self.write("JsAny.from(");
+                    self.write(&format!(
+                        "const _v_{} = ({}.get({}) orelse JsAny.fromUndefined()){}JsAny.from(",
+                        blk, obj, idx, method
+                    ));
                     self.emit_expr(value);
                     self.write(")");
                     if needs_alloc {
                         self.write(", js_allocator.allocator()");
                     }
-                    self.write(")) catch @panic(\"OOM: map put\")");
-                    return;
+                    self.write("); ");
                 }
             }
+            self.write(&format!(
+                "{}.put({}, _v_{}) catch @panic(\"OOM: map put\"); break :{} _v_{}; }})",
+                obj, idx, blk, blk, blk
+            ));
+            return;
         }
 
         // P2-EM #3 / P1-EM-1: Index AND Member targets with logical ops must not
