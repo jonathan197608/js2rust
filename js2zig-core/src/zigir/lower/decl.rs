@@ -386,6 +386,7 @@ impl Lowerer {
                 ZigType::NamedStruct(n) if n == "Map" || n == "Set" || n == "RegExp" => false,
                 ZigType::NamedStruct(n) if self.class_names.contains(n) => false,
                 ZigType::BigInt => false,
+                ZigType::JsSymbol => false,
                 // Empty object literal {} -> JsObjectMap: needs `var` for method calls (put, delete, etc.)
                 ZigType::Struct(f) if f.is_empty() => false,
                 _ => is_const,
@@ -417,7 +418,9 @@ impl Lowerer {
         let needs_var_suppression = (!is_const
             && (matches!(
                 zig_type,
-                Some(ZigType::ArrayList(_)) | Some(ZigType::NamedStruct(_))
+                Some(ZigType::ArrayList(_))
+                    | Some(ZigType::NamedStruct(_))
+                    | Some(ZigType::JsSymbol)
             ) || matches!(zig_type, Some(ZigType::Struct(ref f)) if f.is_empty())))
             || is_js_const_reassigned;
 

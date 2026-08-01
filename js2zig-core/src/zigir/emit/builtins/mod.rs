@@ -256,6 +256,25 @@ impl Emitter {
         self.expr_to_string(expr)
     }
 
+    /// Emit an expression, wrapping it in `JsAny.from(...)` when the target
+    /// element type is `JsAny`. This is necessary for fill/with/splice insert
+    /// items where the source value may be a primitive (i64, f64, bool, etc.)
+    /// but the array stores `JsAny`. `JsAny.from` has a fast path for
+    /// `T == JsAny` so wrapping an already-JsAny value is a no-op.
+    pub(super) fn emit_jsany_wrapped_expr(
+        &mut self,
+        elem_type: &crate::types::ZigType,
+        expr: &crate::zigir::types::IrExpr,
+    ) {
+        if matches!(elem_type, crate::types::ZigType::JsAny) {
+            self.write("JsAny.from(");
+        }
+        self.emit_expr(expr);
+        if matches!(elem_type, crate::types::ZigType::JsAny) {
+            self.write(")");
+        }
+    }
+
     /// Emit `if (<expr>) break :<blk> <value>` or `if (!(<expr>)) break :<blk> <value>`.
     /// Shared by short-circuit (some/every), find-like, and find-index-like inlining.
     pub(super) fn emit_if_break_pred(

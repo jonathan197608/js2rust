@@ -1500,3 +1500,106 @@ return user.age;
 }
 
 // ── Test: Number.* static constants ──────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+// R48-EMIT: JsAny array method wrapping tests (EMIT-002/003/004)
+// ═══════════════════════════════════════════════════════════════
+
+// ── Test: Array.fill() on JsAny array ──────────────────────
+
+#[test]
+fn test_emit_fill_jsany_array() {
+    // fill(value) on a mixed-type (JsAny) array must wrap the fill value
+    // in JsAny.from() to avoid type mismatch.
+    let js = r#"
+export function fillJsAny() {
+const arr = [1, "two", true];
+arr.fill(42);
+return arr[0];
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_fill_jsany_array");
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for fill on JsAny array:\n{}",
+        zig
+    );
+}
+
+#[test]
+fn test_emit_fill_jsany_array_range() {
+    // fill(value, start, end) on a JsAny array must wrap the fill value.
+    let js = r#"
+export function fillJsAnyRange() {
+const arr = [1, "two", true, null];
+arr.fill(0, 1, 3);
+return arr[1];
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_fill_jsany_array_range");
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for fill(value, start, end) on JsAny array:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.with() on JsAny array ──────────────────────
+
+#[test]
+fn test_emit_with_jsany_array() {
+    // with(index, value) on a JsAny array must wrap the value in JsAny.from().
+    let js = r#"
+export function withJsAny() {
+const arr = [1, "two", true];
+return arr.with(1, 99);
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_with_jsany_array");
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for with() on JsAny array:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.splice() insert on JsAny array ──────────────
+
+#[test]
+fn test_emit_splice_insert_jsany_array() {
+    // splice(start, deleteCount, ...items) on a JsAny array must wrap
+    // insert items in JsAny.from().
+    let js = r#"
+export function spliceInsertJsAny() {
+const arr = [1, "two", true];
+arr.splice(1, 1, 42, "new");
+return arr[1];
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_splice_insert_jsany_array");
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for splice insert on JsAny array:\n{}",
+        zig
+    );
+}
+
+// ── Test: Array.toSpliced() insert on JsAny array ──────────────
+
+#[test]
+fn test_emit_to_spliced_insert_jsany_array() {
+    // toSpliced(start, deleteCount, ...items) on a JsAny array must wrap
+    // insert items in JsAny.from().
+    let js = r#"
+export function toSplicedInsertJsAny() {
+const arr = [1, "two", true];
+return arr.toSpliced(1, 1, 42);
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_to_spliced_insert_jsany_array");
+    assert!(
+        zig.contains("JsAny.from("),
+        "Expected JsAny.from() wrapping for toSpliced insert on JsAny array:\n{}",
+        zig
+    );
+}

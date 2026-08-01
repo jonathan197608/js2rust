@@ -18,13 +18,21 @@ impl Emitter {
         target: &str,
         start_var: &str,
         elem_type_str: &str,
+        elem_type: &ZigType,
         args: &[crate::zigir::types::IrExpr],
         method_name: &str,
     ) {
         if args.len() > 2 {
+            let needs_jsany_wrap = matches!(elem_type, ZigType::JsAny);
             let insert_items: Vec<String> = args[2..]
                 .iter()
-                .map(|arg| self.render_expr_to_string(arg))
+                .map(|arg| {
+                    if needs_jsany_wrap {
+                        format!("JsAny.from({})", self.render_expr_to_string(arg))
+                    } else {
+                        self.render_expr_to_string(arg)
+                    }
+                })
                 .collect();
             self.write(&format!(
                 "{}.insertSlice(js_allocator.allocator(), {}, &[_]{}{{ {} }}) catch @panic(\"OOM: Array.{} insert\"); ",
@@ -484,7 +492,14 @@ impl Emitter {
             _sp, receiver, _st
         ));
         // Insert items if provided (args beyond start and count)
-        self.emit_splice_insert(&receiver, &_st, &elem_type_str, &data.args, "splice");
+        self.emit_splice_insert(
+            &receiver,
+            &_st,
+            &elem_type_str,
+            &data.elem_type,
+            &data.args,
+            "splice",
+        );
         self.write(&format!("break :{} {}; }})", blk, _sp));
     }
     // ── at ─────────────────────────────────────────────
@@ -693,7 +708,7 @@ impl Emitter {
             1 => {
                 // fill(value) — fill entire array
                 self.write(&format!("for ({}) |*elem| {{ elem.* = ", items_access));
-                self.emit_expr(&data.args[0]);
+                self.emit_jsany_wrapped_expr(&data.elem_type, &data.args[0]);
                 self.write("; }");
             }
             2 => {
@@ -713,7 +728,7 @@ impl Emitter {
                     "for ({}[{}..]) |*elem| {{ elem.* = ",
                     items_access, _fs
                 ));
-                self.emit_expr(&data.args[0]);
+                self.emit_jsany_wrapped_expr(&data.elem_type, &data.args[0]);
                 self.write("; }");
             }
             _ => {
@@ -739,7 +754,7 @@ impl Emitter {
                     "if ({} > {}) {{ for ({}[{}..{}]) |*elem| {{ elem.* = ",
                     _fe, _fs, items_access, _fs, _fe
                 ));
-                self.emit_expr(&data.args[0]);
+                self.emit_jsany_wrapped_expr(&data.elem_type, &data.args[0]);
                 self.write("; } }");
             }
         }
@@ -786,7 +801,7 @@ impl Emitter {
         self.write(&format!("if ({} >= {}.items.len) @panic(\"RangeError: Invalid array index for Array.with()\"); ", _wi, _w));
         self.write(&format!("{}.items[{}] = ", _w, _wi));
         if data.args.len() >= 2 {
-            self.emit_expr(&data.args[1]);
+            self.emit_jsany_wrapped_expr(&data.elem_type, &data.args[1]);
         } else {
             match data.elem_type {
                 ZigType::JsAny => self.write("JsAny.fromUndefined()"),
@@ -924,7 +939,14 @@ impl Emitter {
             _j, _j, _tsc, _j, _tsp, _tss
         ));
         // Insert items if provided (args beyond start and deleteCount)
-        self.emit_splice_insert(&_tsp, &_tss, &elem_type_str, &data.args, "toSpliced");
+        self.emit_splice_insert(
+            &_tsp,
+            &_tss,
+            &elem_type_str,
+            &data.elem_type,
+            &data.args,
+            "toSpliced",
+        );
         self.write(&format!("break :{} {}; }})", blk, _tsp));
     }
 }

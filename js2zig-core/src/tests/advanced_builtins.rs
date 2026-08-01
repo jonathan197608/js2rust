@@ -3056,3 +3056,39 @@ export function testDynamicObjDeinit() {
         zig
     );
 }
+
+// ═══════════════════════════════════════════════════════════════
+// R48-EMIT-001: JsSymbol const variable defer deinit fix
+// ═══════════════════════════════════════════════════════════════
+
+#[test]
+fn test_emit_symbol_const_non_returned() {
+    // A const Symbol variable that is not returned must still get
+    // `defer sym.deinit(...)` for cleanup. Since JsSymbol.deinit takes
+    // *JsSymbol (mutable pointer), the variable must be declared as `var`
+    // (not `const`) to allow taking the address. This test ensures the
+    // generated code passes Zig's ast-check without errors.
+    let js = r#"
+/**
+ * @returns {boolean}
+ */
+export function symbolNotReturned() {
+const sym = Symbol("test");
+return sym.description == "test";
+}
+"#;
+    let zig = transpile_and_check(js, "test_emit_symbol_const_non_returned");
+    println!("=== R48-EMIT-001: Symbol const non-returned ===\n{}", zig);
+    // Must generate defer deinit for the non-returned Symbol variable
+    assert!(
+        zig.contains("defer sym.deinit(js_allocator.allocator())"),
+        "Expected 'defer sym.deinit(...)' for non-returned Symbol variable:\n{}",
+        zig
+    );
+    // Must be `var` not `const` so that *JsSymbol can be taken
+    assert!(
+        zig.contains("var sym:"),
+        "Expected 'var sym:' (not const) for JsSymbol with defer deinit:\n{}",
+        zig
+    );
+}
