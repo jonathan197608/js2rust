@@ -646,8 +646,8 @@ impl Emitter {
         }
         // Convert negative indices via from-end
         self.write(&format!(
-            "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
-            _ln, receiver, _tg, _tr, _ln, _tr, _tr, _ln,
+            "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+            _ln, items_access, _tg, _tr, _ln, _tr, _tr, _ln,
             _cs, _sr, _ln, _sr, _sr, _ln,
             _ce, _er, _ln, _er, _er, _ln
         ));
@@ -706,8 +706,8 @@ impl Emitter {
                 self.write(&format!("const {}: isize = @intCast(", _fsr));
                 self.emit_i64_coerced(&data.args[1]);
                 self.write(&format!(
-                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
-                    _ln, receiver, _fs, _fsr, _ln, _fsr, _fsr, _ln
+                    "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, items_access, _fs, _fsr, _ln, _fsr, _fsr, _ln
                 ));
                 self.write(&format!(
                     "for ({}[{}..]) |*elem| {{ elem.* = ",
@@ -730,8 +730,8 @@ impl Emitter {
                 self.write(&format!("); const {}: isize = @intCast(", _fer));
                 self.emit_i64_coerced(&data.args[2]);
                 self.write(&format!(
-                    "); const {} = {}.items.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
-                    _ln, receiver, _fs, _fsr, _ln, _fsr, _fsr, _ln,
+                    "); const {} = {}.len; const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); const {}: usize = @intCast(if ({} < 0) @max(0, @as(isize, @intCast({})) + {}) else @min(@as(usize, @intCast({})), {})); ",
+                    _ln, items_access, _fs, _fsr, _ln, _fsr, _fsr, _ln,
                     _fe, _fer, _ln, _fer, _fer, _ln
                 ));
                 // Guard: when end < start, fill is a no-op per JS spec.

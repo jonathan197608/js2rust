@@ -99,7 +99,12 @@ pub const JsRegExp = struct {
                 self.lastIndex = 0;
                 return null;
             }
-            self.lastIndex = end_pos;
+            // Zero-length match: advance lastIndex by 1 to prevent infinite loop.
+            if (end_pos == self.lastIndex) {
+                self.lastIndex = end_pos + 1;
+            } else {
+                self.lastIndex = end_pos;
+            }
             if (result.len < 0) return error.NegativeSize;
             const bytes = result.ptr[0..@intCast(result.len)];
             return try parseNulSeparated(alloc, bytes, count);

@@ -416,6 +416,38 @@ pub const JsAny = union(enum) {
     /// R8-P1-15: Previously reduced arrays/objects to .length via toValue(),
     /// making distinct arrays with same length "equal". Now uses reference
     /// identity for arrays/objects (two distinct objects are never ==).
+    /// Check if two JsAny values reference the same heap allocation.
+    /// Used for self-assignment guard in set()/objectPut() to prevent
+    /// deinit from freeing the value being assigned.
+    /// For heap-allocated types (array, object, string), checks pointer identity.
+    /// For value types (int, float, bool, null, undefined), uses value equality.
+    fn isSameRef(self: JsAny, other: JsAny) bool {
+        switch (self) {
+            .array => |a| switch (other) {
+                .array => |b| return a == b,
+                else => return false,
+            },
+            .object => |o| switch (other) {
+                .object => |b| return o == b,
+                else => return false,
+            },
+            .value => |v| switch (v) {
+                .string => |s| switch (other) {
+                    .value => |ov| switch (ov) {
+                        .string => |os| return s.ptr == os.ptr,
+                        else => return false,
+                    },
+                    else => return false,
+                },
+                else => return std.meta.eql(v, switch (other) {
+                    .value => |ov| ov,
+                    else => return false,
+                }),
+            },
+            .null => return other == .null,
+        }
+    }
+
     pub fn eq(self: JsAny, other: JsAny) bool {
         // Reference identity for heap-allocated containers
         switch (self) {
@@ -640,7 +672,7 @@ pub const JsAny = union(enum) {
                 if (o.getPtr(key)) |existing| {
                     // Self-assignment guard: if val and existing.* reference
                     // the same heap allocation, deinit would free val too.
-                    if (std.meta.eql(existing.*, val)) return;
+                    if (existing.*.isSameRef(val)) return;
                     var old = existing.*;
                     existing.* = val;
                     old.deinit(alloc);
@@ -689,7 +721,7 @@ pub const JsAny = union(enum) {
                 if (o.getPtr(key)) |existing| {
                     // Self-assignment guard: if val and existing.* reference
                     // the same heap allocation, deinit would free val too.
-                    if (std.meta.eql(existing.*, val)) return;
+                    if (existing.*.isSameRef(val)) return;
                     var old = existing.*;
                     existing.* = val;
                     old.deinit(alloc);

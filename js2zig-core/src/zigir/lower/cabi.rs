@@ -691,18 +691,29 @@ impl Lowerer {
 
         let chain_obj_name = self.name_mangler.next_name("__chain");
 
+        let receiver_is_slice = matches!(
+            inner_expr,
+            IrExpr::BuiltinCall(bc)
+                if bc.method == "split"
+                    && bc.module == crate::zigir::builtins::BuiltinModule::JsString
+        );
+
+        // Mutating methods (splice, copyWithin, fill) cannot operate on
+        // []const slices (e.g. from split()). Fall back to BuiltinCall.
+        if receiver_is_slice {
+            use crate::zigir::types::ArrayMethodKind as AMK;
+            if matches!(kind, AMK::Splice | AMK::CopyWithin | AMK::Fill) {
+                return None;
+            }
+        }
+
         Some(IrExpr::ArrayMethodInline(Box::new(IrArrayMethodInline {
             kind,
             obj_name: chain_obj_name,
             obj_expr: Some(Box::new(inner_expr.clone())),
             elem_type: elem_type.clone(),
             args: args.to_vec(),
-            receiver_is_slice: matches!(
-                inner_expr,
-                IrExpr::BuiltinCall(bc)
-                    if bc.method == "split"
-                        && bc.module == crate::zigir::builtins::BuiltinModule::JsString
-            ),
+            receiver_is_slice,
         })))
     }
 

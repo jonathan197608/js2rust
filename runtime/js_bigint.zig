@@ -21,13 +21,14 @@ pub const JsBigInt = struct {
             rest = rest[1..];
         }
         // Detect base from prefix: 0x → 16, 0o → 8, 0b → 2, else 10
-        const base: u8 = if (rest.len > 2 and rest[0] == '0') switch (rest[1]) {
+        const base: u8 = if (rest.len >= 2 and rest[0] == '0') switch (rest[1]) {
             'x', 'X' => 16,
             'o', 'O' => 8,
             'b', 'B' => 2,
             else => 10,
         } else 10;
         const digits: []const u8 = if (base != 10) rest[2..] else rest;
+        if (digits.len == 0) return error.InvalidBigIntLiteral;
         try managed.setString(base, digits);
         if (negative) managed.negate();
         return Self{ .value = managed };

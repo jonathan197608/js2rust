@@ -312,14 +312,15 @@ pub fn JsCollection(comptime Value: type) type {
             index: usize,
 
             pub fn next(self: *InsertionOrderIterator) ?struct { key_ptr: *const JsAny, value_ptr: *const Value } {
-                if (self.index >= self.collection.insertion_order.items.len) return null;
-                const key = &self.collection.insertion_order.items[self.index];
-                self.index += 1;
-                if (self.collection.inner.getPtr(key.*)) |val_ptr| {
-                    return .{ .key_ptr = key, .value_ptr = val_ptr };
+                while (self.index < self.collection.insertion_order.items.len) {
+                    const key = &self.collection.insertion_order.items[self.index];
+                    self.index += 1;
+                    if (self.collection.inner.getPtr(key.*)) |val_ptr| {
+                        return .{ .key_ptr = key, .value_ptr = val_ptr };
+                    }
+                    // Key was deleted from inner but not from insertion_order? Skip.
                 }
-                // Key was deleted from inner but not from insertion_order? Shouldn't happen.
-                return self.next();
+                return null;
             }
         };
 
